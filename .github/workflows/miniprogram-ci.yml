@@ -7,50 +7,30 @@ on:
       - "miniprogram/**"
   workflow_dispatch:
 
-# [人工注释][CI-004] 一次性生成 package-lock；提交成功后本 workflow 会恢复为 contents: read + npm ci。
+# [人工注释][CI-004] package-lock 已纳入仓库；长期 CI 只读并统一使用 npm ci 保证可复现。
 permissions:
-  contents: write
-  pull-requests: read
+  contents: read
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miniprogram
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Generate lockfile
-        working-directory: miniprogram
-        run: npm install --package-lock-only --ignore-scripts
+          cache: npm
+          cache-dependency-path: miniprogram/package-lock.json
 
       - name: Install from lockfile
-        working-directory: miniprogram
         run: npm ci
 
       - name: Typecheck
-        working-directory: miniprogram
         run: npm run typecheck
 
       - name: Build WeChat mini program
-        working-directory: miniprogram
         run: npm run build:weapp
-
-      - name: Commit generated lockfile
-        if: github.event_name == 'pull_request'
-        env:
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add miniprogram/package-lock.json
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "chore: lock miniprogram dependencies"
-          git push origin "HEAD:${HEAD_BRANCH}"
