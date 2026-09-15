@@ -1,8 +1,9 @@
 <!-- [人工注释][DOC-PROGRESS-001] 本文件是迹忆项目长期维护的开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
 <!-- [人工注释][DOC-PROGRESS-002] PR #1 第二轮 HOLD 项已完成代码与自动验收，当前进入第三轮最终审查前状态。 -->
+<!-- [人工注释][DOC-PROGRESS-003] PR #1 第三轮唯一 P1：ObjectLocation naive recorded_at 已修复并通过自动验收，等待窄范围最终复核。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-09-15  
+> 最后更新：2026-09-16  
 > 当前阶段：V1 Foundation / Stage 1  
 > 当前开发分支：`feat/v1-foundation`  
 > 当前 PR：#1 `feat: establish V1 trusted memory foundation`
@@ -26,8 +27,8 @@
 
 | ID | 模块 | 当前状态 | 说明 |
 | --- | --- | --- | --- |
-| FND-000 | V1 Foundation 总体 | 🔵 进行中 | PR #1 第二轮 HOLD 项已修复并完成自动验收，等待第三轮最终正式审查；Stage 2 仍未开始 |
-| CI-001 | Backend CI | 🟠 待审查 / 待合并 | Ruff + SQLite Alembic + PostgreSQL Alembic + PostgreSQL ObjectLocation 不变量 + pytest 18/18 全绿 |
+| FND-000 | V1 Foundation 总体 | 🔵 进行中 | PR #1 第三轮唯一 P1 已修复并通过自动验收，等待窄范围最终复核；Stage 2 仍未开始 |
+| CI-001 | Backend CI | 🟠 待审查 / 待合并 | Ruff + SQLite Alembic + PostgreSQL Alembic + PostgreSQL ObjectLocation 不变量 + pytest 19/19 全绿 |
 | CI-002 | Flutter Android CI | 🟠 待审查 / 待合并 | analyze + test + debug APK build 已有真实远程 PASS |
 | CI-003 | Flutter iOS CI | 🟠 待审查 / 待合并 | `flutter build ios --debug --no-codesign` 已有真实远程 PASS |
 | CI-004 | 微信小程序 CI | 🟠 待审查 / 待合并 | `package-lock.json` 已提交，长期只读 CI 使用 `npm ci` + TypeScript + Taro WeChat build |
@@ -38,7 +39,7 @@
 
 | ID | 功能 / 需求 | 状态 | 验收要求 / 当前说明 |
 | --- | --- | --- | --- |
-| FND-001 | FastAPI 模块化单体基础工程 | 🟠 | 结构完成，等待 PR #1 第三轮最终审查 |
+| FND-001 | FastAPI 模块化单体基础工程 | 🟠 | 结构完成，等待 PR #1 最终窄范围复核 |
 | FND-002 | PostgreSQL / SQLite 开发数据库基础 | 🟠 | 同步 SQLAlchemy 路径统一，PostgreSQL 已进入正式 CI |
 | FND-003 | Redis 开发依赖基础 | 🟠 | Docker 开发环境已配置 |
 | FND-004 | Alembic migration baseline | 🟠 | SQLite / PostgreSQL 均在 CI 执行 `upgrade head`；README 新环境启动明确要求先 migration |
@@ -63,6 +64,7 @@
 | FND-023 | Location 时间戳时区健壮性 | 🟠 | schema 拒绝 naive datetime；批处理先统一 UTC 后再做范围比较，防止 500 |
 | FND-024 | PostgreSQL ObjectLocation 真实数据库不变量 | 🟠 | PostgreSQL migration、单 CURRENT partial unique index、真实 `FOR UPDATE` 锁语义均已 CI 验证 |
 | FND-025 | 正式 API 文档协议同步 | 🟠 | `capture_source`、Evidence、timezone-aware 位置示例已与当前 schema 对齐 |
+| FND-026 | ObjectLocation 显式时间戳时区约束 | 🟠 | ObjectLocation 与 GPS 共用 timezone-aware schema validator；naive `recorded_at` 返回 422，且 CURRENT 保持不变 |
 
 ---
 
