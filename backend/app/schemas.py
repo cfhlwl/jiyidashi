@@ -9,7 +9,8 @@ from app.models import MemoryType, ObjectLocationStatus, SourceType
 
 
 def _require_timezone_aware_datetime(value: datetime) -> datetime:
-    # [人工注释][FND-026] 所有用于服务端时间顺序判断的显式 recorded_at 必须携带时区，禁止把客户端本地 naive 时间误当 UTC。
+    # [人工注释][FND-026] 服务端用于时间顺序判断的显式 recorded_at 必须携带时区。
+    # 禁止把客户端本地 naive 时间直接误当成 UTC。
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("recorded_at must include a timezone offset")
     return value
