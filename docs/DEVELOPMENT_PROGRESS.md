@@ -2,12 +2,13 @@
 <!-- [人工注释][DOC-PROGRESS-002] PR #1 第二轮 HOLD 项已完成代码与自动验收，当前进入第三轮最终审查前状态。 -->
 <!-- [人工注释][DOC-PROGRESS-003] PR #1 第三轮唯一 P1：ObjectLocation naive recorded_at 已修复并通过自动验收，等待窄范围最终复核。 -->
 <!-- [人工注释][DOC-PROGRESS-004] PR #1 已完成最终复核并合并 main；Foundation 与三端 CI 基线正式标记为已完成。 -->
+<!-- [人工注释][DOC-PROGRESS-005] Stage 1 第一批真实用户闭环已启动：身份、文字记忆、物品位置、查询与 Evidence 三端接线。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-16  
-> 当前阶段：V1 Foundation 已完成 / Stage 1 待启动  
-> 当前开发分支：`main`  
-> 最近合并：PR #1 `feat: establish V1 trusted memory foundation`
+> 当前阶段：Stage 1「记得住」第一批闭环开发中  
+> 当前开发分支：`feat/stage1-memory-loop`  
+> 当前 PR：待创建（Stage 1 memory loop）
 
 ## 状态规则
 
@@ -28,7 +29,8 @@
 
 | ID | 模块 | 当前状态 | 说明 |
 | --- | --- | --- | --- |
-| FND-000 | V1 Foundation 总体 | ✅ 已完成 | PR #1 已通过最终复核并合并 `main`；Stage 1 / Stage 2 均尚未开始 |
+| FND-000 | V1 Foundation 总体 | ✅ 已完成 | PR #1 已通过最终复核并合并 `main` |
+| S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | 🔵 进行中 | 正式身份 + 用户资料 + 文字记录 + 物品位置 + 查询/Evidence + Flutter/小程序真实 API 接线 |
 | CI-001 | Backend CI | ✅ 已完成 | Ruff + SQLite Alembic + PostgreSQL Alembic + PostgreSQL ObjectLocation 不变量 + pytest 19/19 全绿 |
 | CI-002 | Flutter Android CI | ✅ 已完成 | analyze + test + debug APK build 最终 HEAD 真实远程 PASS |
 | CI-003 | Flutter iOS CI | ✅ 已完成 | `flutter build ios --debug --no-codesign` 最终 HEAD 真实远程 PASS |
@@ -75,20 +77,20 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S1-001 | 正式用户注册 / 登录 | ⬜ | 手机号 / Apple / 微信等方案后续确定 |
-| S1-002 | 用户资料与时区设置 | ⬜ | 当前仅有基础模型 |
-| S1-003 | 文字记忆录入 | ⬜ | 后端模型已有，客户端尚未真实接线 |
+| S1-001 | 正式用户注册 / 登录 | 🔵 | 第一批实现 Email + Password 身份提供方；后续可扩 Apple / 微信 / 手机号 |
+| S1-002 | 用户资料与时区设置 | 🔵 | 增加本人资料读取/修改和服务端时区校验 |
+| S1-003 | 文字记忆录入 | 🔵 | 后端已有可信写入，本轮接入 Flutter / 小程序真实 API |
 | S1-004 | 语音记忆录入 | ⬜ | 需要录音、上传、ASR、Evidence |
 | S1-005 | 图片记忆录入 | ⬜ | 主动拍照 / 主动选择，不默认全相册扫描 |
 | S1-006 | COS / OSS 对象存储直传 | ⬜ | 私有桶 + 临时签名 URL |
 | S1-007 | ASR 语音转写 | ⬜ | 原始音频保留为证据 |
 | S1-008 | “帮我记住”统一入口 | ⬜ | 文字 / 语音 / 拍照统一进入 Memory Pipeline |
-| S1-009 | “东西在哪”物品录入 | ⬜ | Object / ObjectLocation 前后端完整接线 |
-| S1-010 | “东西在哪”查询 | ⬜ | 返回最后有效位置 + 证据 + 时间 |
+| S1-009 | “东西在哪”物品录入 | 🔵 | 本轮完成 Flutter / 小程序创建 Object + 写 ObjectLocation |
+| S1-010 | “东西在哪”查询 | 🔵 | 本轮通过结构化 Memory Query 返回最后有效位置 + Evidence + 时间 |
 | S1-011 | 物品位置失效 / “已经不在那里” | ⬜ | CURRENT → STALE / UNKNOWN |
-| S1-012 | 基础记忆搜索 | ⬜ | 结构化优先，必要时文本检索 |
-| S1-013 | “问记忆”客户端页面接真实 API | ⬜ | 当前 UI 仅为骨架 |
-| S1-014 | 答案展示 Evidence / 来源 / 时间 | ⬜ | 不能只显示聊天文本 |
+| S1-012 | 基础记忆搜索 | 🔵 | 复用可信结构化/文本查询并接入客户端 |
+| S1-013 | “问记忆”客户端页面接真实 API | 🔵 | Flutter 与微信小程序从占位页切换到真实查询 |
+| S1-014 | 答案展示 Evidence / 来源 / 时间 | 🔵 | 两端必须显示 certainty、Evidence、时间，不允许只有聊天文本 |
 | S1-015 | 客户端本地 SQLite | ⬜ | Android / iOS 本地持久化 |
 | S1-016 | 离线记忆队列 | ⬜ | 无网络仍可“记一下” |
 | S1-017 | 离线同步与幂等 | ⬜ | 使用 client UUID 防重复 |
@@ -106,7 +108,7 @@
 
 # 3. Stage 2：自动记
 
-> **当前明确未开始。Foundation 已完成并合并 main；Stage 1 尚未进入正式开发，因此本阶段继续保持未开始。**
+> **当前明确未开始。Stage 1 第一批闭环正在开发，完成审查前不进入后台定位。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
@@ -273,4 +275,4 @@
 5. 发现缺陷时：在相关功能下新增修复项或单独 Bug ID，不允许只改代码不记录。
 6. 每次新增或修改人工维护的源代码，都必须遵守 `docs/CODE_ANNOTATION_RULES.md` 的 `[人工注释]` 标记规范。
 7. 自动生成文件、lockfile、二进制资源不得为了加注释而破坏格式；此类文件通过提交记录和本表关联追踪。
-8. Stage 2 及以后功能不得提前侵入当前 Foundation PR，除非先更新本表并明确变更范围。
+8. Stage 2 及以后功能不得提前侵入当前 Stage 1 PR，除非先更新本表并明确变更范围。
