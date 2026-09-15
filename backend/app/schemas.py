@@ -1,10 +1,21 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 from app.models import MemoryType, ObjectLocationStatus, SourceType
+
+
+def _require_timezone_aware_datetime(value: datetime) -> datetime:
+    # [人工注释][FND-026] 所有用于服务端时间顺序判断的显式 recorded_at 必须携带时区，禁止把客户端本地 naive 时间误当 UTC。
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("recorded_at must include a timezone offset")
+    return value
+
+
+TimezoneAwareDateTime = Annotated[datetime, AfterValidator(_require_timezone_aware_datetime)]
 
 
 class ORMModel(BaseModel):
@@ -85,7 +96,7 @@ class ObjectLocationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     location_text: str = Field(min_length=1, max_length=2000)
-    recorded_at: datetime | None = None
+    recorded_at: TimezoneAwareDateTime | None = None
     capture_source: UserCaptureSource = UserCaptureSource.USER_TEXT
     place_id: UUID | None = None
 
@@ -128,15 +139,7 @@ class LocationPointCreate(BaseModel):
     longitude: float = Field(ge=-180, le=180)
     accuracy: float | None = Field(default=None, ge=0)
     speed: float | None = None
-    recorded_at: datetime
-
-    # [人工注释][FND-023] 自动位置时间必须携带时区，禁止 naive/aware 混批导致服务器比较异常。
-    @field_validator("recorded_at")
-    @classmethod
-    def require_timezone_aware_recorded_at(cls, value: datetime) -> datetime:
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("recorded_at must include a timezone offset")
-        return value
+    recorded_at: TimezoneAwareDateTime
 
 
 class LocationBatchRequest(BaseModel):
