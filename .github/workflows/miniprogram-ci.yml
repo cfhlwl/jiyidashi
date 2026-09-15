@@ -1,0 +1,35 @@
+name: miniprogram-ci
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/miniprogram-ci.yml"
+      - "miniprogram/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: miniprogram/package-lock.json
+
+      - name: Install
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build WeChat mini program
+        run: npm run build:weapp
