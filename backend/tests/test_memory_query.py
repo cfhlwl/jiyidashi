@@ -225,6 +225,35 @@ async def test_late_offline_object_location_cannot_replace_newer_current(
         assert len(current_rows) == 1
 
 
+async def test_naive_object_location_timestamp_is_rejected_without_changing_current(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    # [人工注释][FND-026] ObjectLocation 显式时间缺少时区时必须 422，且不能影响已经确认的新 CURRENT。
+    object_id = await _create_object(client, auth_headers, "门禁卡")
+    now = datetime.now(UTC)
+    current_location = await client.post(
+        f"/v1/objects/{object_id}/locations",
+        headers=auth_headers,
+        json={"location_text": "书房", "recorded_at": now.isoformat()},
+    )
+    assert current_location.status_code == 201
+    assert current_location.json()["status"] == "CURRENT"
+
+    naive_older = (now - timedelta(minutes=30)).replace(tzinfo=None).isoformat()
+    rejected = await client.post(
+        f"/v1/objects/{object_id}/locations",
+        headers=auth_headers,
+        json={"location_text": "鞋柜", "recorded_at": naive_older},
+    )
+    assert rejected.status_code == 422
+
+    current = await client.get(f"/v1/objects/{object_id}/location", headers=auth_headers)
+    assert current.status_code == 200
+    assert current.json()["location_text"] == "书房"
+    assert current.json()["id"] == current_location.json()["id"]
+
+
 async def test_database_rejects_second_current_object_location(
     client: AsyncClient,
     auth_headers: dict[str, str],
