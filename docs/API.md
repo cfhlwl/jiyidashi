@@ -1,3 +1,4 @@
+<!-- [人工注释][FND-025] 本文档必须与当前公开 schema 同步；客户端只能声明 capture_source，可信等级由服务端所有。 -->
 # V1 API 基线
 
 Base path:
@@ -12,7 +13,9 @@ Base path:
 POST /v1/auth/dev-token
 ```
 
-仅 development 使用。
+仅本地 development/test 使用，并且必须显式 `ENABLE_DEV_AUTH=true`。
+
+`APP_ENV=production` 或 `APP_ENV=prod` 时该能力不可开启；生产必须使用正式认证方案。
 
 ## Memory
 
@@ -25,16 +28,33 @@ POST   /v1/memory/query
 GET    /v1/memory/summarize/day
 ```
 
-示例：
+### 新建 Memory
+
+公开客户端只能提交用户实际使用的采集通道：
+
+- `USER_TEXT`
+- `USER_VOICE`
+- `USER_PHOTO`
+
+客户端**不得提交** `confidence`、`is_confirmed`、`AI_INFERENCE` 等服务端可信字段；额外字段会被 schema 拒绝。
 
 ```json
 POST /v1/memories
 {
   "memory_type": "NOTE",
   "content": "医生让我下个月18号复查",
-  "source_type": "USER_TEXT",
-  "confidence": 1.0,
-  "is_confirmed": true
+  "capture_source": "USER_TEXT"
+}
+```
+
+语音主动记录示例：
+
+```json
+POST /v1/memories
+{
+  "memory_type": "VOICE",
+  "content": "护照放在书房左侧柜子第二层",
+  "capture_source": "USER_VOICE"
 }
 ```
 
@@ -48,7 +68,7 @@ GET  /v1/objects/{id}/location
 POST /v1/objects/{id}/location/stale
 ```
 
-示例：
+创建物品：
 
 ```json
 POST /v1/objects
@@ -57,18 +77,20 @@ POST /v1/objects
 }
 ```
 
-随后：
+随后记录位置：
 
 ```json
 POST /v1/objects/{id}/locations
 {
   "location_text": "书房左侧柜子第二层",
-  "source_type": "USER_VOICE",
-  "confidence": 1.0
+  "capture_source": "USER_VOICE",
+  "recorded_at": "2026-09-15T20:36:00+08:00"
 }
 ```
 
-查询：
+`recorded_at` 可省略；如果客户端显式提交，必须携带时区偏移。
+
+## 查询记忆
 
 ```json
 POST /v1/memory/query
@@ -77,7 +99,7 @@ POST /v1/memory/query
 }
 ```
 
-命中：
+命中示例：
 
 ```json
 {
@@ -86,8 +108,18 @@ POST /v1/memory/query
   "certainty": "confirmed",
   "reason": null,
   "intent": "FIND_OBJECT",
-  "evidence": [],
-  "memory_ids": []
+  "evidence": [
+    {
+      "kind": "OBJECT_LOCATION",
+      "id": "11111111-1111-1111-1111-111111111111",
+      "occurred_at": "2026-09-15T12:36:00Z",
+      "excerpt": "护照：书房左侧柜子第二层",
+      "confidence": 1.0
+    }
+  ],
+  "memory_ids": [
+    "22222222-2222-2222-2222-222222222222"
+  ]
 }
 ```
 
@@ -105,19 +137,39 @@ POST /v1/memory/query
 }
 ```
 
+> **可信规则：** 可回答的个人事实必须经过服务端 Evidence gate。客户端提交的字段不能把 AI 推断升级为 confirmed fact。
+
 ## 自动位置
 
 ```http
 POST /v1/location/batch
 ```
 
-暂停记录时服务端返回：
+示例：
+
+```json
+{
+  "points": [
+    {
+      "client_uuid": "device-a-20260915-0001",
+      "latitude": 39.9042,
+      "longitude": 116.4074,
+      "accuracy": 20,
+      "recorded_at": "2026-09-15T10:30:00+08:00"
+    }
+  ]
+}
+```
+
+`recorded_at` **必须 timezone-aware**。例如 `Z`、`+08:00` 均可；`2026-09-15T10:30:00` 这种无时区时间会返回 422。
+
+暂停记录时，如果当前仍处于暂停状态，服务端返回：
 
 ```http
 409 RECORDING_PAUSED
 ```
 
-因此即使客户端后台任务没有及时停掉，也不能继续写入自动轨迹。
+恢复后补传历史点时，服务端仍会根据每个点自身 `recorded_at` 与持久化暂停区间比对；暂停期间产生的自动位置不会因为延迟上传而入库。
 
 ## 隐私
 
