@@ -11,6 +11,7 @@ from app.deps import get_current_user_id
 from app.models import LocationPoint
 from app.schemas import LocationBatchRequest, LocationBatchResponse
 from app.services.privacy_service import (
+    ensure_utc,
     get_privacy_state,
     is_pause_active,
     pause_intervals_for_range,
@@ -37,8 +38,10 @@ def _new_points(
         ).all()
     )
 
-    min_time = min(point.recorded_at for point in payload.points)
-    max_time = max(point.recorded_at for point in payload.points)
+    # [人工注释][FND-023] 防御性地先统一到 UTC，再做 min/max 和暂停区间判断，避免时间类型混比。
+    normalized_points = [(point, ensure_utc(point.recorded_at)) for point in payload.points]
+    min_time = min(recorded_at for _, recorded_at in normalized_points)
+    max_time = max(recorded_at for _, recorded_at in normalized_points)
     intervals = pause_intervals_for_range(
         db,
         user_id,
@@ -49,8 +52,8 @@ def _new_points(
     seen = set(existing_ids)
     rows: list[LocationPoint] = []
     rejected_privacy = 0
-    for point in payload.points:
-        if timestamp_in_pause_intervals(point.recorded_at, intervals):
+    for point, recorded_at in normalized_points:
+        if timestamp_in_pause_intervals(recorded_at, intervals):
             rejected_privacy += 1
             continue
         if point.client_uuid in seen:
@@ -64,7 +67,7 @@ def _new_points(
                 longitude=point.longitude,
                 accuracy=point.accuracy,
                 speed=point.speed,
-                recorded_at=point.recorded_at,
+                recorded_at=recorded_at,
             )
         )
     return rows, rejected_privacy
