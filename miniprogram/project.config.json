@@ -1,0 +1,14 @@
+{
+  "description": "迹忆微信小程序",
+  "miniprogramRoot": "dist/",
+  "projectname": "jiyidashi",
+  "appid": "touristappid",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": false
+  },
+  "compileType": "miniprogram"
+}

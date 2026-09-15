@@ -1,0 +1,36 @@
+name: miniprogram-ci
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/miniprogram-ci.yml"
+      - "miniprogram/**"
+  workflow_dispatch:
+
+# [人工注释][CI-004] package-lock 已纳入仓库；长期 CI 只读并统一使用 npm ci 保证可复现。
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: miniprogram/package-lock.json
+
+      - name: Install from lockfile
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build WeChat mini program
+        run: npm run build:weapp

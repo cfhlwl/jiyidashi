@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "module": "commonjs",
+    "strict": true,
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "types": ["@tarojs/taro", "miniprogram-api-typings"],
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src", "config"]
+}
