@@ -8,36 +8,73 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: read
 
 jobs:
   generate:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+
+      - name: Check whether platform projects already exist
+        id: platforms
+        run: |
+          if [ -d mobile/android ] && [ -d mobile/ios ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: subosito/flutter-action@v2
+        if: steps.platforms.outputs.needed == 'true'
         with:
           channel: stable
           cache: true
 
       - name: Generate Android and iOS project files
+        if: steps.platforms.outputs.needed == 'true'
         working-directory: mobile
         run: |
           cp lib/main.dart /tmp/jiyidashi-main.dart
           cp pubspec.yaml /tmp/jiyidashi-pubspec.yaml
+          cp analysis_options.yaml /tmp/jiyidashi-analysis-options.yaml
           flutter create --platforms=android,ios --org cn.jiyidashi --project-name jiyidashi .
           cp /tmp/jiyidashi-main.dart lib/main.dart
           cp /tmp/jiyidashi-pubspec.yaml pubspec.yaml
+          cp /tmp/jiyidashi-analysis-options.yaml analysis_options.yaml
+          cat > test/widget_test.dart <<'EOF'
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:jiyidashi/main.dart';
+
+          void main() {
+            testWidgets('renders the main navigation', (tester) async {
+              await tester.pumpWidget(const JiYiApp());
+              expect(find.text('今天'), findsWidgets);
+              expect(find.text('时间轴'), findsOneWidget);
+              expect(find.text('记一下'), findsOneWidget);
+              expect(find.text('问记忆'), findsOneWidget);
+              expect(find.text('我的'), findsOneWidget);
+            });
+          }
+          EOF
           flutter pub get
           flutter analyze
+          flutter test
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: flutter-platform-baseline
-          path: |
-            mobile/.metadata
-            mobile/android
-            mobile/ios
-            mobile/test
-          if-no-files-found: error
+      - name: Commit generated platform projects
+        if: steps.platforms.outputs.needed == 'true' && github.event_name == 'pull_request'
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/.metadata mobile/android mobile/ios mobile/test mobile/pubspec.lock
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore: materialize Flutter platform projects"
+          git push origin "HEAD:${HEAD_BRANCH}"
