@@ -56,12 +56,16 @@ docs/           PRD、架构、接口、进度与代码规范
 
 需要 Python 3.12+。
 
+<!-- [人工注释][FND-004] 新环境必须先执行 Alembic migration，再启动 API；AUTO_CREATE_SCHEMA 默认关闭。 -->
+### SQLite 本地开发
+
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 cp .env.example .env
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
@@ -71,9 +75,10 @@ uvicorn app.main:app --reload
 - OpenAPI: `http://127.0.0.1:8000/docs`
 - Health: `http://127.0.0.1:8000/health`
 
-开发环境如需测试 Token，必须先显式设置：
+开发环境如需测试 Token，必须在**本地开发环境**的 `.env` 中显式设置：
 
 ```text
+APP_ENV=development
 ENABLE_DEV_AUTH=true
 ```
 
@@ -88,9 +93,10 @@ Content-Type: application/json
 }
 ```
 
-生产环境必须保持 `ENABLE_DEV_AUTH=false` 并接入正式登录方案。
+<!-- [人工注释][FND-019] production/prod 模式下 dev auth 被配置校验和 endpoint 双重硬关闭，不能通过 ENABLE_DEV_AUTH=true 重新开启。 -->
+生产环境必须使用正式认证方案。`APP_ENV=production` 或 `APP_ENV=prod` 时，`ENABLE_DEV_AUTH=true` 会导致配置校验失败；即使绕过配置校验，`/v1/auth/dev-token` 也会返回 404。
 
-## Docker 开发依赖
+## Docker / PostgreSQL 开发依赖
 
 ```bash
 docker compose up -d postgres redis
@@ -102,6 +108,16 @@ docker compose up -d postgres redis
 DATABASE_URL=postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi
 ```
 
+首次启动或 schema 版本更新后必须执行：
+
+```bash
+cd backend
+alembic upgrade head
+uvicorn app.main:app --reload
+```
+
+不要依赖 `AUTO_CREATE_SCHEMA` 代替 migration；该开关默认保持 `false`。
+
 ## 测试
 
 ```bash
@@ -109,6 +125,8 @@ cd backend
 pytest
 ruff check .
 ```
+
+正式 `backend-ci` 同时在 SQLite 和 PostgreSQL 上执行 Alembic baseline，并在 PostgreSQL 上验收 ObjectLocation 的单 `CURRENT` 约束和 `FOR UPDATE` 锁语义。
 
 ## 当前开发原则
 
