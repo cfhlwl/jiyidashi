@@ -28,6 +28,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self):
+        # [人工注释][FND-019] 生产环境配置本身也必须拒绝 dev auth，避免误配置后服务带后门启动。
+        if self.is_production and self.enable_dev_auth:
+            raise ValueError("ENABLE_DEV_AUTH must be false in production")
+
         if self.is_production and (
             self.jwt_secret == "change-this-in-real-environments"
             or len(self.jwt_secret.encode("utf-8")) < 32
