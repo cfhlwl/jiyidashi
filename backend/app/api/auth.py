@@ -17,9 +17,8 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 @router.post("/dev-token", response_model=TokenResponse)
 def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
-    # Fail closed: the endpoint is absent-by-policy unless explicitly enabled.
-    # APP_ENV alone can never make dev authentication available.
-    if not settings.enable_dev_auth:
+    # [人工注释][FND-019] 生产环境无条件禁用开发认证；即使误配 ENABLE_DEV_AUTH=true 也必须 404。
+    if settings.is_production or not settings.enable_dev_auth:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="NOT_FOUND",
