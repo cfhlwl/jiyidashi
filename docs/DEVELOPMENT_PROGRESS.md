@@ -1,4 +1,5 @@
 <!-- [人工注释][DOC-PROGRESS-001] 本文件是迹忆项目长期维护的开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
+<!-- [人工注释][DOC-PROGRESS-002] PR #1 第二轮 HOLD 项已完成代码与自动验收，当前进入第三轮最终审查前状态。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-15  
@@ -25,11 +26,11 @@
 
 | ID | 模块 | 当前状态 | 说明 |
 | --- | --- | --- | --- |
-| FND-000 | V1 Foundation 总体 | 🔵 进行中 | PR #1 已完成第一轮问题修复，当前等待第二轮正式审查；暂不进入 Stage 2 |
-| CI-001 | Backend CI | 🟠 待审查 / 待合并 | Ruff + Alembic + pytest 远程全绿 |
-| CI-002 | Flutter Android CI | 🟠 待审查 / 待合并 | analyze + test + debug APK build 远程全绿 |
-| CI-003 | Flutter iOS CI | 🟠 待审查 / 待合并 | `flutter build ios --debug --no-codesign` 远程全绿 |
-| CI-004 | 微信小程序 CI | 🟠 待审查 / 待合并 | TypeScript + Taro WeChat build 远程全绿 |
+| FND-000 | V1 Foundation 总体 | 🔵 进行中 | PR #1 第二轮 HOLD 项已修复并完成自动验收，等待第三轮最终正式审查；Stage 2 仍未开始 |
+| CI-001 | Backend CI | 🟠 待审查 / 待合并 | Ruff + SQLite Alembic + PostgreSQL Alembic + PostgreSQL ObjectLocation 不变量 + pytest 18/18 全绿 |
+| CI-002 | Flutter Android CI | 🟠 待审查 / 待合并 | analyze + test + debug APK build 已有真实远程 PASS |
+| CI-003 | Flutter iOS CI | 🟠 待审查 / 待合并 | `flutter build ios --debug --no-codesign` 已有真实远程 PASS |
+| CI-004 | 微信小程序 CI | 🟠 待审查 / 待合并 | `package-lock.json` 已提交，长期只读 CI 使用 `npm ci` + TypeScript + Taro WeChat build |
 
 ---
 
@@ -37,17 +38,17 @@
 
 | ID | 功能 / 需求 | 状态 | 验收要求 / 当前说明 |
 | --- | --- | --- | --- |
-| FND-001 | FastAPI 模块化单体基础工程 | 🟠 | 结构完成，等待 PR #1 第二轮审查 |
-| FND-002 | PostgreSQL / SQLite 开发数据库基础 | 🟠 | 同步 SQLAlchemy 路径统一 |
+| FND-001 | FastAPI 模块化单体基础工程 | 🟠 | 结构完成，等待 PR #1 第三轮最终审查 |
+| FND-002 | PostgreSQL / SQLite 开发数据库基础 | 🟠 | 同步 SQLAlchemy 路径统一，PostgreSQL 已进入正式 CI |
 | FND-003 | Redis 开发依赖基础 | 🟠 | Docker 开发环境已配置 |
-| FND-004 | Alembic migration baseline | 🟠 | 远程 CI 已执行 `upgrade head` |
+| FND-004 | Alembic migration baseline | 🟠 | SQLite / PostgreSQL 均在 CI 执行 `upgrade head`；README 新环境启动明确要求先 migration |
 | FND-005 | Memory 核心模型 | 🟠 | Memory 为长期记忆主对象 |
 | FND-006 | MemorySource / Evidence 模型 | 🟠 | 查询事实必须验证 Evidence |
 | FND-007 | `NO EVIDENCE -> NO MEMORY` 强制规则 | 🟠 | 已由服务端 Evidence gate 强制执行 |
 | FND-008 | AI inference 与事实隔离 | 🟠 | AI 推断不得直接成为 confirmed fact |
 | FND-009 | 服务端可信等级所有权 | 🟠 | 客户端不能自行提交 confidence / confirmed 权限 |
 | FND-010 | Object / ObjectLocation 历史模型 | 🟠 | 保留历史，不覆盖旧记录 |
-| FND-011 | 每个 Object 最多一个 CURRENT | 🟠 | 应用事务 + DB partial unique index 双重保护 |
+| FND-011 | 每个 Object 最多一个 CURRENT | 🟠 | 应用事务 + DB partial unique index 双重保护；PostgreSQL 实库验收 PASS |
 | FND-012 | 离线旧位置晚到防回滚 | 🟠 | 根据 `recorded_at` 决定 CURRENT / STALE |
 | FND-013 | 删除 Memory 与 ObjectLocation 联动失效 | 🟠 | 删除后不得继续从对象位置查询回答 |
 | FND-014 | Location `client_uuid` 幂等 | 🟠 | 离线重传不得产生重复位置点 |
@@ -55,10 +56,13 @@
 | FND-016 | 隐私暂停历史区间 | 🟠 | 恢复后补传暂停期间 GPS 仍拒绝 |
 | FND-017 | 用户时区自然日边界 | 🟠 | timeline / summary 使用用户 timezone |
 | FND-018 | 中文基础记忆查询 | 🟠 | 无空格中文查询已有正向回归测试 |
-| FND-019 | Dev Auth fail-closed | 🟠 | `ENABLE_DEV_AUTH=false` 默认关闭 |
+| FND-019 | Dev Auth fail-closed | 🟠 | 示例默认关闭；`production/prod + ENABLE_DEV_AUTH=true` 配置直接拒绝，endpoint 再硬 404 |
 | FND-020 | Flutter Android/iOS 标准工程 | 🟠 | `android/`、`ios/`、lockfile、测试已生成 |
-| FND-021 | Taro 微信小程序标准工程 | 🟠 | `config/`、Babel、project config 已补齐 |
-| FND-022 | 三端 CI 基线 | 🟠 | backend / mobile / miniprogram 三条 CI 已全绿 |
+| FND-021 | Taro 微信小程序标准工程 | 🟠 | `config/`、Babel、project config、`package-lock.json` 已补齐 |
+| FND-022 | 三端 CI 基线 | 🟠 | backend / mobile / miniprogram 均有真实构建与自动验收 |
+| FND-023 | Location 时间戳时区健壮性 | 🟠 | schema 拒绝 naive datetime；批处理先统一 UTC 后再做范围比较，防止 500 |
+| FND-024 | PostgreSQL ObjectLocation 真实数据库不变量 | 🟠 | PostgreSQL migration、单 CURRENT partial unique index、真实 `FOR UPDATE` 锁语义均已 CI 验证 |
+| FND-025 | 正式 API 文档协议同步 | 🟠 | `capture_source`、Evidence、timezone-aware 位置示例已与当前 schema 对齐 |
 
 ---
 
