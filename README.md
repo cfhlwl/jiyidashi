@@ -8,18 +8,36 @@
 
 当前分支是 V1 基础工程，重点不是堆功能，而是先把可信记忆模型、对象位置查询、隐私暂停与三端工程骨架建立起来。
 
+<!-- [人工注释][DOC-PROGRESS-001] 统一项目进度入口，后续开发状态以 DEVELOPMENT_PROGRESS 为准。 -->
+## 开发进度与代码审查规则
+
+- **开发进度总表：** `docs/DEVELOPMENT_PROGRESS.md`
+- **人工代码注释规范：** `docs/CODE_ANNOTATION_RULES.md`
+- **高层开发路线：** `docs/ROADMAP.md`
+
+状态约定：
+
+- 🔵 进行中
+- 🟠 已实现、待审查 / 待合并
+- ✅ 已合并 `main` 且验收完成
+- ⬜ 未开始
+- ⏸ 延后
+- 🚫 当前版本不做
+
+从 2026-09-15 起，人工新增或修改的源码逻辑必须使用统一的 `[人工注释][任务ID]` 标记；自动生成文件、lockfile、二进制资源和不支持注释的严格 JSON 按规范中的例外规则处理。
+
 ## 仓库结构
 
 ```text
 backend/        FastAPI 后端与核心 Memory API
 mobile/         Flutter Android/iOS 主客户端
 miniprogram/    微信小程序（Taro）基础工程
-docs/           PRD、架构与接口说明
+docs/           PRD、架构、接口、进度与代码规范
 ```
 
 ## V1 第一阶段已覆盖
 
-- 开发环境 JWT 登录
+- 开发环境 JWT 登录（默认关闭，仅显式开启 `ENABLE_DEV_AUTH` 后可用）
 - 文字/语音/照片等 Memory 数据模型
 - Memory Evidence / 可信度字段
 - “东西放哪里”对象与位置历史
@@ -53,7 +71,13 @@ uvicorn app.main:app --reload
 - OpenAPI: `http://127.0.0.1:8000/docs`
 - Health: `http://127.0.0.1:8000/health`
 
-开发环境可以先获取一个测试 Token：
+开发环境如需测试 Token，必须先显式设置：
+
+```text
+ENABLE_DEV_AUTH=true
+```
+
+然后才能调用：
 
 ```http
 POST /v1/auth/dev-token
@@ -64,7 +88,7 @@ Content-Type: application/json
 }
 ```
 
-生产环境必须禁用此接口并接入正式登录方案。
+生产环境必须保持 `ENABLE_DEV_AUTH=false` 并接入正式登录方案。
 
 ## Docker 开发依赖
 
@@ -95,5 +119,6 @@ ruff check .
 5. **暂停记录后自动定位不得继续入库。**
 6. **APP 是自动记录主端，小程序不是长期后台定位主端。**
 7. **V1 暂不做医疗诊断、人脸识别、24 小时录音。**
+8. **每次开发先更新进度 ID，源码变更同步加 `[人工注释][任务ID]`。**
 
 更多信息见 `docs/`。
