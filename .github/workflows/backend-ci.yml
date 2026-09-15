@@ -15,6 +15,21 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      # [人工注释][FND-024] 正式 CI 使用真实 PostgreSQL 验证 migration、partial unique index 与 FOR UPDATE。
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: jiyi
+          POSTGRES_PASSWORD: jiyi
+          POSTGRES_DB: jiyi_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jiyi -d jiyi_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
@@ -32,12 +47,26 @@ jobs:
       - name: Lint
         run: ruff check .
 
-      - name: Migration baseline
+      - name: SQLite migration baseline
         env:
           DATABASE_URL: sqlite:///./ci-migration.db
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: alembic upgrade head
+
+      - name: PostgreSQL migration baseline
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: alembic upgrade head
+
+      - name: PostgreSQL ObjectLocation invariants
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_object_location_integration.py
 
       - name: Test
         run: pytest -q
