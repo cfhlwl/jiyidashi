@@ -17,11 +17,14 @@ def test_dev_auth_is_fail_closed_by_default():
 
 
 def test_prod_alias_is_treated_as_production():
+    # [人工注释][FND-019] 本测试只验证 prod 别名，显式关闭 dev auth，避免继承 CI 开发环境变量。
     settings = Settings(
         _env_file=None,
         app_env="prod",
         database_url="sqlite:///./unused.db",
         jwt_secret="0123456789abcdef0123456789abcdef",
+        enable_dev_auth=False,
+        auto_create_schema=False,
     )
     assert settings.is_production is True
 
