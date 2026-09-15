@@ -1,4 +1,5 @@
-# [人工注释][FND-024] PostgreSQL 专用集成验收：验证 CURRENT partial unique index 与 FOR UPDATE 锁语义。
+# [人工注释][FND-024] PostgreSQL 专用集成验收：
+# 验证 CURRENT partial unique index 与 FOR UPDATE 锁语义。
 import os
 from datetime import UTC, datetime, timedelta
 from threading import Thread
