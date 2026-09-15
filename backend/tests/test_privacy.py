@@ -111,3 +111,31 @@ async def test_location_batch_is_idempotent_by_client_uuid(
     assert first.json()["accepted"] == 1
     assert second.status_code == 200
     assert second.json()["accepted"] == 0
+
+
+async def test_location_batch_rejects_timezone_naive_timestamp(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    # [人工注释][FND-023] 混入 naive datetime 必须在 schema 层返回 422，不能进入 min/max 后变成 500。
+    response = await client.post(
+        "/v1/location/batch",
+        headers=auth_headers,
+        json={
+            "points": [
+                {
+                    "client_uuid": "aware-point",
+                    "latitude": 31.2304,
+                    "longitude": 121.4737,
+                    "recorded_at": datetime.now(UTC).isoformat(),
+                },
+                {
+                    "client_uuid": "naive-point",
+                    "latitude": 31.2305,
+                    "longitude": 121.4738,
+                    "recorded_at": "2026-09-15T10:30:00",
+                },
+            ]
+        },
+    )
+    assert response.status_code == 422
