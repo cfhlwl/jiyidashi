@@ -229,7 +229,8 @@ async def test_naive_object_location_timestamp_is_rejected_without_changing_curr
     client: AsyncClient,
     auth_headers: dict[str, str],
 ):
-    # [人工注释][FND-026] ObjectLocation 显式时间缺少时区时必须 422，且不能影响已经确认的新 CURRENT。
+    # [人工注释][FND-026] ObjectLocation 显式 naive 时间必须 422。
+    # 同时验证拒绝请求不会影响已经确认的新 CURRENT。
     object_id = await _create_object(client, auth_headers, "门禁卡")
     now = datetime.now(UTC)
     current_location = await client.post(
