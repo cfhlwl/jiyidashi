@@ -225,15 +225,28 @@ async def test_late_offline_object_location_cannot_replace_newer_current(
         assert len(current_rows) == 1
 
 
-def test_database_rejects_second_current_object_location():
+async def test_database_rejects_second_current_object_location(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    # [人工注释][FND-011] 本测试自行创建 CURRENT，单独运行也必须真正触发数据库唯一约束。
+    object_id = await _create_object(client, auth_headers, "数据库唯一约束测试物品")
+    created = await client.post(
+        f"/v1/objects/{object_id}/locations",
+        headers=auth_headers,
+        json={"location_text": "原始 CURRENT"},
+    )
+    assert created.status_code == 201
+
     with SessionLocal() as db:
         current = db.scalar(
             select(ObjectLocation).where(
-                ObjectLocation.status == ObjectLocationStatus.CURRENT
+                ObjectLocation.object_id == UUID(object_id),
+                ObjectLocation.status == ObjectLocationStatus.CURRENT,
             )
         )
-        if current is None:
-            return
+        assert current is not None
+
         duplicate = ObjectLocation(
             object_id=current.object_id,
             user_id=current.user_id,
