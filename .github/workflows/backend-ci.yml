@@ -32,5 +32,12 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      - name: Migration baseline
+        env:
+          DATABASE_URL: sqlite:///./ci-migration.db
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: alembic upgrade head
+
       - name: Test
         run: pytest -q

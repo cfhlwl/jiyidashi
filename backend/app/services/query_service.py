@@ -1,13 +1,22 @@
 import re
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import desc, or_, select
+from sqlalchemy import desc, exists, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Memory, ObjectItem, ObjectLocation, ObjectLocationStatus
+from app.models import (
+    Memory,
+    MemorySource,
+    ObjectItem,
+    ObjectLocation,
+    ObjectLocationStatus,
+    SourceType,
+)
 from app.schemas import Evidence, MemoryQueryResponse
 
 OBJECT_QUERY_MARKERS = ("在哪", "哪里", "放哪", "放在什么", "位置")
+CJK_RUN = re.compile(r"[\u3400-\u9fff]+")
 
 
 def _normalize_object_name(text: str) -> str:
@@ -28,6 +37,44 @@ def _normalize_object_name(text: str) -> str:
     ):
         value = value.replace(phrase, "")
     return value.strip()
+
+
+def _eligible_memory_exists() -> exists:
+    return exists(
+        select(MemorySource.id).where(
+            MemorySource.memory_id == Memory.id,
+            MemorySource.source_type != SourceType.AI_INFERENCE,
+            MemorySource.confidence >= 0.6,
+        )
+    )
+
+
+def _search_terms(question: str) -> list[str]:
+    """Create deterministic terms that work for both Chinese and spaced text.
+
+    Chinese does not have whitespace word boundaries. Bigrams make queries such
+    as “老张合同” match “老张周五下午来公司取合同” without requiring an LLM.
+    """
+
+    terms: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        value = value.strip().lower()
+        if len(value) >= 2 and value not in seen:
+            seen.add(value)
+            terms.append(value)
+
+    for token in re.split(r"[\s，。！？,.!?：:；;]+", question):
+        add(token)
+
+    for run in CJK_RUN.findall(question):
+        if len(run) <= 3:
+            add(run)
+        for index in range(max(0, len(run) - 1)):
+            add(run[index : index + 2])
+
+    return terms[:16]
 
 
 def query_memory(
@@ -54,28 +101,31 @@ def _find_object(
     if not object_name:
         return _no_evidence("FIND_OBJECT")
 
-    objects = (
-        db.scalars(
-            select(ObjectItem).where(
-                ObjectItem.user_id == user_id,
-                or_(
-                    ObjectItem.normalized_name == object_name.lower(),
-                    ObjectItem.name.ilike(f"%{object_name}%"),
-                ),
-            )
+    objects = db.scalars(
+        select(ObjectItem).where(
+            ObjectItem.user_id == user_id,
+            or_(
+                ObjectItem.normalized_name == object_name.lower(),
+                ObjectItem.name.ilike(f"%{object_name}%"),
+            ),
         )
     ).all()
-
     if not objects:
         return _no_evidence("FIND_OBJECT")
 
     object_ids = [item.id for item in objects]
     location = db.scalar(
         select(ObjectLocation)
+        .join(Memory, Memory.id == ObjectLocation.memory_id)
         .where(
             ObjectLocation.user_id == user_id,
             ObjectLocation.object_id.in_(object_ids),
             ObjectLocation.status == ObjectLocationStatus.CURRENT,
+            Memory.user_id == user_id,
+            Memory.is_deleted.is_(False),
+            Memory.is_confirmed.is_(True),
+            Memory.source_type != SourceType.AI_INFERENCE,
+            _eligible_memory_exists(),
         )
         .order_by(desc(ObjectLocation.recorded_at))
         .limit(1)
@@ -84,10 +134,7 @@ def _find_object(
         return _no_evidence("FIND_OBJECT")
 
     matched_object = next(item for item in objects if item.id == location.object_id)
-    answer = (
-        f"你最后一次记录“{matched_object.name}”的位置是："
-        f"{location.location_text}。"
-    )
+    answer = f"你最后一次记录“{matched_object.name}”的位置是：{location.location_text}。"
     evidence = Evidence(
         kind="OBJECT_LOCATION",
         id=location.id,
@@ -98,7 +145,7 @@ def _find_object(
     return MemoryQueryResponse(
         answer=answer,
         can_answer=True,
-        certainty="confirmed" if location.confidence >= 0.9 else "evidence",
+        certainty="confirmed",
         intent="FIND_OBJECT",
         evidence=[evidence],
         memory_ids=[location.memory_id] if location.memory_id else [],
@@ -110,33 +157,34 @@ def _search_memories(
     user_id: UUID,
     question: str,
 ) -> MemoryQueryResponse:
-    # Foundation implementation: deterministic evidence retrieval only.
-    # LLM/RAG can be added later, but it must consume these results instead
-    # of inventing personal history by itself.
-    tokens = [
-        token
-        for token in re.split(r"[\s，。！？,.!?]+", question)
-        if len(token.strip()) >= 2
-    ]
-    if not tokens:
+    terms = _search_terms(question)
+    if not terms:
         return _no_evidence("MEMORY_SEARCH")
 
-    filters = [Memory.content.ilike(f"%{token}%") for token in tokens[:6]]
-    memories = (
-        db.scalars(
-            select(Memory)
-            .where(
-                Memory.user_id == user_id,
-                Memory.is_deleted.is_(False),
-                or_(*filters),
-                Memory.confidence >= 0.6,
-            )
-            .order_by(desc(Memory.occurred_at))
-            .limit(5)
+    filters = [Memory.content.ilike(f"%{term}%") for term in terms]
+    candidates = db.scalars(
+        select(Memory)
+        .where(
+            Memory.user_id == user_id,
+            Memory.is_deleted.is_(False),
+            Memory.is_confirmed.is_(True),
+            Memory.source_type != SourceType.AI_INFERENCE,
+            Memory.confidence >= 0.6,
+            _eligible_memory_exists(),
+            or_(*filters),
         )
+        .order_by(desc(Memory.occurred_at))
+        .limit(30)
     ).all()
+    if not candidates:
+        return _no_evidence("MEMORY_SEARCH")
 
-    if not memories:
+    ranked = sorted(
+        candidates,
+        key=lambda item: (_term_score(item.content, terms), _sort_datetime(item.occurred_at)),
+        reverse=True,
+    )[:5]
+    if not ranked or _term_score(ranked[0].content, terms) == 0:
         return _no_evidence("MEMORY_SEARCH")
 
     evidence = [
@@ -147,18 +195,27 @@ def _search_memories(
             excerpt=item.content[:240],
             confidence=item.confidence,
         )
-        for item in memories
+        for item in ranked
     ]
-    latest = memories[0]
-    answer = f"我找到了 {len(memories)} 条相关记录。最近一条是：{latest.content}"
+    latest = ranked[0]
+    answer = f"我找到了 {len(ranked)} 条相关记录。最相关的一条是：{latest.content}"
     return MemoryQueryResponse(
         answer=answer,
         can_answer=True,
         certainty="evidence",
         intent="MEMORY_SEARCH",
         evidence=evidence,
-        memory_ids=[item.id for item in memories],
+        memory_ids=[item.id for item in ranked],
     )
+
+
+def _term_score(content: str, terms: list[str]) -> int:
+    lower_content = content.lower()
+    return sum(1 for term in terms if term in lower_content)
+
+
+def _sort_datetime(value: datetime) -> float:
+    return value.timestamp()
 
 
 def _no_evidence(intent: str) -> MemoryQueryResponse:

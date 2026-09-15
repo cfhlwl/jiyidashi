@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import enum
 from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Enum,
@@ -12,10 +13,10 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,7 +27,7 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class MemoryType(str, enum.Enum):
+class MemoryType(StrEnum):
     NOTE = "NOTE"
     VOICE = "VOICE"
     PHOTO = "PHOTO"
@@ -36,7 +37,7 @@ class MemoryType(str, enum.Enum):
     EVENT = "EVENT"
 
 
-class SourceType(str, enum.Enum):
+class SourceType(StrEnum):
     USER_TEXT = "USER_TEXT"
     USER_VOICE = "USER_VOICE"
     USER_PHOTO = "USER_PHOTO"
@@ -46,13 +47,13 @@ class SourceType(str, enum.Enum):
     AI_INFERENCE = "AI_INFERENCE"
 
 
-class ObjectLocationStatus(str, enum.Enum):
+class ObjectLocationStatus(StrEnum):
     CURRENT = "CURRENT"
     STALE = "STALE"
     UNKNOWN = "UNKNOWN"
 
 
-class ReminderStatus(str, enum.Enum):
+class ReminderStatus(StrEnum):
     PENDING = "PENDING"
     DONE = "DONE"
     CANCELLED = "CANCELLED"
@@ -80,13 +81,17 @@ class Device(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     client_uuid: Mapped[str] = mapped_column(String(80))
     platform: Mapped[str] = mapped_column(String(32))
     device_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     device_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     push_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_active_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -94,14 +99,20 @@ class Place(Base):
     __tablename__ = "places"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(200))
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    first_visited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_visited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_visited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_visited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     visit_count: Mapped[int] = mapped_column(Integer, default=0)
     is_user_named: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -115,7 +126,9 @@ class Memory(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     memory_type: Mapped[MemoryType] = mapped_column(
         Enum(MemoryType, native_enum=False), default=MemoryType.NOTE
     )
@@ -158,11 +171,15 @@ class LocationPoint(Base):
     __tablename__ = "location_points"
     __table_args__ = (
         Index("ix_location_points_user_recorded", "user_id", "recorded_at"),
-        UniqueConstraint("user_id", "client_uuid", name="uq_location_points_user_client_uuid"),
+        UniqueConstraint(
+            "user_id", "client_uuid", name="uq_location_points_user_client_uuid"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     device_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("devices.id", ondelete="SET NULL"), nullable=True
     )
@@ -178,8 +195,12 @@ class Visit(Base):
     __tablename__ = "visits"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    place_id: Mapped[UUID] = mapped_column(ForeignKey("places.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    place_id: Mapped[UUID] = mapped_column(
+        ForeignKey("places.id", ondelete="CASCADE"), index=True
+    )
     arrived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -190,11 +211,15 @@ class Visit(Base):
 class ObjectItem(Base):
     __tablename__ = "objects"
     __table_args__ = (
-        UniqueConstraint("user_id", "normalized_name", name="uq_objects_user_normalized_name"),
+        UniqueConstraint(
+            "user_id", "normalized_name", name="uq_objects_user_normalized_name"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(160))
     normalized_name: Mapped[str] = mapped_column(String(160))
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -206,13 +231,22 @@ class ObjectLocation(Base):
     __tablename__ = "object_locations"
     __table_args__ = (
         Index("ix_object_locations_object_recorded", "object_id", "recorded_at"),
+        Index(
+            "uq_object_locations_one_current",
+            "object_id",
+            unique=True,
+            postgresql_where=text("status = 'CURRENT'"),
+            sqlite_where=text("status = 'CURRENT'"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     object_id: Mapped[UUID] = mapped_column(
         ForeignKey("objects.id", ondelete="CASCADE"), index=True
     )
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     memory_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("memories.id", ondelete="SET NULL"), nullable=True
     )
@@ -232,7 +266,9 @@ class Reminder(Base):
     __tablename__ = "reminders"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     memory_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("memories.id", ondelete="SET NULL"), nullable=True
     )
@@ -251,12 +287,37 @@ class PrivacyState(Base):
     user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
+    recording_paused_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     recording_paused_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class PrivacyPauseInterval(Base):
+    __tablename__ = "privacy_pause_intervals"
+    __table_args__ = (
+        Index(
+            "ix_privacy_pause_intervals_user_time",
+            "user_id",
+            "started_at",
+            "ended_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class FamilyMember(Base):

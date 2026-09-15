@@ -8,9 +8,10 @@
     "skipLibCheck": true,
     "moduleResolution": "node",
     "baseUrl": ".",
+    "types": ["@tarojs/taro", "miniprogram-api-typings"],
     "paths": {
       "@/*": ["src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "config"]
 }

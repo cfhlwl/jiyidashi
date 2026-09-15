@@ -1,3 +1,4 @@
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,14 +12,14 @@ from app.schemas import DevTokenRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
+DbSession = Annotated[Session, Depends(get_db)]
 
 
 @router.post("/dev-token", response_model=TokenResponse)
-def dev_token(
-    payload: DevTokenRequest,
-    db: Session = Depends(get_db),
-) -> TokenResponse:
-    if settings.is_production:
+def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
+    # Fail closed: the endpoint is absent-by-policy unless explicitly enabled.
+    # APP_ENV alone can never make dev authentication available.
+    if not settings.enable_dev_auth:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="NOT_FOUND",

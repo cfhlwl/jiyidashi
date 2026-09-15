@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -8,6 +9,20 @@ from app.models import MemoryType, ObjectLocationStatus, SourceType
 
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserCaptureSource(StrEnum):
+    """Public clients may only declare a user-origin capture channel.
+
+    Trust, confidence and confirmation status are server-owned fields.
+    """
+
+    USER_TEXT = "USER_TEXT"
+    USER_VOICE = "USER_VOICE"
+    USER_PHOTO = "USER_PHOTO"
+
+    def to_source_type(self) -> SourceType:
+        return SourceType(self.value)
 
 
 class DevTokenRequest(BaseModel):
@@ -22,16 +37,16 @@ class TokenResponse(BaseModel):
 
 
 class MemoryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     memory_type: MemoryType = MemoryType.NOTE
     title: str | None = Field(default=None, max_length=240)
     content: str = Field(min_length=1, max_length=20000)
     occurred_at: datetime | None = None
-    source_type: SourceType = SourceType.USER_TEXT
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    capture_source: UserCaptureSource = UserCaptureSource.USER_TEXT
     place_id: UUID | None = None
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
-    is_confirmed: bool = True
     metadata: dict = Field(default_factory=dict)
 
 
@@ -67,10 +82,11 @@ class ObjectRead(ORMModel):
 
 
 class ObjectLocationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     location_text: str = Field(min_length=1, max_length=2000)
     recorded_at: datetime | None = None
-    source_type: SourceType = SourceType.USER_TEXT
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    capture_source: UserCaptureSource = UserCaptureSource.USER_TEXT
     place_id: UUID | None = None
 
 
@@ -121,6 +137,7 @@ class LocationBatchRequest(BaseModel):
 
 class LocationBatchResponse(BaseModel):
     accepted: int
+    rejected_privacy: int = 0
 
 
 class PrivacyPauseRequest(BaseModel):
@@ -136,6 +153,7 @@ class PrivacyPauseRequest(BaseModel):
 
 class PrivacyStatusResponse(BaseModel):
     recording_paused: bool
+    paused_since: datetime | None
     paused_until: datetime | None
 
 

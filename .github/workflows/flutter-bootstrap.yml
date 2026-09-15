@@ -1,0 +1,43 @@
+name: flutter-bootstrap
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/flutter-bootstrap.yml"
+      - "mobile/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android and iOS project files
+        working-directory: mobile
+        run: |
+          cp lib/main.dart /tmp/jiyidashi-main.dart
+          cp pubspec.yaml /tmp/jiyidashi-pubspec.yaml
+          flutter create --platforms=android,ios --org cn.jiyidashi --project-name jiyidashi .
+          cp /tmp/jiyidashi-main.dart lib/main.dart
+          cp /tmp/jiyidashi-pubspec.yaml pubspec.yaml
+          flutter pub get
+          flutter analyze
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flutter-platform-baseline
+          path: |
+            mobile/.metadata
+            mobile/android
+            mobile/ios
+            mobile/test
+          if-no-files-found: error

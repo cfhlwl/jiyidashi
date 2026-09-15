@@ -8,9 +8,10 @@ TEST_DB = Path(__file__).parent / "test.db"
 if TEST_DB.exists():
     TEST_DB.unlink()
 
-os.environ["APP_ENV"] = "development"
+os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
 os.environ["JWT_SECRET"] = "test-secret-0123456789abcdef-0123456789abcdef"
+os.environ["ENABLE_DEV_AUTH"] = "true"
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
 
 from app.main import app  # noqa: E402
