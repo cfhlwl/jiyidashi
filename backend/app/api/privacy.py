@@ -8,13 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.schemas import PrivacyPauseRequest, PrivacyStatusResponse
-from app.services.privacy_service import (
-    ensure_utc,
-    get_privacy_state,
-    is_pause_active,
-    pause_recording as pause_recording_service,
-    resume_recording as resume_recording_service,
-)
+from app.services import privacy_service
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -23,14 +17,14 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 def _response(state) -> PrivacyStatusResponse:
     return PrivacyStatusResponse(
-        recording_paused=is_pause_active(state.recording_paused_until),
+        recording_paused=privacy_service.is_pause_active(state.recording_paused_until),
         paused_since=(
-            ensure_utc(state.recording_paused_since)
+            privacy_service.ensure_utc(state.recording_paused_since)
             if state.recording_paused_since
             else None
         ),
         paused_until=(
-            ensure_utc(state.recording_paused_until)
+            privacy_service.ensure_utc(state.recording_paused_until)
             if state.recording_paused_until
             else None
         ),
@@ -39,7 +33,7 @@ def _response(state) -> PrivacyStatusResponse:
 
 @router.get("/status", response_model=PrivacyStatusResponse)
 def privacy_status(user_id: CurrentUser, db: DbSession) -> PrivacyStatusResponse:
-    return _response(get_privacy_state(db, user_id))
+    return _response(privacy_service.get_privacy_state(db, user_id))
 
 
 @router.post("/pause", response_model=PrivacyStatusResponse)
@@ -56,7 +50,7 @@ def pause_recording(
     if until.tzinfo is None:
         until = until.replace(tzinfo=UTC)
 
-    state = pause_recording_service(db, user_id, started_at=now, ended_at=until)
+    state = privacy_service.pause_recording(db, user_id, started_at=now, ended_at=until)
     db.commit()
     db.refresh(state)
     return _response(state)
@@ -64,7 +58,7 @@ def pause_recording(
 
 @router.post("/resume", response_model=PrivacyStatusResponse)
 def resume_recording(user_id: CurrentUser, db: DbSession) -> PrivacyStatusResponse:
-    state = resume_recording_service(db, user_id, resumed_at=datetime.now(UTC))
+    state = privacy_service.resume_recording(db, user_id, resumed_at=datetime.now(UTC))
     db.commit()
     db.refresh(state)
     return _response(state)
