@@ -88,7 +88,9 @@ def main() -> None:
     object_id = uuid4()
 
     with Session(engine) as db:
+        # [人工注释][FND-024] 测试夹具按真实 FK 依赖顺序提交，避免 ORM 无 relationship 时乱序插入。
         db.add(User(id=user_id, nickname="PostgreSQL CI"))
+        db.commit()
         db.add(
             ObjectItem(
                 id=object_id,
