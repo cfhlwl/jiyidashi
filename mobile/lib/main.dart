@@ -123,28 +123,26 @@ class TodayPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PageFrame(
+    return const PageFrame(
       title: '今天',
       subtitle: '你负责生活，我帮你记住。',
       child: Column(
         children: [
-          const _SummaryCard(),
-          const SizedBox(height: 16),
-          ...const [
-            _TimelineCard(
-              time: '08:52',
-              title: '等待自动足迹',
-              detail: 'V1 第二阶段接入 Android / iOS 原生后台定位。',
-              icon: Icons.location_on_outlined,
-            ),
-            SizedBox(height: 12),
-            _TimelineCard(
-              time: '现在',
-              title: '先记住一件重要的事',
-              detail: '例如：“护照放在书房左侧柜子第二层”。',
-              icon: Icons.bookmark_add_outlined,
-            ),
-          ],
+          _SummaryCard(),
+          SizedBox(height: 16),
+          _TimelineCard(
+            time: '08:52',
+            title: '等待自动足迹',
+            detail: 'V1 第二阶段接入 Android / iOS 原生后台定位。',
+            icon: Icons.location_on_outlined,
+          ),
+          SizedBox(height: 12),
+          _TimelineCard(
+            time: '现在',
+            title: '先记住一件重要的事',
+            detail: '例如：“护照放在书房左侧柜子第二层”。',
+            icon: Icons.bookmark_add_outlined,
+          ),
         ],
       ),
     );
@@ -156,13 +154,13 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return const Card(
       elevation: 0,
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: EdgeInsets.all(18),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: const [
+          children: [
             _Metric(value: '0', label: '地点'),
             _Metric(value: '0', label: '记忆'),
             _Metric(value: '0', label: '照片'),
@@ -261,11 +259,11 @@ class CapturePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PageFrame(
+    return const PageFrame(
       title: '记一下',
       subtitle: '不用分类，先把事情说出来。',
       child: Column(
-        children: const [
+        children: [
           _ActionTile(
             icon: Icons.mic_none,
             title: '说一句',
@@ -378,11 +376,11 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PageFrame(
+    return const PageFrame(
       title: '我的',
       subtitle: '记忆属于你，控制权也必须属于你。',
       child: Column(
-        children: const [
+        children: [
           _SettingsTile(icon: Icons.family_restroom, title: '家庭成员'),
           _SettingsTile(icon: Icons.pause_circle_outline, title: '暂停记录'),
           _SettingsTile(icon: Icons.location_on_outlined, title: '位置权限'),
