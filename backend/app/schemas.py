@@ -1,0 +1,146 @@
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.models import MemoryType, ObjectLocationStatus, SourceType
+
+
+class ORMModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DevTokenRequest(BaseModel):
+    user_id: UUID | None = None
+    nickname: str = Field(default="测试用户", min_length=1, max_length=80)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: UUID
+
+
+class MemoryCreate(BaseModel):
+    memory_type: MemoryType = MemoryType.NOTE
+    title: str | None = Field(default=None, max_length=240)
+    content: str = Field(min_length=1, max_length=20000)
+    occurred_at: datetime | None = None
+    source_type: SourceType = SourceType.USER_TEXT
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    place_id: UUID | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    is_confirmed: bool = True
+    metadata: dict = Field(default_factory=dict)
+
+
+class MemoryRead(ORMModel):
+    id: UUID
+    user_id: UUID
+    memory_type: MemoryType
+    title: str | None
+    content: str
+    occurred_at: datetime
+    source_type: SourceType
+    confidence: float
+    place_id: UUID | None
+    latitude: float | None
+    longitude: float | None
+    is_confirmed: bool
+    metadata_json: dict
+    created_at: datetime
+
+
+class ObjectCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    category: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class ObjectRead(ORMModel):
+    id: UUID
+    name: str
+    category: str | None
+    description: str | None
+    created_at: datetime
+
+
+class ObjectLocationCreate(BaseModel):
+    location_text: str = Field(min_length=1, max_length=2000)
+    recorded_at: datetime | None = None
+    source_type: SourceType = SourceType.USER_TEXT
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    place_id: UUID | None = None
+
+
+class ObjectLocationRead(ORMModel):
+    id: UUID
+    object_id: UUID
+    location_text: str
+    recorded_at: datetime
+    confidence: float
+    status: ObjectLocationStatus
+    memory_id: UUID | None
+
+
+class MemoryQueryRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class Evidence(BaseModel):
+    kind: str
+    id: UUID
+    occurred_at: datetime
+    excerpt: str
+    confidence: float
+
+
+class MemoryQueryResponse(BaseModel):
+    answer: str | None
+    can_answer: bool
+    certainty: str
+    reason: str | None = None
+    intent: str
+    evidence: list[Evidence] = Field(default_factory=list)
+    memory_ids: list[UUID] = Field(default_factory=list)
+
+
+class LocationPointCreate(BaseModel):
+    client_uuid: str = Field(min_length=1, max_length=80)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy: float | None = Field(default=None, ge=0)
+    speed: float | None = None
+    recorded_at: datetime
+
+
+class LocationBatchRequest(BaseModel):
+    points: list[LocationPointCreate] = Field(min_length=1, max_length=500)
+
+
+class LocationBatchResponse(BaseModel):
+    accepted: int
+
+
+class PrivacyPauseRequest(BaseModel):
+    duration_minutes: int | None = Field(default=None, ge=1, le=60 * 24)
+    until: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_mode(self):
+        if (self.duration_minutes is None) == (self.until is None):
+            raise ValueError("Provide exactly one of duration_minutes or until")
+        return self
+
+
+class PrivacyStatusResponse(BaseModel):
+    recording_paused: bool
+    paused_until: datetime | None
+
+
+class DaySummaryResponse(BaseModel):
+    date: str
+    memory_count: int
+    place_count: int
+    summary: str
