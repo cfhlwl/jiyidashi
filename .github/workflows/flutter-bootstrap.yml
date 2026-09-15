@@ -77,4 +77,5 @@ jobs:
             exit 0
           fi
           git commit -m "chore: materialize Flutter platform projects"
+          git pull --rebase origin "${HEAD_BRANCH}"
           git push origin "HEAD:${HEAD_BRANCH}"
