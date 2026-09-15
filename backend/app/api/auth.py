@@ -8,11 +8,32 @@ from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import create_access_token
 from app.models import User
-from app.schemas import DevTokenRequest, TokenResponse
+from app.schemas import DevTokenRequest, LoginRequest, RegisterRequest, TokenResponse
+from app.services.auth_service import authenticate_email_password, register_email_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, db: DbSession) -> TokenResponse:
+    # [人工注释][S1-001] 正式注册由服务端生成 user_id，客户端不能选择或覆盖身份归属。
+    user = register_email_password(db, payload)
+    return TokenResponse(
+        access_token=create_access_token(user.id),
+        user_id=user.id,
+    )
+
+
+@router.post("/login", response_model=TokenResponse)
+def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
+    # [人工注释][S1-001] 登录只在凭证校验成功后签发正式访问 Token。
+    user = authenticate_email_password(db, payload)
+    return TokenResponse(
+        access_token=create_access_token(user.id),
+        user_id=user.id,
+    )
 
 
 @router.post("/dev-token", response_model=TokenResponse)
