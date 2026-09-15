@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models import MemoryType, ObjectLocationStatus, SourceType
 
@@ -129,6 +129,14 @@ class LocationPointCreate(BaseModel):
     accuracy: float | None = Field(default=None, ge=0)
     speed: float | None = None
     recorded_at: datetime
+
+    # [人工注释][FND-023] 自动位置时间必须携带时区，禁止 naive/aware 混批导致服务器比较异常。
+    @field_validator("recorded_at")
+    @classmethod
+    def require_timezone_aware_recorded_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("recorded_at must include a timezone offset")
+        return value
 
 
 class LocationBatchRequest(BaseModel):
