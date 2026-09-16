@@ -6,12 +6,13 @@
 <!-- [人工注释][DOC-PROGRESS-013] PR #3 第一轮 2 P1 + 2 P2 已完成窄修并在同一生产代码 HEAD cfa2cd84 上通过 Backend / Mobile / Mini Program 全量门禁，进入第二轮正式审查。 -->
 <!-- [人工注释][DOC-PROGRESS-014] PR #3 第二轮原 2 P1 + 2 P2 全部关闭，新发现 P1 S1-PR3-FIX-005 已完成唯一 Object 解析窄修；生产代码 HEAD 1b0bf994 通过 Backend 41/41、Mobile、Mini Program 全量门禁，进入第三轮窄范围最终复审。 -->
 <!-- [人工注释][DOC-PROGRESS-015] PR #3 第三轮最终复审 PASS，并已合并 main=52ef68f4；Stage 1 第二批正式完成，Stage 2 继续未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-016] Stage 1 第三批采用四工作线并行开发；统一基于 main=e98c99de 排期，当前仅完成任务拆分与依赖记录，尚未启动功能开发，Stage 2 继续未开始。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-16  
-> 当前阶段：Stage 1「记得住」第二批已完成；继续 Stage 1，Stage 2 未开始  
-> 当前开发分支：`main`  
-> 当前 PR：#3 `feat: add Stage 1 memory controls and deletion`（已合并）
+> 当前阶段：Stage 1「记得住」第三批并行开发已排期、待启动；Stage 2 未开始  
+> 当前开发基线：`main=e98c99de30a0cb3e09998bc39b4b543f2007e8e2`  
+> 当前 PR：无；PR #3 已合并，第三批尚未创建功能 PR
 
 ## 状态规则
 
@@ -35,10 +36,12 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并 `main=52ef68f4`；最终 HEAD 三端 CI 全部 SUCCESS |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | ⬜ | 并行工作线、依赖和分支方案已记录；尚未启动代码开发 |
 | CI-001 | Backend CI | ✅ | 最终 PR HEAD `7319d493`：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 41/41 PASS |
 | CI-002 | Flutter Android CI | ✅ | 最终 PR HEAD `7319d493`：analyze + tests + production-config debug APK build PASS |
 | CI-003 | Flutter iOS CI | ✅ | 最终 PR HEAD `7319d493`：production-config `flutter build ios --debug --no-codesign` PASS |
 | CI-004 | 微信小程序 CI | ✅ | 最终 PR HEAD `7319d493`：`npm ci` + TypeScript + production Taro WeChat build PASS |
+| CI-005 | UI Visual Preview / Golden Screenshot | ⬜ | 第三批工程质量任务；先覆盖 Flutter Golden，再扩展 Android Emulator / 小程序 Preview |
 
 ---
 
@@ -129,6 +132,62 @@
 | S1-PR3-FIX-003 | P2 | `pause/today` 两次读取当前时间存在午夜跨日竞态 | ✅ | 单一 `now` 派生 local day + `America/New_York` 回归 PASS；已合并 |
 | S1-PR3-FIX-004 | P2 | 本轮传输层语义修改缺少人工注释 | ✅ | Flutter / 小程序人工注释补齐并通过 CI；已合并 |
 | S1-PR3-FIX-005 | P1 | 重叠 Object 名称可能跨对象按最新位置回答，甚至绕过更具体 Object 的 STALE | ✅ | 唯一最长/最具体 Object 解析、同等最佳 fail closed、更具体 STALE 不回退短名均通过第三轮最终复审；已合并 |
+
+## 2.3 Stage 1 第三批并行开发安排
+
+<!-- [人工注释][S1-PLAN-001] 第三批采用“公共协议先冻结、四工作线独立分支、独立 PR、逐条审查”的方式推进；排期不等于开工，未创建开发分支前任务仍保持 ⬜。 -->
+
+### 2.3.1 统一基线与硬规则
+
+- 所有第三批开发分支统一从 `main=e98c99de30a0cb3e09998bc39b4b543f2007e8e2` 创建；不得从 PR #3 旧分支继续开发。
+- 一个任务组一个独立分支、一个独立 PR；禁止建立一个包含全部第三批功能的“大 Stage 1 分支”。
+- 手工新增或修改的语义代码块继续使用 `[人工注释][TASK-ID]`；自动生成文件、lockfile、严格 JSON 等按既有豁免规则处理。
+- 公共 API / schema / Evidence 协议先冻结再让多端并行；任何工作线需要修改共享协议时，必须先记录并通知其他工作线，禁止各端自行发明字段。
+- 每个 PR 单独通过本端自动测试；涉及公共协议时必须补 Backend + 受影响客户端回归。
+- Stage 2 后台定位、CoreLocation、Location Bridge、Visit clustering 等全部保持 ⬜，第三批不得提前侵入。
+
+### 2.3.2 四条并行工作线
+
+| 工作线 | 第一阶段任务 | 计划分支 / PR | 允许范围 | 关键依赖 | 当前状态 |
+| --- | --- | --- | --- | --- | --- |
+| A：Backend Media | `S1-006` + `S1-005` 后端媒体/Evidence 基础 | `feat/stage1-media-pipeline` | 私有对象存储、临时签名上传/下载、媒体元数据、图片 Evidence、Backend tests、API 文档 | 先冻结媒体上传协议；不得引入 Stage 3 OCR/Vision | ⬜ 待启动 |
+| B：Flutter Offline | `S1-015` + `S1-016` | `feat/stage1-mobile-offline` | Android/iOS 本地 SQLite、离线队列、状态机、重启恢复、Flutter tests | 可立即独立推进；`S1-017` 同步协议后置 | ⬜ 待启动 |
+| C：Mini Capture | `S1-005` 小程序主动拍照/选图 + `S1-004` 录音 UI/权限壳 | `feat/stage1-miniprogram-capture` | 小程序页面、权限、文件选择/录音适配、上传客户端；禁止假 API/假成功 | 媒体提交字段必须使用 A 冻结协议；真实语音提交等待 `S1-007` | ⬜ 待启动 |
+| D：Data & Quality | `S1-020` 数据导出；`CI-005` UI Visual Preview | `feat/stage1-data-export`；`ci/ui-visual-preview` | 用户数据导出、授权边界、导出测试；Flutter Golden/视觉产物 CI | 与 A/B/C 冲突较少，两个任务仍各自独立 PR | ⬜ 待启动 |
+
+### 2.3.3 第二阶段接续任务
+
+| 顺序 | 任务 | 前置条件 | 计划工作线 | 当前状态 |
+| --- | --- | --- | --- | --- |
+| 1 | `S1-007` ASR 语音转写 | A 的对象存储/Evidence 基础合并 | A | ⬜ |
+| 2 | `S1-008` “帮我记住”统一入口 | `S1-005` + `S1-007` 协议稳定 | A + B/C 客户端接入 | ⬜ |
+| 3 | `S1-017` 离线同步与幂等 | B 的 SQLite/队列完成；服务端提交幂等协议冻结 | B + Backend 窄配合 | ⬜ |
+| 4 | `S1-018` 单条 Memory 编辑 | 第三批公共协议稳定 | 独立 Backend/客户端 PR | ⬜ |
+| 5 | `S1-021` 全部数据删除 | `S1-006` Storage 删除语义稳定 | D / Backend | ⬜ |
+| 6 | `S1-022` 注销账号 | `S1-021` 全量删除闭环完成 | D / Backend | ⬜ |
+| 7 | `S1-025` 基础提醒模型 | 核心记录/离线链稳定 | 后续独立 PR | ⬜ |
+| 8 | `S1-026` 首次使用引导 | 文字/图片/语音统一入口稳定 | Flutter + 小程序 | ⬜ |
+
+### 2.3.4 推荐启动与合并顺序
+
+1. **先启动 A 与 B**：A 先锁定媒体上传公共协议，B 完全独立实现本地 SQLite + 离线队列。
+2. **随后启动 D**：数据导出和 UI Preview 各自独立 PR，不等待媒体功能。
+3. **C 在 A 的公共协议冻结后启动真实接入**：可先做 UI/权限，但不允许提交假数据兜底。
+4. A 第一阶段合并后进入 `S1-007`；B 第一阶段合并后等待服务端幂等契约再进入 `S1-017`。
+5. `S1-021/022` 必须等对象存储删除语义确定后再做，避免 DB 删除完成而 Storage 残留。
+6. 每个工作线合并前都必须基于最新 `main` 做最终 replay / CI；不得因为“另一条线已 PASS”而跳过自己的验收。
+
+### 2.3.5 共享文件冲突规则
+
+以下位置视为第三批共享热点，修改前必须先确认是否已有其他工作线占用：
+
+- `backend/app/schemas.py` 及公共 API payload 定义；
+- `docs/API.md`；
+- Flutter / Mini Program 公共 API client 的字段协议；
+- `docs/DEVELOPMENT_PROGRESS.md`；
+- CI workflow 文件。
+
+原则：**共享协议只允许一个 PR 定义，其他 PR 只消费；如确需修改，先 rebase 最新 `main` 并重新做跨端契约审查。**
 
 ---
 
@@ -302,3 +361,4 @@
 6. 每次新增或修改人工维护的源代码，都必须遵守 `docs/CODE_ANNOTATION_RULES.md` 的 `[人工注释]` 标记规范。
 7. 自动生成文件、lockfile、二进制资源不得为了加注释而破坏格式；通过提交记录和本表追踪。
 8. Stage 2 及以后功能不得提前侵入当前 Stage 1 PR，除非先更新本表并明确变更范围。
+9. 第三批并行开发必须遵守 2.3 的工作线边界；共享协议由单一 PR 定义，其他工作线只消费，禁止多分支同时独立修改同一契约。
