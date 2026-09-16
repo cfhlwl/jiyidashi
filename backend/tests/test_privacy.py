@@ -87,7 +87,11 @@ async def test_pause_today_ends_at_user_local_midnight(
 
     zone = ZoneInfo("Asia/Shanghai")
     local_day = datetime.now(UTC).astimezone(zone).date()
-    expected = datetime.combine(local_day + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+    expected = datetime.combine(
+        local_day + timedelta(days=1),
+        time.min,
+        tzinfo=zone,
+    ).astimezone(UTC)
     actual = datetime.fromisoformat(payload["paused_until"])
     assert actual == expected
 
