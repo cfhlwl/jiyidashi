@@ -27,7 +27,7 @@ class _CaptureApi extends JiYiApiClient {
   }
 }
 
-// [人工注释][S1-015][S1-016] SQLite 的真实落盘/重启语义由 offline_queue_test 覆盖；UI 测试使用可控 Future 精确证明“持久化完成前绝不显示成功”。
+// [人工注释][S1-015][S1-016] 真实 SQLite 落盘/重启由 offline_queue_test 独立覆盖；这里用可控 Queue seam 只验证 UI 必须等待持久化 Future 完成后才能显示成功。
 class _CaptureQueue extends OfflineQueueStore {
   _CaptureQueue({this.deferPersistence = false});
 
