@@ -7,12 +7,13 @@
 <!-- [人工注释][DOC-PROGRESS-014] PR #3 第二轮原 2 P1 + 2 P2 全部关闭，新发现 P1 S1-PR3-FIX-005 已完成唯一 Object 解析窄修；生产代码 HEAD 1b0bf994 通过 Backend 41/41、Mobile、Mini Program 全量门禁，进入第三轮窄范围最终复审。 -->
 <!-- [人工注释][DOC-PROGRESS-015] PR #3 第三轮最终复审 PASS，并已合并 main=52ef68f4；Stage 1 第二批正式完成，Stage 2 继续未开始。 -->
 <!-- [人工注释][DOC-PROGRESS-016] Stage 1 第三批采用四工作线并行开发；统一基于 main=e98c99de 排期，当前仅完成任务拆分与依赖记录，尚未启动功能开发，Stage 2 继续未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-017] PR #6 工作线 B 已完成 S1-015/S1-016 实现与收尾清理，进入最终 HEAD 自动门禁；S1-017 真实同步/服务端幂等仍保持未开始。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-16  
-> 当前阶段：Stage 1「记得住」第三批并行开发已排期、待启动；Stage 2 未开始  
-> 当前开发基线：`main=e98c99de30a0cb3e09998bc39b4b543f2007e8e2`  
-> 当前 PR：无；PR #3 已合并，第三批尚未创建功能 PR
+> 当前阶段：Stage 1「记得住」第三批并行开发进行中；工作线 B Flutter Offline 已进入最终门禁，Stage 2 未开始  
+> 当前开发基线：`main=b09a3981e12904fe488a623b1a5e1ee1314af6a8`  
+> 当前 PR：#6 Draft；`S1-015` + `S1-016` 等待最终 HEAD CI 与正式审查，`S1-017` 不在本 PR
 
 ## 状态规则
 
@@ -36,7 +37,7 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并 `main=52ef68f4`；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | ⬜ | 并行工作线、依赖和分支方案已记录；尚未启动代码开发 |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | 并行工作线已启动；工作线 B 的 SQLite/离线队列进入最终门禁，其余任务继续按独立工作线推进 |
 | CI-001 | Backend CI | ✅ | 最终 PR HEAD `7319d493`：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 41/41 PASS |
 | CI-002 | Flutter Android CI | ✅ | 最终 PR HEAD `7319d493`：analyze + tests + production-config debug APK build PASS |
 | CI-003 | Flutter iOS CI | ✅ | 最终 PR HEAD `7319d493`：production-config `flutter build ios --debug --no-codesign` PASS |
@@ -98,9 +99,9 @@
 | S1-012 | 基础记忆搜索 | ✅ | 普通 Memory Evidence 返回真实来源且不降低 gate |
 | S1-013 | “问记忆”客户端页面接真实 API | ✅ | Flutter / 小程序已接真实 API |
 | S1-014 | 答案展示 Evidence / 来源 / 时间 | ✅ | 客户端展示来源、证据类型、时间、可信度 |
-| S1-015 | 客户端本地 SQLite | ⬜ | Android / iOS 本地持久化 |
-| S1-016 | 离线记忆队列 | ⬜ | 无网络仍可“记一下” |
-| S1-017 | 离线同步与幂等 | ⬜ | 使用 client UUID 防重复 |
+| S1-015 | 客户端本地 SQLite | 🟠 | Android / iOS 本地持久化、版本化 migration、账号隔离与重启恢复已实现；PR #6 等待最终 HEAD CI / 正式审查 |
+| S1-016 | 离线记忆队列 | 🟠 | pending/sending/failed/completed/cancelled、本地取消、失败重试与连接失败 fallback 已实现；PR #6 等待最终 HEAD CI / 正式审查 |
+| S1-017 | 离线同步与幂等 | ⬜ | 使用 client UUID 防重复；真实同步、自动 flush 与服务端幂等明确留到下一步 |
 | S1-018 | 单条 Memory 编辑 | ⬜ | 编辑后 Evidence 与审计语义需明确 |
 | S1-019 | 单条 Memory 删除 | ✅ | 真实服务端 DELETE 链、删除后查询失效及 ObjectLocation 联动均通过审查并已合并 |
 | S1-020 | 数据导出 | ⬜ | 用户可导出自己的全部记忆 |
@@ -151,7 +152,7 @@
 | 工作线 | 第一阶段任务 | 计划分支 / PR | 允许范围 | 关键依赖 | 当前状态 |
 | --- | --- | --- | --- | --- | --- |
 | A：Backend Media | `S1-006` + `S1-005` 后端媒体/Evidence 基础 | `feat/stage1-media-pipeline` | 私有对象存储、临时签名上传/下载、媒体元数据、图片 Evidence、Backend tests、API 文档 | 先冻结媒体上传协议；不得引入 Stage 3 OCR/Vision | ⬜ 待启动 |
-| B：Flutter Offline | `S1-015` + `S1-016` | `feat/stage1-mobile-offline` | Android/iOS 本地 SQLite、离线队列、状态机、重启恢复、Flutter tests | 可立即独立推进；`S1-017` 同步协议后置 | ⬜ 待启动 |
+| B：Flutter Offline | `S1-015` + `S1-016` | `feat/stage1-mobile-offline` | Android/iOS 本地 SQLite、离线队列、状态机、重启恢复、Flutter tests | 可立即独立推进；`S1-017` 同步协议后置 | 🟠 PR #6 待最终 HEAD CI / 正式审查 |
 | C：Mini Capture | `S1-005` 小程序主动拍照/选图 + `S1-004` 录音 UI/权限壳 | `feat/stage1-miniprogram-capture` | 小程序页面、权限、文件选择/录音适配、上传客户端；禁止假 API/假成功 | 媒体提交字段必须使用 A 冻结协议；真实语音提交等待 `S1-007` | ⬜ 待启动 |
 | D：Data & Quality | `S1-020` 数据导出；`CI-005` UI Visual Preview | `feat/stage1-data-export`；`ci/ui-visual-preview` | 用户数据导出、授权边界、导出测试；Flutter Golden/视觉产物 CI | 与 A/B/C 冲突较少，两个任务仍各自独立 PR | ⬜ 待启动 |
 
