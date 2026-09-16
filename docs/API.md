@@ -3,6 +3,7 @@
 <!-- [人工注释][S1-FIX-002][S1-FIX-003] 第二轮修复补充真实 Evidence 来源契约与正式认证滥用保护。 -->
 <!-- [人工注释][S1-011][S1-019][S1-023][S1-024] Stage 1 第二批补齐位置失效、单条删除、暂停今天与手动恢复控制语义。 -->
 <!-- [人工注释][S1-PR3-FIX-001][S1-PR3-FIX-002][S1-PR3-FIX-003] PR #3 第一轮 HOLD 后补充 Object 匹配路由、失效时间水位与 pause/today 单时钟语义。 -->
+<!-- [人工注释][S1-005][S1-006] Stage 1 第三批 A 线冻结私有媒体上传/下载、READY 校验、图片 Memory 与 Evidence 关联协议。 -->
 # V1 API 基线
 
 Base path:
@@ -108,11 +109,7 @@ GET    /v1/memory/summarize/day
 
 ### 新建 Memory
 
-公开客户端只能提交用户实际使用的采集通道：
-
-- `USER_TEXT`
-- `USER_VOICE`
-- `USER_PHOTO`
+通用 Memory API 当前只允许直接提交 `USER_TEXT` / `USER_VOICE`。图片必须先完成下文的私有媒体上传与 `READY` 校验，再调用 `/v1/media/{media_id}/memory`；裸 `USER_PHOTO` 会返回 422。
 
 客户端**不得提交** `confidence`、`is_confirmed`、`AI_INFERENCE` 等服务端可信字段；额外字段会被 schema 拒绝。
 
@@ -148,6 +145,120 @@ DELETE /v1/memories/{id}
 - 如果该 Memory 支撑一个 CURRENT ObjectLocation，删除会让该当前位置同步失效。
 - Flutter / 微信小程序只有在服务端 DELETE 成功后才清空当前答案，不能只做本地隐藏。
 
+## 私有媒体 / 图片 Evidence
+
+```http
+POST /v1/media/uploads
+POST /v1/media/{media_id}/complete
+POST /v1/media/{media_id}/download
+POST /v1/media/{media_id}/memory
+```
+
+媒体桶必须保持**私有**。服务端数据库只保存私有 `object_key`，公开 API 永远不返回永久公开 URL，也不允许客户端提交 bucket / endpoint / object key。COS / OSS 通过服务端 `STORAGE_BACKEND=s3` 的 SigV4 兼容配置接入；Mini / Flutter 只消费本节统一协议。
+
+### 1. 创建临时上传
+
+```json
+POST /v1/media/uploads
+{
+  "client_upload_id": "22222222-2222-2222-2222-222222222222",
+  "kind": "IMAGE",
+  "content_type": "image/jpeg",
+  "size_bytes": 284921,
+  "original_filename": "IMG_1001.jpg"
+}
+```
+
+Stage 1 当前只接受 `IMAGE`，支持 `image/jpeg`、`image/png`、`image/webp`、`image/heic`、`image/heif`。`client_upload_id` 是**当前用户域内**的幂等键：
+
+- 同一用户 + 同一 `client_upload_id` + 相同元数据：复用同一个 `media_id` / 私有对象身份，并可重新签发短时 PUT。
+- 同一用户 + 同一 `client_upload_id` 但尺寸/类型/文件名变化：`409 MEDIA_UPLOAD_ID_CONFLICT`。
+- 不同用户可以使用相同 `client_upload_id`，不会共享媒体身份。
+
+成功示例：
+
+```json
+{
+  "id": "33333333-3333-3333-3333-333333333333",
+  "kind": "IMAGE",
+  "status": "PENDING",
+  "content_type": "image/jpeg",
+  "size_bytes": 284921,
+  "original_filename": "IMG_1001.jpg",
+  "storage_etag": null,
+  "created_at": "2026-09-16T10:00:00Z",
+  "completed_at": null,
+  "upload": {
+    "method": "PUT",
+    "url": "https://<private-object-storage>/<temporary-signature>",
+    "headers": {
+      "Content-Type": "image/jpeg"
+    },
+    "expires_at": "2026-09-16T10:10:00Z"
+  }
+}
+```
+
+客户端必须使用响应里的 `method` / `headers` 上传；`upload.url` 到期后由对象存储拒绝。服务端默认签名 TTL 为 600 秒，配置范围 60–3600 秒。
+
+### 2. 服务端确认对象
+
+对象直传成功后调用：
+
+```http
+POST /v1/media/33333333-3333-3333-3333-333333333333/complete
+```
+
+此请求**不接受** object key / size / content type 等客户端补充字段。服务端使用数据库中的当前用户归属与私有 object key 对对象存储执行 HEAD：
+
+- 对象不存在：`409 MEDIA_OBJECT_NOT_FOUND`
+- 实际尺寸不符：`409 MEDIA_OBJECT_SIZE_MISMATCH`
+- 实际 Content-Type 不符：`409 MEDIA_OBJECT_TYPE_MISMATCH`
+- 对象存储不可用：`503 MEDIA_STORAGE_UNAVAILABLE`
+- 媒体不属于当前用户：统一 `404 MEDIA_NOT_FOUND`
+
+只有 HEAD 校验通过后状态才变成 `READY`。客户端“上传成功”的声明本身不能升级可信等级。
+
+### 3. 创建图片 Memory / Evidence
+
+```json
+POST /v1/media/33333333-3333-3333-3333-333333333333/memory
+{
+  "content": "红色文件夹里有旅行票据",
+  "title": "旅行票据",
+  "occurred_at": "2026-09-16T18:05:00+08:00"
+}
+```
+
+规则：
+
+- `media_id` 必须属于当前用户且状态为 `READY`。
+- `content` 是用户主动输入的文字；本阶段**不做 OCR、Vision、AI 图片理解**。
+- 服务端创建 `PHOTO` Memory + `USER_PHOTO` MemorySource，并写入一对一 MediaEvidenceLink。
+- 同一 `media_id` 重复调用只返回既有 Memory，不重复制造 confirmed fact。
+- 原始图片是 Evidence；它不代表任何 AI 推断已经成为 confirmed fact。
+
+`POST /v1/memory/query` 的 Evidence 在图片证据命中时增加：
+
+```json
+{
+  "kind": "MEMORY",
+  "source_type": "USER_PHOTO",
+  "memory_source_id": "44444444-4444-4444-4444-444444444444",
+  "media_id": "33333333-3333-3333-3333-333333333333"
+}
+```
+
+非图片 Evidence 的 `media_id` 为 `null`。客户端不得自行根据 `source_type` 合成媒体 ID。
+
+### 4. 临时下载
+
+```http
+POST /v1/media/{media_id}/download
+```
+
+仅当前用户的 `READY` 媒体可签发短时 GET。每次读取都重新执行用户归属检查；跨用户访问统一 404。响应中的 `download.url` 不是永久地址，不应持久化。
+
 ## Objects
 
 ```http
@@ -180,7 +291,7 @@ POST /v1/objects/{id}/locations
 }
 ```
 
-`recorded_at` 可省略；如果客户端显式提交，必须携带时区偏移。
+`recorded_at` 可省略；如果客户端显式提交，必须携带时区偏移。当前对象位置 API 也拒绝裸 `USER_PHOTO`，未来如果支持“图片证明物品位置”，必须复用已验证 media 链路而不是仅声明来源字符串。
 
 ### 明确标记“已经不在那里”
 
@@ -224,7 +335,8 @@ POST /v1/memory/query
       "memory_source_id": "33333333-3333-3333-3333-333333333333",
       "occurred_at": "2026-09-15T12:36:00Z",
       "excerpt": "护照：书房左侧柜子第二层",
-      "confidence": 1.0
+      "confidence": 1.0,
+      "media_id": null
     }
   ],
   "memory_ids": [
@@ -240,6 +352,7 @@ Evidence 字段语义：
 - `source_type`：真正的采集来源，例如 `USER_TEXT` / `USER_VOICE` / `USER_PHOTO` / `GPS`。
 - `memory_source_id`：实际参与 Evidence gate 的 `MemorySource.id`，用于追溯证据记录。
 - `confidence`：该 `MemorySource` 的可信度。
+- `media_id`：只有服务端存在 MediaEvidenceLink 时才返回对应媒体 ID；否则为 `null`。
 
 没有证据：
 

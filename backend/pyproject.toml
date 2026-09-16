@@ -19,6 +19,8 @@ dependencies = [
   "pyjwt>=2.10,<3.0",
   "python-multipart>=0.0.12,<1.0",
   "alembic>=1.14,<2.0",
+  # [人工注释][S1-006] 仅使用 boto3 的 S3 SigV4/HEAD 能力接私有 COS/OSS 兼容桶，不引入任何 OCR/Vision SDK。
+  "boto3>=1.35,<2.0",
 ]
 
 [project.optional-dependencies]
