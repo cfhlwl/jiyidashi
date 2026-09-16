@@ -1,6 +1,7 @@
 import { Button, Input, Text, View } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 import {
+  canEditApiBaseUrl,
   getApiBaseUrl,
   getProfile,
   isAuthenticated,
@@ -22,6 +23,7 @@ export default function Page() {
   const [profile, setProfile] = useState<Awaited<ReturnType<typeof getProfile>> | null>(null)
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
+  const allowApiEdit = canEditApiBaseUrl()
 
   const applyProfile = (next: Awaited<ReturnType<typeof getProfile>>) => {
     setProfile(next)
@@ -91,8 +93,12 @@ export default function Page() {
   }
 
   const saveApiBase = () => {
-    setApiBaseUrl(apiBase)
-    setStatus('开发环境 API 地址已保存')
+    try {
+      setApiBaseUrl(apiBase)
+      setStatus('开发环境 API 地址已保存')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'API 地址保存失败')
+    }
   }
 
   if (profile) {
@@ -144,11 +150,14 @@ export default function Page() {
           {registerMode ? '已有账号？登录' : '第一次使用？创建账号'}
         </Button>
       </View>
-      <View className='card'>
-        <View className='card-title'>开发环境 API</View>
-        <Input className='field' type='text' value={apiBase} onInput={(e) => setApiBase(e.detail.value)} />
-        <Button className='secondary-button' onClick={saveApiBase}>保存 API 地址</Button>
-      </View>
+      {allowApiEdit && (
+        <View className='card'>
+          {/* [人工注释][S1-FIX-007] 生产构建通过常量完全移除此入口，普通用户不能改写 API endpoint。 */}
+          <View className='card-title'>开发环境 API</View>
+          <Input className='field' type='text' value={apiBase} onInput={(e) => setApiBase(e.detail.value)} />
+          <Button className='secondary-button' onClick={saveApiBase}>保存 API 地址</Button>
+        </View>
+      )}
       {status && <View className='status'>{status}</View>}
     </View>
   )
