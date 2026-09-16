@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -81,6 +81,25 @@ def list_objects(user_id: CurrentUser, db: DbSession) -> list[ObjectItem]:
     )
 
 
+def _latest_invalidation(
+    db: Session,
+    object_id: UUID,
+    user_id: UUID,
+) -> ObjectLocation | None:
+    # [人工注释][S1-011] UNKNOWN ObjectLocation 是“用户已明确否定此前位置”的持久化时间水位。
+    # 晚到位置只有 recorded_at 晚于该水位，才可能再次成为 CURRENT。
+    return db.scalar(
+        select(ObjectLocation)
+        .where(
+            ObjectLocation.user_id == user_id,
+            ObjectLocation.object_id == object_id,
+            ObjectLocation.status == ObjectLocationStatus.UNKNOWN,
+        )
+        .order_by(ObjectLocation.recorded_at.desc())
+        .limit(1)
+    )
+
+
 @router.post(
     "/{object_id}/locations",
     response_model=ObjectLocationRead,
@@ -92,8 +111,8 @@ def add_object_location(
     user_id: CurrentUser,
     db: DbSession,
 ) -> ObjectLocation:
-    # Row lock serializes writes for the same object on PostgreSQL. The partial
-    # unique index remains the final database invariant for CURRENT.
+    # [人工注释][S1-011] add 与 stale 必须锁同一 Object 行，
+    # 让“新位置写入”和“用户明确失效”在 PostgreSQL 上形成单一串行顺序。
     item = db.scalar(
         select(ObjectItem)
         .where(ObjectItem.id == object_id, ObjectItem.user_id == user_id)
@@ -113,7 +132,14 @@ def add_object_location(
         .order_by(ObjectLocation.recorded_at.desc())
         .limit(1)
     )
-    becomes_current = current is None or recorded_at > ensure_utc(current.recorded_at)
+    invalidation = _latest_invalidation(db, object_id, user_id)
+    invalidated_at = (
+        ensure_utc(invalidation.recorded_at) if invalidation is not None else None
+    )
+
+    is_newer_than_invalidation = invalidated_at is None or recorded_at > invalidated_at
+    is_newer_than_current = current is None or recorded_at > ensure_utc(current.recorded_at)
+    becomes_current = is_newer_than_invalidation and is_newer_than_current
 
     if becomes_current and current is not None:
         current.status = ObjectLocationStatus.STALE
@@ -198,14 +224,38 @@ def mark_object_location_stale(
     user_id: CurrentUser,
     db: DbSession,
 ) -> ObjectLocation:
+    # [人工注释][S1-011] stale 与 add 共用 Object FOR UPDATE 锁。
+    # 失效提交完成前，其他位置写入不能绕过 invalidation watermark。
+    item = db.scalar(
+        select(ObjectItem)
+        .where(ObjectItem.id == object_id, ObjectItem.user_id == user_id)
+        .with_for_update()
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="OBJECT_NOT_FOUND")
+
     location = _eligible_current_location(db, object_id, user_id)
     if location is None:
         raise HTTPException(status_code=404, detail="OBJECT_LOCATION_NOT_FOUND")
 
-    db.execute(
-        update(ObjectLocation)
-        .where(ObjectLocation.id == location.id)
-        .values(status=ObjectLocationStatus.STALE)
+    # [人工注释][S1-011] 水位严格取用户执行失效操作的服务器时间 T；
+    # 不能受旧客户端未来 recorded_at 影响，否则可能把合法的新位置长期误判为旧数据。
+    invalidated_at = datetime.now(UTC)
+    location.status = ObjectLocationStatus.STALE
+    db.flush()
+
+    # [人工注释][S1-011] UNKNOWN 行不是“新位置”，而是用户确认旧位置已经失效的时间水位。
+    # 它保留在历史中，使离线补传的旧位置在 CURRENT 已为空时也不能复活。
+    db.add(
+        ObjectLocation(
+            object_id=object_id,
+            user_id=user_id,
+            memory_id=None,
+            location_text="用户已确认原位置失效",
+            recorded_at=invalidated_at,
+            confidence=1.0,
+            status=ObjectLocationStatus.UNKNOWN,
+        )
     )
     db.commit()
     db.refresh(location)

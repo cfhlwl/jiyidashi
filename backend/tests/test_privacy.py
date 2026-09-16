@@ -1,5 +1,6 @@
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from httpx import AsyncClient
 
@@ -71,6 +72,41 @@ async def test_paused_timestamp_is_rejected_even_after_resume(
     assert delayed.status_code == 200
     assert delayed.json()["accepted"] == 0
     assert delayed.json()["rejected_privacy"] == 1
+
+
+async def test_pause_today_ends_at_configured_user_local_midnight(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    # [人工注释][S1-023] 先切到带 DST 规则的非默认 IANA timezone，
+    # 再以服务端返回的 paused_since 为同一 reference 验证下一次当地午夜。
+    updated = await client.patch(
+        "/v1/user",
+        headers=auth_headers,
+        json={"timezone": "America/New_York"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["timezone"] == "America/New_York"
+
+    response = await client.post("/v1/privacy/pause/today", headers=auth_headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["recording_paused"] is True
+
+    zone = ZoneInfo("America/New_York")
+    started_at = datetime.fromisoformat(payload["paused_since"])
+    local_day = started_at.astimezone(zone).date()
+    expected = datetime.combine(
+        local_day + timedelta(days=1),
+        time.min,
+        tzinfo=zone,
+    ).astimezone(UTC)
+    actual = datetime.fromisoformat(payload["paused_until"])
+    assert actual == expected
+
+    resumed = await client.post("/v1/privacy/resume", headers=auth_headers)
+    assert resumed.status_code == 200
+    assert resumed.json()["recording_paused"] is False
 
 
 async def test_manual_memory_still_works_during_pause(

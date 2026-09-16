@@ -82,6 +82,85 @@ def _verify_for_update_lock(engine, object_id) -> None:
                 raise AssertionError(f"FOR UPDATE did not serialize the contender: {result}")
 
 
+def _verify_stale_and_add_share_object_lock(engine, user_id, object_id) -> None:
+    # [人工注释][S1-011] 真实 PostgreSQL 门禁：stale 事务持有 Object FOR UPDATE 时，
+    # 代表 add 路径的同一 Object FOR UPDATE 必须被阻塞，确保失效水位与新位置写入严格串行。
+    result: list[str] = []
+    invalidated_at = datetime.now(UTC) + timedelta(seconds=2)
+
+    def add_contender() -> None:
+        with Session(engine) as db:
+            db.execute(text("SET LOCAL lock_timeout = '500ms'"))
+            try:
+                db.scalar(
+                    select(ObjectItem)
+                    .where(ObjectItem.id == object_id)
+                    .with_for_update()
+                )
+            except OperationalError:
+                db.rollback()
+                result.append("add-blocked-by-stale")
+            else:
+                db.rollback()
+                result.append("add-not-blocked")
+
+    with Session(engine) as stale_db:
+        with stale_db.begin():
+            locked = stale_db.scalar(
+                select(ObjectItem)
+                .where(ObjectItem.id == object_id)
+                .with_for_update()
+            )
+            assert locked is not None
+
+            current = stale_db.scalar(
+                select(ObjectLocation).where(
+                    ObjectLocation.object_id == object_id,
+                    ObjectLocation.status == ObjectLocationStatus.CURRENT,
+                )
+            )
+            assert current is not None
+            current.status = ObjectLocationStatus.STALE
+            stale_db.add(
+                ObjectLocation(
+                    object_id=object_id,
+                    user_id=user_id,
+                    location_text="用户已确认原位置失效",
+                    recorded_at=invalidated_at,
+                    status=ObjectLocationStatus.UNKNOWN,
+                )
+            )
+            stale_db.flush()
+
+            thread = Thread(target=add_contender, daemon=True)
+            thread.start()
+            thread.join(timeout=5)
+            if thread.is_alive():
+                raise AssertionError("stale/add lock contender did not finish")
+            if result != ["add-blocked-by-stale"]:
+                raise AssertionError(f"stale/add did not share Object lock: {result}")
+
+    with Session(engine) as verify_db:
+        current = verify_db.scalar(
+            select(ObjectLocation).where(
+                ObjectLocation.object_id == object_id,
+                ObjectLocation.status == ObjectLocationStatus.CURRENT,
+            )
+        )
+        watermark = verify_db.scalar(
+            select(ObjectLocation)
+            .where(
+                ObjectLocation.object_id == object_id,
+                ObjectLocation.status == ObjectLocationStatus.UNKNOWN,
+            )
+            .order_by(ObjectLocation.recorded_at.desc())
+            .limit(1)
+        )
+        assert current is None
+        assert watermark is not None
+        assert watermark.recorded_at == invalidated_at
+
+
 def main() -> None:
     engine = create_engine(_database_url(), pool_pre_ping=True)
     user_id = uuid4()
@@ -104,6 +183,7 @@ def main() -> None:
     try:
         _verify_unique_current(engine, user_id, object_id)
         _verify_for_update_lock(engine, object_id)
+        _verify_stale_and_add_share_object_lock(engine, user_id, object_id)
     finally:
         with Session(engine) as db:
             user = db.get(User, user_id)

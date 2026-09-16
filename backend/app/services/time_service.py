@@ -16,8 +16,17 @@ def _user_zone(db: Session, user_id: UUID) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
-def local_today(db: Session, user_id: UUID) -> date:
-    return datetime.now(UTC).astimezone(_user_zone(db, user_id)).date()
+def local_today(
+    db: Session,
+    user_id: UUID,
+    reference_utc: datetime | None = None,
+) -> date:
+    # [人工注释][S1-023] 可注入同一个 reference timestamp，避免“暂停今天”跨本地午夜时
+    # started_at 与 local day 分别读取系统时间而落到两个不同日期。
+    reference = reference_utc or datetime.now(UTC)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=UTC)
+    return reference.astimezone(_user_zone(db, user_id)).date()
 
 
 def user_day_bounds_utc(

@@ -3,11 +3,16 @@ import { useEffect, useState } from 'react'
 import {
   canEditApiBaseUrl,
   getApiBaseUrl,
+  getPrivacyStatus,
   getProfile,
   isAuthenticated,
   loginAccount,
   logout,
+  pauseMemory,
+  pauseMemoryToday,
+  PrivacyStatus,
   registerAccount,
+  resumeMemory,
   setApiBaseUrl,
   updateProfile,
 } from '../../services/api'
@@ -21,6 +26,7 @@ export default function Page() {
   const [timezone, setTimezone] = useState('Asia/Shanghai')
   const [apiBase, setApiBase] = useState(getApiBaseUrl())
   const [profile, setProfile] = useState<Awaited<ReturnType<typeof getProfile>> | null>(null)
+  const [privacy, setPrivacy] = useState<PrivacyStatus | null>(null)
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const allowApiEdit = canEditApiBaseUrl()
@@ -34,10 +40,12 @@ export default function Page() {
   const refreshProfile = async () => {
     if (!isAuthenticated()) {
       setProfile(null)
+      setPrivacy(null)
       return
     }
     try {
       applyProfile(await getProfile())
+      setPrivacy(await getPrivacyStatus())
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '读取资料失败')
     }
@@ -92,6 +100,19 @@ export default function Page() {
     }
   }
 
+  const applyPrivacy = async (action: () => Promise<PrivacyStatus>, success: string) => {
+    setLoading(true)
+    setStatus('')
+    try {
+      setPrivacy(await action())
+      setStatus(success)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '操作失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const saveApiBase = () => {
     try {
       setApiBaseUrl(apiBase)
@@ -114,11 +135,29 @@ export default function Page() {
           <View className='muted'>语言：{profile.locale}</View>
           <Button className='primary-button' disabled={loading} onClick={saveProfile}>保存资料</Button>
         </View>
+
+        <View className='card'>
+          <View className='card-title'>记忆暂停</View>
+          <View className='muted'>
+            {privacy?.recording_paused
+              ? `自动记录已暂停${privacy.paused_until ? `，直到 ${privacy.paused_until}` : ''}`
+              : '自动记录当前开启'}
+          </View>
+          {/* [人工注释][S1-023] 暂停只影响自动采集；用户主动“记一下”仍然允许。 */}
+          <Button className='secondary-button' disabled={loading} onClick={() => applyPrivacy(() => pauseMemory(30), '已暂停 30 分钟')}>暂停 30 分钟</Button>
+          <Button className='secondary-button' disabled={loading} onClick={() => applyPrivacy(() => pauseMemory(60), '已暂停 1 小时')}>暂停 1 小时</Button>
+          <Button className='secondary-button' disabled={loading} onClick={() => applyPrivacy(() => pauseMemory(180), '已暂停 3 小时')}>暂停 3 小时</Button>
+          <Button className='secondary-button' disabled={loading} onClick={() => applyPrivacy(pauseMemoryToday, '今天剩余时间已暂停')}>暂停今天</Button>
+          {/* [人工注释][S1-024] 恢复后历史 pause interval 仍保留，暂停期间的自动数据不能补传入库。 */}
+          <Button className='primary-button' disabled={loading || !privacy?.recording_paused} onClick={() => applyPrivacy(resumeMemory, '已恢复自动记录')}>恢复记录</Button>
+        </View>
+
         <Button
           className='secondary-button'
           onClick={() => {
             logout()
             setProfile(null)
+            setPrivacy(null)
             setEmail('')
             setPassword('')
             setNickname('')

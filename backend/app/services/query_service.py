@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     Memory,
     MemorySource,
+    MemoryType,
     ObjectItem,
     ObjectLocation,
     ObjectLocationStatus,
@@ -15,28 +16,56 @@ from app.models import (
 )
 from app.schemas import Evidence, MemoryQueryResponse
 
-OBJECT_QUERY_MARKERS = ("在哪", "哪里", "放哪", "放在什么", "位置")
+OBJECT_LOCATION_MARKERS = (
+    "在哪",
+    "哪里",
+    "何处",
+    "什么地方",
+    "放哪",
+    "放在",
+    "位置",
+)
 CJK_RUN = re.compile(r"[\u3400-\u9fff]+")
 
 
-def _normalize_object_name(text: str) -> str:
-    value = text.strip()
-    value = re.sub(r"[？?。！!，,]", "", value)
-    value = re.sub(r"^(我的|我那|请问|帮我找一下|帮我找找)", "", value)
-    for phrase in (
-        "现在放在哪里",
-        "现在在哪里",
-        "放在哪里",
-        "放哪儿了",
-        "放哪了",
-        "在哪里",
-        "在哪儿",
-        "在哪",
-        "的位置",
-        "位置",
-    ):
-        value = value.replace(phrase, "")
-    return value.strip()
+def _compact_text(text: str) -> str:
+    value = text.strip().lower()
+    return re.sub(r"[\s？?。！!，,：:；;]+", "", value)
+
+
+def _has_object_location_intent(question: str) -> bool:
+    return any(marker in question for marker in OBJECT_LOCATION_MARKERS)
+
+
+def _resolve_object(
+    db: Session,
+    user_id: UUID,
+    question: str,
+) -> tuple[ObjectItem | None, bool]:
+    # [人工注释][S1-PR3-FIX-005] Object 身份必须在查位置之前唯一解析。
+    # 子串重叠时只接受唯一的最长/最具体匹配；同等最佳无法唯一判断时宁可 NO_EVIDENCE。
+    compact_question = _compact_text(question)
+    if not compact_question:
+        return None, False
+
+    objects = db.scalars(
+        select(ObjectItem).where(ObjectItem.user_id == user_id)
+    ).all()
+    matched = [
+        (item, _compact_text(item.name))
+        for item in objects
+        if _compact_text(item.name) and _compact_text(item.name) in compact_question
+    ]
+    if not matched:
+        return None, False
+
+    best_length = max(len(normalized_name) for _, normalized_name in matched)
+    best_matches = [
+        item for item, normalized_name in matched if len(normalized_name) == best_length
+    ]
+    if len(best_matches) != 1:
+        return None, True
+    return best_matches[0], False
 
 
 def _eligible_memory_exists() -> exists:
@@ -99,10 +128,15 @@ def query_memory(
 ) -> MemoryQueryResponse:
     clean_question = question.strip()
 
-    if any(marker in clean_question for marker in OBJECT_QUERY_MARKERS):
-        result = _find_object(db, user_id, clean_question)
-        if result.can_answer:
-            return result
+    if _has_object_location_intent(clean_question):
+        matched_object, is_ambiguous = _resolve_object(db, user_id, clean_question)
+        if is_ambiguous:
+            # [人工注释][S1-PR3-FIX-005] 同等最佳 Object 无法唯一解析时禁止按位置时间猜答案。
+            return _no_evidence("FIND_OBJECT")
+        if matched_object is not None:
+            # [人工注释][S1-011] 已有 Object + 位置意图时，结构化 CURRENT 状态是最终事实源。
+            # Object 存在但没有 CURRENT 必须直接 NO_EVIDENCE，严禁历史位置 Memory fallback。
+            return _find_object(db, user_id, matched_object)
 
     return _search_memories(db, user_id, clean_question)
 
@@ -110,31 +144,16 @@ def query_memory(
 def _find_object(
     db: Session,
     user_id: UUID,
-    question: str,
+    item: ObjectItem,
 ) -> MemoryQueryResponse:
-    object_name = _normalize_object_name(question)
-    if not object_name:
-        return _no_evidence("FIND_OBJECT")
-
-    objects = db.scalars(
-        select(ObjectItem).where(
-            ObjectItem.user_id == user_id,
-            or_(
-                ObjectItem.normalized_name == object_name.lower(),
-                ObjectItem.name.ilike(f"%{object_name}%"),
-            ),
-        )
-    ).all()
-    if not objects:
-        return _no_evidence("FIND_OBJECT")
-
-    object_ids = [item.id for item in objects]
+    # [人工注释][S1-PR3-FIX-005] 位置查询只允许读取已唯一解析 Object 的 CURRENT，
+    # 不能把多个子串匹配 Object 合并后再按 recorded_at 选择较新的另一个对象。
     location = db.scalar(
         select(ObjectLocation)
         .join(Memory, Memory.id == ObjectLocation.memory_id)
         .where(
             ObjectLocation.user_id == user_id,
-            ObjectLocation.object_id.in_(object_ids),
+            ObjectLocation.object_id == item.id,
             ObjectLocation.status == ObjectLocationStatus.CURRENT,
             Memory.user_id == user_id,
             Memory.is_deleted.is_(False),
@@ -152,15 +171,14 @@ def _find_object(
     if source is None:
         return _no_evidence("FIND_OBJECT")
 
-    matched_object = next(item for item in objects if item.id == location.object_id)
-    answer = f"你最后一次记录“{matched_object.name}”的位置是：{location.location_text}。"
+    answer = f"你最后一次记录“{item.name}”的位置是：{location.location_text}。"
     evidence = Evidence(
         kind="OBJECT_LOCATION",
         id=location.id,
         source_type=source.source_type,
         memory_source_id=source.id,
         occurred_at=location.recorded_at,
-        excerpt=f"{matched_object.name}：{location.location_text}",
+        excerpt=f"{item.name}：{location.location_text}",
         confidence=source.confidence,
     )
     return MemoryQueryResponse(
@@ -187,6 +205,7 @@ def _search_memories(
         select(Memory)
         .where(
             Memory.user_id == user_id,
+            Memory.memory_type != MemoryType.OBJECT_LOCATION,
             Memory.is_deleted.is_(False),
             Memory.is_confirmed.is_(True),
             Memory.source_type != SourceType.AI_INFERENCE,
@@ -200,6 +219,8 @@ def _search_memories(
     if not candidates:
         return _no_evidence("MEMORY_SEARCH")
 
+    # [人工注释][S1-011] OBJECT_LOCATION backing Memory 不参与普通搜索。
+    # 历史位置只能由结构化状态解释，避免 STALE/UNKNOWN 位置重新承担“当前位置事实源”。
     ranked = sorted(
         candidates,
         key=lambda item: (_term_score(item.content, terms), _sort_datetime(item.occurred_at)),

@@ -7,6 +7,16 @@ import 'package:jiyidashi/api_client.dart';
 
 const jsonHeaders = {'content-type': 'application/json; charset=utf-8'};
 
+http.Response loginResponse() => http.Response(
+      jsonEncode({
+        'access_token': 'example-token',
+        'token_type': 'bearer',
+        'user_id': '11111111-1111-1111-1111-111111111111',
+      }),
+      200,
+      headers: jsonHeaders,
+    );
+
 void main() {
   test('register keeps user ownership server-side and stores token in session', () async {
     late Map<String, dynamic> requestBody;
@@ -45,17 +55,7 @@ void main() {
       baseUrl: 'https://example.test/v1',
       httpClient: MockClient((request) async {
         calls += 1;
-        if (calls == 1) {
-          return http.Response(
-            jsonEncode({
-              'access_token': 'example-token',
-              'token_type': 'bearer',
-              'user_id': '11111111-1111-1111-1111-111111111111',
-            }),
-            200,
-            headers: jsonHeaders,
-          );
-        }
+        if (calls == 1) return loginResponse();
 
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(request.headers['authorization'], 'Bearer example-token');
@@ -83,17 +83,7 @@ void main() {
       baseUrl: 'https://example.test/v1',
       httpClient: MockClient((request) async {
         calls += 1;
-        if (calls == 1) {
-          return http.Response(
-            jsonEncode({
-              'access_token': 'example-token',
-              'token_type': 'bearer',
-              'user_id': '11111111-1111-1111-1111-111111111111',
-            }),
-            200,
-            headers: jsonHeaders,
-          );
-        }
+        if (calls == 1) return loginResponse();
         return http.Response(
           jsonEncode({
             'answer': '物品最后记录在书房。',
@@ -136,5 +126,111 @@ void main() {
       firstEvidence['memory_source_id'],
       '55555555-5555-5555-5555-555555555555',
     );
+  });
+
+  test('mark stale resolves an existing object without creating a new one', () async {
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        expect(request.headers['authorization'], 'Bearer example-token');
+        if (request.method == 'GET') {
+          expect(request.url.path, '/v1/objects');
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                'name': '护照',
+                'category': null,
+                'description': null,
+                'created_at': '2026-09-16T00:00:00Z',
+              }
+            ]),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        expect(request.method, 'POST');
+        expect(
+          request.url.path,
+          '/v1/objects/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/location/stale',
+        );
+        return http.Response(
+          jsonEncode({
+            'id': 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+            'object_id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            'location_text': '书房',
+            'recorded_at': '2026-09-16T00:00:00Z',
+            'confidence': 1.0,
+            'status': 'STALE',
+            'memory_id': 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    final result = await api.markObjectLocationStale(' 护照 ');
+    // [人工注释][S1-011] 客户端失效操作必须命中已有 Object，并以服务端 STALE 状态为准。
+    expect(result['status'], 'STALE');
+    expect(calls, 3);
+  });
+
+  test('delete memory uses authenticated DELETE endpoint', () async {
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        expect(request.method, 'DELETE');
+        expect(request.url.path, '/v1/memories/deadbeef');
+        expect(request.headers['authorization'], 'Bearer example-token');
+        return http.Response('', 204);
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    // [人工注释][S1-019] 删除契约必须走正式 Token，不能只在客户端隐藏记录。
+    await api.deleteMemory('deadbeef');
+    expect(calls, 2);
+  });
+
+  test('privacy controls use server pause and resume endpoints', () async {
+    var calls = 0;
+    final seen = <String>[];
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        seen.add('${request.method} ${request.url.path}');
+        return http.Response(
+          jsonEncode({
+            'recording_paused': request.url.path != '/v1/privacy/resume',
+            'paused_since': '2026-09-16T00:00:00Z',
+            'paused_until': '2026-09-16T16:00:00Z',
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    await api.pauseMemory(30);
+    await api.pauseMemoryToday();
+    await api.resumeMemory();
+
+    // [人工注释][S1-023][S1-024] “今天”交给服务端按用户时区计算，恢复只调用 resume。
+    expect(seen, [
+      'POST /v1/privacy/pause',
+      'POST /v1/privacy/pause/today',
+      'POST /v1/privacy/resume',
+    ]);
   });
 }

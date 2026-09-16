@@ -253,8 +253,11 @@ class TodayPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return const PageFrame(
       title: '今天',
-      subtitle: 'Stage 1 先把“记住 → 找回 → 相信”做扎实。',
-      child: _InfoCard(title: '第一批真实闭环', detail: '现在可以登录、写下一条记忆、记录物品位置，并从服务端 Evidence 中找回答案。'),
+      subtitle: 'Stage 1 继续完善“记住 → 找回 → 纠错 → 删除 → 暂停”。',
+      child: _InfoCard(
+        title: '你的记忆由你控制',
+        detail: '现在除了记录与找回，还可以标记物品已经不在原位置、删除记忆，并随时暂停或恢复自动记录。',
+      ),
     );
   }
 }
@@ -321,6 +324,17 @@ class _CapturePageState extends State<CapturePage> {
     });
   }
 
+  Future<void> markObjectStale() async {
+    if (objectController.text.trim().isEmpty) return;
+    await _run(() async {
+      // [人工注释][S1-011] “已经不在那里”必须由服务端把 CURRENT 改成 STALE，
+      // 客户端不能只清空输入框或本地隐藏答案。
+      await widget.api.markObjectLocationStale(objectController.text);
+      locationController.clear();
+      return '✓ 已标记 ${objectController.text.trim()} 已经不在原位置';
+    });
+  }
+
   Future<void> _run(Future<String> Function() action) async {
     setState(() {
       loading = true;
@@ -330,9 +344,9 @@ class _CapturePageState extends State<CapturePage> {
       final message = await action();
       setState(() => result = message);
     } on ApiException catch (exc) {
-      setState(() => result = '保存失败：${exc.message}');
+      setState(() => result = '操作失败：${exc.message}');
     } catch (_) {
-      setState(() => result = '保存失败：无法连接服务器');
+      setState(() => result = '操作失败：无法连接服务器');
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -342,7 +356,7 @@ class _CapturePageState extends State<CapturePage> {
   Widget build(BuildContext context) {
     return PageFrame(
       title: '记一下',
-      subtitle: '第一批先支持文字记忆和“东西在哪”。',
+      subtitle: '记录新的可信记忆，也可以明确纠正已经失效的位置。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -384,6 +398,8 @@ class _CapturePageState extends State<CapturePage> {
                   TextField(controller: locationController, decoration: const InputDecoration(labelText: '位置', hintText: '书房左侧柜子第二层')),
                   const SizedBox(height: 12),
                   FilledButton.tonal(onPressed: loading ? null : saveObjectLocation, child: const Text('记录当前位置')),
+                  const SizedBox(height: 8),
+                  OutlinedButton(onPressed: loading ? null : markObjectStale, child: const Text('已经不在那里')),
                 ],
               ),
             ),
@@ -424,6 +440,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   final controller = TextEditingController();
   Map<String, dynamic>? result;
   String? error;
+  String? actionMessage;
   bool loading = false;
 
   @override
@@ -437,6 +454,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     setState(() {
       loading = true;
       error = null;
+      actionMessage = null;
     });
     try {
       final response = await widget.api.queryMemory(controller.text);
@@ -450,9 +468,42 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     }
   }
 
+  Future<void> deleteFirstMemory() async {
+    final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
+    if (ids.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除这条记忆？'),
+        content: const Text('删除后，这条记忆以及依赖它的当前位置答案都不能再被找回。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('删除')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => loading = true);
+    try {
+      // [人工注释][S1-019] 只有服务端 DELETE 成功后才清空当前答案，
+      // 这样“删除”才是真正影响后续检索的业务操作。
+      await widget.api.deleteMemory(ids.first.toString());
+      setState(() {
+        result = null;
+        actionMessage = '✓ 这条记忆已删除，后续查询不会再使用它';
+      });
+    } on ApiException catch (exc) {
+      setState(() => error = exc.message);
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final evidence = (result?['evidence'] as List<dynamic>? ?? const []);
+    final memoryIds = (result?['memory_ids'] as List<dynamic>? ?? const []);
     return PageFrame(
       title: '问记忆',
       subtitle: '答案必须来自你的真实 Evidence。',
@@ -472,6 +523,10 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
           if (error != null) ...[
             const SizedBox(height: 12),
             Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+          if (actionMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(actionMessage!),
           ],
           if (result != null) ...[
             const SizedBox(height: 18),
@@ -508,6 +563,13 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                 ),
               );
             }),
+            if (memoryIds.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: loading ? null : deleteFirstMemory,
+                child: const Text('删除最相关记忆'),
+              ),
+            ],
           ],
         ],
       ),
@@ -547,12 +609,114 @@ class ProfilePage extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _InfoCard(title: profile['nickname']?.toString() ?? '用户', detail: '${profile['email'] ?? ''}\n时区：${profile['timezone']}'),
+              _InfoCard(
+                title: profile['nickname']?.toString() ?? '用户',
+                detail: '${profile['email'] ?? ''}\n时区：${profile['timezone']}',
+              ),
+              const SizedBox(height: 12),
+              _PrivacyControls(api: api),
               const SizedBox(height: 12),
               OutlinedButton(onPressed: onLogout, child: const Text('退出登录')),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _PrivacyControls extends StatefulWidget {
+  const _PrivacyControls({required this.api});
+
+  final JiYiApiClient api;
+
+  @override
+  State<_PrivacyControls> createState() => _PrivacyControlsState();
+}
+
+class _PrivacyControlsState extends State<_PrivacyControls> {
+  Map<String, dynamic>? status;
+  bool loading = true;
+  String? message;
+
+  @override
+  void initState() {
+    super.initState();
+    refresh();
+  }
+
+  Future<void> refresh() async {
+    try {
+      final next = await widget.api.getPrivacyStatus();
+      if (mounted) setState(() => status = next);
+    } on ApiException catch (exc) {
+      if (mounted) setState(() => message = exc.message);
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> apply(
+    Future<Map<String, dynamic>> Function() action,
+    String success,
+  ) async {
+    setState(() {
+      loading = true;
+      message = null;
+    });
+    try {
+      final next = await action();
+      if (mounted) {
+        setState(() {
+          status = next;
+          message = success;
+        });
+      }
+    } on ApiException catch (exc) {
+      if (mounted) setState(() => message = exc.message);
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final paused = status?['recording_paused'] == true;
+    final until = status?['paused_until']?.toString();
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('记忆暂停', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Text(paused ? '自动记录已暂停${until == null ? '' : '，直到 $until'}' : '自动记录当前开启'),
+            const SizedBox(height: 12),
+            // [人工注释][S1-023] 暂停只影响自动采集；用户主动“记一下”仍可继续使用。
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(onPressed: loading ? null : () => apply(() => widget.api.pauseMemory(30), '已暂停 30 分钟'), child: const Text('30 分钟')),
+                OutlinedButton(onPressed: loading ? null : () => apply(() => widget.api.pauseMemory(60), '已暂停 1 小时'), child: const Text('1 小时')),
+                OutlinedButton(onPressed: loading ? null : () => apply(() => widget.api.pauseMemory(180), '已暂停 3 小时'), child: const Text('3 小时')),
+                OutlinedButton(onPressed: loading ? null : () => apply(widget.api.pauseMemoryToday, '今天剩余时间已暂停'), child: const Text('今天')),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // [人工注释][S1-024] 恢复后历史 pause interval 仍保留，暂停期间自动数据不能延迟补传。
+            FilledButton(
+              onPressed: loading || !paused ? null : () => apply(widget.api.resumeMemory, '已恢复自动记录'),
+              child: const Text('恢复记录'),
+            ),
+            if (message != null) ...[
+              const SizedBox(height: 8),
+              Text(message!),
+            ],
+          ],
+        ),
       ),
     );
   }

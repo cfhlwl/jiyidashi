@@ -1,11 +1,16 @@
 <!-- [人工注释][DOC-PROGRESS-001] 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
 <!-- [人工注释][DOC-PROGRESS-009] PR #2 已通过第二轮复审并合并 main；Stage 1 第一批真实用户闭环正式完成，下一批仍继续 Stage 1，不启动 Stage 2。 -->
+<!-- [人工注释][DOC-PROGRESS-010] Stage 1 第二批启动：物品位置失效、单条 Memory 删除、暂停记忆与手动恢复；Stage 2 继续保持未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-011] Stage 1 第二批首版代码与三端自动验收完成后进入 PR #3 第一轮正式审查。 -->
+<!-- [人工注释][DOC-PROGRESS-012] PR #3 第一轮正式审查结论 HOLD：2 个 P1 + 2 个 P2 进入窄范围修复；本批状态回退 🔵，Stage 2 继续未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-013] PR #3 第一轮 2 P1 + 2 P2 已完成窄修并在同一生产代码 HEAD cfa2cd84 上通过 Backend / Mobile / Mini Program 全量门禁，进入第二轮正式审查。 -->
+<!-- [人工注释][DOC-PROGRESS-014] PR #3 第二轮原 2 P1 + 2 P2 全部关闭，新发现 P1 S1-PR3-FIX-005 已完成唯一 Object 解析窄修；生产代码 HEAD 1b0bf994 通过 Backend 41/41、Mobile、Mini Program 全量门禁，进入第三轮窄范围最终复审。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-16  
-> 当前阶段：Stage 1「记得住」第一批已完成，下一批待启动  
-> 当前开发分支：`main`  
-> 当前 PR：无
+> 当前阶段：Stage 1「记得住」第二批待第三轮窄范围最终复审  
+> 当前开发分支：`feat/stage1-controls-and-delete`  
+> 当前 PR：#3 `feat: add Stage 1 memory controls and deletion`（Ready for Review）
 
 ## 状态规则
 
@@ -28,11 +33,11 @@
 | --- | --- | --- | --- |
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
-| S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ⬜ | 下一开发批次，尚未开始 |
-| CI-001 | Backend CI | ✅ | PR #2：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 33/33 PASS |
-| CI-002 | Flutter Android CI | ✅ | analyze + test + production-config debug APK build PASS |
-| CI-003 | Flutter iOS CI | ✅ | production-config `flutter build ios --debug --no-codesign` PASS |
-| CI-004 | 微信小程序 CI | ✅ | `npm ci` + TypeScript + production Taro WeChat build PASS |
+| S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | 🟠 | PR #3 第二轮新 P1 `S1-PR3-FIX-005` 已窄修并通过最终生产代码 HEAD 三端 CI，等待第三轮最终复审 |
+| CI-001 | Backend CI | ✅ | `1b0bf994`：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 41/41 PASS |
+| CI-002 | Flutter Android CI | ✅ | `1b0bf994`：analyze + 7 tests + production-config debug APK build PASS |
+| CI-003 | Flutter iOS CI | ✅ | `1b0bf994`：production-config `flutter build ios --debug --no-codesign` PASS |
+| CI-004 | 微信小程序 CI | ✅ | `1b0bf994`：`npm ci` + TypeScript + production Taro WeChat build PASS |
 
 ---
 
@@ -51,7 +56,7 @@
 | FND-009 | 服务端可信等级所有权 | ✅ | 客户端不能提交 confidence / confirmed 权限 |
 | FND-010 | Object / ObjectLocation 历史模型 | ✅ | 保留历史，不覆盖旧记录 |
 | FND-011 | 每个 Object 最多一个 CURRENT | ✅ | 应用事务 + DB partial unique index；PostgreSQL 实库验收 PASS |
-| FND-012 | 离线旧位置晚到防回滚 | ✅ | 根据 `recorded_at` 决定 CURRENT / STALE |
+| FND-012 | 离线旧位置晚到防回滚 | ✅ | 根据 `recorded_at` 决定 CURRENT / STALE；PR #3 已补“用户失效水位”边界并通过回归 |
 | FND-013 | 删除 Memory 与 ObjectLocation 联动失效 | ✅ | 删除后不得继续从对象位置查询回答 |
 | FND-014 | Location `client_uuid` 幂等 | ✅ | 离线重传不得产生重复位置点 |
 | FND-015 | 隐私暂停服务端最终门禁 | ✅ | 暂停期间自动数据不得入库 |
@@ -85,7 +90,7 @@
 | S1-008 | “帮我记住”统一入口 | ⬜ | 文字 / 语音 / 拍照统一进入 Memory Pipeline |
 | S1-009 | “东西在哪”物品录入 | ✅ | Object create 并发竞争已幂等兜底 |
 | S1-010 | “东西在哪”查询 | ✅ | 返回真实 Evidence `source_type` / `memory_source_id` |
-| S1-011 | 物品位置失效 / “已经不在那里” | ⬜ | CURRENT → STALE / UNKNOWN；客户端入口待实现 |
+| S1-011 | 物品位置失效 / “已经不在那里” | 🟠 | Object 查询已补唯一最具体 Object 解析；普通搜索排除位置 backing Memory、UNKNOWN 失效水位、stale/add 共锁及重叠名称回归均 PASS |
 | S1-012 | 基础记忆搜索 | ✅ | 普通 Memory Evidence 返回真实来源且不降低 gate |
 | S1-013 | “问记忆”客户端页面接真实 API | ✅ | Flutter / 小程序已接真实 API |
 | S1-014 | 答案展示 Evidence / 来源 / 时间 | ✅ | 客户端展示来源、证据类型、时间、可信度 |
@@ -93,12 +98,12 @@
 | S1-016 | 离线记忆队列 | ⬜ | 无网络仍可“记一下” |
 | S1-017 | 离线同步与幂等 | ⬜ | 使用 client UUID 防重复 |
 | S1-018 | 单条 Memory 编辑 | ⬜ | 编辑后 Evidence 与审计语义需明确 |
-| S1-019 | 单条 Memory 删除 | ⬜ | 删除后所有查询路径都必须失效；客户端入口待实现 |
+| S1-019 | 单条 Memory 删除 | 🟠 | 第一轮核心语义 PASS，后续复审未改业务链；最终生产代码 HEAD 三端 CI 继续通过 |
 | S1-020 | 数据导出 | ⬜ | 用户可导出自己的全部记忆 |
 | S1-021 | 全部数据删除 | ⬜ | DB / Cache / Storage 一致删除 |
 | S1-022 | 注销账号 | ⬜ | 与全部数据删除联动 |
-| S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ⬜ | 服务端基础规则已有，客户端待实现 |
-| S1-024 | 手动恢复记录 | ⬜ | 恢复不能导致暂停期数据补传 |
+| S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | 🟠 | 单一 reference timestamp + `America/New_York` DST 时区回归已通过，第二轮确认 PASS |
+| S1-024 | 手动恢复记录 | 🟠 | 第一轮核心语义 PASS，后续未改 PrivacyPauseInterval；最终生产代码 HEAD 重验通过 |
 | S1-025 | 基础提醒模型 | ⬜ | 仅从记忆产生提醒，不做完整 Todo |
 | S1-026 | 首次使用引导 | ⬜ | 3 分钟内完成“记住 → 找回”Aha Moment |
 
@@ -113,6 +118,16 @@
 | S1-FIX-005 | P2 | nickname / locale 空白绕过 | ✅ | strip-before-validation，whitespace-only 422 |
 | S1-FIX-006 | P2 | 同名 Object 并发创建唯一约束 500 | ✅ | rollback + reselect 幂等返回 |
 | S1-FIX-007 | P2 | 客户端生产 API endpoint 仍是开发态 | ✅ | build-time endpoint + production CI 真构建 |
+
+## 2.2 PR #3 正式审查修复项
+
+| ID | 优先级 | 问题 | 状态 | 当前结果 |
+| --- | --- | --- | --- | --- |
+| S1-PR3-FIX-001 | P1 | Object 查询路由既漏拦历史位置又误伤普通“哪里”查询 | 🟠 | 第二轮确认 PASS：位置意图 + 已有 Object 才结构化接管；`OBJECT_LOCATION` backing Memory 不进普通搜索；双措辞与普通 NOTE 回归 PASS |
+| S1-PR3-FIX-002 | P1 | 用户 STALE 后晚到旧位置可在 CURRENT 为空时复活 | 🟠 | 第二轮确认 PASS：`UNKNOWN` 持久化 invalidation watermark + add/stale 共 Object `FOR UPDATE`；离线旧位置与 PostgreSQL 锁门禁 PASS |
+| S1-PR3-FIX-003 | P2 | `pause/today` 两次读取当前时间存在午夜跨日竞态 | 🟠 | 第二轮确认 PASS：单一 `now` 派生 local day；`America/New_York` + returned `paused_since` 回归 PASS |
+| S1-PR3-FIX-004 | P2 | 本轮传输层语义修改缺少人工注释 | 🟠 | 第二轮确认 PASS：Flutter `_request/_decodeResponse/_jsonListRequest` 与小程序 DELETE transport 已补 `[人工注释]`；Mobile/Mini CI PASS |
+| S1-PR3-FIX-005 | P1 | 重叠 Object 名称可能跨对象按最新位置回答，甚至绕过更具体 Object 的 STALE | 🟠 | 唯一最长/最具体 Object 先解析再查 CURRENT；同等最佳直接 `NO_EVIDENCE`；更具体 CURRENT、STALE 防短名回退、ambiguous 三条回归 PASS；Backend 41/41 PASS，待第三轮窄审 |
 
 ---
 
@@ -234,7 +249,7 @@
 | SEC-008 | 账户注销 | ⬜ | 与删除策略联动 |
 | SEC-009 | 位置权限单独同意 | ⬜ | 按平台规则实施 |
 | SEC-010 | 家庭查看逐项授权 | ⬜ | 默认关闭 |
-| SEC-011 | 记忆暂停 | 🟠 | 服务端 foundation 已实现，客户端未完成 |
+| SEC-011 | 记忆暂停 | 🟠 | 第一轮核心门禁 PASS；`pause/today` 单时钟边界修复第二轮确认 PASS，最终生产代码 HEAD 三端 CI 继续通过 |
 | SEC-012 | AI 不知道就说不知道 | 🟠 | Evidence gate 已实现；完整 AI 层尚未进入 |
 | SEC-013 | AI 推断显式标记 | ⬜ | UI 层尚未实现 |
 | SEC-014 | 敏感操作二次确认 | ⬜ | 导出 / 删除 / 家庭授权等 |

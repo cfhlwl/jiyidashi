@@ -125,6 +125,11 @@ class JiYiApiClient {
     );
   }
 
+  Future<void> deleteMemory(String memoryId) async {
+    // [人工注释][S1-019] 删除只调用服务端 soft-delete 入口；客户端删除后不得保留本地“可回答”状态。
+    await _jsonRequest('DELETE', '/memories/$memoryId');
+  }
+
   Future<Map<String, dynamic>> rememberObjectLocation({
     required String objectName,
     required String locationText,
@@ -146,6 +151,47 @@ class JiYiApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> markObjectLocationStale(String objectName) async {
+    // [人工注释][S1-011] 失效操作先从用户自己的 Object 列表精确定位对象，
+    // 不通过 POST 创建一个原本不存在的空对象。
+    final objects = await _jsonListRequest('/objects');
+    final normalized = objectName.trim().toLowerCase();
+    Map<String, dynamic>? matched;
+    for (final object in objects) {
+      if ((object['name']?.toString().trim().toLowerCase() ?? '') == normalized) {
+        matched = object;
+        break;
+      }
+    }
+    if (matched == null) {
+      throw ApiException(404, '没有找到这个物品');
+    }
+    return _jsonRequest('POST', '/objects/${matched['id']}/location/stale');
+  }
+
+  Future<Map<String, dynamic>> getPrivacyStatus() {
+    return _jsonRequest('GET', '/privacy/status');
+  }
+
+  Future<Map<String, dynamic>> pauseMemory(int minutes) {
+    // [人工注释][S1-023] 客户端只选择暂停时长，历史 pause interval 仍由服务端持久化。
+    return _jsonRequest(
+      'POST',
+      '/privacy/pause',
+      body: {'duration_minutes': minutes},
+    );
+  }
+
+  Future<Map<String, dynamic>> pauseMemoryToday() {
+    // [人工注释][S1-023] “今天”由服务端按用户 IANA timezone 计算本地午夜。
+    return _jsonRequest('POST', '/privacy/pause/today');
+  }
+
+  Future<Map<String, dynamic>> resumeMemory() {
+    // [人工注释][S1-024] 恢复只结束当前暂停，服务端仍保留历史暂停区间阻断延迟补传。
+    return _jsonRequest('POST', '/privacy/resume');
+  }
+
   Future<Map<String, dynamic>> queryMemory(String question) {
     // [人工注释][S1-013] “问记忆”始终调用服务端 Evidence gate，不在客户端本地拼答案。
     return _jsonRequest(
@@ -159,7 +205,9 @@ class JiYiApiClient {
     accessToken = null;
   }
 
-  Future<Map<String, dynamic>> _jsonRequest(
+  // [人工注释][S1-019] 统一传输层显式支持 DELETE；204 空响应也必须沿同一服务端成功链处理，
+  // 不能让删除退化成客户端本地隐藏。
+  Future<http.Response> _request(
     String method,
     String path, {
     Map<String, dynamic>? body,
@@ -168,18 +216,22 @@ class JiYiApiClient {
     if (authenticated && accessToken == null) {
       throw ApiException(401, '请先登录');
     }
-
     final headers = authenticated
         ? _headers
         : const {'Content-Type': 'application/json'};
     final encoded = body == null ? null : jsonEncode(body);
-    final response = switch (method) {
+    return switch (method) {
       'GET' => await _http.get(_uri(path), headers: headers),
       'POST' => await _http.post(_uri(path), headers: headers, body: encoded),
       'PATCH' => await _http.patch(_uri(path), headers: headers, body: encoded),
+      'DELETE' => await _http.delete(_uri(path), headers: headers, body: encoded),
       _ => throw ArgumentError('Unsupported method: $method'),
     };
+  }
 
+  // [人工注释][S1-019] DELETE 可能返回 204 无 body；统一解码层把空成功响应视为合法空对象，
+  // 同时仍对所有非 2xx 返回真实服务端 detail。
+  dynamic _decodeResponse(http.Response response) {
     final dynamic decoded = response.body.isEmpty
         ? <String, dynamic>{}
         : jsonDecode(response.body);
@@ -190,9 +242,36 @@ class JiYiApiClient {
         detail?.toString() ?? '请求失败',
       );
     }
+    return decoded;
+  }
+
+  Future<Map<String, dynamic>> _jsonRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    bool authenticated = true,
+  }) async {
+    final decoded = _decodeResponse(
+      await _request(method, path, body: body, authenticated: authenticated),
+    );
     if (decoded is! Map<String, dynamic>) {
-      throw ApiException(response.statusCode, '服务端返回格式不正确');
+      throw ApiException(200, '服务端返回格式不正确');
     }
     return decoded;
+  }
+
+  // [人工注释][S1-011] 物品失效前必须读取用户真实 Object 列表；这个 helper 只解析服务端列表，
+  // 不创建、猜测或补造 Object。
+  Future<List<Map<String, dynamic>>> _jsonListRequest(String path) async {
+    final decoded = _decodeResponse(await _request('GET', path));
+    if (decoded is! List<dynamic>) {
+      throw ApiException(200, '服务端返回格式不正确');
+    }
+    return decoded.map((item) {
+      if (item is! Map<String, dynamic>) {
+        throw ApiException(200, '服务端返回格式不正确');
+      }
+      return item;
+    }).toList();
   }
 }
