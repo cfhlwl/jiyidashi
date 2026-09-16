@@ -63,9 +63,10 @@ def pause_recording_until_today_ends(
     db: DbSession,
 ) -> PrivacyStatusResponse:
     # [人工注释][S1-023] “今天”必须按用户 IANA timezone 计算日界线，
-    # 客户端不能用设备时区自行猜测暂停结束时间。
+    # 并且 started_at 与 local day 必须来自同一个 UTC reference，避免午夜跨日竞态。
     now = datetime.now(UTC)
-    _, end_of_local_day = user_day_bounds_utc(db, user_id, local_today(db, user_id))
+    local_day = local_today(db, user_id, reference_utc=now)
+    _, end_of_local_day = user_day_bounds_utc(db, user_id, local_day)
     state = privacy_service.pause_recording(
         db,
         user_id,
