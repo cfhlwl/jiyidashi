@@ -9,6 +9,8 @@ const userB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 void main() {
   sqfliteFfiInit();
+  // [人工注释][S1-015] 单元测试使用 no-isolate FFI 工厂，避免测试 runner 被额外 SQLite worker isolate 挂住；生产 Android/iOS 仍使用 sqflite 原生实现。
+  final testDatabaseFactory = databaseFactoryFfiNoIsolate;
 
   late Directory tempDirectory;
   late String databasePath;
@@ -21,7 +23,7 @@ void main() {
   });
 
   tearDown(() async {
-    await databaseFactoryFfi.deleteDatabase(databasePath);
+    await testDatabaseFactory.deleteDatabase(databasePath);
     if (await tempDirectory.exists()) {
       await tempDirectory.delete(recursive: true);
     }
@@ -29,7 +31,7 @@ void main() {
 
   OfflineQueueStore createStore() {
     return OfflineQueueStore(
-      factory: databaseFactoryFfi,
+      factory: testDatabaseFactory,
       databasePathProvider: () async => databasePath,
     );
   }
@@ -223,7 +225,7 @@ void main() {
     );
     await store.close();
 
-    final database = await databaseFactoryFfi.openDatabase(databasePath);
+    final database = await testDatabaseFactory.openDatabase(databasePath);
     expect(await database.getVersion(), OfflineQueueStore.schemaVersion);
     await database.close();
   });
