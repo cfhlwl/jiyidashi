@@ -75,6 +75,23 @@ class JiYiApiClient {
     return _jsonRequest('GET', '/user');
   }
 
+  Future<Map<String, dynamic>> updateProfile({
+    required String nickname,
+    required String timezone,
+    String locale = 'zh-CN',
+  }) {
+    // [人工注释][S1-002] 时区修改只提交 IANA 名称，服务端再次校验后才影响自然日边界。
+    return _jsonRequest(
+      'PATCH',
+      '/user',
+      body: {
+        'nickname': nickname.trim(),
+        'timezone': timezone.trim(),
+        'locale': locale.trim(),
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> createTextMemory({
     String? title,
     required String content,
@@ -139,21 +156,23 @@ class JiYiApiClient {
     final headers = authenticated
         ? _headers
         : const {'Content-Type': 'application/json'};
-    late http.Response response;
     final encoded = body == null ? null : jsonEncode(body);
-    switch (method) {
-      case 'GET':
-        response = await _http.get(_uri(path), headers: headers);
-      case 'POST':
-        response = await _http.post(_uri(path), headers: headers, body: encoded);
-      default:
-        throw ArgumentError('Unsupported method: $method');
-    }
+    final response = switch (method) {
+      'GET' => await _http.get(_uri(path), headers: headers),
+      'POST' => await _http.post(_uri(path), headers: headers, body: encoded),
+      'PATCH' => await _http.patch(_uri(path), headers: headers, body: encoded),
+      _ => throw ArgumentError('Unsupported method: $method'),
+    };
 
-    final dynamic decoded = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    final dynamic decoded = response.body.isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = decoded is Map<String, dynamic> ? decoded['detail'] : null;
-      throw ApiException(response.statusCode, detail?.toString() ?? '请求失败');
+      throw ApiException(
+        response.statusCode,
+        detail?.toString() ?? '请求失败',
+      );
     }
     if (decoded is! Map<String, dynamic>) {
       throw ApiException(response.statusCode, '服务端返回格式不正确');
