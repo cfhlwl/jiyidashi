@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     Memory,
     MemorySource,
+    MemoryType,
     ObjectItem,
     ObjectLocation,
     ObjectLocationStatus,
@@ -15,28 +16,44 @@ from app.models import (
 )
 from app.schemas import Evidence, MemoryQueryResponse
 
-OBJECT_QUERY_MARKERS = ("在哪", "哪里", "放哪", "放在什么", "位置")
+OBJECT_LOCATION_MARKERS = (
+    "在哪",
+    "哪里",
+    "何处",
+    "什么地方",
+    "放哪",
+    "放在",
+    "位置",
+)
 CJK_RUN = re.compile(r"[\u3400-\u9fff]+")
 
 
-def _normalize_object_name(text: str) -> str:
-    value = text.strip()
-    value = re.sub(r"[？?。！!，,]", "", value)
-    value = re.sub(r"^(我的|我那|请问|帮我找一下|帮我找找)", "", value)
-    for phrase in (
-        "现在放在哪里",
-        "现在在哪里",
-        "放在哪里",
-        "放哪儿了",
-        "放哪了",
-        "在哪里",
-        "在哪儿",
-        "在哪",
-        "的位置",
-        "位置",
-    ):
-        value = value.replace(phrase, "")
-    return value.strip()
+def _compact_text(text: str) -> str:
+    value = text.strip().lower()
+    return re.sub(r"[\s？?。！!，,：:；;]+", "", value)
+
+
+def _has_object_location_intent(question: str) -> bool:
+    return any(marker in question for marker in OBJECT_LOCATION_MARKERS)
+
+
+def _matching_objects(db: Session, user_id: UUID, question: str) -> list[ObjectItem]:
+    # [人工注释][S1-011] “位置意图”和“是否真的存在匹配 Object”必须分开判断。
+    # 只有命中用户已有 Object 时才由结构化 CURRENT/STALE 状态接管；否则继续普通 Memory 搜索。
+    compact_question = _compact_text(question)
+    if not compact_question:
+        return []
+
+    objects = db.scalars(
+        select(ObjectItem).where(ObjectItem.user_id == user_id)
+    ).all()
+    matched = [
+        item
+        for item in objects
+        if _compact_text(item.name) and _compact_text(item.name) in compact_question
+    ]
+    matched.sort(key=lambda item: len(_compact_text(item.name)), reverse=True)
+    return matched
 
 
 def _eligible_memory_exists() -> exists:
@@ -99,10 +116,12 @@ def query_memory(
 ) -> MemoryQueryResponse:
     clean_question = question.strip()
 
-    if any(marker in clean_question for marker in OBJECT_QUERY_MARKERS):
-        # [人工注释][S1-011] 对象位置意图以结构化 CURRENT 状态为最终事实源。
-        # 一旦用户明确标记 STALE，就绝不能再回退普通 Memory 搜索泄漏历史位置。
-        return _find_object(db, user_id, clean_question)
+    if _has_object_location_intent(clean_question):
+        matched_objects = _matching_objects(db, user_id, clean_question)
+        if matched_objects:
+            # [人工注释][S1-011] 已有 Object + 位置意图时，结构化 CURRENT 状态是最终事实源。
+            # Object 存在但没有 CURRENT 必须直接 NO_EVIDENCE，严禁历史位置 Memory fallback。
+            return _find_object(db, user_id, matched_objects)
 
     return _search_memories(db, user_id, clean_question)
 
@@ -110,21 +129,8 @@ def query_memory(
 def _find_object(
     db: Session,
     user_id: UUID,
-    question: str,
+    objects: list[ObjectItem],
 ) -> MemoryQueryResponse:
-    object_name = _normalize_object_name(question)
-    if not object_name:
-        return _no_evidence("FIND_OBJECT")
-
-    objects = db.scalars(
-        select(ObjectItem).where(
-            ObjectItem.user_id == user_id,
-            or_(
-                ObjectItem.normalized_name == object_name.lower(),
-                ObjectItem.name.ilike(f"%{object_name}%"),
-            ),
-        )
-    ).all()
     if not objects:
         return _no_evidence("FIND_OBJECT")
 
@@ -187,6 +193,7 @@ def _search_memories(
         select(Memory)
         .where(
             Memory.user_id == user_id,
+            Memory.memory_type != MemoryType.OBJECT_LOCATION,
             Memory.is_deleted.is_(False),
             Memory.is_confirmed.is_(True),
             Memory.source_type != SourceType.AI_INFERENCE,
@@ -200,6 +207,8 @@ def _search_memories(
     if not candidates:
         return _no_evidence("MEMORY_SEARCH")
 
+    # [人工注释][S1-011] OBJECT_LOCATION backing Memory 不参与普通搜索。
+    # 历史位置只能由结构化状态解释，避免 STALE/UNKNOWN 位置重新承担“当前位置事实源”。
     ranked = sorted(
         candidates,
         key=lambda item: (_term_score(item.content, terms), _sort_datetime(item.occurred_at)),
