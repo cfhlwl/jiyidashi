@@ -238,7 +238,9 @@ def mark_object_location_stale(
     if location is None:
         raise HTTPException(status_code=404, detail="OBJECT_LOCATION_NOT_FOUND")
 
-    invalidated_at = max(datetime.now(UTC), ensure_utc(location.recorded_at))
+    # [人工注释][S1-011] 水位严格取用户执行失效操作的服务器时间 T；
+    # 不能受旧客户端未来 recorded_at 影响，否则可能把合法的新位置长期误判为旧数据。
+    invalidated_at = datetime.now(UTC)
     location.status = ObjectLocationStatus.STALE
     db.flush()
 
