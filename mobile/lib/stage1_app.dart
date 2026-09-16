@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
+import 'offline_queue.dart';
 
 class JiYiApp extends StatefulWidget {
-  const JiYiApp({super.key, this.api});
+  const JiYiApp({super.key, this.api, this.offlineQueue});
 
   final JiYiApiClient? api;
+  final OfflineQueueStore? offlineQueue;
 
   @override
   State<JiYiApp> createState() => _JiYiAppState();
@@ -13,7 +17,19 @@ class JiYiApp extends StatefulWidget {
 
 class _JiYiAppState extends State<JiYiApp> {
   late final JiYiApiClient api = widget.api ?? JiYiApiClient();
+  // [人工注释][S1-015] App 级共享一个 SQLite queue store；测试可注入独立数据库，生产默认使用系统数据库目录。
+  late final OfflineQueueStore offlineQueue =
+      widget.offlineQueue ?? OfflineQueueStore();
   bool authenticated = false;
+
+  @override
+  void dispose() {
+    // [人工注释][S1-015] 只关闭本组件自己创建的数据库句柄；外部注入 Store 的生命周期由调用方负责。
+    if (widget.offlineQueue == null) {
+      unawaited(offlineQueue.close());
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +44,7 @@ class _JiYiAppState extends State<JiYiApp> {
       home: authenticated
           ? AppShell(
               api: api,
+              offlineQueue: offlineQueue,
               onLogout: () {
                 api.logout();
                 setState(() => authenticated = false);
@@ -184,9 +201,15 @@ class _AuthPageState extends State<AuthPage> {
 }
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.api, required this.onLogout});
+  const AppShell({
+    super.key,
+    required this.api,
+    required this.offlineQueue,
+    required this.onLogout,
+  });
 
   final JiYiApiClient api;
+  final OfflineQueueStore offlineQueue;
   final VoidCallback onLogout;
 
   @override
@@ -201,7 +224,7 @@ class _AppShellState extends State<AppShell> {
     final pages = <Widget>[
       const TodayPage(),
       const TimelinePage(),
-      CapturePage(api: widget.api),
+      CapturePage(api: widget.api, offlineQueue: widget.offlineQueue),
       MemoryQueryPage(api: widget.api),
       ProfilePage(api: widget.api, onLogout: widget.onLogout),
     ];
@@ -276,9 +299,14 @@ class TimelinePage extends StatelessWidget {
 }
 
 class CapturePage extends StatefulWidget {
-  const CapturePage({super.key, required this.api});
+  const CapturePage({
+    super.key,
+    required this.api,
+    required this.offlineQueue,
+  });
 
   final JiYiApiClient api;
+  final OfflineQueueStore offlineQueue;
 
   @override
   State<CapturePage> createState() => _CapturePageState();
@@ -291,6 +319,13 @@ class _CapturePageState extends State<CapturePage> {
   final locationController = TextEditingController();
   bool loading = false;
   String? result;
+  int offlinePendingCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refreshOfflinePendingCount());
+  }
 
   @override
   void dispose() {
@@ -301,16 +336,74 @@ class _CapturePageState extends State<CapturePage> {
     super.dispose();
   }
 
+  // [人工注释][S1-015] 本地队列只能使用当前认证响应里的真实 user_id；缺失身份时拒绝访问，避免无归属或跨账号记录。
+  String get _ownerUserId {
+    final userId = widget.api.authenticatedUserId;
+    if (userId == null || userId.trim().isEmpty) {
+      throw StateError('Authenticated user ID is required for offline storage');
+    }
+    return userId;
+  }
+
+  // [人工注释][S1-016] 待发送数量按当前 user_id 直接来自 SQLite；重启后仍能恢复，同时不暴露同机其他账号记录。
+  Future<void> _refreshOfflinePendingCount() async {
+    try {
+      final count = await widget.offlineQueue.countAwaitingDelivery(_ownerUserId);
+      if (mounted) setState(() => offlinePendingCount = count);
+    } catch (_) {
+      // [人工注释][S1-016] 计数展示失败不能把真实录入流程伪装成功；保存动作仍会单独报告 SQLite 写入结果。
+    }
+  }
+
   Future<void> saveTextMemory() async {
-    if (contentController.text.trim().isEmpty) return;
-    await _run(() async {
-      final memory = await widget.api.createTextMemory(
-        title: titleController.text,
-        content: contentController.text,
-      );
-      contentController.clear();
-      return '✓ 已记住 · ${memory['id']}';
+    final content = contentController.text.trim();
+    if (content.isEmpty) return;
+    final title = titleController.text.trim();
+    setState(() {
+      loading = true;
+      result = null;
     });
+    try {
+      final memory = await widget.api.createTextMemory(
+        title: title,
+        content: content,
+      );
+      titleController.clear();
+      contentController.clear();
+      setState(() => result = '✓ 已记住 · ${memory['id']}');
+    } on ApiException catch (exc) {
+      // [人工注释][S1-016] 服务端已明确返回的认证/校验/业务错误不是“离线”；禁止把真实失败转成本地假成功。
+      setState(() => result = '操作失败：${exc.message}');
+    } on TransportException catch (_) {
+      // [人工注释][S1-016] 只有底层明确分类的 transport/timeout 才能进入 SQLite；协议解析和客户端异常禁止走 fallback。
+      try {
+        // [人工注释][S1-015] transport 失败时先按当前 user_id await SQLite 持久化成功，再清输入并显示本地保存。
+        final queued = await widget.offlineQueue.enqueueTextMemory(
+          ownerUserId: _ownerUserId,
+          title: title,
+          content: content,
+        );
+        titleController.clear();
+        contentController.clear();
+        await _refreshOfflinePendingCount();
+        if (mounted) {
+          setState(() => result =
+              '✓ 已保存到本机，待联网后发送 · ${queued.clientUuid}');
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() => result = '操作失败：无法连接服务器，且本地保存失败');
+        }
+      }
+    } on ProtocolException catch (exc) {
+      // [人工注释][S1-016] 响应已到达但协议不可解析时显式失败，避免服务端已 commit 后再次排队。
+      setState(() => result = '操作失败：${exc.message}');
+    } catch (_) {
+      // [人工注释][S1-016] 未分类客户端异常一律 fail closed；catch-all 不再承担 offline fallback。
+      setState(() => result = '操作失败：客户端处理异常');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
   }
 
   Future<void> saveObjectLocation() async {
@@ -360,6 +453,14 @@ class _CapturePageState extends State<CapturePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (offlinePendingCount > 0) ...[
+            // [人工注释][S1-016] 本批只展示当前账号的本机待发送事实，不提供“立即同步”按钮，避免越界实现 S1-017。
+            _InfoCard(
+              title: '本机待发送',
+              detail: '有 $offlinePendingCount 条记录已安全保存在本机，等待后续联网同步。',
+            ),
+            const SizedBox(height: 12),
+          ],
           Card(
             elevation: 0,
             child: Padding(

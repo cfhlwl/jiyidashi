@@ -233,4 +233,36 @@ void main() {
       'POST /v1/privacy/resume',
     ]);
   });
+
+  test('transport and malformed responses keep strict exception classes', () async {
+    // [人工注释][S1-016] 真 transport 可离线；2xx 坏 JSON 是 ProtocolException；非 2xx 坏 body 仍是 ApiException。
+    final transportApi = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        throw http.ClientException('connection reset', request.url);
+      }),
+    );
+    await expectLater(
+      transportApi.login(email: 'u@example.test', password: 'password-123'),
+      throwsA(isA<TransportException>()),
+    );
+
+    final malformed200 = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((_) async => http.Response('{bad-json', 200)),
+    );
+    await expectLater(
+      malformed200.login(email: 'u@example.test', password: 'password-123'),
+      throwsA(isA<ProtocolException>()),
+    );
+
+    final malformed502 = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((_) async => http.Response('<html>bad</html>', 502)),
+    );
+    await expectLater(
+      malformed502.login(email: 'u@example.test', password: 'password-123'),
+      throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', 502)),
+    );
+  });
 }
