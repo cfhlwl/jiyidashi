@@ -3,7 +3,7 @@
 <!-- [人工注释][S1-FIX-002][S1-FIX-003] 第二轮修复补充真实 Evidence 来源契约与正式认证滥用保护。 -->
 <!-- [人工注释][S1-011][S1-019][S1-023][S1-024] Stage 1 第二批补齐位置失效、单条删除、暂停今天与手动恢复控制语义。 -->
 <!-- [人工注释][S1-PR3-FIX-001][S1-PR3-FIX-002][S1-PR3-FIX-003] PR #3 第一轮 HOLD 后补充 Object 匹配路由、失效时间水位与 pause/today 单时钟语义。 -->
-<!-- [人工注释][S1-005][S1-006] Stage 1 第三批 A 线冻结私有 staging->final 媒体协议、READY 校验、图片 Memory 与 Evidence 关联协议。 -->
+<!-- [人工注释][S1-005][S1-006] Stage 1 第三批 A 线冻结私有 staging->final 媒体协议、真实图片签名校验、commit-safe READY 与 Evidence 关联协议。 -->
 # V1 API 基线
 
 Base path:
@@ -154,7 +154,9 @@ POST /v1/media/{media_id}/download
 POST /v1/media/{media_id}/memory
 ```
 
-媒体桶必须保持**私有**。服务端数据库保存私有 staging / final object key，公开 API 永远不返回这些 key 或永久公开 URL，也不允许客户端提交 bucket / endpoint / object key。COS / OSS 通过服务端 `STORAGE_BACKEND=s3` 的 SigV4 兼容配置接入；Mini / Flutter 只消费本节统一协议。
+媒体桶必须保持**私有**。服务端数据库保存私有 staging / final object key，公开 API 永远不返回这些 key、内部 `storage_etag` 或永久公开 URL，也不允许客户端提交 bucket / endpoint / object key。COS / OSS 通过服务端 `STORAGE_BACKEND=s3` 的 SigV4 兼容配置接入；Mini / Flutter 只消费本节统一协议。
+
+生产环境使用自定义 `STORAGE_ENDPOINT_URL` 时必须是 `https://`；development / test 可为本地 MinIO 等显式使用 HTTP。没有自定义 endpoint 时由 SDK 按 provider / region 生成标准 endpoint。
 
 ### 1. 创建临时上传
 
@@ -185,7 +187,6 @@ Stage 1 当前只接受 `IMAGE`，支持 `image/jpeg`、`image/png`、`image/web
   "content_type": "image/jpeg",
   "size_bytes": 284921,
   "original_filename": "IMG_1001.jpg",
-  "storage_etag": null,
   "created_at": "2026-09-16T10:00:00Z",
   "completed_at": null,
   "upload": {
@@ -213,9 +214,11 @@ POST /v1/media/33333333-3333-3333-3333-333333333333/complete
 
 1. 用当前用户归属找到服务端持久化的 staging key。
 2. HEAD staging，校验实际尺寸与 Content-Type。
-3. 使用服务端对象存储凭证把 staging COPY / promote 到独立 final key。
-4. HEAD final 再次校验尺寸与 Content-Type。
-5. 只有 final 校验成功才写 `READY` / final ETag，并尽力清理 staging。
+3. Range 读取 staging 的极小文件头，验证真实图片签名；JPEG / PNG / WebP 按 magic bytes，HEIC / HEIF 按 ISO-BMFF `ftyp` brand 校验。本步骤只判断文件容器/类型，**不做 OCR、Vision 或任何图片语义分析**。
+4. 使用服务端对象存储凭证把 staging COPY / promote 到独立 final key。
+5. HEAD final 再次校验尺寸与 Content-Type，并再次 Range 读取 final 文件头验证图片签名，封住“staging 校验后、COPY 前旧 PUT 改写”的竞态。
+6. final 全部校验成功后，数据库事务写 `READY` 与内部 final ETag，并执行 `commit`。
+7. **只有数据库 commit 成功后**才 best-effort 删除 staging。若 commit 失败，数据库保持 `PENDING`、staging 保留，final 可以已存在；再次调用 `complete` 可重新校验/晋升并恢复成功。
 
 这样即使旧 PUT 签名在 `READY` 后尚未到期，它也只能改写 staging，不能覆盖已经作为 Evidence 的 final 对象。下载与 Evidence 永远只引用 final key。
 
@@ -224,11 +227,12 @@ POST /v1/media/33333333-3333-3333-3333-333333333333/complete
 - staging 对象不存在：`409 MEDIA_OBJECT_NOT_FOUND`
 - 实际尺寸不符：`409 MEDIA_OBJECT_SIZE_MISMATCH`
 - 实际 Content-Type 不符：`409 MEDIA_OBJECT_TYPE_MISMATCH`
+- 声明图片类型但实际文件头不匹配：`409 MEDIA_IMAGE_INVALID`
 - staging -> final 晋升后 final 不可读取：`503 MEDIA_PROMOTION_FAILED`
 - 对象存储不可用：`503 MEDIA_STORAGE_UNAVAILABLE`
 - 媒体不属于当前用户：统一 `404 MEDIA_NOT_FOUND`
 
-客户端“上传成功”的声明本身不能升级可信等级，只有服务端完成上述 staging -> final 校验流程后状态才会变为 `READY`。
+客户端“上传成功”的声明和客户端提供的 MIME 元数据本身都不能升级可信等级；只有服务端完成尺寸、类型、真实文件签名、staging → final 与数据库 commit 后状态才会成为 `READY`。
 
 ### 3. 创建图片 Memory / Evidence
 
