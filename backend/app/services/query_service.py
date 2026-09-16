@@ -100,9 +100,9 @@ def query_memory(
     clean_question = question.strip()
 
     if any(marker in clean_question for marker in OBJECT_QUERY_MARKERS):
-        result = _find_object(db, user_id, clean_question)
-        if result.can_answer:
-            return result
+        # [人工注释][S1-011] 对象位置意图以结构化 CURRENT 状态为最终事实源。
+        # 一旦用户明确标记 STALE，就绝不能再回退普通 Memory 搜索泄漏历史位置。
+        return _find_object(db, user_id, clean_question)
 
     return _search_memories(db, user_id, clean_question)
 
