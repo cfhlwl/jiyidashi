@@ -35,7 +35,11 @@ def _require_iana_timezone(value: str) -> str:
 
 
 TimezoneAwareDateTime = Annotated[datetime, AfterValidator(_require_timezone_aware_datetime)]
-TimezoneName = Annotated[str, Field(min_length=1, max_length=64), AfterValidator(_require_iana_timezone)]
+TimezoneName = Annotated[
+    str,
+    Field(min_length=1, max_length=64),
+    AfterValidator(_require_iana_timezone),
+]
 
 
 class ORMModel(BaseModel):
