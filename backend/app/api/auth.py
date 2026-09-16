@@ -17,7 +17,8 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def _client_ip(request: Request) -> str:
-    # [人工注释][S1-FIX-003] 认证限流只使用 ASGI 已解析的 client host，不信任可由客户端伪造的普通请求头。
+    # [人工注释][S1-FIX-003] 只使用 ASGI 已解析的 client host；
+    # 不信任客户端可自行伪造的普通转发请求头。
     return request.client.host if request.client is not None else "unknown"
 
 
