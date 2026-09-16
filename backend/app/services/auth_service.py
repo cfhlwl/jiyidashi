@@ -39,15 +39,17 @@ def register_email_password(db: Session, payload: RegisterRequest) -> User:
         timezone=payload.timezone,
         locale=payload.locale,
     )
-    identity = AuthIdentity(
-        user_id=user.id,
-        provider=AuthProvider.EMAIL_PASSWORD,
-        subject=subject,
-        secret_hash=_password_hasher.hash(payload.password),
-    )
     db.add(user)
-    db.add(identity)
     try:
+        # [人工注释][S1-001] User.id 是 ORM insert-time default，必须先 flush 后再建立身份外键。
+        db.flush()
+        identity = AuthIdentity(
+            user_id=user.id,
+            provider=AuthProvider.EMAIL_PASSWORD,
+            subject=subject,
+            secret_hash=_password_hasher.hash(payload.password),
+        )
+        db.add(identity)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
