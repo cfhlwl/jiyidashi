@@ -336,13 +336,22 @@ class _CapturePageState extends State<CapturePage> {
     super.dispose();
   }
 
-  // [人工注释][S1-016] 待发送数量直接来自 SQLite；App 重启后仍能看到未完成本地记录，而不是依赖内存计数。
+  // [人工注释][S1-015] 本地队列只能使用当前认证响应里的真实 user_id；缺失身份时拒绝访问，避免无归属或跨账号记录。
+  String get _ownerUserId {
+    final userId = widget.api.authenticatedUserId;
+    if (userId == null || userId.trim().isEmpty) {
+      throw StateError('Authenticated user ID is required for offline storage');
+    }
+    return userId;
+  }
+
+  // [人工注释][S1-016] 待发送数量按当前 user_id 直接来自 SQLite；重启后仍能恢复，同时不暴露同机其他账号记录。
   Future<void> _refreshOfflinePendingCount() async {
     try {
-      final count = await widget.offlineQueue.countAwaitingDelivery();
+      final count = await widget.offlineQueue.countAwaitingDelivery(_ownerUserId);
       if (mounted) setState(() => offlinePendingCount = count);
     } catch (_) {
-      // 计数展示失败不能把真实录入流程伪装成功；保存动作仍会单独报告 SQLite 写入结果。
+      // [人工注释][S1-016] 计数展示失败不能把真实录入流程伪装成功；保存动作仍会单独报告 SQLite 写入结果。
     }
   }
 
@@ -367,8 +376,9 @@ class _CapturePageState extends State<CapturePage> {
       setState(() => result = '操作失败：${exc.message}');
     } catch (_) {
       try {
-        // [人工注释][S1-015] 连接层失败时先 await SQLite 持久化成功，再清输入框并展示“已保存到本机”。
+        // [人工注释][S1-015] 连接层失败时先按当前 user_id await SQLite 持久化成功，再清输入框并展示“已保存到本机”。
         final queued = await widget.offlineQueue.enqueueTextMemory(
+          ownerUserId: _ownerUserId,
           title: title,
           content: content,
         );
@@ -439,7 +449,7 @@ class _CapturePageState extends State<CapturePage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (offlinePendingCount > 0) ...[
-            // [人工注释][S1-016] 本批只展示本机待发送事实，不提供“立即同步”按钮，避免越界实现 S1-017。
+            // [人工注释][S1-016] 本批只展示当前账号的本机待发送事实，不提供“立即同步”按钮，避免越界实现 S1-017。
             _InfoCard(
               title: '本机待发送',
               detail: '有 $offlinePendingCount 条记录已安全保存在本机，等待后续联网同步。',
