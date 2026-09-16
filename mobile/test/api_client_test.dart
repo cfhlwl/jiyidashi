@@ -123,6 +123,7 @@ void main() {
 
     // [人工注释][S1-014] 客户端契约必须保留服务端 Evidence，不能只剩自由文本答案。
     final evidence = result['evidence'] as List<dynamic>;
+    expect(result['can_answer'], isTrue);
     expect(result['certainty'], 'confirmed');
     expect(evidence, hasLength(1));
     expect(
