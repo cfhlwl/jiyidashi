@@ -35,3 +35,49 @@ page {
 .muted {
   color: #78817c;
 }
+
+.field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 82rpx;
+  margin: 18rpx 0;
+  padding: 18rpx 20rpx;
+  border: 2rpx solid #dce3df;
+  border-radius: 16rpx;
+  background: #ffffff;
+}
+
+.textarea {
+  min-height: 180rpx;
+}
+
+.primary-button {
+  margin-top: 18rpx;
+  background: #446a57;
+  color: #ffffff;
+  border-radius: 18rpx;
+}
+
+.secondary-button {
+  margin-top: 18rpx;
+  background: #edf3ef;
+  color: #294637;
+  border-radius: 18rpx;
+}
+
+.status {
+  margin-top: 18rpx;
+  color: #446a57;
+}
+
+.error {
+  margin-top: 18rpx;
+  color: #b3261e;
+}
+
+.evidence {
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid #eef1ef;
+}
