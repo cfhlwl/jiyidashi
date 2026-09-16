@@ -215,7 +215,7 @@ B 线正式审查：生产 HEAD `d1351f61`；第二轮窄范围复审确认 0 P0
 
 | ID | 优先级 | 问题 | 状态 | 当前结果 |
 | --- | --- | --- | --- | --- |
-| S1-PR6-FIX-001 | P1 | catch-all 客户端异常被误判为离线并写入 SQLite | ✅ | 第二轮窄范围复审 PASS；底层仅 `http.ClientException` / `TimeoutException` 映射为 `TransportException`，2xx malformed/结构错误为 `ProtocolException`，非 2xx malformed 仍为 `ApiException`；UI 仅 TransportException 可入队 |
+| S1-PR6-FIX-001 | P1 | catch-all 客户端异常被误判为离线并写入 SQLite | 🟠 | 第二轮窄范围复审 PASS；底层仅 `http.ClientException` / `TimeoutException` 映射为 `TransportException`，2xx malformed/结构错误为 `ProtocolException`，非 2xx malformed 仍为 `ApiException`；UI 仅 TransportException 可入队；随 PR #6 待合并 |
 
 > 第二轮窄范围复审结论：**PASS / READY FOR FINAL MERGE PROCESS**。`S1-015` / `S1-016` 当前 🟠 待合并；`S1-017` 保持 ⬜。已知 response-loss/unknown-commit 边界留到 S1-017 使用 `client_uuid + 服务端幂等` 处理，不构成 PR #6 阻塞项。
 
