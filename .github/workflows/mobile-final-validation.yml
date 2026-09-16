@@ -1,0 +1,102 @@
+name: mobile-final-validation
+
+on:
+  push:
+    branches:
+      - feat/stage1-mobile-offline
+    paths:
+      - ".github/workflows/mobile-final-validation.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-final-head:
+    runs-on: ubuntu-latest
+    outputs:
+      final_sha: ${{ steps.final.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/stage1-mobile-offline
+
+      # [人工注释][S1-015][S1-016] 先自删临时验收 workflow 并提交，后续 Android/iOS 均显式 checkout 该干净最终 SHA。
+      - id: final
+        name: Create clean final head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "cfhlwl"
+          git config user.email "57704371+cfhlwl@users.noreply.github.com"
+          git rm .github/workflows/mobile-final-validation.yml
+          git commit -m "ci: finalize Flutter offline validation head"
+          FINAL_SHA="$(git rev-parse HEAD)"
+          git push origin HEAD:feat/stage1-mobile-offline
+          echo "sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
+          echo "FINAL_SHA=$FINAL_SHA"
+
+  android:
+    needs: prepare-final-head
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-final-head.outputs.final_sha }}
+
+      - name: Verify final SHA
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ needs.prepare-final-head.outputs.final_sha }}"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build Android debug APK
+        run: >-
+          flutter build apk --debug
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
+
+  ios:
+    needs: prepare-final-head
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-final-head.outputs.final_sha }}
+
+      - name: Verify final SHA
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ needs.prepare-final-head.outputs.final_sha }}"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build iOS without codesigning
+        run: >-
+          flutter build ios --debug --no-codesign
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
