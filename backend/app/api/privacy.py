@@ -9,6 +9,7 @@ from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.schemas import PrivacyPauseRequest, PrivacyStatusResponse
 from app.services import privacy_service
+from app.services.time_service import local_today, user_day_bounds_utc
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -56,8 +57,30 @@ def pause_recording(
     return _response(state)
 
 
+@router.post("/pause/today", response_model=PrivacyStatusResponse)
+def pause_recording_until_today_ends(
+    user_id: CurrentUser,
+    db: DbSession,
+) -> PrivacyStatusResponse:
+    # [人工注释][S1-023] “今天”必须按用户 IANA timezone 计算日界线，
+    # 客户端不能用设备时区自行猜测暂停结束时间。
+    now = datetime.now(UTC)
+    _, end_of_local_day = user_day_bounds_utc(db, user_id, local_today(db, user_id))
+    state = privacy_service.pause_recording(
+        db,
+        user_id,
+        started_at=now,
+        ended_at=end_of_local_day,
+    )
+    db.commit()
+    db.refresh(state)
+    return _response(state)
+
+
 @router.post("/resume", response_model=PrivacyStatusResponse)
 def resume_recording(user_id: CurrentUser, db: DbSession) -> PrivacyStatusResponse:
+    # [人工注释][S1-024] 手动恢复只关闭当前 pause interval；历史暂停区间仍保留，
+    # 因而暂停期间产生的自动位置点以后补传仍会被服务端拒绝。
     state = privacy_service.resume_recording(db, user_id, resumed_at=datetime.now(UTC))
     db.commit()
     db.refresh(state)
