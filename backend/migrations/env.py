@@ -3,7 +3,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app import auth_models, models  # noqa: F401
+# [人工注释][S1-006] Alembic 显式加载媒体模型，保证 media_assets 与
+# media_evidence_links 进入正式 schema drift gate。
+from app import auth_models, media_models, models  # noqa: F401
 from app.core.config import get_settings
 from app.core.db import Base
 

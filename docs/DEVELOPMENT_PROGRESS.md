@@ -7,12 +7,14 @@
 <!-- [人工注释][DOC-PROGRESS-014] PR #3 第二轮原 2 P1 + 2 P2 全部关闭，新发现 P1 S1-PR3-FIX-005 已完成唯一 Object 解析窄修；生产代码 HEAD 1b0bf994 通过 Backend 41/41、Mobile、Mini Program 全量门禁，进入第三轮窄范围最终复审。 -->
 <!-- [人工注释][DOC-PROGRESS-015] PR #3 第三轮最终复审 PASS，并已合并 main=52ef68f4；Stage 1 第二批正式完成，Stage 2 继续未开始。 -->
 <!-- [人工注释][DOC-PROGRESS-016] Stage 1 第三批采用四工作线并行开发；统一基于 main=e98c99de 排期，当前仅完成任务拆分与依赖记录，尚未启动功能开发，Stage 2 继续未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-017] A：Backend Media 已在 PR #7 完成 S1-006 + S1-005 后端媒体/Evidence 第一阶段实现并通过 Backend 全量门禁，状态进入待正式审查；OCR/Vision/ASR/Stage 2 均未启动。 -->
+<!-- [人工注释][DOC-PROGRESS-018] PR #7 第一轮预审 HOLD 的 3 个 P1 + 2 个 P2 已完成窄修；生产代码 HEAD 13cd13f3 通过 Backend 全量门禁与 pytest 53/53，A 线恢复 🟠 待第二轮审查；OCR/Vision/ASR/Stage 2 继续未启动。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-16  
-> 当前阶段：Stage 1「记得住」第三批并行开发已排期、待启动；Stage 2 未开始  
-> 当前开发基线：`main=e98c99de30a0cb3e09998bc39b4b543f2007e8e2`  
-> 当前 PR：无；PR #3 已合并，第三批尚未创建功能 PR
+> 当前阶段：Stage 1「记得住」第三批并行开发进行中；A：Backend Media 第一轮预审修复已完成并待第二轮审查；Stage 2 未开始  
+> 当前开发基线：`main=b09a3981e12904fe488a623b1a5e1ee1314af6a8`  
+> 当前 PR：#7 `feat/stage1-media-pipeline`（Draft，第一轮 3P1+2P2 已修，待第二轮审查）
 
 ## 状态规则
 
@@ -36,8 +38,8 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并 `main=52ef68f4`；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | ⬜ | 并行工作线、依赖和分支方案已记录；尚未启动代码开发 |
-| CI-001 | Backend CI | ✅ | 最终 PR HEAD `7319d493`：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 41/41 PASS |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A：Backend Media 第一轮修复后恢复 🟠 待第二轮审查；其余第三批工作线仍按独立分支推进 |
+| CI-001 | Backend CI | ✅ | PR #7 生产 HEAD `13cd13f3`：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 53/53 PASS |
 | CI-002 | Flutter Android CI | ✅ | 最终 PR HEAD `7319d493`：analyze + tests + production-config debug APK build PASS |
 | CI-003 | Flutter iOS CI | ✅ | 最终 PR HEAD `7319d493`：production-config `flutter build ios --debug --no-codesign` PASS |
 | CI-004 | 微信小程序 CI | ✅ | 最终 PR HEAD `7319d493`：`npm ci` + TypeScript + production Taro WeChat build PASS |
@@ -88,9 +90,9 @@
 | S1-002 | 用户资料与时区设置 | ✅ | trim-before-validation、IANA timezone |
 | S1-003 | 文字记忆录入 | ✅ | Flutter / 小程序接真实 Memory API，仅声明 `USER_TEXT` |
 | S1-004 | 语音记忆录入 | ⬜ | 录音、上传、ASR、Evidence |
-| S1-005 | 图片记忆录入 | ⬜ | 主动拍照 / 主动选择，不默认全相册扫描 |
-| S1-006 | COS / OSS 对象存储直传 | ⬜ | 私有桶 + 临时签名 URL |
-| S1-007 | ASR 语音转写 | ⬜ | 原始音频保留为证据 |
+| S1-005 | 图片记忆录入 | 🔵 | A 线后端媒体/Evidence 第一轮修复已通过 53/53，待第二轮审查；主动拍照/选图客户端仍由 C 线实现 |
+| S1-006 | COS / OSS 对象存储直传 | 🟠 | PR #7 第一轮 3P1+2P2 已修：commit-safe staging 清理、生产 HTTPS、真实图片签名、create_schema 显式媒体模型、公共 ETag 移除；待第二轮审查/合并 |
+| S1-007 | ASR 语音转写 | ⬜ | 原始音频保留为证据；本 PR 未启动 |
 | S1-008 | “帮我记住”统一入口 | ⬜ | 文字 / 语音 / 拍照统一进入 Memory Pipeline |
 | S1-009 | “东西在哪”物品录入 | ✅ | Object create 并发竞争已幂等兜底 |
 | S1-010 | “东西在哪”查询 | ✅ | 返回真实 Evidence `source_type` / `memory_source_id` |
@@ -139,7 +141,7 @@
 
 ### 2.3.1 统一基线与硬规则
 
-- 所有第三批开发分支统一从 `main=e98c99de30a0cb3e09998bc39b4b543f2007e8e2` 创建；不得从 PR #3 旧分支继续开发。
+- 所有第三批开发分支统一从对应任务启动时确认的最新 `main` 创建；A 线实际基线为 `main=b09a3981e12904fe488a623b1a5e1ee1314af6a8`。
 - 一个任务组一个独立分支、一个独立 PR；禁止建立一个包含全部第三批功能的“大 Stage 1 分支”。
 - 手工新增或修改的语义代码块继续使用 `[人工注释][TASK-ID]`；自动生成文件、lockfile、严格 JSON 等按既有豁免规则处理。
 - 公共 API / schema / Evidence 协议先冻结再让多端并行；任何工作线需要修改共享协议时，必须先记录并通知其他工作线，禁止各端自行发明字段。
@@ -150,10 +152,12 @@
 
 | 工作线 | 第一阶段任务 | 计划分支 / PR | 允许范围 | 关键依赖 | 当前状态 |
 | --- | --- | --- | --- | --- | --- |
-| A：Backend Media | `S1-006` + `S1-005` 后端媒体/Evidence 基础 | `feat/stage1-media-pipeline` | 私有对象存储、临时签名上传/下载、媒体元数据、图片 Evidence、Backend tests、API 文档 | 先冻结媒体上传协议；不得引入 Stage 3 OCR/Vision | ⬜ 待启动 |
+| A：Backend Media | `S1-006` + `S1-005` 后端媒体/Evidence 基础 | `feat/stage1-media-pipeline` / PR #7 | 私有对象存储、临时签名上传/下载、媒体元数据、图片 Evidence、Backend tests、API 文档 | 媒体协议已冻结为 staging→final；第一轮 3P1+2P2 已窄修；未引入 OCR/Vision/ASR/Stage 2 | 🟠 待第二轮审查 |
 | B：Flutter Offline | `S1-015` + `S1-016` | `feat/stage1-mobile-offline` | Android/iOS 本地 SQLite、离线队列、状态机、重启恢复、Flutter tests | 可立即独立推进；`S1-017` 同步协议后置 | ⬜ 待启动 |
 | C：Mini Capture | `S1-005` 小程序主动拍照/选图 + `S1-004` 录音 UI/权限壳 | `feat/stage1-miniprogram-capture` | 小程序页面、权限、文件选择/录音适配、上传客户端；禁止假 API/假成功 | 媒体提交字段必须使用 A 冻结协议；真实语音提交等待 `S1-007` | ⬜ 待启动 |
 | D：Data & Quality | `S1-020` 数据导出；`CI-005` UI Visual Preview | `feat/stage1-data-export`；`ci/ui-visual-preview` | 用户数据导出、授权边界、导出测试；Flutter Golden/视觉产物 CI | 与 A/B/C 冲突较少，两个任务仍各自独立 PR | ⬜ 待启动 |
+
+A 线当前自动验收：生产代码 HEAD `13cd13f3`；Ruff PASS；SQLite migration PASS；PostgreSQL migration PASS；`alembic check` PASS；PostgreSQL ObjectLocation invariants PASS；pytest **53/53 PASS**。PR #7 继续保持 Draft，等待第二轮人工审查，不自动合并。
 
 ### 2.3.3 第二阶段接续任务
 
@@ -188,6 +192,18 @@
 - CI workflow 文件。
 
 原则：**共享协议只允许一个 PR 定义，其他 PR 只消费；如确需修改，先 rebase 最新 `main` 并重新做跨端契约审查。**
+
+### 2.3.6 PR #7 第一轮预审修复项
+
+| ID | 优先级 | 问题 | 状态 | 当前结果 |
+| --- | --- | --- | --- | --- |
+| S1-PR7-FIX-001 | P1 | READY commit 前删除 staging，commit 失败后无法恢复 | 🟠 | 已改为 READY commit 成功后才 best-effort 清 staging；commit-failure 回归确认 DB=PENDING、staging 保留、final 可存在且重试可恢复 |
+| S1-PR7-FIX-002 | P1 | production 自定义对象存储 endpoint 可使用 HTTP | 🟠 | production/prod + S3 + custom endpoint 强制 HTTPS；development/test 仍允许本地 HTTP |
+| S1-PR7-FIX-003 | P1 | READY 只验证 size/MIME，不能证明真实图片 | 🟠 | staging 与 final 均做小范围文件头校验；JPEG/PNG/WebP magic bytes、HEIC/HEIF `ftyp` brand；非法对象返回 `MEDIA_IMAGE_INVALID` 且保持 PENDING |
+| S1-PR7-FIX-004 | P2 | `create_schema()` 依赖偶然 import 顺序加载媒体模型 | 🟠 | 已显式 import `media_models`，与 Alembic drift gate 语义对齐 |
+| S1-PR7-FIX-005 | P2 | 公共 `MediaRead` 暴露内部 `storage_etag` | 🟠 | DB 内部 ETag 保留；公开 Media API 已移除该字段，客户端继续只依赖 opaque `media_id` |
+
+> 第一轮修复生产代码范围：`c553b121..13cd13f3`。上述 5 项已在同一生产 HEAD 通过 Backend 全量门禁，状态为“已修复、待第二轮人工确认”，尚未合并 main，因此不标记 ✅。
 
 ---
 
@@ -299,9 +315,9 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| SEC-001 | HTTPS / TLS | ⬜ | 上线前强制 |
-| SEC-002 | 对象存储私有桶 | ⬜ | 禁止公开文件 URL |
-| SEC-003 | 临时签名下载 URL | ⬜ | 到期失效 |
+| SEC-001 | HTTPS / TLS | ⬜ | 上线前强制；PR #7 已额外强制 production 自定义对象存储 endpoint 使用 HTTPS |
+| SEC-002 | 对象存储私有桶 | 🟠 | PR #7 已按私有桶 + 服务端 key + fail-closed 设计实现，且 READY 前验证真实图片文件头；待第二轮审查/部署 |
+| SEC-003 | 临时签名下载 URL | 🟠 | PR #7 已实现短时 PUT/GET，GET 仅对 owner 的 READY final 对象签发；staging 仅在 READY commit 成功后清理，待第二轮审查 |
 | SEC-004 | 敏感数据权限隔离 | ⬜ | 位置 / 健康 / 家庭 / 生物识别分级 |
 | SEC-005 | 服务端访问审计 | ⬜ | 敏感数据查询留痕 |
 | SEC-006 | 数据导出 | ⬜ | 用户数据可迁移 |

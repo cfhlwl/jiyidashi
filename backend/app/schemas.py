@@ -14,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.media_models import MediaKind, MediaStatus
 from app.models import MemoryType, ObjectLocationStatus, SourceType
 
 
@@ -68,6 +69,16 @@ class UserCaptureSource(StrEnum):
 
     def to_source_type(self) -> SourceType:
         return SourceType(self.value)
+
+
+class ImageContentType(StrEnum):
+    # [人工注释][S1-005] Stage 1 只冻结常见静态图片类型；媒体基础 PR 不偷带
+    # 音频、ASR、OCR 或 Vision 格式/字段。
+    JPEG = "image/jpeg"
+    PNG = "image/png"
+    WEBP = "image/webp"
+    HEIC = "image/heic"
+    HEIF = "image/heif"
 
 
 class RegisterRequest(BaseModel):
@@ -130,6 +141,14 @@ class MemoryCreate(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
     metadata: dict = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def reject_unverified_photo_source(self):
+        # [人工注释][S1-005] USER_PHOTO 不能由通用 Memory API 裸声明；必须走
+        # READY media -> /media/{id}/memory，保证真实原图进入 Evidence 链。
+        if self.capture_source == UserCaptureSource.USER_PHOTO:
+            raise ValueError("USER_PHOTO requires a verified media object")
+        return self
+
 
 class MemoryRead(ORMModel):
     id: UUID
@@ -146,6 +165,64 @@ class MemoryRead(ORMModel):
     is_confirmed: bool
     metadata_json: dict
     created_at: datetime
+
+
+class SignedTransfer(BaseModel):
+    # [人工注释][S1-006] URL 只是临时能力票据；expires_at/headers 属于冻结协议，
+    # 客户端不得把 URL 持久化为永久资源地址。
+    method: str
+    url: str
+    headers: dict[str, str] = Field(default_factory=dict)
+    expires_at: datetime
+
+
+class MediaUploadCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # [人工注释][S1-006] client_upload_id 在用户域内承担重试幂等；客户端不能
+    # 提交 object_key、bucket、endpoint 或任意最终存储地址。
+    client_upload_id: UUID
+    kind: MediaKind = MediaKind.IMAGE
+    content_type: ImageContentType
+    size_bytes: int = Field(gt=0, le=50 * 1024 * 1024)
+    original_filename: str | None = Field(default=None, max_length=255)
+
+
+class MediaRead(ORMModel):
+    # [人工注释][S1-006] 公共媒体协议只暴露业务元数据；storage_etag 留在服务端内部，
+    # 避免把 S3/COS/OSS 的实现细节冻结成客户端契约。
+    id: UUID
+    kind: MediaKind
+    status: MediaStatus
+    content_type: str
+    size_bytes: int
+    original_filename: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class MediaUploadResponse(MediaRead):
+    upload: SignedTransfer | None
+
+
+class MediaDownloadResponse(BaseModel):
+    media_id: UUID
+    download: SignedTransfer
+
+
+class PhotoMemoryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # [人工注释][S1-005] 图片文本只能来自用户主动输入；本阶段没有 OCR/Vision
+    # 输出字段，也没有任何客户端可信度/确认状态字段。
+    title: str | None = Field(default=None, max_length=240)
+    content: str = Field(min_length=1, max_length=20000)
+    occurred_at: TimezoneAwareDateTime | None = None
+
+
+class PhotoMemoryResponse(BaseModel):
+    media: MediaRead
+    memory: MemoryRead
 
 
 class ObjectCreate(BaseModel):
@@ -169,6 +246,16 @@ class ObjectLocationCreate(BaseModel):
     recorded_at: TimezoneAwareDateTime | None = None
     capture_source: UserCaptureSource = UserCaptureSource.USER_TEXT
     place_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def reject_unverified_photo_source(self):
+        # [人工注释][S1-005] 当前没有“图片 -> 位置”的可信转换；禁止仅用
+        # USER_PHOTO 字符串伪造物品位置的图片 Evidence。
+        if self.capture_source == UserCaptureSource.USER_PHOTO:
+            raise ValueError(
+                "USER_PHOTO object locations require a future verified media flow"
+            )
+        return self
 
 
 class ObjectLocationRead(ORMModel):
@@ -194,6 +281,9 @@ class Evidence(BaseModel):
     occurred_at: datetime
     excerpt: str
     confidence: float
+    # [人工注释][S1-005] 图片 Evidence 只暴露 opaque media_id；原图读取仍必须
+    # 再走 owner 校验和短时下载签名。
+    media_id: UUID | None = None
 
 
 class MemoryQueryResponse(BaseModel):
