@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StringConstraints,
     model_validator,
 )
 
@@ -40,6 +41,15 @@ TimezoneName = Annotated[
     Field(min_length=1, max_length=64),
     AfterValidator(_require_iana_timezone),
 ]
+# [人工注释][S1-FIX-005] 资料字段先 strip 再执行长度校验，纯空白输入必须在 schema 层返回 422。
+NicknameText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+]
+LocaleText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=2, max_length=32),
+]
 
 
 class ORMModel(BaseModel):
@@ -65,9 +75,9 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr
     password: str = Field(min_length=10, max_length=128)
-    nickname: str = Field(min_length=1, max_length=80)
+    nickname: NicknameText
     timezone: TimezoneName = "Asia/Shanghai"
-    locale: str = Field(default="zh-CN", min_length=2, max_length=32)
+    locale: LocaleText = "zh-CN"
 
 
 class LoginRequest(BaseModel):
@@ -102,9 +112,9 @@ class UserRead(ORMModel):
 class UserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nickname: str | None = Field(default=None, min_length=1, max_length=80)
+    nickname: NicknameText | None = None
     timezone: TimezoneName | None = None
-    locale: str | None = Field(default=None, min_length=2, max_length=32)
+    locale: LocaleText | None = None
 
 
 class MemoryCreate(BaseModel):
@@ -176,8 +186,11 @@ class MemoryQueryRequest(BaseModel):
 
 
 class Evidence(BaseModel):
+    # [人工注释][S1-FIX-002] kind 描述证据实体类型；source_type 才是 USER_TEXT/GPS 等真实来源。
     kind: str
     id: UUID
+    source_type: SourceType
+    memory_source_id: UUID
     occurred_at: datetime
     excerpt: str
     confidence: float
