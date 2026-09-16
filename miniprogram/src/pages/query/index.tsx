@@ -1,6 +1,12 @@
+import Taro from '@tarojs/taro'
 import { Button, Input, Text, View } from '@tarojs/components'
 import { useState } from 'react'
-import { isAuthenticated, MemoryQueryResult, queryMemory } from '../../services/api'
+import {
+  deleteMemory,
+  isAuthenticated,
+  MemoryQueryResult,
+  queryMemory,
+} from '../../services/api'
 import './index.scss'
 
 function sourceLabel(sourceType: string): string {
@@ -43,6 +49,32 @@ export default function Page() {
     }
   }
 
+  const deleteFirstMemory = async () => {
+    const memoryId = result?.memory_ids?.[0]
+    if (!memoryId) return
+    const confirmed = await Taro.showModal({
+      title: '删除这条记忆？',
+      content: '删除后，这条记忆以及依赖它的当前位置答案都不能再被找回。',
+      confirmText: '删除',
+      confirmColor: '#b3261e',
+    })
+    if (!confirmed.confirm) return
+
+    setLoading(true)
+    setStatus('')
+    try {
+      // [人工注释][S1-019] 删除必须等待服务端确认成功后再清空当前答案，
+      // 不能只做客户端视觉隐藏。
+      await deleteMemory(memoryId)
+      setResult(null)
+      setStatus('✓ 这条记忆已删除，后续查询不会再使用它')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '删除失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <View className='page'>
       <View className='title'>问记忆</View>
@@ -65,6 +97,9 @@ export default function Page() {
               <View className='muted'>可信度：{evidence.confidence}</View>
             </View>
           ))}
+          {result.memory_ids.length > 0 && (
+            <Button className='secondary-button' disabled={loading} onClick={deleteFirstMemory}>删除最相关记忆</Button>
+          )}
         </View>
       )}
 
