@@ -49,6 +49,21 @@ def _eligible_memory_exists() -> exists:
     )
 
 
+def _best_memory_source(db: Session, memory_id: UUID) -> MemorySource | None:
+    # [人工注释][S1-FIX-002] 查询响应必须返回真正参与 Evidence gate 的 MemorySource，
+    # 不得用 MEMORY / OBJECT_LOCATION 这种实体 kind 冒充来源。
+    return db.scalar(
+        select(MemorySource)
+        .where(
+            MemorySource.memory_id == memory_id,
+            MemorySource.source_type != SourceType.AI_INFERENCE,
+            MemorySource.confidence >= 0.6,
+        )
+        .order_by(desc(MemorySource.confidence), desc(MemorySource.created_at))
+        .limit(1)
+    )
+
+
 def _search_terms(question: str) -> list[str]:
     """Create deterministic terms that work for both Chinese and spaced text.
 
@@ -130,7 +145,11 @@ def _find_object(
         .order_by(desc(ObjectLocation.recorded_at))
         .limit(1)
     )
-    if location is None:
+    if location is None or location.memory_id is None:
+        return _no_evidence("FIND_OBJECT")
+
+    source = _best_memory_source(db, location.memory_id)
+    if source is None:
         return _no_evidence("FIND_OBJECT")
 
     matched_object = next(item for item in objects if item.id == location.object_id)
@@ -138,9 +157,11 @@ def _find_object(
     evidence = Evidence(
         kind="OBJECT_LOCATION",
         id=location.id,
+        source_type=source.source_type,
+        memory_source_id=source.id,
         occurred_at=location.recorded_at,
         excerpt=f"{matched_object.name}：{location.location_text}",
-        confidence=location.confidence,
+        confidence=source.confidence,
     )
     return MemoryQueryResponse(
         answer=answer,
@@ -148,7 +169,7 @@ def _find_object(
         certainty="confirmed",
         intent="FIND_OBJECT",
         evidence=[evidence],
-        memory_ids=[location.memory_id] if location.memory_id else [],
+        memory_ids=[location.memory_id],
     )
 
 
@@ -187,25 +208,37 @@ def _search_memories(
     if not ranked or _term_score(ranked[0].content, terms) == 0:
         return _no_evidence("MEMORY_SEARCH")
 
-    evidence = [
-        Evidence(
-            kind="MEMORY",
-            id=item.id,
-            occurred_at=item.occurred_at,
-            excerpt=item.content[:240],
-            confidence=item.confidence,
+    evidence: list[Evidence] = []
+    answerable_memories: list[Memory] = []
+    for item in ranked:
+        source = _best_memory_source(db, item.id)
+        if source is None:
+            continue
+        evidence.append(
+            Evidence(
+                kind="MEMORY",
+                id=item.id,
+                source_type=source.source_type,
+                memory_source_id=source.id,
+                occurred_at=item.occurred_at,
+                excerpt=item.content[:240],
+                confidence=source.confidence,
+            )
         )
-        for item in ranked
-    ]
-    latest = ranked[0]
-    answer = f"我找到了 {len(ranked)} 条相关记录。最相关的一条是：{latest.content}"
+        answerable_memories.append(item)
+
+    if not evidence:
+        return _no_evidence("MEMORY_SEARCH")
+
+    latest = answerable_memories[0]
+    answer = f"我找到了 {len(answerable_memories)} 条相关记录。最相关的一条是：{latest.content}"
     return MemoryQueryResponse(
         answer=answer,
         can_answer=True,
         certainty="evidence",
         intent="MEMORY_SEARCH",
         evidence=evidence,
-        memory_ids=[item.id for item in ranked],
+        memory_ids=[item.id for item in answerable_memories],
     )
 
 

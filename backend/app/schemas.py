@@ -2,8 +2,17 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 from app.models import MemoryType, ObjectLocationStatus, SourceType
 
@@ -16,7 +25,31 @@ def _require_timezone_aware_datetime(value: datetime) -> datetime:
     return value
 
 
+def _require_iana_timezone(value: str) -> str:
+    # [人工注释][S1-002] 用户时区必须是可解析的 IANA 名称，防止时间轴在运行期才失败。
+    normalized = value.strip()
+    try:
+        ZoneInfo(normalized)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError("timezone must be a valid IANA timezone") from exc
+    return normalized
+
+
 TimezoneAwareDateTime = Annotated[datetime, AfterValidator(_require_timezone_aware_datetime)]
+TimezoneName = Annotated[
+    str,
+    Field(min_length=1, max_length=64),
+    AfterValidator(_require_iana_timezone),
+]
+# [人工注释][S1-FIX-005] 资料字段先 strip 再执行长度校验，纯空白输入必须在 schema 层返回 422。
+NicknameText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+]
+LocaleText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=2, max_length=32),
+]
 
 
 class ORMModel(BaseModel):
@@ -37,6 +70,23 @@ class UserCaptureSource(StrEnum):
         return SourceType(self.value)
 
 
+class RegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: str = Field(min_length=10, max_length=128)
+    nickname: NicknameText
+    timezone: TimezoneName = "Asia/Shanghai"
+    locale: LocaleText = "zh-CN"
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
+
 class DevTokenRequest(BaseModel):
     user_id: UUID | None = None
     nickname: str = Field(default="测试用户", min_length=1, max_length=80)
@@ -46,6 +96,25 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_id: UUID
+
+
+class UserRead(ORMModel):
+    id: UUID
+    nickname: str
+    phone: str | None
+    email: str | None
+    timezone: str
+    locale: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nickname: NicknameText | None = None
+    timezone: TimezoneName | None = None
+    locale: LocaleText | None = None
 
 
 class MemoryCreate(BaseModel):
@@ -117,8 +186,11 @@ class MemoryQueryRequest(BaseModel):
 
 
 class Evidence(BaseModel):
+    # [人工注释][S1-FIX-002] kind 描述证据实体类型；source_type 才是 USER_TEXT/GPS 等真实来源。
     kind: str
     id: UUID
+    source_type: SourceType
+    memory_source_id: UUID
     occurred_at: datetime
     excerpt: str
     confidence: float

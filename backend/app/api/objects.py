@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -49,7 +50,22 @@ def create_object(payload: ObjectCreate, user_id: CurrentUser, db: DbSession) ->
         description=payload.description,
     )
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # [人工注释][S1-FIX-006] 并发首次创建同名物品时，
+        # 唯一键竞争必须回退为幂等读取，不能返回 500。
+        db.rollback()
+        existing = db.scalar(
+            select(ObjectItem).where(
+                ObjectItem.user_id == user_id,
+                ObjectItem.normalized_name == normalized,
+            )
+        )
+        if existing is not None:
+            return existing
+        raise
+
     db.refresh(item)
     return item
 

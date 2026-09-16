@@ -1,4 +1,6 @@
 <!-- [人工注释][FND-025] 本文档必须与当前公开 schema 同步；客户端只能声明 capture_source，可信等级由服务端所有。 -->
+<!-- [人工注释][S1-001] Stage 1 正式认证接口已加入公开 API；dev-token 仍只用于显式开启的开发/测试环境。 -->
+<!-- [人工注释][S1-FIX-002][S1-FIX-003] 第二轮修复补充真实 Evidence 来源契约与正式认证滥用保护。 -->
 # V1 API 基线
 
 Base path:
@@ -6,6 +8,80 @@ Base path:
 ```text
 /v1
 ```
+
+## 正式认证
+
+### 注册
+
+```http
+POST /v1/auth/register
+```
+
+```json
+{
+  "email": "user@example.com",
+  "password": "correct-horse-battery-staple",
+  "nickname": "小忆",
+  "timezone": "Asia/Shanghai",
+  "locale": "zh-CN"
+}
+```
+
+`timezone` 必须是可解析的 IANA 时区名称。`nickname` / `locale` 会先去除首尾空白再校验，纯空白返回 422。`user_id` 由服务端生成，客户端不能指定。
+
+成功返回：
+
+```json
+{
+  "access_token": "<jwt>",
+  "token_type": "bearer",
+  "user_id": "11111111-1111-1111-1111-111111111111"
+}
+```
+
+### 登录
+
+```http
+POST /v1/auth/login
+```
+
+```json
+{
+  "email": "user@example.com",
+  "password": "correct-horse-battery-staple"
+}
+```
+
+账号不存在与密码错误统一返回 `401 INVALID_CREDENTIALS`。不存在账号仍执行固定 dummy Argon2 verify，避免出现明显的快速失败路径。
+
+正式认证同时启用服务端滥用保护：
+
+- 注册：IP 窗口限速，且门禁发生在 Argon2 hash 之前。
+- 登录：IP 总窗口 + 已存在账号/IP 窗口。
+- 连续失败：短期指数退避。
+- 超限统一返回 `429 AUTH_RATE_LIMITED`，并附 `Retry-After` 响应头。
+- 限流 bucket 只保存服务端 HMAC key，不保存原始 IP 或邮箱。
+- `APP_ENV=production/prod` 时禁止关闭 `AUTH_RATE_LIMIT_ENABLED`。
+
+### 本人资料
+
+```http
+GET   /v1/user
+PATCH /v1/user
+```
+
+更新示例：
+
+```json
+PATCH /v1/user
+{
+  "nickname": "新的昵称",
+  "timezone": "Asia/Singapore",
+  "locale": "zh-CN"
+}
+```
+
+`PATCH /v1/user` 只允许修改公开资料字段；登录邮箱/身份归属不能通过 profile API 修改。nickname / locale 采用 strip-before-validation，纯空白输入返回 422。
 
 ## 开发登录
 
@@ -77,6 +153,8 @@ POST /v1/objects
 }
 ```
 
+同一用户重复创建相同规范化名称会返回既有 Object；并发首次创建发生唯一约束竞争时也会 rollback 后重新读取既有 Object，不把该竞争暴露成 500。
+
 随后记录位置：
 
 ```json
@@ -112,6 +190,8 @@ POST /v1/memory/query
     {
       "kind": "OBJECT_LOCATION",
       "id": "11111111-1111-1111-1111-111111111111",
+      "source_type": "USER_TEXT",
+      "memory_source_id": "33333333-3333-3333-3333-333333333333",
       "occurred_at": "2026-09-15T12:36:00Z",
       "excerpt": "护照：书房左侧柜子第二层",
       "confidence": 1.0
@@ -122,6 +202,14 @@ POST /v1/memory/query
   ]
 }
 ```
+
+Evidence 字段语义：
+
+- `kind`：证据承载对象类型，例如 `MEMORY` / `OBJECT_LOCATION`；**不是来源**。
+- `id`：对应承载对象 ID（Memory 或 ObjectLocation）。
+- `source_type`：真正的采集来源，例如 `USER_TEXT` / `USER_VOICE` / `USER_PHOTO` / `GPS`。
+- `memory_source_id`：实际参与 Evidence gate 的 `MemorySource.id`，用于追溯证据记录。
+- `confidence`：该 `MemorySource` 的可信度。
 
 没有证据：
 
@@ -138,6 +226,25 @@ POST /v1/memory/query
 ```
 
 > **可信规则：** 可回答的个人事实必须经过服务端 Evidence gate。客户端提交的字段不能把 AI 推断升级为 confirmed fact。
+
+## 客户端生产 API 配置
+
+Flutter 生产构建必须显式提供：
+
+```text
+--dart-define=APP_ENV=production
+--dart-define=API_BASE_URL=https://<production-api>/v1
+```
+
+生产 Flutter 不再回退 localhost，也不显示开发 API 地址。
+
+微信小程序 production build 必须设置：
+
+```text
+JIYI_API_BASE_URL=https://<production-api>/v1
+```
+
+生产配置拒绝 localhost / `127.0.0.1` / 非 HTTPS endpoint，并通过 build-time 常量移除普通页面中的 API 编辑入口。
 
 ## 自动位置
 
