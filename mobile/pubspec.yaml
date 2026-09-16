@@ -17,8 +17,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
-  # [人工注释][S1-015] 单元测试使用真实 SQLite FFI 验证重启恢复和状态持久化，不依赖模拟 Map。
-  sqflite_common_ffi: ^2.4.3
+  # [人工注释][S1-015] 测试固定在 sqlite3 v2 的最后兼容线，避免 v3 build hooks 给 Flutter CI 引入额外 native 构建变量；仍使用真实 SQLite 文件验证重启恢复。
+  sqflite_common_ffi: 2.3.7+1
 
 flutter:
   uses-material-design: true
