@@ -29,7 +29,7 @@ class _CaptureApi extends JiYiApiClient {
 
 void main() {
   sqfliteFfiInit();
-  // [人工注释][S1-015] Widget 测试同样使用 no-isolate FFI，避免测试结束后额外 worker isolate 阻止 runner 退出；生产实现不受影响。
+  // [人工注释][S1-015] Widget 测试使用 no-isolate FFI，避免测试结束后额外 worker isolate 阻止 runner 退出；生产实现不受影响。
   final testDatabaseFactory = databaseFactoryFfiNoIsolate;
 
   late Directory tempDirectory;
@@ -70,6 +70,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // [人工注释][S1-016] 输入框获得焦点后光标会持续调度 frame，不能用 pumpAndSettle 等“永远静止”；改为有限等待目标 UI 状态，超时即失败。
+  Future<void> pumpUntilFound(
+    WidgetTester tester,
+    Finder finder,
+  ) async {
+    for (var attempt = 0; attempt < 100; attempt++) {
+      await tester.pump(const Duration(milliseconds: 25));
+      if (finder.evaluate().isNotEmpty) return;
+    }
+    throw TestFailure('Timed out waiting for expected capture UI state');
+  }
+
   testWidgets('connection failure persists text locally before success UI',
       (tester) async {
     // [人工注释][S1-015] 网络异常时只有当前账号 SQLite insert 完成后才允许显示“已保存到本机”，并清空用户输入。
@@ -78,9 +90,11 @@ void main() {
     await tester.enterText(fields.at(0), '离线标题');
     await tester.enterText(fields.at(1), '离线时也不能丢的内容');
     await tester.tap(find.widgetWithText(FilledButton, '帮我记住'));
-    await tester.pumpAndSettle();
 
-    expect(find.textContaining('✓ 已保存到本机，待联网后发送'), findsOneWidget);
+    final savedLocally = find.textContaining('✓ 已保存到本机，待联网后发送');
+    await pumpUntilFound(tester, savedLocally);
+
+    expect(savedLocally, findsOneWidget);
     expect(find.text('本机待发送'), findsOneWidget);
     expect(find.textContaining('有 1 条记录已安全保存在本机'), findsOneWidget);
 
@@ -99,9 +113,11 @@ void main() {
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(1), '这条记录被服务端拒绝');
     await tester.tap(find.widgetWithText(FilledButton, '帮我记住'));
-    await tester.pumpAndSettle();
 
-    expect(find.text('操作失败：内容不符合要求'), findsOneWidget);
+    final serverFailure = find.text('操作失败：内容不符合要求');
+    await pumpUntilFound(tester, serverFailure);
+
+    expect(serverFailure, findsOneWidget);
     expect(find.textContaining('已保存到本机'), findsNothing);
     expect(await queue.countAwaitingDelivery(captureUserId), 0);
     expect(await queue.listAll(captureUserId), isEmpty);
