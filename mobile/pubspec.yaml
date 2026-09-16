@@ -10,11 +10,15 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.2
+  # [人工注释][S1-015] Android / iOS 本地持久化使用 SQLite；禁止用内存队列冒充离线可靠存储。
+  sqflite: ^2.4.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  # [人工注释][S1-015] 单元测试使用真实 SQLite FFI 验证重启恢复和状态持久化，不依赖模拟 Map。
+  sqflite_common_ffi: ^2.4.3
 
 flutter:
   uses-material-design: true
