@@ -30,6 +30,17 @@ export type UserProfile = {
   locale: string
 }
 
+export type PrivacyStatus = {
+  recording_paused: boolean
+  paused_since?: string | null
+  paused_until?: string | null
+}
+
+export type UserObject = {
+  id: string
+  name: string
+}
+
 export function canEditApiBaseUrl(): boolean {
   return JIYI_ALLOW_API_BASE_EDIT
 }
@@ -57,7 +68,7 @@ export function logout(): void {
   Taro.removeStorageSync(TOKEN_KEY)
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'PATCH', path: string, data?: unknown): Promise<T> {
+async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, data?: unknown): Promise<T> {
   const token = Taro.getStorageSync<string>(TOKEN_KEY)
   const response = await Taro.request<T>({
     url: `${getApiBaseUrl()}${path}`,
@@ -127,6 +138,11 @@ export function createTextMemory(content: string, title?: string): Promise<{ id:
   })
 }
 
+export function deleteMemory(memoryId: string): Promise<void> {
+  // [人工注释][S1-019] 删除必须调用服务端 DELETE，客户端不能只隐藏本地 UI。
+  return request('DELETE', `/memories/${memoryId}`)
+}
+
 export async function rememberObjectLocation(objectName: string, locationText: string): Promise<void> {
   // [人工注释][S1-009] 小程序与 Flutter 共用 Object → ObjectLocation 的服务端可信链。
   const object = await request<{ id: string }>('POST', '/objects', {
@@ -136,6 +152,34 @@ export async function rememberObjectLocation(objectName: string, locationText: s
     location_text: locationText.trim(),
     capture_source: 'USER_TEXT',
   })
+}
+
+export async function markObjectLocationStale(objectName: string): Promise<void> {
+  // [人工注释][S1-011] 只从已有 Object 中精确定位，不通过 POST 创建不存在的空对象。
+  const objects = await request<UserObject[]>('GET', '/objects')
+  const normalized = objectName.trim().toLocaleLowerCase()
+  const matched = objects.find((item) => item.name.trim().toLocaleLowerCase() === normalized)
+  if (!matched) throw new Error('没有找到这个物品')
+  await request('POST', `/objects/${matched.id}/location/stale`)
+}
+
+export function getPrivacyStatus(): Promise<PrivacyStatus> {
+  return request('GET', '/privacy/status')
+}
+
+export function pauseMemory(minutes: number): Promise<PrivacyStatus> {
+  // [人工注释][S1-023] 小程序只选择暂停时长，历史 pause interval 由服务端持久化。
+  return request('POST', '/privacy/pause', { duration_minutes: minutes })
+}
+
+export function pauseMemoryToday(): Promise<PrivacyStatus> {
+  // [人工注释][S1-023] “今天”交给服务端按用户 IANA timezone 计算本地午夜。
+  return request('POST', '/privacy/pause/today')
+}
+
+export function resumeMemory(): Promise<PrivacyStatus> {
+  // [人工注释][S1-024] 手动恢复只结束当前 pause interval；历史暂停区间仍保留。
+  return request('POST', '/privacy/resume')
 }
 
 export function queryMemory(question: string): Promise<MemoryQueryResult> {
