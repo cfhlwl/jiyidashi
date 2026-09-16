@@ -32,6 +32,9 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/heic",
     "image/heif",
 }
+IMAGE_SIGNATURE_PREFIX_BYTES = 64
+HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs"}
+HEIF_BRANDS = HEIC_BRANDS | {b"mif1", b"msf1"}
 
 
 # [人工注释][S1-005][S1-006] 媒体服务统一持有用户归属、服务端 object key 与 READY 门禁。
@@ -98,6 +101,48 @@ def _validate_stored_object(asset: MediaAsset, stored: StoredObject) -> None:
         raise MediaError("MEDIA_OBJECT_SIZE_MISMATCH", 409)
     if _normalize_content_type(stored.content_type) != asset.content_type:
         raise MediaError("MEDIA_OBJECT_TYPE_MISMATCH", 409)
+
+
+def _iso_bmff_brands(prefix: bytes) -> set[bytes]:
+    if len(prefix) < 16 or prefix[4:8] != b"ftyp":
+        return set()
+    box_size = int.from_bytes(prefix[:4], "big")
+    if box_size < 16:
+        return set()
+    available_end = min(len(prefix), box_size)
+    brands = {prefix[8:12]}
+    for index in range(16, available_end - 3, 4):
+        brands.add(prefix[index : index + 4])
+    return brands
+
+
+def _validate_image_signature(content_type: str, prefix: bytes) -> None:
+    # [人工注释][S1-005] MIME 元数据来自客户端上传请求，不能单独证明对象真的是图片。
+    # READY 前必须验证最小文件签名；这里只识别容器/文件头，不做 OCR、Vision 或语义分析。
+    is_valid = False
+    if content_type == "image/jpeg":
+        is_valid = len(prefix) >= 3 and prefix[:3] == b"\xff\xd8\xff"
+    elif content_type == "image/png":
+        is_valid = prefix.startswith(b"\x89PNG\r\n\x1a\n")
+    elif content_type == "image/webp":
+        is_valid = len(prefix) >= 12 and prefix[:4] == b"RIFF" and prefix[8:12] == b"WEBP"
+    elif content_type == "image/heic":
+        is_valid = bool(_iso_bmff_brands(prefix) & HEIC_BRANDS)
+    elif content_type == "image/heif":
+        is_valid = bool(_iso_bmff_brands(prefix) & HEIF_BRANDS)
+
+    if not is_valid:
+        raise MediaError("MEDIA_IMAGE_INVALID", 409)
+
+
+def _validate_image_object(storage: ObjectStorage, asset: MediaAsset, object_key: str) -> None:
+    try:
+        prefix = storage.read_prefix(object_key, IMAGE_SIGNATURE_PREFIX_BYTES)
+    except ObjectNotFound as exc:
+        raise MediaError("MEDIA_OBJECT_NOT_FOUND", 409) from exc
+    except ObjectStorageError as exc:
+        raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
+    _validate_image_signature(asset.content_type, prefix)
 
 
 def start_media_upload(
@@ -190,6 +235,7 @@ def complete_media_upload(
     except ObjectStorageError as exc:
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
     _validate_stored_object(asset, staged)
+    _validate_image_object(storage, asset, asset.upload_object_key)
 
     try:
         storage.promote_object(asset.upload_object_key, asset.object_key)
@@ -199,19 +245,23 @@ def complete_media_upload(
     except ObjectStorageError as exc:
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
     _validate_stored_object(asset, final)
+    # [人工注释][S1-005] final 再验一次签名，封住“校验 staging 后、COPY 前旧 PUT 改写”的竞态。
+    _validate_image_object(storage, asset, asset.object_key)
 
     asset.status = MediaStatus.READY
     asset.storage_etag = final.etag
     asset.completed_at = datetime.now(UTC)
     db.flush()
+    return asset
 
-    # [人工注释][S1-006] staging 清理失败只会留下私有垃圾对象，不影响 final 的不可覆盖性，
-    # 因此 READY 不回滚；后续生命周期清理可独立治理，不扩大本 PR 范围。
+
+def cleanup_media_staging(storage: ObjectStorage, asset: MediaAsset) -> None:
+    # [人工注释][S1-006] staging 只能在 READY 数据库事务 commit 成功后 best-effort 清理。
+    # commit 失败时保留 staging，使 PENDING 任务可以重试；清理失败只留下私有垃圾对象。
     try:
         storage.delete_object(asset.upload_object_key)
     except ObjectStorageError:
         pass
-    return asset
 
 
 def sign_media_download(

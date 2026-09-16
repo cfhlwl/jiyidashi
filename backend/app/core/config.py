@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -87,6 +88,14 @@ class Settings(BaseSettings):
                 "STORAGE_BUCKET, STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY "
                 "are required when STORAGE_BACKEND=s3"
             )
+
+        # [人工注释][S1-006] 生产自定义对象存储 endpoint 承载原图和 SigV4 临时凭证，
+        # 必须使用 HTTPS；development/test 仍允许本地 MinIO 等 HTTP endpoint。
+        endpoint = (self.storage_endpoint_url or "").strip()
+        if self.is_production and self.storage_backend == "s3" and endpoint:
+            parsed = urlparse(endpoint)
+            if parsed.scheme.lower() != "https" or not parsed.netloc:
+                raise ValueError("STORAGE_ENDPOINT_URL must use HTTPS in production")
         return self
 
 

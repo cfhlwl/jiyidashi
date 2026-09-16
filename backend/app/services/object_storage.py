@@ -44,6 +44,8 @@ class ObjectStorage(Protocol):
 
     def stat_object(self, object_key: str) -> StoredObject: ...
 
+    def read_prefix(self, object_key: str, max_bytes: int) -> bytes: ...
+
     def promote_object(self, source_key: str, destination_key: str) -> None: ...
 
     def delete_object(self, object_key: str) -> None: ...
@@ -63,6 +65,10 @@ class DisabledObjectStorage:
         raise AssertionError("unreachable")
 
     def stat_object(self, object_key: str) -> StoredObject:
+        self._unavailable()
+        raise AssertionError("unreachable")
+
+    def read_prefix(self, object_key: str, max_bytes: int) -> bytes:
         self._unavailable()
         raise AssertionError("unreachable")
 
@@ -94,6 +100,13 @@ class S3ObjectStorage:
         return datetime.now(UTC) + timedelta(
             seconds=self._settings.storage_presign_ttl_seconds
         )
+
+    @staticmethod
+    def _is_not_found(exc: ClientError) -> bool:
+        error = exc.response.get("Error", {})
+        code = str(error.get("Code", ""))
+        status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        return status == 404 or code in {"404", "NoSuchKey", "NotFound"}
 
     def sign_upload(self, object_key: str, content_type: str) -> PresignedTransfer:
         try:
@@ -143,10 +156,7 @@ class S3ObjectStorage:
                 Key=object_key,
             )
         except ClientError as exc:
-            error = exc.response.get("Error", {})
-            code = str(error.get("Code", ""))
-            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if status == 404 or code in {"404", "NoSuchKey", "NotFound"}:
+            if self._is_not_found(exc):
                 raise ObjectNotFound("object not found") from exc
             raise ObjectStorageError("failed to inspect object") from exc
         except Exception as exc:
@@ -163,6 +173,30 @@ class S3ObjectStorage:
             etag=etag,
         )
 
+    def read_prefix(self, object_key: str, max_bytes: int) -> bytes:
+        # [人工注释][S1-005] 只读取极小文件头用于类型真实性校验，不做完整下载、OCR 或 Vision。
+        if max_bytes <= 0:
+            return b""
+        try:
+            response = self._client.get_object(
+                Bucket=self._settings.storage_bucket,
+                Key=object_key,
+                Range=f"bytes=0-{max_bytes - 1}",
+            )
+            body = response["Body"]
+            try:
+                return bytes(body.read(max_bytes))
+            finally:
+                close = getattr(body, "close", None)
+                if callable(close):
+                    close()
+        except ClientError as exc:
+            if self._is_not_found(exc):
+                raise ObjectNotFound("object not found") from exc
+            raise ObjectStorageError("failed to read object prefix") from exc
+        except Exception as exc:
+            raise ObjectStorageError("failed to read object prefix") from exc
+
     def promote_object(self, source_key: str, destination_key: str) -> None:
         # [人工注释][S1-006] 晋升由服务端凭证执行，客户端拿不到 final key 的写权限。
         try:
@@ -176,10 +210,7 @@ class S3ObjectStorage:
                 MetadataDirective="COPY",
             )
         except ClientError as exc:
-            error = exc.response.get("Error", {})
-            code = str(error.get("Code", ""))
-            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if status == 404 or code in {"404", "NoSuchKey", "NotFound"}:
+            if self._is_not_found(exc):
                 raise ObjectNotFound("source object not found") from exc
             raise ObjectStorageError("failed to promote object") from exc
         except Exception as exc:

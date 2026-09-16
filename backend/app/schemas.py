@@ -189,13 +189,14 @@ class MediaUploadCreate(BaseModel):
 
 
 class MediaRead(ORMModel):
+    # [人工注释][S1-006] 公共媒体协议只暴露业务元数据；storage_etag 留在服务端内部，
+    # 避免把 S3/COS/OSS 的实现细节冻结成客户端契约。
     id: UUID
     kind: MediaKind
     status: MediaStatus
     content_type: str
     size_bytes: int
     original_filename: str | None
-    storage_etag: str | None
     created_at: datetime
     completed_at: datetime | None
 

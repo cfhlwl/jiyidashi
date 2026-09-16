@@ -19,6 +19,7 @@ from app.schemas import (
 )
 from app.services.media_service import (
     MediaError,
+    cleanup_media_staging,
     complete_media_upload,
     create_photo_memory,
     sign_media_download,
@@ -83,12 +84,13 @@ def complete_upload(
     storage: Storage,
 ) -> MediaRead:
     # [人工注释][S1-006] complete 不接受 object key/size/type 参数；
-    # 全部以服务端持久化预期值和对象存储校验结果为准。
+    # READY 必须先 commit 成功，staging 才允许 best-effort 清理，确保失败后仍可重试。
     try:
         asset = complete_media_upload(db, user_id, media_id, storage)
     except MediaError as exc:
         _raise_http(exc)
     db.commit()
+    cleanup_media_staging(storage, asset)
     db.refresh(asset)
     return _media_read(asset)
 

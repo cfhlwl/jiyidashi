@@ -1,10 +1,13 @@
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
 from app.core.config import Settings
+from app.core.db import SessionLocal, get_db
 from app.main import app
+from app.media_models import MediaAsset, MediaStatus
+from app.services.media_service import MediaError, _validate_image_signature
 from app.services.object_storage import (
     ObjectNotFound,
     PresignedTransfer,
@@ -14,14 +17,21 @@ from app.services.object_storage import (
 )
 
 
-# [人工注释][S1-005][S1-006] 测试存储只模拟签名、HEAD 与 staging -> final 晋升，
-# 不保存真实图片内容；回归重点是归属、READY 门禁、不可覆盖 final 与 Evidence 关联。
+def _jpeg_bytes(size: int) -> bytes:
+    assert size >= 3
+    return b"\xff\xd8\xff" + (b"\x00" * (size - 3))
+
+
+# [人工注释][S1-005][S1-006] 测试存储模拟签名、HEAD、小范围文件头读取与
+# staging -> final 晋升；不执行 OCR/Vision，回归重点是 READY 可信门禁与事务恢复。
 class FakeObjectStorage:
     def __init__(self):
         self.objects: dict[str, StoredObject] = {}
+        self.object_bytes: dict[str, bytes] = {}
         self.last_upload_key: str | None = None
         self.last_download_key: str | None = None
         self.promotions: list[tuple[str, str]] = []
+        self.deletions: list[str] = []
         self.upload_sign_count = 0
 
     def sign_upload(self, object_key: str, content_type: str) -> PresignedTransfer:
@@ -48,14 +58,22 @@ class FakeObjectStorage:
             raise ObjectNotFound("missing")
         return self.objects[object_key]
 
+    def read_prefix(self, object_key: str, max_bytes: int) -> bytes:
+        if object_key not in self.object_bytes:
+            raise ObjectNotFound("missing")
+        return self.object_bytes[object_key][:max_bytes]
+
     def promote_object(self, source_key: str, destination_key: str) -> None:
-        if source_key not in self.objects:
+        if source_key not in self.objects or source_key not in self.object_bytes:
             raise ObjectNotFound("missing")
         self.objects[destination_key] = self.objects[source_key]
+        self.object_bytes[destination_key] = self.object_bytes[source_key]
         self.promotions.append((source_key, destination_key))
 
     def delete_object(self, object_key: str) -> None:
         self.objects.pop(object_key, None)
+        self.object_bytes.pop(object_key, None)
+        self.deletions.append(object_key)
 
 
 @pytest.fixture
@@ -72,14 +90,36 @@ async def _new_headers(client, nickname: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
-def _upload_payload(*, client_upload_id=None, size_bytes: int = 11) -> dict:
+def _upload_payload(
+    *,
+    client_upload_id=None,
+    size_bytes: int = 11,
+    content_type: str = "image/jpeg",
+) -> dict:
     return {
         "client_upload_id": str(client_upload_id or uuid4()),
         "kind": "IMAGE",
-        "content_type": "image/jpeg",
+        "content_type": content_type,
         "size_bytes": size_bytes,
         "original_filename": "camera/photo.jpg",
     }
+
+
+def _put_fake_object(
+    storage: FakeObjectStorage,
+    object_key: str,
+    *,
+    size_bytes: int,
+    content_type: str,
+    data: bytes,
+    etag: str,
+) -> None:
+    storage.objects[object_key] = StoredObject(
+        size_bytes=size_bytes,
+        content_type=content_type,
+        etag=etag,
+    )
+    storage.object_bytes[object_key] = data
 
 
 @pytest.mark.asyncio
@@ -113,14 +153,18 @@ async def test_verified_photo_becomes_queryable_media_evidence(
     assert upload_body["upload"]["headers"] == {"Content-Type": "image/jpeg"}
     assert "object_key" not in upload_body
     assert "upload_object_key" not in upload_body
+    assert "storage_etag" not in upload_body
     media_id = upload_body["id"]
 
     staging_key = fake_storage.last_upload_key
     assert staging_key is not None
     assert "/_staging/" in staging_key
-    fake_storage.objects[staging_key] = StoredObject(
+    _put_fake_object(
+        fake_storage,
+        staging_key,
         size_bytes=11,
         content_type="image/jpeg",
+        data=_jpeg_bytes(11),
         etag="etag-1",
     )
 
@@ -130,6 +174,7 @@ async def test_verified_photo_becomes_queryable_media_evidence(
     )
     assert complete.status_code == 200
     assert complete.json()["status"] == "READY"
+    assert "storage_etag" not in complete.json()
     assert len(fake_storage.promotions) == 1
     promoted_source, final_key = fake_storage.promotions[0]
     assert promoted_source == staging_key
@@ -140,9 +185,12 @@ async def test_verified_photo_becomes_queryable_media_evidence(
 
     # [人工注释][S1-006] 模拟旧 PUT 签名在 READY 后重新写 staging；final Evidence
     # 对象必须保持不变，下载也只能签 final key。
-    fake_storage.objects[staging_key] = StoredObject(
+    _put_fake_object(
+        fake_storage,
+        staging_key,
         size_bytes=999,
         content_type="image/png",
+        data=b"late-overwrite",
         etag="late-overwrite",
     )
     assert fake_storage.objects[final_key].size_bytes == 11
@@ -154,6 +202,7 @@ async def test_verified_photo_becomes_queryable_media_evidence(
         json={"content": "红色文件夹里有旅行票据"},
     )
     assert created.status_code == 201
+    assert "storage_etag" not in created.json()["media"]
     memory_id = created.json()["memory"]["id"]
     assert created.json()["memory"]["source_type"] == "USER_PHOTO"
 
@@ -239,9 +288,12 @@ async def test_media_idempotency_owner_isolation_and_invalid_object_rejection(
     assert missing.status_code == 409
     assert missing.json()["detail"] == "MEDIA_OBJECT_NOT_FOUND"
 
-    fake_storage.objects[first_staging_key] = StoredObject(
+    _put_fake_object(
+        fake_storage,
+        first_staging_key,
         size_bytes=999,
         content_type="image/jpeg",
+        data=_jpeg_bytes(17),
         etag="bad-size",
     )
     bad_size = await client.post(
@@ -252,9 +304,12 @@ async def test_media_idempotency_owner_isolation_and_invalid_object_rejection(
     assert bad_size.json()["detail"] == "MEDIA_OBJECT_SIZE_MISMATCH"
     assert not fake_storage.promotions
 
-    fake_storage.objects[first_staging_key] = StoredObject(
+    _put_fake_object(
+        fake_storage,
+        first_staging_key,
         size_bytes=17,
         content_type="image/png",
+        data=b"\x89PNG\r\n\x1a\n",
         etag="bad-type",
     )
     bad_type = await client.post(
@@ -265,9 +320,33 @@ async def test_media_idempotency_owner_isolation_and_invalid_object_rejection(
     assert bad_type.json()["detail"] == "MEDIA_OBJECT_TYPE_MISMATCH"
     assert not fake_storage.promotions
 
-    fake_storage.objects[first_staging_key] = StoredObject(
+    # [人工注释][S1-005] MIME/size 即使匹配，非 JPEG 字节也不能进入 READY/Evidence。
+    _put_fake_object(
+        fake_storage,
+        first_staging_key,
         size_bytes=17,
         content_type="image/jpeg",
+        data=b"not-a-real-jpeg!!",
+        etag="fake-jpeg",
+    )
+    bad_signature = await client.post(
+        f"/v1/media/{first_id}/complete",
+        headers=owner_headers,
+    )
+    assert bad_signature.status_code == 409
+    assert bad_signature.json()["detail"] == "MEDIA_IMAGE_INVALID"
+    assert not fake_storage.promotions
+    with SessionLocal() as verify_db:
+        asset = verify_db.get(MediaAsset, UUID(first_id))
+        assert asset is not None
+        assert asset.status == MediaStatus.PENDING
+
+    _put_fake_object(
+        fake_storage,
+        first_staging_key,
+        size_bytes=17,
+        content_type="image/jpeg",
+        data=_jpeg_bytes(17),
         etag="ok",
     )
     ready = await client.post(
@@ -288,6 +367,96 @@ async def test_media_idempotency_owner_isolation_and_invalid_object_rejection(
         json={"content": "不允许绑定别人的图片"},
     )
     assert cross_memory.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_complete_commit_failure_keeps_staging_and_retry_recovers(
+    client,
+    auth_headers,
+    fake_storage: FakeObjectStorage,
+):
+    # [人工注释][S1-006] READY commit 失败时 staging 必须仍存在；final 可已生成，
+    # 但数据库回滚为 PENDING，随后相同 complete 应能重新晋升并成功恢复。
+    upload = await client.post(
+        "/v1/media/uploads",
+        headers=auth_headers,
+        json=_upload_payload(size_bytes=13),
+    )
+    assert upload.status_code == 201
+    media_id = upload.json()["id"]
+    staging_key = fake_storage.last_upload_key
+    assert staging_key is not None
+    _put_fake_object(
+        fake_storage,
+        staging_key,
+        size_bytes=13,
+        content_type="image/jpeg",
+        data=_jpeg_bytes(13),
+        etag="commit-retry",
+    )
+
+    failing_session = SessionLocal()
+
+    def fail_commit() -> None:
+        raise RuntimeError("synthetic commit failure")
+
+    failing_session.commit = fail_commit  # type: ignore[method-assign]
+
+    def failing_db():
+        try:
+            yield failing_session
+        finally:
+            failing_session.close()
+
+    app.dependency_overrides[get_db] = failing_db
+    try:
+        with pytest.raises(RuntimeError, match="synthetic commit failure"):
+            await client.post(
+                f"/v1/media/{media_id}/complete",
+                headers=auth_headers,
+            )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert staging_key in fake_storage.objects
+    assert staging_key not in fake_storage.deletions
+    assert fake_storage.promotions
+    final_key = fake_storage.promotions[-1][1]
+    assert final_key in fake_storage.objects
+    with SessionLocal() as verify_db:
+        asset = verify_db.get(MediaAsset, UUID(media_id))
+        assert asset is not None
+        assert asset.status == MediaStatus.PENDING
+
+    retry = await client.post(
+        f"/v1/media/{media_id}/complete",
+        headers=auth_headers,
+    )
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "READY"
+    assert staging_key not in fake_storage.objects
+    assert staging_key in fake_storage.deletions
+
+
+@pytest.mark.parametrize(
+    ("content_type", "prefix"),
+    [
+        ("image/jpeg", b"\xff\xd8\xff\xe0jpeg"),
+        ("image/png", b"\x89PNG\r\n\x1a\nrest"),
+        ("image/webp", b"RIFF\x10\x00\x00\x00WEBPVP8 "),
+        ("image/heic", b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic"),
+        ("image/heif", b"\x00\x00\x00\x18ftypmif1\x00\x00\x00\x00mif1heic"),
+    ],
+)
+def test_supported_image_signatures_are_accepted(content_type: str, prefix: bytes):
+    # [人工注释][S1-005] Stage 1 只做确定性的文件头真实性校验，不解析图片内容语义。
+    _validate_image_signature(content_type, prefix)
+
+
+def test_declared_jpeg_rejects_non_jpeg_bytes():
+    with pytest.raises(MediaError) as caught:
+        _validate_image_signature("image/jpeg", b"plain arbitrary bytes")
+    assert caught.value.code == "MEDIA_IMAGE_INVALID"
 
 
 @pytest.mark.asyncio
@@ -344,3 +513,30 @@ def test_s3_presigned_upload_is_short_lived(monkeypatch):
     assert calls[0]["Params"]["ContentType"] == "image/jpeg"
     assert before + timedelta(seconds=119) <= transfer.expires_at
     assert transfer.expires_at <= datetime.now(UTC) + timedelta(seconds=121)
+
+
+def test_production_custom_storage_endpoint_requires_https():
+    # [人工注释][S1-006] production 自定义 endpoint 不能把原图或 SigV4 能力票据降级到明文 HTTP。
+    common = {
+        "app_env": "production",
+        "jwt_secret": "x" * 32,
+        "storage_backend": "s3",
+        "storage_bucket": "private-bucket",
+        "storage_access_key_id": "test-key",
+        "storage_secret_access_key": "test-secret",
+    }
+    with pytest.raises(ValueError, match="HTTPS"):
+        Settings(**common, storage_endpoint_url="http://storage.example.com")
+
+    secure = Settings(**common, storage_endpoint_url="https://storage.example.com")
+    assert secure.storage_endpoint_url == "https://storage.example.com"
+
+    development = Settings(
+        app_env="development",
+        storage_backend="s3",
+        storage_bucket="private-bucket",
+        storage_access_key_id="test-key",
+        storage_secret_access_key="test-secret",
+        storage_endpoint_url="http://127.0.0.1:9000",
+    )
+    assert development.storage_endpoint_url == "http://127.0.0.1:9000"
