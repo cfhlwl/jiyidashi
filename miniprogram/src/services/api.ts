@@ -2,11 +2,12 @@ import Taro from '@tarojs/taro'
 
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
-const DEFAULT_API_BASE = 'http://127.0.0.1:8000/v1'
 
 export type Evidence = {
   kind: string
   id: string
+  source_type: string
+  memory_source_id: string
   occurred_at: string
   excerpt: string
   confidence: number
@@ -29,11 +30,22 @@ export type UserProfile = {
   locale: string
 }
 
+export function canEditApiBaseUrl(): boolean {
+  return JIYI_ALLOW_API_BASE_EDIT
+}
+
 export function getApiBaseUrl(): string {
-  return Taro.getStorageSync<string>(API_BASE_KEY) || DEFAULT_API_BASE
+  // [人工注释][S1-FIX-007] 仅开发构建允许本地覆盖；生产产物始终使用 build-time endpoint。
+  if (JIYI_ALLOW_API_BASE_EDIT) {
+    return Taro.getStorageSync<string>(API_BASE_KEY) || JIYI_API_BASE_URL
+  }
+  return JIYI_API_BASE_URL
 }
 
 export function setApiBaseUrl(value: string): void {
+  if (!JIYI_ALLOW_API_BASE_EDIT) {
+    throw new Error('生产构建不允许修改 API 地址')
+  }
   Taro.setStorageSync(API_BASE_KEY, value.replace(/\/$/, ''))
 }
 
