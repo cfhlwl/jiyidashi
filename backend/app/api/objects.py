@@ -53,7 +53,8 @@ def create_object(payload: ObjectCreate, user_id: CurrentUser, db: DbSession) ->
     try:
         db.commit()
     except IntegrityError:
-        # [人工注释][S1-FIX-006] 两台设备并发首次创建同名物品时，唯一键竞争必须回退为幂等读取，不能 500。
+        # [人工注释][S1-FIX-006] 并发首次创建同名物品时，
+        # 唯一键竞争必须回退为幂等读取，不能返回 500。
         db.rollback()
         existing = db.scalar(
             select(ObjectItem).where(
