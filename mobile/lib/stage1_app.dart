@@ -374,9 +374,10 @@ class _CapturePageState extends State<CapturePage> {
     } on ApiException catch (exc) {
       // [人工注释][S1-016] 服务端已明确返回的认证/校验/业务错误不是“离线”；禁止把真实失败转成本地假成功。
       setState(() => result = '操作失败：${exc.message}');
-    } catch (_) {
+    } on TransportException catch (_) {
+      // [人工注释][S1-016] 只有底层明确分类的 transport/timeout 才能进入 SQLite；协议解析和客户端异常禁止走 fallback。
       try {
-        // [人工注释][S1-015] 连接层失败时先按当前 user_id await SQLite 持久化成功，再清输入框并展示“已保存到本机”。
+        // [人工注释][S1-015] transport 失败时先按当前 user_id await SQLite 持久化成功，再清输入并显示本地保存。
         final queued = await widget.offlineQueue.enqueueTextMemory(
           ownerUserId: _ownerUserId,
           title: title,
@@ -386,16 +387,20 @@ class _CapturePageState extends State<CapturePage> {
         contentController.clear();
         await _refreshOfflinePendingCount();
         if (mounted) {
-          setState(
-            () => result =
-                '✓ 已保存到本机，待联网后发送 · ${queued.clientUuid}',
-          );
+          setState(() => result =
+              '✓ 已保存到本机，待联网后发送 · ${queued.clientUuid}');
         }
       } catch (_) {
         if (mounted) {
           setState(() => result = '操作失败：无法连接服务器，且本地保存失败');
         }
       }
+    } on ProtocolException catch (exc) {
+      // [人工注释][S1-016] 响应已到达但协议不可解析时显式失败，避免服务端已 commit 后再次排队。
+      setState(() => result = '操作失败：${exc.message}');
+    } catch (_) {
+      // [人工注释][S1-016] 未分类客户端异常一律 fail closed；catch-all 不再承担 offline fallback。
+      setState(() => result = '操作失败：客户端处理异常');
     } finally {
       if (mounted) setState(() => loading = false);
     }

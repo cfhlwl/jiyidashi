@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -26,6 +27,24 @@ class ApiException implements Exception {
   final int statusCode;
   final String message;
 
+  @override
+  String toString() => message;
+}
+
+// [人工注释][S1-016] 只有 HTTP 客户端明确报告的连接/传输失败或超时才属于可离线降级的 transport；协议/解析错误不得进入该类型。
+class TransportException implements Exception {
+  TransportException(this.message, [this.cause]);
+  final String message;
+  final Object? cause;
+  @override
+  String toString() => message;
+}
+
+// [人工注释][S1-016] 2xx 响应已到达但 JSON/结构不符合正式协议时必须 fail closed，禁止误判为离线。
+class ProtocolException implements Exception {
+  ProtocolException(this.message, [this.cause]);
+  final String message;
+  final Object? cause;
   @override
   String toString() => message;
 }
@@ -240,27 +259,39 @@ class JiYiApiClient {
         ? _headers
         : const {'Content-Type': 'application/json'};
     final encoded = body == null ? null : jsonEncode(body);
-    return switch (method) {
-      'GET' => await _http.get(_uri(path), headers: headers),
-      'POST' => await _http.post(_uri(path), headers: headers, body: encoded),
-      'PATCH' => await _http.patch(_uri(path), headers: headers, body: encoded),
-      'DELETE' => await _http.delete(_uri(path), headers: headers, body: encoded),
-      _ => throw ArgumentError('Unsupported method: $method'),
-    };
+    // [人工注释][S1-016] transport 分类只在底层 HTTP 边界捕获 ClientException/TimeoutException；其他异常原样向上，绝不触发离线入队。
+    try {
+      return switch (method) {
+        'GET' => await _http.get(_uri(path), headers: headers),
+        'POST' => await _http.post(_uri(path), headers: headers, body: encoded),
+        'PATCH' => await _http.patch(_uri(path), headers: headers, body: encoded),
+        'DELETE' => await _http.delete(_uri(path), headers: headers, body: encoded),
+        _ => throw ArgumentError('Unsupported method: $method'),
+      };
+    } on http.ClientException catch (exc) {
+      throw TransportException('网络连接失败', exc);
+    } on TimeoutException catch (exc) {
+      throw TransportException('网络请求超时', exc);
+    }
   }
 
-  // [人工注释][S1-019] DELETE 可能返回 204 无 body；统一解码层把空成功响应视为合法空对象，
-  // 同时仍对所有非 2xx 返回真实服务端 detail。
+  // [人工注释][S1-019][S1-016] 204 空响应仍合法；非 2xx 即使 body 为 HTML/坏 JSON 也属于服务端失败，只有 2xx 坏 JSON 才是协议异常。
   dynamic _decodeResponse(http.Response response) {
-    final dynamic decoded = response.body.isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    final isError = response.statusCode < 200 || response.statusCode >= 300;
+    dynamic decoded;
+    if (response.body.isEmpty) {
+      decoded = <String, dynamic>{};
+    } else {
+      try {
+        decoded = jsonDecode(response.body);
+      } on FormatException catch (exc) {
+        if (isError) throw ApiException(response.statusCode, '请求失败');
+        throw ProtocolException('服务端返回格式不正确', exc);
+      }
+    }
+    if (isError) {
       final detail = decoded is Map<String, dynamic> ? decoded['detail'] : null;
-      throw ApiException(
-        response.statusCode,
-        detail?.toString() ?? '请求失败',
-      );
+      throw ApiException(response.statusCode, detail?.toString() ?? '请求失败');
     }
     return decoded;
   }
@@ -275,7 +306,8 @@ class JiYiApiClient {
       await _request(method, path, body: body, authenticated: authenticated),
     );
     if (decoded is! Map<String, dynamic>) {
-      throw ApiException(200, '服务端返回格式不正确');
+      // [人工注释][S1-016] 2xx 结构异常是协议失败，不是 transport。
+      throw ProtocolException('服务端返回格式不正确');
     }
     return decoded;
   }
@@ -285,11 +317,12 @@ class JiYiApiClient {
   Future<List<Map<String, dynamic>>> _jsonListRequest(String path) async {
     final decoded = _decodeResponse(await _request('GET', path));
     if (decoded is! List<dynamic>) {
-      throw ApiException(200, '服务端返回格式不正确');
+      // [人工注释][S1-016] 列表结构异常同样 fail closed，不允许降级为 offline。
+      throw ProtocolException('服务端返回格式不正确');
     }
     return decoded.map((item) {
       if (item is! Map<String, dynamic>) {
-        throw ApiException(200, '服务端返回格式不正确');
+        throw ProtocolException('服务端返回格式不正确');
       }
       return item;
     }).toList();
