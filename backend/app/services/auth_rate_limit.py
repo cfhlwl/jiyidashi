@@ -194,7 +194,7 @@ def record_login_failure(db: Session, client_ip: str, subject: str) -> None:
 
     if bucket.failures >= settings.auth_login_backoff_after_failures:
         exponent = bucket.failures - settings.auth_login_backoff_after_failures
-        seconds = min(2**exponent, settings.auth_login_backoff_max_seconds)
+        seconds = min(2 ** (exponent + 1), settings.auth_login_backoff_max_seconds)
         bucket.blocked_until = now + timedelta(seconds=seconds)
 
     bucket.updated_at = now
