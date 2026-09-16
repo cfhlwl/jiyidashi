@@ -22,6 +22,13 @@ export type MemoryQueryResult = {
   memory_ids: string[]
 }
 
+export type UserProfile = {
+  nickname: string
+  email?: string | null
+  timezone: string
+  locale: string
+}
+
 export function getApiBaseUrl(): string {
   return Taro.getStorageSync<string>(API_BASE_KEY) || DEFAULT_API_BASE
 }
@@ -81,13 +88,21 @@ export async function loginAccount(email: string, password: string): Promise<voi
   Taro.setStorageSync(TOKEN_KEY, result.access_token)
 }
 
-export function getProfile(): Promise<{
-  nickname: string
-  email?: string | null
-  timezone: string
-  locale: string
-}> {
+export function getProfile(): Promise<UserProfile> {
   return request('GET', '/user')
+}
+
+export function updateProfile(input: {
+  nickname: string
+  timezone: string
+  locale?: string
+}): Promise<UserProfile> {
+  // [人工注释][S1-002] 小程序只提交 IANA timezone 名称，服务端再次校验后才更新用户自然日边界。
+  return request('PATCH', '/user', {
+    nickname: input.nickname.trim(),
+    timezone: input.timezone.trim(),
+    locale: (input.locale || 'zh-CN').trim(),
+  })
 }
 
 export function createTextMemory(content: string, title?: string): Promise<{ id: string }> {
