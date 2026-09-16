@@ -29,8 +29,8 @@ def _as_utc(value: datetime) -> datetime:
 
 def _bucket_key(scope: str, value: str) -> str:
     # [人工注释][S1-FIX-003] bucket key 使用服务端密钥做 HMAC，避免在限流表中存原始 IP / 邮箱。
-    message = f"{scope}:{value}".encode("utf-8")
-    return hmac.new(settings.jwt_secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+    message = f"{scope}:{value}".encode()
+    return hmac.new(settings.jwt_secret.encode(), message, hashlib.sha256).hexdigest()
 
 
 def _rate_limited(retry_after_seconds: int) -> HTTPException:
