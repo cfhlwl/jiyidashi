@@ -8,6 +8,7 @@ import {
   logout,
   registerAccount,
   setApiBaseUrl,
+  updateProfile,
 } from '../../services/api'
 import './index.scss'
 
@@ -16,10 +17,17 @@ export default function Page() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [nickname, setNickname] = useState('')
+  const [timezone, setTimezone] = useState('Asia/Shanghai')
   const [apiBase, setApiBase] = useState(getApiBaseUrl())
   const [profile, setProfile] = useState<Awaited<ReturnType<typeof getProfile>> | null>(null)
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const applyProfile = (next: Awaited<ReturnType<typeof getProfile>>) => {
+    setProfile(next)
+    setNickname(next.nickname)
+    setTimezone(next.timezone)
+  }
 
   const refreshProfile = async () => {
     if (!isAuthenticated()) {
@@ -27,7 +35,7 @@ export default function Page() {
       return
     }
     try {
-      setProfile(await getProfile())
+      applyProfile(await getProfile())
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '读取资料失败')
     }
@@ -64,6 +72,24 @@ export default function Page() {
     }
   }
 
+  const saveProfile = async () => {
+    if (!nickname.trim() || !timezone.trim()) {
+      setStatus('昵称和时区不能为空')
+      return
+    }
+    setLoading(true)
+    setStatus('')
+    try {
+      // [人工注释][S1-002] 用户修改 IANA 时区后以后端返回值为准，客户端不自行推断自然日边界。
+      applyProfile(await updateProfile({ nickname, timezone, locale: profile?.locale }))
+      setStatus('资料已更新')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '资料更新失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const saveApiBase = () => {
     setApiBaseUrl(apiBase)
     setStatus('开发环境 API 地址已保存')
@@ -75,16 +101,21 @@ export default function Page() {
         <View className='title'>我的</View>
         <View className='subtitle'>你的记忆由你控制。</View>
         <View className='card'>
-          <View className='card-title'>{profile.nickname}</View>
+          <View className='card-title'>账号资料</View>
           <Text>{profile.email || ''}</Text>
-          <View className='muted'>时区：{profile.timezone}</View>
+          <Input className='field' type='text' placeholder='昵称' value={nickname} onInput={(e) => setNickname(e.detail.value)} />
+          <Input className='field' type='text' placeholder='IANA 时区，例如 Asia/Shanghai' value={timezone} onInput={(e) => setTimezone(e.detail.value)} />
           <View className='muted'>语言：{profile.locale}</View>
+          <Button className='primary-button' disabled={loading} onClick={saveProfile}>保存资料</Button>
         </View>
         <Button
           className='secondary-button'
           onClick={() => {
             logout()
             setProfile(null)
+            setEmail('')
+            setPassword('')
+            setNickname('')
             setStatus('已退出登录')
           }}
         >
