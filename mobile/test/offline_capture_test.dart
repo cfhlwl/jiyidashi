@@ -1,13 +1,13 @@
-import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/stage1_app.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 const captureUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const captureClientUuid = '77777777-7777-4777-8777-777777777777';
 
 // [人工注释][S1-016] UI 回归用可控 API 故障区分“连接层离线”与“服务端明确拒绝”，防止把真实 4xx/5xx 伪装成本地成功。
 class _CaptureApi extends JiYiApiClient {
@@ -27,34 +27,92 @@ class _CaptureApi extends JiYiApiClient {
   }
 }
 
-void main() {
-  sqfliteFfiInit();
-  // [人工注释][S1-015] Widget 测试使用 no-isolate FFI，避免测试结束后额外 worker isolate 阻止 runner 退出；生产实现不受影响。
-  final testDatabaseFactory = databaseFactoryFfiNoIsolate;
+// [人工注释][S1-015][S1-016] SQLite 的真实落盘/重启语义由 offline_queue_test 覆盖；UI 测试使用可控 Future 精确证明“持久化完成前绝不显示成功”。
+class _CaptureQueue extends OfflineQueueStore {
+  _CaptureQueue({this.deferPersistence = false});
 
-  late Directory tempDirectory;
-  late String databasePath;
-  late OfflineQueueStore queue;
+  final bool deferPersistence;
+  final Completer<OfflineQueueItem> _writeCompleter =
+      Completer<OfflineQueueItem>();
+  OfflineQueueItem? storedItem;
+  int enqueueCalls = 0;
 
-  // [人工注释][S1-015] Widget 测试也落真实临时 SQLite 文件，确保 UI 提示建立在持久化成功而不是 mock 内存对象之上。
-  setUp(() async {
-    tempDirectory = await Directory.systemTemp.createTemp('jiyidashi-capture-');
-    databasePath =
-        '${tempDirectory.path}${Platform.pathSeparator}offline-queue.sqlite3';
-    queue = OfflineQueueStore(
-      factory: testDatabaseFactory,
-      databasePathProvider: () async => databasePath,
-      clientUuidFactory: () => '77777777-7777-4777-8777-777777777777',
+  OfflineQueueItem _item({
+    required String ownerUserId,
+    String? title,
+    required String content,
+  }) {
+    final now = DateTime.utc(2026, 9, 16, 0, 0);
+    return OfflineQueueItem(
+      id: 1,
+      ownerUserId: ownerUserId,
+      clientUuid: captureClientUuid,
+      operationType: OfflineQueueStore.textMemoryOperation,
+      payload: {
+        if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+        'content': content.trim(),
+      },
+      status: OfflineQueueStatus.pending,
+      attemptCount: 0,
+      createdAt: now,
+      updatedAt: now,
     );
-  });
+  }
 
-  tearDown(() async {
-    await queue.close();
-    await testDatabaseFactory.deleteDatabase(databasePath);
-    if (await tempDirectory.exists()) {
-      await tempDirectory.delete(recursive: true);
+  @override
+  Future<OfflineQueueItem> enqueueTextMemory({
+    required String ownerUserId,
+    String? title,
+    required String content,
+    String? clientUuid,
+  }) async {
+    enqueueCalls += 1;
+    final item = _item(
+      ownerUserId: ownerUserId,
+      title: title,
+      content: content,
+    );
+    if (deferPersistence) {
+      final persisted = await _writeCompleter.future;
+      storedItem = persisted;
+      return persisted;
     }
-  });
+    storedItem = item;
+    return item;
+  }
+
+  void completePersistence({
+    required String ownerUserId,
+    String? title,
+    required String content,
+  }) {
+    _writeCompleter.complete(
+      _item(
+        ownerUserId: ownerUserId,
+        title: title,
+        content: content,
+      ),
+    );
+  }
+
+  @override
+  Future<int> countAwaitingDelivery(String ownerUserId) async {
+    return storedItem?.ownerUserId == ownerUserId ? 1 : 0;
+  }
+
+  @override
+  Future<List<OfflineQueueItem>> listAll(String ownerUserId) async {
+    final item = storedItem;
+    if (item == null || item.ownerUserId != ownerUserId) return const [];
+    return [item];
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+void main() {
+  late _CaptureQueue queue;
 
   Future<void> pumpCapture(
     WidgetTester tester,
@@ -67,7 +125,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
   }
 
   // [人工注释][S1-016] 输入框获得焦点后光标会持续调度 frame，不能用 pumpAndSettle 等“永远静止”；改为有限等待目标 UI 状态，超时即失败。
@@ -82,33 +140,40 @@ void main() {
     throw TestFailure('Timed out waiting for expected capture UI state');
   }
 
-  testWidgets('connection failure persists text locally before success UI',
+  testWidgets('connection failure waits for local persistence before success UI',
       (tester) async {
-    // [人工注释][S1-015] 网络异常时只有当前账号 SQLite insert 完成后才允许显示“已保存到本机”，并清空用户输入。
+    // [人工注释][S1-015] 网络异常时，持久化 Future 未完成之前禁止显示“已保存到本机”；完成后才清输入并展示待发送状态。
+    queue = _CaptureQueue(deferPersistence: true);
     await pumpCapture(tester, _CaptureApi(Exception('network down')));
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), '离线标题');
     await tester.enterText(fields.at(1), '离线时也不能丢的内容');
     await tester.tap(find.widgetWithText(FilledButton, '帮我记住'));
+    await tester.pump();
 
+    expect(queue.enqueueCalls, 1);
+    expect(find.textContaining('已保存到本机'), findsNothing);
+
+    queue.completePersistence(
+      ownerUserId: captureUserId,
+      title: '离线标题',
+      content: '离线时也不能丢的内容',
+    );
     final savedLocally = find.textContaining('✓ 已保存到本机，待联网后发送');
     await pumpUntilFound(tester, savedLocally);
 
     expect(savedLocally, findsOneWidget);
     expect(find.text('本机待发送'), findsOneWidget);
     expect(find.textContaining('有 1 条记录已安全保存在本机'), findsOneWidget);
-
-    final all = await queue.listAll(captureUserId);
-    expect(all, hasLength(1));
-    expect(all.single.ownerUserId, captureUserId);
-    expect(all.single.status, OfflineQueueStatus.pending);
-    expect(all.single.payload['title'], '离线标题');
-    expect(all.single.payload['content'], '离线时也不能丢的内容');
+    expect(queue.storedItem?.ownerUserId, captureUserId);
+    expect(queue.storedItem?.payload['title'], '离线标题');
+    expect(queue.storedItem?.payload['content'], '离线时也不能丢的内容');
   });
 
   testWidgets('server ApiException remains a failure and is not queued',
       (tester) async {
     // [人工注释][S1-016] 服务端 422 等明确响应说明请求已到服务端；本地队列不得吞掉错误或显示离线保存成功。
+    queue = _CaptureQueue();
     await pumpCapture(tester, _CaptureApi(ApiException(422, '内容不符合要求')));
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(1), '这条记录被服务端拒绝');
@@ -119,7 +184,7 @@ void main() {
 
     expect(serverFailure, findsOneWidget);
     expect(find.textContaining('已保存到本机'), findsNothing);
-    expect(await queue.countAwaitingDelivery(captureUserId), 0);
-    expect(await queue.listAll(captureUserId), isEmpty);
+    expect(queue.enqueueCalls, 0);
+    expect(queue.storedItem, isNull);
   });
 }
