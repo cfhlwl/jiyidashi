@@ -37,23 +37,35 @@ def _has_object_location_intent(question: str) -> bool:
     return any(marker in question for marker in OBJECT_LOCATION_MARKERS)
 
 
-def _matching_objects(db: Session, user_id: UUID, question: str) -> list[ObjectItem]:
-    # [人工注释][S1-011] “位置意图”和“是否真的存在匹配 Object”必须分开判断。
-    # 只有命中用户已有 Object 时才由结构化 CURRENT/STALE 状态接管；否则继续普通 Memory 搜索。
+def _resolve_object(
+    db: Session,
+    user_id: UUID,
+    question: str,
+) -> tuple[ObjectItem | None, bool]:
+    # [人工注释][S1-PR3-FIX-005] Object 身份必须在查位置之前唯一解析。
+    # 子串重叠时只接受唯一的最长/最具体匹配；同等最佳无法唯一判断时宁可 NO_EVIDENCE。
     compact_question = _compact_text(question)
     if not compact_question:
-        return []
+        return None, False
 
     objects = db.scalars(
         select(ObjectItem).where(ObjectItem.user_id == user_id)
     ).all()
     matched = [
-        item
+        (item, _compact_text(item.name))
         for item in objects
         if _compact_text(item.name) and _compact_text(item.name) in compact_question
     ]
-    matched.sort(key=lambda item: len(_compact_text(item.name)), reverse=True)
-    return matched
+    if not matched:
+        return None, False
+
+    best_length = max(len(normalized_name) for _, normalized_name in matched)
+    best_matches = [
+        item for item, normalized_name in matched if len(normalized_name) == best_length
+    ]
+    if len(best_matches) != 1:
+        return None, True
+    return best_matches[0], False
 
 
 def _eligible_memory_exists() -> exists:
@@ -117,11 +129,14 @@ def query_memory(
     clean_question = question.strip()
 
     if _has_object_location_intent(clean_question):
-        matched_objects = _matching_objects(db, user_id, clean_question)
-        if matched_objects:
+        matched_object, is_ambiguous = _resolve_object(db, user_id, clean_question)
+        if is_ambiguous:
+            # [人工注释][S1-PR3-FIX-005] 同等最佳 Object 无法唯一解析时禁止按位置时间猜答案。
+            return _no_evidence("FIND_OBJECT")
+        if matched_object is not None:
             # [人工注释][S1-011] 已有 Object + 位置意图时，结构化 CURRENT 状态是最终事实源。
             # Object 存在但没有 CURRENT 必须直接 NO_EVIDENCE，严禁历史位置 Memory fallback。
-            return _find_object(db, user_id, matched_objects)
+            return _find_object(db, user_id, matched_object)
 
     return _search_memories(db, user_id, clean_question)
 
@@ -129,18 +144,16 @@ def query_memory(
 def _find_object(
     db: Session,
     user_id: UUID,
-    objects: list[ObjectItem],
+    item: ObjectItem,
 ) -> MemoryQueryResponse:
-    if not objects:
-        return _no_evidence("FIND_OBJECT")
-
-    object_ids = [item.id for item in objects]
+    # [人工注释][S1-PR3-FIX-005] 位置查询只允许读取已唯一解析 Object 的 CURRENT，
+    # 不能把多个子串匹配 Object 合并后再按 recorded_at 选择较新的另一个对象。
     location = db.scalar(
         select(ObjectLocation)
         .join(Memory, Memory.id == ObjectLocation.memory_id)
         .where(
             ObjectLocation.user_id == user_id,
-            ObjectLocation.object_id.in_(object_ids),
+            ObjectLocation.object_id == item.id,
             ObjectLocation.status == ObjectLocationStatus.CURRENT,
             Memory.user_id == user_id,
             Memory.is_deleted.is_(False),
@@ -158,15 +171,14 @@ def _find_object(
     if source is None:
         return _no_evidence("FIND_OBJECT")
 
-    matched_object = next(item for item in objects if item.id == location.object_id)
-    answer = f"你最后一次记录“{matched_object.name}”的位置是：{location.location_text}。"
+    answer = f"你最后一次记录“{item.name}”的位置是：{location.location_text}。"
     evidence = Evidence(
         kind="OBJECT_LOCATION",
         id=location.id,
         source_type=source.source_type,
         memory_source_id=source.id,
         occurred_at=location.recorded_at,
-        excerpt=f"{matched_object.name}：{location.location_text}",
+        excerpt=f"{item.name}：{location.location_text}",
         confidence=source.confidence,
     )
     return MemoryQueryResponse(
