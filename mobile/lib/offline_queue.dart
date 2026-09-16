@@ -91,7 +91,7 @@ class OfflineQueueStore {
     Future<String> Function()? databasePathProvider,
     String Function()? clientUuidFactory,
     DateTime Function()? now,
-  })  : _factory = factory ?? databaseFactory,
+  })  : _factory = factory,
         _databasePathProvider =
             databasePathProvider ?? _defaultDatabasePath,
         _clientUuidFactory = clientUuidFactory ?? _newClientUuid,
@@ -101,7 +101,7 @@ class OfflineQueueStore {
   static const String databaseFileName = 'jiyidashi_stage1.sqlite3';
   static const String textMemoryOperation = 'text_memory';
 
-  final DatabaseFactory _factory;
+  final DatabaseFactory? _factory;
   final Future<String> Function() _databasePathProvider;
   final String Function() _clientUuidFactory;
   final DateTime Function() _now;
@@ -139,10 +139,11 @@ class OfflineQueueStore {
     return normalized;
   }
 
-  // [人工注释][S1-015] 首次创建与后续升级共用同一 migration 链；打开新版未知数据库时由 SQLite 报错而不是静默删除数据。
+  // [人工注释][S1-015] 只有真正首次访问 SQLite 时才解析平台 databaseFactory；纯 UI/认证测试不应被未初始化的数据库插件耦合。
   Future<Database> _database() {
     return _databaseFuture ??= () async {
-      final database = await _factory.openDatabase(
+      final factory = _factory ?? databaseFactory;
+      final database = await factory.openDatabase(
         await _databasePathProvider(),
         options: OpenDatabaseOptions(
           version: schemaVersion,
