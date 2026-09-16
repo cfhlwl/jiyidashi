@@ -2,6 +2,24 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
+const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+const _developmentApiBaseUrl = 'http://127.0.0.1:8000/v1';
+
+String _resolveApiBaseUrl(String? override) {
+  if (override != null && override.trim().isNotEmpty) {
+    return override.replaceFirst(RegExp(r'/$'), '');
+  }
+  if (_configuredApiBaseUrl.trim().isNotEmpty) {
+    return _configuredApiBaseUrl.replaceFirst(RegExp(r'/$'), '');
+  }
+  // [人工注释][S1-FIX-007] production 构建禁止静默回退 localhost；必须通过 dart-define 明确注入真实 API。
+  if (_appEnv == 'production') {
+    throw StateError('API_BASE_URL is required for production builds');
+  }
+  return _developmentApiBaseUrl;
+}
+
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
 
@@ -15,15 +33,13 @@ class ApiException implements Exception {
 class JiYiApiClient {
   JiYiApiClient({http.Client? httpClient, String? baseUrl})
       : _http = httpClient ?? http.Client(),
-        baseUrl = baseUrl ??
-            const String.fromEnvironment(
-              'API_BASE_URL',
-              defaultValue: 'http://127.0.0.1:8000/v1',
-            );
+        baseUrl = _resolveApiBaseUrl(baseUrl);
 
   final http.Client _http;
   final String baseUrl;
   String? accessToken;
+
+  bool get showDevelopmentEndpoint => _appEnv != 'production';
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
