@@ -77,7 +77,7 @@ void main() {
     await api.createTextMemory(content: '测试中文记忆内容');
   });
 
-  test('query preserves server evidence for UI rendering', () async {
+  test('query preserves real memory source evidence for UI rendering', () async {
     var calls = 0;
     final api = JiYiApiClient(
       baseUrl: 'https://example.test/v1',
@@ -105,6 +105,8 @@ void main() {
               {
                 'kind': 'OBJECT_LOCATION',
                 'id': '33333333-3333-3333-3333-333333333333',
+                'source_type': 'USER_TEXT',
+                'memory_source_id': '55555555-5555-5555-5555-555555555555',
                 'occurred_at': '2026-09-16T00:00:00Z',
                 'excerpt': '物品：书房',
                 'confidence': 1.0,
@@ -121,14 +123,18 @@ void main() {
     await api.login(email: 'user@example.test', password: 'example-password-123');
     final result = await api.queryMemory('物品在哪里？');
 
-    // [人工注释][S1-014] 客户端契约必须保留服务端 Evidence，不能只剩自由文本答案。
+    // [人工注释][S1-FIX-002] 客户端必须保留真实 source_type 和 MemorySource ID，不能把 kind 当来源。
     final evidence = result['evidence'] as List<dynamic>;
+    final firstEvidence = evidence.single as Map<String, dynamic>;
     expect(result['can_answer'], isTrue);
     expect(result['certainty'], 'confirmed');
     expect(evidence, hasLength(1));
+    expect(firstEvidence['excerpt'], '物品：书房');
+    expect(firstEvidence['kind'], 'OBJECT_LOCATION');
+    expect(firstEvidence['source_type'], 'USER_TEXT');
     expect(
-      (evidence.single as Map<String, dynamic>)['excerpt'],
-      '物品：书房',
+      firstEvidence['memory_source_id'],
+      '55555555-5555-5555-5555-555555555555',
     );
   });
 }
