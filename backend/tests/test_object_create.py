@@ -20,7 +20,8 @@ def test_concurrent_duplicate_object_insert_reselects_existing():
     db.scalar.side_effect = [None, existing]
     db.commit.side_effect = IntegrityError("INSERT objects", {}, RuntimeError("unique"))
 
-    # [人工注释][S1-FIX-006] 模拟两设备同时首次创建同名 Object：唯一键失败后必须 rollback + reselect，而不是向用户返回 500。
+    # [人工注释][S1-FIX-006] 模拟两设备同时首次创建同名 Object；
+    # 唯一键失败后必须 rollback + reselect，而不是向用户返回 500。
     result = create_object(ObjectCreate(name="护照"), user_id, db)
 
     assert result is existing
