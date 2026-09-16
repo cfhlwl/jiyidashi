@@ -70,9 +70,8 @@ class JiYiApiClient {
       },
       authenticated: false,
     );
-    accessToken = data['access_token'] as String;
-    // [人工注释][S1-015] 本地账号作用域只接受认证响应里的真实 user_id；缺失/错误格式直接暴露协议错误，不创建无归属离线数据。
-    authenticatedUserId = data['user_id'] as String;
+    // [人工注释][S1-015] 注册响应必须同时提供 token + user_id 才建立本机登录作用域，避免半登录状态写入无归属 SQLite 数据。
+    _establishAuthenticatedSession(data);
     return data;
   }
 
@@ -80,17 +79,30 @@ class JiYiApiClient {
     required String email,
     required String password,
   }) async {
-    // [人工注释][S1-001] 登录成功后只在当前进程保存正式 Token；持久化会在 S1-015 单独实现。
+    // [人工注释][S1-001] 登录成功后只在当前进程保存正式 Token；持久化会在独立认证持久化任务中处理。
     final data = await _jsonRequest(
       'POST',
       '/auth/login',
       body: {'email': email.trim(), 'password': password},
       authenticated: false,
     );
-    accessToken = data['access_token'] as String;
-    // [人工注释][S1-015] 离线 SQLite 必须按服务端 user_id 分区，避免同机切换账号后看到或未来发送其他用户的待处理记录。
-    authenticatedUserId = data['user_id'] as String;
+    // [人工注释][S1-015] 离线 SQLite 必须按认证响应的真实 user_id 分区；token/user_id 原子建立，协议异常时两者都不落入会话。
+    _establishAuthenticatedSession(data);
     return data;
+  }
+
+  // [人工注释][S1-015] 本机会话身份以服务端认证响应为唯一来源；字段缺失、空值或类型错误都 fail-closed，不创建模糊账号作用域。
+  void _establishAuthenticatedSession(Map<String, dynamic> data) {
+    final token = data['access_token'];
+    final userId = data['user_id'];
+    if (token is! String ||
+        token.trim().isEmpty ||
+        userId is! String ||
+        userId.trim().isEmpty) {
+      throw ApiException(200, '认证服务返回格式不正确');
+    }
+    accessToken = token;
+    authenticatedUserId = userId;
   }
 
   Future<Map<String, dynamic>> getProfile() {
