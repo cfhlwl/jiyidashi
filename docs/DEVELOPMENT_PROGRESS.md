@@ -5,12 +5,13 @@
 <!-- [人工注释][DOC-PROGRESS-005] Stage 1 第一批真实用户闭环已启动：身份、文字记忆、物品位置、查询与 Evidence 三端接线。 -->
 <!-- [人工注释][DOC-PROGRESS-006] Stage 1 第一批代码与自动验收已完成，PR #2 进入正式审查前状态；Stage 2 继续保持未开始。 -->
 <!-- [人工注释][DOC-PROGRESS-007] PR #2 第一轮正式审查 HOLD：3 个 P1 + 4 个 P2 进入第二轮修复，PR 已转回 Draft。 -->
+<!-- [人工注释][DOC-PROGRESS-008] PR #2 第二轮正式复审 PASS：7 个修复项均关闭，三端 CI 全绿，当前待最终 HEAD/CI 窄复核与合并。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-16  
-> 当前阶段：Stage 1「记得住」PR #2 第二轮修复中  
+> 当前阶段：Stage 1「记得住」PR #2 第二轮审查 PASS / 待合并  
 > 当前开发分支：`feat/stage1-memory-loop`  
-> 当前 PR：#2 `feat: build Stage 1 trusted memory loop`（Draft）
+> 当前 PR：#2 `feat: build Stage 1 trusted memory loop`（Ready for Review）
 
 ## 状态规则
 
@@ -32,11 +33,11 @@
 | ID | 模块 | 当前状态 | 说明 |
 | --- | --- | --- | --- |
 | FND-000 | V1 Foundation 总体 | ✅ 已完成 | PR #1 已通过最终复核并合并 `main` |
-| S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | 🔵 进行中 | PR #2 第一轮 HOLD；第二轮只修审查发现的 3 个 P1 + 4 个 P2，不扩 Stage 2 |
-| CI-001 | Backend CI | ✅ 已完成 | Foundation 基线持续通过；PR #2 第一轮审查基线 pytest 26/26 PASS |
-| CI-002 | Flutter Android CI | ✅ 已完成 | 第一轮审查基线 analyze + test + debug APK build PASS；第二轮修复后需重新验收 |
-| CI-003 | Flutter iOS CI | ✅ 已完成 | 第一轮审查基线 `flutter build ios --debug --no-codesign` PASS；第二轮修复后需重新验收 |
-| CI-004 | 微信小程序 CI | ✅ 已完成 | 第一轮审查基线 `npm ci` + TypeScript + Taro WeChat build PASS；第二轮修复后需重新验收 |
+| S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | 🟠 待合并 | PR #2 第二轮正式复审 PASS；7 个修复项关闭，等待最终 HEAD/CI 窄复核后合并 |
+| CI-001 | Backend CI | ✅ 已完成 | PR #2 第二轮基线 Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 33/33 PASS |
+| CI-002 | Flutter Android CI | ✅ 已完成 | 第二轮基线 analyze + test + production-config debug APK build PASS |
+| CI-003 | Flutter iOS CI | ✅ 已完成 | 第二轮基线 production-config `flutter build ios --debug --no-codesign` PASS |
+| CI-004 | 微信小程序 CI | ✅ 已完成 | 第二轮基线 `npm ci` + TypeScript + production Taro WeChat build PASS |
 
 ---
 
@@ -79,20 +80,20 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S1-001 | 正式用户注册 / 登录 | 🔵 | 第一轮 HOLD：补认证限速/退避、dummy Argon2、迁移 metadata/drift gate |
-| S1-002 | 用户资料与时区设置 | 🔵 | 第一轮 HOLD：补 trim 后非空校验与 whitespace-only 422 |
+| S1-001 | 正式用户注册 / 登录 | 🟠 | 第二轮正式复审 PASS；认证限速/退避、dummy Argon2、迁移 metadata/drift gate 已关闭问题，待合并 |
+| S1-002 | 用户资料与时区设置 | 🟠 | 第二轮正式复审 PASS；trim 后非空校验与 whitespace-only 422 已验证，待合并 |
 | S1-003 | 文字记忆录入 | 🟠 | Flutter / 小程序均接真实 Memory API，客户端仅声明 `USER_TEXT` |
 | S1-004 | 语音记忆录入 | ⬜ | 需要录音、上传、ASR、Evidence |
 | S1-005 | 图片记忆录入 | ⬜ | 主动拍照 / 主动选择，不默认全相册扫描 |
 | S1-006 | COS / OSS 对象存储直传 | ⬜ | 私有桶 + 临时签名 URL |
 | S1-007 | ASR 语音转写 | ⬜ | 原始音频保留为证据 |
 | S1-008 | “帮我记住”统一入口 | ⬜ | 文字 / 语音 / 拍照统一进入 Memory Pipeline |
-| S1-009 | “东西在哪”物品录入 | 🔵 | 第一轮 P2：补 Object create 并发唯一约束竞争兜底 |
-| S1-010 | “东西在哪”查询 | 🔵 | 第一轮 P1：Evidence 返回真实 `source_type` / `memory_source_id` |
+| S1-009 | “东西在哪”物品录入 | 🟠 | 第二轮正式复审 PASS；Object create 并发唯一约束竞争已幂等兜底，待合并 |
+| S1-010 | “东西在哪”查询 | 🟠 | 第二轮正式复审 PASS；Evidence 返回真实 `source_type` / `memory_source_id`，待合并 |
 | S1-011 | 物品位置失效 / “已经不在那里” | ⬜ | CURRENT → STALE / UNKNOWN |
-| S1-012 | 基础记忆搜索 | 🔵 | 第一轮 P1：普通 Memory 查询 Evidence 同样补真实来源 |
-| S1-013 | “问记忆”客户端页面接真实 API | 🔵 | Flutter / 小程序适配真实 Evidence source contract |
-| S1-014 | 答案展示 Evidence / 来源 / 时间 | 🔵 | 第一轮 P1：不得再把 `kind` 当来源，必须展示 `source_type` |
+| S1-012 | 基础记忆搜索 | 🟠 | 第二轮正式复审 PASS；普通 Memory Evidence 返回真实来源且不降低 Evidence gate，待合并 |
+| S1-013 | “问记忆”客户端页面接真实 API | 🟠 | 第二轮正式复审 PASS；Flutter / 小程序已消费真实 Evidence source contract，待合并 |
+| S1-014 | 答案展示 Evidence / 来源 / 时间 | 🟠 | 第二轮正式复审 PASS；客户端展示 `source_type`、证据类型、时间和可信度，待合并 |
 | S1-015 | 客户端本地 SQLite | ⬜ | Android / iOS 本地持久化 |
 | S1-016 | 离线记忆队列 | ⬜ | 无网络仍可“记一下” |
 | S1-017 | 离线同步与幂等 | ⬜ | 使用 client UUID 防重复 |
@@ -110,19 +111,19 @@
 
 | ID | 优先级 | 问题 | 状态 | 第二轮验收 |
 | --- | --- | --- | --- | --- |
-| S1-FIX-001 | P1 | `AuthIdentity` 未显式进入 Alembic metadata / 无 schema drift gate | 🔵 | `migrations/env.py`、`create_schema()` 显式加载；PostgreSQL `alembic check` PASS |
-| S1-FIX-002 | P1 | Evidence 未返回真实 `source_type` | 🔵 | API 返回 `source_type` + `memory_source_id`；Flutter/小程序展示真实来源 |
-| S1-FIX-003 | P1 | `/register` / `/login` 缺少抗爆破与 Argon2 DoS 门禁 | 🔵 | 匿名认证有 IP/账号窗口门禁、429、短期指数退避，并有自动测试 |
-| S1-FIX-004 | P2 | 不存在账号未执行 dummy Argon2 verify | 🔵 | missing/wrong-password 均执行 Argon2 成本路径并统一 401 |
-| S1-FIX-005 | P2 | nickname / locale 可由纯空白绕过 min_length | 🔵 | strip-before-validation；whitespace-only 返回 422 |
-| S1-FIX-006 | P2 | 同名 Object 并发创建可能唯一约束 500 | 🔵 | `IntegrityError` rollback + reselect，幂等返回已存在对象 |
-| S1-FIX-007 | P2 | 客户端生产 API endpoint 仍是开发态 | 🔵 | Flutter/小程序 build-time endpoint；生产构建不暴露小程序 API 编辑入口 |
+| S1-FIX-001 | P1 | `AuthIdentity` 未显式进入 Alembic metadata / 无 schema drift gate | 🟠 | 第二轮正式复审 PASS；显式加载 metadata，PostgreSQL `alembic check` 显示无 drift，待合并 |
+| S1-FIX-002 | P1 | Evidence 未返回真实 `source_type` | 🟠 | 第二轮正式复审 PASS；API 返回 `source_type` + `memory_source_id`，Flutter/小程序展示真实来源，待合并 |
+| S1-FIX-003 | P1 | `/register` / `/login` 缺少抗爆破与 Argon2 DoS 门禁 | 🟠 | 第二轮正式复审 PASS；IP/账号窗口、429、Retry-After、指数退避均已验证，待合并 |
+| S1-FIX-004 | P2 | 不存在账号未执行 dummy Argon2 verify | 🟠 | 第二轮正式复审 PASS；missing/wrong-password 均执行 Argon2 成本路径并统一 401，待合并 |
+| S1-FIX-005 | P2 | nickname / locale 可由纯空白绕过 min_length | 🟠 | 第二轮正式复审 PASS；strip-before-validation，whitespace-only 返回 422，待合并 |
+| S1-FIX-006 | P2 | 同名 Object 并发创建可能唯一约束 500 | 🟠 | 第二轮正式复审 PASS；`IntegrityError` rollback + reselect，幂等返回已存在对象，待合并 |
+| S1-FIX-007 | P2 | 客户端生产 API endpoint 仍是开发态 | 🟠 | 第二轮正式复审 PASS；Flutter/小程序 build-time endpoint，production CI 真构建，待合并 |
 
 ---
 
 # 3. Stage 2：自动记
 
-> **当前明确未开始。PR #2 第二轮修复与复审完成前，不进入后台定位。**
+> **当前明确未开始。PR #2 合并 `main` 前，不进入后台定位。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
