@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     auto_create_schema: bool = False
     cors_origins: list[str] = Field(default_factory=list)
 
+    # [人工注释][S1-FIX-003] 正式认证的滥用保护默认开启，生产环境禁止关闭。
+    auth_rate_limit_enabled: bool = True
+    auth_register_ip_limit: int = 20
+    auth_register_window_seconds: int = 600
+    auth_login_ip_limit: int = 30
+    auth_login_account_ip_limit: int = 8
+    auth_login_window_seconds: int = 900
+    auth_login_backoff_after_failures: int = 3
+    auth_login_backoff_max_seconds: int = 60
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -31,6 +41,9 @@ class Settings(BaseSettings):
         # [人工注释][FND-019] 生产环境配置本身也必须拒绝 dev auth，避免误配置后服务带后门启动。
         if self.is_production and self.enable_dev_auth:
             raise ValueError("ENABLE_DEV_AUTH must be false in production")
+
+        if self.is_production and not self.auth_rate_limit_enabled:
+            raise ValueError("AUTH_RATE_LIMIT_ENABLED must be true in production")
 
         if self.is_production and (
             self.jwt_secret == "change-this-in-real-environments"
