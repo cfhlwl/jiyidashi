@@ -68,6 +68,8 @@ export function logout(): void {
   Taro.removeStorageSync(TOKEN_KEY)
 }
 
+// [人工注释][S1-019] 统一传输层显式包含 DELETE，单条记忆删除必须真正到达服务端；
+// 非 2xx 始终抛出服务端错误，客户端不能把失败请求当作本地删除成功。
 async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, data?: unknown): Promise<T> {
   const token = Taro.getStorageSync<string>(TOKEN_KEY)
   const response = await Taro.request<T>({
