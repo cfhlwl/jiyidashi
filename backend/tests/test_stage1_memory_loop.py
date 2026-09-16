@@ -41,6 +41,10 @@ async def test_formal_user_can_record_and_retrieve_text_memory(client: AsyncClie
     assert body["can_answer"] is True
     assert body["evidence"]
     assert body["memory_ids"] == [created.json()["id"]]
+    # [人工注释][S1-FIX-002] kind 是证据实体类型；真实采集来源必须来自 MemorySource.source_type。
+    assert body["evidence"][0]["kind"] == "MEMORY"
+    assert body["evidence"][0]["source_type"] == "USER_TEXT"
+    assert body["evidence"][0]["memory_source_id"]
 
 
 async def test_formal_user_object_location_query_returns_evidence(client: AsyncClient):
@@ -78,6 +82,9 @@ async def test_formal_user_object_location_query_returns_evidence(client: AsyncC
     assert len(body["evidence"]) >= 1
     assert body["evidence"][0]["excerpt"]
     assert body["evidence"][0]["occurred_at"]
+    assert body["evidence"][0]["kind"] == "OBJECT_LOCATION"
+    assert body["evidence"][0]["source_type"] == "USER_TEXT"
+    assert body["evidence"][0]["memory_source_id"]
 
 
 async def test_formal_user_query_without_evidence_still_refuses_to_guess(client: AsyncClient):
