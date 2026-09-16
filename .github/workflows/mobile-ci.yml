@@ -35,7 +35,11 @@ jobs:
         run: flutter test
 
       - name: Build Android debug APK
-        run: flutter build apk --debug
+        # [人工注释][S1-FIX-007] CI 用 production dart-define 构建，证明生产产物必须走显式 HTTPS API 且不显示开发 endpoint。
+        run: >-
+          flutter build apk --debug
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
 
   ios:
     runs-on: macos-latest
@@ -55,4 +59,8 @@ jobs:
         run: flutter pub get
 
       - name: Build iOS without codesigning
-        run: flutter build ios --debug --no-codesign
+        # [人工注释][S1-FIX-007] iOS 同样以 production dart-define 验证 build-time endpoint 契约。
+        run: >-
+          flutter build ios --debug --no-codesign
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
