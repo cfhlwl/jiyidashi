@@ -1,6 +1,7 @@
 <!-- [人工注释][FND-025] 本文档必须与当前公开 schema 同步；客户端只能声明 capture_source，可信等级由服务端所有。 -->
 <!-- [人工注释][S1-001] Stage 1 正式认证接口已加入公开 API；dev-token 仍只用于显式开启的开发/测试环境。 -->
 <!-- [人工注释][S1-FIX-002][S1-FIX-003] 第二轮修复补充真实 Evidence 来源契约与正式认证滥用保护。 -->
+<!-- [人工注释][S1-011][S1-019][S1-023][S1-024] Stage 1 第二批补齐位置失效、单条删除、暂停今天与手动恢复控制语义。 -->
 # V1 API 基线
 
 Base path:
@@ -134,6 +135,18 @@ POST /v1/memories
 }
 ```
 
+### 删除单条 Memory
+
+```http
+DELETE /v1/memories/{id}
+```
+
+删除成功返回 `204`。
+
+- 删除后的 Memory 不能再进入普通记忆搜索或 Evidence 回答。
+- 如果该 Memory 支撑一个 CURRENT ObjectLocation，删除会让该当前位置同步失效。
+- Flutter / 微信小程序只有在服务端 DELETE 成功后才清空当前答案，不能只做本地隐藏。
+
 ## Objects
 
 ```http
@@ -167,6 +180,18 @@ POST /v1/objects/{id}/locations
 ```
 
 `recorded_at` 可省略；如果客户端显式提交，必须携带时区偏移。
+
+### 明确标记“已经不在那里”
+
+```http
+POST /v1/objects/{id}/location/stale
+```
+
+该接口用于用户主动纠正当前位置：
+
+- 当前 `CURRENT` 位置变为 `STALE`，历史记录保留。
+- 此后再问“护照在哪里？”时，结构化 ObjectLocation 状态是最终事实源；如果没有新的 CURRENT，必须返回 `NO_EVIDENCE`。
+- 对象位置意图**不得**回退普通 Memory 搜索，把历史位置重新当成当前位置回答。
 
 ## 查询记忆
 
@@ -278,18 +303,42 @@ POST /v1/location/batch
 
 恢复后补传历史点时，服务端仍会根据每个点自身 `recorded_at` 与持久化暂停区间比对；暂停期间产生的自动位置不会因为延迟上传而入库。
 
-## 隐私
+## 隐私 / 记忆暂停
 
 ```http
 GET  /v1/privacy/status
 POST /v1/privacy/pause
+POST /v1/privacy/pause/today
 POST /v1/privacy/resume
 ```
 
 暂停 30 分钟：
 
 ```json
+POST /v1/privacy/pause
 {
   "duration_minutes": 30
 }
 ```
+
+客户端可用固定时长：30 分钟、60 分钟、180 分钟。
+
+### 暂停今天
+
+```http
+POST /v1/privacy/pause/today
+```
+
+“今天”由服务端读取用户资料中的 IANA timezone，计算该用户**下一次本地午夜**，客户端不得按设备时区自行猜结束时间。
+
+### 手动恢复
+
+```http
+POST /v1/privacy/resume
+```
+
+恢复只结束当前 pause interval：
+
+- 历史暂停区间不会删除。
+- 暂停期间产生的自动位置点即使恢复后才上传，仍会被服务端识别并拒绝入库。
+- 暂停只影响自动采集；用户主动执行“记一下”、文字记忆、物品位置记录仍允许。
