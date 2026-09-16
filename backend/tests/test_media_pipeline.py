@@ -519,6 +519,7 @@ def test_production_custom_storage_endpoint_requires_https():
     # [人工注释][S1-006] production 自定义 endpoint 不能把原图或 SigV4 能力票据降级到明文 HTTP。
     common = {
         "app_env": "production",
+        "enable_dev_auth": False,
         "jwt_secret": "x" * 32,
         "storage_backend": "s3",
         "storage_bucket": "private-bucket",
