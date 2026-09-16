@@ -38,6 +38,8 @@ class JiYiApiClient {
   final http.Client _http;
   final String baseUrl;
   String? accessToken;
+  // [人工注释][S1-015] 登录态同时保留服务端签发的 user_id，作为本机 SQLite 数据的账号隔离键；不得用昵称/邮箱猜身份。
+  String? authenticatedUserId;
 
   bool get showDevelopmentEndpoint => _appEnv != 'production';
 
@@ -69,6 +71,8 @@ class JiYiApiClient {
       authenticated: false,
     );
     accessToken = data['access_token'] as String;
+    // [人工注释][S1-015] 本地账号作用域只接受认证响应里的真实 user_id；缺失/错误格式直接暴露协议错误，不创建无归属离线数据。
+    authenticatedUserId = data['user_id'] as String;
     return data;
   }
 
@@ -84,6 +88,8 @@ class JiYiApiClient {
       authenticated: false,
     );
     accessToken = data['access_token'] as String;
+    // [人工注释][S1-015] 离线 SQLite 必须按服务端 user_id 分区，避免同机切换账号后看到或未来发送其他用户的待处理记录。
+    authenticatedUserId = data['user_id'] as String;
     return data;
   }
 
@@ -203,6 +209,8 @@ class JiYiApiClient {
 
   void logout() {
     accessToken = null;
+    // [人工注释][S1-015] 退出登录同时清掉当前本机账号作用域；SQLite 数据保留但下一个账号不能读取它。
+    authenticatedUserId = null;
   }
 
   // [人工注释][S1-019] 统一传输层显式支持 DELETE；204 空响应也必须沿同一服务端成功链处理，
