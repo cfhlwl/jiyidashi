@@ -24,10 +24,11 @@ extension OfflineQueueStatusStorage on OfflineQueueStatus {
   }
 }
 
-// [人工注释][S1-015] 本地记录保留稳定 clientUuid、原始本地 payload 与完整状态字段；不把本地状态冒充服务端 Memory。
+// [人工注释][S1-015] 本地记录必须绑定真实服务端 user_id，并保留稳定 clientUuid、原始 payload 与状态；本地状态不冒充服务端 Memory。
 class OfflineQueueItem {
   const OfflineQueueItem({
     required this.id,
+    required this.ownerUserId,
     required this.clientUuid,
     required this.operationType,
     required this.payload,
@@ -41,6 +42,7 @@ class OfflineQueueItem {
   });
 
   final int id;
+  final String ownerUserId;
   final String clientUuid;
   final String operationType;
   final Map<String, dynamic> payload;
@@ -63,6 +65,7 @@ class OfflineQueueItem {
     }
     return OfflineQueueItem(
       id: row['id']! as int,
+      ownerUserId: row['owner_user_id']! as String,
       clientUuid: row['client_uuid']! as String,
       operationType: row['operation_type']! as String,
       payload: decoded,
@@ -124,6 +127,18 @@ class OfflineQueueStore {
 
   DateTime _utcNow() => _now().toUtc();
 
+  String _normalizeOwnerUserId(String ownerUserId) {
+    final normalized = ownerUserId.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(
+        ownerUserId,
+        'ownerUserId',
+        'owner user ID must not be empty',
+      );
+    }
+    return normalized;
+  }
+
   // [人工注释][S1-015] 首次创建与后续升级共用同一 migration 链；打开新版未知数据库时由 SQLite 报错而不是静默删除数据。
   Future<Database> _database() {
     return _databaseFuture ??= () async {
@@ -147,7 +162,8 @@ class OfflineQueueStore {
           await db.execute('''
             CREATE TABLE offline_queue (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
-              client_uuid TEXT NOT NULL UNIQUE,
+              owner_user_id TEXT NOT NULL,
+              client_uuid TEXT NOT NULL,
               operation_type TEXT NOT NULL,
               payload_json TEXT NOT NULL,
               status TEXT NOT NULL CHECK (
@@ -158,12 +174,13 @@ class OfflineQueueStore {
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
               completed_at TEXT,
-              cancelled_at TEXT
+              cancelled_at TEXT,
+              UNIQUE(owner_user_id, client_uuid)
             )
           ''');
           await db.execute('''
-            CREATE INDEX idx_offline_queue_status_created
-            ON offline_queue(status, created_at, id)
+            CREATE INDEX idx_offline_queue_owner_status_created
+            ON offline_queue(owner_user_id, status, created_at, id)
           ''');
       }
     }
@@ -186,6 +203,7 @@ class OfflineQueueStore {
 
   // [人工注释][S1-016] 当前只验证稳定的文字记录本地结构；payload 是本地格式，不新增或修改 Backend 媒体/API 字段。
   Future<OfflineQueueItem> enqueueTextMemory({
+    required String ownerUserId,
     String? title,
     required String content,
     String? clientUuid,
@@ -196,6 +214,7 @@ class OfflineQueueStore {
     }
     final normalizedTitle = title?.trim();
     return enqueueLocalTask(
+      ownerUserId: ownerUserId,
       operationType: textMemoryOperation,
       payload: {
         if (normalizedTitle != null && normalizedTitle.isNotEmpty)
@@ -206,12 +225,14 @@ class OfflineQueueStore {
     );
   }
 
-  // [人工注释][S1-016] 入队事务以 client_uuid 唯一约束去重；相同 UUID + 相同内容返回原任务，不同内容直接拒绝避免串单。
+  // [人工注释][S1-016] 入队事务同时按真实 user_id 与 client_uuid 隔离/去重；同账号相同 UUID 不允许被不同内容静默覆盖。
   Future<OfflineQueueItem> enqueueLocalTask({
+    required String ownerUserId,
     required String operationType,
     required Map<String, dynamic> payload,
     String? clientUuid,
   }) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
     final normalizedType = operationType.trim();
     if (normalizedType.isEmpty) {
       throw ArgumentError.value(
@@ -229,8 +250,8 @@ class OfflineQueueStore {
     return db.transaction((txn) async {
       final existingRows = await txn.query(
         'offline_queue',
-        where: 'client_uuid = ?',
-        whereArgs: [stableUuid],
+        where: 'owner_user_id = ? AND client_uuid = ?',
+        whereArgs: [owner, stableUuid],
         limit: 1,
       );
       if (existingRows.isNotEmpty) {
@@ -244,6 +265,7 @@ class OfflineQueueStore {
 
       final now = _utcNow().toIso8601String();
       final id = await txn.insert('offline_queue', {
+        'owner_user_id': owner,
         'client_uuid': stableUuid,
         'operation_type': normalizedType,
         'payload_json': payloadJson,
@@ -262,37 +284,46 @@ class OfflineQueueStore {
     });
   }
 
-  // [人工注释][S1-016] 重启恢复与后续 S1-017 调度均从 SQLite 读取真实队列，不维护易丢失的内存镜像。
-  Future<List<OfflineQueueItem>> listAll() async {
+  // [人工注释][S1-016] 重启恢复与后续 S1-017 调度均按 user_id 从 SQLite 读取真实队列，不维护易丢失或跨账号的内存镜像。
+  Future<List<OfflineQueueItem>> listAll(String ownerUserId) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
     final db = await _database();
     final rows = await db.query(
       'offline_queue',
+      where: 'owner_user_id = ?',
+      whereArgs: [owner],
       orderBy: 'created_at ASC, id ASC',
     );
     return rows.map(OfflineQueueItem.fromRow).toList(growable: false);
   }
 
-  Future<OfflineQueueItem?> findByClientUuid(String clientUuid) async {
+  Future<OfflineQueueItem?> findByClientUuid(
+    String ownerUserId,
+    String clientUuid,
+  ) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
     final db = await _database();
     final rows = await db.query(
       'offline_queue',
-      where: 'client_uuid = ?',
-      whereArgs: [clientUuid],
+      where: 'owner_user_id = ? AND client_uuid = ?',
+      whereArgs: [owner, clientUuid],
       limit: 1,
     );
     return rows.isEmpty ? null : OfflineQueueItem.fromRow(rows.single);
   }
 
-  // [人工注释][S1-016] UI 只统计仍需处理的本机任务；completed/cancelled 不再显示为“待发送”。
-  Future<int> countAwaitingDelivery() async {
+  // [人工注释][S1-016] UI 只统计当前登录用户仍需处理的本机任务；其他账号以及 completed/cancelled 均不可见。
+  Future<int> countAwaitingDelivery(String ownerUserId) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
     final db = await _database();
     final result = await db.rawQuery(
       '''
         SELECT COUNT(*) AS total
         FROM offline_queue
-        WHERE status IN (?, ?, ?)
+        WHERE owner_user_id = ? AND status IN (?, ?, ?)
       ''',
       [
+        owner,
         OfflineQueueStatus.pending.storageValue,
         OfflineQueueStatus.sending.storageValue,
         OfflineQueueStatus.failed.storageValue,
@@ -302,8 +333,12 @@ class OfflineQueueStore {
   }
 
   // [人工注释][S1-016] pending -> sending 才增加 attempt_count；重试先把同一条 failed 任务恢复 pending，再由发送动作计数。
-  Future<OfflineQueueItem> markSending(String clientUuid) {
+  Future<OfflineQueueItem> markSending(
+    String ownerUserId,
+    String clientUuid,
+  ) {
     return _transition(
+      ownerUserId,
       clientUuid,
       allowed: const {OfflineQueueStatus.pending},
       next: OfflineQueueStatus.sending,
@@ -316,9 +351,14 @@ class OfflineQueueStore {
   }
 
   // [人工注释][S1-016] 只有 sending 能进入 failed，错误原因持久化供重启后展示/诊断；失败绝不写 completed_at。
-  Future<OfflineQueueItem> markFailed(String clientUuid, String error) {
+  Future<OfflineQueueItem> markFailed(
+    String ownerUserId,
+    String clientUuid,
+    String error,
+  ) {
     final normalizedError = error.trim();
     return _transition(
+      ownerUserId,
       clientUuid,
       allowed: const {OfflineQueueStatus.sending},
       next: OfflineQueueStatus.failed,
@@ -331,8 +371,12 @@ class OfflineQueueStore {
   }
 
   // [人工注释][S1-016] completed 只能来自 sending 的明确成功确认；本轮不实现产生该确认的网络同步器。
-  Future<OfflineQueueItem> markCompleted(String clientUuid) {
+  Future<OfflineQueueItem> markCompleted(
+    String ownerUserId,
+    String clientUuid,
+  ) {
     return _transition(
+      ownerUserId,
       clientUuid,
       allowed: const {OfflineQueueStatus.sending},
       next: OfflineQueueStatus.completed,
@@ -344,9 +388,13 @@ class OfflineQueueStore {
     );
   }
 
-  // [人工注释][S1-016] failed -> pending 在原行原 client_uuid 上重试，不 insert 新任务，因此不会制造本地重复记录。
-  Future<OfflineQueueItem> retryFailed(String clientUuid) {
+  // [人工注释][S1-016] failed -> pending 在同账号原行原 client_uuid 上重试，不 insert 新任务，因此不会制造本地重复记录。
+  Future<OfflineQueueItem> retryFailed(
+    String ownerUserId,
+    String clientUuid,
+  ) {
     return _transition(
+      ownerUserId,
       clientUuid,
       allowed: const {OfflineQueueStatus.failed},
       next: OfflineQueueStatus.pending,
@@ -357,9 +405,12 @@ class OfflineQueueStore {
     );
   }
 
-  // [人工注释][S1-016] 取消采用软状态：pending/failed 可取消，sending/completed 不允许假装取消；重复取消保持幂等。
-  Future<OfflineQueueItem> cancel(String clientUuid) async {
-    final current = await findByClientUuid(clientUuid);
+  // [人工注释][S1-016] 取消采用软状态：当前用户的 pending/failed 可取消，sending/completed 不允许假装取消；重复取消保持幂等。
+  Future<OfflineQueueItem> cancel(
+    String ownerUserId,
+    String clientUuid,
+  ) async {
+    final current = await findByClientUuid(ownerUserId, clientUuid);
     if (current == null) {
       throw StateError('Offline queue item not found: $clientUuid');
     }
@@ -367,6 +418,7 @@ class OfflineQueueStore {
       return current;
     }
     return _transition(
+      ownerUserId,
       clientUuid,
       allowed: const {
         OfflineQueueStatus.pending,
@@ -382,6 +434,7 @@ class OfflineQueueStore {
   }
 
   Future<OfflineQueueItem> _transition(
+    String ownerUserId,
     String clientUuid, {
     required Set<OfflineQueueStatus> allowed,
     required OfflineQueueStatus next,
@@ -390,12 +443,13 @@ class OfflineQueueStore {
       String now,
     ) mutate,
   }) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
     final db = await _database();
     return db.transaction((txn) async {
       final rows = await txn.query(
         'offline_queue',
-        where: 'client_uuid = ?',
-        whereArgs: [clientUuid],
+        where: 'owner_user_id = ? AND client_uuid = ?',
+        whereArgs: [owner, clientUuid],
         limit: 1,
       );
       if (rows.isEmpty) {
@@ -414,13 +468,13 @@ class OfflineQueueStore {
           'status': next.storageValue,
           ...mutate(current, now),
         },
-        where: 'id = ?',
-        whereArgs: [current.id],
+        where: 'id = ? AND owner_user_id = ?',
+        whereArgs: [current.id, owner],
       );
       final updated = await txn.query(
         'offline_queue',
-        where: 'id = ?',
-        whereArgs: [current.id],
+        where: 'id = ? AND owner_user_id = ?',
+        whereArgs: [current.id, owner],
         limit: 1,
       );
       return OfflineQueueItem.fromRow(updated.single);
