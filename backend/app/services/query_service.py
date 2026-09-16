@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import desc, exists, or_, select
 from sqlalchemy.orm import Session
 
+from app.media_models import MediaEvidenceLink
 from app.models import (
     Memory,
     MemorySource,
@@ -90,6 +91,16 @@ def _best_memory_source(db: Session, memory_id: UUID) -> MemorySource | None:
         )
         .order_by(desc(MemorySource.confidence), desc(MemorySource.created_at))
         .limit(1)
+    )
+
+
+def _media_id_for_source(db: Session, memory_source_id: UUID) -> UUID | None:
+    # [人工注释][S1-005] 查询层只从服务端 MediaEvidenceLink 暴露 media_id；
+    # 普通文本/语音 Evidence 返回 null，客户端不能靠 source_type 自造媒体关联。
+    return db.scalar(
+        select(MediaEvidenceLink.media_id).where(
+            MediaEvidenceLink.memory_source_id == memory_source_id
+        )
     )
 
 
@@ -180,6 +191,7 @@ def _find_object(
         occurred_at=location.recorded_at,
         excerpt=f"{item.name}：{location.location_text}",
         confidence=source.confidence,
+        media_id=_media_id_for_source(db, source.id),
     )
     return MemoryQueryResponse(
         answer=answer,
@@ -244,6 +256,7 @@ def _search_memories(
                 occurred_at=item.occurred_at,
                 excerpt=item.content[:240],
                 confidence=source.confidence,
+                media_id=_media_id_for_source(db, source.id),
             )
         )
         answerable_memories.append(item)
