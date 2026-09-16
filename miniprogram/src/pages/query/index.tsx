@@ -3,6 +3,19 @@ import { useState } from 'react'
 import { isAuthenticated, MemoryQueryResult, queryMemory } from '../../services/api'
 import './index.scss'
 
+function sourceLabel(sourceType: string): string {
+  const labels: Record<string, string> = {
+    USER_TEXT: '用户文字记录',
+    USER_VOICE: '用户语音记录',
+    USER_PHOTO: '用户照片记录',
+    GPS: 'GPS 位置证据',
+    PHOTO_EXIF: '照片位置信息',
+    SYSTEM_PLACE: '系统地点识别',
+    AI_INFERENCE: 'AI 推测',
+  }
+  return labels[sourceType] || sourceType
+}
+
 export default function Page() {
   const [question, setQuestion] = useState('')
   const [result, setResult] = useState<MemoryQueryResult | null>(null)
@@ -44,11 +57,12 @@ export default function Page() {
           <View className='card-title'>{result.can_answer ? result.answer || '' : '我没有找到相关记录。'}</View>
           <View className='muted'>可信状态：{result.certainty} · 意图：{result.intent}</View>
           {result.evidence.map((evidence) => (
-            <View className='evidence' key={evidence.id}>
-              {/* [人工注释][S1-014] Evidence 的来源、时间、摘录和 confidence 必须和答案一起展示。 */}
+            <View className='evidence' key={evidence.memory_source_id}>
+              {/* [人工注释][S1-FIX-002] kind 只表示证据实体类型；UI 的“来源”必须显示真实 source_type。 */}
               <Text>{evidence.excerpt}</Text>
-              <View className='muted'>{evidence.kind} · {evidence.occurred_at}</View>
-              <View className='muted'>confidence {evidence.confidence}</View>
+              <View className='muted'>来源：{sourceLabel(evidence.source_type)}</View>
+              <View className='muted'>证据类型：{evidence.kind} · 时间：{evidence.occurred_at}</View>
+              <View className='muted'>可信度：{evidence.confidence}</View>
             </View>
           ))}
         </View>
