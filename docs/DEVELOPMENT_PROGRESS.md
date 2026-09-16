@@ -12,13 +12,14 @@
 <!-- [人工注释][DOC-PROGRESS-020] B：Flutter Offline 首版完成后，PR #6 第一轮正式审查 HOLD，进入 S1-PR6-FIX-001 transport 异常分类 P1 窄修；S1-017 仍未开始。 -->
 <!-- [人工注释][DOC-PROGRESS-021] PR #6 第一轮正式审查：0 P0 / 1 P1 / 0 阻塞 P2；仅 TransportException 可触发 SQLite offline fallback，协议/解析/客户端异常必须 fail closed。 -->
 <!-- [人工注释][DOC-PROGRESS-022] PR #6 第二轮窄范围复审 PASS：S1-PR6-FIX-001 正式关闭，生产 HEAD d1351f61 的 transport/protocol 分类与 SQLite fallback 边界通过审查；S1-015/S1-016 进入 🟠 待合并，S1-017 继续未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-023] PR #6 已正式合并 main，merge commit=c8e5614d；Issue #5 已 completed，S1-015/S1-016 与 B 工作线转 ✅，S1-017 继续保持未开始。 -->
 <!-- [人工注释][DOC-PROGRESS-019] PR #7 第二轮窄范围复审 PASS，第一轮 3P1+2P2 全部关闭；PR 已从 Draft 转 Ready 并合并 main=9504fa8d。S1-006 完成，S1-005 继续由客户端主动拍照/选图工作线推进；Stage 2 继续未开始。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-17  
-> 当前阶段：Stage 1「记得住」第三批并行开发进行中；PR #6 第二轮窄范围复审 PASS，工作线 B 正式审查通过、待合并；Stage 2 未开始
-> 当前开发基线：`main=daf84199a10ad1669fbe241d8e6b150d8f4434bb`  
-> 当前 PR：#6 `feat/stage1-mobile-offline`（第二轮 PASS；S1-015/S1-016 🟠 待合并；S1-017 不在本 PR）
+> 当前阶段：Stage 1「记得住」第三批并行开发进行中；A、B 两条第一阶段工作线已合并，继续推进 C / D 与后续依赖任务；Stage 2 未开始
+> 当前生产代码基线：PR #6 merge commit `c8e5614d173df1afbd4645cd918647efb1f80658`；后续仅状态文档更新  
+> 当前 PR：PR #6 已合并；S1-015/S1-016 ✅，S1-017 继续 ⬜
 
 ## 状态规则
 
@@ -42,7 +43,7 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并 `main=52ef68f4`；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | 并行工作线已启动；B 线 SQLite/离线队列正式审查通过、待合并，其余任务继续按独立工作线推进 |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A：Backend Media 与 B：Flutter Offline 已合并；C / D 与后续依赖任务继续按独立工作线推进 |
 | CI-001 | Backend CI | ✅ | PR #7 生产 HEAD `13cd13f3`：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 53/53 PASS |
 | CI-002 | Flutter Android CI | ✅ | 最终 PR HEAD `7319d493`：analyze + tests + production-config debug APK build PASS |
 | CI-003 | Flutter iOS CI | ✅ | 最终 PR HEAD `7319d493`：production-config `flutter build ios --debug --no-codesign` PASS |
@@ -104,8 +105,8 @@
 | S1-012 | 基础记忆搜索 | ✅ | 普通 Memory Evidence 返回真实来源且不降低 gate |
 | S1-013 | “问记忆”客户端页面接真实 API | ✅ | Flutter / 小程序已接真实 API |
 | S1-014 | 答案展示 Evidence / 来源 / 时间 | ✅ | 客户端展示来源、证据类型、时间、可信度 |
-| S1-015 | 客户端本地 SQLite | 🟠 | PR #6 第二轮窄范围复审 PASS；SQLite schema/状态机本轮未修改，正式审查通过、待合并 |
-| S1-016 | 离线记忆队列 | 🟠 | PR #6 第二轮窄范围复审 PASS；仅 TransportException 可触发 SQLite fallback，Protocol/Api/未知异常 fail closed，待合并 |
+| S1-015 | 客户端本地 SQLite | ✅ | PR #6 第二轮窄范围复审 PASS 并合并 `main=c8e5614d`；版本化 SQLite、账号隔离、重启恢复正式完成 |
+| S1-016 | 离线记忆队列 | ✅ | PR #6 已合并；pending/sending/failed/completed/cancelled、稳定 UUID、取消/重试、仅 TransportException fallback 均通过正式审查 |
 | S1-017 | 离线同步与幂等 | ⬜ | 真实同步/自动 flush 尚未进入；未来自动重发前必须用 `client_uuid + 服务端幂等` 处理“请求已发送但响应丢失”的不确定性 |
 | S1-018 | 单条 Memory 编辑 | ⬜ | 编辑后 Evidence 与审计语义需明确 |
 | S1-019 | 单条 Memory 删除 | ✅ | 真实服务端 DELETE 链、删除后查询失效及 ObjectLocation 联动均通过审查并已合并 |
@@ -157,13 +158,13 @@
 | 工作线 | 第一阶段任务 | 计划分支 / PR | 允许范围 | 关键依赖 | 当前状态 |
 | --- | --- | --- | --- | --- | --- |
 | A：Backend Media | `S1-006` + `S1-005` 后端媒体/Evidence 基础 | `feat/stage1-media-pipeline` / PR #7 | 私有对象存储、临时签名上传/下载、媒体元数据、图片 Evidence、Backend tests、API 文档 | 媒体协议已冻结为 staging→final；第二轮复审 PASS；未引入 OCR/Vision/ASR/Stage 2 | ✅ 已合并 |
-| B：Flutter Offline | `S1-015` + `S1-016` | `feat/stage1-mobile-offline` / PR #6 | Android/iOS 本地 SQLite、离线队列、状态机、重启恢复、Flutter tests | 第二轮窄范围复审 PASS；S1-PR6-FIX-001 已关闭；`S1-017` 后置 | 🟠 正式审查通过，待合并 |
+| B：Flutter Offline | `S1-015` + `S1-016` | `feat/stage1-mobile-offline` / PR #6 | Android/iOS 本地 SQLite、离线队列、状态机、重启恢复、Flutter tests | 第二轮窄范围复审 PASS；S1-PR6-FIX-001 已关闭；`S1-017` 后置 | ✅ 已合并 |
 | C：Mini Capture | `S1-005` 小程序主动拍照/选图 + `S1-004` 录音 UI/权限壳 | `feat/stage1-miniprogram-capture` | 小程序页面、权限、文件选择/录音适配、上传客户端；禁止假 API/假成功 | 媒体提交字段必须使用 A 已合并协议；真实语音提交等待 `S1-007` | ⬜ 待启动 |
 | D：Data & Quality | `S1-020` 数据导出；`CI-005` UI Visual Preview | `feat/stage1-data-export`；`ci/ui-visual-preview` | 用户数据导出、授权边界、导出测试；Flutter Golden/视觉产物 CI | 与 A/B/C 冲突较少，两个任务仍各自独立 PR | ⬜ 待启动 |
 
 A 线最终验收：生产代码 HEAD `13cd13f3`；Ruff PASS；SQLite migration PASS；PostgreSQL migration PASS；`alembic check` PASS；PostgreSQL ObjectLocation invariants PASS；pytest **53/53 PASS**。第二轮窄范围复审 PASS，PR #7 已合并 `main=9504fa8d`。
 
-B 线正式审查：生产 HEAD `d1351f61`；第二轮窄范围复审确认 0 P0 / 0 P1 / 0 阻塞 P2，S1-PR6-FIX-001 已关闭。TransportException 才允许 SQLite fallback；ProtocolException、ApiException 与未知客户端异常均 fail closed。Android analyze/tests/APK 与 iOS no-codesign build 已绑定最终生产 SHA 验收通过。真实自动同步与服务端幂等仍留到 `S1-017`。
+B 线正式审查：生产 HEAD `d1351f61`；第二轮窄范围复审确认 0 P0 / 0 P1 / 0 阻塞 P2，S1-PR6-FIX-001 已关闭。TransportException 才允许 SQLite fallback；ProtocolException、ApiException 与未知客户端异常均 fail closed。Android analyze/tests/APK 与 iOS no-codesign build 已绑定最终生产 SHA 验收通过。PR #6 已合并 `main=c8e5614d`，Issue #5 已 completed；真实自动同步与服务端幂等仍留到 `S1-017`。
 
 ### 2.3.3 第二阶段接续任务
 
@@ -215,9 +216,9 @@ B 线正式审查：生产 HEAD `d1351f61`；第二轮窄范围复审确认 0 P0
 
 | ID | 优先级 | 问题 | 状态 | 当前结果 |
 | --- | --- | --- | --- | --- |
-| S1-PR6-FIX-001 | P1 | catch-all 客户端异常被误判为离线并写入 SQLite | 🟠 | 第二轮窄范围复审 PASS；底层仅 `http.ClientException` / `TimeoutException` 映射为 `TransportException`，2xx malformed/结构错误为 `ProtocolException`，非 2xx malformed 仍为 `ApiException`；UI 仅 TransportException 可入队；随 PR #6 待合并 |
+| S1-PR6-FIX-001 | P1 | catch-all 客户端异常被误判为离线并写入 SQLite | ✅ | 第二轮窄范围复审 PASS；底层仅 `http.ClientException` / `TimeoutException` 映射为 `TransportException`，2xx malformed/结构错误为 `ProtocolException`，非 2xx malformed 仍为 `ApiException`；UI 仅 TransportException 可入队；已随 PR #6 合并 |
 
-> 第二轮窄范围复审结论：**PASS / READY FOR FINAL MERGE PROCESS**。`S1-015` / `S1-016` 当前 🟠 待合并；`S1-017` 保持 ⬜。已知 response-loss/unknown-commit 边界留到 S1-017 使用 `client_uuid + 服务端幂等` 处理，不构成 PR #6 阻塞项。
+> 第二轮窄范围复审结论：**PASS / MERGED**。`S1-015` / `S1-016` 已随 PR #6 合并并转 ✅；`S1-017` 保持 ⬜。已知 response-loss/unknown-commit 边界留到 S1-017 使用 `client_uuid + 服务端幂等` 处理，不构成 PR #6 阻塞项。
 
 ---
 
