@@ -6,6 +6,8 @@ on:
       - feat/stage1-mobile-offline
     paths:
       - ".github/workflows/mobile-offline-diagnostic.yml"
+      - "mobile/test/**"
+      - "mobile/lib/offline_queue.dart"
 
 permissions:
   contents: read
