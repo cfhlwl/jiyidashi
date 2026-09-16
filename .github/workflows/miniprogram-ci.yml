@@ -33,4 +33,7 @@ jobs:
         run: npm run typecheck
 
       - name: Build WeChat mini program
+        # [人工注释][S1-FIX-007] CI 以生产模式验证：必须注入非本地 HTTPS endpoint，且产物关闭 API 编辑入口。
+        env:
+          JIYI_API_BASE_URL: https://api.example.invalid/v1
         run: npm run build:weapp
