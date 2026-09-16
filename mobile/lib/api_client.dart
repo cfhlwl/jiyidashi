@@ -205,6 +205,8 @@ class JiYiApiClient {
     accessToken = null;
   }
 
+  // [人工注释][S1-019] 统一传输层显式支持 DELETE；204 空响应也必须沿同一服务端成功链处理，
+  // 不能让删除退化成客户端本地隐藏。
   Future<http.Response> _request(
     String method,
     String path, {
@@ -227,6 +229,8 @@ class JiYiApiClient {
     };
   }
 
+  // [人工注释][S1-019] DELETE 可能返回 204 无 body；统一解码层把空成功响应视为合法空对象，
+  // 同时仍对所有非 2xx 返回真实服务端 detail。
   dynamic _decodeResponse(http.Response response) {
     final dynamic decoded = response.body.isEmpty
         ? <String, dynamic>{}
@@ -256,6 +260,8 @@ class JiYiApiClient {
     return decoded;
   }
 
+  // [人工注释][S1-011] 物品失效前必须读取用户真实 Object 列表；这个 helper 只解析服务端列表，
+  // 不创建、猜测或补造 Object。
   Future<List<Map<String, dynamic>>> _jsonListRequest(String path) async {
     final decoded = _decodeResponse(await _request('GET', path));
     if (decoded is! List<dynamic>) {
