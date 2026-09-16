@@ -168,11 +168,14 @@ class _AuthPageState extends State<AuthPage> {
                       }),
               child: Text(registerMode ? '已有账号？登录' : '第一次使用？创建账号'),
             ),
-            const SizedBox(height: 20),
-            Text(
-              '当前开发环境 API：${widget.api.baseUrl}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            if (widget.api.showDevelopmentEndpoint) ...[
+              // [人工注释][S1-FIX-007] 生产构建不渲染开发 API 信息，endpoint 只能由 build-time 配置注入。
+              const SizedBox(height: 20),
+              Text(
+                '当前开发环境 API：${widget.api.baseUrl}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ],
         ),
       ),
@@ -395,6 +398,19 @@ class _CapturePageState extends State<CapturePage> {
   }
 }
 
+String _evidenceSourceLabel(String? sourceType) {
+  const labels = <String, String>{
+    'USER_TEXT': '用户文字记录',
+    'USER_VOICE': '用户语音记录',
+    'USER_PHOTO': '用户照片记录',
+    'GPS': 'GPS 位置证据',
+    'PHOTO_EXIF': '照片位置信息',
+    'SYSTEM_PLACE': '系统地点识别',
+    'AI_INFERENCE': 'AI 推测',
+  };
+  return labels[sourceType] ?? sourceType ?? '未知来源';
+}
+
 class MemoryQueryPage extends StatefulWidget {
   const MemoryQueryPage({super.key, required this.api});
 
@@ -478,13 +494,17 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             ),
             ...evidence.map((item) {
               final e = item as Map<String, dynamic>;
-              // [人工注释][S1-014] 客户端必须把 Evidence 的来源、时间、摘录和可信度一并展示。
+              // [人工注释][S1-FIX-002] kind 是证据实体类型；“来源”必须展示服务端返回的真实 source_type。
               return Card(
                 elevation: 0,
                 child: ListTile(
                   leading: const Icon(Icons.fact_check_outlined),
                   title: Text(e['excerpt']?.toString() ?? ''),
-                  subtitle: Text('${e['kind']} · ${e['occurred_at']} · confidence ${e['confidence']}'),
+                  subtitle: Text(
+                    '来源：${_evidenceSourceLabel(e['source_type']?.toString())}\n'
+                    '证据类型：${e['kind']} · 时间：${e['occurred_at']}\n'
+                    '可信度：${e['confidence']}',
+                  ),
                 ),
               );
             }),
