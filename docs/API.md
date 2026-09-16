@@ -2,6 +2,7 @@
 <!-- [人工注释][S1-001] Stage 1 正式认证接口已加入公开 API；dev-token 仍只用于显式开启的开发/测试环境。 -->
 <!-- [人工注释][S1-FIX-002][S1-FIX-003] 第二轮修复补充真实 Evidence 来源契约与正式认证滥用保护。 -->
 <!-- [人工注释][S1-011][S1-019][S1-023][S1-024] Stage 1 第二批补齐位置失效、单条删除、暂停今天与手动恢复控制语义。 -->
+<!-- [人工注释][S1-PR3-FIX-001][S1-PR3-FIX-002][S1-PR3-FIX-003] PR #3 第一轮 HOLD 后补充 Object 匹配路由、失效时间水位与 pause/today 单时钟语义。 -->
 # V1 API 基线
 
 Base path:
@@ -190,8 +191,12 @@ POST /v1/objects/{id}/location/stale
 该接口用于用户主动纠正当前位置：
 
 - 当前 `CURRENT` 位置变为 `STALE`，历史记录保留。
-- 此后再问“护照在哪里？”时，结构化 ObjectLocation 状态是最终事实源；如果没有新的 CURRENT，必须返回 `NO_EVIDENCE`。
-- 对象位置意图**不得**回退普通 Memory 搜索，把历史位置重新当成当前位置回答。
+- 服务端同时写入一个内部 `UNKNOWN` ObjectLocation 作为**失效时间水位**；它不是新的用户位置，也不会作为 CURRENT 返回。
+- 失效时间水位取用户执行该操作时的服务器时间 `T`。之后迟到的 `recorded_at <= T` 位置只能成为 `STALE`，即使当时已经没有 CURRENT，也不能“复活”为当前位置。
+- 新位置写入与 stale 操作都锁同一个 Object 行 `FOR UPDATE`，保证两者在 PostgreSQL 上串行化。
+- 此后再问“护照在哪里？”或“护照在什么地方？”时，只有**位置意图 + 实际命中用户已有 Object**才由结构化 ObjectLocation 状态接管；如果该 Object 没有新的 CURRENT，必须返回 `NO_EVIDENCE`。
+- 如果问题虽然包含“哪里”等位置词，但根本没有匹配到已有 Object，则允许继续普通 Memory 搜索，例如“老张在哪里工作？”。
+- 普通 Memory 搜索明确排除 `MemoryType.OBJECT_LOCATION` backing Memory，历史位置不能绕过结构化 CURRENT / STALE / UNKNOWN 状态重新承担当前位置事实源。
 
 ## 查询记忆
 
@@ -329,7 +334,7 @@ POST /v1/privacy/pause
 POST /v1/privacy/pause/today
 ```
 
-“今天”由服务端读取用户资料中的 IANA timezone，计算该用户**下一次本地午夜**，客户端不得按设备时区自行猜结束时间。
+“今天”由服务端读取用户资料中的 IANA timezone，计算该用户**下一次本地午夜**，客户端不得按设备时区自行猜结束时间。服务端只捕获一次 UTC `now`，`paused_since` 与用户本地日期均从同一个 reference timestamp 派生，避免请求恰好跨本地午夜时产生额外一天的暂停。
 
 ### 手动恢复
 
