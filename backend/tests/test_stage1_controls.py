@@ -81,6 +81,164 @@ async def test_location_wording_without_matching_object_still_searches_normal_me
     assert "上海办公室" in query.json()["answer"]
 
 
+async def test_overlapping_object_names_choose_unique_most_specific_object(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    # [人工注释][S1-PR3-FIX-005] “护照”是“旅行护照”的子串时，
+    # 必须先唯一解析更具体 Object，不能按两个 Object 的位置更新时间选答案。
+    generic = await client.post(
+        "/v1/objects",
+        headers=auth_headers,
+        json={"name": "护照"},
+    )
+    specific = await client.post(
+        "/v1/objects",
+        headers=auth_headers,
+        json={"name": "旅行护照"},
+    )
+    assert generic.status_code == 201
+    assert specific.status_code == 201
+
+    now = datetime.now(UTC)
+    specific_location = await client.post(
+        f"/v1/objects/{specific.json()['id']}/locations",
+        headers=auth_headers,
+        json={
+            "location_text": "书房",
+            "capture_source": "USER_TEXT",
+            "recorded_at": (now - timedelta(hours=2)).isoformat(),
+        },
+    )
+    generic_location = await client.post(
+        f"/v1/objects/{generic.json()['id']}/locations",
+        headers=auth_headers,
+        json={
+            "location_text": "鞋柜",
+            "capture_source": "USER_TEXT",
+            "recorded_at": (now - timedelta(hours=1)).isoformat(),
+        },
+    )
+    assert specific_location.status_code == 201
+    assert generic_location.status_code == 201
+
+    query = await client.post(
+        "/v1/memory/query",
+        headers=auth_headers,
+        json={"question": "旅行护照在哪里？"},
+    )
+    assert query.status_code == 200
+    payload = query.json()
+    assert payload["can_answer"] is True
+    assert payload["intent"] == "FIND_OBJECT"
+    assert "旅行护照" in payload["answer"]
+    assert "书房" in payload["answer"]
+    assert "鞋柜" not in payload["answer"]
+
+
+async def test_specific_stale_object_never_falls_back_to_shorter_current_object(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    # [人工注释][S1-PR3-FIX-005] 更具体 Object 一旦 STALE，
+    # 不允许退回其较短子串 Object 的合法 CURRENT 来制造跨对象错误答案。
+    generic = await client.post(
+        "/v1/objects",
+        headers=auth_headers,
+        json={"name": "护照"},
+    )
+    specific = await client.post(
+        "/v1/objects",
+        headers=auth_headers,
+        json={"name": "旅行护照"},
+    )
+    assert generic.status_code == 201
+    assert specific.status_code == 201
+
+    now = datetime.now(UTC)
+    specific_location = await client.post(
+        f"/v1/objects/{specific.json()['id']}/locations",
+        headers=auth_headers,
+        json={
+            "location_text": "书房",
+            "capture_source": "USER_TEXT",
+            "recorded_at": (now - timedelta(hours=2)).isoformat(),
+        },
+    )
+    generic_location = await client.post(
+        f"/v1/objects/{generic.json()['id']}/locations",
+        headers=auth_headers,
+        json={
+            "location_text": "鞋柜",
+            "capture_source": "USER_TEXT",
+            "recorded_at": (now - timedelta(hours=1)).isoformat(),
+        },
+    )
+    assert specific_location.status_code == 201
+    assert generic_location.status_code == 201
+
+    stale = await client.post(
+        f"/v1/objects/{specific.json()['id']}/location/stale",
+        headers=auth_headers,
+    )
+    assert stale.status_code == 200
+
+    query = await client.post(
+        "/v1/memory/query",
+        headers=auth_headers,
+        json={"question": "旅行护照在哪里？"},
+    )
+    assert query.status_code == 200
+    payload = query.json()
+    assert payload["can_answer"] is False
+    assert payload["reason"] == "NO_EVIDENCE"
+    assert payload["intent"] == "FIND_OBJECT"
+
+
+async def test_equal_best_object_matches_return_no_evidence(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    # [人工注释][S1-PR3-FIX-005] 两个同等具体 Object 都出现在问题中时，
+    # 当前单对象查询协议无法唯一判断用户目标，可信规则要求不猜测。
+    first = await client.post(
+        "/v1/objects",
+        headers=auth_headers,
+        json={"name": "旅行护照"},
+    )
+    second = await client.post(
+        "/v1/objects",
+        headers=auth_headers,
+        json={"name": "备用钥匙"},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    first_location = await client.post(
+        f"/v1/objects/{first.json()['id']}/locations",
+        headers=auth_headers,
+        json={"location_text": "书房", "capture_source": "USER_TEXT"},
+    )
+    second_location = await client.post(
+        f"/v1/objects/{second.json()['id']}/locations",
+        headers=auth_headers,
+        json={"location_text": "玄关", "capture_source": "USER_TEXT"},
+    )
+    assert first_location.status_code == 201
+    assert second_location.status_code == 201
+
+    query = await client.post(
+        "/v1/memory/query",
+        headers=auth_headers,
+        json={"question": "旅行护照和备用钥匙在哪里？"},
+    )
+    assert query.status_code == 200
+    payload = query.json()
+    assert payload["can_answer"] is False
+    assert payload["reason"] == "NO_EVIDENCE"
+    assert payload["intent"] == "FIND_OBJECT"
+
+
 async def test_stale_watermark_blocks_late_offline_location_from_becoming_current(
     client: AsyncClient,
     auth_headers: dict[str, str],
