@@ -29,6 +29,8 @@ class _CaptureApi extends JiYiApiClient {
 
 void main() {
   sqfliteFfiInit();
+  // [人工注释][S1-015] Widget 测试同样使用 no-isolate FFI，避免测试结束后额外 worker isolate 阻止 runner 退出；生产实现不受影响。
+  final testDatabaseFactory = databaseFactoryFfiNoIsolate;
 
   late Directory tempDirectory;
   late String databasePath;
@@ -40,7 +42,7 @@ void main() {
     databasePath =
         '${tempDirectory.path}${Platform.pathSeparator}offline-queue.sqlite3';
     queue = OfflineQueueStore(
-      factory: databaseFactoryFfi,
+      factory: testDatabaseFactory,
       databasePathProvider: () async => databasePath,
       clientUuidFactory: () => '77777777-7777-4777-8777-777777777777',
     );
@@ -48,7 +50,7 @@ void main() {
 
   tearDown(() async {
     await queue.close();
-    await databaseFactoryFfi.deleteDatabase(databasePath);
+    await testDatabaseFactory.deleteDatabase(databasePath);
     if (await tempDirectory.exists()) {
       await tempDirectory.delete(recursive: true);
     }
