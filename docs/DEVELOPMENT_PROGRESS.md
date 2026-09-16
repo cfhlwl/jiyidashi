@@ -1,30 +1,24 @@
-<!-- [人工注释][DOC-PROGRESS-001] 本文件是迹忆项目长期维护的开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- [人工注释][DOC-PROGRESS-002] PR #1 第二轮 HOLD 项已完成代码与自动验收，当前进入第三轮最终审查前状态。 -->
-<!-- [人工注释][DOC-PROGRESS-003] PR #1 第三轮唯一 P1：ObjectLocation naive recorded_at 已修复并通过自动验收，等待窄范围最终复核。 -->
-<!-- [人工注释][DOC-PROGRESS-004] PR #1 已完成最终复核并合并 main；Foundation 与三端 CI 基线正式标记为已完成。 -->
-<!-- [人工注释][DOC-PROGRESS-005] Stage 1 第一批真实用户闭环已启动：身份、文字记忆、物品位置、查询与 Evidence 三端接线。 -->
-<!-- [人工注释][DOC-PROGRESS-006] Stage 1 第一批代码与自动验收已完成，PR #2 进入正式审查前状态；Stage 2 继续保持未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-007] PR #2 第一轮正式审查 HOLD：3 个 P1 + 4 个 P2 进入第二轮修复，PR 已转回 Draft。 -->
-<!-- [人工注释][DOC-PROGRESS-008] PR #2 第二轮正式复审 PASS：7 个修复项均关闭，三端 CI 全绿，当前待最终 HEAD/CI 窄复核与合并。 -->
+<!-- [人工注释][DOC-PROGRESS-001] 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
+<!-- [人工注释][DOC-PROGRESS-009] PR #2 已通过第二轮复审并合并 main；Stage 1 第一批真实用户闭环正式完成，下一批仍继续 Stage 1，不启动 Stage 2。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-16  
-> 当前阶段：Stage 1「记得住」PR #2 第二轮审查 PASS / 待合并  
-> 当前开发分支：`feat/stage1-memory-loop`  
-> 当前 PR：#2 `feat: build Stage 1 trusted memory loop`（Ready for Review）
+> 当前阶段：Stage 1「记得住」第一批已完成，下一批待启动  
+> 当前开发分支：`main`  
+> 当前 PR：无
 
 ## 状态规则
 
 | 标记 | 状态 | 使用规则 |
 | --- | --- | --- |
-| 🔵 | 进行中 | 正在开发、修复或正在执行验收 |
-| 🟠 | 待审查 / 待合并 | 代码已经实现并通过当前自动测试，但尚未完成正式审查或尚未合并 `main` |
+| 🔵 | 进行中 | 正在开发、修复或执行验收 |
+| 🟠 | 待审查 / 待合并 | 代码已实现并通过当前自动测试，但尚未完成正式审查或尚未合并 `main` |
 | ✅ | 已完成 | 已合并 `main`，并完成对应验收 |
 | ⬜ | 未开始 | 尚未进入开发 |
 | ⏸ | 延后 | 已确认需要，但当前阶段暂缓 |
 | 🚫 | 当前版本不做 | 明确不进入当前版本范围 |
 
-> **完成定义：** 只有“代码完成 + 自动测试通过 + 正式审查通过 + 合并 main + 必要验收完成”后，才能标记为 ✅ 已完成。
+> **完成定义：** 只有“代码完成 + 自动测试通过 + 正式审查通过 + 合并 main + 必要验收完成”后，才能标记为 ✅。
 
 ---
 
@@ -32,12 +26,13 @@
 
 | ID | 模块 | 当前状态 | 说明 |
 | --- | --- | --- | --- |
-| FND-000 | V1 Foundation 总体 | ✅ 已完成 | PR #1 已通过最终复核并合并 `main` |
-| S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | 🟠 待合并 | PR #2 第二轮正式复审 PASS；7 个修复项关闭，等待最终 HEAD/CI 窄复核后合并 |
-| CI-001 | Backend CI | ✅ 已完成 | PR #2 第二轮基线 Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 33/33 PASS |
-| CI-002 | Flutter Android CI | ✅ 已完成 | 第二轮基线 analyze + test + production-config debug APK build PASS |
-| CI-003 | Flutter iOS CI | ✅ 已完成 | 第二轮基线 production-config `flutter build ios --debug --no-codesign` PASS |
-| CI-004 | 微信小程序 CI | ✅ 已完成 | 第二轮基线 `npm ci` + TypeScript + production Taro WeChat build PASS |
+| FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
+| S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
+| S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ⬜ | 下一开发批次，尚未开始 |
+| CI-001 | Backend CI | ✅ | PR #2：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 33/33 PASS |
+| CI-002 | Flutter Android CI | ✅ | analyze + test + production-config debug APK build PASS |
+| CI-003 | Flutter iOS CI | ✅ | production-config `flutter build ios --debug --no-codesign` PASS |
+| CI-004 | 微信小程序 CI | ✅ | `npm ci` + TypeScript + production Taro WeChat build PASS |
 
 ---
 
@@ -45,85 +40,85 @@
 
 | ID | 功能 / 需求 | 状态 | 验收要求 / 当前说明 |
 | --- | --- | --- | --- |
-| FND-001 | FastAPI 模块化单体基础工程 | ✅ | PR #1 已通过最终复核并合并 main |
-| FND-002 | PostgreSQL / SQLite 开发数据库基础 | ✅ | SQLAlchemy 路径统一，PostgreSQL 已进入正式 CI |
+| FND-001 | FastAPI 模块化单体基础工程 | ✅ | PR #1 合并 main |
+| FND-002 | PostgreSQL / SQLite 开发数据库基础 | ✅ | PostgreSQL 已进入正式 CI |
 | FND-003 | Redis 开发依赖基础 | ✅ | Docker 开发环境已配置 |
-| FND-004 | Alembic migration baseline | ✅ | SQLite / PostgreSQL 均在 CI 执行 `upgrade head`；README 新环境启动明确要求先 migration |
+| FND-004 | Alembic migration baseline | ✅ | SQLite / PostgreSQL 均执行 `upgrade head` |
 | FND-005 | Memory 核心模型 | ✅ | Memory 为长期记忆主对象 |
 | FND-006 | MemorySource / Evidence 模型 | ✅ | 查询事实必须验证 Evidence |
-| FND-007 | `NO EVIDENCE -> NO MEMORY` 强制规则 | ✅ | 已由服务端 Evidence gate 强制执行 |
+| FND-007 | `NO EVIDENCE -> NO MEMORY` 强制规则 | ✅ | 服务端 Evidence gate 强制执行 |
 | FND-008 | AI inference 与事实隔离 | ✅ | AI 推断不得直接成为 confirmed fact |
-| FND-009 | 服务端可信等级所有权 | ✅ | 客户端不能自行提交 confidence / confirmed 权限 |
+| FND-009 | 服务端可信等级所有权 | ✅ | 客户端不能提交 confidence / confirmed 权限 |
 | FND-010 | Object / ObjectLocation 历史模型 | ✅ | 保留历史，不覆盖旧记录 |
-| FND-011 | 每个 Object 最多一个 CURRENT | ✅ | 应用事务 + DB partial unique index 双重保护；PostgreSQL 实库验收 PASS |
+| FND-011 | 每个 Object 最多一个 CURRENT | ✅ | 应用事务 + DB partial unique index；PostgreSQL 实库验收 PASS |
 | FND-012 | 离线旧位置晚到防回滚 | ✅ | 根据 `recorded_at` 决定 CURRENT / STALE |
 | FND-013 | 删除 Memory 与 ObjectLocation 联动失效 | ✅ | 删除后不得继续从对象位置查询回答 |
 | FND-014 | Location `client_uuid` 幂等 | ✅ | 离线重传不得产生重复位置点 |
 | FND-015 | 隐私暂停服务端最终门禁 | ✅ | 暂停期间自动数据不得入库 |
 | FND-016 | 隐私暂停历史区间 | ✅ | 恢复后补传暂停期间 GPS 仍拒绝 |
 | FND-017 | 用户时区自然日边界 | ✅ | timeline / summary 使用用户 timezone |
-| FND-018 | 中文基础记忆查询 | ✅ | 无空格中文查询已有正向回归测试 |
-| FND-019 | Dev Auth fail-closed | ✅ | 示例默认关闭；`production/prod + ENABLE_DEV_AUTH=true` 配置直接拒绝，endpoint 再硬 404 |
-| FND-020 | Flutter Android/iOS 标准工程 | ✅ | `android/`、`ios/`、lockfile、测试已生成并通过最终 CI |
-| FND-021 | Taro 微信小程序标准工程 | ✅ | `config/`、Babel、project config、`package-lock.json` 已补齐并通过最终 CI |
-| FND-022 | 三端 CI 基线 | ✅ | backend / mobile / miniprogram 最终 HEAD 均真实构建与自动验收 PASS |
-| FND-023 | Location 时间戳时区健壮性 | ✅ | schema 拒绝 naive datetime；批处理先统一 UTC 后再做范围比较，防止 500 |
-| FND-024 | PostgreSQL ObjectLocation 真实数据库不变量 | ✅ | PostgreSQL migration、单 CURRENT partial unique index、真实 `FOR UPDATE` 锁语义均已 CI 验证 |
-| FND-025 | 正式 API 文档协议同步 | ✅ | `capture_source`、Evidence、timezone-aware 位置示例已与当前 schema 对齐 |
-| FND-026 | ObjectLocation 显式时间戳时区约束 | ✅ | ObjectLocation 与 GPS 共用 timezone-aware schema validator；naive `recorded_at` 返回 422，且 CURRENT 保持不变 |
+| FND-018 | 中文基础记忆查询 | ✅ | 无空格中文查询有正向回归 |
+| FND-019 | Dev Auth fail-closed | ✅ | production/prod 无条件硬关闭 |
+| FND-020 | Flutter Android/iOS 标准工程 | ✅ | Android/iOS 真实构建 PASS |
+| FND-021 | Taro 微信小程序标准工程 | ✅ | production WeChat build PASS |
+| FND-022 | 三端 CI 基线 | ✅ | backend / mobile / miniprogram 均真实验收 |
+| FND-023 | Location 时间戳时区健壮性 | ✅ | 拒绝 naive datetime |
+| FND-024 | PostgreSQL ObjectLocation 真实数据库不变量 | ✅ | migration、单 CURRENT、`FOR UPDATE` 均 CI 验证 |
+| FND-025 | 正式 API 文档协议同步 | ✅ | `capture_source` / Evidence / timezone 协议对齐 |
+| FND-026 | ObjectLocation 显式时间戳时区约束 | ✅ | naive `recorded_at` 422 且 CURRENT 不变 |
 
 ---
 
 # 2. Stage 1：记得住
 
-目标：先完成“记录 → 保存 → 找到 → 相信”的最小闭环。
+目标：完成“记录 → 保存 → 找到 → 相信 → 纠错/删除/暂停”的 V1 主闭环。
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S1-001 | 正式用户注册 / 登录 | 🟠 | 第二轮正式复审 PASS；认证限速/退避、dummy Argon2、迁移 metadata/drift gate 已关闭问题，待合并 |
-| S1-002 | 用户资料与时区设置 | 🟠 | 第二轮正式复审 PASS；trim 后非空校验与 whitespace-only 422 已验证，待合并 |
-| S1-003 | 文字记忆录入 | 🟠 | Flutter / 小程序均接真实 Memory API，客户端仅声明 `USER_TEXT` |
-| S1-004 | 语音记忆录入 | ⬜ | 需要录音、上传、ASR、Evidence |
+| S1-001 | 正式用户注册 / 登录 | ✅ | Argon2、限速/退避、dummy verify、migration drift gate 已通过复审 |
+| S1-002 | 用户资料与时区设置 | ✅ | trim-before-validation、IANA timezone |
+| S1-003 | 文字记忆录入 | ✅ | Flutter / 小程序接真实 Memory API，仅声明 `USER_TEXT` |
+| S1-004 | 语音记忆录入 | ⬜ | 录音、上传、ASR、Evidence |
 | S1-005 | 图片记忆录入 | ⬜ | 主动拍照 / 主动选择，不默认全相册扫描 |
 | S1-006 | COS / OSS 对象存储直传 | ⬜ | 私有桶 + 临时签名 URL |
 | S1-007 | ASR 语音转写 | ⬜ | 原始音频保留为证据 |
 | S1-008 | “帮我记住”统一入口 | ⬜ | 文字 / 语音 / 拍照统一进入 Memory Pipeline |
-| S1-009 | “东西在哪”物品录入 | 🟠 | 第二轮正式复审 PASS；Object create 并发唯一约束竞争已幂等兜底，待合并 |
-| S1-010 | “东西在哪”查询 | 🟠 | 第二轮正式复审 PASS；Evidence 返回真实 `source_type` / `memory_source_id`，待合并 |
-| S1-011 | 物品位置失效 / “已经不在那里” | ⬜ | CURRENT → STALE / UNKNOWN |
-| S1-012 | 基础记忆搜索 | 🟠 | 第二轮正式复审 PASS；普通 Memory Evidence 返回真实来源且不降低 Evidence gate，待合并 |
-| S1-013 | “问记忆”客户端页面接真实 API | 🟠 | 第二轮正式复审 PASS；Flutter / 小程序已消费真实 Evidence source contract，待合并 |
-| S1-014 | 答案展示 Evidence / 来源 / 时间 | 🟠 | 第二轮正式复审 PASS；客户端展示 `source_type`、证据类型、时间和可信度，待合并 |
+| S1-009 | “东西在哪”物品录入 | ✅ | Object create 并发竞争已幂等兜底 |
+| S1-010 | “东西在哪”查询 | ✅ | 返回真实 Evidence `source_type` / `memory_source_id` |
+| S1-011 | 物品位置失效 / “已经不在那里” | ⬜ | CURRENT → STALE / UNKNOWN；客户端入口待实现 |
+| S1-012 | 基础记忆搜索 | ✅ | 普通 Memory Evidence 返回真实来源且不降低 gate |
+| S1-013 | “问记忆”客户端页面接真实 API | ✅ | Flutter / 小程序已接真实 API |
+| S1-014 | 答案展示 Evidence / 来源 / 时间 | ✅ | 客户端展示来源、证据类型、时间、可信度 |
 | S1-015 | 客户端本地 SQLite | ⬜ | Android / iOS 本地持久化 |
 | S1-016 | 离线记忆队列 | ⬜ | 无网络仍可“记一下” |
 | S1-017 | 离线同步与幂等 | ⬜ | 使用 client UUID 防重复 |
 | S1-018 | 单条 Memory 编辑 | ⬜ | 编辑后 Evidence 与审计语义需明确 |
-| S1-019 | 单条 Memory 删除 | ⬜ | 删除后所有查询路径都必须失效 |
+| S1-019 | 单条 Memory 删除 | ⬜ | 删除后所有查询路径都必须失效；客户端入口待实现 |
 | S1-020 | 数据导出 | ⬜ | 用户可导出自己的全部记忆 |
-| S1-021 | 全部数据删除 | ⬜ | 业务 DB + 对象存储都要处理 |
-| S1-022 | 注销账号 | ⬜ | 满足数据删除与保留规则 |
-| S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ⬜ | 服务端基础规则已存在，客户端待实现 |
+| S1-021 | 全部数据删除 | ⬜ | DB / Cache / Storage 一致删除 |
+| S1-022 | 注销账号 | ⬜ | 与全部数据删除联动 |
+| S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ⬜ | 服务端基础规则已有，客户端待实现 |
 | S1-024 | 手动恢复记录 | ⬜ | 恢复不能导致暂停期数据补传 |
 | S1-025 | 基础提醒模型 | ⬜ | 仅从记忆产生提醒，不做完整 Todo |
 | S1-026 | 首次使用引导 | ⬜ | 3 分钟内完成“记住 → 找回”Aha Moment |
 
 ## 2.1 PR #2 第一轮审查修复项
 
-| ID | 优先级 | 问题 | 状态 | 第二轮验收 |
+| ID | 优先级 | 问题 | 状态 | 最终结果 |
 | --- | --- | --- | --- | --- |
-| S1-FIX-001 | P1 | `AuthIdentity` 未显式进入 Alembic metadata / 无 schema drift gate | 🟠 | 第二轮正式复审 PASS；显式加载 metadata，PostgreSQL `alembic check` 显示无 drift，待合并 |
-| S1-FIX-002 | P1 | Evidence 未返回真实 `source_type` | 🟠 | 第二轮正式复审 PASS；API 返回 `source_type` + `memory_source_id`，Flutter/小程序展示真实来源，待合并 |
-| S1-FIX-003 | P1 | `/register` / `/login` 缺少抗爆破与 Argon2 DoS 门禁 | 🟠 | 第二轮正式复审 PASS；IP/账号窗口、429、Retry-After、指数退避均已验证，待合并 |
-| S1-FIX-004 | P2 | 不存在账号未执行 dummy Argon2 verify | 🟠 | 第二轮正式复审 PASS；missing/wrong-password 均执行 Argon2 成本路径并统一 401，待合并 |
-| S1-FIX-005 | P2 | nickname / locale 可由纯空白绕过 min_length | 🟠 | 第二轮正式复审 PASS；strip-before-validation，whitespace-only 返回 422，待合并 |
-| S1-FIX-006 | P2 | 同名 Object 并发创建可能唯一约束 500 | 🟠 | 第二轮正式复审 PASS；`IntegrityError` rollback + reselect，幂等返回已存在对象，待合并 |
-| S1-FIX-007 | P2 | 客户端生产 API endpoint 仍是开发态 | 🟠 | 第二轮正式复审 PASS；Flutter/小程序 build-time endpoint，production CI 真构建，待合并 |
+| S1-FIX-001 | P1 | `AuthIdentity` metadata / schema drift gate | ✅ | PostgreSQL `alembic check` PASS，已合并 |
+| S1-FIX-002 | P1 | Evidence 未返回真实 `source_type` | ✅ | API + Flutter + 小程序已合并 |
+| S1-FIX-003 | P1 | 注册/登录缺少抗爆破与 Argon2 DoS 门禁 | ✅ | IP/账号窗口、429、Retry-After、指数退避已合并 |
+| S1-FIX-004 | P2 | 不存在账号未执行 dummy Argon2 verify | ✅ | missing/wrong-password 成本路径一致 |
+| S1-FIX-005 | P2 | nickname / locale 空白绕过 | ✅ | strip-before-validation，whitespace-only 422 |
+| S1-FIX-006 | P2 | 同名 Object 并发创建唯一约束 500 | ✅ | rollback + reselect 幂等返回 |
+| S1-FIX-007 | P2 | 客户端生产 API endpoint 仍是开发态 | ✅ | build-time endpoint + production CI 真构建 |
 
 ---
 
 # 3. Stage 2：自动记
 
-> **当前明确未开始。PR #2 合并 `main` 前，不进入后台定位。**
+> **当前明确未开始。继续完成 Stage 1 剩余能力后，再单独评审是否进入后台定位。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
@@ -141,7 +136,7 @@
 | S2-012 | 今日足迹 | ⬜ | 今天去了哪里 |
 | S2-013 | 地点详情 | ⬜ | 首次、最近、累计次数、相关记忆 |
 | S2-014 | 原始位置生命周期 | ⬜ | 原始点短期保存，长期保存 Visit |
-| S2-015 | 定位耗电监控指标 | ⬜ | 作为核心质量指标 |
+| S2-015 | 定位耗电监控指标 | ⬜ | 核心质量指标 |
 | S2-016 | 定位权限渐进式引导 | ⬜ | 不能首次启动一次索取全部权限 |
 
 ---
@@ -166,7 +161,7 @@
 | S3-014 | Reminder 意图提取 | ⬜ | 用户确认后才创建提醒 |
 | S3-015 | Daily Summary | ⬜ | “今天发生了什么” |
 | S3-016 | 月度回忆 | ⬜ | 月度事件整理 |
-| S3-017 | 年度回忆 | ⬜ | “我的 2027”等年度报告 |
+| S3-017 | 年度回忆 | ⬜ | 年度报告 |
 | S3-018 | 记忆纠错 / 用户确认反馈 | ⬜ | AI 整理结果可正确 / 修改 / 删除 |
 | S3-019 | False Memory Rate 指标 | ⬜ | 最高优先级质量指标之一 |
 
@@ -240,7 +235,7 @@
 | SEC-009 | 位置权限单独同意 | ⬜ | 按平台规则实施 |
 | SEC-010 | 家庭查看逐项授权 | ⬜ | 默认关闭 |
 | SEC-011 | 记忆暂停 | 🟠 | 服务端 foundation 已实现，客户端未完成 |
-| SEC-012 | AI 不知道就说不知道 | 🟠 | foundation Evidence gate 已实现 |
+| SEC-012 | AI 不知道就说不知道 | 🟠 | Evidence gate 已实现；完整 AI 层尚未进入 |
 | SEC-013 | AI 推断显式标记 | ⬜ | UI 层尚未实现 |
 | SEC-014 | 敏感操作二次确认 | ⬜ | 导出 / 删除 / 家庭授权等 |
 | SEC-015 | 安全事件与异常访问告警 | ⬜ | 上线前设计 |
@@ -283,11 +278,11 @@
 
 # 11. 每次开发必须同步执行的项目规则
 
-1. 开始新任务时：把对应 ID 从 `⬜ 未开始` 改为 `🔵 进行中`。
-2. 代码完成并通过当前自动测试后：改为 `🟠 待审查 / 待合并`。
-3. 只有正式审查通过、合并 `main` 并完成必要验收后：改为 `✅ 已完成`。
+1. 开始新任务时：把对应 ID 从 `⬜` 改为 `🔵`。
+2. 代码完成并通过当前自动测试后：改为 `🟠`。
+3. 只有正式审查通过、合并 `main` 并完成必要验收后：改为 `✅`。
 4. 发现新需求时：先加入本表并分配 ID，再开始实现。
-5. 发现缺陷时：在相关功能下新增修复项或单独 Bug ID，不允许只改代码不记录。
+5. 发现缺陷时：新增修复项或 Bug ID，不允许只改代码不记录。
 6. 每次新增或修改人工维护的源代码，都必须遵守 `docs/CODE_ANNOTATION_RULES.md` 的 `[人工注释]` 标记规范。
-7. 自动生成文件、lockfile、二进制资源不得为了加注释而破坏格式；此类文件通过提交记录和本表关联追踪。
+7. 自动生成文件、lockfile、二进制资源不得为了加注释而破坏格式；通过提交记录和本表追踪。
 8. Stage 2 及以后功能不得提前侵入当前 Stage 1 PR，除非先更新本表并明确变更范围。
