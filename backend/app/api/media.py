@@ -60,7 +60,8 @@ def create_upload(
     db: DbSession,
     storage: Storage,
 ) -> MediaUploadResponse:
-    # [人工注释][S1-006] 创建上传只返回短时 PUT 签名与 opaque media_id；object_key 永不进入公开 payload。
+    # [人工注释][S1-006] 创建上传只返回短时 PUT 签名与 opaque media_id；
+    # staging/final object key 永不进入公开 payload。
     try:
         result = start_media_upload(db, user_id, payload, storage)
     except MediaError as exc:
@@ -81,7 +82,8 @@ def complete_upload(
     db: DbSession,
     storage: Storage,
 ) -> MediaRead:
-    # [人工注释][S1-006] complete 不接受 object key/size/type 参数；全部以服务端持久化预期值和对象存储 HEAD 为准。
+    # [人工注释][S1-006] complete 不接受 object key/size/type 参数；
+    # 全部以服务端持久化预期值和对象存储校验结果为准。
     try:
         asset = complete_media_upload(db, user_id, media_id, storage)
     except MediaError as exc:
@@ -120,7 +122,7 @@ def create_memory_from_photo(
     user_id: CurrentUser,
     db: DbSession,
 ) -> PhotoMemoryResponse:
-    # [人工注释][S1-005] 本接口只把“已验证原始图片 + 用户主动输入的文字”接成 PHOTO Memory；
+    # [人工注释][S1-005] 这里只把已验证原始图片和用户主动文字接成 PHOTO Memory。
     # 不读取图片语义、不做 OCR/Vision，也不允许客户端提交 confidence/confirmed。
     try:
         asset, memory = create_photo_memory(db, user_id, media_id, payload)

@@ -12,12 +12,17 @@ from app.core.config import get_settings
 from app.media_models import MediaAsset, MediaEvidenceLink, MediaKind, MediaStatus
 from app.models import Memory, MemorySource, MemoryType, SourceType
 from app.schemas import MediaUploadCreate, PhotoMemoryCreate
-from app.services.memory_service import TrustedMemoryWrite, create_trusted_memory, get_memory_for_user
+from app.services.memory_service import (
+    TrustedMemoryWrite,
+    create_trusted_memory,
+    get_memory_for_user,
+)
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorage,
     ObjectStorageError,
     PresignedTransfer,
+    StoredObject,
 )
 
 ALLOWED_IMAGE_CONTENT_TYPES = {
@@ -29,8 +34,8 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
 }
 
 
-# [人工注释][S1-005][S1-006] 媒体服务统一持有“用户归属 + 服务端 object_key + READY 门禁”；
-# 客户端只能携带 media_id，不能提交任意 object_key 绕过所有权检查。
+# [人工注释][S1-005][S1-006] 媒体服务统一持有用户归属、服务端 object key 与 READY 门禁。
+# 客户端只能携带 media_id，不能提交任意 object key 绕过所有权检查。
 class MediaError(RuntimeError):
     def __init__(self, code: str, status_code: int):
         super().__init__(code)
@@ -73,17 +78,26 @@ def _same_upload(asset: MediaAsset, payload: MediaUploadCreate) -> bool:
     )
 
 
-def _object_key(user_id: UUID, media_id: UUID) -> str:
+def _object_keys(user_id: UUID, media_id: UUID) -> tuple[str, str]:
     settings = get_settings()
     prefix = settings.storage_object_prefix.strip("/") or "media"
-    return f"{prefix}/{user_id}/{media_id.hex}"
+    upload_key = f"{prefix}/_staging/{user_id}/{media_id.hex}/{uuid4().hex}"
+    final_key = f"{prefix}/{user_id}/{media_id.hex}"
+    return upload_key, final_key
 
 
 def _sign_upload(storage: ObjectStorage, asset: MediaAsset) -> PresignedTransfer:
     try:
-        return storage.sign_upload(asset.object_key, asset.content_type)
+        return storage.sign_upload(asset.upload_object_key, asset.content_type)
     except ObjectStorageError as exc:
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
+
+
+def _validate_stored_object(asset: MediaAsset, stored: StoredObject) -> None:
+    if stored.size_bytes != asset.size_bytes:
+        raise MediaError("MEDIA_OBJECT_SIZE_MISMATCH", 409)
+    if _normalize_content_type(stored.content_type) != asset.content_type:
+        raise MediaError("MEDIA_OBJECT_TYPE_MISMATCH", 409)
 
 
 def start_media_upload(
@@ -92,8 +106,8 @@ def start_media_upload(
     payload: MediaUploadCreate,
     storage: ObjectStorage,
 ) -> MediaUploadResult:
-    # [人工注释][S1-006] client_upload_id 是用户域内幂等键；重复同请求复用同一 media_id/object_key，
-    # 相同幂等键但元数据变化必须 409，防止客户端把另一份文件偷换进既有 Evidence 身份。
+    # [人工注释][S1-006] client_upload_id 是用户域内幂等键。相同请求复用媒体身份；
+    # 相同幂等键但元数据变化必须 409，防止另一份文件偷换进既有 Evidence 身份。
     content_type = _normalize_content_type(payload.content_type)
     if payload.kind != MediaKind.IMAGE:
         raise MediaError("MEDIA_KIND_UNSUPPORTED", 422)
@@ -116,13 +130,15 @@ def start_media_upload(
         return MediaUploadResult(asset=existing, upload=_sign_upload(storage, existing))
 
     media_id = uuid4()
+    upload_key, final_key = _object_keys(user_id, media_id)
     asset = MediaAsset(
         id=media_id,
         user_id=user_id,
         client_upload_id=payload.client_upload_id,
         kind=payload.kind,
         status=MediaStatus.PENDING,
-        object_key=_object_key(user_id, media_id),
+        upload_object_key=upload_key,
+        object_key=final_key,
         content_type=content_type,
         size_bytes=payload.size_bytes,
         original_filename=_normalize_filename(payload.original_filename),
@@ -131,7 +147,8 @@ def start_media_upload(
     try:
         db.flush()
     except IntegrityError:
-        # [人工注释][S1-006] 并发首次提交由数据库唯一约束裁决；回滚后只允许读取当前用户相同幂等键。
+        # [人工注释][S1-006] 并发首次提交由数据库唯一约束裁决；回滚后只读取
+        # 当前用户相同幂等键，绝不跨用户复用媒体对象。
         db.rollback()
         existing = db.scalar(
             select(MediaAsset).where(
@@ -154,8 +171,8 @@ def complete_media_upload(
     media_id: UUID,
     storage: ObjectStorage,
 ) -> MediaAsset:
-    # [人工注释][S1-005][S1-006] READY 只能来自服务端对私有桶 HEAD 的验证；
-    # 客户端“上传成功”声明不具有可信等级，尺寸/类型不一致的对象不得成为 Evidence。
+    # [人工注释][S1-005][S1-006] READY 只能来自服务端校验。客户端 PUT 只写 staging；
+    # 服务端校验后晋升到 final，Evidence/下载只读取 final，旧 PUT 签名无法覆盖已确认原图。
     asset = db.scalar(
         select(MediaAsset)
         .where(MediaAsset.id == media_id, MediaAsset.user_id == user_id)
@@ -167,21 +184,33 @@ def complete_media_upload(
         return asset
 
     try:
-        stored = storage.stat_object(asset.object_key)
+        staged = storage.stat_object(asset.upload_object_key)
     except ObjectNotFound as exc:
         raise MediaError("MEDIA_OBJECT_NOT_FOUND", 409) from exc
     except ObjectStorageError as exc:
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
+    _validate_stored_object(asset, staged)
 
-    if stored.size_bytes != asset.size_bytes:
-        raise MediaError("MEDIA_OBJECT_SIZE_MISMATCH", 409)
-    if _normalize_content_type(stored.content_type) != asset.content_type:
-        raise MediaError("MEDIA_OBJECT_TYPE_MISMATCH", 409)
+    try:
+        storage.promote_object(asset.upload_object_key, asset.object_key)
+        final = storage.stat_object(asset.object_key)
+    except ObjectNotFound as exc:
+        raise MediaError("MEDIA_PROMOTION_FAILED", 503) from exc
+    except ObjectStorageError as exc:
+        raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
+    _validate_stored_object(asset, final)
 
     asset.status = MediaStatus.READY
-    asset.storage_etag = stored.etag
+    asset.storage_etag = final.etag
     asset.completed_at = datetime.now(UTC)
     db.flush()
+
+    # [人工注释][S1-006] staging 清理失败只会留下私有垃圾对象，不影响 final 的不可覆盖性，
+    # 因此 READY 不回滚；后续生命周期清理可独立治理，不扩大本 PR 范围。
+    try:
+        storage.delete_object(asset.upload_object_key)
+    except ObjectStorageError:
+        pass
     return asset
 
 
@@ -191,7 +220,7 @@ def sign_media_download(
     media_id: UUID,
     storage: ObjectStorage,
 ) -> tuple[MediaAsset, PresignedTransfer]:
-    # [人工注释][S1-006] 下载签名先按 media_id + 当前 user_id 查库，再用服务端保存的 object_key 签名；
+    # [人工注释][S1-006] 下载签名前按 media_id + user_id 查库，再对 final key 签名。
     # 对其他用户统一 404，禁止仅凭 object key 或猜测 UUID 跨用户读取。
     asset = _get_asset_for_user(db, user_id, media_id)
     if asset is None:
@@ -211,8 +240,8 @@ def create_photo_memory(
     media_id: UUID,
     payload: PhotoMemoryCreate,
 ) -> tuple[MediaAsset, Memory]:
-    # [人工注释][S1-005] 图片 Memory 必须锁定当前用户已 READY 的媒体；同一 media 只允许一个 Evidence 关联，
-    # 重复提交直接返回既有 Memory，不重复制造事实，也不执行任何 OCR/Vision 推断。
+    # [人工注释][S1-005] 图片 Memory 必须锁定当前用户已 READY 的媒体；同一 media 只允许
+    # 一个 Evidence 关联。重复提交返回既有 Memory，不制造第二条事实，也不做 OCR/Vision。
     asset = db.scalar(
         select(MediaAsset)
         .where(MediaAsset.id == media_id, MediaAsset.user_id == user_id)

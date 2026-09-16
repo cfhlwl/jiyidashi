@@ -11,8 +11,8 @@ from app.core.db import Base
 from app.models import utcnow
 
 
-# [人工注释][S1-005][S1-006] 媒体对象与现有 MemorySource 分表维护：原始图片先成为用户私有媒体，
-# 只有完成对象存储校验后才能通过 MediaEvidenceLink 进入可信 Evidence 链，禁止仅凭客户端 USER_PHOTO 声明升级事实。
+# [人工注释][S1-005][S1-006] 原始图片先成为用户私有媒体，完成对象存储校验与
+# staging -> final 晋升后，才能通过 MediaEvidenceLink 进入可信 Evidence 链。
 class MediaKind(StrEnum):
     IMAGE = "IMAGE"
 
@@ -30,6 +30,10 @@ class MediaAsset(Base):
             "client_upload_id",
             name="uq_media_assets_user_client_upload_id",
         ),
+        UniqueConstraint(
+            "upload_object_key",
+            name="uq_media_assets_upload_object_key",
+        ),
         UniqueConstraint("object_key", name="uq_media_assets_object_key"),
     )
 
@@ -44,13 +48,16 @@ class MediaAsset(Base):
     status: Mapped[MediaStatus] = mapped_column(
         Enum(MediaStatus, native_enum=False), default=MediaStatus.PENDING
     )
+    upload_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     storage_etag: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class MediaEvidenceLink(Base):

@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     auto_create_schema: bool = False
     cors_origins: list[str] = Field(default_factory=list)
 
-    # [人工注释][S1-006] 媒体存储默认关闭且无公开 URL 回退；启用 s3 时可接 COS/OSS 的 S3 SigV4 兼容私有桶。
+    # [人工注释][S1-006] 媒体存储默认关闭且无公开 URL 回退；启用 s3 时可接
+    # COS/OSS 的 S3 SigV4 兼容私有桶。
     storage_backend: str = "disabled"
     storage_bucket: str = ""
     storage_region: str = ""
@@ -25,7 +26,11 @@ class Settings(BaseSettings):
     storage_addressing_style: str = "virtual"
     storage_object_prefix: str = "media"
     storage_presign_ttl_seconds: int = Field(default=600, ge=60, le=3600)
-    media_max_image_bytes: int = Field(default=20 * 1024 * 1024, ge=1, le=50 * 1024 * 1024)
+    media_max_image_bytes: int = Field(
+        default=20 * 1024 * 1024,
+        ge=1,
+        le=50 * 1024 * 1024,
+    )
 
     # [人工注释][S1-FIX-003] 正式认证的滥用保护默认开启，生产环境禁止关闭。
     auth_rate_limit_enabled: bool = True
@@ -65,7 +70,8 @@ class Settings(BaseSettings):
                 "Production JWT_SECRET must be at least 32 bytes and not use the default"
             )
 
-        # [人工注释][S1-006] 服务端只接受显式支持的驱动与寻址方式；启用私有对象存储时必须具备完整签名配置。
+        # [人工注释][S1-006] 只接受显式支持的存储驱动与寻址方式；启用私有对象
+        # 存储时必须具备完整签名配置，禁止半配置后静默回退。
         if self.storage_backend not in {"disabled", "s3"}:
             raise ValueError("STORAGE_BACKEND must be disabled or s3")
         if self.storage_addressing_style not in {"virtual", "path", "auto"}:

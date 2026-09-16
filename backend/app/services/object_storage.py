@@ -12,7 +12,8 @@ from botocore.exceptions import ClientError
 from app.core.config import Settings, get_settings
 
 
-# [人工注释][S1-006] 公共 API 永远只拿短时签名请求，不暴露永久公开 URL；具体 COS/OSS/S3 兼容实现隔离在此抽象后。
+# [人工注释][S1-006] 公共 API 永远只拿短时签名请求，不暴露永久公开 URL。
+# COS/OSS/S3 兼容实现统一隔离在此抽象后。
 @dataclass(frozen=True)
 class PresignedTransfer:
     url: str
@@ -43,9 +44,13 @@ class ObjectStorage(Protocol):
 
     def stat_object(self, object_key: str) -> StoredObject: ...
 
+    def promote_object(self, source_key: str, destination_key: str) -> None: ...
+
+    def delete_object(self, object_key: str) -> None: ...
+
 
 class DisabledObjectStorage:
-    # [人工注释][S1-006] 未配置对象存储时媒体接口 fail closed 返回不可用，不能偷偷退化成本机公开文件目录。
+    # [人工注释][S1-006] 未配置对象存储时媒体接口 fail closed，不能退化成本机公开目录。
     def _unavailable(self) -> None:
         raise ObjectStorageError("object storage is not configured")
 
@@ -61,10 +66,16 @@ class DisabledObjectStorage:
         self._unavailable()
         raise AssertionError("unreachable")
 
+    def promote_object(self, source_key: str, destination_key: str) -> None:
+        self._unavailable()
+
+    def delete_object(self, object_key: str) -> None:
+        self._unavailable()
+
 
 class S3ObjectStorage:
-    # [人工注释][S1-006] 使用 S3 SigV4 兼容边界承载 COS/OSS 私有桶；签名 PUT 固定 Content-Type，
-    # 完成接口随后 HEAD 服务端生成的 object_key，避免客户端自行声明“已上传”即进入 Evidence。
+    # [人工注释][S1-006] 使用 S3 SigV4 兼容边界承载 COS/OSS 私有桶。
+    # PUT 只写 staging；完成后由服务端 COPY 到 final，旧 PUT 签名不能覆盖 Evidence 对象。
     def __init__(self, settings: Settings):
         self._settings = settings
         self._client = boto3.client(
@@ -96,7 +107,7 @@ class S3ObjectStorage:
                 ExpiresIn=self._settings.storage_presign_ttl_seconds,
                 HttpMethod="PUT",
             )
-        except Exception as exc:  # boto providers expose several transport/credential errors.
+        except Exception as exc:
             raise ObjectStorageError("failed to sign upload") from exc
         return PresignedTransfer(
             url=url,
@@ -151,6 +162,37 @@ class S3ObjectStorage:
             content_type=str(response.get("ContentType") or "").lower(),
             etag=etag,
         )
+
+    def promote_object(self, source_key: str, destination_key: str) -> None:
+        # [人工注释][S1-006] 晋升由服务端凭证执行，客户端拿不到 final key 的写权限。
+        try:
+            self._client.copy_object(
+                Bucket=self._settings.storage_bucket,
+                CopySource={
+                    "Bucket": self._settings.storage_bucket,
+                    "Key": source_key,
+                },
+                Key=destination_key,
+                MetadataDirective="COPY",
+            )
+        except ClientError as exc:
+            error = exc.response.get("Error", {})
+            code = str(error.get("Code", ""))
+            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if status == 404 or code in {"404", "NoSuchKey", "NotFound"}:
+                raise ObjectNotFound("source object not found") from exc
+            raise ObjectStorageError("failed to promote object") from exc
+        except Exception as exc:
+            raise ObjectStorageError("failed to promote object") from exc
+
+    def delete_object(self, object_key: str) -> None:
+        try:
+            self._client.delete_object(
+                Bucket=self._settings.storage_bucket,
+                Key=object_key,
+            )
+        except Exception as exc:
+            raise ObjectStorageError("failed to delete object") from exc
 
 
 @lru_cache

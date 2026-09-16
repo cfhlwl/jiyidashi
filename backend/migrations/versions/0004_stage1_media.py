@@ -20,8 +20,8 @@ media_status = sa.Enum("PENDING", "READY", name="mediastatus", native_enum=False
 
 
 def upgrade() -> None:
-    # [人工注释][S1-005][S1-006] 媒体表只保存私有 object_key 与预期元数据，不保存永久公开 URL；
-    # user_id + client_upload_id 保证用户域内上传重试幂等。
+    # [人工注释][S1-005][S1-006] 媒体表只保存私有 staging/final key 与预期元数据，
+    # 不保存永久公开 URL；user_id + client_upload_id 保证用户域内上传重试幂等。
     op.create_table(
         "media_assets",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -29,6 +29,7 @@ def upgrade() -> None:
         sa.Column("client_upload_id", sa.Uuid(), nullable=False),
         sa.Column("kind", media_kind, nullable=False),
         sa.Column("status", media_status, nullable=False),
+        sa.Column("upload_object_key", sa.String(512), nullable=False),
         sa.Column("object_key", sa.String(512), nullable=False),
         sa.Column("content_type", sa.String(100), nullable=False),
         sa.Column("size_bytes", sa.Integer(), nullable=False),
@@ -43,12 +44,16 @@ def upgrade() -> None:
             "client_upload_id",
             name="uq_media_assets_user_client_upload_id",
         ),
+        sa.UniqueConstraint(
+            "upload_object_key",
+            name="uq_media_assets_upload_object_key",
+        ),
         sa.UniqueConstraint("object_key", name="uq_media_assets_object_key"),
     )
     op.create_index("ix_media_assets_user_id", "media_assets", ["user_id"])
 
     # [人工注释][S1-005] 原始图片与参与 Evidence gate 的 MemorySource 一对一关联；
-    # 这样 USER_PHOTO 证据可追溯到真实 READY media，而不是依赖客户端字符串声明。
+    # USER_PHOTO 可追溯到真实 READY media，而不是依赖客户端字符串声明。
     op.create_table(
         "media_evidence_links",
         sa.Column("id", sa.Uuid(), nullable=False),
