@@ -3,7 +3,7 @@
 <!-- [人工注释][S1-FIX-002][S1-FIX-003] 第二轮修复补充真实 Evidence 来源契约与正式认证滥用保护。 -->
 <!-- [人工注释][S1-011][S1-019][S1-023][S1-024] Stage 1 第二批补齐位置失效、单条删除、暂停今天与手动恢复控制语义。 -->
 <!-- [人工注释][S1-PR3-FIX-001][S1-PR3-FIX-002][S1-PR3-FIX-003] PR #3 第一轮 HOLD 后补充 Object 匹配路由、失效时间水位与 pause/today 单时钟语义。 -->
-<!-- [人工注释][S1-005][S1-006] Stage 1 第三批 A 线冻结私有媒体上传/下载、READY 校验、图片 Memory 与 Evidence 关联协议。 -->
+<!-- [人工注释][S1-005][S1-006] Stage 1 第三批 A 线冻结私有 staging->final 媒体协议、READY 校验、图片 Memory 与 Evidence 关联协议。 -->
 # V1 API 基线
 
 Base path:
@@ -154,7 +154,7 @@ POST /v1/media/{media_id}/download
 POST /v1/media/{media_id}/memory
 ```
 
-媒体桶必须保持**私有**。服务端数据库只保存私有 `object_key`，公开 API 永远不返回永久公开 URL，也不允许客户端提交 bucket / endpoint / object key。COS / OSS 通过服务端 `STORAGE_BACKEND=s3` 的 SigV4 兼容配置接入；Mini / Flutter 只消费本节统一协议。
+媒体桶必须保持**私有**。服务端数据库保存私有 staging / final object key，公开 API 永远不返回这些 key 或永久公开 URL，也不允许客户端提交 bucket / endpoint / object key。COS / OSS 通过服务端 `STORAGE_BACKEND=s3` 的 SigV4 兼容配置接入；Mini / Flutter 只消费本节统一协议。
 
 ### 1. 创建临时上传
 
@@ -171,7 +171,7 @@ POST /v1/media/uploads
 
 Stage 1 当前只接受 `IMAGE`，支持 `image/jpeg`、`image/png`、`image/webp`、`image/heic`、`image/heif`。`client_upload_id` 是**当前用户域内**的幂等键：
 
-- 同一用户 + 同一 `client_upload_id` + 相同元数据：复用同一个 `media_id` / 私有对象身份，并可重新签发短时 PUT。
+- 同一用户 + 同一 `client_upload_id` + 相同元数据：复用同一个 `media_id` / staging 对象身份，并可重新签发短时 PUT。
 - 同一用户 + 同一 `client_upload_id` 但尺寸/类型/文件名变化：`409 MEDIA_UPLOAD_ID_CONFLICT`。
 - 不同用户可以使用相同 `client_upload_id`，不会共享媒体身份。
 
@@ -199,7 +199,7 @@ Stage 1 当前只接受 `IMAGE`，支持 `image/jpeg`、`image/png`、`image/web
 }
 ```
 
-客户端必须使用响应里的 `method` / `headers` 上传；`upload.url` 到期后由对象存储拒绝。服务端默认签名 TTL 为 600 秒，配置范围 60–3600 秒。
+客户端必须使用响应里的 `method` / `headers` 上传；`upload.url` 到期后由对象存储拒绝。服务端默认签名 TTL 为 600 秒，配置范围 60–3600 秒。PUT 只允许写服务端生成的私有 staging key，客户端从未获得 final Evidence key 的写能力。
 
 ### 2. 服务端确认对象
 
@@ -209,15 +209,26 @@ Stage 1 当前只接受 `IMAGE`，支持 `image/jpeg`、`image/png`、`image/web
 POST /v1/media/33333333-3333-3333-3333-333333333333/complete
 ```
 
-此请求**不接受** object key / size / content type 等客户端补充字段。服务端使用数据库中的当前用户归属与私有 object key 对对象存储执行 HEAD：
+此请求**不接受** object key / size / content type 等客户端补充字段。服务端流程固定为：
 
-- 对象不存在：`409 MEDIA_OBJECT_NOT_FOUND`
+1. 用当前用户归属找到服务端持久化的 staging key。
+2. HEAD staging，校验实际尺寸与 Content-Type。
+3. 使用服务端对象存储凭证把 staging COPY / promote 到独立 final key。
+4. HEAD final 再次校验尺寸与 Content-Type。
+5. 只有 final 校验成功才写 `READY` / final ETag，并尽力清理 staging。
+
+这样即使旧 PUT 签名在 `READY` 后尚未到期，它也只能改写 staging，不能覆盖已经作为 Evidence 的 final 对象。下载与 Evidence 永远只引用 final key。
+
+错误语义：
+
+- staging 对象不存在：`409 MEDIA_OBJECT_NOT_FOUND`
 - 实际尺寸不符：`409 MEDIA_OBJECT_SIZE_MISMATCH`
 - 实际 Content-Type 不符：`409 MEDIA_OBJECT_TYPE_MISMATCH`
+- staging -> final 晋升后 final 不可读取：`503 MEDIA_PROMOTION_FAILED`
 - 对象存储不可用：`503 MEDIA_STORAGE_UNAVAILABLE`
 - 媒体不属于当前用户：统一 `404 MEDIA_NOT_FOUND`
 
-只有 HEAD 校验通过后状态才变成 `READY`。客户端“上传成功”的声明本身不能升级可信等级。
+客户端“上传成功”的声明本身不能升级可信等级，只有服务端完成上述 staging -> final 校验流程后状态才会变为 `READY`。
 
 ### 3. 创建图片 Memory / Evidence
 
@@ -257,7 +268,7 @@ POST /v1/media/33333333-3333-3333-3333-333333333333/memory
 POST /v1/media/{media_id}/download
 ```
 
-仅当前用户的 `READY` 媒体可签发短时 GET。每次读取都重新执行用户归属检查；跨用户访问统一 404。响应中的 `download.url` 不是永久地址，不应持久化。
+仅当前用户的 `READY` 媒体可签发短时 GET。每次读取都重新执行用户归属检查；跨用户访问统一 404。GET 只签 final object，响应中的 `download.url` 不是永久地址，不应持久化。
 
 ## Objects
 
