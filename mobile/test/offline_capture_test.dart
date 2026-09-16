@@ -7,9 +7,14 @@ import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+const captureUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
 // [人工注释][S1-016] UI 回归用可控 API 故障区分“连接层离线”与“服务端明确拒绝”，防止把真实 4xx/5xx 伪装成本地成功。
 class _CaptureApi extends JiYiApiClient {
-  _CaptureApi(this.failure) : super(baseUrl: 'https://example.invalid/v1');
+  _CaptureApi(this.failure) : super(baseUrl: 'https://example.invalid/v1') {
+    // [人工注释][S1-015] 测试直接注入认证后的真实 user_id 语义，证明本地记录会绑定当前账号而不是匿名公共队列。
+    authenticatedUserId = captureUserId;
+  }
 
   final Object failure;
 
@@ -65,7 +70,7 @@ void main() {
 
   testWidgets('connection failure persists text locally before success UI',
       (tester) async {
-    // [人工注释][S1-015] 网络异常时只有 SQLite insert 完成后才允许显示“已保存到本机”，并清空用户输入。
+    // [人工注释][S1-015] 网络异常时只有当前账号 SQLite insert 完成后才允许显示“已保存到本机”，并清空用户输入。
     await pumpCapture(tester, _CaptureApi(Exception('network down')));
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), '离线标题');
@@ -77,8 +82,9 @@ void main() {
     expect(find.text('本机待发送'), findsOneWidget);
     expect(find.textContaining('有 1 条记录已安全保存在本机'), findsOneWidget);
 
-    final all = await queue.listAll();
+    final all = await queue.listAll(captureUserId);
     expect(all, hasLength(1));
+    expect(all.single.ownerUserId, captureUserId);
     expect(all.single.status, OfflineQueueStatus.pending);
     expect(all.single.payload['title'], '离线标题');
     expect(all.single.payload['content'], '离线时也不能丢的内容');
@@ -95,7 +101,7 @@ void main() {
 
     expect(find.text('操作失败：内容不符合要求'), findsOneWidget);
     expect(find.textContaining('已保存到本机'), findsNothing);
-    expect(await queue.countAwaitingDelivery(), 0);
-    expect(await queue.listAll(), isEmpty);
+    expect(await queue.countAwaitingDelivery(captureUserId), 0);
+    expect(await queue.listAll(captureUserId), isEmpty);
   });
 }
