@@ -9,7 +9,7 @@
 <!-- [人工注释][DOC-PROGRESS-016] Stage 1 第三批采用四工作线并行开发；统一基于 main=e98c99de 排期，当前仅完成任务拆分与依赖记录，尚未启动功能开发，Stage 2 继续未开始。 -->
 <!-- [人工注释][DOC-PROGRESS-017] A：Backend Media 已在 PR #7 完成 S1-006 + S1-005 后端媒体/Evidence 第一阶段实现并通过 Backend 全量门禁，状态进入待正式审查；OCR/Vision/ASR/Stage 2 均未启动。 -->
 <!-- [人工注释][DOC-PROGRESS-018] PR #7 第一轮预审 HOLD 的 3 个 P1 + 2 个 P2 已完成窄修；生产代码 HEAD 13cd13f3 通过 Backend 全量门禁与 pytest 53/53，A 线恢复 🟠 待第二轮审查；OCR/Vision/ASR/Stage 2 继续未启动。 -->
-<!-- [人工注释][DOC-PROGRESS-019] B：Flutter Offline 已完成 S1-015/S1-016 实现、真实 SQLite/状态机与 UI fallback 自动验收，并基于最新 main 做最终 replay；S1-017 真实同步/服务端幂等仍保持未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-020] B：Flutter Offline 已完成 S1-015/S1-016 实现、真实 SQLite/状态机与 UI fallback 自动验收，并基于最新 main 做最终 replay；S1-017 真实同步/服务端幂等仍保持未开始。 -->
 <!-- [人工注释][DOC-PROGRESS-019] PR #7 第二轮窄范围复审 PASS，第一轮 3P1+2P2 全部关闭；PR 已从 Draft 转 Ready 并合并 main=9504fa8d。S1-006 完成，S1-005 继续由客户端主动拍照/选图工作线推进；Stage 2 继续未开始。 -->
 # 迹忆开发进度总表
 
