@@ -49,7 +49,8 @@ class AuthRateLimitBucket(Base):
 
     __tablename__ = "auth_rate_limit_buckets"
 
-    # [人工注释][S1-FIX-003] 只保存 HMAC bucket key，不落原始 IP / 邮箱；数据库门禁在 Argon2 前生效。
+    # [人工注释][S1-FIX-003] 只保存 HMAC bucket key，不落原始 IP / 邮箱；
+    # 数据库门禁在 Argon2 前生效。
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     scope: Mapped[str] = mapped_column(String(40), index=True)
     window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
