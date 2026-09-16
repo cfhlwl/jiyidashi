@@ -1,6 +1,11 @@
 import { Button, Input, Textarea, View } from '@tarojs/components'
 import { useState } from 'react'
-import { createTextMemory, isAuthenticated, rememberObjectLocation } from '../../services/api'
+import {
+  createTextMemory,
+  isAuthenticated,
+  markObjectLocationStale,
+  rememberObjectLocation,
+} from '../../services/api'
 import './index.scss'
 
 export default function Page() {
@@ -56,10 +61,31 @@ export default function Page() {
     }
   }
 
+  const staleObject = async () => {
+    if (!ensureLogin()) return
+    if (!objectName.trim()) {
+      setStatus('请先填写需要失效的物品名称')
+      return
+    }
+    setLoading(true)
+    setStatus('')
+    try {
+      // [人工注释][S1-011] “已经不在那里”必须把服务端 CURRENT 改为 STALE，
+      // 后续查询才能可靠返回 NO_EVIDENCE。
+      await markObjectLocationStale(objectName)
+      setStatus(`✓ 已标记：${objectName.trim()} 已经不在原位置`)
+      setLocationText('')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '操作失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <View className='page'>
       <View className='title'>记一下</View>
-      <View className='subtitle'>Stage 1 第一批先支持文字和“东西在哪”。</View>
+      <View className='subtitle'>记录新的可信记忆，也可以明确告诉迹忆“东西已经不在那里”。</View>
 
       <View className='card'>
         <View className='card-title'>写一句</View>
@@ -73,6 +99,7 @@ export default function Page() {
         <Input className='field' type='text' placeholder='物品，例如：护照' value={objectName} onInput={(e) => setObjectName(e.detail.value)} />
         <Input className='field' type='text' placeholder='位置，例如：书房左侧柜子第二层' value={locationText} onInput={(e) => setLocationText(e.detail.value)} />
         <Button className='secondary-button' disabled={loading} onClick={saveObject}>记录当前位置</Button>
+        <Button className='secondary-button' disabled={loading} onClick={staleObject}>已经不在那里</Button>
       </View>
 
       {status && <View className='status'>{status}</View>}
