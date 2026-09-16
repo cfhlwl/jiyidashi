@@ -6,7 +6,8 @@ from app.services import auth_rate_limit
 
 
 def test_registration_ip_window_returns_429(client, monkeypatch):
-    # [人工注释][S1-FIX-003] 直接验证数据库级 IP bucket：达到窗口额度后必须在 Argon2 前 429 并给 Retry-After。
+    # [人工注释][S1-FIX-003] 验证数据库级 IP bucket；
+    # 达到窗口额度后必须在 Argon2 前 429 并给 Retry-After。
     monkeypatch.setattr(auth_rate_limit.settings, "auth_register_ip_limit", 2)
     client_ip = "198.51.100.77"
 
