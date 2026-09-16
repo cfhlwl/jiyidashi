@@ -1,4 +1,5 @@
 <!-- [人工注释][FND-025] 本文档必须与当前公开 schema 同步；客户端只能声明 capture_source，可信等级由服务端所有。 -->
+<!-- [人工注释][S1-001] Stage 1 正式认证接口已加入公开 API；dev-token 仍只用于显式开启的开发/测试环境。 -->
 # V1 API 基线
 
 Base path:
@@ -6,6 +7,71 @@ Base path:
 ```text
 /v1
 ```
+
+## 正式认证
+
+### 注册
+
+```http
+POST /v1/auth/register
+```
+
+```json
+{
+  "email": "user@example.com",
+  "password": "correct-horse-battery-staple",
+  "nickname": "小忆",
+  "timezone": "Asia/Shanghai",
+  "locale": "zh-CN"
+}
+```
+
+`timezone` 必须是可解析的 IANA 时区名称。`user_id` 由服务端生成，客户端不能指定。
+
+成功返回：
+
+```json
+{
+  "access_token": "<jwt>",
+  "token_type": "bearer",
+  "user_id": "11111111-1111-1111-1111-111111111111"
+}
+```
+
+### 登录
+
+```http
+POST /v1/auth/login
+```
+
+```json
+{
+  "email": "user@example.com",
+  "password": "correct-horse-battery-staple"
+}
+```
+
+账号不存在与密码错误统一返回 `401 INVALID_CREDENTIALS`，不通过错误信息泄露账号存在性。
+
+### 本人资料
+
+```http
+GET   /v1/user
+PATCH /v1/user
+```
+
+更新示例：
+
+```json
+PATCH /v1/user
+{
+  "nickname": "新的昵称",
+  "timezone": "Asia/Singapore",
+  "locale": "zh-CN"
+}
+```
+
+`PATCH /v1/user` 只允许修改公开资料字段；登录邮箱/身份归属不能通过 profile API 修改。
 
 ## 开发登录
 
