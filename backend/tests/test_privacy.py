@@ -74,19 +74,28 @@ async def test_paused_timestamp_is_rejected_even_after_resume(
     assert delayed.json()["rejected_privacy"] == 1
 
 
-async def test_pause_today_ends_at_user_local_midnight(
+async def test_pause_today_ends_at_configured_user_local_midnight(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ):
-    # [人工注释][S1-023] “暂停今天”由服务端按用户资料里的 Asia/Shanghai
-    # 计算下一次本地午夜，不能依赖客户端设备时区。
+    # [人工注释][S1-023] 先切到带 DST 规则的非默认 IANA timezone，
+    # 再以服务端返回的 paused_since 为同一 reference 验证下一次当地午夜。
+    updated = await client.patch(
+        "/v1/user",
+        headers=auth_headers,
+        json={"timezone": "America/New_York"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["timezone"] == "America/New_York"
+
     response = await client.post("/v1/privacy/pause/today", headers=auth_headers)
     assert response.status_code == 200
     payload = response.json()
     assert payload["recording_paused"] is True
 
-    zone = ZoneInfo("Asia/Shanghai")
-    local_day = datetime.now(UTC).astimezone(zone).date()
+    zone = ZoneInfo("America/New_York")
+    started_at = datetime.fromisoformat(payload["paused_since"])
+    local_day = started_at.astimezone(zone).date()
     expected = datetime.combine(
         local_day + timedelta(days=1),
         time.min,
