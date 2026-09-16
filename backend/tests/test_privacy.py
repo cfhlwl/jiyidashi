@@ -1,5 +1,6 @@
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from httpx import AsyncClient
 
@@ -71,6 +72,28 @@ async def test_paused_timestamp_is_rejected_even_after_resume(
     assert delayed.status_code == 200
     assert delayed.json()["accepted"] == 0
     assert delayed.json()["rejected_privacy"] == 1
+
+
+async def test_pause_today_ends_at_user_local_midnight(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    # [人工注释][S1-023] “暂停今天”由服务端按用户资料里的 Asia/Shanghai
+    # 计算下一次本地午夜，不能依赖客户端设备时区。
+    response = await client.post("/v1/privacy/pause/today", headers=auth_headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["recording_paused"] is True
+
+    zone = ZoneInfo("Asia/Shanghai")
+    local_day = datetime.now(UTC).astimezone(zone).date()
+    expected = datetime.combine(local_day + timedelta(days=1), time.min, tzinfo=zone).astimezone(UTC)
+    actual = datetime.fromisoformat(payload["paused_until"])
+    assert actual == expected
+
+    resumed = await client.post("/v1/privacy/resume", headers=auth_headers)
+    assert resumed.status_code == 200
+    assert resumed.json()["recording_paused"] is False
 
 
 async def test_manual_memory_still_works_during_pause(
