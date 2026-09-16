@@ -14,6 +14,7 @@ def test_dev_auth_is_fail_closed_by_default():
         auto_create_schema=False,
     )
     assert settings.enable_dev_auth is False
+    assert settings.auth_rate_limit_enabled is True
 
 
 def test_prod_alias_is_treated_as_production():
@@ -24,6 +25,7 @@ def test_prod_alias_is_treated_as_production():
         database_url="sqlite:///./unused.db",
         jwt_secret="0123456789abcdef0123456789abcdef",
         enable_dev_auth=False,
+        auth_rate_limit_enabled=True,
         auto_create_schema=False,
     )
     assert settings.is_production is True
@@ -38,6 +40,21 @@ def test_production_configuration_rejects_enabled_dev_auth():
             database_url="sqlite:///./unused.db",
             jwt_secret="0123456789abcdef0123456789abcdef",
             enable_dev_auth=True,
+            auth_rate_limit_enabled=True,
+            auto_create_schema=False,
+        )
+
+
+def test_production_configuration_rejects_disabled_auth_rate_limit():
+    # [人工注释][S1-FIX-003] 正式匿名认证不能靠“以后配网关”假设保护，生产配置禁止关闭服务端门禁。
+    with pytest.raises(ValueError, match="AUTH_RATE_LIMIT_ENABLED must be true in production"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            database_url="sqlite:///./unused.db",
+            jwt_secret="0123456789abcdef0123456789abcdef",
+            enable_dev_auth=False,
+            auth_rate_limit_enabled=False,
             auto_create_schema=False,
         )
 
@@ -50,6 +67,7 @@ async def test_dev_token_endpoint_still_rejects_bypassed_production_config(
     unsafe_settings = Settings.model_construct(
         app_env="production",
         enable_dev_auth=True,
+        auth_rate_limit_enabled=True,
         jwt_secret="0123456789abcdef0123456789abcdef",
     )
     monkeypatch.setattr(auth_api, "settings", unsafe_settings)
