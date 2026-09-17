@@ -46,6 +46,8 @@ class ObjectStorage(Protocol):
 
     def read_prefix(self, object_key: str, max_bytes: int) -> bytes: ...
 
+    def read_object(self, object_key: str, max_bytes: int) -> bytes: ...
+
     def promote_object(self, source_key: str, destination_key: str) -> None: ...
 
     def delete_object(self, object_key: str) -> None: ...
@@ -69,6 +71,10 @@ class DisabledObjectStorage:
         raise AssertionError("unreachable")
 
     def read_prefix(self, object_key: str, max_bytes: int) -> bytes:
+        self._unavailable()
+        raise AssertionError("unreachable")
+
+    def read_object(self, object_key: str, max_bytes: int) -> bytes:
         self._unavailable()
         raise AssertionError("unreachable")
 
@@ -174,7 +180,8 @@ class S3ObjectStorage:
         )
 
     def read_prefix(self, object_key: str, max_bytes: int) -> bytes:
-        # [人工注释][S1-005] 只读取极小文件头用于类型真实性校验，不做完整下载、OCR 或 Vision。
+        # [人工注释][S1-004][S1-005] 只读取极小文件头用于类型真实性校验，
+        # 不做 OCR/Vision/ASR；语义处理只发生在已 READY 的 final 对象上。
         if max_bytes <= 0:
             return b""
         try:
@@ -196,6 +203,33 @@ class S3ObjectStorage:
             raise ObjectStorageError("failed to read object prefix") from exc
         except Exception as exc:
             raise ObjectStorageError("failed to read object prefix") from exc
+
+    def read_object(self, object_key: str, max_bytes: int) -> bytes:
+        # [人工注释][S1-007] ASR 只允许后端读取当前用户已 READY 的 final 音频。
+        # 读取上限由服务端 media_max_audio_bytes 控制，多 1 字节探测超限，避免无界下载。
+        if max_bytes <= 0:
+            return b""
+        try:
+            response = self._client.get_object(
+                Bucket=self._settings.storage_bucket,
+                Key=object_key,
+            )
+            body = response["Body"]
+            try:
+                data = bytes(body.read(max_bytes + 1))
+            finally:
+                close = getattr(body, "close", None)
+                if callable(close):
+                    close()
+        except ClientError as exc:
+            if self._is_not_found(exc):
+                raise ObjectNotFound("object not found") from exc
+            raise ObjectStorageError("failed to read object") from exc
+        except Exception as exc:
+            raise ObjectStorageError("failed to read object") from exc
+        if len(data) > max_bytes:
+            raise ObjectStorageError("object exceeds bounded read")
+        return data
 
     def promote_object(self, source_key: str, destination_key: str) -> None:
         # [人工注释][S1-006] 晋升由服务端凭证执行，客户端拿不到 final key 的写权限。
