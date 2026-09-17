@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'offline_queue.dart';
 import 'ui/jiyi_theme.dart';
+import 'ui/jiyi_components.dart';
+import 'ui/jiyi_tokens.dart';
 
 class JiYiApp extends StatefulWidget {
   const JiYiApp({super.key, this.api, this.offlineQueue});
@@ -121,76 +123,152 @@ class _AuthPageState extends State<AuthPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 48, 24, 28),
+          padding: const EdgeInsets.fromLTRB(
+            JiYiSpacing.lg,
+            JiYiSpacing.xxl,
+            JiYiSpacing.lg,
+            JiYiSpacing.xxl,
+          ),
           children: [
-            Text(
-              '迹忆',
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '你负责生活，我帮你记住。',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 36),
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: '邮箱',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '密码',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (registerMode) ...[
-              const SizedBox(height: 14),
-              TextField(
-                controller: nicknameController,
-                decoration: const InputDecoration(
-                  labelText: '昵称',
-                  border: OutlineInputBorder(),
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // [人工注释][S1-027] 登录页品牌区只增强视觉识别，不增加未实现能力或营销承诺。
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(JiYiRadius.large),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(JiYiSpacing.sm),
+                          child: Icon(
+                            Icons.psychology_alt_outlined,
+                            size: 28,
+                            color: theme.colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.lg),
+                    Text('迹忆', style: theme.textTheme.displaySmall),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      '你负责生活，我帮你记住。',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.xxl),
+                    JiYiSectionCard(
+                      title: registerMode ? '创建你的记忆空间' : '欢迎回来',
+                      subtitle: registerMode
+                          ? '注册后，你的记录、找回和隐私设置都归属于自己的账号。'
+                          : '登录后继续查看和管理属于你的可信记忆。',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: '邮箱',
+                              hintText: 'name@example.com',
+                              prefixIcon: Icon(Icons.mail_outline),
+                            ),
+                          ),
+                          const SizedBox(height: JiYiSpacing.sm),
+                          TextField(
+                            controller: passwordController,
+                            obscureText: true,
+                            textInputAction: registerMode
+                                ? TextInputAction.next
+                                : TextInputAction.done,
+                            onSubmitted: loading || registerMode
+                                ? null
+                                : (_) => submit(),
+                            decoration: const InputDecoration(
+                              labelText: '密码',
+                              prefixIcon: Icon(Icons.lock_outline),
+                            ),
+                          ),
+                          if (registerMode) ...[
+                            const SizedBox(height: JiYiSpacing.sm),
+                            TextField(
+                              controller: nicknameController,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: loading ? null : (_) => submit(),
+                              decoration: const InputDecoration(
+                                labelText: '昵称',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                            ),
+                          ],
+                          if (error != null) ...[
+                            const SizedBox(height: JiYiSpacing.sm),
+                            JiYiStatusBanner(
+                              kind: JiYiStatusKind.error,
+                              title: '未能继续',
+                              message: error!,
+                            ),
+                          ],
+                          const SizedBox(height: JiYiSpacing.md),
+                          FilledButton.icon(
+                            onPressed: loading ? null : submit,
+                            icon: loading
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : Icon(registerMode
+                                    ? Icons.person_add_alt_1_outlined
+                                    : Icons.login),
+                            label: Text(
+                              loading
+                                  ? '请稍候…'
+                                  : (registerMode ? '创建账号' : '登录'),
+                            ),
+                          ),
+                          const SizedBox(height: JiYiSpacing.xs),
+                          TextButton(
+                            onPressed: loading
+                                ? null
+                                : () => setState(() {
+                                      registerMode = !registerMode;
+                                      error = null;
+                                    }),
+                            child: Text(
+                              registerMode ? '已有账号？返回登录' : '第一次使用？创建账号',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (widget.api.showDevelopmentEndpoint) ...[
+                      // [人工注释][S1-FIX-007] 生产构建不渲染开发 API 信息，endpoint 只能由 build-time 配置注入。
+                      const SizedBox(height: JiYiSpacing.md),
+                      Text(
+                        '当前开发环境 API：${widget.api.baseUrl}',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            ],
-            if (error != null) ...[
-              const SizedBox(height: 12),
-              Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ],
-            const SizedBox(height: 18),
-            FilledButton(
-              onPressed: loading ? null : submit,
-              child: Text(loading ? '请稍候…' : (registerMode ? '创建账号' : '登录')),
             ),
-            TextButton(
-              onPressed: loading
-                  ? null
-                  : () => setState(() {
-                        registerMode = !registerMode;
-                        error = null;
-                      }),
-              child: Text(registerMode ? '已有账号？登录' : '第一次使用？创建账号'),
-            ),
-            if (widget.api.showDevelopmentEndpoint) ...[
-              // [人工注释][S1-FIX-007] 生产构建不渲染开发 API 信息，endpoint 只能由 build-time 配置注入。
-              const SizedBox(height: 20),
-              Text(
-                '当前开发环境 API：${widget.api.baseUrl}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
           ],
         ),
       ),
@@ -231,53 +309,54 @@ class _AppShellState extends State<AppShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
+        // [人工注释][S1-027] destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.today_outlined), label: '今天'),
-          NavigationDestination(icon: Icon(Icons.timeline_outlined), label: '时间轴'),
-          NavigationDestination(icon: Icon(Icons.add_circle_outline), label: '记一下'),
-          NavigationDestination(icon: Icon(Icons.psychology_alt_outlined), label: '问记忆'),
-          NavigationDestination(icon: Icon(Icons.person_outline), label: '我的'),
+          NavigationDestination(icon: Icon(Icons.today_outlined), selectedIcon: Icon(Icons.today), label: '今天'),
+          NavigationDestination(icon: Icon(Icons.timeline_outlined), selectedIcon: Icon(Icons.timeline), label: '时间轴'),
+          NavigationDestination(icon: Icon(Icons.add_circle_outline), selectedIcon: Icon(Icons.add_circle), label: '记一下'),
+          NavigationDestination(icon: Icon(Icons.psychology_alt_outlined), selectedIcon: Icon(Icons.psychology_alt), label: '问记忆'),
+          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: '我的'),
         ],
       ),
     );
   }
 }
 
-class PageFrame extends StatelessWidget {
-  const PageFrame({super.key, required this.title, required this.child, this.subtitle});
-
-  final String title;
-  final String? subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
-      children: [
-        Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)),
-        if (subtitle != null) ...[
-          const SizedBox(height: 6),
-          Text(subtitle!, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        ],
-        const SizedBox(height: 22),
-        child,
-      ],
-    );
-  }
-}
 
 class TodayPage extends StatelessWidget {
   const TodayPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const PageFrame(
+    final theme = Theme.of(context);
+    return JiYiPageFrame(
       title: '今天',
-      subtitle: 'Stage 1 继续完善“记住 → 找回 → 纠错 → 删除 → 暂停”。',
-      child: _InfoCard(
-        title: '你的记忆由你控制',
-        detail: '现在除了记录与找回，还可以标记物品已经不在原位置、删除记忆，并随时暂停或恢复自动记录。',
+      subtitle: '把重要的事记下来，需要时再找回来。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // [人工注释][S1-027] 首页只展示当前已经真实具备的记录、找回和隐私控制能力，不新增动态统计或虚构推荐。
+          JiYiSectionCard(
+            leading: Icon(Icons.shield_outlined, color: theme.colorScheme.primary),
+            title: '你的记忆由你控制',
+            subtitle: '记录、找回、纠错、删除和暂停都由你决定。',
+            child: Text(
+              '先从“记一下”主动留下可信内容；需要回忆时到“问记忆”查找，并随时在“我的”里管理隐私。',
+              style: theme.textTheme.bodyLarge,
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.md),
+          JiYiSectionCard(
+            leading: Icon(Icons.fact_check_outlined, color: theme.colorScheme.primary),
+            title: '只展示有依据的记忆',
+            child: Text(
+              '没有证据时不会生成记忆；现有 Evidence 规则保持不变。',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -288,10 +367,16 @@ class TimelinePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const PageFrame(
+    return const JiYiPageFrame(
       title: '时间轴',
-      subtitle: '自动足迹仍属于 Stage 2，本阶段不提前接入。',
-      child: _InfoCard(title: '暂未开放自动足迹', detail: '当前只展示用户主动记录的可信记忆；后台定位会在独立阶段开发。'),
+      subtitle: '按时间回看已经形成的可信记忆。',
+      child: JiYiSectionCard(
+        child: JiYiEmptyState(
+          icon: Icons.route_outlined,
+          title: '自动足迹尚未开放',
+          message: '当前不会在后台自动记录位置；这里后续只会展示真实、可解释的时间记录。',
+        ),
+      ),
     );
   }
 }
@@ -445,7 +530,7 @@ class _CapturePageState extends State<CapturePage> {
 
   @override
   Widget build(BuildContext context) {
-    return PageFrame(
+    return JiYiPageFrame(
       title: '记一下',
       subtitle: '记录新的可信记忆，也可以明确纠正已经失效的位置。',
       child: Column(
@@ -603,7 +688,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   Widget build(BuildContext context) {
     final evidence = (result?['evidence'] as List<dynamic>? ?? const []);
     final memoryIds = (result?['memory_ids'] as List<dynamic>? ?? const []);
-    return PageFrame(
+    return JiYiPageFrame(
       title: '问记忆',
       subtitle: '答案必须来自你的真实 Evidence。',
       child: Column(
@@ -684,7 +769,7 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PageFrame(
+    return JiYiPageFrame(
       title: '我的',
       subtitle: '正式账号与个人记忆空间。',
       child: FutureBuilder<Map<String, dynamic>>(
