@@ -97,7 +97,16 @@ jobs:
 
       - name: Verify worktree remains clean
         working-directory: .
-        run: git diff --check && git status --short
+        shell: bash
+        run: |
+          # [人工注释][CI-005] git status 输出脏文件仍可能返回 0；必须显式判定 porcelain 非空并 fail closed。
+          set -euo pipefail
+          git diff --check
+          status="$(git status --porcelain)"
+          if [ -n "$status" ]; then
+            printf '%s\n' "$status"
+            exit 1
+          fi
 
   ios:
     runs-on: macos-latest
