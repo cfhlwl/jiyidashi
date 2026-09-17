@@ -1,0 +1,133 @@
+name: mobile-visual-preview
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/d2-generate-assets.yml"
+      - "mobile/**"
+  push:
+    branches:
+      - ci/ui-visual-preview
+    paths:
+      - ".github/workflows/d2-generate-assets.yml"
+      - "mobile/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    env:
+      TZ: UTC
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      # [人工注释][CI-005] 普通 CI 只校验已经提交并人工审查过的 Golden，绝不自动执行 --update-goldens。
+      - name: Run Flutter tests including committed goldens
+        run: flutter test --reporter expanded
+
+      # [人工注释][CI-005] 用临时篡改后的基线证明 Flutter 会生成失败截图/diff；随后恢复原文件并再次通过。
+      # 故意失败只存在于 Runner 工作区，不会写回分支。
+      - name: Prove golden mismatch artifact generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf test/failures /tmp/golden-mismatch-proof
+          cp test/goldens/home_today.png /tmp/home_today.original.png
+          cp test/goldens/auth_login.png test/goldens/home_today.png
+
+          set +e
+          flutter test test/visual_golden_test.dart --reporter expanded
+          mismatch_status=$?
+          set -e
+
+          mv /tmp/home_today.original.png test/goldens/home_today.png
+          if [ "$mismatch_status" -eq 0 ]; then
+            echo "Expected the intentional golden mismatch to fail."
+            exit 1
+          fi
+          if ! find test/failures -type f -name '*.png' -print -quit | grep -q .; then
+            echo "Golden mismatch failed, but Flutter produced no PNG failure artifact."
+            exit 1
+          fi
+
+          mkdir -p /tmp/golden-mismatch-proof
+          cp -R test/failures/. /tmp/golden-mismatch-proof/
+          rm -rf test/failures
+          flutter test test/visual_golden_test.dart --reporter expanded
+
+      # [人工注释][CI-005] 无论 Golden 校验成功或失败都保留当前基线；失败时额外上传 Flutter test/failures，
+      # 正常验收时上传上一步生成的 mismatch proof，确保正式审查可以直接查看视觉证据。
+      - name: Upload visual review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-visual-preview-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            mobile/test/goldens/*.png
+            mobile/test/failures/**/*.png
+            /tmp/golden-mismatch-proof/**/*.png
+
+      - name: Build Android debug APK
+        run: >-
+          flutter build apk --debug
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
+
+      - name: Verify worktree remains clean
+        working-directory: .
+        shell: bash
+        run: |
+          # [人工注释][CI-005] git status 输出脏文件仍可能返回 0；必须显式判定 porcelain 非空并 fail closed。
+          set -euo pipefail
+          git diff --check
+          status="$(git status --porcelain)"
+          if [ -n "$status" ]; then
+            printf '%s\n' "$status"
+            exit 1
+          fi
+
+  ios:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # [人工注释][CI-005] D2 不改产品业务，但仍保留 iOS 无签名构建门禁，防止视觉测试依赖破坏现有双端基线。
+      - name: Build iOS without codesigning
+        run: >-
+          flutter build ios --debug --no-codesign
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
