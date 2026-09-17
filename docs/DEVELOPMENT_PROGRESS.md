@@ -6,12 +6,12 @@
 <!-- [人工注释][DOC-PROGRESS-029] E：Voice Pipeline / PR #18 初版实现生产/测试 HEAD=9ad68a3844，Backend CI 35216633743 与 Mini Program CI 35216633782 均 SUCCESS；第一轮正式审查随后 HOLD，发现 2×P1 + 1×阻塞 P2。 -->
 <!-- [人工注释][DOC-PROGRESS-030] PR #18 第一轮三个窄修已实现并通过精确 HEAD=eb29b0235a 验收：FIX-001 将 DB preflight/claim 与外部 storage+ASR I/O 真正分离；FIX-002 新增 durable media_asr_claims 租约并由真实 PostgreSQL 双 Session 验证 provider 单飞；FIX-003 用 httpx MockTransport 覆盖 OpenAIASRProvider HTTP adapter。Backend CI 35221916652 SUCCESS（含 PostgreSQL voice single-flight 与 77 passed），Mini Program CI 35221916739 SUCCESS。三项仍待第二轮窄范围正式复审，不标 ✅。 -->
 <!-- [人工注释][DOC-PROGRESS-031] PR #18 第二轮窄范围复审 PASS：S1-PR18-FIX-001~003 已正式关闭；生产/测试 HEAD=8ea2a1c7513f64f496f7cbaa1dfe8c36717d0bf8，Backend CI 35222923492 / #166 SUCCESS（PostgreSQL voice ASR single-flight PASS，77 passed），Mini Program CI 35222923466 / #154 SUCCESS。PR 进入最终 clean replay / exact-head CI Gate，S1-004/S1-007 与 E 线继续保持 🟠，待最终合并 main 后转 ✅。 -->
-<!-- [人工注释][DOC-PROGRESS-032] Stage 1G / PR #17 Flutter 第一阶段已完成 G1~G6，并在 latest main=a1962100（PR #18 合并后）做 clean replay；S1-027 与 G 工作线保持 🟠，等待正式 UI 审查、最终合并与必要验收；Stage 2 继续未启动。 -->
+<!-- [人工注释][DOC-PROGRESS-032] Stage 1G / PR #17 Flutter 第一阶段已完成 G1~G6，并在 latest main=a1962100（PR #18 合并后）做 clean replay；S1-027 与 G 工作线保持 🟠，等待正式 UI 审查、最终合并与必要验收；Stage 2 继续未启动。 -->\n<!-- [人工注释][DOC-PROGRESS-033] PR #17 第二轮极窄复审 PASS，最终 clean HEAD=d8373adc；标准 mobile-ci 35246026919 与 mobile-visual-preview 35246029602 均 SUCCESS，随后以 expected_head_sha 锁定合并，merge commit=d470f662；Issue #16 自动关闭，S1-027 与 G 工作线转 ✅，Stage 2 继续未启动。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-17  
 > 当前阶段：Stage 1「记得住」继续推进；第三批 A/B/C/D 第一阶段已全部完成并合并，E：Voice Pipeline 第二轮正式复审 PASS，进入最终 clean replay / exact-head CI Gate；Stage 2 未开始  
-> 当前生产代码基线：`main=677b6ce9707b0a60e4581ac6cb95eefb94166677`  
+> 当前生产代码基线：`main=d470f662c3dd446137ced877afc96d00bfda03ce`  
 > 当前开发重点：E 线 `S1-004 + S1-007` 已通过第二轮正式复审，保持 🟠 等待最终 clean replay、精确 HEAD CI、Ready/merge；`S1-017` 等其他 Stage 1 收口工作线保持原状态
 
 ## 状态规则
@@ -110,7 +110,7 @@
 | S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
 | S1-025 | 基础提醒模型 | ⬜ | 仅从记忆产生提醒，不做完整 Todo |
 | S1-026 | 首次使用引导 | ⬜ | 待统一入口稳定后，目标 3 分钟内完成“记住 → 找回”Aha Moment |
-| S1-027 | Product UI / Design System | 🟠 | PR #17 Flutter 第一阶段 G1~G6 开发与自动验收完成；Theme/token/共享组件、5 个核心页面、Evidence/隐私/离线状态、Golden/CJK/MaterialIcons、Android/iOS 已验证，等待正式 UI 审查与合并；Stage 2 未启动 |
+| S1-027 | Product UI / Design System | ✅ | PR #17 已完成两轮正式审查、latest-main clean replay、exact-head Mobile/Visual CI 并合并；Theme/token/共享组件、5 个核心页面、Evidence/隐私/离线状态及 Golden 均已验证；merge commit `d470f662`；Stage 2 未启动 |
 
 ## 2.1 Stage 1 第三批 A/B/C/D 第一阶段收口
 
@@ -146,7 +146,7 @@
 | --- | --- | --- | --- | --- |
 | 1 | E：Voice Pipeline | `S1-004 + S1-007` | 🟠 | PR #18 / `feat/stage1-voice-asr`；第二轮窄范围复审 PASS，FIX-001~003 已正式关闭；当前进入最终 clean replay + exact-head Backend/Mini CI Gate，合并 main 后再转 ✅ |
 | 1 | F：Offline Sync | `S1-017` | ⬜ | 服务端幂等 + Flutter 自动 flush；必须覆盖服务端已提交但响应丢失的 unknown-commit 场景 |
-| 1 | G：Product UI / Design System | 正式 UI 设计与组件规范 | 🟠 | PR #17 Flutter 第一阶段 G1~G6 已完成并通过视觉/双端自动验收，等待正式 UI 审查与合并；微信小程序视觉同步仍属后续独立工作，Stage 2 未启动 |
+| 1 | G：Product UI / Design System | 正式 UI 设计与组件规范 | ✅ | PR #17 Flutter 第一阶段已完成正式审查、最终 clean replay、exact-head CI 并合并 main；微信小程序视觉同步仍属后续独立工作，Stage 2 未启动 |
 | 2 | Unified Capture | `S1-008` | ⬜ | 等语音协议稳定后统一文字/图片/语音入口 |
 | 2 | Memory Edit | `S1-018` | ⬜ | 独立 Backend/客户端 PR |
 | 3 | Data Delete | `S1-021` | ⬜ | DB / Cache / Storage 全删除，明确对象存储删除和失败恢复语义 |
