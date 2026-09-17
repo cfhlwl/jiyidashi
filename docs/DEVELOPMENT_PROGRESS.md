@@ -2,12 +2,13 @@
 <!-- [人工注释][DOC-PROGRESS-025] PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- [人工注释][DOC-PROGRESS-026] D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- [人工注释][DOC-PROGRESS-027] Stage 1 第三批 A/B/C/D 第一阶段全部完成；Stage 1 本身仍未完成，下一阶段继续 S1-004/S1-007、S1-017、S1-008、S1-018、S1-021、S1-022、S1-025、S1-026；Stage 2 继续明确未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-028] E：Voice Pipeline / Issue #14 已从 main=677b6ce9 启动；分支 feat/stage1-voice-asr 仅推进 S1-004 + S1-007，先完成真实音频上传、ASR provider 边界与原始音频 Evidence，Stage 2 继续未开始。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-17  
-> 当前阶段：Stage 1「记得住」继续推进；第三批 A/B/C/D 第一阶段已全部完成并合并，下一步进入 Stage 1 第二阶段收口；Stage 2 未开始  
-> 当前生产代码基线：`main=f1d9baefd88a43c3da27378b5d87664221edf527`（PR #12 合并后；本文件随后仅产生 docs-only 更新）  
-> 当前开发重点：正式 UI 工作线可独立启动；功能侧优先 `S1-004 + S1-007` 语音/ASR 与 `S1-017` 离线自动同步/服务端幂等，之后进入 `S1-008` 统一入口及数据删除/注销等收口任务
+> 当前阶段：Stage 1「记得住」继续推进；第三批 A/B/C/D 第一阶段已全部完成并合并，E：Voice Pipeline 已启动；Stage 2 未开始  
+> 当前生产代码基线：`main=677b6ce9707b0a60e4581ac6cb95eefb94166677`  
+> 当前开发重点：E 线 `S1-004 + S1-007` 真实语音上传 / ASR / Evidence 正在开发；`S1-017` 等其他 Stage 1 收口工作线保持原状态
 
 ## 状态规则
 
@@ -31,7 +32,7 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A/B/C/D 第一阶段均已合并；语音完整链、离线自动同步/幂等及后续 Stage 1 收口任务仍未完成，因此本阶段整体继续进行中 |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A/B/C/D 第一阶段均已合并；E：Voice Pipeline 已启动，离线自动同步/幂等及后续 Stage 1 收口任务仍未完成，因此本阶段整体继续进行中 |
 | CI-001 | Backend CI | ✅ | A/D1 均通过 Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants 与 full pytest；PR #12 replay CI `35203341989` SUCCESS |
 | CI-002 | Flutter Android CI | ✅ | 标准 Android analyze/tests/APK 持续通过；PR #13 最终标准 Mobile CI `35201294079` SUCCESS |
 | CI-003 | Flutter iOS CI | ✅ | iOS no-codesign 持续通过；PR #13 最终标准 Mobile CI `35201294079` SUCCESS |
@@ -82,10 +83,10 @@
 | S1-001 | 正式用户注册 / 登录 | ✅ | Argon2、限速/退避、dummy verify、migration drift gate 已通过复审 |
 | S1-002 | 用户资料与时区设置 | ✅ | trim-before-validation、IANA timezone |
 | S1-003 | 文字记忆录入 | ✅ | Flutter / 小程序接真实 Memory API，仅声明 `USER_TEXT` |
-| S1-004 | 语音记忆录入 | 🔵 | PR #9 已完成小程序录音 UI、权限和 Recorder session ownership；真实音频上传、ASR、Evidence 尚未实现 |
+| S1-004 | 语音记忆录入 | 🔵 | E：Voice Pipeline / Issue #14 已启动；复用 PR #9 Recorder session ownership，当前开发真实音频上传、服务端 ASR 与原始音频 Evidence |
 | S1-005 | 图片记忆录入 | ✅ | PR #7 后端媒体/Evidence + PR #9 小程序真实拍照/选图上传链均已审查、CI、clean replay 并合并 |
 | S1-006 | COS / OSS 对象存储直传 | ✅ | 私有 staging→final、短时签名、owner gate、图片签名验证与 commit-safe staging 清理已落地 |
-| S1-007 | ASR 语音转写 | ⬜ | 下一阶段优先；原始音频必须保留为 Evidence，禁止假转写 |
+| S1-007 | ASR 语音转写 | 🔵 | E 线开发中；原始音频必须保留为 Evidence，ASR 失败/超时/空结果/低置信必须 fail closed，客户端不得伪造转写成功或可信度 |
 | S1-008 | “帮我记住”统一入口 | ⬜ | 待 `S1-005 + S1-007` 协议稳定后，统一文字 / 语音 / 图片 Memory Pipeline |
 | S1-009 | “东西在哪”物品录入 | ✅ | Object create 并发竞争已幂等兜底 |
 | S1-010 | “东西在哪”查询 | ✅ | 返回真实 Evidence `source_type` / `memory_source_id` |
@@ -135,7 +136,7 @@
 
 | 优先级 | 工作线 | 对应任务 | 当前状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| 1 | E：Voice Pipeline | `S1-004 + S1-007` | ⬜ | 音频上传、ASR、原始音频 Evidence、失败/重试语义；完成后才能把 S1-004 转 ✅ |
+| 1 | E：Voice Pipeline | `S1-004 + S1-007` | 🔵 | Issue #14 / `feat/stage1-voice-asr` 已启动；真实音频上传、ASR provider、原始音频 Evidence 与失败/重试语义 |
 | 1 | F：Offline Sync | `S1-017` | ⬜ | 服务端幂等 + Flutter 自动 flush；必须覆盖服务端已提交但响应丢失的 unknown-commit 场景 |
 | 1 | G：Product UI / Design System | 正式 UI 设计与组件规范 | ⬜ | 与 E/F 可并行；先 Flutter 核心页面，再同步微信小程序；CI-005 负责防视觉回归，不等于 UI redesign |
 | 2 | Unified Capture | `S1-008` | ⬜ | 等语音协议稳定后统一文字/图片/语音入口 |
