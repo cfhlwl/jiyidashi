@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/stage1_app.dart';
+import 'package:jiyidashi/ui/jiyi_theme.dart';
 
 // [人工注释][CI-005] Golden 只冻结当前产品渲染结果，不为“好测试”改业务组件；
 // 统一窗口、DPR、locale 与主题，Linux CI 是首阶段唯一权威像素基线。
@@ -30,12 +31,9 @@ Future<void> _loadMaterialIconsFont() async {
   await loader.load();
 }
 
-ThemeData _goldenTheme() => ThemeData(
-      fontFamily: _goldenFontFamily,
-      useMaterial3: true,
-      colorSchemeSeed: const Color(0xFF446A57),
-      scaffoldBackgroundColor: const Color(0xFFF7F8F6),
-    );
+// [人工注释][S1-027] Golden 复用生产 Theme；这里只注入仓库固定 CJK 测试字体，禁止再次复制产品色/布局 token。
+ThemeData _goldenTheme() =>
+    JiYiTheme.light(fontFamily: _goldenFontFamily);
 
 class _GoldenApi extends JiYiApiClient {
   _GoldenApi() : super(baseUrl: 'http://golden.invalid/v1') {

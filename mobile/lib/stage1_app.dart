@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'offline_queue.dart';
+import 'ui/jiyi_theme.dart';
 
 class JiYiApp extends StatefulWidget {
   const JiYiApp({super.key, this.api, this.offlineQueue});
@@ -36,11 +37,8 @@ class _JiYiAppState extends State<JiYiApp> {
     return MaterialApp(
       title: '迹忆',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF446A57),
-        scaffoldBackgroundColor: const Color(0xFFF7F8F6),
-      ),
+      // [人工注释][S1-027] 生产 Theme 改为单一事实源；G1 参数与原 Theme 完全一致，预期不产生视觉漂移。
+      theme: JiYiTheme.light(),
       home: authenticated
           ? AppShell(
               api: api,
