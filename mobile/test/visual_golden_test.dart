@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/offline_queue.dart';
@@ -7,8 +10,19 @@ import 'package:jiyidashi/stage1_app.dart';
 // [人工注释][CI-005] Golden 只冻结当前产品渲染结果，不为“好测试”改业务组件；
 // 统一窗口、DPR、locale 与主题，Linux CI 是首阶段唯一权威像素基线。
 const _goldenSize = Size(390, 844);
+const _goldenFontFamily = 'JiYi Golden CJK';
+
+// [人工注释][CI-005] Golden 必须显式加载仓库内固定版本的 CJK 字体；禁止依赖 Runner 系统字体，
+// 否则 Ubuntu 镜像变化或 flutter_test 缺字会把中文排版回归伪装成稳定结果。
+Future<void> _loadGoldenFont() async {
+  final bytes = await File('test/fonts/JiYiGoldenCJK-Regular.ttf').readAsBytes();
+  final loader = FontLoader(_goldenFontFamily)
+    ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+  await loader.load();
+}
 
 ThemeData _goldenTheme() => ThemeData(
+      fontFamily: _goldenFontFamily,
       useMaterial3: true,
       colorSchemeSeed: const Color(0xFF446A57),
       scaffoldBackgroundColor: const Color(0xFFF7F8F6),
@@ -82,6 +96,11 @@ Future<Key> _pumpShell(WidgetTester tester) async {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async {
+    await _loadGoldenFont();
+  });
+
   testWidgets('golden: login', (tester) async {
     // [人工注释][CI-005] 登录页使用真实 AuthPage 静态初始态，禁止网络调用和截图后处理。
     final key = await _pumpSurface(
