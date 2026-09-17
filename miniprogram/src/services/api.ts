@@ -1,4 +1,11 @@
 import Taro from '@tarojs/taro'
+import type {
+  ImageContentType,
+  MediaRead,
+  MediaUploadResponse,
+  PhotoMemoryResponse,
+  SignedTransfer,
+} from './photoCapture'
 
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
@@ -11,6 +18,8 @@ export type Evidence = {
   occurred_at: string
   excerpt: string
   confidence: number
+  // [人工注释][S1-005] 图片 Evidence 的 media_id 只能消费服务端 MediaEvidenceLink 返回值；客户端不自行合成。
+  media_id?: string | null
 }
 
 export type MemoryQueryResult = {
@@ -83,8 +92,11 @@ async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: str
   })
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    const payload = response.data as unknown as { detail?: string }
-    throw new Error(payload?.detail || `HTTP_${response.statusCode}`)
+    const payload = response.data as unknown as { detail?: string | Array<{ msg?: string }> }
+    const detail = Array.isArray(payload?.detail)
+      ? payload.detail.map((item) => item.msg).filter(Boolean).join('；')
+      : payload?.detail
+    throw new Error(detail || `HTTP_${response.statusCode}`)
   }
   return response.data
 }
@@ -137,6 +149,54 @@ export function createTextMemory(content: string, title?: string): Promise<{ id:
     ...(title?.trim() ? { title: title.trim() } : {}),
     content: content.trim(),
     capture_source: 'USER_TEXT',
+  })
+}
+
+// [人工注释][S1-005] 图片链严格消费 PR #7 冻结协议。客户端只提交 opaque 幂等 ID、文件业务元数据，
+// 从不提交 bucket/object key/endpoint/ETag，也不声明 READY/confidence/confirmed。
+export function createImageMediaUpload(input: {
+  clientUploadId: string
+  contentType: ImageContentType
+  sizeBytes: number
+  originalFilename?: string | null
+}): Promise<MediaUploadResponse> {
+  return request('POST', '/media/uploads', {
+    client_upload_id: input.clientUploadId,
+    kind: 'IMAGE',
+    content_type: input.contentType,
+    size_bytes: input.sizeBytes,
+    ...(input.originalFilename ? { original_filename: input.originalFilename } : {}),
+  })
+}
+
+// [人工注释][S1-005] signed PUT 是对象存储临时能力票据，不携带业务 API Authorization；
+// 必须原样使用服务端 method/headers 发送原始 ArrayBuffer，禁止用 multipart uploadFile 改写请求体。
+export async function putSignedMediaObject(transfer: SignedTransfer, body: ArrayBuffer): Promise<void> {
+  if (transfer.method.toUpperCase() !== 'PUT') {
+    throw new Error('服务端返回了不支持的媒体上传方式')
+  }
+  const response = await Taro.request({
+    url: transfer.url,
+    method: 'PUT',
+    data: body,
+    header: transfer.headers,
+  })
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`图片上传失败（HTTP_${response.statusCode}）`)
+  }
+}
+
+export function completeImageMediaUpload(mediaId: string): Promise<MediaRead> {
+  return request('POST', `/media/${mediaId}/complete`)
+}
+
+export function createPhotoMemory(
+  mediaId: string,
+  input: { title?: string; content: string },
+): Promise<PhotoMemoryResponse> {
+  return request('POST', `/media/${mediaId}/memory`, {
+    ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+    content: input.content.trim(),
   })
 }
 
