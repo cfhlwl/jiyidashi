@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   generate:
@@ -122,7 +122,7 @@ jobs:
           subsetter.populate(text="".join(sorted(chars)))
           subsetter.subset(font)
 
-          # 派生子集不继续使用上游保留名称，统一改为 Golden 测试专用 family。
+          # [人工注释][CI-005] 派生子集不继续使用上游保留名称，统一改为 Golden 测试专用 family。
           replacements = {
               1: "JiYi Golden CJK",
               2: "Regular",
@@ -182,18 +182,18 @@ jobs:
           flutter test test/visual_golden_test.dart --update-goldens --reporter expanded
           flutter test test/visual_golden_test.dart --reporter expanded
 
-      - name: Commit final D2 fix and remove bootstrap workflow
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm .github/workflows/d2-cjk-golden-fix.yml
-          git diff --check
-          git config user.name "cfhlwl"
-          git config user.email "57704371+cfhlwl@users.noreply.github.com"
-          git add .github/workflows/d2-generate-assets.yml \
-                  mobile/test/visual_golden_test.dart \
-                  mobile/test/goldens \
-                  mobile/test/fonts \
-                  .github/workflows/d2-cjk-golden-fix.yml
-          git commit -m "fix(mobile): stabilize deterministic CJK golden baseline"
-          git push origin HEAD:ci/ui-visual-preview
+      # [人工注释][CI-005] GitHub Actions token 无 workflow 写权限；Runner 只输出经过测试的最终文件，
+      # 由仓库连接在后续单独落盘，避免自动 push workflow 被平台拒绝。
+      - name: Upload generated D2 fix files
+        uses: actions/upload-artifact@v4
+        with:
+          name: d2-cjk-final-files-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            .github/workflows/d2-generate-assets.yml
+            mobile/test/visual_golden_test.dart
+            mobile/test/goldens/*.png
+            mobile/test/fonts/JiYiGoldenCJK-Regular.ttf
+            mobile/test/fonts/OFL.txt
+            mobile/test/fonts/README.md
