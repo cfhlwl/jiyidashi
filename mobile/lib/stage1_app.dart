@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'offline_queue.dart';
+import 'ui/jiyi_theme.dart';
+import 'ui/jiyi_components.dart';
+import 'ui/jiyi_tokens.dart';
 
 class JiYiApp extends StatefulWidget {
   const JiYiApp({super.key, this.api, this.offlineQueue});
@@ -36,11 +39,8 @@ class _JiYiAppState extends State<JiYiApp> {
     return MaterialApp(
       title: '迹忆',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF446A57),
-        scaffoldBackgroundColor: const Color(0xFFF7F8F6),
-      ),
+      // 生产 Theme 改为单一事实源；G1 参数与原 Theme 完全一致，预期不产生视觉漂移。
+      theme: JiYiTheme.light(),
       home: authenticated
           ? AppShell(
               api: api,
@@ -85,7 +85,8 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   Future<void> submit() async {
-    if (emailController.text.trim().isEmpty || passwordController.text.isEmpty) {
+    if (emailController.text.trim().isEmpty ||
+        passwordController.text.isEmpty) {
       setState(() => error = '请输入邮箱和密码');
       return;
     }
@@ -123,76 +124,154 @@ class _AuthPageState extends State<AuthPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 48, 24, 28),
+          padding: const EdgeInsets.fromLTRB(
+            JiYiSpacing.lg,
+            JiYiSpacing.xxl,
+            JiYiSpacing.lg,
+            JiYiSpacing.xxl,
+          ),
           children: [
-            Text(
-              '迹忆',
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '你负责生活，我帮你记住。',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 36),
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: '邮箱',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '密码',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (registerMode) ...[
-              const SizedBox(height: 14),
-              TextField(
-                controller: nicknameController,
-                decoration: const InputDecoration(
-                  labelText: '昵称',
-                  border: OutlineInputBorder(),
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 登录页品牌区只增强视觉识别，不增加未实现能力或营销承诺。
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(JiYiRadius.large),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(JiYiSpacing.sm),
+                          child: Icon(
+                            Icons.psychology_alt_outlined,
+                            size: 28,
+                            color: theme.colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.lg),
+                    Text('迹忆', style: theme.textTheme.displaySmall),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      '你负责生活，我帮你记住。',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.xxl),
+                    JiYiSectionCard(
+                      title: registerMode ? '创建你的记忆空间' : '欢迎回来',
+                      subtitle: registerMode
+                          ? '注册后，你的记录、找回和隐私设置都归属于自己的账号。'
+                          : '登录后继续查看和管理属于你的可信记忆。',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: '邮箱',
+                              hintText: 'name@example.com',
+                              prefixIcon: Icon(Icons.mail_outline),
+                            ),
+                          ),
+                          const SizedBox(height: JiYiSpacing.sm),
+                          TextField(
+                            controller: passwordController,
+                            obscureText: true,
+                            textInputAction: registerMode
+                                ? TextInputAction.next
+                                : TextInputAction.done,
+                            onSubmitted: loading || registerMode
+                                ? null
+                                : (_) => submit(),
+                            decoration: const InputDecoration(
+                              labelText: '密码',
+                              prefixIcon: Icon(Icons.lock_outline),
+                            ),
+                          ),
+                          if (registerMode) ...[
+                            const SizedBox(height: JiYiSpacing.sm),
+                            TextField(
+                              controller: nicknameController,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: loading ? null : (_) => submit(),
+                              decoration: const InputDecoration(
+                                labelText: '昵称',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                            ),
+                          ],
+                          if (error != null) ...[
+                            const SizedBox(height: JiYiSpacing.sm),
+                            JiYiStatusBanner(
+                              kind: JiYiStatusKind.error,
+                              title: '未能继续',
+                              message: error!,
+                            ),
+                          ],
+                          const SizedBox(height: JiYiSpacing.md),
+                          FilledButton.icon(
+                            onPressed: loading ? null : submit,
+                            icon: loading
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(
+                                    registerMode
+                                        ? Icons.person_add_alt_1_outlined
+                                        : Icons.login,
+                                  ),
+                            label: Text(
+                              loading ? '请稍候…' : (registerMode ? '创建账号' : '登录'),
+                            ),
+                          ),
+                          const SizedBox(height: JiYiSpacing.xs),
+                          TextButton(
+                            onPressed: loading
+                                ? null
+                                : () => setState(() {
+                                    registerMode = !registerMode;
+                                    error = null;
+                                  }),
+                            child: Text(
+                              registerMode ? '已有账号？返回登录' : '第一次使用？创建账号',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (widget.api.showDevelopmentEndpoint) ...[
+                      // [人工注释][S1-FIX-007] 生产构建不渲染开发 API 信息，endpoint 只能由 build-time 配置注入。
+                      const SizedBox(height: JiYiSpacing.md),
+                      Text(
+                        '当前开发环境 API：${widget.api.baseUrl}',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            ],
-            if (error != null) ...[
-              const SizedBox(height: 12),
-              Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ],
-            const SizedBox(height: 18),
-            FilledButton(
-              onPressed: loading ? null : submit,
-              child: Text(loading ? '请稍候…' : (registerMode ? '创建账号' : '登录')),
             ),
-            TextButton(
-              onPressed: loading
-                  ? null
-                  : () => setState(() {
-                        registerMode = !registerMode;
-                        error = null;
-                      }),
-              child: Text(registerMode ? '已有账号？登录' : '第一次使用？创建账号'),
-            ),
-            if (widget.api.showDevelopmentEndpoint) ...[
-              // [人工注释][S1-FIX-007] 生产构建不渲染开发 API 信息，endpoint 只能由 build-time 配置注入。
-              const SizedBox(height: 20),
-              Text(
-                '当前开发环境 API：${widget.api.baseUrl}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
           ],
         ),
       ),
@@ -233,38 +312,35 @@ class _AppShellState extends State<AppShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
+        // destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.today_outlined), label: '今天'),
-          NavigationDestination(icon: Icon(Icons.timeline_outlined), label: '时间轴'),
-          NavigationDestination(icon: Icon(Icons.add_circle_outline), label: '记一下'),
-          NavigationDestination(icon: Icon(Icons.psychology_alt_outlined), label: '问记忆'),
-          NavigationDestination(icon: Icon(Icons.person_outline), label: '我的'),
+          NavigationDestination(
+            icon: Icon(Icons.today_outlined),
+            selectedIcon: Icon(Icons.today),
+            label: '今天',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.timeline_outlined),
+            selectedIcon: Icon(Icons.timeline),
+            label: '时间轴',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.add_circle_outline),
+            selectedIcon: Icon(Icons.add_circle),
+            label: '记一下',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.psychology_alt_outlined),
+            selectedIcon: Icon(Icons.psychology_alt),
+            label: '问记忆',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: '我的',
+          ),
         ],
       ),
-    );
-  }
-}
-
-class PageFrame extends StatelessWidget {
-  const PageFrame({super.key, required this.title, required this.child, this.subtitle});
-
-  final String title;
-  final String? subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
-      children: [
-        Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)),
-        if (subtitle != null) ...[
-          const SizedBox(height: 6),
-          Text(subtitle!, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        ],
-        const SizedBox(height: 22),
-        child,
-      ],
     );
   }
 }
@@ -274,12 +350,41 @@ class TodayPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const PageFrame(
+    final theme = Theme.of(context);
+    return JiYiPageFrame(
       title: '今天',
-      subtitle: 'Stage 1 继续完善“记住 → 找回 → 纠错 → 删除 → 暂停”。',
-      child: _InfoCard(
-        title: '你的记忆由你控制',
-        detail: '现在除了记录与找回，还可以标记物品已经不在原位置、删除记忆，并随时暂停或恢复自动记录。',
+      subtitle: '把重要的事记下来，需要时再找回来。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 首页只展示当前已经真实具备的记录、找回和隐私控制能力，不新增动态统计或虚构推荐。
+          JiYiSectionCard(
+            leading: Icon(
+              Icons.shield_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            title: '你的记忆由你控制',
+            subtitle: '记录、找回、纠错、删除和暂停都由你决定。',
+            child: Text(
+              '先从“记一下”主动留下可信内容；需要回忆时到“问记忆”查找，并随时在“我的”里管理隐私。',
+              style: theme.textTheme.bodyLarge,
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.md),
+          JiYiSectionCard(
+            leading: Icon(
+              Icons.fact_check_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            title: '只展示有依据的记忆',
+            child: Text(
+              '没有证据时不会生成记忆；现有 Evidence 规则保持不变。',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -290,20 +395,22 @@ class TimelinePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const PageFrame(
+    return const JiYiPageFrame(
       title: '时间轴',
-      subtitle: '自动足迹仍属于 Stage 2，本阶段不提前接入。',
-      child: _InfoCard(title: '暂未开放自动足迹', detail: '当前只展示用户主动记录的可信记忆；后台定位会在独立阶段开发。'),
+      subtitle: '按时间回看已经形成的可信记忆。',
+      child: JiYiSectionCard(
+        child: JiYiEmptyState(
+          icon: Icons.route_outlined,
+          title: '自动足迹尚未开放',
+          message: '当前不会在后台自动记录位置；这里后续只会展示真实、可解释的时间记录。',
+        ),
+      ),
     );
   }
 }
 
 class CapturePage extends StatefulWidget {
-  const CapturePage({
-    super.key,
-    required this.api,
-    required this.offlineQueue,
-  });
+  const CapturePage({super.key, required this.api, required this.offlineQueue});
 
   final JiYiApiClient api;
   final OfflineQueueStore offlineQueue;
@@ -348,7 +455,9 @@ class _CapturePageState extends State<CapturePage> {
   // [人工注释][S1-016] 待发送数量按当前 user_id 直接来自 SQLite；重启后仍能恢复，同时不暴露同机其他账号记录。
   Future<void> _refreshOfflinePendingCount() async {
     try {
-      final count = await widget.offlineQueue.countAwaitingDelivery(_ownerUserId);
+      final count = await widget.offlineQueue.countAwaitingDelivery(
+        _ownerUserId,
+      );
       if (mounted) setState(() => offlinePendingCount = count);
     } catch (_) {
       // [人工注释][S1-016] 计数展示失败不能把真实录入流程伪装成功；保存动作仍会单独报告 SQLite 写入结果。
@@ -387,8 +496,7 @@ class _CapturePageState extends State<CapturePage> {
         contentController.clear();
         await _refreshOfflinePendingCount();
         if (mounted) {
-          setState(() => result =
-              '✓ 已保存到本机，待联网后发送 · ${queued.clientUuid}');
+          setState(() => result = '✓ 已保存到本机，待联网后发送 · ${queued.clientUuid}');
         }
       } catch (_) {
         if (mounted) {
@@ -407,7 +515,10 @@ class _CapturePageState extends State<CapturePage> {
   }
 
   Future<void> saveObjectLocation() async {
-    if (objectController.text.trim().isEmpty || locationController.text.trim().isEmpty) return;
+    if (objectController.text.trim().isEmpty ||
+        locationController.text.trim().isEmpty) {
+      return;
+    }
     await _run(() async {
       final location = await widget.api.rememberObjectLocation(
         objectName: objectController.text,
@@ -447,72 +558,138 @@ class _CapturePageState extends State<CapturePage> {
 
   @override
   Widget build(BuildContext context) {
-    return PageFrame(
+    final theme = Theme.of(context);
+    final visibleResult = result == null
+        ? null
+        : _visibleCaptureResult(result!);
+    final resultKind = result == null ? null : _captureStatusKind(result!);
+    return JiYiPageFrame(
       title: '记一下',
-      subtitle: '记录新的可信记忆，也可以明确纠正已经失效的位置。',
+      subtitle: '把重要的内容或物品位置清楚地记下来。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (offlinePendingCount > 0) ...[
-            // [人工注释][S1-016] 本批只展示当前账号的本机待发送事实，不提供“立即同步”按钮，避免越界实现 S1-017。
-            _InfoCard(
+            // 这里只展示当前账号 SQLite 已持久化的待发送事实；不新增手动同步或暗示已经上传。
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.warning,
               title: '本机待发送',
-              detail: '有 $offlinePendingCount 条记录已安全保存在本机，等待后续联网同步。',
+              message: '有 $offlinePendingCount 条记录已安全保存在本机，待联网后发送。',
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: JiYiSpacing.md),
           ],
-          Card(
-            elevation: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('写一句', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 12),
-                  TextField(controller: titleController, decoration: const InputDecoration(labelText: '标题（可选）')),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: contentController,
-                    minLines: 3,
-                    maxLines: 6,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '例如：老张周五下午来公司取合同。'),
+          JiYiSectionCard(
+            leading: Icon(
+              Icons.edit_note_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            title: '写一句',
+            subtitle: '适合记录临时安排、承诺、重要提醒或一段想留下的话。',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: titleController,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: '标题（可选）',
+                    prefixIcon: Icon(Icons.title_outlined),
                   ),
-                  const SizedBox(height: 12),
-                  FilledButton(onPressed: loading ? null : saveTextMemory, child: const Text('帮我记住')),
-                ],
-              ),
+                ),
+                const SizedBox(height: JiYiSpacing.sm),
+                TextField(
+                  controller: contentController,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: const InputDecoration(
+                    labelText: '内容',
+                    hintText: '例如：老张周五下午来公司取合同。',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.md),
+                FilledButton.icon(
+                  onPressed: loading ? null : saveTextMemory,
+                  icon: loading
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.bookmark_add_outlined),
+                  label: const Text('帮我记住'),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            elevation: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('东西在哪', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 12),
-                  TextField(controller: objectController, decoration: const InputDecoration(labelText: '物品', hintText: '护照')),
-                  const SizedBox(height: 8),
-                  TextField(controller: locationController, decoration: const InputDecoration(labelText: '位置', hintText: '书房左侧柜子第二层')),
-                  const SizedBox(height: 12),
-                  FilledButton.tonal(onPressed: loading ? null : saveObjectLocation, child: const Text('记录当前位置')),
-                  const SizedBox(height: 8),
-                  OutlinedButton(onPressed: loading ? null : markObjectStale, child: const Text('已经不在那里')),
-                ],
-              ),
+          const SizedBox(height: JiYiSpacing.md),
+          JiYiSectionCard(
+            leading: Icon(
+              Icons.inventory_2_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            title: '东西在哪',
+            subtitle: '记录物品的当前位置；如果已经移动，可以明确标记原位置失效。',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: objectController,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: '物品',
+                    hintText: '例如：护照',
+                    prefixIcon: Icon(Icons.inventory_2_outlined),
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.sm),
+                TextField(
+                  controller: locationController,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(
+                    labelText: '位置',
+                    hintText: '例如：书房左侧柜子第二层',
+                    prefixIcon: Icon(Icons.place_outlined),
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.md),
+                FilledButton.tonalIcon(
+                  onPressed: loading ? null : saveObjectLocation,
+                  icon: const Icon(Icons.add_location_alt_outlined),
+                  label: const Text('记录当前位置'),
+                ),
+                const SizedBox(height: JiYiSpacing.xs),
+                OutlinedButton.icon(
+                  onPressed: loading ? null : markObjectStale,
+                  icon: const Icon(Icons.location_off_outlined),
+                  label: const Text('已经不在那里'),
+                ),
+              ],
             ),
           ),
-          if (result != null) ...[
-            const SizedBox(height: 12),
-            Text(result!),
+          if (visibleResult != null && resultKind != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            // 原始 result 仍保留给现有行为测试与状态机；展示层只隐藏无产品价值的内部 id/clientUuid 后缀。
+            JiYiStatusBanner(kind: resultKind, message: visibleResult),
           ],
         ],
       ),
     );
   }
+}
+
+// Capture 状态样式只根据现有结果文案分类，不改变任何成功/失败/离线判断来源。
+JiYiStatusKind _captureStatusKind(String value) {
+  if (value.startsWith('操作失败：')) return JiYiStatusKind.error;
+  if (value.contains('已保存到本机')) return JiYiStatusKind.warning;
+  return JiYiStatusKind.success;
+}
+
+// 内部 UUID/Memory id 继续存在于业务返回值中，但不直接暴露给客户；错误文案与可理解的位置结果原样保留。
+String _visibleCaptureResult(String value) {
+  if (!value.startsWith('✓')) return value;
+  final separator = value.lastIndexOf(' · ');
+  if (separator <= 0) return value;
+  return value.substring(0, separator);
 }
 
 String _evidenceSourceLabel(String? sourceType) {
@@ -551,7 +728,9 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   }
 
   Future<void> query() async {
-    if (controller.text.trim().isEmpty) return;
+    if (controller.text.trim().isEmpty) {
+      return;
+    }
     setState(() {
       loading = true;
       error = null;
@@ -565,25 +744,43 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     } catch (_) {
       setState(() => error = '暂时无法连接服务器');
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
   Future<void> deleteFirstMemory() async {
     final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
-    if (ids.isEmpty) return;
+    if (ids.isEmpty) {
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除这条记忆？'),
         content: const Text('删除后，这条记忆以及依赖它的当前位置答案都不能再被找回。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('删除')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          // 删除语义不变，只把确认动作明确显示为危险操作，避免与普通主按钮混淆。
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('确认删除'),
+          ),
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      return;
+    }
 
     setState(() => loading = true);
     try {
@@ -597,78 +794,168 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     } on ApiException catch (exc) {
       setState(() => error = exc.message);
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // G4 仅重排 Query/Evidence/删除入口的展示层；答案、Evidence、memory_ids 都继续直接使用服务端真实返回。
+    final theme = Theme.of(context);
     final evidence = (result?['evidence'] as List<dynamic>? ?? const []);
     final memoryIds = (result?['memory_ids'] as List<dynamic>? ?? const []);
-    return PageFrame(
+    final canAnswer = result?['can_answer'] == true;
+    final answer = result?['answer']?.toString() ?? '';
+    final certainty = result?['certainty']?.toString() ?? '未知';
+    final intent = result?['intent']?.toString() ?? '未知';
+
+    return JiYiPageFrame(
       title: '问记忆',
-      subtitle: '答案必须来自你的真实 Evidence。',
+      subtitle: '从你自己的记录里查找；答案会把依据一起展示出来。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              labelText: '你想回忆什么？',
-              hintText: '例如：我的护照在哪里？',
-              border: OutlineInputBorder(),
+          JiYiSectionCard(
+            leading: Icon(
+              Icons.psychology_alt_outlined,
+              color: theme.colorScheme.primary,
             ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: loading ? null : query, child: Text(loading ? '查找中…' : '从我的记忆里查找')),
-          if (error != null) ...[
-            const SizedBox(height: 12),
-            Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          ],
-          if (actionMessage != null) ...[
-            const SizedBox(height: 12),
-            Text(actionMessage!),
-          ],
-          if (result != null) ...[
-            const SizedBox(height: 18),
-            Card(
-              elevation: 0,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      result!['can_answer'] == true ? (result!['answer']?.toString() ?? '') : '我没有找到相关记录。',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('可信状态：${result!['certainty']} · 意图：${result!['intent']}'),
-                  ],
-                ),
-              ),
-            ),
-            ...evidence.map((item) {
-              final e = item as Map<String, dynamic>;
-              // [人工注释][S1-FIX-002] kind 是证据实体类型；“来源”必须展示服务端返回的真实 source_type。
-              return Card(
-                elevation: 0,
-                child: ListTile(
-                  leading: const Icon(Icons.fact_check_outlined),
-                  title: Text(e['excerpt']?.toString() ?? ''),
-                  subtitle: Text(
-                    '来源：${_evidenceSourceLabel(e['source_type']?.toString())}\n'
-                    '证据类型：${e['kind']} · 时间：${e['occurred_at']}\n'
-                    '可信度：${e['confidence']}',
+            title: '问一个问题',
+            subtitle: '找不到可靠依据时，迹忆会明确告诉你，而不是猜一个答案。',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: controller,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: loading ? null : (_) => query(),
+                  decoration: const InputDecoration(
+                    labelText: '你想回忆什么？',
+                    hintText: '例如：我的护照在哪里？',
+                    prefixIcon: Icon(Icons.search),
                   ),
                 ),
-              );
-            }),
+                const SizedBox(height: JiYiSpacing.md),
+                FilledButton.icon(
+                  onPressed: loading ? null : query,
+                  icon: loading
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.manage_search_outlined),
+                  label: Text(loading ? '查找中…' : '从我的记忆里查找'),
+                ),
+              ],
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.error,
+              title: '暂时无法查找',
+              message: error!,
+            ),
+          ],
+          if (actionMessage != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.success,
+              message: actionMessage!,
+            ),
+          ],
+          if (result != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            JiYiSectionCard(
+              leading: Icon(
+                canAnswer ? Icons.lightbulb_outline : Icons.search_off_outlined,
+                color: canAnswer
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              title: canAnswer ? '找到相关记忆' : '没有足够依据',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    canAnswer && answer.isNotEmpty
+                        ? answer
+                        : '我没有找到能够支持答案的相关记录。',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: JiYiSpacing.sm),
+                  // certainty / intent 不被 UI 重新推断；这里只把服务端原值放入有标签的 Chip，避免弱化可信状态。
+                  Wrap(
+                    spacing: JiYiSpacing.xs,
+                    runSpacing: JiYiSpacing.xs,
+                    children: [
+                      Chip(
+                        avatar: const Icon(Icons.verified_outlined, size: 18),
+                        label: Text('可信状态：$certainty'),
+                      ),
+                      Chip(
+                        avatar: const Icon(Icons.category_outlined, size: 18),
+                        label: Text('识别意图：$intent'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (evidence.isNotEmpty) ...[
+              const SizedBox(height: JiYiSpacing.lg),
+              Text('为什么这么回答', style: theme.textTheme.titleMedium),
+              const SizedBox(height: JiYiSpacing.xs),
+              Text(
+                '下面是这次回答实际使用的证据。',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.sm),
+              ...evidence.map((item) {
+                final e = item as Map<String, dynamic>;
+                // Evidence 卡片只格式化层级；source_type/kind/occurred_at/confidence 均展示服务端真实字段。
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
+                  child: JiYiEvidenceCard(
+                    excerpt: e['excerpt']?.toString() ?? '',
+                    source: _evidenceSourceLabel(e['source_type']?.toString()),
+                    evidenceType: e['kind']?.toString() ?? '未知',
+                    occurredAt: e['occurred_at']?.toString() ?? '未知',
+                    confidence: e['confidence']?.toString() ?? '未知',
+                  ),
+                );
+              }),
+            ] else if (canAnswer) ...[
+              const SizedBox(height: JiYiSpacing.md),
+              // 若服务端声称可回答却没有可展示 Evidence，UI 明确暴露该异常事实，不用美化层隐藏。
+              const JiYiStatusBanner(
+                kind: JiYiStatusKind.warning,
+                title: '没有可展示的证据',
+                message: '这次响应没有返回 Evidence，请谨慎使用这个答案。',
+              ),
+            ],
             if (memoryIds.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: loading ? null : deleteFirstMemory,
-                child: const Text('删除最相关记忆'),
+              const SizedBox(height: JiYiSpacing.md),
+              JiYiSectionCard(
+                leading: Icon(
+                  Icons.delete_outline,
+                  color: theme.colorScheme.error,
+                ),
+                title: '管理这条记忆',
+                subtitle: '删除会真正影响后续检索，并同时影响依赖它的当前位置答案。',
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    side: BorderSide(color: theme.colorScheme.error),
+                  ),
+                  onPressed: loading ? null : deleteFirstMemory,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('删除最相关记忆'),
+                ),
               ),
             ],
           ],
@@ -686,38 +973,93 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PageFrame(
+    // G5 只统一 Profile 的 loading/error/account 信息层级；资料仍完全来自 getProfile() 的真实响应。
+    final theme = Theme.of(context);
+    return JiYiPageFrame(
       title: '我的',
-      subtitle: '正式账号与个人记忆空间。',
+      subtitle: '管理账号信息、时区和隐私控制。',
       child: FutureBuilder<Map<String, dynamic>>(
         future: api.getProfile(),
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const JiYiSectionCard(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: JiYiSpacing.lg),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: JiYiSpacing.sm),
+                    Text('正在读取个人资料…'),
+                  ],
+                ),
+              ),
+            );
           }
           if (snapshot.hasError) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('无法读取个人资料'),
-                const SizedBox(height: 12),
-                OutlinedButton(onPressed: onLogout, child: const Text('退出登录')),
+                const JiYiStatusBanner(
+                  kind: JiYiStatusKind.error,
+                  title: '无法读取个人资料',
+                  message: '请检查网络后重试；你也可以先安全退出当前账号。',
+                ),
+                const SizedBox(height: JiYiSpacing.md),
+                OutlinedButton.icon(
+                  onPressed: onLogout,
+                  icon: const Icon(Icons.logout),
+                  label: const Text('退出登录'),
+                ),
               ],
             );
           }
+
           final profile = snapshot.data!;
-          // [人工注释][S1-002] 展示服务端保存的时区，后续时间轴自然日都以该 IANA timezone 为准。
+          // 时区继续展示服务端保存的真实 IANA timezone；UI 不自行猜测或覆盖。
+          final nickname = profile['nickname']?.toString() ?? '用户';
+          final email = profile['email']?.toString() ?? '';
+          final timezone = profile['timezone']?.toString() ?? '未知';
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _InfoCard(
-                title: profile['nickname']?.toString() ?? '用户',
-                detail: '${profile['email'] ?? ''}\n时区：${profile['timezone']}',
+              JiYiSectionCard(
+                leading: CircleAvatar(
+                  backgroundColor: theme.colorScheme.primaryContainer,
+                  foregroundColor: theme.colorScheme.onPrimaryContainer,
+                  child: const Icon(Icons.person_outline),
+                ),
+                title: nickname,
+                subtitle: '当前登录账号',
+                child: Column(
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.mail_outline),
+                      title: const Text('邮箱'),
+                      subtitle: Text(email.isEmpty ? '未提供' : email),
+                    ),
+                    const Divider(),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.schedule_outlined),
+                      title: const Text('时区'),
+                      subtitle: Text(timezone),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: JiYiSpacing.md),
               _PrivacyControls(api: api),
-              const SizedBox(height: 12),
-              OutlinedButton(onPressed: onLogout, child: const Text('退出登录')),
+              const SizedBox(height: JiYiSpacing.md),
+              OutlinedButton.icon(
+                onPressed: onLogout,
+                icon: const Icon(Icons.logout),
+                label: const Text('退出登录'),
+              ),
             ],
           );
         },
@@ -739,6 +1081,10 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
   Map<String, dynamic>? status;
   bool loading = true;
   String? message;
+  // 提示类型只控制展示样式；pause/resume 的成功失败仍以服务端结果为准。
+  bool messageIsError = false;
+  // statusIsStale 表示当前只能展示上一次已知状态，不能把它当成实时隐私状态。
+  bool statusIsStale = false;
 
   @override
   void initState() {
@@ -747,13 +1093,33 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
   }
 
   Future<void> refresh() async {
+    if (mounted && !loading) {
+      setState(() => loading = true);
+    }
     try {
       final next = await widget.api.getPrivacyStatus();
-      if (mounted) setState(() => status = next);
+      if (mounted) {
+        // 刷新成功后才恢复为实时可信状态；状态值仍完全来自服务端响应。
+        setState(() {
+          status = next;
+          statusIsStale = false;
+          message = null;
+          messageIsError = false;
+        });
+      }
     } on ApiException catch (exc) {
-      if (mounted) setState(() => message = exc.message);
+      if (mounted) {
+        // 读取失败时绝不把未知状态推断为“未暂停”；已有状态只能作为上一次已知值展示。
+        setState(() {
+          statusIsStale = status != null;
+          message = exc.message;
+          messageIsError = true;
+        });
+      }
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
@@ -762,19 +1128,31 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
     String success,
   ) async {
     setState(() {
+      // 新动作开始时只重置提示样式；暂停时长与业务状态仍由服务端决定。
       loading = true;
       message = null;
+      messageIsError = false;
     });
     try {
       final next = await action();
       if (mounted) {
         setState(() {
+          // success 文案仍由调用方对应真实成功动作传入；这里只设置成功视觉。
           status = next;
+          statusIsStale = false;
           message = success;
+          messageIsError = false;
         });
       }
     } on ApiException catch (exc) {
-      if (mounted) setState(() => message = exc.message);
+      if (mounted) {
+        // pause/resume 的服务端错误保持 fail-visible，只加强错误状态视觉。
+        setState(() {
+          statusIsStale = status != null;
+          message = exc.message;
+          messageIsError = true;
+        });
+      }
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -782,67 +1160,129 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
 
   @override
   Widget build(BuildContext context) {
-    final paused = status?['recording_paused'] == true;
-    final until = status?['paused_until']?.toString();
-    return Card(
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('记忆暂停', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Text(paused ? '自动记录已暂停${until == null ? '' : '，直到 $until'}' : '自动记录当前开启'),
-            const SizedBox(height: 12),
-            // [人工注释][S1-023] 暂停只影响自动采集；用户主动“记一下”仍可继续使用。
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton(onPressed: loading ? null : () => apply(() => widget.api.pauseMemory(30), '已暂停 30 分钟'), child: const Text('30 分钟')),
-                OutlinedButton(onPressed: loading ? null : () => apply(() => widget.api.pauseMemory(60), '已暂停 1 小时'), child: const Text('1 小时')),
-                OutlinedButton(onPressed: loading ? null : () => apply(() => widget.api.pauseMemory(180), '已暂停 3 小时'), child: const Text('3 小时')),
-                OutlinedButton(onPressed: loading ? null : () => apply(widget.api.pauseMemoryToday, '今天剩余时间已暂停'), child: const Text('今天')),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // [人工注释][S1-024] 恢复后历史 pause interval 仍保留，暂停期间自动数据不能延迟补传。
-            FilledButton(
-              onPressed: loading || !paused ? null : () => apply(widget.api.resumeMemory, '已恢复自动记录'),
-              child: const Text('恢复记录'),
-            ),
-            if (message != null) ...[
-              const SizedBox(height: 8),
-              Text(message!),
+    // 隐私状态只消费服务端返回值；status 为空时必须保持 unknown，不能折算成 false。
+    final theme = Theme.of(context);
+    final hasKnownStatus = status != null;
+    final paused = hasKnownStatus && status!['recording_paused'] == true;
+    final until = hasKnownStatus ? status!['paused_until']?.toString() : null;
+
+    if (loading && status == null) {
+      return const JiYiSectionCard(
+        title: '隐私与记录控制',
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: JiYiSpacing.sm),
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: JiYiSpacing.sm),
+              Expanded(child: Text('正在读取当前隐私状态…')),
             ],
-          ],
+          ),
         ),
+      );
+    }
+
+    return JiYiSectionCard(
+      leading: Icon(
+        !hasKnownStatus
+            ? Icons.error_outline
+            : (paused
+                  ? Icons.pause_circle_outline
+                  : Icons.privacy_tip_outlined),
+        color: !hasKnownStatus
+            ? theme.colorScheme.error
+            : (statusIsStale || paused)
+            ? context.jiyiSemanticColors.warning
+            : theme.colorScheme.primary,
       ),
-    );
-  }
-}
-
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.title, required this.detail});
-
-  final String title;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Text(detail),
+      title: '隐私与记录控制',
+      subtitle: '暂停只影响自动采集；你主动使用“记一下”仍然可以继续保存内容。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!hasKnownStatus)
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.error,
+              title: '无法确认当前隐私状态',
+              message: message ?? '当前状态未知，请稍后重试。',
+            )
+          else
+            JiYiStatusBanner(
+              kind: statusIsStale
+                  ? JiYiStatusKind.warning
+                  : (paused ? JiYiStatusKind.warning : JiYiStatusKind.success),
+              title: statusIsStale
+                  ? (paused ? '上一次已知状态：自动采集已暂停' : '上一次已知状态：没有暂停自动采集')
+                  : (paused ? '自动采集已暂停' : '当前没有暂停自动采集'),
+              message: statusIsStale
+                  ? '当前状态刷新失败，以下为上一次已知状态，可能不是最新。'
+                  : paused
+                  ? (until == null ? '暂停状态已生效。' : '暂停状态已生效，直到 $until。')
+                  : '如果暂时不希望自动采集，可以选择一个暂停时长。',
+            ),
+          if (message != null && hasKnownStatus) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            JiYiStatusBanner(
+              kind: messageIsError
+                  ? JiYiStatusKind.error
+                  : JiYiStatusKind.success,
+              message: message!,
+            ),
           ],
-        ),
+          const SizedBox(height: JiYiSpacing.md),
+          Text('暂停时长', style: theme.textTheme.titleSmall),
+          const SizedBox(height: JiYiSpacing.xs),
+          // 四个时长仍调用原 pause API；这里只统一按钮层级与 loading disable 状态。
+          Wrap(
+            spacing: JiYiSpacing.xs,
+            runSpacing: JiYiSpacing.xs,
+            children: [
+              OutlinedButton(
+                onPressed: loading
+                    ? null
+                    : () =>
+                          apply(() => widget.api.pauseMemory(30), '已暂停 30 分钟'),
+                child: const Text('30 分钟'),
+              ),
+              OutlinedButton(
+                onPressed: loading
+                    ? null
+                    : () => apply(() => widget.api.pauseMemory(60), '已暂停 1 小时'),
+                child: const Text('1 小时'),
+              ),
+              OutlinedButton(
+                onPressed: loading
+                    ? null
+                    : () =>
+                          apply(() => widget.api.pauseMemory(180), '已暂停 3 小时'),
+                child: const Text('3 小时'),
+              ),
+              OutlinedButton(
+                onPressed: loading
+                    ? null
+                    : () => apply(widget.api.pauseMemoryToday, '今天剩余时间已暂停'),
+                child: const Text('今天'),
+              ),
+            ],
+          ),
+          const SizedBox(height: JiYiSpacing.md),
+          // 恢复按钮仍只在服务端状态 paused=true 时可用；历史 pause interval 与禁止补传语义不变。
+          FilledButton.icon(
+            onPressed: loading || !paused
+                ? null
+                : () => apply(widget.api.resumeMemory, '已恢复自动记录'),
+            icon: loading
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.play_arrow_rounded),
+            label: const Text('恢复记录'),
+          ),
+        ],
       ),
     );
   }
