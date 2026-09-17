@@ -1,26 +1,13 @@
 <!-- [人工注释][DOC-PROGRESS-001] 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- [人工注释][DOC-PROGRESS-009] PR #2 已通过第二轮复审并合并 main；Stage 1 第一批真实用户闭环正式完成，下一批仍继续 Stage 1，不启动 Stage 2。 -->
-<!-- [人工注释][DOC-PROGRESS-010] Stage 1 第二批启动：物品位置失效、单条 Memory 删除、暂停记忆与手动恢复；Stage 2 继续保持未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-011] Stage 1 第二批首版代码与三端自动验收完成后进入 PR #3 第一轮正式审查。 -->
-<!-- [人工注释][DOC-PROGRESS-012] PR #3 第一轮正式审查结论 HOLD：2 个 P1 + 2 个 P2 进入窄范围修复；本批状态回退 🔵，Stage 2 继续未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-013] PR #3 第一轮 2 P1 + 2 P2 已完成窄修并在同一生产代码 HEAD cfa2cd84 上通过 Backend / Mobile / Mini Program 全量门禁，进入第二轮正式审查。 -->
-<!-- [人工注释][DOC-PROGRESS-014] PR #3 第二轮原 2 P1 + 2 P2 全部关闭，新发现 P1 S1-PR3-FIX-005 已完成唯一 Object 解析窄修；生产代码 HEAD 1b0bf994 通过 Backend 41/41、Mobile、Mini Program 全量门禁，进入第三轮窄范围最终复审。 -->
-<!-- [人工注释][DOC-PROGRESS-015] PR #3 第三轮最终复审 PASS，并已合并 main=52ef68f4；Stage 1 第二批正式完成，Stage 2 继续未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-016] Stage 1 第三批采用四工作线并行开发；统一基于 main=e98c99de 排期，当前仅完成任务拆分与依赖记录，尚未启动功能开发，Stage 2 继续未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-017] A：Backend Media 已在 PR #7 完成 S1-006 + S1-005 后端媒体/Evidence 第一阶段实现并通过 Backend 全量门禁，状态进入待正式审查；OCR/Vision/ASR/Stage 2 均未启动。 -->
-<!-- [人工注释][DOC-PROGRESS-018] PR #7 第一轮预审 HOLD 的 3 个 P1 + 2 个 P2 已完成窄修；生产代码 HEAD 13cd13f3 通过 Backend 全量门禁与 pytest 53/53，A 线恢复 🟠 待第二轮审查；OCR/Vision/ASR/Stage 2 继续未启动。 -->
-<!-- [人工注释][DOC-PROGRESS-020] B：Flutter Offline 首版完成后，PR #6 第一轮正式审查 HOLD，进入 S1-PR6-FIX-001 transport 异常分类 P1 窄修；S1-017 仍未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-021] PR #6 第一轮正式审查：0 P0 / 1 P1 / 0 阻塞 P2；仅 TransportException 可触发 SQLite offline fallback，协议/解析/客户端异常必须 fail closed。 -->
-<!-- [人工注释][DOC-PROGRESS-022] PR #6 第二轮窄范围复审 PASS：S1-PR6-FIX-001 正式关闭，生产 HEAD d1351f61 的 transport/protocol 分类与 SQLite fallback 边界通过审查；S1-015/S1-016 进入 🟠 待合并，S1-017 继续未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-023] PR #6 已正式合并 main，merge commit=c8e5614d；Issue #5 已 completed，S1-015/S1-016 与 B 工作线转 ✅，S1-017 继续保持未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-019] PR #7 第二轮窄范围复审 PASS，第一轮 3P1+2P2 全部关闭；PR 已从 Draft 转 Ready 并合并 main=9504fa8d。S1-006 完成，S1-005 继续由客户端主动拍照/选图工作线推进；Stage 2 继续未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-024] PR #9 第三轮极窄复审 PASS：S1-PR9-FIX-001 正式关闭，3 个 P2 已在第二轮关闭；C 工作线进入 🟠。最终 clean replay 以 main=c9d5a53e 为唯一父基线，生产 replay commit=bf539a94，等待最终 Mini Program CI 与 replay 后核验；OCR/Vision/ASR/Stage 2 均未进入。 -->
+<!-- [人工注释][DOC-PROGRESS-025] PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
+<!-- [人工注释][DOC-PROGRESS-026] D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
+<!-- [人工注释][DOC-PROGRESS-027] Stage 1 第三批 A/B/C/D 第一阶段全部完成；Stage 1 本身仍未完成，下一阶段继续 S1-004/S1-007、S1-017、S1-008、S1-018、S1-021、S1-022、S1-025、S1-026；Stage 2 继续明确未开始。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-17  
-> 当前阶段：Stage 1「记得住」第三批并行开发进行中；A、B 已合并，C 第三轮代码审查 PASS 并完成 latest-main clean replay，等待最终 Mini Program CI / replay 后核验；Stage 2 未开始  
-> 当前开发基线：`main=c9d5a53e0fea48f33cd2e9daea8dad657e9eaf28`；PR #9 clean replay 生产提交 `bf539a94900bded2d4ba030921f82f1bfcee7e0b`  
-> 当前 PR：#9 `feat: Stage 1C mini program capture` 保持 Draft；C 工作线 🟠，`S1-PR9-FIX-001` ✅，等待最终 clean HEAD Mini Program CI 与 replay 后核验
+> 当前阶段：Stage 1「记得住」继续推进；第三批 A/B/C/D 第一阶段已全部完成并合并，下一步进入 Stage 1 第二阶段收口；Stage 2 未开始  
+> 当前生产代码基线：`main=f1d9baefd88a43c3da27378b5d87664221edf527`（PR #12 合并后；本文件随后仅产生 docs-only 更新）  
+> 当前开发重点：正式 UI 工作线可独立启动；功能侧优先 `S1-004 + S1-007` 语音/ASR 与 `S1-017` 离线自动同步/服务端幂等，之后进入 `S1-008` 统一入口及数据删除/注销等收口任务
 
 ## 状态规则
 
@@ -43,13 +30,13 @@
 | --- | --- | --- | --- |
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
-| S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并 `main=52ef68f4`；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A：Backend Media、B：Flutter Offline 已合并；C：Mini Capture 第三轮代码审查 PASS，clean replay 后进入最终 CI / 合并门禁；D 与后续依赖任务继续推进 |
-| CI-001 | Backend CI | ✅ | PR #7 生产 HEAD `13cd13f3`：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、pytest 53/53 PASS |
-| CI-002 | Flutter Android CI | ✅ | 最终 PR HEAD `7319d493`：analyze + tests + production-config debug APK build PASS |
-| CI-003 | Flutter iOS CI | ✅ | 最终 PR HEAD `7319d493`：production-config `flutter build ios --debug --no-codesign` PASS |
-| CI-004 | 微信小程序 CI | ✅ | PR #9 第一轮窄修 HEAD `dd40d479` CI #122 全绿；Recorder session ownership 窄验收 run `35175233509` 在 `9ff304c2` 全绿；最终 clean replay HEAD 仍需执行标准 Mini Program CI |
-| CI-005 | UI Visual Preview / Golden Screenshot | ⬜ | 第三批工程质量任务；先覆盖 Flutter Golden，再扩展 Android Emulator / 小程序 Preview |
+| S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并；最终 HEAD 三端 CI 全部 SUCCESS |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A/B/C/D 第一阶段均已合并；语音完整链、离线自动同步/幂等及后续 Stage 1 收口任务仍未完成，因此本阶段整体继续进行中 |
+| CI-001 | Backend CI | ✅ | A/D1 均通过 Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants 与 full pytest；PR #12 replay CI `35203341989` SUCCESS |
+| CI-002 | Flutter Android CI | ✅ | 标准 Android analyze/tests/APK 持续通过；PR #13 最终标准 Mobile CI `35201294079` SUCCESS |
+| CI-003 | Flutter iOS CI | ✅ | iOS no-codesign 持续通过；PR #13 最终标准 Mobile CI `35201294079` SUCCESS |
+| CI-004 | 微信小程序 CI | ✅ | PR #9 clean HEAD `5f8ac339` 的标准 Mini Program CI `35176991792` SUCCESS，并已合并 |
+| CI-005 | UI Visual Preview / Golden Screenshot | ✅ | PR #13 已合并；固定 CJK + MaterialIcons、Golden mismatch 证明、视觉 artifact、dirty gate、Android/iOS 门禁均通过 |
 
 ---
 
@@ -68,7 +55,7 @@
 | FND-009 | 服务端可信等级所有权 | ✅ | 客户端不能提交 confidence / confirmed 权限 |
 | FND-010 | Object / ObjectLocation 历史模型 | ✅ | 保留历史，不覆盖旧记录 |
 | FND-011 | 每个 Object 最多一个 CURRENT | ✅ | 应用事务 + DB partial unique index；PostgreSQL 实库验收 PASS |
-| FND-012 | 离线旧位置晚到防回滚 | ✅ | 根据 `recorded_at` 决定 CURRENT / STALE；PR #3 已补“用户失效水位”边界并通过回归 |
+| FND-012 | 离线旧位置晚到防回滚 | ✅ | 根据 `recorded_at` 决定 CURRENT / STALE；失效水位边界已回归 |
 | FND-013 | 删除 Memory 与 ObjectLocation 联动失效 | ✅ | 删除后不得继续从对象位置查询回答 |
 | FND-014 | Location `client_uuid` 幂等 | ✅ | 离线重传不得产生重复位置点 |
 | FND-015 | 隐私暂停服务端最终门禁 | ✅ | 暂停期间自动数据不得入库 |
@@ -88,151 +75,84 @@
 
 # 2. Stage 1：记得住
 
-目标：完成“记录 → 保存 → 找到 → 相信 → 纠错/删除/暂停”的 V1 主闭环。
+目标：完成“记录 → 保存 → 找到 → 相信 → 纠错/删除/暂停”的 V1 主闭环，并把主动文字/图片/语音、离线恢复和用户数据控制做成日常可用能力。
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | S1-001 | 正式用户注册 / 登录 | ✅ | Argon2、限速/退避、dummy verify、migration drift gate 已通过复审 |
 | S1-002 | 用户资料与时区设置 | ✅ | trim-before-validation、IANA timezone |
 | S1-003 | 文字记忆录入 | ✅ | Flutter / 小程序接真实 Memory API，仅声明 `USER_TEXT` |
-| S1-004 | 语音记忆录入 | 🔵 | PR #9 已实现小程序本地录音 UI、`scope.record` 权限与 Recorder session ownership；第三轮极窄复审确认 late start/stop 不跨页面污染。真实音频上传、ASR、Evidence 仍未实现 |
-| S1-005 | 图片记忆录入 | 🟠 | PR #7 后端媒体/Evidence 已合并；PR #9 图片真实链已接通，第一轮 3 个 P2 已关闭、第三轮 Recorder P1 已关闭；当前待最终 clean replay CI / 合并 |
-| S1-006 | COS / OSS 对象存储直传 | ✅ | PR #7 第二轮复审 PASS 并合并 `main=9504fa8d`；私有 staging→final、短时签名、owner gate、真实图片签名与 commit-safe staging 清理已落地 |
-| S1-007 | ASR 语音转写 | ⬜ | 原始音频保留为证据；PR #9 明确未启动，不存在假 ASR/假上传 |
-| S1-008 | “帮我记住”统一入口 | ⬜ | 文字 / 语音 / 拍照统一进入 Memory Pipeline |
+| S1-004 | 语音记忆录入 | 🔵 | PR #9 已完成小程序录音 UI、权限和 Recorder session ownership；真实音频上传、ASR、Evidence 尚未实现 |
+| S1-005 | 图片记忆录入 | ✅ | PR #7 后端媒体/Evidence + PR #9 小程序真实拍照/选图上传链均已审查、CI、clean replay 并合并 |
+| S1-006 | COS / OSS 对象存储直传 | ✅ | 私有 staging→final、短时签名、owner gate、图片签名验证与 commit-safe staging 清理已落地 |
+| S1-007 | ASR 语音转写 | ⬜ | 下一阶段优先；原始音频必须保留为 Evidence，禁止假转写 |
+| S1-008 | “帮我记住”统一入口 | ⬜ | 待 `S1-005 + S1-007` 协议稳定后，统一文字 / 语音 / 图片 Memory Pipeline |
 | S1-009 | “东西在哪”物品录入 | ✅ | Object create 并发竞争已幂等兜底 |
 | S1-010 | “东西在哪”查询 | ✅ | 返回真实 Evidence `source_type` / `memory_source_id` |
-| S1-011 | 物品位置失效 / “已经不在那里” | ✅ | 唯一最具体 Object 解析、普通搜索排除位置 backing Memory、UNKNOWN 失效水位、stale/add 共锁及重叠名称回归均通过三轮审查并已合并 |
+| S1-011 | 物品位置失效 / “已经不在那里” | ✅ | 唯一最具体 Object、UNKNOWN 失效水位、锁与重叠名称回归均通过 |
 | S1-012 | 基础记忆搜索 | ✅ | 普通 Memory Evidence 返回真实来源且不降低 gate |
 | S1-013 | “问记忆”客户端页面接真实 API | ✅ | Flutter / 小程序已接真实 API |
 | S1-014 | 答案展示 Evidence / 来源 / 时间 | ✅ | 客户端展示来源、证据类型、时间、可信度 |
-| S1-015 | 客户端本地 SQLite | ✅ | PR #6 第二轮窄范围复审 PASS 并合并 `main=c8e5614d`；版本化 SQLite、账号隔离、重启恢复正式完成 |
-| S1-016 | 离线记忆队列 | ✅ | PR #6 已合并；pending/sending/failed/completed/cancelled、稳定 UUID、取消/重试、仅 TransportException fallback 均通过正式审查 |
-| S1-017 | 离线同步与幂等 | ⬜ | 真实同步/自动 flush 尚未进入；未来自动重发前必须用 `client_uuid + 服务端幂等` 处理“请求已发送但响应丢失”的不确定性 |
+| S1-015 | 客户端本地 SQLite | ✅ | PR #6 已合并；版本化 SQLite、账号隔离、重启恢复完成 |
+| S1-016 | 离线记忆队列 | ✅ | PR #6 已合并；状态机、稳定 UUID、取消/重试、仅 TransportException fallback 均通过正式审查 |
+| S1-017 | 离线同步与幂等 | ⬜ | 下一阶段优先；服务端 `client_uuid` 幂等必须覆盖 response-loss / unknown-commit 后再允许自动重发 |
 | S1-018 | 单条 Memory 编辑 | ⬜ | 编辑后 Evidence 与审计语义需明确 |
-| S1-019 | 单条 Memory 删除 | ✅ | 真实服务端 DELETE 链、删除后查询失效及 ObjectLocation 联动均通过审查并已合并 |
-| S1-020 | 数据导出 | ⬜ | 用户可导出自己的全部记忆 |
-| S1-021 | 全部数据删除 | ⬜ | DB / Cache / Storage 一致删除 |
-| S1-022 | 注销账号 | ⬜ | 与全部数据删除联动 |
-| S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ✅ | 单一 reference timestamp + `America/New_York` DST 时区回归通过正式审查并已合并 |
-| S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁回归通过并已合并 |
+| S1-019 | 单条 Memory 删除 | ✅ | 服务端 DELETE、删除后查询失效及 ObjectLocation 联动均已合并 |
+| S1-020 | 数据导出 | ✅ | PR #12 已合并；owner 隔离、JSON v1、媒体敏感字段保护、5000 上限/413、删除位置 tombstone 均通过正式审查 |
+| S1-021 | 全部数据删除 | ⬜ | DB / Cache / Storage 一致删除；必须先于注销账号完成 |
+| S1-022 | 注销账号 | ⬜ | 依赖 `S1-021` 全量删除闭环 |
+| S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ✅ | 单一 reference timestamp + DST 时区回归通过 |
+| S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
 | S1-025 | 基础提醒模型 | ⬜ | 仅从记忆产生提醒，不做完整 Todo |
-| S1-026 | 首次使用引导 | ⬜ | 3 分钟内完成“记住 → 找回”Aha Moment |
+| S1-026 | 首次使用引导 | ⬜ | 待统一入口稳定后，目标 3 分钟内完成“记住 → 找回”Aha Moment |
 
-## 2.1 PR #2 第一轮审查修复项
+## 2.1 Stage 1 第三批 A/B/C/D 第一阶段收口
 
-| ID | 优先级 | 问题 | 状态 | 最终结果 |
+| 工作线 | 范围 | PR / 最终结果 | 状态 |
+| --- | --- | --- | --- |
+| A：Backend Media | `S1-006` + `S1-005` 后端媒体/Evidence | PR #7 已合并；媒体协议 staging→final、签名、Evidence、图片验证与安全边界通过正式审查 | ✅ |
+| B：Flutter Offline | `S1-015` + `S1-016` | PR #6 已合并；SQLite + 离线队列 + transport/protocol 分类通过正式审查 | ✅ |
+| C：Mini Capture | `S1-005` 小程序主动图片 + `S1-004` 录音 UI/权限壳 | PR #9 clean HEAD `5f8ac339`，标准 Mini Program CI `35176991792` SUCCESS；merge commit `9722635f` | ✅ 第一阶段 |
+| D1：Data Export | `S1-020` | PR #12 在 PR #13 合并后的 main 上 clean replay 为 `8181127f`，Backend CI `35203341989` SUCCESS；merge commit `f1d9baef` | ✅ |
+| D2：Visual Quality | `CI-005` | PR #13 最终 HEAD `3a9409d9`；Visual CI `35201294030` + Mobile CI `35201294079` SUCCESS；merge commit `3b43574a` | ✅ |
+
+### 已关闭的关键审查问题
+
+| ID | 级别 | 结果 |
+| --- | --- | --- |
+| S1-PR6-FIX-001 | P1 | catch-all 客户端异常误入 SQLite offline fallback；已改为仅 TransportException 可入队并随 PR #6 合并 |
+| S1-PR7-FIX-001~005 | 3×P1 + 2×P2 | commit-safe staging、production HTTPS、真实图片校验、模型导入、公共 ETag 泄露均关闭并随 PR #7 合并 |
+| S1-PR9-FIX-001 | P1 | Recorder session owner 固定，late start/stop/error 不再污染新页面；已关闭并随 PR #9 合并 |
+| S1-PR9-FIX-002~004 | P2 | 图片预读、人工注释、微信真实 COS/OSS 合法域名验收说明均关闭 |
+| S1-PR12-FIX-001 | P1 | deleted Memory 的 ObjectLocation 不再通过 export 泄露位置；改为 STALE redacted tombstone，已关闭 |
+| CI-PR13-FIX-001 | P1 | Golden 固定 CJK 字体，中文不再为缺字方框 |
+| CI-PR13-FIX-002 | P2 | worktree dirty gate 改为真正 fail-closed |
+| CI-PR13-FIX-003 | P1 | Golden 显式加载固定 MaterialIcons，导航图标真实且互不相同 |
+
+## 2.2 下一阶段推荐并行工作线
+
+<!-- [人工注释][S1-PLAN-002] 以下是第三批第一阶段完成后的 Stage 1 收口顺序；这里只记录计划，不代表任务已开工。未创建分支/Issue 前状态继续保持 ⬜。 -->
+
+| 优先级 | 工作线 | 对应任务 | 当前状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| S1-FIX-001 | P1 | `AuthIdentity` metadata / schema drift gate | ✅ | PostgreSQL `alembic check` PASS，已合并 |
-| S1-FIX-002 | P1 | Evidence 未返回真实 `source_type` | ✅ | API + Flutter + 小程序已合并 |
-| S1-FIX-003 | P1 | 注册/登录缺少抗爆破与 Argon2 DoS 门禁 | ✅ | IP/账号窗口、429、Retry-After、指数退避已合并 |
-| S1-FIX-004 | P2 | 不存在账号未执行 dummy Argon2 verify | ✅ | missing/wrong-password 成本路径一致 |
-| S1-FIX-005 | P2 | nickname / locale 空白绕过 | ✅ | strip-before-validation，whitespace-only 422 |
-| S1-FIX-006 | P2 | 同名 Object 并发创建唯一约束 500 | ✅ | rollback + reselect 幂等返回 |
-| S1-FIX-007 | P2 | 客户端生产 API endpoint 仍是开发态 | ✅ | build-time endpoint + production CI 真构建 |
+| 1 | E：Voice Pipeline | `S1-004 + S1-007` | ⬜ | 音频上传、ASR、原始音频 Evidence、失败/重试语义；完成后才能把 S1-004 转 ✅ |
+| 1 | F：Offline Sync | `S1-017` | ⬜ | 服务端幂等 + Flutter 自动 flush；必须覆盖服务端已提交但响应丢失的 unknown-commit 场景 |
+| 1 | G：Product UI / Design System | 正式 UI 设计与组件规范 | ⬜ | 与 E/F 可并行；先 Flutter 核心页面，再同步微信小程序；CI-005 负责防视觉回归，不等于 UI redesign |
+| 2 | Unified Capture | `S1-008` | ⬜ | 等语音协议稳定后统一文字/图片/语音入口 |
+| 2 | Memory Edit | `S1-018` | ⬜ | 独立 Backend/客户端 PR |
+| 3 | Data Delete | `S1-021` | ⬜ | DB / Cache / Storage 全删除，明确对象存储删除和失败恢复语义 |
+| 4 | Account Delete | `S1-022` | ⬜ | 必须建立在 S1-021 完整闭环之上 |
+| 5 | Reminder | `S1-025` | ⬜ | 基础提醒，不扩展成 Todo 产品 |
+| 6 | Onboarding | `S1-026` | ⬜ | 统一入口稳定后设计首次 Aha Moment |
 
-## 2.2 PR #3 正式审查修复项
+### 硬规则
 
-| ID | 优先级 | 问题 | 状态 | 当前结果 |
-| --- | --- | --- | --- | --- |
-| S1-PR3-FIX-001 | P1 | Object 查询路由既漏拦历史位置又误伤普通“哪里”查询 | ✅ | 第二轮确认 PASS；PR #3 已合并 main |
-| S1-PR3-FIX-002 | P1 | 用户 STALE 后晚到旧位置可在 CURRENT 为空时复活 | ✅ | `UNKNOWN` invalidation watermark + add/stale 共 Object `FOR UPDATE` 通过回归与 PostgreSQL 门禁；已合并 |
-| S1-PR3-FIX-003 | P2 | `pause/today` 两次读取当前时间存在午夜跨日竞态 | ✅ | 单一 `now` 派生 local day + `America/New_York` 回归 PASS；已合并 |
-| S1-PR3-FIX-004 | P2 | 本轮传输层语义修改缺少人工注释 | ✅ | Flutter / 小程序人工注释补齐并通过 CI；已合并 |
-| S1-PR3-FIX-005 | P1 | 重叠 Object 名称可能跨对象按最新位置回答，甚至绕过更具体 Object 的 STALE | ✅ | 唯一最长/最具体 Object 解析、同等最佳 fail closed、更具体 STALE 不回退短名均通过第三轮最终复审；已合并 |
-
-## 2.3 Stage 1 第三批并行开发安排
-
-<!-- [人工注释][S1-PLAN-001] 第三批采用“公共协议先冻结、四工作线独立分支、独立 PR、逐条审查”的方式推进；排期不等于开工，未创建开发分支前任务仍保持 ⬜。 -->
-
-### 2.3.1 统一基线与硬规则
-
-- 所有第三批开发分支统一从对应任务启动时确认的最新 `main` 创建；A 线实际基线为 `main=b09a3981e12904fe488a623b1a5e1ee1314af6a8`，C 线原始基线为 `main=daf84199a10ad1669fbe241d8e6b150d8f4434bb`，最终 clean replay 基线为 `main=c9d5a53e0fea48f33cd2e9daea8dad657e9eaf28`。
-- 一个任务组一个独立分支、一个独立 PR；禁止建立一个包含全部第三批功能的“大 Stage 1 分支”。
-- 手工新增或修改的语义代码块继续使用 `[人工注释][TASK-ID]`；自动生成文件、lockfile、严格 JSON 等按既有豁免规则处理。
-- 公共 API / schema / Evidence 协议先冻结再让多端并行；任何工作线需要修改共享协议时，必须先记录并通知其他工作线，禁止各端自行发明字段。
-- 每个 PR 单独通过本端自动测试；涉及公共协议时必须补 Backend + 受影响客户端回归。
-- Stage 2 后台定位、CoreLocation、Location Bridge、Visit clustering 等全部保持 ⬜，第三批不得提前侵入。
-
-### 2.3.2 四条并行工作线
-
-| 工作线 | 第一阶段任务 | 计划分支 / PR | 允许范围 | 关键依赖 | 当前状态 |
-| --- | --- | --- | --- | --- | --- |
-| A：Backend Media | `S1-006` + `S1-005` 后端媒体/Evidence 基础 | `feat/stage1-media-pipeline` / PR #7 | 私有对象存储、临时签名上传/下载、媒体元数据、图片 Evidence、Backend tests、API 文档 | 媒体协议已冻结为 staging→final；第二轮复审 PASS；未引入 OCR/Vision/ASR/Stage 2 | ✅ 已合并 |
-| B：Flutter Offline | `S1-015` + `S1-016` | `feat/stage1-mobile-offline` / PR #6 | Android/iOS 本地 SQLite、离线队列、状态机、重启恢复、Flutter tests | 第二轮窄范围复审 PASS；S1-PR6-FIX-001 已关闭；`S1-017` 后置 | ✅ 已合并 |
-| C：Mini Capture | `S1-005` 小程序主动拍照/选图 + `S1-004` 录音 UI/权限壳 | `feat/stage1-miniprogram-capture` / PR #9 | 小程序页面、权限、文件选择/录音适配、上传客户端；禁止假 API/假成功 | 三轮代码审查已 PASS；`S1-PR9-FIX-001` 与 3 个 P2 已关闭；clean replay 已生成，真实语音上传/ASR 仍等待 `S1-007` | 🟠 待最终 CI / replay 后核验 / 合并 |
-| D：Data & Quality | `S1-020` 数据导出；`CI-005` UI Visual Preview | `feat/stage1-data-export`；`ci/ui-visual-preview` | 用户数据导出、授权边界、导出测试；Flutter Golden/视觉产物 CI | 与 A/B/C 冲突较少，两个任务仍各自独立 PR | ⬜ 待启动 |
-
-A 线最终验收：生产代码 HEAD `13cd13f3`；Ruff PASS；SQLite migration PASS；PostgreSQL migration PASS；`alembic check` PASS；PostgreSQL ObjectLocation invariants PASS；pytest **53/53 PASS**。第二轮窄范围复审 PASS，PR #7 已合并 `main=9504fa8d`。
-
-B 线正式审查：生产 HEAD `d1351f61`；第二轮窄范围复审确认 0 P0 / 0 P1 / 0 阻塞 P2，S1-PR6-FIX-001 已关闭。TransportException 才允许 SQLite fallback；ProtocolException、ApiException 与未知客户端异常均 fail closed。Android analyze/tests/APK 与 iOS no-codesign build 已绑定最终生产 SHA 验收通过。PR #6 已合并 `main=c8e5614d`，Issue #5 已 completed；真实自动同步与服务端幂等仍留到 `S1-017`。
-
-C 线代码审查：第一轮 1P1+3P2 后，3 个 P2 在第二轮关闭；Recorder session ownership P1 在第三轮极窄复审 PASS 并正式关闭。窄验收 run `35175233509` 在生产/测试树 `9ff304c2` 上通过 install、TypeScript、capture workflow tests、production WeChat build；其后到 `7af77a0a` 只删除临时验收 workflow。最终 clean replay 生产提交 `bf539a94` 以 `main=c9d5a53e` 为唯一父提交，未改 Recorder 生产逻辑，等待最终标准 Mini Program CI 与 replay 后核验。
-
-### 2.3.3 第二阶段接续任务
-
-| 顺序 | 任务 | 前置条件 | 计划工作线 | 当前状态 |
-| --- | --- | --- | --- | --- |
-| 1 | `S1-007` ASR 语音转写 | A 的对象存储/Evidence 基础合并 | A | ⬜ |
-| 2 | `S1-008` “帮我记住”统一入口 | `S1-005` + `S1-007` 协议稳定 | A + B/C 客户端接入 | ⬜ |
-| 3 | `S1-017` 离线同步与幂等 | B 的 SQLite/队列完成；服务端提交幂等协议冻结；自动重发前必须覆盖 response-loss/unknown-commit 场景 | B + Backend 窄配合 | ⬜ |
-| 4 | `S1-018` 单条 Memory 编辑 | 第三批公共协议稳定 | 独立 Backend/客户端 PR | ⬜ |
-| 5 | `S1-021` 全部数据删除 | `S1-006` Storage 删除语义稳定 | D / Backend | ⬜ |
-| 6 | `S1-022` 注销账号 | `S1-021` 全量删除闭环完成 | D / Backend | ⬜ |
-| 7 | `S1-025` 基础提醒模型 | 核心记录/离线链稳定 | 后续独立 PR | ⬜ |
-| 8 | `S1-026` 首次使用引导 | 文字/图片/语音统一入口稳定 | Flutter + 小程序 | ⬜ |
-
-### 2.3.4 推荐启动与合并顺序
-
-1. **先启动 A 与 B**：A 先锁定媒体上传公共协议，B 完全独立实现本地 SQLite + 离线队列。
-2. **随后启动 D**：数据导出和 UI Preview 各自独立 PR，不等待媒体功能。
-3. **C 在 A 的公共协议冻结后启动真实接入**：可先做 UI/权限，但不允许提交假数据兜底。
-4. A 第一阶段合并后进入 `S1-007`；B 第一阶段合并后等待服务端幂等契约再进入 `S1-017`。
-5. `S1-021/022` 必须等对象存储删除语义确定后再做，避免 DB 删除完成而 Storage 残留。
-6. 每个工作线合并前都必须基于最新 `main` 做最终 replay / CI；不得因为“另一条线已 PASS”而跳过自己的验收。
-
-### 2.3.5 共享文件冲突规则
-
-以下位置视为第三批共享热点，修改前必须先确认是否已有其他工作线占用：
-
-- `backend/app/schemas.py` 及公共 API payload 定义；
-- `docs/API.md`；
-- Flutter / Mini Program 公共 API client 的字段协议；
-- `docs/DEVELOPMENT_PROGRESS.md`；
-- CI workflow 文件。
-
-原则：**共享协议只允许一个 PR 定义，其他 PR 只消费；如确需修改，先 rebase 最新 `main` 并重新做跨端契约审查。**
-
-### 2.3.6 PR #7 第一轮预审修复项
-
-| ID | 优先级 | 问题 | 状态 | 当前结果 |
-| --- | --- | --- | --- | --- |
-| S1-PR7-FIX-001 | P1 | READY commit 前删除 staging，commit 失败后无法恢复 | ✅ | 第二轮确认 PASS；READY commit 成功后才 best-effort 清 staging，commit-failure 回归确认可恢复；已随 PR #7 合并 |
-| S1-PR7-FIX-002 | P1 | production 自定义对象存储 endpoint 可使用 HTTP | ✅ | 第二轮确认 PASS；production/prod + S3 + custom endpoint 强制 HTTPS；已随 PR #7 合并 |
-| S1-PR7-FIX-003 | P1 | READY 只验证 size/MIME，不能证明真实图片 | ✅ | 第二轮确认 PASS；staging/final 双文件头校验，非法对象保持 PENDING；已随 PR #7 合并 |
-| S1-PR7-FIX-004 | P2 | `create_schema()` 依赖偶然 import 顺序加载媒体模型 | ✅ | 第二轮确认 PASS；显式 import `media_models`；已随 PR #7 合并 |
-| S1-PR7-FIX-005 | P2 | 公共 `MediaRead` 暴露内部 `storage_etag` | ✅ | 第二轮确认 PASS；DB 内部 ETag 保留、公开 API 移除；已随 PR #7 合并 |
-
-> 第二轮窄范围复审结论 PASS；生产代码范围 `c553b121..13cd13f3` 无新 P0/P1/阻塞 P2。PR #7 已合并 `main=9504fa8d`，上述 5 项正式关闭。
-
-### 2.3.7 PR #6 正式审查修复项
-
-| ID | 优先级 | 问题 | 状态 | 当前结果 |
-| --- | --- | --- | --- | --- |
-| S1-PR6-FIX-001 | P1 | catch-all 客户端异常被误判为离线并写入 SQLite | ✅ | 第二轮窄范围复审 PASS；底层仅 `http.ClientException` / `TimeoutException` 映射为 `TransportException`，2xx malformed/结构错误为 `ProtocolException`，非 2xx malformed 仍为 `ApiException`；UI 仅 TransportException 可入队；已随 PR #6 合并 |
-
-> 第二轮窄范围复审结论：**PASS / MERGED**。`S1-015` / `S1-016` 已随 PR #6 合并并转 ✅；`S1-017` 保持 ⬜。已知 response-loss/unknown-commit 边界留到 S1-017 使用 `client_uuid + 服务端幂等` 处理，不构成 PR #6 阻塞项。
-
-### 2.3.8 PR #9 正式审查修复项
-
-| ID | 优先级 | 问题 | 状态 | 当前结果 |
-| --- | --- | --- | --- | --- |
-| S1-PR9-FIX-001 | P1 | Recorder session 事件按事件到达时的当前 subscriber 分发，late `onStart` 可污染新页面 | ✅ | 第三轮极窄复审 PASS；`start()` 固定 `RecorderSession.owner`，旧 session 的 start/stop/error 不会交给新 subscriber，失效 owner 的 late stop 临时文件会删除，新页面随后可正常重新录音 |
-| S1-PR9-FIX-002 | P2 | 原图在服务端大小限制前整文件读入 ArrayBuffer | ✅ | 第二轮确认 PASS；仅预读 64B 文件头，先以 `chooseMedia.size` 执行服务端 create，接受后才加载完整 body，并再次校验长度 |
-| S1-PR9-FIX-003 | P2 | 新增 helper / transport 语义块人工注释不完整 | ✅ | 第二轮确认 PASS；`readFilePrefix/readFileAsArrayBuffer/deleteTempFile/microphonePermissionAdapter/RecorderController` 等语义块人工注释已补齐 |
-| S1-PR9-FIX-004 | P2 | 真实 COS/OSS signed PUT 缺微信 `request` 合法域名部署验收说明 | ✅ | 第二轮文档层确认 PASS；部署文档明确 API + signed PUT 对象存储域名均需加入微信 `request` 合法域名并要求真机完整闭环；真实 provider 验收仍作为部署门禁，不由 CI 冒充 |
-
-> 第三轮极窄复审结论：**PASS / CODE REVIEW COMPLETE**。P0=0、P1=0、新阻塞 P2=0。PR #9 仍保持 Draft；最终 clean replay 生产提交 `bf539a94` 基于 `main=c9d5a53e`，等待最终 Mini Program CI 与 replay 后核验后再进入 Ready / merge。
+- 一个任务组一个独立分支、一个独立 PR；禁止大而全的 Stage 1 分支。
+- 手工新增/修改的语义代码块继续使用 `[人工注释][TASK-ID]`。
+- 公共 API/schema/Evidence 协议只允许一个 PR 定义，其他端只消费。
+- 每个 PR 合并前都必须基于最新 `main` 做最终 replay / CI。
+- `S1-021 → S1-022` 顺序不可反。
+- Stage 2 后台定位、CoreLocation、Location Bridge、Visit clustering 等继续保持 ⬜，不得提前侵入 Stage 1 PR。
 
 ---
 
@@ -344,17 +264,17 @@ C 线代码审查：第一轮 1P1+3P2 后，3 个 P2 在第二轮关闭；Record
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| SEC-001 | HTTPS / TLS | ⬜ | 上线前强制；PR #7 已额外强制 production 自定义对象存储 endpoint 使用 HTTPS |
-| SEC-002 | 对象存储私有桶 | 🟠 | PR #7 已按私有桶 + 服务端 key + fail-closed 设计实现，且 READY 前验证真实图片文件头；待部署验收 |
-| SEC-003 | 临时签名下载 URL | 🟠 | PR #7 已实现短时 PUT/GET，GET 仅对 owner 的 READY final 对象签发；PR #9 已补微信 request 合法域名/真实 COS-OSS 真机部署门禁，真实 provider 验收仍待执行 |
+| SEC-001 | HTTPS / TLS | ⬜ | 上线前强制；对象存储 production 自定义 endpoint 已单独强制 HTTPS |
+| SEC-002 | 对象存储私有桶 | 🟠 | 代码已按私有桶 + 服务端 key + fail-closed 设计实现；仍需真实 provider 部署验收 |
+| SEC-003 | 临时签名下载 URL | 🟠 | 短时 PUT/GET 已实现；微信 API + signed PUT 合法域名及真实 COS/OSS 真机闭环仍需部署验收 |
 | SEC-004 | 敏感数据权限隔离 | ⬜ | 位置 / 健康 / 家庭 / 生物识别分级 |
 | SEC-005 | 服务端访问审计 | ⬜ | 敏感数据查询留痕 |
-| SEC-006 | 数据导出 | ⬜ | 用户数据可迁移 |
-| SEC-007 | 数据彻底删除 | ⬜ | DB / Cache / Storage 一致删除 |
-| SEC-008 | 账户注销 | ⬜ | 与删除策略联动 |
+| SEC-006 | 数据导出 | ✅ | PR #12 已合并；当前认证用户可导出版本化 JSON，严格 owner 隔离且不泄露内部 Storage 字段 |
+| SEC-007 | 数据彻底删除 | ⬜ | 对应 S1-021；DB / Cache / Storage 一致删除 |
+| SEC-008 | 账户注销 | ⬜ | 对应 S1-022；与删除策略联动 |
 | SEC-009 | 位置权限单独同意 | ⬜ | 按平台规则实施 |
 | SEC-010 | 家庭查看逐项授权 | ⬜ | 默认关闭 |
-| SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁、`pause/today` 单时钟边界均通过审查并随 PR #3 合并 |
+| SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁与时区边界均已合并 |
 | SEC-012 | AI 不知道就说不知道 | 🟠 | Evidence gate 已实现；完整 AI 层尚未进入 |
 | SEC-013 | AI 推断显式标记 | ⬜ | UI 层尚未实现 |
 | SEC-014 | 敏感操作二次确认 | ⬜ | 导出 / 删除 / 家庭授权等 |
@@ -406,4 +326,5 @@ C 线代码审查：第一轮 1P1+3P2 后，3 个 P2 在第二轮关闭；Record
 6. 每次新增或修改人工维护的源代码，都必须遵守 `docs/CODE_ANNOTATION_RULES.md` 的 `[人工注释]` 标记规范。
 7. 自动生成文件、lockfile、二进制资源不得为了加注释而破坏格式；通过提交记录和本表追踪。
 8. Stage 2 及以后功能不得提前侵入当前 Stage 1 PR，除非先更新本表并明确变更范围。
-9. 第三批并行开发必须遵守 2.3 的工作线边界；共享协议由单一 PR 定义，其他工作线只消费，禁止多分支同时独立修改同一契约。
+9. 并行开发必须保持独立分支/独立 PR；共享协议由单一 PR 定义，其他工作线只消费。
+10. 每条工作线在最终合并前都必须重新确认最新 `main`、clean replay、精确 HEAD CI 和最终净 diff。
