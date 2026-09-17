@@ -85,7 +85,8 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   Future<void> submit() async {
-    if (emailController.text.trim().isEmpty || passwordController.text.isEmpty) {
+    if (emailController.text.trim().isEmpty ||
+        passwordController.text.isEmpty) {
       setState(() => error = '请输入邮箱和密码');
       return;
     }
@@ -228,15 +229,17 @@ class _AuthPageState extends State<AuthPage> {
                             icon: loading
                                 ? const SizedBox.square(
                                     dimension: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   )
-                                : Icon(registerMode
-                                    ? Icons.person_add_alt_1_outlined
-                                    : Icons.login),
+                                : Icon(
+                                    registerMode
+                                        ? Icons.person_add_alt_1_outlined
+                                        : Icons.login,
+                                  ),
                             label: Text(
-                              loading
-                                  ? '请稍候…'
-                                  : (registerMode ? '创建账号' : '登录'),
+                              loading ? '请稍候…' : (registerMode ? '创建账号' : '登录'),
                             ),
                           ),
                           const SizedBox(height: JiYiSpacing.xs),
@@ -244,9 +247,9 @@ class _AuthPageState extends State<AuthPage> {
                             onPressed: loading
                                 ? null
                                 : () => setState(() {
-                                      registerMode = !registerMode;
-                                      error = null;
-                                    }),
+                                    registerMode = !registerMode;
+                                    error = null;
+                                  }),
                             child: Text(
                               registerMode ? '已有账号？返回登录' : '第一次使用？创建账号',
                             ),
@@ -311,17 +314,36 @@ class _AppShellState extends State<AppShell> {
         onDestinationSelected: (value) => setState(() => index = value),
         // [人工注释][S1-027] destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.today_outlined), selectedIcon: Icon(Icons.today), label: '今天'),
-          NavigationDestination(icon: Icon(Icons.timeline_outlined), selectedIcon: Icon(Icons.timeline), label: '时间轴'),
-          NavigationDestination(icon: Icon(Icons.add_circle_outline), selectedIcon: Icon(Icons.add_circle), label: '记一下'),
-          NavigationDestination(icon: Icon(Icons.psychology_alt_outlined), selectedIcon: Icon(Icons.psychology_alt), label: '问记忆'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: '我的'),
+          NavigationDestination(
+            icon: Icon(Icons.today_outlined),
+            selectedIcon: Icon(Icons.today),
+            label: '今天',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.timeline_outlined),
+            selectedIcon: Icon(Icons.timeline),
+            label: '时间轴',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.add_circle_outline),
+            selectedIcon: Icon(Icons.add_circle),
+            label: '记一下',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.psychology_alt_outlined),
+            selectedIcon: Icon(Icons.psychology_alt),
+            label: '问记忆',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: '我的',
+          ),
         ],
       ),
     );
   }
 }
-
 
 class TodayPage extends StatelessWidget {
   const TodayPage({super.key});
@@ -337,7 +359,10 @@ class TodayPage extends StatelessWidget {
         children: [
           // [人工注释][S1-027] 首页只展示当前已经真实具备的记录、找回和隐私控制能力，不新增动态统计或虚构推荐。
           JiYiSectionCard(
-            leading: Icon(Icons.shield_outlined, color: theme.colorScheme.primary),
+            leading: Icon(
+              Icons.shield_outlined,
+              color: theme.colorScheme.primary,
+            ),
             title: '你的记忆由你控制',
             subtitle: '记录、找回、纠错、删除和暂停都由你决定。',
             child: Text(
@@ -347,7 +372,10 @@ class TodayPage extends StatelessWidget {
           ),
           const SizedBox(height: JiYiSpacing.md),
           JiYiSectionCard(
-            leading: Icon(Icons.fact_check_outlined, color: theme.colorScheme.primary),
+            leading: Icon(
+              Icons.fact_check_outlined,
+              color: theme.colorScheme.primary,
+            ),
             title: '只展示有依据的记忆',
             child: Text(
               '没有证据时不会生成记忆；现有 Evidence 规则保持不变。',
@@ -382,11 +410,7 @@ class TimelinePage extends StatelessWidget {
 }
 
 class CapturePage extends StatefulWidget {
-  const CapturePage({
-    super.key,
-    required this.api,
-    required this.offlineQueue,
-  });
+  const CapturePage({super.key, required this.api, required this.offlineQueue});
 
   final JiYiApiClient api;
   final OfflineQueueStore offlineQueue;
@@ -431,7 +455,9 @@ class _CapturePageState extends State<CapturePage> {
   // [人工注释][S1-016] 待发送数量按当前 user_id 直接来自 SQLite；重启后仍能恢复，同时不暴露同机其他账号记录。
   Future<void> _refreshOfflinePendingCount() async {
     try {
-      final count = await widget.offlineQueue.countAwaitingDelivery(_ownerUserId);
+      final count = await widget.offlineQueue.countAwaitingDelivery(
+        _ownerUserId,
+      );
       if (mounted) setState(() => offlinePendingCount = count);
     } catch (_) {
       // [人工注释][S1-016] 计数展示失败不能把真实录入流程伪装成功；保存动作仍会单独报告 SQLite 写入结果。
@@ -470,8 +496,7 @@ class _CapturePageState extends State<CapturePage> {
         contentController.clear();
         await _refreshOfflinePendingCount();
         if (mounted) {
-          setState(() => result =
-              '✓ 已保存到本机，待联网后发送 · ${queued.clientUuid}');
+          setState(() => result = '✓ 已保存到本机，待联网后发送 · ${queued.clientUuid}');
         }
       } catch (_) {
         if (mounted) {
@@ -490,7 +515,10 @@ class _CapturePageState extends State<CapturePage> {
   }
 
   Future<void> saveObjectLocation() async {
-    if (objectController.text.trim().isEmpty || locationController.text.trim().isEmpty) return;
+    if (objectController.text.trim().isEmpty ||
+        locationController.text.trim().isEmpty) {
+      return;
+    }
     await _run(() async {
       final location = await widget.api.rememberObjectLocation(
         objectName: objectController.text,
@@ -531,7 +559,9 @@ class _CapturePageState extends State<CapturePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final visibleResult = result == null ? null : _visibleCaptureResult(result!);
+    final visibleResult = result == null
+        ? null
+        : _visibleCaptureResult(result!);
     final resultKind = result == null ? null : _captureStatusKind(result!);
     return JiYiPageFrame(
       title: '记一下',
@@ -639,10 +669,7 @@ class _CapturePageState extends State<CapturePage> {
           if (visibleResult != null && resultKind != null) ...[
             const SizedBox(height: JiYiSpacing.md),
             // [人工注释][S1-027] 原始 result 仍保留给现有行为测试与状态机；展示层只隐藏无产品价值的内部 id/clientUuid 后缀。
-            JiYiStatusBanner(
-              kind: resultKind,
-              message: visibleResult,
-            ),
+            JiYiStatusBanner(kind: resultKind, message: visibleResult),
           ],
         ],
       ),
@@ -701,7 +728,9 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   }
 
   Future<void> query() async {
-    if (controller.text.trim().isEmpty) return;
+    if (controller.text.trim().isEmpty) {
+      return;
+    }
     setState(() {
       loading = true;
       error = null;
@@ -715,25 +744,43 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     } catch (_) {
       setState(() => error = '暂时无法连接服务器');
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
   Future<void> deleteFirstMemory() async {
     final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
-    if (ids.isEmpty) return;
+    if (ids.isEmpty) {
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除这条记忆？'),
         content: const Text('删除后，这条记忆以及依赖它的当前位置答案都不能再被找回。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('删除')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          // [人工注释][S1-027] 删除语义不变，只把确认动作明确显示为危险操作，避免与普通主按钮混淆。
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('确认删除'),
+          ),
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      return;
+    }
 
     setState(() => loading = true);
     try {
@@ -747,78 +794,168 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     } on ApiException catch (exc) {
       setState(() => error = exc.message);
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // [人工注释][S1-027] G4 仅重排 Query/Evidence/删除入口的展示层；答案、Evidence、memory_ids 都继续直接使用服务端真实返回。
+    final theme = Theme.of(context);
     final evidence = (result?['evidence'] as List<dynamic>? ?? const []);
     final memoryIds = (result?['memory_ids'] as List<dynamic>? ?? const []);
+    final canAnswer = result?['can_answer'] == true;
+    final answer = result?['answer']?.toString() ?? '';
+    final certainty = result?['certainty']?.toString() ?? '未知';
+    final intent = result?['intent']?.toString() ?? '未知';
+
     return JiYiPageFrame(
       title: '问记忆',
-      subtitle: '答案必须来自你的真实 Evidence。',
+      subtitle: '从你自己的记录里查找；答案会把依据一起展示出来。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              labelText: '你想回忆什么？',
-              hintText: '例如：我的护照在哪里？',
-              border: OutlineInputBorder(),
+          JiYiSectionCard(
+            leading: Icon(
+              Icons.psychology_alt_outlined,
+              color: theme.colorScheme.primary,
             ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: loading ? null : query, child: Text(loading ? '查找中…' : '从我的记忆里查找')),
-          if (error != null) ...[
-            const SizedBox(height: 12),
-            Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          ],
-          if (actionMessage != null) ...[
-            const SizedBox(height: 12),
-            Text(actionMessage!),
-          ],
-          if (result != null) ...[
-            const SizedBox(height: 18),
-            Card(
-              elevation: 0,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      result!['can_answer'] == true ? (result!['answer']?.toString() ?? '') : '我没有找到相关记录。',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('可信状态：${result!['certainty']} · 意图：${result!['intent']}'),
-                  ],
-                ),
-              ),
-            ),
-            ...evidence.map((item) {
-              final e = item as Map<String, dynamic>;
-              // [人工注释][S1-FIX-002] kind 是证据实体类型；“来源”必须展示服务端返回的真实 source_type。
-              return Card(
-                elevation: 0,
-                child: ListTile(
-                  leading: const Icon(Icons.fact_check_outlined),
-                  title: Text(e['excerpt']?.toString() ?? ''),
-                  subtitle: Text(
-                    '来源：${_evidenceSourceLabel(e['source_type']?.toString())}\n'
-                    '证据类型：${e['kind']} · 时间：${e['occurred_at']}\n'
-                    '可信度：${e['confidence']}',
+            title: '问一个问题',
+            subtitle: '找不到可靠依据时，迹忆会明确告诉你，而不是猜一个答案。',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: controller,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: loading ? null : (_) => query(),
+                  decoration: const InputDecoration(
+                    labelText: '你想回忆什么？',
+                    hintText: '例如：我的护照在哪里？',
+                    prefixIcon: Icon(Icons.search),
                   ),
                 ),
-              );
-            }),
+                const SizedBox(height: JiYiSpacing.md),
+                FilledButton.icon(
+                  onPressed: loading ? null : query,
+                  icon: loading
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.manage_search_outlined),
+                  label: Text(loading ? '查找中…' : '从我的记忆里查找'),
+                ),
+              ],
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.error,
+              title: '暂时无法查找',
+              message: error!,
+            ),
+          ],
+          if (actionMessage != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.success,
+              message: actionMessage!,
+            ),
+          ],
+          if (result != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            JiYiSectionCard(
+              leading: Icon(
+                canAnswer ? Icons.lightbulb_outline : Icons.search_off_outlined,
+                color: canAnswer
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              title: canAnswer ? '找到相关记忆' : '没有足够依据',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    canAnswer && answer.isNotEmpty
+                        ? answer
+                        : '我没有找到能够支持答案的相关记录。',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: JiYiSpacing.sm),
+                  // [人工注释][S1-027] certainty / intent 不被 UI 重新推断；这里只把服务端原值放入有标签的 Chip，避免弱化可信状态。
+                  Wrap(
+                    spacing: JiYiSpacing.xs,
+                    runSpacing: JiYiSpacing.xs,
+                    children: [
+                      Chip(
+                        avatar: const Icon(Icons.verified_outlined, size: 18),
+                        label: Text('可信状态：$certainty'),
+                      ),
+                      Chip(
+                        avatar: const Icon(Icons.category_outlined, size: 18),
+                        label: Text('识别意图：$intent'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (evidence.isNotEmpty) ...[
+              const SizedBox(height: JiYiSpacing.lg),
+              Text('为什么这么回答', style: theme.textTheme.titleMedium),
+              const SizedBox(height: JiYiSpacing.xs),
+              Text(
+                '下面是这次回答实际使用的证据。',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.sm),
+              ...evidence.map((item) {
+                final e = item as Map<String, dynamic>;
+                // [人工注释][S1-FIX-002][S1-027] Evidence 卡片只格式化层级；source_type/kind/occurred_at/confidence 均展示服务端真实字段。
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
+                  child: JiYiEvidenceCard(
+                    excerpt: e['excerpt']?.toString() ?? '',
+                    source: _evidenceSourceLabel(e['source_type']?.toString()),
+                    evidenceType: e['kind']?.toString() ?? '未知',
+                    occurredAt: e['occurred_at']?.toString() ?? '未知',
+                    confidence: e['confidence']?.toString() ?? '未知',
+                  ),
+                );
+              }),
+            ] else if (canAnswer) ...[
+              const SizedBox(height: JiYiSpacing.md),
+              // [人工注释][S1-027] 若服务端声称可回答却没有可展示 Evidence，UI 明确暴露该异常事实，不用美化层隐藏。
+              const JiYiStatusBanner(
+                kind: JiYiStatusKind.warning,
+                title: '没有可展示的证据',
+                message: '这次响应没有返回 Evidence，请谨慎使用这个答案。',
+              ),
+            ],
             if (memoryIds.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: loading ? null : deleteFirstMemory,
-                child: const Text('删除最相关记忆'),
+              const SizedBox(height: JiYiSpacing.md),
+              JiYiSectionCard(
+                leading: Icon(
+                  Icons.delete_outline,
+                  color: theme.colorScheme.error,
+                ),
+                title: '管理这条记忆',
+                subtitle: '删除会真正影响后续检索，并同时影响依赖它的当前位置答案。',
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    side: BorderSide(color: theme.colorScheme.error),
+                  ),
+                  onPressed: loading ? null : deleteFirstMemory,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('删除最相关记忆'),
+                ),
               ),
             ],
           ],
@@ -941,31 +1078,64 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('记忆暂停', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            const Text(
+              '记忆暂停',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
-            Text(paused ? '自动记录已暂停${until == null ? '' : '，直到 $until'}' : '自动记录当前开启'),
+            Text(
+              paused
+                  ? '自动记录已暂停${until == null ? '' : '，直到 $until'}'
+                  : '自动记录当前开启',
+            ),
             const SizedBox(height: 12),
             // [人工注释][S1-023] 暂停只影响自动采集；用户主动“记一下”仍可继续使用。
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                OutlinedButton(onPressed: loading ? null : () => apply(() => widget.api.pauseMemory(30), '已暂停 30 分钟'), child: const Text('30 分钟')),
-                OutlinedButton(onPressed: loading ? null : () => apply(() => widget.api.pauseMemory(60), '已暂停 1 小时'), child: const Text('1 小时')),
-                OutlinedButton(onPressed: loading ? null : () => apply(() => widget.api.pauseMemory(180), '已暂停 3 小时'), child: const Text('3 小时')),
-                OutlinedButton(onPressed: loading ? null : () => apply(widget.api.pauseMemoryToday, '今天剩余时间已暂停'), child: const Text('今天')),
+                OutlinedButton(
+                  onPressed: loading
+                      ? null
+                      : () => apply(
+                          () => widget.api.pauseMemory(30),
+                          '已暂停 30 分钟',
+                        ),
+                  child: const Text('30 分钟'),
+                ),
+                OutlinedButton(
+                  onPressed: loading
+                      ? null
+                      : () =>
+                            apply(() => widget.api.pauseMemory(60), '已暂停 1 小时'),
+                  child: const Text('1 小时'),
+                ),
+                OutlinedButton(
+                  onPressed: loading
+                      ? null
+                      : () => apply(
+                          () => widget.api.pauseMemory(180),
+                          '已暂停 3 小时',
+                        ),
+                  child: const Text('3 小时'),
+                ),
+                OutlinedButton(
+                  onPressed: loading
+                      ? null
+                      : () => apply(widget.api.pauseMemoryToday, '今天剩余时间已暂停'),
+                  child: const Text('今天'),
+                ),
               ],
             ),
             const SizedBox(height: 8),
             // [人工注释][S1-024] 恢复后历史 pause interval 仍保留，暂停期间自动数据不能延迟补传。
             FilledButton(
-              onPressed: loading || !paused ? null : () => apply(widget.api.resumeMemory, '已恢复自动记录'),
+              onPressed: loading || !paused
+                  ? null
+                  : () => apply(widget.api.resumeMemory, '已恢复自动记录'),
               child: const Text('恢复记录'),
             ),
-            if (message != null) ...[
-              const SizedBox(height: 8),
-              Text(message!),
-            ],
+            if (message != null) ...[const SizedBox(height: 8), Text(message!)],
           ],
         ),
       ),
@@ -988,7 +1158,10 @@ class _InfoCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
             Text(detail),
           ],
