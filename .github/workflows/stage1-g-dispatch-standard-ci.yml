@@ -1,0 +1,31 @@
+name: stage1-g-dispatch-standard-ci
+
+on:
+  push:
+    branches:
+      - chore/stage1-g-dispatch-standard-ci-20260917
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch repository standard mobile workflows on final G branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mobile-ci.yml --repo cfhlwl/jiyidashi --ref feat/stage1-product-ui
+          gh workflow run d2-generate-assets.yml --repo cfhlwl/jiyidashi --ref feat/stage1-product-ui
+
+      - name: Remove temporary dispatcher branch
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X DELETE repos/cfhlwl/jiyidashi/git/refs/heads/chore/stage1-g-dispatch-standard-ci-20260917 || true
