@@ -21,6 +21,15 @@ Future<void> _loadGoldenFont() async {
   await loader.load();
 }
 
+// [人工注释][CI-005] Flutter Icons.* 的 IconData 固定使用 `MaterialIcons` family；
+// Golden 必须显式注册仓库内的 Flutter 3.47.4 MaterialIcons 字体，否则图标会退化成缺字方框。
+Future<void> _loadMaterialIconsFont() async {
+  final bytes = await File('test/fonts/MaterialIcons-Regular.otf').readAsBytes();
+  final loader = FontLoader('MaterialIcons')
+    ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+  await loader.load();
+}
+
 ThemeData _goldenTheme() => ThemeData(
       fontFamily: _goldenFontFamily,
       useMaterial3: true,
@@ -99,6 +108,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
     await _loadGoldenFont();
+    await _loadMaterialIconsFont();
   });
 
   testWidgets('golden: login', (tester) async {
