@@ -32,6 +32,22 @@ class Settings(BaseSettings):
         ge=1,
         le=50 * 1024 * 1024,
     )
+    # [人工注释][S1-004] 60 秒主动语音单独限制大小，防止音频 ASR 路径借共享
+    # 50 MiB schema 上限制造不必要的对象存储下载/上游转写压力。
+    media_max_audio_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        ge=1,
+        le=50 * 1024 * 1024,
+    )
+
+    # [人工注释][S1-007] ASR 凭证只存在服务端配置。disabled 时语音媒体仍可安全
+    # 上传/READY，但 voice-memory 必须 fail closed；openai 模式通过可替换 provider 边界调用转写。
+    asr_provider: str = "disabled"
+    asr_base_url: str = "https://api.openai.com/v1"
+    asr_api_key: str = ""
+    asr_model: str = "gpt-4o-mini-transcribe"
+    asr_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
+    asr_min_confidence: float = Field(default=0.60, ge=0.0, le=1.0)
 
     # [人工注释][S1-FIX-003] 正式认证的滥用保护默认开启，生产环境禁止关闭。
     auth_rate_limit_enabled: bool = True
@@ -96,6 +112,21 @@ class Settings(BaseSettings):
             parsed = urlparse(endpoint)
             if parsed.scheme.lower() != "https" or not parsed.netloc:
                 raise ValueError("STORAGE_ENDPOINT_URL must use HTTPS in production")
+
+        # [人工注释][S1-007] provider 枚举和密钥/HTTPS 在服务端启动时 fail closed；
+        # 客户端永远拿不到 ASR key，也不能把 provider endpoint 当成直连地址。
+        if self.asr_provider not in {"disabled", "openai"}:
+            raise ValueError("ASR_PROVIDER must be disabled or openai")
+        if self.asr_provider == "openai":
+            if not self.asr_api_key.strip() or not self.asr_model.strip():
+                raise ValueError(
+                    "ASR_API_KEY and ASR_MODEL are required when ASR_PROVIDER=openai"
+                )
+            parsed_asr = urlparse(self.asr_base_url.strip())
+            if not parsed_asr.scheme or not parsed_asr.netloc:
+                raise ValueError("ASR_BASE_URL must be an absolute URL")
+            if self.is_production and parsed_asr.scheme.lower() != "https":
+                raise ValueError("ASR_BASE_URL must use HTTPS in production")
         return self
 
 

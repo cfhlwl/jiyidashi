@@ -2,12 +2,16 @@
 <!-- [人工注释][DOC-PROGRESS-025] PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- [人工注释][DOC-PROGRESS-026] D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- [人工注释][DOC-PROGRESS-027] Stage 1 第三批 A/B/C/D 第一阶段全部完成；Stage 1 本身仍未完成，下一阶段继续 S1-004/S1-007、S1-017、S1-008、S1-018、S1-021、S1-022、S1-025、S1-026；Stage 2 继续明确未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-028] E：Voice Pipeline / Issue #14 已从 main=677b6ce9 启动；分支 feat/stage1-voice-asr 仅推进 S1-004 + S1-007，先完成真实音频上传、ASR provider 边界与原始音频 Evidence，Stage 2 继续未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-029] E：Voice Pipeline / PR #18 初版实现生产/测试 HEAD=9ad68a3844，Backend CI 35216633743 与 Mini Program CI 35216633782 均 SUCCESS；第一轮正式审查随后 HOLD，发现 2×P1 + 1×阻塞 P2。 -->
+<!-- [人工注释][DOC-PROGRESS-030] PR #18 第一轮三个窄修已实现并通过精确 HEAD=eb29b0235a 验收：FIX-001 将 DB preflight/claim 与外部 storage+ASR I/O 真正分离；FIX-002 新增 durable media_asr_claims 租约并由真实 PostgreSQL 双 Session 验证 provider 单飞；FIX-003 用 httpx MockTransport 覆盖 OpenAIASRProvider HTTP adapter。Backend CI 35221916652 SUCCESS（含 PostgreSQL voice single-flight 与 77 passed），Mini Program CI 35221916739 SUCCESS。三项仍待第二轮窄范围正式复审，不标 ✅。 -->
+<!-- [人工注释][DOC-PROGRESS-031] PR #18 第二轮窄范围复审 PASS：S1-PR18-FIX-001~003 已正式关闭；生产/测试 HEAD=8ea2a1c7513f64f496f7cbaa1dfe8c36717d0bf8，Backend CI 35222923492 / #166 SUCCESS（PostgreSQL voice ASR single-flight PASS，77 passed），Mini Program CI 35222923466 / #154 SUCCESS。PR 进入最终 clean replay / exact-head CI Gate，S1-004/S1-007 与 E 线继续保持 🟠，待最终合并 main 后转 ✅。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-17  
-> 当前阶段：Stage 1「记得住」继续推进；第三批 A/B/C/D 第一阶段已全部完成并合并，下一步进入 Stage 1 第二阶段收口；Stage 2 未开始  
-> 当前生产代码基线：`main=f1d9baefd88a43c3da27378b5d87664221edf527`（PR #12 合并后；本文件随后仅产生 docs-only 更新）  
-> 当前开发重点：正式 UI 工作线可独立启动；功能侧优先 `S1-004 + S1-007` 语音/ASR 与 `S1-017` 离线自动同步/服务端幂等，之后进入 `S1-008` 统一入口及数据删除/注销等收口任务
+> 当前阶段：Stage 1「记得住」继续推进；第三批 A/B/C/D 第一阶段已全部完成并合并，E：Voice Pipeline 第二轮正式复审 PASS，进入最终 clean replay / exact-head CI Gate；Stage 2 未开始  
+> 当前生产代码基线：`main=677b6ce9707b0a60e4581ac6cb95eefb94166677`  
+> 当前开发重点：E 线 `S1-004 + S1-007` 已通过第二轮正式复审，保持 🟠 等待最终 clean replay、精确 HEAD CI、Ready/merge；`S1-017` 等其他 Stage 1 收口工作线保持原状态
 
 ## 状态规则
 
@@ -31,11 +35,11 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A/B/C/D 第一阶段均已合并；语音完整链、离线自动同步/幂等及后续 Stage 1 收口任务仍未完成，因此本阶段整体继续进行中 |
-| CI-001 | Backend CI | ✅ | A/D1 均通过 Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants 与 full pytest；PR #12 replay CI `35203341989` SUCCESS |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A/B/C/D 第一阶段均已合并；E：Voice Pipeline 第二轮复审 PASS、待最终合并，离线自动同步/幂等及后续 Stage 1 收口任务仍未完成，因此本阶段整体继续进行中 |
+| CI-001 | Backend CI | ✅ | PR #18 审查生产 HEAD `8ea2a1c751` 的 Backend CI `35222923492` / #166 SUCCESS：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、PostgreSQL voice ASR single-flight 与 full pytest 均成功，`77 passed` |
 | CI-002 | Flutter Android CI | ✅ | 标准 Android analyze/tests/APK 持续通过；PR #13 最终标准 Mobile CI `35201294079` SUCCESS |
 | CI-003 | Flutter iOS CI | ✅ | iOS no-codesign 持续通过；PR #13 最终标准 Mobile CI `35201294079` SUCCESS |
-| CI-004 | 微信小程序 CI | ✅ | PR #9 clean HEAD `5f8ac339` 的标准 Mini Program CI `35176991792` SUCCESS，并已合并 |
+| CI-004 | 微信小程序 CI | ✅ | PR #18 审查生产 HEAD `8ea2a1c751` 的 Mini Program CI `35222923466` / #154 SUCCESS：lockfile install、typecheck、capture tests、production WeChat build 均通过 |
 | CI-005 | UI Visual Preview / Golden Screenshot | ✅ | PR #13 已合并；固定 CJK + MaterialIcons、Golden mismatch 证明、视觉 artifact、dirty gate、Android/iOS 门禁均通过 |
 
 ---
@@ -46,7 +50,7 @@
 | --- | --- | --- | --- |
 | FND-001 | FastAPI 模块化单体基础工程 | ✅ | PR #1 合并 main |
 | FND-002 | PostgreSQL / SQLite 开发数据库基础 | ✅ | PostgreSQL 已进入正式 CI |
-| FND-003 | Redis 开发依赖基础 | ✅ | Docker 开发环境已配置 |
+| FND-003 | Redis 开发依赖基础 | ✅ | Docker 开发环境基础已配置 |
 | FND-004 | Alembic migration baseline | ✅ | SQLite / PostgreSQL 均执行 `upgrade head` |
 | FND-005 | Memory 核心模型 | ✅ | Memory 为长期记忆主对象 |
 | FND-006 | MemorySource / Evidence 模型 | ✅ | 查询事实必须验证 Evidence |
@@ -82,14 +86,14 @@
 | S1-001 | 正式用户注册 / 登录 | ✅ | Argon2、限速/退避、dummy verify、migration drift gate 已通过复审 |
 | S1-002 | 用户资料与时区设置 | ✅ | trim-before-validation、IANA timezone |
 | S1-003 | 文字记忆录入 | ✅ | Flutter / 小程序接真实 Memory API，仅声明 `USER_TEXT` |
-| S1-004 | 语音记忆录入 | 🔵 | PR #9 已完成小程序录音 UI、权限和 Recorder session ownership；真实音频上传、ASR、Evidence 尚未实现 |
+| S1-004 | 语音记忆录入 | 🟠 | PR #18 已实现 Recorder MP3 → 私有 AUDIO 上传 → READY → 服务端 ASR → VOICE Memory/Evidence；2×P1 + 1×P2 已在第二轮正式复审关闭，待最终 clean replay / exact-head CI / merge |
 | S1-005 | 图片记忆录入 | ✅ | PR #7 后端媒体/Evidence + PR #9 小程序真实拍照/选图上传链均已审查、CI、clean replay 并合并 |
 | S1-006 | COS / OSS 对象存储直传 | ✅ | 私有 staging→final、短时签名、owner gate、图片签名验证与 commit-safe staging 清理已落地 |
-| S1-007 | ASR 语音转写 | ⬜ | 下一阶段优先；原始音频必须保留为 Evidence，禁止假转写 |
+| S1-007 | ASR 语音转写 | 🟠 | PR #18 已实现服务端 ASR、原始音频 Evidence 与 fail-closed；transaction gap、durable ASR claim/lease 单飞、OpenAI adapter tests 已第二轮 PASS，待最终 clean replay / exact-head CI / merge |
 | S1-008 | “帮我记住”统一入口 | ⬜ | 待 `S1-005 + S1-007` 协议稳定后，统一文字 / 语音 / 图片 Memory Pipeline |
 | S1-009 | “东西在哪”物品录入 | ✅ | Object create 并发竞争已幂等兜底 |
 | S1-010 | “东西在哪”查询 | ✅ | 返回真实 Evidence `source_type` / `memory_source_id` |
-| S1-011 | 物品位置失效 / “已经不在那里” | ✅ | 唯一最具体 Object、UNKNOWN 失效水位、锁与重叠名称回归均通过 |
+| S1-011 | “东西在哪”物品位置失效 / “已经不在那里” | ✅ | 唯一最具体 Object、UNKNOWN 失效水位、锁与重叠名称回归均通过 |
 | S1-012 | 基础记忆搜索 | ✅ | 普通 Memory Evidence 返回真实来源且不降低 gate |
 | S1-013 | “问记忆”客户端页面接真实 API | ✅ | Flutter / 小程序已接真实 API |
 | S1-014 | 答案展示 Evidence / 来源 / 时间 | ✅ | 客户端展示来源、证据类型、时间、可信度 |
@@ -128,6 +132,9 @@
 | CI-PR13-FIX-001 | P1 | Golden 固定 CJK 字体，中文不再为缺字方框 |
 | CI-PR13-FIX-002 | P2 | worktree dirty gate 改为真正 fail-closed |
 | CI-PR13-FIX-003 | P1 | Golden 显式加载固定 MaterialIcons，导航图标真实且互不相同 |
+| S1-PR18-FIX-001 | P1 | ✅ 第二轮关闭：DB preflight/claim 与 storage/ASR 外部 I/O 之间存在真实 transaction gap；storage/provider 执行时 `Session.in_transaction()==False` |
+| S1-PR18-FIX-002 | P1 | ✅ 第二轮关闭：`media_asr_claims` durable lease/token 实现数据库级单飞；真实 PostgreSQL 双 Session 验证 provider calls=1 且 Memory/Source/Evidence 唯一 |
+| S1-PR18-FIX-003 | P2 | ✅ 第二轮关闭：`OpenAIASRProvider` 真实 adapter 通过 MockTransport 覆盖 multipart、Authorization、logprobs、HTTP/timeout/malformed 错误路径 |
 
 ## 2.2 下一阶段推荐并行工作线
 
@@ -135,7 +142,7 @@
 
 | 优先级 | 工作线 | 对应任务 | 当前状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| 1 | E：Voice Pipeline | `S1-004 + S1-007` | ⬜ | 音频上传、ASR、原始音频 Evidence、失败/重试语义；完成后才能把 S1-004 转 ✅ |
+| 1 | E：Voice Pipeline | `S1-004 + S1-007` | 🟠 | PR #18 / `feat/stage1-voice-asr`；第二轮窄范围复审 PASS，FIX-001~003 已正式关闭；当前进入最终 clean replay + exact-head Backend/Mini CI Gate，合并 main 后再转 ✅ |
 | 1 | F：Offline Sync | `S1-017` | ⬜ | 服务端幂等 + Flutter 自动 flush；必须覆盖服务端已提交但响应丢失的 unknown-commit 场景 |
 | 1 | G：Product UI / Design System | 正式 UI 设计与组件规范 | ⬜ | 与 E/F 可并行；先 Flutter 核心页面，再同步微信小程序；CI-005 负责防视觉回归，不等于 UI redesign |
 | 2 | Unified Capture | `S1-008` | ⬜ | 等语音协议稳定后统一文字/图片/语音入口 |
@@ -249,7 +256,7 @@
 
 # 7. V3：AI 人生助手与硬件扩展
 
-| ID | 功能 / 需求 | 状态 | 说明 |
+| ID | 功能 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | V3-001 | AI 人生助手 | ⬜ | 跨多年记忆查询与整理 |
 | V3-002 | “过去十年”总结 | ⬜ | 长期时间范围分析 |

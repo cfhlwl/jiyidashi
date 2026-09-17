@@ -21,11 +21,12 @@ dependencies = [
   "alembic>=1.14,<2.0",
   # [人工注释][S1-006] 仅使用 boto3 的 S3 SigV4/HEAD 能力接私有 COS/OSS 兼容桶，不引入任何 OCR/Vision SDK。
   "boto3>=1.35,<2.0",
+  # [人工注释][S1-007] ASR provider 只在服务端通过 HTTP 调用，模型密钥不进入客户端。
+  "httpx>=0.28,<1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.28,<1.0",
   "pytest>=8.3,<9.0",
   "pytest-asyncio>=0.25,<1.0",
   "ruff>=0.9,<1.0",

@@ -6,6 +6,12 @@ import type {
   PhotoMemoryResponse,
   SignedTransfer,
 } from './photoCapture'
+import type {
+  AudioContentType,
+  AudioMediaRead,
+  AudioMediaUploadResponse,
+  VoiceMemoryResponse,
+} from './voiceCapture'
 
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
@@ -18,7 +24,7 @@ export type Evidence = {
   occurred_at: string
   excerpt: string
   confidence: number
-  // [人工注释][S1-005] 图片 Evidence 的 media_id 只能消费服务端 MediaEvidenceLink 返回值；客户端不自行合成。
+  // [人工注释][S1-005][S1-007] 图片/语音 Evidence 的 media_id 只能消费服务端 MediaEvidenceLink 返回值；客户端不自行合成。
   media_id?: string | null
 }
 
@@ -169,7 +175,24 @@ export function createImageMediaUpload(input: {
   })
 }
 
-// [人工注释][S1-005] signed PUT 是对象存储临时能力票据，不携带业务 API Authorization；
+// [人工注释][S1-004][S1-007] 语音复用同一媒体上传协议；客户端只声明 RecorderManager
+// 生成的 MP3 业务元数据，不提交 transcript/confidence/provider/confirmed。
+export function createAudioMediaUpload(input: {
+  clientUploadId: string
+  contentType: AudioContentType
+  sizeBytes: number
+  originalFilename?: string | null
+}): Promise<AudioMediaUploadResponse> {
+  return request('POST', '/media/uploads', {
+    client_upload_id: input.clientUploadId,
+    kind: 'AUDIO',
+    content_type: input.contentType,
+    size_bytes: input.sizeBytes,
+    ...(input.originalFilename ? { original_filename: input.originalFilename } : {}),
+  })
+}
+
+// [人工注释][S1-004][S1-005] signed PUT 是对象存储临时能力票据，不携带业务 API Authorization；
 // 必须原样使用服务端 method/headers 发送原始 ArrayBuffer，禁止用 multipart uploadFile 改写请求体。
 export async function putSignedMediaObject(transfer: SignedTransfer, body: ArrayBuffer): Promise<void> {
   if (transfer.method.toUpperCase() !== 'PUT') {
@@ -182,11 +205,15 @@ export async function putSignedMediaObject(transfer: SignedTransfer, body: Array
     header: transfer.headers,
   })
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error(`图片上传失败（HTTP_${response.statusCode}）`)
+    throw new Error(`媒体上传失败（HTTP_${response.statusCode}）`)
   }
 }
 
 export function completeImageMediaUpload(mediaId: string): Promise<MediaRead> {
+  return request('POST', `/media/${mediaId}/complete`)
+}
+
+export function completeAudioMediaUpload(mediaId: string): Promise<AudioMediaRead> {
   return request('POST', `/media/${mediaId}/complete`)
 }
 
@@ -197,6 +224,17 @@ export function createPhotoMemory(
   return request('POST', `/media/${mediaId}/memory`, {
     ...(input.title?.trim() ? { title: input.title.trim() } : {}),
     content: input.content.trim(),
+  })
+}
+
+export function createVoiceMemory(
+  mediaId: string,
+  input: { title?: string; occurredAt?: string },
+): Promise<VoiceMemoryResponse> {
+  // [人工注释][S1-007] 小程序只可提交标题与录音发生时间；转写文字与可信度全部由服务端 ASR 派生。
+  return request('POST', `/media/${mediaId}/voice-memory`, {
+    ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+    ...(input.occurredAt ? { occurred_at: input.occurredAt } : {}),
   })
 }
 

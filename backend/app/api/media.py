@@ -16,12 +16,16 @@ from app.schemas import (
     PhotoMemoryCreate,
     PhotoMemoryResponse,
     SignedTransfer,
+    VoiceMemoryCreate,
+    VoiceMemoryResponse,
 )
+from app.services.asr import ASRProvider, get_asr_provider
 from app.services.media_service import (
     MediaError,
     cleanup_media_staging,
     complete_media_upload,
     create_photo_memory,
+    create_voice_memory,
     sign_media_download,
     start_media_upload,
 )
@@ -31,6 +35,7 @@ router = APIRouter(prefix="/media", tags=["media"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
 Storage = Annotated[ObjectStorage, Depends(get_object_storage)]
+ASR = Annotated[ASRProvider, Depends(get_asr_provider)]
 
 
 def _raise_http(exc: MediaError) -> None:
@@ -61,7 +66,7 @@ def create_upload(
     db: DbSession,
     storage: Storage,
 ) -> MediaUploadResponse:
-    # [人工注释][S1-006] 创建上传只返回短时 PUT 签名与 opaque media_id；
+    # [人工注释][S1-004][S1-006] 图片/语音创建上传都只返回短时 PUT 与 opaque media_id；
     # staging/final object key 永不进入公开 payload。
     try:
         result = start_media_upload(db, user_id, payload, storage)
@@ -83,8 +88,8 @@ def complete_upload(
     db: DbSession,
     storage: Storage,
 ) -> MediaRead:
-    # [人工注释][S1-006] complete 不接受 object key/size/type 参数；
-    # READY 必须先 commit 成功，staging 才允许 best-effort 清理，确保失败后仍可重试。
+    # [人工注释][S1-004][S1-006] complete 不接受 object key/size/type 参数；
+    # READY 必须先 commit 成功，staging 才允许 best-effort 清理，图片/语音规则一致。
     try:
         asset = complete_media_upload(db, user_id, media_id, storage)
     except MediaError as exc:
@@ -134,3 +139,35 @@ def create_memory_from_photo(
     db.refresh(asset)
     db.refresh(memory)
     return PhotoMemoryResponse(media=_media_read(asset), memory=memory)
+
+
+@router.post(
+    "/{media_id}/voice-memory",
+    response_model=VoiceMemoryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_memory_from_voice(
+    media_id: UUID,
+    payload: VoiceMemoryCreate,
+    user_id: CurrentUser,
+    db: DbSession,
+    storage: Storage,
+    asr: ASR,
+) -> VoiceMemoryResponse:
+    # [人工注释][S1-004][S1-007] 客户端只提交 media_id + 可选标题/发生时间。
+    # transcript/confidence/provider 成功状态全部由服务端从 READY 原始音频派生。
+    try:
+        asset, memory = create_voice_memory(
+            db,
+            user_id,
+            media_id,
+            payload,
+            storage,
+            asr,
+        )
+    except MediaError as exc:
+        _raise_http(exc)
+    db.commit()
+    db.refresh(asset)
+    db.refresh(memory)
+    return VoiceMemoryResponse(media=_media_read(asset), memory=memory)

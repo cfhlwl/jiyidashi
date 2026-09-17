@@ -2,10 +2,13 @@ import { Button, Image, Input, Textarea, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import {
+  completeAudioMediaUpload,
   completeImageMediaUpload,
+  createAudioMediaUpload,
   createImageMediaUpload,
   createPhotoMemory,
   createTextMemory,
+  createVoiceMemory,
   isAuthenticated,
   markObjectLocationStale,
   putSignedMediaObject,
@@ -23,6 +26,11 @@ import {
   type MicrophonePermissionAdapter,
   type PhotoSubmissionPhase,
 } from '../../services/photoCapture'
+import {
+  submitVoiceMemory,
+  VoiceSubmissionLock,
+  type VoiceSubmissionPhase,
+} from '../../services/voiceCapture'
 import './index.scss'
 
 type SelectedPhoto = {
@@ -35,6 +43,9 @@ type SelectedPhoto = {
 type VoiceClip = {
   tempFilePath: string
   durationMs: number
+  originalFilename: string | null
+  clientUploadId: string
+  occurredAt: string
 }
 
 const PHOTO_PHASE_TEXT: Record<PhotoSubmissionPhase, string> = {
@@ -43,6 +54,15 @@ const PHOTO_PHASE_TEXT: Record<PhotoSubmissionPhase, string> = {
   verifying: '服务端验证中',
   saving: '正在写入记忆',
   recorded: '已记录',
+  failed: '失败，可重试',
+}
+
+const VOICE_PHASE_TEXT: Record<VoiceSubmissionPhase, string> = {
+  recorded: '待上传',
+  uploading: '上传原始录音中',
+  verifying: '服务端验证音频中',
+  transcribing: '服务端转写中',
+  saved: '已记录',
   failed: '失败，可重试',
 }
 
@@ -98,7 +118,27 @@ function readFileAsArrayBuffer(filePath: string): Promise<ArrayBuffer> {
   })
 }
 
-// [人工注释][S1-004] 本地录音文件生命周期属于隐私边界；页面清除、换录音和卸载都只能做本地 unlink，不触发上传或 ASR。
+// [人工注释][S1-004] 60 秒 MP3 在提交时读取一次原始 ArrayBuffer；失败时临时文件仍保留，
+// 重试继续使用同一个 client_upload_id。可信大小与真实 MP3 文件头仍由服务端校验。
+function readVoiceFileAsArrayBuffer(filePath: string): Promise<ArrayBuffer> {
+  const fileSystem = Taro.getFileSystemManager()
+  return new Promise((resolve, reject) => {
+    fileSystem.readFile({
+      filePath,
+      success: (result) => {
+        if (result.data instanceof ArrayBuffer) {
+          resolve(result.data)
+          return
+        }
+        reject(new Error('无法读取录音原始数据'))
+      },
+      fail: (error) => reject(new Error(getErrorMessage(error, '读取录音失败'))),
+    })
+  })
+}
+
+// [人工注释][S1-004] 本地录音文件生命周期属于隐私边界；页面清除、换录音和卸载都只能做本地 unlink，
+// 真实语音提交成功后也必须立即清除本地临时副本；上传/ASR 失败则保留供用户显式重试。
 function deleteTempFile(filePath?: string | null): void {
   if (!filePath) return
   try {
@@ -108,7 +148,7 @@ function deleteTempFile(filePath?: string | null): void {
   }
 }
 
-// [人工注释][S1-004] 麦克风权限只服务本地 RecorderManager 壳；拒绝后必须由用户主动进入设置恢复，不做隐式授权兜底。
+// [人工注释][S1-004] 麦克风权限只服务用户主动 RecorderManager；拒绝后必须由用户主动进入设置恢复，不做隐式授权兜底。
 const microphonePermissionAdapter: MicrophonePermissionAdapter = {
   current: async () => {
     const setting = await Taro.getSetting()
@@ -165,8 +205,14 @@ export default function Page() {
   const [voicePermission, setVoicePermission] = useState<'unknown' | 'granted' | 'denied'>('unknown')
   const [voiceRecording, setVoiceRecording] = useState(false)
   const [voiceClip, setVoiceClip] = useState<VoiceClip | null>(null)
-  const [voiceStatus, setVoiceStatus] = useState('本轮只保存本地临时录音，不上传、不转写、不生成记忆。')
+  const [voiceTitle, setVoiceTitle] = useState('')
+  const [voicePhase, setVoicePhase] = useState<VoiceSubmissionPhase>('recorded')
+  const [voiceError, setVoiceError] = useState('')
+  const [voiceMemoryId, setVoiceMemoryId] = useState<string | null>(null)
+  const [voiceSubmitting, setVoiceSubmitting] = useState(false)
+  const [voiceStatus, setVoiceStatus] = useState('录音完成后可上传，由服务端验证原始音频并执行 ASR。')
   const voiceClipRef = useRef<VoiceClip | null>(null)
+  const voiceSubmitLock = useRef(new VoiceSubmissionLock())
 
   useEffect(() => {
     // [人工注释][S1-004] 页面只订阅模块级 RecorderLifecycleController；卸载先取消 subscriber，
@@ -174,14 +220,23 @@ export default function Page() {
     const unsubscribeRecorder = recorderController.subscribe({
       onStart: () => {
         setVoiceRecording(true)
-        setVoiceStatus('正在录音…停止后仅保留本地临时文件。')
+        setVoiceStatus('正在录音…最长 60 秒。')
       },
       onStop: (result) => {
         setVoiceRecording(false)
-        const nextClip = { tempFilePath: result.tempFilePath, durationMs: result.duration }
+        const nextClip: VoiceClip = {
+          tempFilePath: result.tempFilePath,
+          durationMs: result.duration,
+          originalFilename: filenameFromPath(result.tempFilePath) || 'voice.mp3',
+          clientUploadId: createClientUploadId(),
+          occurredAt: new Date().toISOString(),
+        }
         voiceClipRef.current = nextClip
         setVoiceClip(nextClip)
-        setVoiceStatus(`本地录音已完成（${Math.max(1, Math.round(result.duration / 1000))} 秒），等待后续 S1-007；本轮不会上传或生成文字。`)
+        setVoicePhase('recorded')
+        setVoiceError('')
+        setVoiceMemoryId(null)
+        setVoiceStatus(`录音已完成（${Math.max(1, Math.round(result.duration / 1000))} 秒），可上传并由服务端转写。`)
       },
       onError: (error) => {
         setVoiceRecording(false)
@@ -307,11 +362,12 @@ export default function Page() {
   }
 
   const startVoiceRecording = async () => {
+    if (voiceSubmitLock.current.busy) return
     try {
       const granted = await ensureMicrophonePermission(microphonePermissionAdapter)
       if (!granted) {
         setVoicePermission('denied')
-        setVoiceStatus('麦克风权限未开启。可点击“打开设置”恢复；本轮不会创建任何语音记忆。')
+        setVoiceStatus('麦克风权限未开启。可点击“打开设置”恢复；不会创建任何语音记忆。')
         return
       }
       setVoicePermission('granted')
@@ -320,6 +376,9 @@ export default function Page() {
         voiceClipRef.current = null
         setVoiceClip(null)
       }
+      setVoiceError('')
+      setVoiceMemoryId(null)
+      setVoicePhase('recorded')
       if (!recorderController.start()) {
         setVoiceStatus('上一段录音仍在停止并清理，请稍后再试。')
       }
@@ -339,14 +398,62 @@ export default function Page() {
   const openMicrophoneSettings = async () => {
     const granted = await recoverMicrophonePermission(microphonePermissionAdapter)
     setVoicePermission(granted ? 'granted' : 'denied')
-    setVoiceStatus(granted ? '麦克风权限已恢复，可以开始本地录音。' : '麦克风权限仍未开启，本轮不会录音或提交任何语音数据。')
+    setVoiceStatus(granted ? '麦克风权限已恢复，可以开始录音。' : '麦克风权限仍未开启，不会录音或提交任何语音数据。')
+  }
+
+  const submitVoice = async () => {
+    if (!ensureLogin()) return
+    const clip = voiceClipRef.current
+    if (!clip) {
+      setVoiceError('请先录一段语音')
+      return
+    }
+    // [人工注释][S1-004] 失败重试必须保留同一 temp file + client_upload_id；同步锁阻止
+    // 快速双击并发 create upload。只有完整 Memory/Evidence 成功后才删除本地临时文件。
+    if (!voiceSubmitLock.current.tryAcquire()) return
+    setVoiceSubmitting(true)
+    setVoiceError('')
+    setStatus('')
+    try {
+      const result = await submitVoiceMemory(
+        {
+          clientUploadId: clip.clientUploadId,
+          originalFilename: clip.originalFilename,
+          occurredAt: clip.occurredAt,
+          title: voiceTitle,
+          loadBody: () => readVoiceFileAsArrayBuffer(clip.tempFilePath),
+        },
+        {
+          createUpload: createAudioMediaUpload,
+          putUpload: putSignedMediaObject,
+          completeUpload: completeAudioMediaUpload,
+          createVoiceMemory,
+        },
+        setVoicePhase,
+      )
+      deleteTempFile(clip.tempFilePath)
+      if (voiceClipRef.current === clip) voiceClipRef.current = null
+      setVoiceClip(null)
+      setVoiceTitle('')
+      setVoiceMemoryId(result.memoryId)
+      setVoiceStatus(`✓ 原始录音已验证、转写并写入可信 Evidence · ${result.memoryId}`)
+    } catch (error) {
+      setVoiceError(getErrorMessage(error, '语音记录失败'))
+      setVoiceStatus('提交失败，本地临时录音已保留，可使用同一录音重试。')
+    } finally {
+      voiceSubmitLock.current.release()
+      setVoiceSubmitting(false)
+    }
   }
 
   const clearVoiceClip = () => {
+    if (voiceSubmitLock.current.busy) return
     deleteTempFile(voiceClipRef.current?.tempFilePath)
     voiceClipRef.current = null
     setVoiceClip(null)
-    setVoiceStatus('本地临时录音已清除；没有上传，也没有生成记忆。')
+    setVoiceError('')
+    setVoicePhase('recorded')
+    setVoiceStatus('本地临时录音已清除；未提交的录音不会成为 Memory。')
   }
 
   const saveObject = async () => {
@@ -389,12 +496,12 @@ export default function Page() {
     }
   }
 
-  const busy = loading || photoSubmitting
+  const busy = loading || photoSubmitting || voiceSubmitting
 
   return (
     <View className='page'>
       <View className='title'>记一下</View>
-      <View className='subtitle'>主动写下、拍下或录下需要记住的内容；图片只有服务端验证成功后才算真正记录。</View>
+      <View className='subtitle'>主动写下、拍下或录下需要记住的内容；图片和语音都必须通过服务端 Evidence 门禁后才算真正记录。</View>
 
       <View className='card'>
         <View className='card-title'>写一句</View>
@@ -436,12 +543,23 @@ export default function Page() {
       </View>
 
       <View className='card'>
-        <View className='card-title'>录一句（准备中）</View>
-        <View className='muted capture-note'>本轮只完成麦克风权限与本地录音壳。录音不会上传，不会生成 ASR 文本，也不会伪装成已确认 Memory。</View>
-        {!voiceRecording && <Button className='secondary-button' onClick={startVoiceRecording}>开始本地录音</Button>}
+        <View className='card-title'>录一句</View>
+        <View className='muted capture-note'>用户主动录音最长 60 秒。原始 MP3 会先进入私有 Evidence；服务端验证后再执行 ASR。失败、超时、空文本或低置信结果都不会生成 Memory。</View>
+        {!voiceRecording && <Button className='secondary-button' disabled={busy} onClick={startVoiceRecording}>开始录音</Button>}
         {voiceRecording && <Button className='primary-button recording-button' onClick={stopVoiceRecording}>停止录音</Button>}
-        {voicePermission === 'denied' && <Button className='secondary-button' onClick={openMicrophoneSettings}>打开设置恢复麦克风权限</Button>}
-        {voiceClip && <Button className='secondary-button' onClick={clearVoiceClip}>清除本地临时录音</Button>}
+        {voicePermission === 'denied' && <Button className='secondary-button' disabled={busy} onClick={openMicrophoneSettings}>打开设置恢复麦克风权限</Button>}
+        {voiceClip && (
+          <>
+            <View className={`capture-state capture-state-${voicePhase}`}>{VOICE_PHASE_TEXT[voicePhase]} · {Math.max(1, Math.round(voiceClip.durationMs / 1000))} 秒</View>
+            <Input className='field' type='text' placeholder='语音标题（可选）' value={voiceTitle} onInput={(e) => setVoiceTitle(e.detail.value)} />
+            <Button className='primary-button' disabled={busy} onClick={submitVoice}>
+              {voiceSubmitting ? VOICE_PHASE_TEXT[voicePhase] : voicePhase === 'failed' ? '重试这段录音' : '上传、转写并帮我记住'}
+            </Button>
+            <Button className='secondary-button' disabled={voiceSubmitting} onClick={clearVoiceClip}>清除本地临时录音</Button>
+          </>
+        )}
+        {voiceError && <View className='error'>{voiceError}</View>}
+        {voiceMemoryId && <View className='status'>✓ 语音已形成可信 Memory / Evidence · {voiceMemoryId}</View>}
         <View className={voicePermission === 'denied' ? 'error' : 'status'}>{voiceStatus}</View>
       </View>
 

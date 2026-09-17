@@ -11,10 +11,11 @@ from app.core.db import Base
 from app.models import utcnow
 
 
-# [人工注释][S1-005][S1-006] 原始图片先成为用户私有媒体，完成对象存储校验与
+# [人工注释][S1-004][S1-005][S1-006] 原始图片/语音先成为用户私有媒体，完成对象存储校验与
 # staging -> final 晋升后，才能通过 MediaEvidenceLink 进入可信 Evidence 链。
 class MediaKind(StrEnum):
     IMAGE = "IMAGE"
+    AUDIO = "AUDIO"
 
 
 class MediaStatus(StrEnum):
@@ -57,6 +58,24 @@ class MediaAsset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+
+# [人工注释][S1-PR18-FIX-002][S1-007] ASR 单飞租约与 READY 媒体生命周期分表维护。
+# media_id 主键保证跨进程同一媒体只有一个 claim；token 防止过期旧请求删除新租约。
+class MediaASRClaim(Base):
+    __tablename__ = "media_asr_claims"
+
+    media_id: Mapped[UUID] = mapped_column(
+        ForeignKey("media_assets.id", ondelete="CASCADE"), primary_key=True
+    )
+    claim_token: Mapped[UUID] = mapped_column(nullable=False)
+    lease_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
 
