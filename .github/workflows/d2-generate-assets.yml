@@ -1,0 +1,250 @@
+name: d2-generate-assets
+
+on:
+  push:
+    branches:
+      - ci/ui-visual-preview
+
+permissions:
+  contents: write
+
+jobs:
+  generate-and-validate:
+    if: github.event.head_commit.message == 'ci(temp): generate D2 visual assets'
+    runs-on: ubuntu-latest
+    env:
+      TZ: UTC
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci/ui-visual-preview
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Generate D2 test sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mobile/test/goldens
+          cat > mobile/test/visual_golden_test.dart <<'DART'
+          import 'package:flutter/material.dart';
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:jiyidashi/api_client.dart';
+          import 'package:jiyidashi/offline_queue.dart';
+          import 'package:jiyidashi/stage1_app.dart';
+
+          // [人工注释][CI-005] Golden 只冻结当前产品渲染结果，不为“好测试”改业务组件；
+          // 统一窗口、DPR、locale 与主题，Linux CI 是首阶段唯一权威像素基线。
+          const _goldenSize = Size(390, 844);
+
+          ThemeData _goldenTheme() => ThemeData(
+                useMaterial3: true,
+                colorSchemeSeed: const Color(0xFF446A57),
+                scaffoldBackgroundColor: const Color(0xFFF7F8F6),
+              );
+
+          class _GoldenApi extends JiYiApiClient {
+            _GoldenApi() : super(baseUrl: 'http://golden.invalid/v1') {
+              accessToken = 'golden-token';
+              authenticatedUserId = '00000000-0000-4000-8000-000000000001';
+            }
+
+            @override
+            Future<Map<String, dynamic>> getProfile() async => {
+                  'id': authenticatedUserId,
+                  'nickname': '测试用户',
+                  'email': 'golden@example.com',
+                  'timezone': 'Asia/Shanghai',
+                  'locale': 'zh-CN',
+                };
+
+            @override
+            Future<Map<String, dynamic>> getPrivacyStatus() async => {
+                  'recording_paused': false,
+                  'paused_until': null,
+                };
+          }
+
+          class _GoldenQueue extends OfflineQueueStore {
+            @override
+            Future<int> countAwaitingDelivery(String ownerUserId) async => 0;
+
+            @override
+            Future<void> close() async {}
+          }
+
+          Future<Key> _pumpSurface(
+            WidgetTester tester,
+            Widget child,
+          ) async {
+            tester.view.physicalSize = _goldenSize;
+            tester.view.devicePixelRatio = 1.0;
+            tester.binding.platformDispatcher.localeTestValue = const Locale('zh', 'CN');
+            addTearDown(() {
+              tester.view.resetPhysicalSize();
+              tester.view.resetDevicePixelRatio();
+              tester.binding.platformDispatcher.clearLocaleTestValue();
+            });
+
+            const key = ValueKey<String>('golden-surface');
+            await tester.pumpWidget(
+              MaterialApp(
+                debugShowCheckedModeBanner: false,
+                theme: _goldenTheme(),
+                home: RepaintBoundary(key: key, child: child),
+              ),
+            );
+            await tester.pumpAndSettle();
+            return key;
+          }
+
+          Future<Key> _pumpShell(WidgetTester tester) async {
+            final api = _GoldenApi();
+            return _pumpSurface(
+              tester,
+              AppShell(
+                api: api,
+                offlineQueue: _GoldenQueue(),
+                onLogout: () {},
+              ),
+            );
+          }
+
+          void main() {
+            testWidgets('golden: login', (tester) async {
+              // [人工注释][CI-005] 登录页使用真实 AuthPage 静态初始态，禁止网络调用和截图后处理。
+              final key = await _pumpSurface(
+                tester,
+                AuthPage(api: _GoldenApi(), onAuthenticated: () {}),
+              );
+              await expectLater(
+                find.byKey(key),
+                matchesGoldenFile('goldens/auth_login.png'),
+              );
+            });
+
+            testWidgets('golden: today home', (tester) async {
+              final key = await _pumpShell(tester);
+              await expectLater(
+                find.byKey(key),
+                matchesGoldenFile('goldens/home_today.png'),
+              );
+            });
+
+            testWidgets('golden: capture and object location', (tester) async {
+              final key = await _pumpShell(tester);
+              await tester.tap(find.text('记一下'));
+              await tester.pumpAndSettle();
+              await expectLater(
+                find.byKey(key),
+                matchesGoldenFile('goldens/capture_object.png'),
+              );
+            });
+
+            testWidgets('golden: memory query', (tester) async {
+              final key = await _pumpShell(tester);
+              await tester.tap(find.text('问记忆'));
+              await tester.pumpAndSettle();
+              await expectLater(
+                find.byKey(key),
+                matchesGoldenFile('goldens/memory_query.png'),
+              );
+            });
+
+            testWidgets('golden: profile and privacy controls', (tester) async {
+              // [人工注释][CI-005] Profile 使用确定性的 fake API 返回固定资料/暂停状态，
+              // 只稳定异步输入，不复制或重写产品 UI。
+              final key = await _pumpShell(tester);
+              await tester.tap(find.text('我的'));
+              await tester.pumpAndSettle();
+              await expectLater(
+                find.byKey(key),
+                matchesGoldenFile('goldens/profile_privacy.png'),
+              );
+            });
+          }
+          DART
+
+          cat > mobile/test/goldens/README.md <<'MD'
+          # Flutter Golden 基线
+
+          <!-- [人工注释][CI-005] 这些 PNG 是 CI-005 的可审查视觉资产；普通 CI 不得自动更新。 -->
+
+          首阶段权威环境固定为 Flutter 3.47.4 / Ubuntu、390×844、DPR 1.0、`zh-CN`、UTC。
+
+          显式更新命令：
+
+          ```bash
+          cd mobile
+          flutter test --update-goldens test/visual_golden_test.dart
+          ```
+
+          更新 PNG 后必须人工审查 diff，再与测试代码一起提交。CI 失败时 `visual-preview` 会上传当前基线和 `test/failures/**` 差异产物。
+          MD
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: mobile
+        run: flutter analyze
+
+      - name: Generate explicit golden baseline
+        working-directory: mobile
+        run: flutter test --update-goldens test/visual_golden_test.dart --reporter expanded
+
+      - name: Run all Flutter tests
+        working-directory: mobile
+        run: flutter test --reporter expanded
+
+      - name: Prove failure diff artifact generation
+        working-directory: mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf test/failures
+          cp test/goldens/home_today.png /tmp/home_today.png
+          cp test/goldens/auth_login.png test/goldens/home_today.png
+          set +e
+          flutter test test/visual_golden_test.dart --reporter expanded
+          status=$?
+          set -e
+          mv /tmp/home_today.png test/goldens/home_today.png
+          if [ "$status" -eq 0 ]; then
+            echo "Expected intentional golden mismatch to fail"
+            exit 1
+          fi
+          if ! find test/failures -type f -name '*.png' -print -quit | grep -q .; then
+            echo "Golden mismatch failed but no PNG diff artifact was generated"
+            exit 1
+          fi
+          rm -rf test/failures
+          flutter test test/visual_golden_test.dart --reporter expanded
+
+      - name: Build Android debug APK
+        working-directory: mobile
+        run: >-
+          flutter build apk --debug
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
+
+      - name: Diff check
+        run: git diff --check
+
+      - name: Commit validated visual assets only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "cfhlwl"
+          git config user.email "57704371+cfhlwl@users.noreply.github.com"
+          git add mobile/test/visual_golden_test.dart mobile/test/goldens
+          git commit -m "ci(mobile): add Flutter visual golden baseline"
+          git push origin HEAD:ci/ui-visual-preview
