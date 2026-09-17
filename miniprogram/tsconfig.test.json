@@ -12,6 +12,8 @@
   },
   "include": [
     "src/services/photoCapture.ts",
-    "tests/photoCapture.test.ts"
+    "src/services/voiceCapture.ts",
+    "tests/photoCapture.test.ts",
+    "tests/voiceCapture.test.ts"
   ]
 }

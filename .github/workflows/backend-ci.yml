@@ -76,5 +76,14 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_object_location_integration.py
 
+      - name: PostgreSQL voice ASR single-flight
+        # [人工注释][S1-PR18-FIX-002][S1-007] 用真实 PostgreSQL + 两个独立 Session
+        # 验证同一 media 并发最多一次 provider 调用，且最终 Memory/Evidence 各唯一。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_voice_asr_integration.py
+
       - name: Test
         run: pytest -q
