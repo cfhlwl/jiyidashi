@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.media_models import MediaAsset, MediaEvidenceLink, MediaKind, MediaStatus
 from app.models import Memory, MemorySource, MemoryType, SourceType
-from app.schemas import MediaUploadCreate, PhotoMemoryCreate
+from app.schemas import MediaUploadCreate, PhotoMemoryCreate, VoiceMemoryCreate
+from app.services.asr import ASRProvider, ASRProviderError
 from app.services.memory_service import (
     TrustedMemoryWrite,
     create_trusted_memory,
@@ -32,12 +33,23 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/heic",
     "image/heif",
 }
+ALLOWED_AUDIO_CONTENT_TYPES = {"audio/mpeg"}
 IMAGE_SIGNATURE_PREFIX_BYTES = 64
+AUDIO_SIGNATURE_PREFIX_BYTES = 1024
 HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs"}
 HEIF_BRANDS = HEIC_BRANDS | {b"mif1", b"msf1"}
 
+ASR_ERROR_STATUS = {
+    "ASR_PROVIDER_UNAVAILABLE": 503,
+    "ASR_TIMEOUT": 504,
+    "ASR_PROVIDER_FAILED": 502,
+    "ASR_PROVIDER_INVALID_RESPONSE": 502,
+    "ASR_CONFIDENCE_MISSING": 502,
+    "ASR_EMPTY_RESULT": 422,
+}
 
-# [人工注释][S1-005][S1-006] 媒体服务统一持有用户归属、服务端 object key 与 READY 门禁。
+
+# [人工注释][S1-004][S1-005][S1-006] 媒体服务统一持有用户归属、服务端 object key 与 READY 门禁。
 # 客户端只能携带 media_id，不能提交任意 object key 绕过所有权检查。
 class MediaError(RuntimeError):
     def __init__(self, code: str, status_code: int):
@@ -135,14 +147,59 @@ def _validate_image_signature(content_type: str, prefix: bytes) -> None:
         raise MediaError("MEDIA_IMAGE_INVALID", 409)
 
 
-def _validate_image_object(storage: ObjectStorage, asset: MediaAsset, object_key: str) -> None:
+def _validate_audio_signature(content_type: str, prefix: bytes) -> None:
+    # [人工注释][S1-004] 客户端声明 audio/mpeg 不能直接升级 READY。微信 MP3 可能
+    # 以 ID3 tag 或 MPEG frame sync 开头；两种合法入口均在服务端检查。
+    is_valid = False
+    if content_type == "audio/mpeg":
+        is_valid = prefix.startswith(b"ID3") or (
+            len(prefix) >= 2 and prefix[0] == 0xFF and (prefix[1] & 0xE0) == 0xE0
+        )
+    if not is_valid:
+        raise MediaError("MEDIA_AUDIO_INVALID", 409)
+
+
+def _validate_media_object(
+    storage: ObjectStorage,
+    asset: MediaAsset,
+    object_key: str,
+) -> None:
+    max_bytes = (
+        IMAGE_SIGNATURE_PREFIX_BYTES
+        if asset.kind == MediaKind.IMAGE
+        else AUDIO_SIGNATURE_PREFIX_BYTES
+    )
     try:
-        prefix = storage.read_prefix(object_key, IMAGE_SIGNATURE_PREFIX_BYTES)
+        prefix = storage.read_prefix(object_key, max_bytes)
     except ObjectNotFound as exc:
         raise MediaError("MEDIA_OBJECT_NOT_FOUND", 409) from exc
     except ObjectStorageError as exc:
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
-    _validate_image_signature(asset.content_type, prefix)
+
+    if asset.kind == MediaKind.IMAGE:
+        _validate_image_signature(asset.content_type, prefix)
+        return
+    if asset.kind == MediaKind.AUDIO:
+        _validate_audio_signature(asset.content_type, prefix)
+        return
+    raise MediaError("MEDIA_KIND_UNSUPPORTED", 422)
+
+
+def _validate_upload_policy(payload: MediaUploadCreate, content_type: str) -> None:
+    settings = get_settings()
+    if payload.kind == MediaKind.IMAGE:
+        if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+            raise MediaError("MEDIA_CONTENT_TYPE_UNSUPPORTED", 422)
+        if payload.size_bytes > settings.media_max_image_bytes:
+            raise MediaError("MEDIA_TOO_LARGE", 413)
+        return
+    if payload.kind == MediaKind.AUDIO:
+        if content_type not in ALLOWED_AUDIO_CONTENT_TYPES:
+            raise MediaError("MEDIA_CONTENT_TYPE_UNSUPPORTED", 422)
+        if payload.size_bytes > settings.media_max_audio_bytes:
+            raise MediaError("MEDIA_TOO_LARGE", 413)
+        return
+    raise MediaError("MEDIA_KIND_UNSUPPORTED", 422)
 
 
 def start_media_upload(
@@ -151,15 +208,10 @@ def start_media_upload(
     payload: MediaUploadCreate,
     storage: ObjectStorage,
 ) -> MediaUploadResult:
-    # [人工注释][S1-006] client_upload_id 是用户域内幂等键。相同请求复用媒体身份；
+    # [人工注释][S1-004][S1-006] 图片/语音共用 user-scoped client_upload_id 幂等协议；
     # 相同幂等键但元数据变化必须 409，防止另一份文件偷换进既有 Evidence 身份。
     content_type = _normalize_content_type(payload.content_type)
-    if payload.kind != MediaKind.IMAGE:
-        raise MediaError("MEDIA_KIND_UNSUPPORTED", 422)
-    if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
-        raise MediaError("MEDIA_CONTENT_TYPE_UNSUPPORTED", 422)
-    if payload.size_bytes > get_settings().media_max_image_bytes:
-        raise MediaError("MEDIA_TOO_LARGE", 413)
+    _validate_upload_policy(payload, content_type)
 
     existing = db.scalar(
         select(MediaAsset).where(
@@ -216,8 +268,8 @@ def complete_media_upload(
     media_id: UUID,
     storage: ObjectStorage,
 ) -> MediaAsset:
-    # [人工注释][S1-005][S1-006] READY 只能来自服务端校验。客户端 PUT 只写 staging；
-    # 服务端校验后晋升到 final，Evidence/下载只读取 final，旧 PUT 签名无法覆盖已确认原图。
+    # [人工注释][S1-004][S1-005][S1-006] READY 只能来自服务端校验。客户端 PUT 只写 staging；
+    # 图片/语音都要在 staging 与 final 各验一次真实文件头，再提交 READY。
     asset = db.scalar(
         select(MediaAsset)
         .where(MediaAsset.id == media_id, MediaAsset.user_id == user_id)
@@ -235,7 +287,7 @@ def complete_media_upload(
     except ObjectStorageError as exc:
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
     _validate_stored_object(asset, staged)
-    _validate_image_object(storage, asset, asset.upload_object_key)
+    _validate_media_object(storage, asset, asset.upload_object_key)
 
     try:
         storage.promote_object(asset.upload_object_key, asset.object_key)
@@ -245,8 +297,8 @@ def complete_media_upload(
     except ObjectStorageError as exc:
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
     _validate_stored_object(asset, final)
-    # [人工注释][S1-005] final 再验一次签名，封住“校验 staging 后、COPY 前旧 PUT 改写”的竞态。
-    _validate_image_object(storage, asset, asset.object_key)
+    # [人工注释][S1-004][S1-005] final 再验一次文件头，封住“校验 staging 后、COPY 前旧 PUT 改写”的竞态。
+    _validate_media_object(storage, asset, asset.object_key)
 
     asset.status = MediaStatus.READY
     asset.storage_etag = final.etag
@@ -270,8 +322,8 @@ def sign_media_download(
     media_id: UUID,
     storage: ObjectStorage,
 ) -> tuple[MediaAsset, PresignedTransfer]:
-    # [人工注释][S1-006] 下载签名前按 media_id + user_id 查库，再对 final key 签名。
-    # 对其他用户统一 404，禁止仅凭 object key 或猜测 UUID 跨用户读取。
+    # [人工注释][S1-006] 每次下载签名前按 media_id + user_id 查库，再对 final key 签名。
+    # 对其他用户统一 404，图片/语音都不能仅凭 object key 或猜测 UUID 跨用户读取。
     asset = _get_asset_for_user(db, user_id, media_id)
     if asset is None:
         raise MediaError("MEDIA_NOT_FOUND", 404)
@@ -284,13 +336,54 @@ def sign_media_download(
     return asset, transfer
 
 
+def _existing_media_memory(
+    db: Session,
+    user_id: UUID,
+    media_id: UUID,
+) -> Memory | None:
+    link = db.scalar(select(MediaEvidenceLink).where(MediaEvidenceLink.media_id == media_id))
+    if link is None:
+        return None
+    memory_id = db.scalar(
+        select(MemorySource.memory_id).where(MemorySource.id == link.memory_source_id)
+    )
+    if memory_id is None:
+        raise MediaError("MEDIA_EVIDENCE_INVALID", 409)
+    memory = get_memory_for_user(db, user_id, memory_id)
+    if memory is None:
+        # [人工注释][S1-007] 软删除后的语音 Memory 不得通过再次 ASR“复活”；
+        # 既有 MediaEvidenceLink 是永久幂等水位，删除语义优先。
+        raise MediaError("MEDIA_MEMORY_DELETED", 409)
+    return memory
+
+
+def _link_memory_source(
+    db: Session,
+    *,
+    asset: MediaAsset,
+    memory: Memory,
+    source_type: SourceType,
+) -> None:
+    source = db.scalar(
+        select(MemorySource).where(
+            MemorySource.memory_id == memory.id,
+            MemorySource.source_type == source_type,
+            MemorySource.source_id == str(asset.id),
+        )
+    )
+    if source is None:
+        raise MediaError("MEDIA_EVIDENCE_INVALID", 500)
+    db.add(MediaEvidenceLink(media_id=asset.id, memory_source_id=source.id))
+    db.flush()
+
+
 def create_photo_memory(
     db: Session,
     user_id: UUID,
     media_id: UUID,
     payload: PhotoMemoryCreate,
 ) -> tuple[MediaAsset, Memory]:
-    # [人工注释][S1-005] 图片 Memory 必须锁定当前用户已 READY 的媒体；同一 media 只允许
+    # [人工注释][S1-005] 图片 Memory 必须锁定当前用户已 READY 的 IMAGE；同一 media 只允许
     # 一个 Evidence 关联。重复提交返回既有 Memory，不制造第二条事实，也不做 OCR/Vision。
     asset = db.scalar(
         select(MediaAsset)
@@ -301,21 +394,11 @@ def create_photo_memory(
         raise MediaError("MEDIA_NOT_FOUND", 404)
     if asset.status != MediaStatus.READY:
         raise MediaError("MEDIA_NOT_READY", 409)
+    if asset.kind != MediaKind.IMAGE:
+        raise MediaError("MEDIA_KIND_MISMATCH", 409)
 
-    existing_link = db.scalar(
-        select(MediaEvidenceLink).where(MediaEvidenceLink.media_id == asset.id)
-    )
-    if existing_link is not None:
-        memory_id = db.scalar(
-            select(MemorySource.memory_id).where(
-                MemorySource.id == existing_link.memory_source_id
-            )
-        )
-        if memory_id is None:
-            raise MediaError("MEDIA_EVIDENCE_INVALID", 409)
-        existing_memory = get_memory_for_user(db, user_id, memory_id)
-        if existing_memory is None:
-            raise MediaError("MEDIA_MEMORY_DELETED", 409)
+    existing_memory = _existing_media_memory(db, user_id, asset.id)
+    if existing_memory is not None:
         return asset, existing_memory
 
     memory = create_trusted_memory(
@@ -338,15 +421,110 @@ def create_photo_memory(
         ),
     )
     db.flush()
-    source = db.scalar(
-        select(MemorySource).where(
-            MemorySource.memory_id == memory.id,
-            MemorySource.source_type == SourceType.USER_PHOTO,
-            MemorySource.source_id == str(asset.id),
-        )
+    _link_memory_source(
+        db,
+        asset=asset,
+        memory=memory,
+        source_type=SourceType.USER_PHOTO,
     )
-    if source is None:
-        raise MediaError("MEDIA_EVIDENCE_INVALID", 500)
-    db.add(MediaEvidenceLink(media_id=asset.id, memory_source_id=source.id))
-    db.flush()
     return asset, memory
+
+
+def create_voice_memory(
+    db: Session,
+    user_id: UUID,
+    media_id: UUID,
+    payload: VoiceMemoryCreate,
+    storage: ObjectStorage,
+    asr: ASRProvider,
+) -> tuple[MediaAsset, Memory]:
+    # [人工注释][S1-004][S1-007] 第一阶段同步 ASR 不在上游网络调用期间持有行锁：
+    # 先做 owner/READY/kind/既有 Evidence 检查并转写，真正写 Memory 前再锁 media 二次判定。
+    asset = _get_asset_for_user(db, user_id, media_id)
+    if asset is None:
+        raise MediaError("MEDIA_NOT_FOUND", 404)
+    if asset.status != MediaStatus.READY:
+        raise MediaError("MEDIA_NOT_READY", 409)
+    if asset.kind != MediaKind.AUDIO:
+        raise MediaError("MEDIA_KIND_MISMATCH", 409)
+
+    existing_memory = _existing_media_memory(db, user_id, asset.id)
+    if existing_memory is not None:
+        return asset, existing_memory
+
+    settings = get_settings()
+    if asset.size_bytes > settings.media_max_audio_bytes:
+        raise MediaError("MEDIA_TOO_LARGE", 413)
+    try:
+        audio = storage.read_object(asset.object_key, settings.media_max_audio_bytes)
+    except ObjectNotFound as exc:
+        raise MediaError("MEDIA_OBJECT_NOT_FOUND", 409) from exc
+    except ObjectStorageError as exc:
+        raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
+    if len(audio) != asset.size_bytes:
+        raise MediaError("MEDIA_OBJECT_SIZE_MISMATCH", 409)
+
+    try:
+        result = asr.transcribe(
+            audio,
+            content_type=asset.content_type,
+            filename=asset.original_filename,
+        )
+    except ASRProviderError as exc:
+        raise MediaError(exc.code, ASR_ERROR_STATUS.get(exc.code, 502)) from exc
+
+    transcript = result.text.strip()
+    if not transcript:
+        raise MediaError("ASR_EMPTY_RESULT", 422)
+    if result.confidence < settings.asr_min_confidence:
+        raise MediaError("ASR_LOW_CONFIDENCE", 422)
+
+    # [人工注释][S1-007] ASR 成功后才进入写事务；并发请求在这里串行化并二次检查
+    # MediaEvidenceLink，因此最多重复上游转写，不会制造两个 Memory/MemorySource/Evidence。
+    locked_asset = db.scalar(
+        select(MediaAsset)
+        .where(MediaAsset.id == media_id, MediaAsset.user_id == user_id)
+        .with_for_update()
+    )
+    if locked_asset is None:
+        raise MediaError("MEDIA_NOT_FOUND", 404)
+    if locked_asset.status != MediaStatus.READY:
+        raise MediaError("MEDIA_NOT_READY", 409)
+    if locked_asset.kind != MediaKind.AUDIO:
+        raise MediaError("MEDIA_KIND_MISMATCH", 409)
+
+    existing_memory = _existing_media_memory(db, user_id, locked_asset.id)
+    if existing_memory is not None:
+        return locked_asset, existing_memory
+
+    memory = create_trusted_memory(
+        db,
+        user_id,
+        TrustedMemoryWrite(
+            memory_type=MemoryType.VOICE,
+            title=payload.title,
+            content=transcript,
+            occurred_at=payload.occurred_at or datetime.now(UTC),
+            source_type=SourceType.USER_VOICE,
+            confidence=result.confidence,
+            is_confirmed=True,
+            metadata={
+                "media_id": str(locked_asset.id),
+                "media_kind": locked_asset.kind.value,
+                "capture_mode": "MANUAL",
+                "asr_provider": result.provider,
+                "asr_model": result.model,
+                "asr_confidence": result.confidence,
+            },
+            source_id=str(locked_asset.id),
+            evidence_text=transcript,
+        ),
+    )
+    db.flush()
+    _link_memory_source(
+        db,
+        asset=locked_asset,
+        memory=memory,
+        source_type=SourceType.USER_VOICE,
+    )
+    return locked_asset, memory
