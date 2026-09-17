@@ -4,13 +4,14 @@ on:
   push:
     branches:
       - ci/ui-visual-preview
+    paths:
+      - .github/workflows/d2-generate-assets.yml
 
 permissions:
   contents: write
 
 jobs:
   generate-and-validate:
-    if: github.event.head_commit.message == 'ci(temp): generate D2 visual assets'
     runs-on: ubuntu-latest
     env:
       TZ: UTC
