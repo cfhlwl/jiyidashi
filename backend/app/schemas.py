@@ -72,13 +72,18 @@ class UserCaptureSource(StrEnum):
 
 
 class ImageContentType(StrEnum):
-    # [人工注释][S1-005] Stage 1 只冻结常见静态图片类型；媒体基础 PR 不偷带
-    # 音频、ASR、OCR 或 Vision 格式/字段。
+    # [人工注释][S1-005] Stage 1 静态图片类型继续沿用已冻结协议。
     JPEG = "image/jpeg"
     PNG = "image/png"
     WEBP = "image/webp"
     HEIC = "image/heic"
     HEIF = "image/heif"
+
+
+class AudioContentType(StrEnum):
+    # [人工注释][S1-004][S1-007] E 线第一阶段只接受微信 RecorderManager 产出的 MP3；
+    # 客户端声明 MIME 只是候选元数据，READY 前仍由服务端检查真实文件头。
+    MPEG = "audio/mpeg"
 
 
 class RegisterRequest(BaseModel):
@@ -142,11 +147,14 @@ class MemoryCreate(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def reject_unverified_photo_source(self):
-        # [人工注释][S1-005] USER_PHOTO 不能由通用 Memory API 裸声明；必须走
-        # READY media -> /media/{id}/memory，保证真实原图进入 Evidence 链。
+    def reject_unverified_media_source(self):
+        # [人工注释][S1-004][S1-005][S1-007] USER_PHOTO / USER_VOICE 都不能由通用
+        # Memory API 裸声明。必须分别走 READY media -> 专用服务端 Evidence 流程，
+        # 防止客户端把字符串或伪造 ASR 直接升级为 confirmed fact。
         if self.capture_source == UserCaptureSource.USER_PHOTO:
             raise ValueError("USER_PHOTO requires a verified media object")
+        if self.capture_source == UserCaptureSource.USER_VOICE:
+            raise ValueError("USER_VOICE requires verified audio and server ASR")
         return self
 
 
@@ -179,13 +187,25 @@ class SignedTransfer(BaseModel):
 class MediaUploadCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # [人工注释][S1-006] client_upload_id 在用户域内承担重试幂等；客户端不能
-    # 提交 object_key、bucket、endpoint 或任意最终存储地址。
+    # [人工注释][S1-004][S1-006] 图片与语音复用同一个 opaque 上传协议；
+    # client_upload_id 只在用户域内做重试幂等，客户端仍不能提交任何 storage key。
     client_upload_id: UUID
     kind: MediaKind = MediaKind.IMAGE
-    content_type: ImageContentType
+    content_type: ImageContentType | AudioContentType
     size_bytes: int = Field(gt=0, le=50 * 1024 * 1024)
     original_filename: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="after")
+    def validate_kind_content_type_pair(self):
+        if self.kind == MediaKind.IMAGE and not isinstance(
+            self.content_type, ImageContentType
+        ):
+            raise ValueError("IMAGE requires an image content type")
+        if self.kind == MediaKind.AUDIO and not isinstance(
+            self.content_type, AudioContentType
+        ):
+            raise ValueError("AUDIO requires an audio content type")
+        return self
 
 
 class MediaRead(ORMModel):
@@ -225,6 +245,20 @@ class PhotoMemoryResponse(BaseModel):
     memory: MemoryRead
 
 
+class VoiceMemoryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # [人工注释][S1-004][S1-007] 客户端只能为这段主动录音附加标题/发生时间；
+    # transcript、confidence、confirmed、provider 状态全部由服务端 ASR/Evidence 链产生。
+    title: str | None = Field(default=None, max_length=240)
+    occurred_at: TimezoneAwareDateTime | None = None
+
+
+class VoiceMemoryResponse(BaseModel):
+    media: MediaRead
+    memory: MemoryRead
+
+
 class ObjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     category: str | None = Field(default=None, max_length=80)
@@ -248,12 +282,16 @@ class ObjectLocationCreate(BaseModel):
     place_id: UUID | None = None
 
     @model_validator(mode="after")
-    def reject_unverified_photo_source(self):
-        # [人工注释][S1-005] 当前没有“图片 -> 位置”的可信转换；禁止仅用
-        # USER_PHOTO 字符串伪造物品位置的图片 Evidence。
+    def reject_unverified_media_source(self):
+        # [人工注释][S1-004][S1-005][S1-007] 当前对象位置 API 只接受 USER_TEXT。
+        # 图片/语音都必须等待各自 verified media 派生链，不能仅靠 capture_source 字符串冒充 Evidence。
         if self.capture_source == UserCaptureSource.USER_PHOTO:
             raise ValueError(
                 "USER_PHOTO object locations require a future verified media flow"
+            )
+        if self.capture_source == UserCaptureSource.USER_VOICE:
+            raise ValueError(
+                "USER_VOICE object locations require verified audio and server ASR"
             )
         return self
 
@@ -281,8 +319,8 @@ class Evidence(BaseModel):
     occurred_at: datetime
     excerpt: str
     confidence: float
-    # [人工注释][S1-005] 图片 Evidence 只暴露 opaque media_id；原图读取仍必须
-    # 再走 owner 校验和短时下载签名。
+    # [人工注释][S1-004][S1-005] 图片/语音 Evidence 都只暴露 opaque media_id；
+    # 原始媒体读取仍必须再走 owner 校验和短时下载签名。
     media_id: UUID | None = None
 
 
