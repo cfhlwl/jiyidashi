@@ -1,0 +1,48 @@
+name: pr13-material-icons-bootstrap
+
+on:
+  push:
+    branches:
+      - ci/ui-visual-preview
+    paths:
+      - ".github/workflows/pr13-material-icons-bootstrap.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      # [人工注释][CI-005] 临时引导任务只提取 Flutter 3.47.4 自带的 MaterialIcons 字体；
+      # 最终正式 PR 会删除本 workflow，不把取字体辅助逻辑留在长期 CI 中。
+      - name: Extract Flutter Material Icons font
+        shell: bash
+        run: |
+          set -euo pipefail
+          font_path="$(find "$FLUTTER_ROOT" -type f -name 'MaterialIcons-Regular.otf' -print -quit)"
+          if [ -z "$font_path" ]; then
+            echo "MaterialIcons-Regular.otf not found in Flutter 3.47.4 SDK cache"
+            exit 1
+          fi
+          mkdir -p /tmp/pr13-material-icons
+          cp "$font_path" /tmp/pr13-material-icons/MaterialIcons-Regular.otf
+          sha256sum /tmp/pr13-material-icons/MaterialIcons-Regular.otf | tee /tmp/pr13-material-icons/SHA256.txt
+          printf '%s\n' "$font_path" > /tmp/pr13-material-icons/SOURCE_PATH.txt
+
+      - name: Upload pinned Material Icons font
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr13-material-icons-flutter-3.47.4-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
+          path: /tmp/pr13-material-icons/*
