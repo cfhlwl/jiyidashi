@@ -1,1 +1,56 @@
 @import '../../app.scss';
+
+/* [人工注释][S1-005] 图片卡片明确展示本地预览与服务端提交阶段，失败态不得伪装成成功。 */
+.capture-note {
+  line-height: 1.55;
+  margin-bottom: 12rpx;
+}
+
+.photo-preview-wrap {
+  position: relative;
+  margin-top: 20rpx;
+  padding: 16rpx;
+  border: 2rpx solid #e0e7e3;
+  border-radius: 18rpx;
+  background: #f9fbfa;
+}
+
+.photo-preview {
+  display: block;
+  width: 100%;
+  height: 360rpx;
+  border-radius: 14rpx;
+  background: #eef2ef;
+}
+
+.capture-state {
+  display: inline-flex;
+  margin-top: 14rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #edf3ef;
+  color: #365643;
+  font-size: 24rpx;
+}
+
+.capture-state-uploading,
+.capture-state-verifying,
+.capture-state-saving {
+  background: #fff6dd;
+  color: #735a10;
+}
+
+.capture-state-recorded {
+  background: #e8f5ed;
+  color: #2e6043;
+}
+
+.capture-state-failed {
+  background: #fdecea;
+  color: #9b2d25;
+}
+
+/* [人工注释][S1-004] 录音按钮只表示本地 RecorderManager 状态；不暗示上传、转写或 Memory 已完成。 */
+.recording-button {
+  background: #8a3a32;
+}

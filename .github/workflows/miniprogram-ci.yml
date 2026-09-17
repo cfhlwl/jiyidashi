@@ -32,6 +32,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Capture workflow tests
+        # [人工注释][S1-005][S1-004] 真实图片失败语义与麦克风权限恢复必须在生产构建前先过自动回归。
+        run: npm run test:capture
+
       - name: Build WeChat mini program
         # [人工注释][S1-FIX-007] CI 以生产模式验证：必须注入非本地 HTTPS endpoint，且产物关闭 API 编辑入口。
         env:

@@ -1,12 +1,149 @@
-import { Button, Input, Textarea, View } from '@tarojs/components'
-import { useState } from 'react'
+import { Button, Image, Input, Textarea, View } from '@tarojs/components'
+import Taro from '@tarojs/taro'
+import { useEffect, useRef, useState } from 'react'
 import {
+  completeImageMediaUpload,
+  createImageMediaUpload,
+  createPhotoMemory,
   createTextMemory,
   isAuthenticated,
   markObjectLocationStale,
+  putSignedMediaObject,
   rememberObjectLocation,
 } from '../../services/api'
+import {
+  createClientUploadId,
+  detectImageContentType,
+  ensureMicrophonePermission,
+  isUserSelectionCancellation,
+  PhotoSubmissionLock,
+  RecorderLifecycleController,
+  recoverMicrophonePermission,
+  submitPhotoMemory,
+  type MicrophonePermissionAdapter,
+  type PhotoSubmissionPhase,
+} from '../../services/photoCapture'
 import './index.scss'
+
+type SelectedPhoto = {
+  tempFilePath: string
+  originalFilename: string | null
+  clientUploadId: string
+  sizeBytes: number
+}
+
+type VoiceClip = {
+  tempFilePath: string
+  durationMs: number
+}
+
+const PHOTO_PHASE_TEXT: Record<PhotoSubmissionPhase, string> = {
+  selected: '待上传',
+  uploading: '上传中',
+  verifying: '服务端验证中',
+  saving: '正在写入记忆',
+  recorded: '已记录',
+  failed: '失败，可重试',
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'errMsg' in error) {
+    return String((error as { errMsg?: unknown }).errMsg || fallback)
+  }
+  return fallback
+}
+
+function filenameFromPath(filePath: string): string | null {
+  const normalized = filePath.split('?')[0].replace(/\\/g, '/')
+  const value = normalized.split('/').pop()?.trim()
+  return value || null
+}
+
+// [人工注释][S1-005] MIME 预判只读取文件头 64B，不先把原图整体搬进 JS 内存；服务端 create upload 仍负责权威大小门禁。
+function readFilePrefix(filePath: string, maxBytes: number): Promise<ArrayBuffer> {
+  const fileSystem = Taro.getFileSystemManager()
+  return new Promise((resolve, reject) => {
+    fileSystem.readFile({
+      filePath,
+      position: 0,
+      length: maxBytes,
+      success: (result) => {
+        if (result.data instanceof ArrayBuffer) {
+          resolve(result.data)
+          return
+        }
+        reject(new Error('无法读取图片文件头'))
+      },
+      fail: (error) => reject(new Error(getErrorMessage(error, '读取图片文件头失败'))),
+    })
+  })
+}
+
+// [人工注释][S1-005] 完整原图只允许在服务端 create upload 接受 size_bytes 后读取，用于真实 signed PUT；超限请求在此之前由服务端拒绝。
+function readFileAsArrayBuffer(filePath: string): Promise<ArrayBuffer> {
+  const fileSystem = Taro.getFileSystemManager()
+  return new Promise((resolve, reject) => {
+    fileSystem.readFile({
+      filePath,
+      success: (result) => {
+        if (result.data instanceof ArrayBuffer) {
+          resolve(result.data)
+          return
+        }
+        reject(new Error('无法读取图片原始数据'))
+      },
+      fail: (error) => reject(new Error(getErrorMessage(error, '读取图片失败'))),
+    })
+  })
+}
+
+// [人工注释][S1-004] 本地录音文件生命周期属于隐私边界；页面清除、换录音和卸载都只能做本地 unlink，不触发上传或 ASR。
+function deleteTempFile(filePath?: string | null): void {
+  if (!filePath) return
+  try {
+    Taro.getFileSystemManager().unlink({ filePath, fail: () => undefined })
+  } catch {
+    // 临时文件可能已被微信回收；这里只做 best-effort 生命周期清理。
+  }
+}
+
+// [人工注释][S1-004] 麦克风权限只服务本地 RecorderManager 壳；拒绝后必须由用户主动进入设置恢复，不做隐式授权兜底。
+const microphonePermissionAdapter: MicrophonePermissionAdapter = {
+  current: async () => {
+    const setting = await Taro.getSetting()
+    return setting.authSetting['scope.record']
+  },
+  request: async () => {
+    try {
+      await Taro.authorize({ scope: 'scope.record' })
+      return true
+    } catch {
+      return false
+    }
+  },
+  openSettings: async () => {
+    try {
+      const setting = await Taro.openSetting()
+      return setting.authSetting['scope.record'] === true
+    } catch {
+      return false
+    }
+  },
+}
+
+// [人工注释][S1-004] 微信 RecorderManager 是全局唯一实例；底层 onStart/onStop/onError 在模块生命周期只注册一次，页面只订阅 controller。
+const recorderManager = Taro.getRecorderManager()
+const recorderController = new RecorderLifecycleController(
+  {
+    onStart: (callback) => recorderManager.onStart(callback),
+    onStop: (callback) => recorderManager.onStop(callback),
+    onError: (callback) => recorderManager.onError(callback),
+    start: () => recorderManager.start({ duration: 60_000, format: 'mp3' }),
+    stop: () => recorderManager.stop(),
+  },
+  (filePath) => deleteTempFile(filePath),
+)
 
 export default function Page() {
   const [title, setTitle] = useState('')
@@ -15,6 +152,49 @@ export default function Page() {
   const [locationText, setLocationText] = useState('')
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null)
+  const [photoTitle, setPhotoTitle] = useState('')
+  const [photoContent, setPhotoContent] = useState('')
+  const [photoPhase, setPhotoPhase] = useState<PhotoSubmissionPhase>('selected')
+  const [photoError, setPhotoError] = useState('')
+  const [photoMemoryId, setPhotoMemoryId] = useState<string | null>(null)
+  const [photoSubmitting, setPhotoSubmitting] = useState(false)
+  const photoSubmitLock = useRef(new PhotoSubmissionLock())
+
+  const [voicePermission, setVoicePermission] = useState<'unknown' | 'granted' | 'denied'>('unknown')
+  const [voiceRecording, setVoiceRecording] = useState(false)
+  const [voiceClip, setVoiceClip] = useState<VoiceClip | null>(null)
+  const [voiceStatus, setVoiceStatus] = useState('本轮只保存本地临时录音，不上传、不转写、不生成记忆。')
+  const voiceClipRef = useRef<VoiceClip | null>(null)
+
+  useEffect(() => {
+    // [人工注释][S1-004] 页面只订阅模块级 RecorderLifecycleController；卸载先取消 subscriber，
+    // 若仍在录音则 controller 会 stop，并在全局 onStop 返回后直接删除新生成的 tempFilePath，禁止回调已卸载页面。
+    const unsubscribeRecorder = recorderController.subscribe({
+      onStart: () => {
+        setVoiceRecording(true)
+        setVoiceStatus('正在录音…停止后仅保留本地临时文件。')
+      },
+      onStop: (result) => {
+        setVoiceRecording(false)
+        const nextClip = { tempFilePath: result.tempFilePath, durationMs: result.duration }
+        voiceClipRef.current = nextClip
+        setVoiceClip(nextClip)
+        setVoiceStatus(`本地录音已完成（${Math.max(1, Math.round(result.duration / 1000))} 秒），等待后续 S1-007；本轮不会上传或生成文字。`)
+      },
+      onError: (error) => {
+        setVoiceRecording(false)
+        setVoiceStatus(getErrorMessage(error, '录音失败，请重试'))
+      },
+    })
+
+    return () => {
+      unsubscribeRecorder()
+      deleteTempFile(voiceClipRef.current?.tempFilePath)
+      voiceClipRef.current = null
+    }
+  }, [])
 
   const ensureLogin = () => {
     if (isAuthenticated()) return true
@@ -36,10 +216,137 @@ export default function Page() {
       setTitle('')
       setStatus(`✓ 已经帮你记住 · ${memory.id}`)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '保存失败')
+      setStatus(getErrorMessage(error, '保存失败'))
     } finally {
       setLoading(false)
     }
+  }
+
+  const choosePhoto = async () => {
+    if (photoSubmitLock.current.busy) return
+    try {
+      // [人工注释][S1-005] 只有用户主动点击才调用微信统一媒体选择器，一次只取一张原图；不会后台扫描相册。
+      const result = await Taro.chooseMedia({
+        count: 1,
+        mediaType: ['image'],
+        sizeType: ['original'],
+        sourceType: ['album', 'camera'],
+      })
+      const selectedFile = result.tempFiles[0]
+      const tempFilePath = selectedFile?.tempFilePath
+      if (!tempFilePath || typeof selectedFile.size !== 'number') return
+      setSelectedPhoto({
+        tempFilePath,
+        originalFilename: filenameFromPath(tempFilePath),
+        clientUploadId: createClientUploadId(),
+        sizeBytes: selectedFile.size,
+      })
+      setPhotoPhase('selected')
+      setPhotoError('')
+      setPhotoMemoryId(null)
+    } catch (error) {
+      if (isUserSelectionCancellation(error)) {
+        // [人工注释][S1-005] 用户取消选择时尚未调用 create upload，因此不会产生服务器媒体记录。
+        setPhotoError('')
+        return
+      }
+      setPhotoError(getErrorMessage(error, '选择图片失败'))
+      setPhotoPhase('failed')
+    }
+  }
+
+  const submitPhoto = async () => {
+    if (!ensureLogin()) return
+    if (!selectedPhoto) {
+      setPhotoError('请先拍照或选择一张图片')
+      return
+    }
+    if (!photoContent.trim()) {
+      setPhotoError('请写下这张图片需要帮你记住的内容')
+      return
+    }
+    // [人工注释][S1-005] 同步单飞锁在 React state 更新前生效，阻止快速双击产生并发 create upload。
+    if (!photoSubmitLock.current.tryAcquire()) return
+    setPhotoSubmitting(true)
+    setPhotoError('')
+    setStatus('')
+    try {
+      const prefix = await readFilePrefix(selectedPhoto.tempFilePath, 64)
+      const contentType = detectImageContentType(prefix)
+      if (!contentType) {
+        throw new Error('仅支持 JPEG、PNG、WebP、HEIC、HEIF 图片')
+      }
+
+      const result = await submitPhotoMemory(
+        {
+          clientUploadId: selectedPhoto.clientUploadId,
+          contentType,
+          sizeBytes: selectedPhoto.sizeBytes,
+          originalFilename: selectedPhoto.originalFilename,
+          loadBody: () => readFileAsArrayBuffer(selectedPhoto.tempFilePath),
+          title: photoTitle,
+          content: photoContent,
+        },
+        {
+          createUpload: createImageMediaUpload,
+          putUpload: putSignedMediaObject,
+          completeUpload: completeImageMediaUpload,
+          createPhotoMemory,
+        },
+        setPhotoPhase,
+      )
+      setPhotoMemoryId(result.memoryId)
+      setPhotoTitle('')
+      setPhotoContent('')
+    } catch (error) {
+      setPhotoError(getErrorMessage(error, '图片记录失败'))
+    } finally {
+      photoSubmitLock.current.release()
+      setPhotoSubmitting(false)
+    }
+  }
+
+  const startVoiceRecording = async () => {
+    try {
+      const granted = await ensureMicrophonePermission(microphonePermissionAdapter)
+      if (!granted) {
+        setVoicePermission('denied')
+        setVoiceStatus('麦克风权限未开启。可点击“打开设置”恢复；本轮不会创建任何语音记忆。')
+        return
+      }
+      setVoicePermission('granted')
+      if (voiceClipRef.current) {
+        deleteTempFile(voiceClipRef.current.tempFilePath)
+        voiceClipRef.current = null
+        setVoiceClip(null)
+      }
+      if (!recorderController.start()) {
+        setVoiceStatus('上一段录音仍在停止并清理，请稍后再试。')
+      }
+    } catch (error) {
+      setVoiceStatus(getErrorMessage(error, '无法开始录音'))
+    }
+  }
+
+  const stopVoiceRecording = () => {
+    try {
+      recorderController.stop()
+    } catch (error) {
+      setVoiceStatus(getErrorMessage(error, '停止录音失败'))
+    }
+  }
+
+  const openMicrophoneSettings = async () => {
+    const granted = await recoverMicrophonePermission(microphonePermissionAdapter)
+    setVoicePermission(granted ? 'granted' : 'denied')
+    setVoiceStatus(granted ? '麦克风权限已恢复，可以开始本地录音。' : '麦克风权限仍未开启，本轮不会录音或提交任何语音数据。')
+  }
+
+  const clearVoiceClip = () => {
+    deleteTempFile(voiceClipRef.current?.tempFilePath)
+    voiceClipRef.current = null
+    setVoiceClip(null)
+    setVoiceStatus('本地临时录音已清除；没有上传，也没有生成记忆。')
   }
 
   const saveObject = async () => {
@@ -55,7 +362,7 @@ export default function Page() {
       await rememberObjectLocation(objectName, locationText)
       setStatus(`✓ 已记录：${objectName.trim()} 在 ${locationText.trim()}`)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '保存失败')
+      setStatus(getErrorMessage(error, '保存失败'))
     } finally {
       setLoading(false)
     }
@@ -76,30 +383,74 @@ export default function Page() {
       setStatus(`✓ 已标记：${objectName.trim()} 已经不在原位置`)
       setLocationText('')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '操作失败')
+      setStatus(getErrorMessage(error, '操作失败'))
     } finally {
       setLoading(false)
     }
   }
 
+  const busy = loading || photoSubmitting
+
   return (
     <View className='page'>
       <View className='title'>记一下</View>
-      <View className='subtitle'>记录新的可信记忆，也可以明确告诉迹忆“东西已经不在那里”。</View>
+      <View className='subtitle'>主动写下、拍下或录下需要记住的内容；图片只有服务端验证成功后才算真正记录。</View>
 
       <View className='card'>
         <View className='card-title'>写一句</View>
         <Input className='field' type='text' placeholder='标题（可选）' value={title} onInput={(e) => setTitle(e.detail.value)} />
         <Textarea className='field textarea' placeholder='例如：老张周五下午来公司取合同。' value={content} onInput={(e) => setContent(e.detail.value)} />
-        <Button className='primary-button' disabled={loading} onClick={saveMemory}>帮我记住</Button>
+        <Button className='primary-button' disabled={busy} onClick={saveMemory}>帮我记住</Button>
+      </View>
+
+      <View className='card'>
+        <View className='card-title'>拍张照片记住</View>
+        <View className='muted capture-note'>主动拍照或从相册选择一张原图。迹忆不会后台扫描相册，也不会在本阶段识图或 OCR。</View>
+        <Button className='secondary-button' disabled={busy} onClick={choosePhoto}>拍照或选择图片</Button>
+        {selectedPhoto && (
+          <View className='photo-preview-wrap'>
+            <Image className='photo-preview' src={selectedPhoto.tempFilePath} mode='aspectFit' />
+            <View className={`capture-state capture-state-${photoPhase}`}>{PHOTO_PHASE_TEXT[photoPhase]}</View>
+          </View>
+        )}
+        {selectedPhoto && (
+          <>
+            <Input className='field' type='text' placeholder='图片标题（可选）' value={photoTitle} onInput={(e) => setPhotoTitle(e.detail.value)} />
+            <Textarea
+              className='field textarea'
+              placeholder='请自己写下需要记住的内容，例如：这是出差报销需要的酒店发票。'
+              value={photoContent}
+              onInput={(e) => setPhotoContent(e.detail.value)}
+            />
+            <Button
+              className='primary-button'
+              disabled={busy || photoPhase === 'recorded'}
+              onClick={submitPhoto}
+            >
+              {photoPhase === 'failed' ? '重试记录这张图片' : photoSubmitting ? PHOTO_PHASE_TEXT[photoPhase] : '上传并帮我记住'}
+            </Button>
+          </>
+        )}
+        {photoError && <View className='error'>{photoError}</View>}
+        {photoMemoryId && <View className='status'>✓ 图片已通过服务端验证并记录 · {photoMemoryId}</View>}
+      </View>
+
+      <View className='card'>
+        <View className='card-title'>录一句（准备中）</View>
+        <View className='muted capture-note'>本轮只完成麦克风权限与本地录音壳。录音不会上传，不会生成 ASR 文本，也不会伪装成已确认 Memory。</View>
+        {!voiceRecording && <Button className='secondary-button' onClick={startVoiceRecording}>开始本地录音</Button>}
+        {voiceRecording && <Button className='primary-button recording-button' onClick={stopVoiceRecording}>停止录音</Button>}
+        {voicePermission === 'denied' && <Button className='secondary-button' onClick={openMicrophoneSettings}>打开设置恢复麦克风权限</Button>}
+        {voiceClip && <Button className='secondary-button' onClick={clearVoiceClip}>清除本地临时录音</Button>}
+        <View className={voicePermission === 'denied' ? 'error' : 'status'}>{voiceStatus}</View>
       </View>
 
       <View className='card'>
         <View className='card-title'>东西在哪</View>
         <Input className='field' type='text' placeholder='物品，例如：护照' value={objectName} onInput={(e) => setObjectName(e.detail.value)} />
         <Input className='field' type='text' placeholder='位置，例如：书房左侧柜子第二层' value={locationText} onInput={(e) => setLocationText(e.detail.value)} />
-        <Button className='secondary-button' disabled={loading} onClick={saveObject}>记录当前位置</Button>
-        <Button className='secondary-button' disabled={loading} onClick={staleObject}>已经不在那里</Button>
+        <Button className='secondary-button' disabled={busy} onClick={saveObject}>记录当前位置</Button>
+        <Button className='secondary-button' disabled={busy} onClick={staleObject}>已经不在那里</Button>
       </View>
 
       {status && <View className='status'>{status}</View>}
