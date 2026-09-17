@@ -3,6 +3,7 @@
 <!-- [人工注释][DOC-PROGRESS-026] D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- [人工注释][DOC-PROGRESS-027] Stage 1 第三批 A/B/C/D 第一阶段全部完成；Stage 1 本身仍未完成，下一阶段继续 S1-004/S1-007、S1-017、S1-008、S1-018、S1-021、S1-022、S1-025、S1-026；Stage 2 继续明确未开始。 -->
 <!-- [人工注释][DOC-PROGRESS-028] Stage 1G / Issue #16 Product UI & Design System 已基于 main=677b6ce9 启动；第一阶段先冻结 Flutter UI 审查清单、design token 与组件边界，S1-027 标 🔵，Stage 2 继续未启动。 -->
+<!-- [人工注释][DOC-PROGRESS-029] Stage 1G Flutter 第一阶段已完成 G1~G6：生产 Theme/token/共享组件、5 个核心页面产品化、Evidence/隐私/离线状态视觉、Golden 显式重基线、完整 CJK/MaterialIcons 确定性字体门禁及 Android/iOS 最终验收均通过；S1-027 转 🟠，等待正式 UI 审查与合并，Stage 2 继续未启动。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-17  
@@ -106,7 +107,7 @@
 | S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
 | S1-025 | 基础提醒模型 | ⬜ | 仅从记忆产生提醒，不做完整 Todo |
 | S1-026 | 首次使用引导 | ⬜ | 待统一入口稳定后，目标 3 分钟内完成“记住 → 找回”Aha Moment |
-| S1-027 | Product UI / Design System | 🔵 | Issue #16 / G 线已启动；先完成 Flutter UI audit、design token、组件边界与 Golden 迁移方案，不改业务语义，不进入 Stage 2 |
+| S1-027 | Product UI / Design System | 🟠 | PR #17 Flutter 第一阶段开发与自动验收完成；Theme/token/共享组件、5 个核心页面、Evidence/隐私/离线状态、Golden/CJK/MaterialIcons、Android/iOS 均已验证，等待正式 UI 审查与合并；Stage 2 未启动 |
 
 ## 2.1 Stage 1 第三批 A/B/C/D 第一阶段收口
 
@@ -139,7 +140,7 @@
 | --- | --- | --- | --- | --- |
 | 1 | E：Voice Pipeline | `S1-004 + S1-007` | ⬜ | 音频上传、ASR、原始音频 Evidence、失败/重试语义；完成后才能把 S1-004 转 ✅ |
 | 1 | F：Offline Sync | `S1-017` | ⬜ | 服务端幂等 + Flutter 自动 flush；必须覆盖服务端已提交但响应丢失的 unknown-commit 场景 |
-| 1 | G：Product UI / Design System | 正式 UI 设计与组件规范 | ⬜ | 与 E/F 可并行；先 Flutter 核心页面，再同步微信小程序；CI-005 负责防视觉回归，不等于 UI redesign |
+| 1 | G：Product UI / Design System | 正式 UI 设计与组件规范 | 🟠 | Flutter 第一阶段已完成并等待正式 UI 审查/合并；微信小程序视觉同步仍属后续独立工作，Stage 2 未启动 |
 | 2 | Unified Capture | `S1-008` | ⬜ | 等语音协议稳定后统一文字/图片/语音入口 |
 | 2 | Memory Edit | `S1-018` | ⬜ | 独立 Backend/客户端 PR |
 | 3 | Data Delete | `S1-021` | ⬜ | DB / Cache / Storage 全删除，明确对象存储删除和失败恢复语义 |
@@ -162,7 +163,7 @@
 
 | 工作线 | 范围 | 当前结果 | 状态 |
 | --- | --- | --- | --- |
-| G：Product UI / Design System | `S1-027`；Flutter 第一阶段 | Issue #16；`docs/STAGE1_G_UI_AUDIT.md` 已冻结现状审查、design token、组件边界与 Golden 迁移策略 | 🔵 |
+| G：Product UI / Design System | `S1-027`；Flutter 第一阶段 | PR #17；G1~G6 开发、Golden 重基线、最终视觉 artifact、Android/iOS 验收完成，等待正式 UI 审查与合并 | 🟠 |
 
 # 3. Stage 2：自动记
 
