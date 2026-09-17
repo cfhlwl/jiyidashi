@@ -530,72 +530,139 @@ class _CapturePageState extends State<CapturePage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final visibleResult = result == null ? null : _visibleCaptureResult(result!);
+    final resultKind = result == null ? null : _captureStatusKind(result!);
     return JiYiPageFrame(
       title: '记一下',
-      subtitle: '记录新的可信记忆，也可以明确纠正已经失效的位置。',
+      subtitle: '把重要的内容或物品位置清楚地记下来。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (offlinePendingCount > 0) ...[
-            // [人工注释][S1-016] 本批只展示当前账号的本机待发送事实，不提供“立即同步”按钮，避免越界实现 S1-017。
-            _InfoCard(
+            // [人工注释][S1-016][S1-027] 这里只展示当前账号 SQLite 已持久化的待发送事实；不新增手动同步或暗示已经上传。
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.warning,
               title: '本机待发送',
-              detail: '有 $offlinePendingCount 条记录已安全保存在本机，等待后续联网同步。',
+              message: '有 $offlinePendingCount 条记录已安全保存在本机，待联网后发送。',
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: JiYiSpacing.md),
           ],
-          Card(
-            elevation: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('写一句', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 12),
-                  TextField(controller: titleController, decoration: const InputDecoration(labelText: '标题（可选）')),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: contentController,
-                    minLines: 3,
-                    maxLines: 6,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '例如：老张周五下午来公司取合同。'),
+          JiYiSectionCard(
+            leading: Icon(
+              Icons.edit_note_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            title: '写一句',
+            subtitle: '适合记录临时安排、承诺、重要提醒或一段想留下的话。',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: titleController,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: '标题（可选）',
+                    prefixIcon: Icon(Icons.title_outlined),
                   ),
-                  const SizedBox(height: 12),
-                  FilledButton(onPressed: loading ? null : saveTextMemory, child: const Text('帮我记住')),
-                ],
-              ),
+                ),
+                const SizedBox(height: JiYiSpacing.sm),
+                TextField(
+                  controller: contentController,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: const InputDecoration(
+                    labelText: '内容',
+                    hintText: '例如：老张周五下午来公司取合同。',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.md),
+                FilledButton.icon(
+                  onPressed: loading ? null : saveTextMemory,
+                  icon: loading
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.bookmark_add_outlined),
+                  label: const Text('帮我记住'),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            elevation: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('东西在哪', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 12),
-                  TextField(controller: objectController, decoration: const InputDecoration(labelText: '物品', hintText: '护照')),
-                  const SizedBox(height: 8),
-                  TextField(controller: locationController, decoration: const InputDecoration(labelText: '位置', hintText: '书房左侧柜子第二层')),
-                  const SizedBox(height: 12),
-                  FilledButton.tonal(onPressed: loading ? null : saveObjectLocation, child: const Text('记录当前位置')),
-                  const SizedBox(height: 8),
-                  OutlinedButton(onPressed: loading ? null : markObjectStale, child: const Text('已经不在那里')),
-                ],
-              ),
+          const SizedBox(height: JiYiSpacing.md),
+          JiYiSectionCard(
+            leading: Icon(
+              Icons.inventory_2_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            title: '东西在哪',
+            subtitle: '记录物品的当前位置；如果已经移动，可以明确标记原位置失效。',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: objectController,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: '物品',
+                    hintText: '例如：护照',
+                    prefixIcon: Icon(Icons.inventory_2_outlined),
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.sm),
+                TextField(
+                  controller: locationController,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(
+                    labelText: '位置',
+                    hintText: '例如：书房左侧柜子第二层',
+                    prefixIcon: Icon(Icons.place_outlined),
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.md),
+                FilledButton.tonalIcon(
+                  onPressed: loading ? null : saveObjectLocation,
+                  icon: const Icon(Icons.add_location_alt_outlined),
+                  label: const Text('记录当前位置'),
+                ),
+                const SizedBox(height: JiYiSpacing.xs),
+                OutlinedButton.icon(
+                  onPressed: loading ? null : markObjectStale,
+                  icon: const Icon(Icons.location_off_outlined),
+                  label: const Text('已经不在那里'),
+                ),
+              ],
             ),
           ),
-          if (result != null) ...[
-            const SizedBox(height: 12),
-            Text(result!),
+          if (visibleResult != null && resultKind != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            // [人工注释][S1-027] 原始 result 仍保留给现有行为测试与状态机；展示层只隐藏无产品价值的内部 id/clientUuid 后缀。
+            JiYiStatusBanner(
+              kind: resultKind,
+              message: visibleResult,
+            ),
           ],
         ],
       ),
     );
   }
+}
+
+// [人工注释][S1-027] Capture 状态样式只根据现有结果文案分类，不改变任何成功/失败/离线判断来源。
+JiYiStatusKind _captureStatusKind(String value) {
+  if (value.startsWith('操作失败：')) return JiYiStatusKind.error;
+  if (value.contains('已保存到本机')) return JiYiStatusKind.warning;
+  return JiYiStatusKind.success;
+}
+
+// [人工注释][S1-027] 内部 UUID/Memory id 继续存在于业务返回值中，但不直接暴露给客户；错误文案与可理解的位置结果原样保留。
+String _visibleCaptureResult(String value) {
+  if (!value.startsWith('✓')) return value;
+  final separator = value.lastIndexOf(' · ');
+  if (separator <= 0) return value;
+  return value.substring(0, separator);
 }
 
 String _evidenceSourceLabel(String? sourceType) {
