@@ -973,38 +973,93 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // [人工注释][S1-027] G5 只统一 Profile 的 loading/error/account 信息层级；资料仍完全来自 getProfile() 的真实响应。
+    final theme = Theme.of(context);
     return JiYiPageFrame(
       title: '我的',
-      subtitle: '正式账号与个人记忆空间。',
+      subtitle: '管理账号信息、时区和隐私控制。',
       child: FutureBuilder<Map<String, dynamic>>(
         future: api.getProfile(),
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const JiYiSectionCard(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: JiYiSpacing.lg),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: JiYiSpacing.sm),
+                    Text('正在读取个人资料…'),
+                  ],
+                ),
+              ),
+            );
           }
           if (snapshot.hasError) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('无法读取个人资料'),
-                const SizedBox(height: 12),
-                OutlinedButton(onPressed: onLogout, child: const Text('退出登录')),
+                const JiYiStatusBanner(
+                  kind: JiYiStatusKind.error,
+                  title: '无法读取个人资料',
+                  message: '请检查网络后重试；你也可以先安全退出当前账号。',
+                ),
+                const SizedBox(height: JiYiSpacing.md),
+                OutlinedButton.icon(
+                  onPressed: onLogout,
+                  icon: const Icon(Icons.logout),
+                  label: const Text('退出登录'),
+                ),
               ],
             );
           }
+
           final profile = snapshot.data!;
-          // [人工注释][S1-002] 展示服务端保存的时区，后续时间轴自然日都以该 IANA timezone 为准。
+          // [人工注释][S1-002][S1-027] 时区继续展示服务端保存的真实 IANA timezone；UI 不自行猜测或覆盖。
+          final nickname = profile['nickname']?.toString() ?? '用户';
+          final email = profile['email']?.toString() ?? '';
+          final timezone = profile['timezone']?.toString() ?? '未知';
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _InfoCard(
-                title: profile['nickname']?.toString() ?? '用户',
-                detail: '${profile['email'] ?? ''}\n时区：${profile['timezone']}',
+              JiYiSectionCard(
+                leading: CircleAvatar(
+                  backgroundColor: theme.colorScheme.primaryContainer,
+                  foregroundColor: theme.colorScheme.onPrimaryContainer,
+                  child: const Icon(Icons.person_outline),
+                ),
+                title: nickname,
+                subtitle: '当前登录账号',
+                child: Column(
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.mail_outline),
+                      title: const Text('邮箱'),
+                      subtitle: Text(email.isEmpty ? '未提供' : email),
+                    ),
+                    const Divider(),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.schedule_outlined),
+                      title: const Text('时区'),
+                      subtitle: Text(timezone),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: JiYiSpacing.md),
               _PrivacyControls(api: api),
-              const SizedBox(height: 12),
-              OutlinedButton(onPressed: onLogout, child: const Text('退出登录')),
+              const SizedBox(height: JiYiSpacing.md),
+              OutlinedButton.icon(
+                onPressed: onLogout,
+                icon: const Icon(Icons.logout),
+                label: const Text('退出登录'),
+              ),
             ],
           );
         },
@@ -1026,6 +1081,8 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
   Map<String, dynamic>? status;
   bool loading = true;
   String? message;
+  // [人工注释][S1-027] 仅记录当前提示的视觉类型，不改变 pause/resume API 的成功失败判定。
+  bool messageIsError = false;
 
   @override
   void initState() {
@@ -1036,11 +1093,27 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
   Future<void> refresh() async {
     try {
       final next = await widget.api.getPrivacyStatus();
-      if (mounted) setState(() => status = next);
+      if (mounted) {
+        // [人工注释][S1-027] 刷新成功只清理旧的展示错误，status 本身仍直接使用服务端响应。
+        setState(() {
+          status = next;
+          message = null;
+          messageIsError = false;
+        });
+      }
     } on ApiException catch (exc) {
-      if (mounted) setState(() => message = exc.message);
+      if (mounted) {
+        // [人工注释][S1-027] API 错误继续原样显示，只补充 error 视觉语义。
+        setState(() {
+          message = exc.message;
+          messageIsError = true;
+        });
+      }
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        // [人工注释][S1-027] 仅补 lint 要求的花括号，不改变 loading 结束语义。
+        setState(() => loading = false);
+      }
     }
   }
 
@@ -1049,19 +1122,29 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
     String success,
   ) async {
     setState(() {
+      // [人工注释][S1-027] 新动作开始时只重置提示样式；暂停时长与业务状态仍由服务端决定。
       loading = true;
       message = null;
+      messageIsError = false;
     });
     try {
       final next = await action();
       if (mounted) {
         setState(() {
+          // [人工注释][S1-027] success 文案仍由调用方对应真实成功动作传入；这里只设置成功视觉。
           status = next;
           message = success;
+          messageIsError = false;
         });
       }
     } on ApiException catch (exc) {
-      if (mounted) setState(() => message = exc.message);
+      if (mounted) {
+        // [人工注释][S1-027] pause/resume 的服务端错误保持 fail-visible，只加强错误状态视觉。
+        setState(() {
+          message = exc.message;
+          messageIsError = true;
+        });
+      }
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -1069,103 +1152,109 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
 
   @override
   Widget build(BuildContext context) {
+    // [人工注释][S1-027] paused/until 继续直接读取 privacy status；UI 不推断“是否真的开启某项 Stage 2 能力”。
+    final theme = Theme.of(context);
     final paused = status?['recording_paused'] == true;
     final until = status?['paused_until']?.toString();
-    return Card(
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              '记忆暂停',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              paused
-                  ? '自动记录已暂停${until == null ? '' : '，直到 $until'}'
-                  : '自动记录当前开启',
-            ),
-            const SizedBox(height: 12),
-            // [人工注释][S1-023] 暂停只影响自动采集；用户主动“记一下”仍可继续使用。
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: loading
-                      ? null
-                      : () => apply(
-                          () => widget.api.pauseMemory(30),
-                          '已暂停 30 分钟',
-                        ),
-                  child: const Text('30 分钟'),
-                ),
-                OutlinedButton(
-                  onPressed: loading
-                      ? null
-                      : () =>
-                            apply(() => widget.api.pauseMemory(60), '已暂停 1 小时'),
-                  child: const Text('1 小时'),
-                ),
-                OutlinedButton(
-                  onPressed: loading
-                      ? null
-                      : () => apply(
-                          () => widget.api.pauseMemory(180),
-                          '已暂停 3 小时',
-                        ),
-                  child: const Text('3 小时'),
-                ),
-                OutlinedButton(
-                  onPressed: loading
-                      ? null
-                      : () => apply(widget.api.pauseMemoryToday, '今天剩余时间已暂停'),
-                  child: const Text('今天'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // [人工注释][S1-024] 恢复后历史 pause interval 仍保留，暂停期间自动数据不能延迟补传。
-            FilledButton(
-              onPressed: loading || !paused
-                  ? null
-                  : () => apply(widget.api.resumeMemory, '已恢复自动记录'),
-              child: const Text('恢复记录'),
-            ),
-            if (message != null) ...[const SizedBox(height: 8), Text(message!)],
-          ],
+
+    if (loading && status == null) {
+      return const JiYiSectionCard(
+        title: '隐私与记录控制',
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: JiYiSpacing.sm),
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: JiYiSpacing.sm),
+              Expanded(child: Text('正在读取当前隐私状态…')),
+            ],
+          ),
         ),
+      );
+    }
+
+    return JiYiSectionCard(
+      leading: Icon(
+        paused ? Icons.pause_circle_outline : Icons.privacy_tip_outlined,
+        color: paused
+            ? context.jiyiSemanticColors.warning
+            : theme.colorScheme.primary,
       ),
-    );
-  }
-}
-
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.title, required this.detail});
-
-  final String title;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+      title: '隐私与记录控制',
+      subtitle: '暂停只影响自动采集；你主动使用“记一下”仍然可以继续保存内容。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          JiYiStatusBanner(
+            kind: paused ? JiYiStatusKind.warning : JiYiStatusKind.success,
+            title: paused ? '自动采集已暂停' : '当前没有暂停自动采集',
+            message: paused
+                ? (until == null ? '暂停状态已生效。' : '暂停状态已生效，直到 $until。')
+                : '如果暂时不希望自动采集，可以选择一个暂停时长。',
+          ),
+          if (message != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            JiYiStatusBanner(
+              kind: messageIsError
+                  ? JiYiStatusKind.error
+                  : JiYiStatusKind.success,
+              message: message!,
             ),
-            const SizedBox(height: 8),
-            Text(detail),
           ],
-        ),
+          const SizedBox(height: JiYiSpacing.md),
+          Text('暂停时长', style: theme.textTheme.titleSmall),
+          const SizedBox(height: JiYiSpacing.xs),
+          // [人工注释][S1-023][S1-027] 四个时长仍调用原 pause API；这里只统一按钮层级与 loading disable 状态。
+          Wrap(
+            spacing: JiYiSpacing.xs,
+            runSpacing: JiYiSpacing.xs,
+            children: [
+              OutlinedButton(
+                onPressed: loading
+                    ? null
+                    : () =>
+                          apply(() => widget.api.pauseMemory(30), '已暂停 30 分钟'),
+                child: const Text('30 分钟'),
+              ),
+              OutlinedButton(
+                onPressed: loading
+                    ? null
+                    : () => apply(() => widget.api.pauseMemory(60), '已暂停 1 小时'),
+                child: const Text('1 小时'),
+              ),
+              OutlinedButton(
+                onPressed: loading
+                    ? null
+                    : () =>
+                          apply(() => widget.api.pauseMemory(180), '已暂停 3 小时'),
+                child: const Text('3 小时'),
+              ),
+              OutlinedButton(
+                onPressed: loading
+                    ? null
+                    : () => apply(widget.api.pauseMemoryToday, '今天剩余时间已暂停'),
+                child: const Text('今天'),
+              ),
+            ],
+          ),
+          const SizedBox(height: JiYiSpacing.md),
+          // [人工注释][S1-024][S1-027] 恢复按钮仍只在服务端状态 paused=true 时可用；历史 pause interval 与禁止补传语义不变。
+          FilledButton.icon(
+            onPressed: loading || !paused
+                ? null
+                : () => apply(widget.api.resumeMemory, '已恢复自动记录'),
+            icon: loading
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.play_arrow_rounded),
+            label: const Text('恢复记录'),
+          ),
+        ],
       ),
     );
   }
