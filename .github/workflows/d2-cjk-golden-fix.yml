@@ -49,8 +49,7 @@ jobs:
           if "import 'dart:io';" not in text:
               text = text.replace(
                   "import 'package:flutter/material.dart';\n",
-                  "import 'dart:io';\n"
-                  "import 'dart:typed_data';\n\n"
+                  "import 'dart:io';\n\n"
                   "import 'package:flutter/material.dart';\n"
                   "import 'package:flutter/services.dart';\n",
                   1,
