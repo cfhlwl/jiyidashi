@@ -11,10 +11,11 @@ from app.core.db import Base
 from app.models import utcnow
 
 
-# [人工注释][S1-005][S1-006] 原始图片先成为用户私有媒体，完成对象存储校验与
+# [人工注释][S1-004][S1-005][S1-006] 原始图片/语音先成为用户私有媒体，完成对象存储校验与
 # staging -> final 晋升后，才能通过 MediaEvidenceLink 进入可信 Evidence 链。
 class MediaKind(StrEnum):
     IMAGE = "IMAGE"
+    AUDIO = "AUDIO"
 
 
 class MediaStatus(StrEnum):
