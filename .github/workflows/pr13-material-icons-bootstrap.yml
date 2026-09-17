@@ -41,35 +41,16 @@ jobs:
             echo "MaterialIcons-Regular.otf not found in Flutter 3.47.4 SDK cache"
             exit 1
           fi
-
           expected_sha="d9865b671a09d683d13a863089d8825e0f61a37696ce5d7d448bc8023aa62453"
           actual_sha="$(sha256sum "$font_path" | awk '{print $1}')"
           if [ "$actual_sha" != "$expected_sha" ]; then
             echo "Unexpected Flutter 3.47.4 MaterialIcons font SHA: $actual_sha"
             exit 1
           fi
-
           mkdir -p mobile/test/fonts
           cp "$font_path" mobile/test/fonts/MaterialIcons-Regular.otf
-          curl -fsSL \
-            "https://raw.githubusercontent.com/google/material-design-icons/40a7a292a79d9394157e1ea24f83d52d5e17c556/LICENSE" \
-            -o mobile/test/fonts/MATERIAL_ICONS_LICENSE.txt
-
-          cat >> mobile/test/fonts/README.md <<'EOF'
-
-          ## Material Icons test font
-
-          <!-- [人工注释][CI-005] 图标 Golden 使用 Flutter 3.47.4 自身固定的 MaterialIcons 字体，来源和哈希均冻结，禁止回退到 Runner 系统字体。 -->
-
-          - Source: Flutter 3.47.4 SDK `material_fonts` cache
-          - Flutter `material_fonts.version`: `flutter_infra_release/flutter/fonts/3012db47f3130e62f7cc0beabff968a33cbec8d8/fonts.zip`
-          - Extracted file: `bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf`
-          - Test font family: `MaterialIcons`
-          - SHA-256: `d9865b671a09d683d13a863089d8825e0f61a37696ce5d7d448bc8023aa62453`
-          - License: Apache License 2.0; see `MATERIAL_ICONS_LICENSE.txt`
-
-          This font is committed only for deterministic Flutter Golden tests and is not added to the production app bundle.
-          EOF
+          curl -fsSL "https://raw.githubusercontent.com/google/material-design-icons/40a7a292a79d9394157e1ea24f83d52d5e17c556/LICENSE" -o mobile/test/fonts/MATERIAL_ICONS_LICENSE.txt
+          printf '%s\n' '' '## Material Icons test font' '' '<!-- [人工注释][CI-005] 图标 Golden 使用 Flutter 3.47.4 自身固定的 MaterialIcons 字体，来源和哈希均冻结，禁止回退到 Runner 系统字体。 -->' '' '- Source: Flutter 3.47.4 SDK `material_fonts` cache' '- Flutter `material_fonts.version`: `flutter_infra_release/flutter/fonts/3012db47f3130e62f7cc0beabff968a33cbec8d8/fonts.zip`' '- Extracted file: `bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf`' '- Test font family: `MaterialIcons`' '- SHA-256: `d9865b671a09d683d13a863089d8825e0f61a37696ce5d7d448bc8023aa62453`' '- License: Apache License 2.0; see `MATERIAL_ICONS_LICENSE.txt`' '' 'This font is committed only for deterministic Flutter Golden tests and is not added to the production app bundle.' >> mobile/test/fonts/README.md
 
       - name: Load Material Icons in Golden tests
         shell: bash
@@ -77,47 +58,20 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-
           path = Path('mobile/test/visual_golden_test.dart')
           text = path.read_text(encoding='utf-8')
-
-          marker = "Future<void> _loadGoldenFont() async {\n"
-          if marker not in text:
-              raise SystemExit('Golden font loader marker not found')
-
-          helper_anchor = "  await loader.load();\n}\n\nThemeData _goldenTheme()"
-          helper = """  await loader.load();
-}
-
-// [人工注释][CI-005] Flutter Icons.* 的 IconData 固定使用 `MaterialIcons` family；
-// Golden 必须显式注册仓库内的 Flutter 3.47.4 MaterialIcons 字体，否则图标会退化成缺字方框。
-Future<void> _loadMaterialIconsFont() async {
-  final bytes = await File('test/fonts/MaterialIcons-Regular.otf').readAsBytes();
-  final loader = FontLoader('MaterialIcons')
-    ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
-  await loader.load();
-}
-
-ThemeData _goldenTheme()"""
+          anchor = "  await loader.load();\n}\n\nThemeData _goldenTheme()"
+          helper = "  await loader.load();\n}\n\n// [人工注释][CI-005] Flutter Icons.* 的 IconData 固定使用 `MaterialIcons` family；\n// Golden 必须显式注册仓库内的 Flutter 3.47.4 MaterialIcons 字体，否则图标会退化成缺字方框。\nFuture<void> _loadMaterialIconsFont() async {\n  final bytes = await File('test/fonts/MaterialIcons-Regular.otf').readAsBytes();\n  final loader = FontLoader('MaterialIcons')\n    ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));\n  await loader.load();\n}\n\nThemeData _goldenTheme()"
           if "Future<void> _loadMaterialIconsFont()" not in text:
-              if helper_anchor not in text:
+              if anchor not in text:
                   raise SystemExit('Golden helper anchor not found')
-              text = text.replace(helper_anchor, helper, 1)
-
-          setup_old = """  setUpAll(() async {
-    await _loadGoldenFont();
-  });
-"""
-          setup_new = """  setUpAll(() async {
-    await _loadGoldenFont();
-    await _loadMaterialIconsFont();
-  });
-"""
+              text = text.replace(anchor, helper, 1)
+          setup_old = "  setUpAll(() async {\n    await _loadGoldenFont();\n  });\n"
+          setup_new = "  setUpAll(() async {\n    await _loadGoldenFont();\n    await _loadMaterialIconsFont();\n  });\n"
           if "await _loadMaterialIconsFont();" not in text:
               if setup_old not in text:
                   raise SystemExit('Golden setUpAll marker not found')
               text = text.replace(setup_old, setup_new, 1)
-
           path.write_text(text, encoding='utf-8')
           PY
 
@@ -140,11 +94,6 @@ ThemeData _goldenTheme()"""
           git diff --check -- mobile/test
           git config user.name "cfhlwl"
           git config user.email "57704371+cfhlwl@users.noreply.github.com"
-          git add \
-            mobile/test/fonts/MaterialIcons-Regular.otf \
-            mobile/test/fonts/MATERIAL_ICONS_LICENSE.txt \
-            mobile/test/fonts/README.md \
-            mobile/test/visual_golden_test.dart \
-            mobile/test/goldens
+          git add mobile/test/fonts/MaterialIcons-Regular.otf mobile/test/fonts/MATERIAL_ICONS_LICENSE.txt mobile/test/fonts/README.md mobile/test/visual_golden_test.dart mobile/test/goldens
           git commit -m "fix(mobile): load deterministic Material Icons in goldens"
           git push origin HEAD:ci/ui-visual-preview
