@@ -2,12 +2,13 @@
 <!-- [人工注释][DOC-PROGRESS-025] PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- [人工注释][DOC-PROGRESS-026] D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- [人工注释][DOC-PROGRESS-027] Stage 1 第三批 A/B/C/D 第一阶段全部完成；Stage 1 本身仍未完成，下一阶段继续 S1-004/S1-007、S1-017、S1-008、S1-018、S1-021、S1-022、S1-025、S1-026；Stage 2 继续明确未开始。 -->
+<!-- [人工注释][DOC-PROGRESS-028] Stage 1G / Issue #16 Product UI & Design System 已基于 main=677b6ce9 启动；第一阶段先冻结 Flutter UI 审查清单、design token 与组件边界，S1-027 标 🔵，Stage 2 继续未启动。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-17  
 > 当前阶段：Stage 1「记得住」继续推进；第三批 A/B/C/D 第一阶段已全部完成并合并，下一步进入 Stage 1 第二阶段收口；Stage 2 未开始  
 > 当前生产代码基线：`main=f1d9baefd88a43c3da27378b5d87664221edf527`（PR #12 合并后；本文件随后仅产生 docs-only 更新）  
-> 当前开发重点：正式 UI 工作线可独立启动；功能侧优先 `S1-004 + S1-007` 语音/ASR 与 `S1-017` 离线自动同步/服务端幂等，之后进入 `S1-008` 统一入口及数据删除/注销等收口任务
+> 当前开发重点：`S1-027` G 线 Product UI / Design System 已启动；功能侧仍优先 `S1-004 + S1-007` 语音/ASR 与 `S1-017` 离线自动同步/服务端幂等，之后进入 `S1-008` 统一入口及数据删除/注销等收口任务
 
 ## 状态规则
 
@@ -105,6 +106,7 @@
 | S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
 | S1-025 | 基础提醒模型 | ⬜ | 仅从记忆产生提醒，不做完整 Todo |
 | S1-026 | 首次使用引导 | ⬜ | 待统一入口稳定后，目标 3 分钟内完成“记住 → 找回”Aha Moment |
+| S1-027 | Product UI / Design System | 🔵 | Issue #16 / G 线已启动；先完成 Flutter UI audit、design token、组件边界与 Golden 迁移方案，不改业务语义，不进入 Stage 2 |
 
 ## 2.1 Stage 1 第三批 A/B/C/D 第一阶段收口
 
@@ -155,6 +157,12 @@
 - Stage 2 后台定位、CoreLocation、Location Bridge、Visit clustering 等继续保持 ⬜，不得提前侵入 Stage 1 PR。
 
 ---
+
+## 2.2 Stage 1 G：Product UI / Design System
+
+| 工作线 | 范围 | 当前结果 | 状态 |
+| --- | --- | --- | --- |
+| G：Product UI / Design System | `S1-027`；Flutter 第一阶段 | Issue #16；`docs/STAGE1_G_UI_AUDIT.md` 已冻结现状审查、design token、组件边界与 Golden 迁移策略 | 🔵 |
 
 # 3. Stage 2：自动记
 
