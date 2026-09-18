@@ -1,19 +1,21 @@
-<!-- [人工注释][DOC-PROGRESS-001] 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- [人工注释][DOC-PROGRESS-025] PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
-<!-- [人工注释][DOC-PROGRESS-026] D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
-<!-- [人工注释][DOC-PROGRESS-027] Stage 1 第三批 A/B/C/D 第一阶段全部完成；Stage 1 本身仍未完成，下一阶段继续 S1-004/S1-007、S1-017、S1-008、S1-018、S1-021、S1-022、S1-025、S1-026；Stage 2 继续明确未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-028] E：Voice Pipeline / Issue #14 已从 main=677b6ce9 启动；分支 feat/stage1-voice-asr 仅推进 S1-004 + S1-007，先完成真实音频上传、ASR provider 边界与原始音频 Evidence，Stage 2 继续未开始。 -->
-<!-- [人工注释][DOC-PROGRESS-029] E：Voice Pipeline / PR #18 初版实现生产/测试 HEAD=9ad68a3844，Backend CI 35216633743 与 Mini Program CI 35216633782 均 SUCCESS；第一轮正式审查随后 HOLD，发现 2×P1 + 1×阻塞 P2。 -->
-<!-- [人工注释][DOC-PROGRESS-030] PR #18 第一轮三个窄修已实现并通过精确 HEAD=eb29b0235a 验收：FIX-001 将 DB preflight/claim 与外部 storage+ASR I/O 真正分离；FIX-002 新增 durable media_asr_claims 租约并由真实 PostgreSQL 双 Session 验证 provider 单飞；FIX-003 用 httpx MockTransport 覆盖 OpenAIASRProvider HTTP adapter。Backend CI 35221916652 SUCCESS（含 PostgreSQL voice single-flight 与 77 passed），Mini Program CI 35221916739 SUCCESS。三项仍待第二轮窄范围正式复审，不标 ✅。 -->
-<!-- [人工注释][DOC-PROGRESS-031] PR #18 第二轮窄范围复审 PASS：S1-PR18-FIX-001~003 已正式关闭；生产/测试 HEAD=8ea2a1c7513f64f496f7cbaa1dfe8c36717d0bf8，Backend CI 35222923492 / #166 SUCCESS（PostgreSQL voice ASR single-flight PASS，77 passed），Mini Program CI 35222923466 / #154 SUCCESS。PR 进入最终 clean replay / exact-head CI Gate，S1-004/S1-007 与 E 线继续保持 🟠，待最终合并 main 后转 ✅。 -->
-<!-- [人工注释][DOC-PROGRESS-032] Stage 1G / PR #17 Flutter 第一阶段已完成 G1~G6，并在 latest main=a1962100（PR #18 合并后）做 clean replay；S1-027 与 G 工作线保持 🟠，等待正式 UI 审查、最终合并与必要验收；Stage 2 继续未启动。 -->
-<!-- [人工注释][DOC-PROGRESS-033] PR #17 第二轮极窄复审 PASS，最终 clean HEAD=d8373adc；标准 mobile-ci 35246026919 与 mobile-visual-preview 35246029602 均 SUCCESS，随后以 expected_head_sha 锁定合并，merge commit=d470f662；Issue #16 自动关闭，S1-027 与 G 工作线转 ✅，Stage 2 继续未启动。 -->
+<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
+<!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
+<!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
+<!-- Stage 1 第三批 A/B/C/D 第一阶段全部完成；Stage 1 本身仍未完成，下一阶段继续 S1-004/S1-007、S1-017、S1-008、S1-018、S1-021、S1-022、S1-025、S1-026；Stage 2 继续明确未开始。 -->
+<!-- E：Voice Pipeline / Issue #14 已从 main=677b6ce9 启动；分支 feat/stage1-voice-asr 仅推进 S1-004 + S1-007，先完成真实音频上传、ASR provider 边界与原始音频 Evidence，Stage 2 继续未开始。 -->
+<!-- E：Voice Pipeline / PR #18 初版实现生产/测试 HEAD=9ad68a3844，Backend CI 35216633743 与 Mini Program CI 35216633782 均 SUCCESS；第一轮正式审查随后 HOLD，发现 2×P1 + 1×阻塞 P2。 -->
+<!-- PR #18 第一轮三个窄修已实现并通过精确 HEAD=eb29b0235a 验收：FIX-001 将 DB preflight/claim 与外部 storage+ASR I/O 真正分离；FIX-002 新增 durable media_asr_claims 租约并由真实 PostgreSQL 双 Session 验证 provider 单飞；FIX-003 用 httpx MockTransport 覆盖 OpenAIASRProvider HTTP adapter。Backend CI 35221916652 SUCCESS（含 PostgreSQL voice single-flight 与 77 passed），Mini Program CI 35221916739 SUCCESS。三项仍待第二轮窄范围正式复审，不标 ✅。 -->
+<!-- PR #18 第二轮窄范围复审 PASS：S1-PR18-FIX-001~003 已正式关闭；生产/测试 HEAD=8ea2a1c7513f64f496f7cbaa1dfe8c36717d0bf8，Backend CI 35222923492 / #166 SUCCESS（PostgreSQL voice ASR single-flight PASS，77 passed），Mini Program CI 35222923466 / #154 SUCCESS。PR 进入最终 clean replay / exact-head CI Gate，S1-004/S1-007 与 E 线继续保持 🟠，待最终合并 main 后转 ✅。 -->
+<!-- Stage 1G / PR #17 Flutter 第一阶段已完成 G1~G6，并在 latest main=a1962100（PR #18 合并后）做 clean replay；S1-027 与 G 工作线保持 🟠，等待正式 UI 审查、最终合并与必要验收；Stage 2 继续未启动。 -->
+<!-- PR #17 第二轮极窄复审 PASS，最终 clean HEAD=d8373adc；标准 mobile-ci 35246026919 与 mobile-visual-preview 35246029602 均 SUCCESS，随后以 expected_head_sha 锁定合并，merge commit=d470f662；Issue #16 自动关闭，S1-027 与 G 工作线转 ✅，Stage 2 继续未启动。 -->
+<!-- PR #18 / E Voice Pipeline 已完成 final clean replay、exact-head Backend/Mini CI 并合并，merge commit=a1962100；Issue #14 已关闭 completed，S1-004/S1-007 转 ✅。 -->
+<!-- PR #20 / F Offline Sync 已完成两轮正式审查、final narrow Gate、latest-main single-commit replay 与三套 exact-head CI，并以 expected-head 锁定合并，merge commit=c4ee5734；Issue #15 已关闭 completed，S1-017 转 ✅。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-09-17  
-> 当前阶段：Stage 1「记得住」继续推进；第三批 A/B/C/D 第一阶段已全部完成并合并，E：Voice Pipeline 第二轮正式复审 PASS，进入最终 clean replay / exact-head CI Gate；Stage 2 未开始  
-> 当前生产代码基线：`main=d470f662c3dd446137ced877afc96d00bfda03ce`  
-> 当前开发重点：E 线 `S1-004 + S1-007` 已通过第二轮正式复审，保持 🟠 等待最终 clean replay、精确 HEAD CI、Ready/merge；`S1-017` 等其他 Stage 1 收口工作线保持原状态
+> 最后更新：2026-09-18  
+> 当前阶段：Stage 1「记得住」继续收口；E/F/G 三条并行工作线均已完成正式审查、latest-main clean replay、exact-head CI 并合并；Stage 2 仍未开始  
+> 当前生产代码基线（E/F/G 产品代码）：`main=c4ee57342d6e9971f7a0a9f648acf0c6259ccdcc`；后续 docs-only 收尾不改变产品 tree  
+> 当前开发重点：进入下一组 Stage 1 收口任务，优先推进 `S1-008` Unified Capture，再按顺序处理 `S1-018`、`S1-021 → S1-022`、`S1-025`、`S1-026`；Stage 2 继续保持未启动
 
 ## 状态规则
 
@@ -37,12 +39,12 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A/B/C/D 第一阶段均已合并；E：Voice Pipeline 第二轮复审 PASS、待最终合并，离线自动同步/幂等及后续 Stage 1 收口任务仍未完成，因此本阶段整体继续进行中 |
-| CI-001 | Backend CI | ✅ | PR #18 审查生产 HEAD `8ea2a1c751` 的 Backend CI `35222923492` / #166 SUCCESS：Ruff、SQLite/PostgreSQL migration、`alembic check`、ObjectLocation invariants、PostgreSQL voice ASR single-flight 与 full pytest 均成功，`77 passed` |
-| CI-002 | Flutter Android CI | ✅ | 标准 Android analyze/tests/APK 持续通过；PR #13 最终标准 Mobile CI `35201294079` SUCCESS |
-| CI-003 | Flutter iOS CI | ✅ | iOS no-codesign 持续通过；PR #13 最终标准 Mobile CI `35201294079` SUCCESS |
-| CI-004 | 微信小程序 CI | ✅ | PR #18 审查生产 HEAD `8ea2a1c751` 的 Mini Program CI `35222923466` / #154 SUCCESS：lockfile install、typecheck、capture tests、production WeChat build 均通过 |
-| CI-005 | UI Visual Preview / Golden Screenshot | ✅ | PR #13 已合并；固定 CJK + MaterialIcons、Golden mismatch 证明、视觉 artifact、dirty gate、Android/iOS 门禁均通过 |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A/B/C/D/E/F/G 已全部完成正式审查并合并；Stage 1 仍有 Unified Capture、Memory Edit、数据删除/注销、提醒与 Onboarding 等收口任务，因此整体阶段继续进行中 |
+| CI-001 | Backend CI | ✅ | PR #20 final HEAD `c654e65c` 的 Backend CI `35291953239` / #208 SUCCESS：Lint、SQLite/PostgreSQL migration、schema drift、ObjectLocation invariants、Voice single-flight、Offline idempotency concurrency 与 full pytest 全部通过 |
+| CI-002 | Flutter Android CI | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile CI `35291953331` / #228 SUCCESS：Analyze、完整 Flutter tests、Android debug APK 全部通过 |
+| CI-003 | Flutter iOS CI | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile CI `35291953331` / #228 SUCCESS：iOS no-codesign build 通过 |
+| CI-004 | 微信小程序 CI | ✅ | PR #18 final clean HEAD `f2f81190` 的 Mini Program CI `35228208019` / #160 SUCCESS：lockfile install、typecheck、capture tests、production WeChat build 均通过 |
+| CI-005 | UI Visual Preview / Golden Screenshot | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile Visual Preview `35291953216` / #84 SUCCESS：Committed Goldens、intentional mismatch、artifact、Android/iOS 与 clean-worktree gate 全部通过 |
 
 ---
 
@@ -88,10 +90,10 @@
 | S1-001 | 正式用户注册 / 登录 | ✅ | Argon2、限速/退避、dummy verify、migration drift gate 已通过复审 |
 | S1-002 | 用户资料与时区设置 | ✅ | trim-before-validation、IANA timezone |
 | S1-003 | 文字记忆录入 | ✅ | Flutter / 小程序接真实 Memory API，仅声明 `USER_TEXT` |
-| S1-004 | 语音记忆录入 | 🟠 | PR #18 已实现 Recorder MP3 → 私有 AUDIO 上传 → READY → 服务端 ASR → VOICE Memory/Evidence；2×P1 + 1×P2 已在第二轮正式复审关闭，待最终 clean replay / exact-head CI / merge |
+| S1-004 | 语音记忆录入 | ✅ | PR #18 已完成正式审查、final clean replay 与 exact-head Backend/Mini CI 并合并；原始音频 Evidence、ASR fail-closed 与 durable single-flight 均已验证；merge commit `a1962100` |
 | S1-005 | 图片记忆录入 | ✅ | PR #7 后端媒体/Evidence + PR #9 小程序真实拍照/选图上传链均已审查、CI、clean replay 并合并 |
 | S1-006 | COS / OSS 对象存储直传 | ✅ | 私有 staging→final、短时签名、owner gate、图片签名验证与 commit-safe staging 清理已落地 |
-| S1-007 | ASR 语音转写 | 🟠 | PR #18 已实现服务端 ASR、原始音频 Evidence 与 fail-closed；transaction gap、durable ASR claim/lease 单飞、OpenAI adapter tests 已第二轮 PASS，待最终 clean replay / exact-head CI / merge |
+| S1-007 | ASR 语音转写 | ✅ | PR #18 已完成 transaction/I-O 分离、durable ASR claim/lease 单飞、OpenAI adapter contract tests、final exact-head CI 并合并；Issue #14 已关闭 completed |
 | S1-008 | “帮我记住”统一入口 | ⬜ | 待 `S1-005 + S1-007` 协议稳定后，统一文字 / 语音 / 图片 Memory Pipeline |
 | S1-009 | “东西在哪”物品录入 | ✅ | Object create 并发竞争已幂等兜底 |
 | S1-010 | “东西在哪”查询 | ✅ | 返回真实 Evidence `source_type` / `memory_source_id` |
@@ -101,7 +103,7 @@
 | S1-014 | 答案展示 Evidence / 来源 / 时间 | ✅ | 客户端展示来源、证据类型、时间、可信度 |
 | S1-015 | 客户端本地 SQLite | ✅ | PR #6 已合并；版本化 SQLite、账号隔离、重启恢复完成 |
 | S1-016 | 离线记忆队列 | ✅ | PR #6 已合并；状态机、稳定 UUID、取消/重试、仅 TransportException fallback 均通过正式审查 |
-| S1-017 | 离线同步与幂等 | ⬜ | 下一阶段优先；服务端 `client_uuid` 幂等必须覆盖 response-loss / unknown-commit 后再允许自动重发 |
+| S1-017 | 离线同步与幂等 | ✅ | PR #20 已完成服务端幂等账本、outbox-first、unknown-commit replay、auth/cancel/single-flight、时间水位与 retry 分类；final HEAD `c654e65c` 三套 exact-head CI 全绿并合并，merge commit `c4ee5734`；Issue #15 已关闭 completed |
 | S1-018 | 单条 Memory 编辑 | ⬜ | 编辑后 Evidence 与审计语义需明确 |
 | S1-019 | 单条 Memory 删除 | ✅ | 服务端 DELETE、删除后查询失效及 ObjectLocation 联动均已合并 |
 | S1-020 | 数据导出 | ✅ | PR #12 已合并；owner 隔离、JSON v1、媒体敏感字段保护、5000 上限/413、删除位置 tombstone 均通过正式审查 |
@@ -138,18 +140,19 @@
 | S1-PR18-FIX-001 | P1 | ✅ 第二轮关闭：DB preflight/claim 与 storage/ASR 外部 I/O 之间存在真实 transaction gap；storage/provider 执行时 `Session.in_transaction()==False` |
 | S1-PR18-FIX-002 | P1 | ✅ 第二轮关闭：`media_asr_claims` durable lease/token 实现数据库级单飞；真实 PostgreSQL 双 Session 验证 provider calls=1 且 Memory/Source/Evidence 唯一 |
 | S1-PR18-FIX-003 | P2 | ✅ 第二轮关闭：`OpenAIASRProvider` 真实 adapter 通过 MockTransport 覆盖 multipart、Authorization、logprobs、HTTP/timeout/malformed 错误路径 |
+| S1-PR20-FIX-001~006 | 5×P1 + 1×P2 | ✅ 两轮审查与最终极窄 Gate 全部关闭：冻结 `occurred_at/recorded_at`、ObjectLocation immutable auth snapshot、deleted backing Memory replay fail-closed、5xx/429/auth retry 分类、F/G 单一生产 UI 集成，以及正常开发注释规范；final exact-head Backend/Mobile/Visual CI 全绿 |
 
 ## 2.2 下一阶段推荐并行工作线
 
-<!-- [人工注释][S1-PLAN-002] 以下是第三批第一阶段完成后的 Stage 1 收口顺序；这里只记录计划，不代表任务已开工。未创建分支/Issue 前状态继续保持 ⬜。 -->
+<!-- 以下是第三批第一阶段完成后的 Stage 1 收口顺序；这里只记录计划，不代表任务已开工。未创建分支/Issue 前状态继续保持 ⬜。 -->
 
 | 优先级 | 工作线 | 对应任务 | 当前状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| 1 | E：Voice Pipeline | `S1-004 + S1-007` | 🟠 | PR #18 / `feat/stage1-voice-asr`；第二轮窄范围复审 PASS，FIX-001~003 已正式关闭；当前进入最终 clean replay + exact-head Backend/Mini CI Gate，合并 main 后再转 ✅ |
-| 1 | F：Offline Sync | `S1-017` | ⬜ | 服务端幂等 + Flutter 自动 flush；必须覆盖服务端已提交但响应丢失的 unknown-commit 场景 |
-| 1 | G：Product UI / Design System | 正式 UI 设计与组件规范 | ✅ | PR #17 Flutter 第一阶段已完成正式审查、最终 clean replay、exact-head CI 并合并 main；微信小程序视觉同步仍属后续独立工作，Stage 2 未启动 |
-| 2 | Unified Capture | `S1-008` | ⬜ | 等语音协议稳定后统一文字/图片/语音入口 |
-| 2 | Memory Edit | `S1-018` | ⬜ | 独立 Backend/客户端 PR |
+| 已完成 | E：Voice Pipeline | `S1-004 + S1-007` | ✅ | PR #18 已正式审查、clean replay、exact-head Backend/Mini CI 并合并；Issue #14 已关闭 |
+| 已完成 | F：Offline Sync | `S1-017` | ✅ | PR #20 已两轮审查、final narrow Gate、single-commit replay 与三套 exact-head CI 后合并；Issue #15 已关闭 |
+| 已完成 | G：Product UI / Design System | `S1-027` | ✅ | PR #17 Flutter 第一阶段已完成正式审查、最终 clean replay、exact-head CI 并合并；微信小程序视觉同步仍属后续独立工作 |
+| 1 | Unified Capture | `S1-008` | ⬜ | 文字/图片/语音协议现已稳定，下一阶段优先统一“帮我记住”入口与可信 Memory Pipeline |
+| 2 | Memory Edit | `S1-018` | ⬜ | 独立 Backend/客户端 PR；先明确编辑后 Evidence 与审计语义 |
 | 3 | Data Delete | `S1-021` | ⬜ | DB / Cache / Storage 全删除，明确对象存储删除和失败恢复语义 |
 | 4 | Account Delete | `S1-022` | ⬜ | 必须建立在 S1-021 完整闭环之上 |
 | 5 | Reminder | `S1-025` | ⬜ | 基础提醒，不扩展成 Todo 产品 |
@@ -158,7 +161,7 @@
 ### 硬规则
 
 - 一个任务组一个独立分支、一个独立 PR；禁止大而全的 Stage 1 分支。
-- 手工新增/修改的语义代码块继续使用 `[人工注释][TASK-ID]`。
+- 人工新增/修改的代码使用正常开发注释解释关键意图、约束、风险和非显而易见的边界；不要求固定标签，也不为简单代码机械加注释。
 - 公共 API/schema/Evidence 协议只允许一个 PR 定义，其他端只消费。
 - 每个 PR 合并前都必须基于最新 `main` 做最终 replay / CI。
 - `S1-021 → S1-022` 顺序不可反。
@@ -333,7 +336,7 @@
 3. 只有正式审查通过、合并 `main` 并完成必要验收后：改为 `✅`。
 4. 发现新需求时：先加入本表并分配 ID，再开始实现。
 5. 发现缺陷时：新增修复项或 Bug ID，不允许只改代码不记录。
-6. 每次新增或修改人工维护的源代码，都必须遵守 `docs/CODE_ANNOTATION_RULES.md` 的 `[人工注释]` 标记规范。
+6. 每次新增或修改人工维护的源代码，都必须遵守 `docs/CODE_ANNOTATION_RULES.md`：对关键/非显而易见逻辑写正常开发注释，说明用途、原因和边界；不要求固定标签。
 7. 自动生成文件、lockfile、二进制资源不得为了加注释而破坏格式；通过提交记录和本表追踪。
 8. Stage 2 及以后功能不得提前侵入当前 Stage 1 PR，除非先更新本表并明确变更范围。
 9. 并行开发必须保持独立分支/独立 PR；共享协议由单一 PR 定义，其他工作线只消费。
