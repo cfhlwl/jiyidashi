@@ -2,7 +2,7 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,11 @@ from app.schemas import (
     MemoryQueryResponse,
     MemoryRead,
 )
+from app.services.idempotency_service import (
+    IdempotencyConflict,
+    IdempotencyResourceGone,
+    execute_idempotent_mutation,
+)
 from app.services.memory_service import create_user_memory, get_memory_for_user, soft_delete_memory
 from app.services.query_service import query_memory
 from app.services.time_service import local_today, user_day_bounds_utc
@@ -23,6 +28,7 @@ from app.services.time_service import local_today, user_day_bounds_utc
 router = APIRouter(tags=["memories"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
+IdempotencyKey = Annotated[UUID | None, Header(alias="Idempotency-Key")]
 
 
 @router.post("/memories", response_model=MemoryRead, status_code=status.HTTP_201_CREATED)
@@ -30,11 +36,31 @@ def create_memory_endpoint(
     payload: MemoryCreate,
     user_id: CurrentUser,
     db: DbSession,
+    idempotency_key: IdempotencyKey = None,
 ) -> Memory:
-    memory = create_user_memory(db, user_id, payload)
-    db.commit()
-    db.refresh(memory)
-    return memory
+    # 离线 outbox 从首次发送开始就携带稳定 UUID；
+    # response-loss 后相同 key + 相同 payload 必须返回同一 Memory，不能重复创建 Evidence。
+    fingerprint_payload = payload.model_dump(mode="json")
+    try:
+        return execute_idempotent_mutation(
+            db,
+            user_id=user_id,
+            operation_type="MEMORY_CREATE",
+            client_uuid=idempotency_key,
+            fingerprint_payload=fingerprint_payload,
+            resource_type="MEMORY",
+            create_resource=lambda session: create_user_memory(session, user_id, payload),
+            resource_id=lambda memory: memory.id,
+            load_resource=lambda session, resource_id: get_memory_for_user(
+                session,
+                user_id,
+                resource_id,
+            ),
+        )
+    except IdempotencyConflict as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except IdempotencyResourceGone as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
 
 
 @router.get("/memories/{memory_id}", response_model=MemoryRead)

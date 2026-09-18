@@ -4,7 +4,7 @@ import 'dart:math';
 
 import 'package:sqflite/sqflite.dart';
 
-// [人工注释][S1-016] 队列状态只描述本机任务生命周期；真正联网同步、服务端幂等与自动重试留给 S1-017。
+// 队列状态描述本机任务生命周期；可靠同步能力在不破坏这些状态的前提下扩展。
 enum OfflineQueueStatus {
   pending,
   sending,
@@ -24,7 +24,8 @@ extension OfflineQueueStatusStorage on OfflineQueueStatus {
   }
 }
 
-// [人工注释][S1-015] 本地记录必须绑定真实服务端 user_id，并保留稳定 clientUuid、原始 payload 与状态；本地状态不冒充服务端 Memory。
+// 本地记录继续绑定真实服务端 user_id 与稳定 clientUuid；
+// serverResourceId 只有收到服务端权威成功响应后才允许写入 completed。
 class OfflineQueueItem {
   const OfflineQueueItem({
     required this.id,
@@ -34,9 +35,11 @@ class OfflineQueueItem {
     required this.payload,
     required this.status,
     required this.attemptCount,
+    required this.retryable,
     required this.createdAt,
     required this.updatedAt,
     this.lastError,
+    this.serverResourceId,
     this.completedAt,
     this.cancelledAt,
   });
@@ -48,7 +51,9 @@ class OfflineQueueItem {
   final Map<String, dynamic> payload;
   final OfflineQueueStatus status;
   final int attemptCount;
+  final bool retryable;
   final String? lastError;
+  final String? serverResourceId;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? completedAt;
@@ -71,7 +76,9 @@ class OfflineQueueItem {
       payload: decoded,
       status: OfflineQueueStatusStorage.parse(row['status']! as String),
       attemptCount: row['attempt_count']! as int,
+      retryable: ((row['retryable'] as int?) ?? 1) == 1,
       lastError: row['last_error'] as String?,
+      serverResourceId: row['server_resource_id'] as String?,
       createdAt: DateTime.parse(row['created_at']! as String),
       updatedAt: DateTime.parse(row['updated_at']! as String),
       completedAt: _parseNullableDate(row['completed_at']),
@@ -84,7 +91,7 @@ class OfflineQueueItem {
   }
 }
 
-// [人工注释][S1-015] SQLite 版本固定从 migration 入口升级；未来 schema 版本只能增量迁移，禁止依赖清库重装。
+// SQLite 继续只允许增量 migration；v2 只增加同步元数据，不清库、不重建 PR #6 队列。
 class OfflineQueueStore {
   OfflineQueueStore({
     DatabaseFactory? factory,
@@ -92,14 +99,14 @@ class OfflineQueueStore {
     String Function()? clientUuidFactory,
     DateTime Function()? now,
   })  : _factory = factory,
-        _databasePathProvider =
-            databasePathProvider ?? _defaultDatabasePath,
+        _databasePathProvider = databasePathProvider ?? _defaultDatabasePath,
         _clientUuidFactory = clientUuidFactory ?? _newClientUuid,
         _now = now ?? DateTime.now;
 
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
   static const String databaseFileName = 'jiyidashi_stage1.sqlite3';
   static const String textMemoryOperation = 'text_memory';
+  static const String objectLocationOperation = 'object_location';
 
   final DatabaseFactory? _factory;
   final Future<String> Function() _databasePathProvider;
@@ -107,13 +114,12 @@ class OfflineQueueStore {
   final DateTime Function() _now;
   Future<Database>? _databaseFuture;
 
-  // [人工注释][S1-015] 生产库放在系统数据库目录；测试可注入独立路径与 DatabaseFactory，不共享真实用户数据。
   static Future<String> _defaultDatabasePath() async {
     final base = await getDatabasesPath();
     return '$base${Platform.pathSeparator}$databaseFileName';
   }
 
-  // [人工注释][S1-016] UUID v4 在任务首次落盘时生成并永久复用；失败重试不得生成第二个本地任务 ID。
+  // UUID v4 在任务首次落盘时生成并永久复用；response-loss 重试不得生成第二个业务键。
   static String _newClientUuid() {
     final random = Random.secure();
     final bytes = List<int>.generate(16, (_) => random.nextInt(256));
@@ -139,7 +145,6 @@ class OfflineQueueStore {
     return normalized;
   }
 
-  // [人工注释][S1-015] 只有真正首次访问 SQLite 时才解析平台 databaseFactory；纯 UI/认证测试不应被未初始化的数据库插件耦合。
   Future<Database> _database() {
     return _databaseFuture ??= () async {
       final factory = _factory ?? databaseFactory;
@@ -183,17 +188,30 @@ class OfflineQueueStore {
             CREATE INDEX idx_offline_queue_owner_status_created
             ON offline_queue(owner_user_id, status, created_at, id)
           ''');
+        case 2:
+          // retryable 持久化“是否允许后台自动再试”；server_resource_id
+          // 只保存服务端权威回执，不能由本地凭空生成。
+          await db.execute('''
+            ALTER TABLE offline_queue
+            ADD COLUMN retryable INTEGER NOT NULL DEFAULT 1
+            CHECK (retryable IN (0, 1))
+          ''');
+          await db.execute('''
+            ALTER TABLE offline_queue
+            ADD COLUMN server_resource_id TEXT
+          ''');
       }
     }
   }
 
-  // [人工注释][S1-016] App 在 sending 中崩溃/被杀后，重启必须显式降为 failed；绝不能把未确认发送结果伪装成 completed。
   Future<void> _recoverInterruptedSending(Database db) async {
     final now = _utcNow().toIso8601String();
     await db.update(
       'offline_queue',
       {
         'status': OfflineQueueStatus.failed.storageValue,
+        'retryable': 1,
+        'server_resource_id': null,
         'last_error': '上次发送在完成确认前中断，可重试',
         'updated_at': now,
       },
@@ -202,11 +220,11 @@ class OfflineQueueStore {
     );
   }
 
-  // [人工注释][S1-016] 当前只验证稳定的文字记录本地结构；payload 是本地格式，不新增或修改 Backend 媒体/API 字段。
   Future<OfflineQueueItem> enqueueTextMemory({
     required String ownerUserId,
     String? title,
     required String content,
+    DateTime? occurredAt,
     String? clientUuid,
   }) {
     final normalizedContent = content.trim();
@@ -214,6 +232,7 @@ class OfflineQueueStore {
       throw ArgumentError.value(content, 'content', 'content must not be empty');
     }
     final normalizedTitle = title?.trim();
+    final stableOccurredAt = (occurredAt ?? _utcNow()).toUtc();
     return enqueueLocalTask(
       ownerUserId: ownerUserId,
       operationType: textMemoryOperation,
@@ -221,12 +240,48 @@ class OfflineQueueStore {
         if (normalizedTitle != null && normalizedTitle.isNotEmpty)
           'title': normalizedTitle,
         'content': normalizedContent,
+        'occurred_at': stableOccurredAt.toIso8601String(),
       },
       clientUuid: clientUuid,
     );
   }
 
-  // [人工注释][S1-016] 入队事务同时按真实 user_id 与 client_uuid 隔离/去重；同账号相同 UUID 不允许被不同内容静默覆盖。
+  Future<OfflineQueueItem> enqueueObjectLocation({
+    required String ownerUserId,
+    required String objectName,
+    required String locationText,
+    DateTime? recordedAt,
+    String? clientUuid,
+  }) {
+    final normalizedObjectName = objectName.trim();
+    final normalizedLocationText = locationText.trim();
+    if (normalizedObjectName.isEmpty) {
+      throw ArgumentError.value(
+        objectName,
+        'objectName',
+        'object name must not be empty',
+      );
+    }
+    if (normalizedLocationText.isEmpty) {
+      throw ArgumentError.value(
+        locationText,
+        'locationText',
+        'location text must not be empty',
+      );
+    }
+    final stableRecordedAt = (recordedAt ?? _utcNow()).toUtc();
+    return enqueueLocalTask(
+      ownerUserId: ownerUserId,
+      operationType: objectLocationOperation,
+      payload: {
+        'object_name': normalizedObjectName,
+        'location_text': normalizedLocationText,
+        'recorded_at': stableRecordedAt.toIso8601String(),
+      },
+      clientUuid: clientUuid,
+    );
+  }
+
   Future<OfflineQueueItem> enqueueLocalTask({
     required String ownerUserId,
     required String operationType,
@@ -272,6 +327,7 @@ class OfflineQueueStore {
         'payload_json': payloadJson,
         'status': OfflineQueueStatus.pending.storageValue,
         'attempt_count': 0,
+        'retryable': 1,
         'created_at': now,
         'updated_at': now,
       });
@@ -285,7 +341,6 @@ class OfflineQueueStore {
     });
   }
 
-  // [人工注释][S1-016] 重启恢复与后续 S1-017 调度均按 user_id 从 SQLite 读取真实队列，不维护易丢失或跨账号的内存镜像。
   Future<List<OfflineQueueItem>> listAll(String ownerUserId) async {
     final owner = _normalizeOwnerUserId(ownerUserId);
     final db = await _database();
@@ -293,6 +348,28 @@ class OfflineQueueStore {
       'offline_queue',
       where: 'owner_user_id = ?',
       whereArgs: [owner],
+      orderBy: 'created_at ASC, id ASC',
+    );
+    return rows.map(OfflineQueueItem.fromRow).toList(growable: false);
+  }
+
+  // 自动 flush 只读取 pending 与“明确可重试”的 failed；确定性 4xx/协议错误
+  // 会保留在 failed 供用户处理，不会进入后台无限重试。
+  Future<List<OfflineQueueItem>> listDeliverable(String ownerUserId) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final db = await _database();
+    final rows = await db.query(
+      'offline_queue',
+      where: '''
+        owner_user_id = ? AND (
+          status = ? OR (status = ? AND retryable = 1)
+        )
+      ''',
+      whereArgs: [
+        owner,
+        OfflineQueueStatus.pending.storageValue,
+        OfflineQueueStatus.failed.storageValue,
+      ],
       orderBy: 'created_at ASC, id ASC',
     );
     return rows.map(OfflineQueueItem.fromRow).toList(growable: false);
@@ -313,7 +390,6 @@ class OfflineQueueStore {
     return rows.isEmpty ? null : OfflineQueueItem.fromRow(rows.single);
   }
 
-  // [人工注释][S1-016] UI 只统计当前登录用户仍需处理的本机任务；其他账号以及 completed/cancelled 均不可见。
   Future<int> countAwaitingDelivery(String ownerUserId) async {
     final owner = _normalizeOwnerUserId(ownerUserId);
     final db = await _database();
@@ -333,7 +409,6 @@ class OfflineQueueStore {
     return (result.single['total'] as int?) ?? 0;
   }
 
-  // [人工注释][S1-016] pending -> sending 才增加 attempt_count；重试先把同一条 failed 任务恢复 pending，再由发送动作计数。
   Future<OfflineQueueItem> markSending(
     String ownerUserId,
     String clientUuid,
@@ -345,18 +420,20 @@ class OfflineQueueStore {
       next: OfflineQueueStatus.sending,
       mutate: (current, now) => {
         'attempt_count': current.attemptCount + 1,
+        'retryable': 1,
         'last_error': null,
+        'server_resource_id': null,
         'updated_at': now,
       },
     );
   }
 
-  // [人工注释][S1-016] 只有 sending 能进入 failed，错误原因持久化供重启后展示/诊断；失败绝不写 completed_at。
   Future<OfflineQueueItem> markFailed(
     String ownerUserId,
     String clientUuid,
-    String error,
-  ) {
+    String error, {
+    required bool retryable,
+  }) {
     final normalizedError = error.trim();
     return _transition(
       ownerUserId,
@@ -364,32 +441,45 @@ class OfflineQueueStore {
       allowed: const {OfflineQueueStatus.sending},
       next: OfflineQueueStatus.failed,
       mutate: (_, now) => {
+        'retryable': retryable ? 1 : 0,
         'last_error': normalizedError.isEmpty ? '发送失败' : normalizedError,
+        'server_resource_id': null,
         'updated_at': now,
         'completed_at': null,
       },
     );
   }
 
-  // [人工注释][S1-016] completed 只能来自 sending 的明确成功确认；本轮不实现产生该确认的网络同步器。
   Future<OfflineQueueItem> markCompleted(
     String ownerUserId,
-    String clientUuid,
-  ) {
+    String clientUuid, {
+    required String serverResourceId,
+  }) {
+    final resourceId = serverResourceId.trim();
+    if (resourceId.isEmpty) {
+      throw ArgumentError.value(
+        serverResourceId,
+        'serverResourceId',
+        'completed requires an authoritative server resource ID',
+      );
+    }
     return _transition(
       ownerUserId,
       clientUuid,
       allowed: const {OfflineQueueStatus.sending},
       next: OfflineQueueStatus.completed,
       mutate: (_, now) => {
+        'retryable': 0,
         'last_error': null,
+        'server_resource_id': resourceId,
         'updated_at': now,
         'completed_at': now,
       },
     );
   }
 
-  // [人工注释][S1-016] failed -> pending 在同账号原行原 client_uuid 上重试，不 insert 新任务，因此不会制造本地重复记录。
+  // 手动重试可以显式把 non-retryable failed 恢复 pending；后台自动重试则
+  // 只从 listDeliverable 读取 retryable=true 的失败任务。
   Future<OfflineQueueItem> retryFailed(
     String ownerUserId,
     String clientUuid,
@@ -400,13 +490,13 @@ class OfflineQueueStore {
       allowed: const {OfflineQueueStatus.failed},
       next: OfflineQueueStatus.pending,
       mutate: (_, now) => {
+        'retryable': 1,
         'last_error': null,
         'updated_at': now,
       },
     );
   }
 
-  // [人工注释][S1-016] 取消采用软状态：当前用户的 pending/failed 可取消，sending/completed 不允许假装取消；重复取消保持幂等。
   Future<OfflineQueueItem> cancel(
     String ownerUserId,
     String clientUuid,
@@ -427,7 +517,9 @@ class OfflineQueueStore {
       },
       next: OfflineQueueStatus.cancelled,
       mutate: (_, now) => {
+        'retryable': 0,
         'last_error': null,
+        'server_resource_id': null,
         'updated_at': now,
         'cancelled_at': now,
       },
@@ -482,7 +574,6 @@ class OfflineQueueStore {
     });
   }
 
-  // [人工注释][S1-015] close 只释放句柄，不删库；下次打开必须仍能恢复未完成记录。
   Future<void> close() async {
     final pending = _databaseFuture;
     _databaseFuture = null;

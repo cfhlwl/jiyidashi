@@ -35,8 +35,8 @@ def get_db() -> Iterator[Session]:
 
 
 def create_schema() -> None:
-    # [人工注释][S1-FIX-001][S1-006] create_all 必须显式加载认证与媒体模型，
+    # create_all 必须显式加载认证、媒体和幂等模型，
     # 不能依赖 router / schema 的偶然 import 顺序决定数据库是否缺表。
-    from app import auth_models, media_models, models  # noqa: F401
+    from app import auth_models, idempotency_models, media_models, models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,11 +19,17 @@ from app.models import (
     SourceType,
 )
 from app.schemas import ObjectCreate, ObjectLocationCreate, ObjectLocationRead, ObjectRead
+from app.services.idempotency_service import (
+    IdempotencyConflict,
+    IdempotencyResourceGone,
+    execute_idempotent_mutation,
+)
 from app.services.memory_service import TrustedMemoryWrite, create_trusted_memory, ensure_utc
 
 router = APIRouter(prefix="/objects", tags=["objects"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
+IdempotencyKey = Annotated[UUID | None, Header(alias="Idempotency-Key")]
 
 
 def normalize_name(name: str) -> str:
@@ -100,19 +106,34 @@ def _latest_invalidation(
     )
 
 
-@router.post(
-    "/{object_id}/locations",
-    response_model=ObjectLocationRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def add_object_location(
+def _load_object_location_for_user(
+    db: Session,
+    user_id: UUID,
+    location_id: UUID,
+) -> ObjectLocation | None:
+    # 幂等 replay 不能绕过 Memory 删除语义。位置历史行可以继续保留，
+    # 但 backing Memory soft-delete 后必须让 ledger 返回 RESOURCE_GONE。
+    return db.scalar(
+        select(ObjectLocation)
+        .join(Memory, Memory.id == ObjectLocation.memory_id)
+        .where(
+            ObjectLocation.id == location_id,
+            ObjectLocation.user_id == user_id,
+            Memory.user_id == user_id,
+            Memory.is_deleted.is_(False),
+        )
+    )
+
+
+def _create_object_location_uncommitted(
+    db: Session,
+    *,
     object_id: UUID,
     payload: ObjectLocationCreate,
-    user_id: CurrentUser,
-    db: DbSession,
+    user_id: UUID,
 ) -> ObjectLocation:
-    # [人工注释][S1-011] add 与 stale 必须锁同一 Object 行，
-    # 让“新位置写入”和“用户明确失效”在 PostgreSQL 上形成单一串行顺序。
+    # add 与 stale 继续锁同一 Object 行；
+    # 幂等层只阻止重复业务提交，不改变位置时间水位和串行化规则。
     item = db.scalar(
         select(ObjectItem)
         .where(ObjectItem.id == object_id, ObjectItem.user_id == user_id)
@@ -176,9 +197,53 @@ def add_object_location(
         ),
     )
     db.add(location)
-    db.commit()
-    db.refresh(location)
+    db.flush()
     return location
+
+
+@router.post(
+    "/{object_id}/locations",
+    response_model=ObjectLocationRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_object_location(
+    object_id: UUID,
+    payload: ObjectLocationCreate,
+    user_id: CurrentUser,
+    db: DbSession,
+    idempotency_key: IdempotencyKey = None,
+) -> ObjectLocation:
+    # object_id 属于业务请求的一部分；同一个 client UUID 如果提交到另一个
+    # Object 或另一份位置 payload，必须 409 而不是静默复用。
+    fingerprint_payload = {
+        "object_id": str(object_id),
+        "payload": payload.model_dump(mode="json"),
+    }
+    try:
+        return execute_idempotent_mutation(
+            db,
+            user_id=user_id,
+            operation_type="OBJECT_LOCATION_CREATE",
+            client_uuid=idempotency_key,
+            fingerprint_payload=fingerprint_payload,
+            resource_type="OBJECT_LOCATION",
+            create_resource=lambda session: _create_object_location_uncommitted(
+                session,
+                object_id=object_id,
+                payload=payload,
+                user_id=user_id,
+            ),
+            resource_id=lambda location: location.id,
+            load_resource=lambda session, resource_id: _load_object_location_for_user(
+                session,
+                user_id,
+                resource_id,
+            ),
+        )
+    except IdempotencyConflict as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except IdempotencyResourceGone as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
 
 
 def _eligible_current_location(
