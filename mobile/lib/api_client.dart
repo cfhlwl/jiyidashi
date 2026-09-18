@@ -49,6 +49,18 @@ class ProtocolException implements Exception {
   String toString() => message;
 }
 
+class _AuthenticatedSessionSnapshot {
+  const _AuthenticatedSessionSnapshot({
+    required this.accessToken,
+    required this.userId,
+    required this.sessionVersion,
+  });
+
+  final String accessToken;
+  final String userId;
+  final int sessionVersion;
+}
+
 class JiYiApiClient {
   JiYiApiClient({http.Client? httpClient, String? baseUrl})
       : _http = httpClient ?? http.Client(),
@@ -59,6 +71,10 @@ class JiYiApiClient {
   String? accessToken;
   // [人工注释][S1-015] 登录态同时保留服务端签发的 user_id，作为本机 SQLite 数据的账号隔离键；不得用昵称/邮箱猜身份。
   String? authenticatedUserId;
+  int _sessionVersion = 0;
+
+  // 登录、注册和退出都会推进会话版本；后台同步用它检测账号切换。
+  int get sessionVersion => _sessionVersion;
 
   bool get showDevelopmentEndpoint => _appEnv != 'production';
 
@@ -66,6 +82,22 @@ class JiYiApiClient {
         'Content-Type': 'application/json',
         if (accessToken != null) 'Authorization': 'Bearer $accessToken',
       };
+
+  _AuthenticatedSessionSnapshot _captureAuthenticatedSession() {
+    final token = accessToken;
+    final userId = authenticatedUserId;
+    if (token == null ||
+        token.trim().isEmpty ||
+        userId == null ||
+        userId.trim().isEmpty) {
+      throw ApiException(401, '请先登录');
+    }
+    return _AuthenticatedSessionSnapshot(
+      accessToken: token,
+      userId: userId,
+      sessionVersion: _sessionVersion,
+    );
+  }
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
 
@@ -122,6 +154,7 @@ class JiYiApiClient {
     }
     accessToken = token;
     authenticatedUserId = userId;
+    _sessionVersion += 1;
   }
 
   Future<Map<String, dynamic>> getProfile() {
@@ -148,8 +181,11 @@ class JiYiApiClient {
   Future<Map<String, dynamic>> createTextMemory({
     String? title,
     required String content,
+    DateTime? occurredAt,
+    String? clientUuid,
   }) {
     // [人工注释][S1-003] 客户端只声明 USER_TEXT capture_source，可信等级继续由服务端决定。
+    // outbox 首次在线尝试携带稳定 UUID 与冻结的发生时间，response-loss 重试必须复用二者。
     return _jsonRequest(
       'POST',
       '/memories',
@@ -157,8 +193,12 @@ class JiYiApiClient {
         'memory_type': 'NOTE',
         if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
         'content': content.trim(),
+        if (occurredAt != null) 'occurred_at': occurredAt.toUtc().toIso8601String(),
         'capture_source': 'USER_TEXT',
       },
+      extraHeaders: clientUuid == null
+          ? null
+          : {'Idempotency-Key': clientUuid.trim()},
     );
   }
 
@@ -170,21 +210,34 @@ class JiYiApiClient {
   Future<Map<String, dynamic>> rememberObjectLocation({
     required String objectName,
     required String locationText,
+    DateTime? recordedAt,
+    String? clientUuid,
   }) async {
     // [人工注释][S1-009] “东西在哪”先建立/复用 Object，再写入有 Evidence 的 ObjectLocation。
+    // 两段 HTTP 属于同一个逻辑 mutation，必须固定使用开始时捕获的认证快照。
+    final authSnapshot = _captureAuthenticatedSession();
     final object = await _jsonRequest(
       'POST',
       '/objects',
       body: {'name': objectName.trim()},
+      authSnapshot: authSnapshot,
     );
-    final objectId = object['id'] as String;
+    final objectId = object['id'];
+    if (objectId is! String || objectId.trim().isEmpty) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
     return _jsonRequest(
       'POST',
       '/objects/$objectId/locations',
       body: {
         'location_text': locationText.trim(),
+        if (recordedAt != null) 'recorded_at': recordedAt.toUtc().toIso8601String(),
         'capture_source': 'USER_TEXT',
       },
+      extraHeaders: clientUuid == null
+          ? null
+          : {'Idempotency-Key': clientUuid.trim()},
+      authSnapshot: authSnapshot,
     );
   }
 
@@ -242,6 +295,7 @@ class JiYiApiClient {
     accessToken = null;
     // [人工注释][S1-015] 退出登录同时清掉当前本机账号作用域；SQLite 数据保留但下一个账号不能读取它。
     authenticatedUserId = null;
+    _sessionVersion += 1;
   }
 
   // [人工注释][S1-019] 统一传输层显式支持 DELETE；204 空响应也必须沿同一服务端成功链处理，
@@ -251,13 +305,24 @@ class JiYiApiClient {
     String path, {
     Map<String, dynamic>? body,
     bool authenticated = true,
+    Map<String, String>? extraHeaders,
+    _AuthenticatedSessionSnapshot? authSnapshot,
   }) async {
-    if (authenticated && accessToken == null) {
+    final token = authSnapshot?.accessToken ?? accessToken;
+    if (authenticated && (token == null || token.trim().isEmpty)) {
       throw ApiException(401, '请先登录');
     }
-    final headers = authenticated
-        ? _headers
-        : const {'Content-Type': 'application/json'};
+    final headers = <String, String>{
+      ...(authenticated
+          ? (authSnapshot == null
+              ? _headers
+              : {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer ${authSnapshot.accessToken}',
+                })
+          : const {'Content-Type': 'application/json'}),
+      ...?extraHeaders,
+    };
     final encoded = body == null ? null : jsonEncode(body);
     // [人工注释][S1-016] transport 分类只在底层 HTTP 边界捕获 ClientException/TimeoutException；其他异常原样向上，绝不触发离线入队。
     try {
@@ -301,9 +366,18 @@ class JiYiApiClient {
     String path, {
     Map<String, dynamic>? body,
     bool authenticated = true,
+    Map<String, String>? extraHeaders,
+    _AuthenticatedSessionSnapshot? authSnapshot,
   }) async {
     final decoded = _decodeResponse(
-      await _request(method, path, body: body, authenticated: authenticated),
+      await _request(
+        method,
+        path,
+        body: body,
+        authenticated: authenticated,
+        extraHeaders: extraHeaders,
+        authSnapshot: authSnapshot,
+      ),
     );
     if (decoded is! Map<String, dynamic>) {
       // [人工注释][S1-016] 2xx 结构异常是协议失败，不是 transport。

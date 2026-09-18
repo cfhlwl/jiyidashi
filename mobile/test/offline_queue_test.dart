@@ -9,13 +9,11 @@ const userB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 void main() {
   sqfliteFfiInit();
-  // [人工注释][S1-015] 单元测试使用 no-isolate FFI 工厂，避免测试 runner 被额外 SQLite worker isolate 挂住；生产 Android/iOS 仍使用 sqflite 原生实现。
   final testDatabaseFactory = databaseFactoryFfiNoIsolate;
 
   late Directory tempDirectory;
   late String databasePath;
 
-  // [人工注释][S1-015] 每个测试使用独立真实 SQLite 文件，close/reopen 才能验证进程重启后的持久化语义。
   setUp(() async {
     tempDirectory = await Directory.systemTemp.createTemp('jiyidashi-offline-');
     databasePath =
@@ -37,7 +35,6 @@ void main() {
   }
 
   test('pending task survives close and reopen with the same client UUID', () async {
-    // [人工注释][S1-015] 未发送记录必须真正落盘；重新创建 Store 后同一账号仍能读到相同本地任务。
     final firstStore = createStore();
     final created = await firstStore.enqueueTextMemory(
       ownerUserId: userA,
@@ -47,6 +44,7 @@ void main() {
     );
     expect(created.ownerUserId, userA);
     expect(created.status, OfflineQueueStatus.pending);
+    expect(created.retryable, isTrue);
     expect(await firstStore.countAwaitingDelivery(userA), 1);
     await firstStore.close();
 
@@ -61,12 +59,36 @@ void main() {
     expect(recovered.clientUuid, created.clientUuid);
     expect(recovered.payload['content'], '下午三点拿合同');
     expect(recovered.status, OfflineQueueStatus.pending);
+    expect(recovered.retryable, isTrue);
     expect(await reopenedStore.countAwaitingDelivery(userA), 1);
     await reopenedStore.close();
   });
 
-  test('interrupted sending is recovered as failed, never completed', () async {
-    // [人工注释][S1-016] sending 时关闭模拟 App 被杀；下次打开必须进入 failed，可重试但绝不能假成功。
+  test('enqueue freezes text and object event timestamps in payload', () async {
+    final store = createStore();
+    final occurredAt = DateTime.utc(2026, 9, 17, 2, 30);
+    final recordedAt = DateTime.utc(2026, 9, 17, 3, 45);
+
+    final text = await store.enqueueTextMemory(
+      ownerUserId: userA,
+      clientUuid: '12121212-1212-4212-8212-121212121212',
+      content: '冻结文字发生时间',
+      occurredAt: occurredAt,
+    );
+    final location = await store.enqueueObjectLocation(
+      ownerUserId: userA,
+      clientUuid: '13131313-1313-4313-8313-131313131313',
+      objectName: '护照',
+      locationText: '旧抽屉',
+      recordedAt: recordedAt,
+    );
+
+    expect(text.payload['occurred_at'], occurredAt.toIso8601String());
+    expect(location.payload['recorded_at'], recordedAt.toIso8601String());
+    await store.close();
+  });
+
+  test('interrupted sending is recovered as retryable failed, never completed', () async {
     final firstStore = createStore();
     final created = await firstStore.enqueueTextMemory(
       ownerUserId: userA,
@@ -85,14 +107,15 @@ void main() {
     );
     expect(recovered, isNotNull);
     expect(recovered!.status, OfflineQueueStatus.failed);
+    expect(recovered.retryable, isTrue);
     expect(recovered.attemptCount, 1);
     expect(recovered.completedAt, isNull);
+    expect(recovered.serverResourceId, isNull);
     expect(recovered.lastError, contains('完成确认前中断'));
     await reopenedStore.close();
   });
 
-  test('failed retry reuses one row and one client UUID', () async {
-    // [人工注释][S1-016] retryFailed 只改变同账号原任务状态；第二次发送增加 attempt_count，但绝不 insert 新任务。
+  test('failed retry reuses one row and completed stores server resource id', () async {
     final store = createStore();
     final created = await store.enqueueTextMemory(
       ownerUserId: userA,
@@ -104,8 +127,10 @@ void main() {
       userA,
       created.clientUuid,
       'network unavailable',
+      retryable: true,
     );
     expect(failed.status, OfflineQueueStatus.failed);
+    expect(failed.retryable, isTrue);
     expect(failed.attemptCount, 1);
 
     final pendingAgain = await store.retryFailed(userA, created.clientUuid);
@@ -117,8 +142,14 @@ void main() {
     final secondSending = await store.markSending(userA, created.clientUuid);
     expect(secondSending.id, created.id);
     expect(secondSending.attemptCount, 2);
-    final completed = await store.markCompleted(userA, created.clientUuid);
+    final completed = await store.markCompleted(
+      userA,
+      created.clientUuid,
+      serverResourceId: 'memory-server-id',
+    );
     expect(completed.status, OfflineQueueStatus.completed);
+    expect(completed.retryable, isFalse);
+    expect(completed.serverResourceId, 'memory-server-id');
     expect(completed.completedAt, isNotNull);
     expect(await store.countAwaitingDelivery(userA), 0);
 
@@ -128,21 +159,47 @@ void main() {
     await store.close();
   });
 
+  test('blocked failed task is excluded from automatic deliverable list', () async {
+    final store = createStore();
+    final created = await store.enqueueTextMemory(
+      ownerUserId: userA,
+      clientUuid: '88888888-8888-4888-8888-888888888888',
+      content: '服务端明确拒绝的记录',
+    );
+    await store.markSending(userA, created.clientUuid);
+    final failed = await store.markFailed(
+      userA,
+      created.clientUuid,
+      'HTTP 422',
+      retryable: false,
+    );
+    expect(failed.retryable, isFalse);
+    expect(await store.listDeliverable(userA), isEmpty);
+
+    final pending = await store.retryFailed(userA, created.clientUuid);
+    expect(pending.status, OfflineQueueStatus.pending);
+    expect(pending.retryable, isTrue);
+    expect(await store.listDeliverable(userA), hasLength(1));
+    await store.close();
+  });
+
   test('duplicate enqueue is idempotent only for identical local task', () async {
-    // [人工注释][S1-016] 同账号相同 UUID + 相同 payload 返回原任务；UUID 冲突但内容不同必须拒绝，避免静默覆盖用户记录。
     final store = createStore();
     const uuid = '44444444-4444-4444-8444-444444444444';
+    final occurredAt = DateTime.utc(2026, 9, 17, 1);
     final first = await store.enqueueTextMemory(
       ownerUserId: userA,
       clientUuid: uuid,
       title: '购物',
       content: '买牛奶',
+      occurredAt: occurredAt,
     );
     final duplicate = await store.enqueueTextMemory(
       ownerUserId: userA,
       clientUuid: uuid,
       title: '购物',
       content: '买牛奶',
+      occurredAt: occurredAt,
     );
     expect(duplicate.id, first.id);
     expect(await store.listAll(userA), hasLength(1));
@@ -153,6 +210,7 @@ void main() {
         clientUuid: uuid,
         title: '购物',
         content: '买咖啡',
+        occurredAt: occurredAt,
       ),
       throwsStateError,
     );
@@ -161,7 +219,6 @@ void main() {
   });
 
   test('cancel is durable and terminal for a local pending task', () async {
-    // [人工注释][S1-016] 取消不物理删行：保留确定的 cancelled 语义，且不能再发送或伪装成 completed。
     final firstStore = createStore();
     final created = await firstStore.enqueueTextMemory(
       ownerUserId: userA,
@@ -170,6 +227,7 @@ void main() {
     );
     final cancelled = await firstStore.cancel(userA, created.clientUuid);
     expect(cancelled.status, OfflineQueueStatus.cancelled);
+    expect(cancelled.retryable, isFalse);
     expect(cancelled.cancelledAt, isNotNull);
     expect(await firstStore.countAwaitingDelivery(userA), 0);
 
@@ -183,6 +241,7 @@ void main() {
       created.clientUuid,
     );
     expect(recovered!.status, OfflineQueueStatus.cancelled);
+    expect(await reopenedStore.listDeliverable(userA), isEmpty);
     await expectLater(
       reopenedStore.markSending(userA, created.clientUuid),
       throwsStateError,
@@ -191,7 +250,6 @@ void main() {
   });
 
   test('queue records are isolated by authenticated user id', () async {
-    // [人工注释][S1-015] 同一设备切换账号时，只能读取当前 user_id 的队列；即使 client_uuid 相同也不能串读或串改。
     final store = createStore();
     const sharedUuid = '77777777-7777-4777-8777-777777777777';
     final a = await store.enqueueTextMemory(
@@ -215,8 +273,7 @@ void main() {
     await store.close();
   });
 
-  test('schema version is persisted without destructive downgrade policy', () async {
-    // [人工注释][S1-015] 首版数据库也必须写入明确 user_version，为未来增量 migration 提供稳定起点。
+  test('schema version 2 is persisted without destructive downgrade policy', () async {
     final store = createStore();
     await store.enqueueTextMemory(
       ownerUserId: userA,
@@ -227,6 +284,9 @@ void main() {
 
     final database = await testDatabaseFactory.openDatabase(databasePath);
     expect(await database.getVersion(), OfflineQueueStore.schemaVersion);
+    final columns = await database.rawQuery('PRAGMA table_info(offline_queue)');
+    final names = columns.map((column) => column['name']).toSet();
+    expect(names, containsAll(<String>{'retryable', 'server_resource_id'}));
     await database.close();
   });
 }

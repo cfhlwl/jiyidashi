@@ -85,5 +85,14 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_voice_asr_integration.py
 
+      - name: PostgreSQL offline idempotency concurrency
+        # 两个独立 Session 同时重放同一个 client_uuid，
+        # 最终必须只留下一个 Memory、一个 MemorySource 和一个 ClientMutation 水位。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_offline_idempotency_integration.py
+
       - name: Test
         run: pytest -q

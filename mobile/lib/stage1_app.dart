@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'offline_queue.dart';
+import 'offline_sync.dart';
 import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
@@ -23,6 +24,10 @@ class _JiYiAppState extends State<JiYiApp> {
   // [人工注释][S1-015] App 级共享一个 SQLite queue store；测试可注入独立数据库，生产默认使用系统数据库目录。
   late final OfflineQueueStore offlineQueue =
       widget.offlineQueue ?? OfflineQueueStore();
+  late final OfflineSyncCoordinator sync = OfflineSyncCoordinator(
+    api: api,
+    store: offlineQueue,
+  );
   bool authenticated = false;
 
   @override
@@ -45,6 +50,7 @@ class _JiYiAppState extends State<JiYiApp> {
           ? AppShell(
               api: api,
               offlineQueue: offlineQueue,
+              sync: sync,
               onLogout: () {
                 api.logout();
                 setState(() => authenticated = false);
@@ -284,26 +290,79 @@ class AppShell extends StatefulWidget {
     super.key,
     required this.api,
     required this.offlineQueue,
+    this.sync,
     required this.onLogout,
   });
 
   final JiYiApiClient api;
   final OfflineQueueStore offlineQueue;
+  final OfflineSyncCoordinator? sync;
   final VoidCallback onLogout;
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
+  late final OfflineSyncCoordinator _sync =
+      widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
   int index = 0;
+  int syncGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // 登录进入生产 Shell 后立即尝试恢复当前账号的可重试 outbox。
+    // coordinator 自身 single-flight，生命周期重复触发不会并发发送同一任务。
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_autoFlush()));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_autoFlush());
+    }
+  }
+
+  Future<void> _autoFlush() async {
+    final owner = widget.api.authenticatedUserId;
+    if (owner == null || owner.trim().isEmpty) return;
+    try {
+      // 空队列直接返回，既避免无意义的数据库/网络调度，也让只提供计数 seam
+      // 的视觉测试不必打开真实 SQLite。数据库首次打开仍会先恢复 interrupted sending。
+      final awaiting = await widget.offlineQueue.countAwaitingDelivery(owner);
+      if (awaiting == 0) return;
+      await _sync.flush(owner);
+    } catch (_) {
+      // 自动同步失败时只保留 SQLite 的真实状态，不能把本地任务伪装成 completed。
+    } finally {
+      if (mounted) setState(() => syncGeneration += 1);
+    }
+  }
+
+  void _queueChanged() {
+    if (mounted) setState(() => syncGeneration += 1);
+  }
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
       const TodayPage(),
       const TimelinePage(),
-      CapturePage(api: widget.api, offlineQueue: widget.offlineQueue),
+      CapturePage(
+        api: widget.api,
+        offlineQueue: widget.offlineQueue,
+        sync: _sync,
+        syncGeneration: syncGeneration,
+        onQueueChanged: _queueChanged,
+      ),
       MemoryQueryPage(api: widget.api),
       ProfilePage(api: widget.api, onLogout: widget.onLogout),
     ];
@@ -410,10 +469,20 @@ class TimelinePage extends StatelessWidget {
 }
 
 class CapturePage extends StatefulWidget {
-  const CapturePage({super.key, required this.api, required this.offlineQueue});
+  const CapturePage({
+    super.key,
+    required this.api,
+    required this.offlineQueue,
+    this.sync,
+    this.syncGeneration = 0,
+    this.onQueueChanged,
+  });
 
   final JiYiApiClient api;
   final OfflineQueueStore offlineQueue;
+  final OfflineSyncCoordinator? sync;
+  final int syncGeneration;
+  final VoidCallback? onQueueChanged;
 
   @override
   State<CapturePage> createState() => _CapturePageState();
@@ -428,10 +497,21 @@ class _CapturePageState extends State<CapturePage> {
   String? result;
   int offlinePendingCount = 0;
 
+  late final OfflineSyncCoordinator _sync =
+      widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
+
   @override
   void initState() {
     super.initState();
     unawaited(_refreshOfflinePendingCount());
+  }
+
+  @override
+  void didUpdateWidget(covariant CapturePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.syncGeneration != widget.syncGeneration) {
+      unawaited(_refreshOfflinePendingCount());
+    }
   }
 
   @override
@@ -464,6 +544,20 @@ class _CapturePageState extends State<CapturePage> {
     }
   }
 
+  Future<OfflineQueueItem> _flushQueued(OfflineQueueItem queued) async {
+    await _sync.flush(_ownerUserId);
+    final current = await widget.offlineQueue.findByClientUuid(
+      _ownerUserId,
+      queued.clientUuid,
+    );
+    if (current == null) {
+      throw StateError('Offline queue item disappeared after flush');
+    }
+    widget.onQueueChanged?.call();
+    await _refreshOfflinePendingCount();
+    return current;
+  }
+
   Future<void> saveTextMemory() async {
     final content = contentController.text.trim();
     if (content.isEmpty) return;
@@ -473,59 +567,87 @@ class _CapturePageState extends State<CapturePage> {
       result = null;
     });
     try {
-      final memory = await widget.api.createTextMemory(
+      // 首次点击时先冻结发生时间并持久化 outbox；第一次在线发送和以后所有重试
+      // 都复用同一 client UUID 与 occurred_at。
+      final queued = await widget.offlineQueue.enqueueTextMemory(
+        ownerUserId: _ownerUserId,
         title: title,
         content: content,
       );
-      titleController.clear();
-      contentController.clear();
-      setState(() => result = '✓ 已记住 · ${memory['id']}');
-    } on ApiException catch (exc) {
-      // [人工注释][S1-016] 服务端已明确返回的认证/校验/业务错误不是“离线”；禁止把真实失败转成本地假成功。
-      setState(() => result = '操作失败：${exc.message}');
-    } on TransportException catch (_) {
-      // [人工注释][S1-016] 只有底层明确分类的 transport/timeout 才能进入 SQLite；协议解析和客户端异常禁止走 fallback。
-      try {
-        // [人工注释][S1-015] transport 失败时先按当前 user_id await SQLite 持久化成功，再清输入并显示本地保存。
-        final queued = await widget.offlineQueue.enqueueTextMemory(
-          ownerUserId: _ownerUserId,
-          title: title,
-          content: content,
-        );
+      final current = await _flushQueued(queued);
+      if (current.status == OfflineQueueStatus.completed) {
         titleController.clear();
         contentController.clear();
-        await _refreshOfflinePendingCount();
-        if (mounted) {
-          setState(() => result = '✓ 已保存到本机，待联网后发送 · ${queued.clientUuid}');
-        }
-      } catch (_) {
-        if (mounted) {
-          setState(() => result = '操作失败：无法连接服务器，且本地保存失败');
-        }
+        setState(() => result = '✓ 已记住 · ${current.serverResourceId}');
+      } else if (current.status == OfflineQueueStatus.failed && current.retryable) {
+        titleController.clear();
+        contentController.clear();
+        setState(() => result = '✓ 已保存到本机，联网后会自动重试');
+      } else {
+        setState(() => result = '操作失败：${current.lastError ?? '同步失败'}');
       }
-    } on ProtocolException catch (exc) {
-      // [人工注释][S1-016] 响应已到达但协议不可解析时显式失败，避免服务端已 commit 后再次排队。
-      setState(() => result = '操作失败：${exc.message}');
     } catch (_) {
-      // [人工注释][S1-016] 未分类客户端异常一律 fail closed；catch-all 不再承担 offline fallback。
-      setState(() => result = '操作失败：客户端处理异常');
+      if (mounted) setState(() => result = '操作失败：本地保存或同步失败');
     } finally {
       if (mounted) setState(() => loading = false);
     }
   }
 
   Future<void> saveObjectLocation() async {
-    if (objectController.text.trim().isEmpty ||
-        locationController.text.trim().isEmpty) {
-      return;
-    }
-    await _run(() async {
-      final location = await widget.api.rememberObjectLocation(
-        objectName: objectController.text,
-        locationText: locationController.text,
-      );
-      return '✓ 已记录 ${objectController.text.trim()} 的当前位置 · ${location['location_text']}';
+    final objectName = objectController.text.trim();
+    final locationText = locationController.text.trim();
+    if (objectName.isEmpty || locationText.isEmpty) return;
+    setState(() {
+      loading = true;
+      result = null;
     });
+    try {
+      // recorded_at 在 enqueue 时冻结，避免延迟同步跨过 UNKNOWN watermark 后
+      // 把旧位置误当成“现在才发生”的新位置。
+      final queued = await widget.offlineQueue.enqueueObjectLocation(
+        ownerUserId: _ownerUserId,
+        objectName: objectName,
+        locationText: locationText,
+      );
+      final current = await _flushQueued(queued);
+      if (current.status == OfflineQueueStatus.completed) {
+        objectController.clear();
+        locationController.clear();
+        setState(() => result = '✓ 已记录当前位置 · ${current.serverResourceId}');
+      } else if (current.status == OfflineQueueStatus.failed && current.retryable) {
+        objectController.clear();
+        locationController.clear();
+        setState(() => result = '✓ 位置已保存到本机，联网后会自动重试');
+      } else {
+        setState(() => result = '操作失败：${current.lastError ?? '同步失败'}');
+      }
+    } catch (_) {
+      if (mounted) setState(() => result = '操作失败：本地保存或同步失败');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> syncNow() async {
+    setState(() {
+      loading = true;
+      result = null;
+    });
+    try {
+      final report = await _sync.flush(_ownerUserId);
+      await _refreshOfflinePendingCount();
+      widget.onQueueChanged?.call();
+      if (mounted) {
+        setState(
+          () => result =
+              '同步完成：成功 ${report.completed}，待重试 ${report.retryableFailures}，需处理 ${report.blockedFailures}',
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => result = '同步暂时无法完成');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
   }
 
   Future<void> markObjectStale() async {
@@ -575,6 +697,12 @@ class _CapturePageState extends State<CapturePage> {
               kind: JiYiStatusKind.warning,
               title: '本机待发送',
               message: '有 $offlinePendingCount 条记录已安全保存在本机，待联网后发送。',
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            OutlinedButton.icon(
+              onPressed: loading ? null : syncNow,
+              icon: const Icon(Icons.sync),
+              label: const Text('立即同步可重试记录'),
             ),
             const SizedBox(height: JiYiSpacing.md),
           ],
