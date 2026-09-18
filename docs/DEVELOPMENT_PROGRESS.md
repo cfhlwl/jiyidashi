@@ -6,7 +6,8 @@
 <!-- [人工注释][DOC-PROGRESS-029] E：Voice Pipeline / PR #18 初版实现生产/测试 HEAD=9ad68a3844，Backend CI 35216633743 与 Mini Program CI 35216633782 均 SUCCESS；第一轮正式审查随后 HOLD，发现 2×P1 + 1×阻塞 P2。 -->
 <!-- [人工注释][DOC-PROGRESS-030] PR #18 第一轮三个窄修已实现并通过精确 HEAD=eb29b0235a 验收：FIX-001 将 DB preflight/claim 与外部 storage+ASR I/O 真正分离；FIX-002 新增 durable media_asr_claims 租约并由真实 PostgreSQL 双 Session 验证 provider 单飞；FIX-003 用 httpx MockTransport 覆盖 OpenAIASRProvider HTTP adapter。Backend CI 35221916652 SUCCESS（含 PostgreSQL voice single-flight 与 77 passed），Mini Program CI 35221916739 SUCCESS。三项仍待第二轮窄范围正式复审，不标 ✅。 -->
 <!-- [人工注释][DOC-PROGRESS-031] PR #18 第二轮窄范围复审 PASS：S1-PR18-FIX-001~003 已正式关闭；生产/测试 HEAD=8ea2a1c7513f64f496f7cbaa1dfe8c36717d0bf8，Backend CI 35222923492 / #166 SUCCESS（PostgreSQL voice ASR single-flight PASS，77 passed），Mini Program CI 35222923466 / #154 SUCCESS。PR 进入最终 clean replay / exact-head CI Gate，S1-004/S1-007 与 E 线继续保持 🟠，待最终合并 main 后转 ✅。 -->
-<!-- [人工注释][DOC-PROGRESS-032] Stage 1G / PR #17 Flutter 第一阶段已完成 G1~G6，并在 latest main=a1962100（PR #18 合并后）做 clean replay；S1-027 与 G 工作线保持 🟠，等待正式 UI 审查、最终合并与必要验收；Stage 2 继续未启动。 -->\n<!-- [人工注释][DOC-PROGRESS-033] PR #17 第二轮极窄复审 PASS，最终 clean HEAD=d8373adc；标准 mobile-ci 35246026919 与 mobile-visual-preview 35246029602 均 SUCCESS，随后以 expected_head_sha 锁定合并，merge commit=d470f662；Issue #16 自动关闭，S1-027 与 G 工作线转 ✅，Stage 2 继续未启动。 -->
+<!-- [人工注释][DOC-PROGRESS-032] Stage 1G / PR #17 Flutter 第一阶段已完成 G1~G6，并在 latest main=a1962100（PR #18 合并后）做 clean replay；S1-027 与 G 工作线保持 🟠，等待正式 UI 审查、最终合并与必要验收；Stage 2 继续未启动。 -->
+<!-- [人工注释][DOC-PROGRESS-033] PR #17 第二轮极窄复审 PASS，最终 clean HEAD=d8373adc；标准 mobile-ci 35246026919 与 mobile-visual-preview 35246029602 均 SUCCESS，随后以 expected_head_sha 锁定合并，merge commit=d470f662；Issue #16 自动关闭，S1-027 与 G 工作线转 ✅，Stage 2 继续未启动。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-17  
