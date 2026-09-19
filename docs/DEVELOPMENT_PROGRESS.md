@@ -14,13 +14,13 @@
 <!-- PR #22 / H Unified Capture 已完成多轮正式审查、recorder fail-closed 终止竞态收口、final clean replay 与四套 exact-head CI，并合并 main=1f0f9487；Issue #21 随 PR 合并完成，S1-008 转 ✅。Stage 1 最后一批 I/J/K/L 已以 Issue #23/#24/#25/#26 并行启动。 -->
 <!-- L：Onboarding / PR #30 已完成正式独立复审（P0=0 / P1=0）、exact-head Mobile #325 与 Visual #181 全绿，并以审核通过 HEAD 7622136e 锁定 squash 合并；merge commit=a4f02cb5，S1-026 转 ✅。 -->
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
-<!-- O：Location / Visit Foundation / Issue #35 已从 main=9a5a1f06 启动；分支 feat/stage2-location-visit-foundation 仅推进 S2-006/S2-007/S2-008/S2-014 的服务端基础，不包含原生定位、Place 自动命名/纠正、时间轴或地图 provider。 -->
+<!-- O：Location / Visit Foundation / Issue #35 / PR #36 已从 main=9a5a1f06 启动；实现 HEAD=b0878f40 已通过 Backend CI #317（migration/drift、真实 PostgreSQL location/visit invariants、116 pytest）与 Mini Program CI #225，当前转 🟠 等待正式独立审查；范围仅 S2-006/S2-007/S2-008/S2-014 服务端基础。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
-> 当前阶段：Stage 1「记得住」已完成；Stage 2 已进入 O / Location & Visit Foundation 的服务端基础开发，其他 Stage 2 客户端/产品线仍未启动  
+> 当前阶段：Stage 1「记得住」已完成；Stage 2 O / Location & Visit Foundation 已完成本轮实现与自动验收，当前等待正式独立审查，其他 Stage 2 客户端/产品线仍未启动  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：O / Issue #35 / `feat/stage2-location-visit-foundation`，仅推进 `S2-006 + S2-007 + S2-008 + S2-014`：权威 Location batch、确定性 Visit 聚类、Place 基础、raw-location durable lifecycle
+> 当前开发重点：O / Issue #35 / PR #36 / `feat/stage2-location-visit-foundation` 已完成权威 Location batch、确定性 Visit 聚类、Place 基础、raw-location durable lifecycle；实现 HEAD `b0878f40` 的 Backend CI #317 与 Mini Program CI #225 全绿，状态为 🟠 待正式审查/最终 latest-main replay
 
 ## 状态规则
 
@@ -170,7 +170,7 @@
 - 公共 API/schema/Evidence 协议只允许一个 PR 定义，其他端只消费。
 - 每个 PR 合并前都必须基于最新 `main` 做最终 replay / CI。
 - `S1-021 → S1-022` 顺序不可反。
-- Stage 2 后台定位、CoreLocation、Location Bridge、Visit clustering 等继续保持 ⬜，不得提前侵入 Stage 1 PR。
+- Stage 1 PR 不得提前侵入 Stage 2；当前 Stage 2 仅 O / S2-006/S2-007/S2-008/S2-014 独立启动，原生后台定位、CoreLocation、Location Bridge 等仍保持 ⬜。
 
 ---
 
@@ -185,15 +185,15 @@
 | S2-003 | Flutter 统一 Location Bridge | ⬜ | `start / stop / pause / status` |
 | S2-004 | 运动状态识别 | ⬜ | 静止 / 移动状态切换 |
 | S2-005 | 智能定位采样策略 | ⬜ | 不允许固定 5 秒高频上传 |
-| S2-006 | Location Point 批量同步 | 🔵 | O / Issue #35：复用既有 `/v1/location/batch`，补强冲突幂等、隐私门禁和 durable 派生 |
-| S2-007 | Visit 聚类 | 🔵 | O / Issue #35：服务端确定性聚类、乱序/重放安全、持久化 provenance |
-| S2-008 | Place 模型与地点库 | 🔵 | O / Issue #35：仅建立自动 Place 基础与访问统计；不做 AI/POI 自动命名 |
+| S2-006 | Location Point 批量同步 | 🟠 | O / Issue #35 / PR #36：复用既有 `/v1/location/batch`，同 UUID 异内容 fail-closed、privacy/location owner 共锁、乱序/重放回归已通过 CI；待正式审查 |
+| S2-007 | Visit 聚类 | 🟠 | O / PR #36：确定性时间/距离聚类、mutable/finalized 边界、稳定 derivation key 与 provenance 已通过真实 PostgreSQL invariant；待正式审查 |
+| S2-008 | Place 模型与地点库 | 🟠 | O / PR #36：owner-scoped 自动 Place 空间桶、访问统计与“未命名地点”基础已实现；明确不做 AI/POI 自动命名，待正式审查 |
 | S2-009 | Place 自动命名 | ⬜ | 地图 POI / 地址解析 |
 | S2-010 | Place 用户纠正 | ⬜ | 用户可纠正“家 / 公司 / 医院”等 |
 | S2-011 | 自动时间轴 | ⬜ | 地点事件 + 主动记忆统一时间轴 |
 | S2-012 | 今日足迹 | ⬜ | 今天去了哪里 |
 | S2-013 | 地点详情 | ⬜ | 首次、最近、累计次数、相关记忆 |
-| S2-014 | 原始位置生命周期 | 🔵 | O / Issue #35：durable finalized watermark + retention，派生安全后才允许删除 raw point |
+| S2-014 | 原始位置生命周期 | 🟠 | O / PR #36：durable finalized watermark + late-arrival/gap 安全窗 + retention 已实现；raw 删除后 Visit provenance 独立存续，待正式审查 |
 | S2-015 | 定位耗电监控指标 | ⬜ | 核心质量指标 |
 | S2-016 | 定位权限渐进式引导 | ⬜ | 不能首次启动一次索取全部权限 |
 
