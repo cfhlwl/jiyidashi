@@ -10,12 +10,13 @@
 <!-- PR #17 第二轮极窄复审 PASS，最终 clean HEAD=d8373adc；标准 mobile-ci 35246026919 与 mobile-visual-preview 35246029602 均 SUCCESS，随后以 expected_head_sha 锁定合并，merge commit=d470f662；Issue #16 自动关闭，S1-027 与 G 工作线转 ✅，Stage 2 继续未启动。 -->
 <!-- PR #18 / E Voice Pipeline 已完成 final clean replay、exact-head Backend/Mini CI 并合并，merge commit=a1962100；Issue #14 已关闭 completed，S1-004/S1-007 转 ✅。 -->
 <!-- PR #20 / F Offline Sync 已完成两轮正式审查、final narrow Gate、latest-main single-commit replay 与三套 exact-head CI，并以 expected-head 锁定合并，merge commit=c4ee5734；Issue #15 已关闭 completed，S1-017 转 ✅。 -->
+<!-- PR #22 / H Unified Capture 已完成多轮正式审查、recorder fail-closed 终止竞态收口、final clean replay 与四套 exact-head CI，并合并 main=1f0f9487；Issue #21 随 PR 合并完成，S1-008 转 ✅。Stage 1 最后一批 I/J/K/L 已以 Issue #23/#24/#25/#26 并行启动。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-09-18  
-> 当前阶段：Stage 1「记得住」继续收口；E/F/G 三条并行工作线均已完成正式审查、latest-main clean replay、exact-head CI 并合并；Stage 2 仍未开始  
-> 当前生产代码基线（E/F/G 产品代码）：`main=c4ee57342d6e9971f7a0a9f648acf0c6259ccdcc`；后续 docs-only 收尾不改变产品 tree  
-> 当前开发重点：`S1-008` / H：Unified Capture 已完成实现、clean replay 与 exact-head Backend/Mini/Mobile/Visual Gate，保持 🟠 等待正式代码审查与合并；其余 `S1-018`、`S1-021 → S1-022`、`S1-025`、`S1-026` 保持未开始，Stage 2 继续保持未启动
+> 最后更新：2026-09-19  
+> 当前阶段：Stage 1「记得住」最终收口；A～H 已完成并合并，I/J/K/L 四条工作线并行开发；Stage 2 仍未开始  
+> 当前生产代码基线（A～H 产品代码）：`main=1f0f948711c51929161d980cd57c056a512b8cfd`；后续进度表 docs-only 提交不改变产品 tree  
+> 当前开发重点：I / `S1-018` Memory Edit（Issue #23）、J / `S1-021` Data Delete（Issue #24）、K / `S1-025` Reminder（Issue #25）、L / `S1-026` Onboarding（Issue #26）并行推进；`S1-022` Account Delete 必须等待 J 完整闭环后再启动；Stage 2 继续保持未启动
 
 ## 状态规则
 
@@ -39,7 +40,7 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A/B/C/D/E/F/G 已全部完成正式审查并合并；Stage 1 仍有 Unified Capture、Memory Edit、数据删除/注销、提醒与 Onboarding 等收口任务，因此整体阶段继续进行中 |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A～H 已全部完成正式审查并合并；I/J/K/L 已并行启动，Account Delete 依赖 Data Delete；完成这些收口任务后再进入 Stage 2 |
 | CI-001 | Backend CI | ✅ | PR #20 final HEAD `c654e65c` 的 Backend CI `35291953239` / #208 SUCCESS：Lint、SQLite/PostgreSQL migration、schema drift、ObjectLocation invariants、Voice single-flight、Offline idempotency concurrency 与 full pytest 全部通过 |
 | CI-002 | Flutter Android CI | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile CI `35291953331` / #228 SUCCESS：Analyze、完整 Flutter tests、Android debug APK 全部通过 |
 | CI-003 | Flutter iOS CI | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile CI `35291953331` / #228 SUCCESS：iOS no-codesign build 通过 |
@@ -94,7 +95,7 @@
 | S1-005 | 图片记忆录入 | ✅ | PR #7 后端媒体/Evidence + PR #9 小程序真实拍照/选图上传链均已审查、CI、clean replay 并合并 |
 | S1-006 | COS / OSS 对象存储直传 | ✅ | 私有 staging→final、短时签名、owner gate、图片签名验证与 commit-safe staging 清理已落地 |
 | S1-007 | ASR 语音转写 | ✅ | PR #18 已完成 transaction/I-O 分离、durable ASR claim/lease 单飞、OpenAI adapter contract tests、final exact-head CI 并合并；Issue #14 已关闭 completed |
-| S1-008 | “帮我记住”统一入口 | 🟠 | PR #22 / Issue #21：Flutter 已统一文字/图片/语音主动记录入口；文字保留 outbox-first，图片复用 verified media，语音复用 READY+ASR+Evidence，并完成 M4A 双端兼容、可信重试、authoritative success、专用 Golden 与四套 exact-head CI；待正式代码审查与合并后转 ✅ |
+| S1-008 | “帮我记住”统一入口 | ✅ | PR #22 已完成多轮正式审查、recorder fail-closed 生命周期/终止竞态收口、final clean replay 与四套 exact-head CI；已合并 `main=1f0f9487` |
 | S1-009 | “东西在哪”物品录入 | ✅ | Object create 并发竞争已幂等兜底 |
 | S1-010 | “东西在哪”查询 | ✅ | 返回真实 Evidence `source_type` / `memory_source_id` |
 | S1-011 | “东西在哪”物品位置失效 / “已经不在那里” | ✅ | 唯一最具体 Object、UNKNOWN 失效水位、锁与重叠名称回归均通过 |
@@ -104,15 +105,15 @@
 | S1-015 | 客户端本地 SQLite | ✅ | PR #6 已合并；版本化 SQLite、账号隔离、重启恢复完成 |
 | S1-016 | 离线记忆队列 | ✅ | PR #6 已合并；状态机、稳定 UUID、取消/重试、仅 TransportException fallback 均通过正式审查 |
 | S1-017 | 离线同步与幂等 | ✅ | PR #20 已完成服务端幂等账本、outbox-first、unknown-commit replay、auth/cancel/single-flight、时间水位与 retry 分类；final HEAD `c654e65c` 三套 exact-head CI 全绿并合并，merge commit `c4ee5734`；Issue #15 已关闭 completed |
-| S1-018 | 单条 Memory 编辑 | ⬜ | 编辑后 Evidence 与审计语义需明确 |
+| S1-018 | 单条 Memory 编辑 | 🔵 | I 线 / Issue #23 / `feat/stage1-memory-edit`：先冻结编辑后 Evidence 与审计语义，再实现 Backend + Flutter |
 | S1-019 | 单条 Memory 删除 | ✅ | 服务端 DELETE、删除后查询失效及 ObjectLocation 联动均已合并 |
 | S1-020 | 数据导出 | ✅ | PR #12 已合并；owner 隔离、JSON v1、媒体敏感字段保护、5000 上限/413、删除位置 tombstone 均通过正式审查 |
-| S1-021 | 全部数据删除 | ⬜ | DB / Cache / Storage 一致删除；必须先于注销账号完成 |
+| S1-021 | 全部数据删除 | 🔵 | J 线 / Issue #24 / `feat/stage1-data-delete`：DB / Cache / Storage 一致删除与 partial-failure durable retry；必须先于注销账号完成 |
 | S1-022 | 注销账号 | ⬜ | 依赖 `S1-021` 全量删除闭环 |
 | S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ✅ | 单一 reference timestamp + DST 时区回归通过 |
 | S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
-| S1-025 | 基础提醒模型 | ⬜ | 仅从记忆产生提醒，不做完整 Todo |
-| S1-026 | 首次使用引导 | ⬜ | 待统一入口稳定后，目标 3 分钟内完成“记住 → 找回”Aha Moment |
+| S1-025 | 基础提醒模型 | 🔵 | K 线 / Issue #25 / `feat/stage1-reminders`：复用现有 Reminder 模型，完成 memory-linked 最小提醒闭环，不扩展 Todo |
+| S1-026 | 首次使用引导 | 🔵 | L 线 / Issue #26 / `feat/stage1-onboarding`：基于已稳定 Unified Capture，目标 3 分钟完成“记住 → 找回 → Evidence”Aha Moment |
 | S1-027 | Product UI / Design System | ✅ | PR #17 已完成两轮正式审查、latest-main clean replay、exact-head Mobile/Visual CI 并合并；Theme/token/共享组件、5 个核心页面、Evidence/隐私/离线状态及 Golden 均已验证；merge commit `d470f662`；Stage 2 未启动 |
 
 ## 2.1 Stage 1 第三批 A/B/C/D 第一阶段收口
@@ -151,12 +152,12 @@
 | 已完成 | E：Voice Pipeline | `S1-004 + S1-007` | ✅ | PR #18 已正式审查、clean replay、exact-head Backend/Mini CI 并合并；Issue #14 已关闭 |
 | 已完成 | F：Offline Sync | `S1-017` | ✅ | PR #20 已两轮审查、final narrow Gate、single-commit replay 与三套 exact-head CI 后合并；Issue #15 已关闭 |
 | 已完成 | G：Product UI / Design System | `S1-027` | ✅ | PR #17 Flutter 第一阶段已完成正式审查、最终 clean replay、exact-head CI 并合并；微信小程序视觉同步仍属后续独立工作 |
-| 1 | H：Unified Capture | `S1-008` | 🟠 | PR #22 实现/测试已完成并 clean replay；Backend、Mini Program、Mobile、Visual exact-head Gate 全绿，等待正式代码审查与合并；Stage 2 不启动 |
-| 2 | Memory Edit | `S1-018` | ⬜ | 独立 Backend/客户端 PR；先明确编辑后 Evidence 与审计语义 |
-| 3 | Data Delete | `S1-021` | ⬜ | DB / Cache / Storage 全删除，明确对象存储删除和失败恢复语义 |
-| 4 | Account Delete | `S1-022` | ⬜ | 必须建立在 S1-021 完整闭环之上 |
-| 5 | Reminder | `S1-025` | ⬜ | 基础提醒，不扩展成 Todo 产品 |
-| 6 | Onboarding | `S1-026` | ⬜ | 统一入口稳定后设计首次 Aha Moment |
+| 已完成 | H：Unified Capture | `S1-008` | ✅ | PR #22 已正式审查、final clean replay、四套 exact-head CI 后合并；main=`1f0f9487` |
+| 并行 I | Memory Edit | `S1-018` | 🔵 | Issue #23 / `feat/stage1-memory-edit`；独立 Backend/客户端 PR，先明确编辑后 Evidence 与审计语义 |
+| 并行 J | Data Delete | `S1-021` | 🔵 | Issue #24 / `feat/stage1-data-delete`；DB / Cache / Storage 全删除，明确对象存储删除和失败恢复语义 |
+| J 完成后 | Account Delete | `S1-022` | ⬜ | 禁止与 J 同时正式实现；必须建立在 S1-021 完整闭环之上 |
+| 并行 K | Reminder | `S1-025` | 🔵 | Issue #25 / `feat/stage1-reminders`；复用现有 Reminder 模型，只做 memory-linked 最小提醒闭环 |
+| 并行 L | Onboarding | `S1-026` | 🔵 | Issue #26 / `feat/stage1-onboarding`；真实 Unified Capture → 找回 → Evidence Aha flow |
 
 ### 硬规则
 
