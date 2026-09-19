@@ -10,6 +10,7 @@
 - 未删除的 Memory 与对应 MemorySource / Evidence；
 - Memory 当前编辑 revision、最后编辑时间与 append-only MemoryEdit 审计历史；
 - Object 与 ObjectLocation 历史，并保留 `CURRENT / STALE / UNKNOWN` 状态；
+- 当前用户的 Reminder（含 `PENDING / DONE / CANCELLED` 历史）；
 - PrivacyState 与 PrivacyPauseInterval；
 - 当前用户媒体业务元数据及仍可用的 Evidence 关联。
 

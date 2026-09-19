@@ -9,6 +9,7 @@ from app.api import (
     memories,
     objects,
     privacy,
+    reminders,
     users,
 )
 
@@ -22,6 +23,8 @@ api_router.include_router(data_export.router)
 # 不与普通 CRUD 分散混用。
 api_router.include_router(data_delete.router)
 api_router.include_router(memories.router)
+# [人工注释][S1-025] Reminder 保持独立资源边界；只引用既有 Memory，不把提醒状态塞进 Memory API。
+api_router.include_router(reminders.router)
 api_router.include_router(objects.router)
 api_router.include_router(location.router)
 api_router.include_router(privacy.router)

@@ -11,6 +11,8 @@ from app.models import (
     MemoryType,
     ObjectLocation,
     ObjectLocationStatus,
+    Reminder,
+    ReminderStatus,
     SourceType,
 )
 from app.schemas import MemoryCreate
@@ -112,14 +114,19 @@ def get_memory_for_user(
     db: Session,
     user_id: UUID,
     memory_id: UUID,
+    *,
+    for_update: bool = False,
 ) -> Memory | None:
-    return db.scalar(
-        select(Memory).where(
-            Memory.id == memory_id,
-            Memory.user_id == user_id,
-            Memory.is_deleted.is_(False),
-        )
+    query = select(Memory).where(
+        Memory.id == memory_id,
+        Memory.user_id == user_id,
+        Memory.is_deleted.is_(False),
     )
+    if for_update:
+        # [人工注释][S1-025] 删除 Memory 与创建 Reminder 共用这一行锁，
+        # 保证不会在软删除提交后留下一个新的 PENDING reminder。
+        query = query.with_for_update()
+    return db.scalar(query)
 
 
 def soft_delete_memory(db: Session, memory: Memory) -> None:
@@ -131,4 +138,21 @@ def soft_delete_memory(db: Session, memory: Memory) -> None:
             ObjectLocation.status == ObjectLocationStatus.CURRENT,
         )
         .values(status=ObjectLocationStatus.STALE)
+    )
+    # [人工注释][S1-025] 删除 backing Memory 后，尚未触发的提醒不能继续作为有效任务存在。
+    # 已完成/已取消历史保持不变，便于用户理解过去发生过什么。
+    db.execute(
+        update(Reminder)
+        .where(
+            Reminder.memory_id == memory.id,
+            Reminder.status == ReminderStatus.PENDING,
+        )
+        .values(status=ReminderStatus.CANCELLED)
+    )
+    # 软删除不会触发数据库 FK 的 ON DELETE SET NULL，因此这里主动把所有 reminder
+    # 与已删除 Memory 脱钩；DONE/CANCELLED 历史状态保留，但不再悬挂 deleted memory_id。
+    db.execute(
+        update(Reminder)
+        .where(Reminder.memory_id == memory.id)
+        .values(memory_id=None)
     )

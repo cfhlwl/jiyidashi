@@ -376,6 +376,56 @@ class JiYiApiClient {
     await _jsonRequest('DELETE', '/memories/$memoryId');
   }
 
+  Future<Map<String, dynamic>> createReminder({
+    required String memoryId,
+    required String title,
+    String? content,
+    required DateTime remindAt,
+    required String clientUuid,
+  }) {
+    final normalizedTitle = title.trim();
+    if (normalizedTitle.isEmpty) {
+      throw ArgumentError.value(title, 'title', 'reminder title must not be empty');
+    }
+    final normalizedContent = content?.trim() ?? '';
+    // [人工注释][S1-025] Flutter 总是把设备上选定的绝对时刻转换成 UTC/Z；
+    // 后端仍拒绝任何没有 offset 的 naive 时间，不在服务器猜用户时区。
+    return _jsonRequest(
+      'POST',
+      '/reminders',
+      body: {
+        'memory_id': memoryId,
+        'title': normalizedTitle,
+        if (normalizedContent.isNotEmpty) 'content': normalizedContent,
+        'remind_at': remindAt.toUtc().toIso8601String(),
+      },
+      // [人工注释][S1-025] 同一次 Reminder create 的 transport/response-loss 重试必须复用此 UUID。
+      extraHeaders: {'Idempotency-Key': clientUuid.trim()},
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> listReminders({
+    String? status,
+    int limit = 100,
+  }) {
+    final normalized = status?.trim();
+    final query = <String, String>{'limit': limit.toString()};
+    if (normalized != null && normalized.isNotEmpty) {
+      query['status'] = normalized;
+    }
+    return _jsonListRequest(
+      Uri(path: '/reminders', queryParameters: query).toString(),
+    );
+  }
+
+  Future<Map<String, dynamic>> completeReminder(String reminderId) {
+    return _jsonRequest('POST', '/reminders/$reminderId/done');
+  }
+
+  Future<Map<String, dynamic>> cancelReminder(String reminderId) {
+    return _jsonRequest('POST', '/reminders/$reminderId/cancel');
+  }
+
   Future<Map<String, dynamic>> rememberObjectLocation({
     required String objectName,
     required String locationText,

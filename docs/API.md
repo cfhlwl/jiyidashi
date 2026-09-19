@@ -509,3 +509,24 @@ POST /v1/privacy/resume
 - 历史暂停区间不会删除。
 - 暂停期间产生的自动位置点即使恢复后才上传，仍会被服务端识别并拒绝入库。
 - 暂停只影响自动采集；用户主动执行“记一下”、文字记忆、物品位置记录仍允许。
+
+## Reminder（S1-025）
+
+Stage 1 Reminder 是绑定既有 Memory 的最小提醒能力，不是 Todo/日历系统。
+
+- `POST /v1/reminders`
+  - Header 必填：`Idempotency-Key: <UUID>`；同 key + 同 payload 返回原 Reminder，同 key + 不同 payload 返回 `409 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST`
+  - 必填：`memory_id`、`title`、带时区 offset/Z 且严格晚于服务端当前 UTC 的 `remind_at`
+  - 可选：`content`
+  - 过去/当前时刻返回 `422 REMINDER_TIME_MUST_BE_FUTURE`
+  - 只能绑定当前用户未删除的 Memory；不存在、跨用户或已删除统一返回 `404 REMINDER_MEMORY_NOT_FOUND`
+- `GET /v1/reminders?status=PENDING|DONE|CANCELLED&limit=100`
+  - 只返回当前用户的提醒；`status` 可省略以读取最近历史
+- `POST /v1/reminders/{id}/done`
+- `POST /v1/reminders/{id}/cancel`
+  - 只允许从 `PENDING` 进入终态
+  - response-loss 后重复相同终态动作是幂等 no-op
+  - `DONE <-> CANCELLED` 互相改写返回 `409 REMINDER_STATUS_CONFLICT`
+
+Memory 软删除会把仍为 `PENDING` 的关联 Reminder 自动改为 `CANCELLED`；已完成/已取消历史保留。
+本阶段不包含重复规则、优先级、项目/子任务、协作、日历同步、AI 自动创建或推送平台扩展。
