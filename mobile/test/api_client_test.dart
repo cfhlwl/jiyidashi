@@ -265,4 +265,66 @@ void main() {
       throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', 502)),
     );
   });
+  test('media upload keeps auth away from the signed storage PUT', () async {
+    var calls = 0;
+    final seen = <String>[];
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+
+        seen.add('${request.method} ${request.url}');
+        if (request.url.host == 'storage.example.test') {
+          expect(request.headers.containsKey('authorization'), isFalse);
+          expect(request.headers['content-type'], 'image/jpeg');
+          expect(request.bodyBytes, [1, 2, 3]);
+          return http.Response('', 200);
+        }
+        if (request.url.path == '/v1/media/uploads') {
+          expect(request.headers['authorization'], 'Bearer example-token');
+          return http.Response(
+            jsonEncode({
+              'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              'kind': 'IMAGE',
+              'status': 'PENDING',
+              'content_type': 'image/jpeg',
+              'size_bytes': 3,
+              'original_filename': 'photo.jpg',
+              'created_at': '2026-09-18T00:00:00Z',
+              'completed_at': null,
+              'upload': {
+                'method': 'PUT',
+                'url': 'https://storage.example.test/signed-upload',
+                'headers': {'Content-Type': 'image/jpeg'},
+                'expires_at': '2026-09-18T00:10:00Z',
+              },
+            }),
+            201,
+            headers: jsonHeaders,
+          );
+        }
+        throw StateError('unexpected request: ${request.method} ${request.url}');
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    final session = await api.createMediaUpload(
+      clientUploadId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      kind: 'IMAGE',
+      contentType: 'image/jpeg',
+      sizeBytes: 3,
+      originalFilename: 'photo.jpg',
+    );
+    expect(session.mediaId, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect(session.upload, isNotNull);
+    await api.uploadSignedMedia(session.upload!, [1, 2, 3]);
+
+    expect(seen, [
+      'POST https://example.test/v1/media/uploads',
+      'PUT https://storage.example.test/signed-upload',
+    ]);
+  });
+
+
 }

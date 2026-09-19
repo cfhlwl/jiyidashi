@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -39,12 +41,14 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/heic",
     "image/heif",
 }
-ALLOWED_AUDIO_CONTENT_TYPES = {"audio/mpeg"}
+ALLOWED_AUDIO_CONTENT_TYPES = {"audio/mpeg", "audio/mp4"}
 IMAGE_SIGNATURE_PREFIX_BYTES = 64
 AUDIO_SIGNATURE_PREFIX_BYTES = 1024
+MP4_AUDIO_BRANDS = {b"M4A ", b"isom", b"iso2", b"mp41", b"mp42"}
 ASR_CLAIM_LEASE = timedelta(minutes=10)
 HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs"}
 HEIF_BRANDS = HEIC_BRANDS | {b"mif1", b"msf1"}
+MEDIA_MEMORY_REQUEST_HASH_KEY = "media_memory_request_sha256"
 
 ASR_ERROR_STATUS = {
     "ASR_PROVIDER_UNAVAILABLE": 503,
@@ -167,13 +171,15 @@ def _validate_image_signature(content_type: str, prefix: bytes) -> None:
 
 
 def _validate_audio_signature(content_type: str, prefix: bytes) -> None:
-    # [人工注释][S1-004] 客户端声明 audio/mpeg 不能直接升级 READY。微信 MP3 可能
-    # 以 ID3 tag 或 MPEG frame sync 开头；两种合法入口均在服务端检查。
+    # MIME 不能直接升级 READY：MP3 检查 ID3/frame sync，M4A 检查 ISO-BMFF ftyp 品牌。
+    # 这里只证明容器格式与声明一致；是否真的可转写仍由服务端 ASR fail-closed 决定。
     is_valid = False
     if content_type == "audio/mpeg":
         is_valid = prefix.startswith(b"ID3") or (
             len(prefix) >= 2 and prefix[0] == 0xFF and (prefix[1] & 0xE0) == 0xE0
         )
+    elif content_type == "audio/mp4":
+        is_valid = bool(_iso_bmff_brands(prefix) & MP4_AUDIO_BRANDS)
     if not is_valid:
         raise MediaError("MEDIA_AUDIO_INVALID", 409)
 
@@ -377,6 +383,92 @@ def _existing_media_memory(
     return memory
 
 
+def _canonical_request_time(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat()
+
+
+def _media_memory_request_hash(
+    *,
+    kind: str,
+    title: str | None,
+    content: str | None,
+    occurred_at: datetime | None,
+) -> str:
+    # 只保存不可逆请求指纹，不在 metadata 中复制用户正文。
+    # null occurred_at 也参与指纹，因此“首次让服务端定时”与后续显式改时间不会静默等价。
+    payload = {
+        "kind": kind,
+        "title": title,
+        "content": content,
+        "occurred_at": _canonical_request_time(occurred_at),
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _assert_photo_memory_replay_matches(
+    memory: Memory,
+    payload: PhotoMemoryCreate,
+) -> None:
+    expected_hash = _media_memory_request_hash(
+        kind="PHOTO",
+        title=payload.title,
+        content=payload.content.strip(),
+        occurred_at=payload.occurred_at,
+    )
+    stored_hash = (memory.metadata_json or {}).get(MEDIA_MEMORY_REQUEST_HASH_KEY)
+    if isinstance(stored_hash, str):
+        if stored_hash != expected_hash:
+            raise MediaError("MEDIA_MEMORY_IDEMPOTENCY_CONFLICT", 409)
+        return
+
+    # 兼容 H 线之前已经存在的媒体 Memory：旧记录没有请求指纹。
+    # 能可靠比较的字段必须一致；旧请求未显式传 occurred_at 时无法反推出 null，只接受现有时间。
+    if memory.title != payload.title or memory.content != payload.content.strip():
+        raise MediaError("MEDIA_MEMORY_IDEMPOTENCY_CONFLICT", 409)
+    if (
+        payload.occurred_at is not None
+        and _canonical_request_time(memory.occurred_at)
+        != _canonical_request_time(payload.occurred_at)
+    ):
+        raise MediaError("MEDIA_MEMORY_IDEMPOTENCY_CONFLICT", 409)
+
+
+def _assert_voice_memory_replay_matches(
+    memory: Memory,
+    payload: VoiceMemoryCreate,
+) -> None:
+    expected_hash = _media_memory_request_hash(
+        kind="VOICE",
+        title=payload.title,
+        content=None,
+        occurred_at=payload.occurred_at,
+    )
+    stored_hash = (memory.metadata_json or {}).get(MEDIA_MEMORY_REQUEST_HASH_KEY)
+    if isinstance(stored_hash, str):
+        if stored_hash != expected_hash:
+            raise MediaError("MEDIA_MEMORY_IDEMPOTENCY_CONFLICT", 409)
+        return
+
+    if memory.title != payload.title:
+        raise MediaError("MEDIA_MEMORY_IDEMPOTENCY_CONFLICT", 409)
+    if (
+        payload.occurred_at is not None
+        and _canonical_request_time(memory.occurred_at)
+        != _canonical_request_time(payload.occurred_at)
+    ):
+        raise MediaError("MEDIA_MEMORY_IDEMPOTENCY_CONFLICT", 409)
+
+
 def _link_memory_source(
     db: Session,
     *,
@@ -419,8 +511,15 @@ def create_photo_memory(
 
     existing_memory = _existing_media_memory(db, user_id, asset.id)
     if existing_memory is not None:
+        _assert_photo_memory_replay_matches(existing_memory, payload)
         return asset, existing_memory
 
+    request_hash = _media_memory_request_hash(
+        kind="PHOTO",
+        title=payload.title,
+        content=payload.content.strip(),
+        occurred_at=payload.occurred_at,
+    )
     memory = create_trusted_memory(
         db,
         user_id,
@@ -435,6 +534,7 @@ def create_photo_memory(
             metadata={
                 "media_id": str(asset.id),
                 "media_kind": asset.kind.value,
+                MEDIA_MEMORY_REQUEST_HASH_KEY: request_hash,
             },
             source_id=str(asset.id),
             evidence_text=payload.content,
@@ -547,6 +647,7 @@ def create_voice_memory(
 
     existing_memory = _existing_media_memory(db, user_id, asset.id)
     if existing_memory is not None:
+        _assert_voice_memory_replay_matches(existing_memory, payload)
         return asset, existing_memory
     if asset.size_bytes > settings.media_max_audio_bytes:
         raise MediaError("MEDIA_TOO_LARGE", 413)
@@ -609,10 +710,17 @@ def create_voice_memory(
 
         existing_memory = _existing_media_memory(db, user_id, locked_asset.id)
         if existing_memory is not None:
+            _assert_voice_memory_replay_matches(existing_memory, payload)
             db.delete(locked_claim)
             db.commit()
             return locked_asset, existing_memory
 
+        request_hash = _media_memory_request_hash(
+            kind="VOICE",
+            title=payload.title,
+            content=None,
+            occurred_at=payload.occurred_at,
+        )
         memory = create_trusted_memory(
             db,
             user_id,
@@ -631,6 +739,7 @@ def create_voice_memory(
                     "asr_provider": result.provider,
                     "asr_model": result.model,
                     "asr_confidence": result.confidence,
+                    MEDIA_MEMORY_REQUEST_HASH_KEY: request_hash,
                 },
                 source_id=str(locked_asset.id),
                 evidence_text=transcript,

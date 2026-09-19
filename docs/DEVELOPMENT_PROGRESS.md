@@ -15,7 +15,7 @@
 > 最后更新：2026-09-18  
 > 当前阶段：Stage 1「记得住」继续收口；E/F/G 三条并行工作线均已完成正式审查、latest-main clean replay、exact-head CI 并合并；Stage 2 仍未开始  
 > 当前生产代码基线（E/F/G 产品代码）：`main=c4ee57342d6e9971f7a0a9f648acf0c6259ccdcc`；后续 docs-only 收尾不改变产品 tree  
-> 当前开发重点：进入下一组 Stage 1 收口任务，优先推进 `S1-008` Unified Capture，再按顺序处理 `S1-018`、`S1-021 → S1-022`、`S1-025`、`S1-026`；Stage 2 继续保持未启动
+> 当前开发重点：`S1-008` / H：Unified Capture 已完成实现、clean replay 与 exact-head Backend/Mini/Mobile/Visual Gate，保持 🟠 等待正式代码审查与合并；其余 `S1-018`、`S1-021 → S1-022`、`S1-025`、`S1-026` 保持未开始，Stage 2 继续保持未启动
 
 ## 状态规则
 
@@ -94,7 +94,7 @@
 | S1-005 | 图片记忆录入 | ✅ | PR #7 后端媒体/Evidence + PR #9 小程序真实拍照/选图上传链均已审查、CI、clean replay 并合并 |
 | S1-006 | COS / OSS 对象存储直传 | ✅ | 私有 staging→final、短时签名、owner gate、图片签名验证与 commit-safe staging 清理已落地 |
 | S1-007 | ASR 语音转写 | ✅ | PR #18 已完成 transaction/I-O 分离、durable ASR claim/lease 单飞、OpenAI adapter contract tests、final exact-head CI 并合并；Issue #14 已关闭 completed |
-| S1-008 | “帮我记住”统一入口 | ⬜ | 待 `S1-005 + S1-007` 协议稳定后，统一文字 / 语音 / 图片 Memory Pipeline |
+| S1-008 | “帮我记住”统一入口 | 🟠 | PR #22 / Issue #21：Flutter 已统一文字/图片/语音主动记录入口；文字保留 outbox-first，图片复用 verified media，语音复用 READY+ASR+Evidence，并完成 M4A 双端兼容、可信重试、authoritative success、专用 Golden 与四套 exact-head CI；待正式代码审查与合并后转 ✅ |
 | S1-009 | “东西在哪”物品录入 | ✅ | Object create 并发竞争已幂等兜底 |
 | S1-010 | “东西在哪”查询 | ✅ | 返回真实 Evidence `source_type` / `memory_source_id` |
 | S1-011 | “东西在哪”物品位置失效 / “已经不在那里” | ✅ | 唯一最具体 Object、UNKNOWN 失效水位、锁与重叠名称回归均通过 |
@@ -151,7 +151,7 @@
 | 已完成 | E：Voice Pipeline | `S1-004 + S1-007` | ✅ | PR #18 已正式审查、clean replay、exact-head Backend/Mini CI 并合并；Issue #14 已关闭 |
 | 已完成 | F：Offline Sync | `S1-017` | ✅ | PR #20 已两轮审查、final narrow Gate、single-commit replay 与三套 exact-head CI 后合并；Issue #15 已关闭 |
 | 已完成 | G：Product UI / Design System | `S1-027` | ✅ | PR #17 Flutter 第一阶段已完成正式审查、最终 clean replay、exact-head CI 并合并；微信小程序视觉同步仍属后续独立工作 |
-| 1 | Unified Capture | `S1-008` | ⬜ | 文字/图片/语音协议现已稳定，下一阶段优先统一“帮我记住”入口与可信 Memory Pipeline |
+| 1 | H：Unified Capture | `S1-008` | 🟠 | PR #22 实现/测试已完成并 clean replay；Backend、Mini Program、Mobile、Visual exact-head Gate 全绿，等待正式代码审查与合并；Stage 2 不启动 |
 | 2 | Memory Edit | `S1-018` | ⬜ | 独立 Backend/客户端 PR；先明确编辑后 Evidence 与审计语义 |
 | 3 | Data Delete | `S1-021` | ⬜ | DB / Cache / Storage 全删除，明确对象存储删除和失败恢复语义 |
 | 4 | Account Delete | `S1-022` | ⬜ | 必须建立在 S1-021 完整闭环之上 |

@@ -81,9 +81,10 @@ class ImageContentType(StrEnum):
 
 
 class AudioContentType(StrEnum):
-    # [人工注释][S1-004][S1-007] E 线第一阶段只接受微信 RecorderManager 产出的 MP3；
-    # 客户端声明 MIME 只是候选元数据，READY 前仍由服务端检查真实文件头。
+    # 客户端声明的 MIME 只是候选元数据；READY 前服务端仍会检查真实文件头。
+    # Flutter 使用 M4A/MPEG-4 容器；容器通过后仍必须由服务端 ASR 证明音频可用。
     MPEG = "audio/mpeg"
+    MP4 = "audio/mp4"
 
 
 class RegisterRequest(BaseModel):

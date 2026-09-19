@@ -61,6 +61,64 @@ class _AuthenticatedSessionSnapshot {
   final int sessionVersion;
 }
 
+class SignedUploadTarget {
+  const SignedUploadTarget({
+    required this.method,
+    required this.url,
+    required this.headers,
+  });
+
+  final String method;
+  final Uri url;
+  final Map<String, String> headers;
+}
+
+class MediaUploadSession {
+  const MediaUploadSession({required this.mediaId, required this.upload});
+
+  final String mediaId;
+  final SignedUploadTarget? upload;
+
+  factory MediaUploadSession.fromJson(Map<String, dynamic> data) {
+    final mediaId = data['id'];
+    if (mediaId is! String || mediaId.trim().isEmpty) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    final rawUpload = data['upload'];
+    if (rawUpload == null) {
+      return MediaUploadSession(mediaId: mediaId, upload: null);
+    }
+    if (rawUpload is! Map<String, dynamic>) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    final method = rawUpload['method'];
+    final url = rawUpload['url'];
+    final rawHeaders = rawUpload['headers'];
+    if (method is! String ||
+        method.toUpperCase() != 'PUT' ||
+        url is! String ||
+        url.trim().isEmpty ||
+        rawHeaders is! Map<String, dynamic>) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    final headers = <String, String>{};
+    for (final entry in rawHeaders.entries) {
+      if (entry.value is! String) {
+        throw ProtocolException('服务端返回格式不正确');
+      }
+      headers[entry.key] = entry.value as String;
+    }
+    return MediaUploadSession(
+      mediaId: mediaId,
+      upload: SignedUploadTarget(
+        method: method.toUpperCase(),
+        url: Uri.parse(url),
+        headers: headers,
+      ),
+    );
+  }
+}
+
 class JiYiApiClient {
   JiYiApiClient({http.Client? httpClient, String? baseUrl})
       : _http = httpClient ?? http.Client(),
@@ -199,6 +257,86 @@ class JiYiApiClient {
       extraHeaders: clientUuid == null
           ? null
           : {'Idempotency-Key': clientUuid.trim()},
+    );
+  }
+
+  Future<MediaUploadSession> createMediaUpload({
+    required String clientUploadId,
+    required String kind,
+    required String contentType,
+    required int sizeBytes,
+    String? originalFilename,
+  }) async {
+    final data = await _jsonRequest(
+      'POST',
+      '/media/uploads',
+      body: {
+        'client_upload_id': clientUploadId,
+        'kind': kind,
+        'content_type': contentType,
+        'size_bytes': sizeBytes,
+        if (originalFilename != null && originalFilename.trim().isNotEmpty)
+          'original_filename': originalFilename.trim(),
+      },
+    );
+    return MediaUploadSession.fromJson(data);
+  }
+
+  Future<void> uploadSignedMedia(
+    SignedUploadTarget target,
+    List<int> bytes,
+  ) async {
+    // Signed PUT 是对象存储临时能力票据，不能附带迹忆 Authorization。
+    // 只发送服务端签发的 headers，避免把账号 token 泄露给 storage host。
+    if (target.method != 'PUT') {
+      throw ProtocolException('媒体上传协议不正确');
+    }
+    late final http.Response response;
+    try {
+      response = await _http.put(target.url, headers: target.headers, body: bytes);
+    } on http.ClientException catch (exc) {
+      throw TransportException('媒体上传连接失败', exc);
+    } on TimeoutException catch (exc) {
+      throw TransportException('媒体上传超时', exc);
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(response.statusCode, '媒体上传失败');
+    }
+  }
+
+  Future<Map<String, dynamic>> completeMediaUpload(String mediaId) {
+    return _jsonRequest('POST', '/media/$mediaId/complete');
+  }
+
+  Future<Map<String, dynamic>> createPhotoMemory({
+    required String mediaId,
+    String? title,
+    required String content,
+    DateTime? occurredAt,
+  }) {
+    return _jsonRequest(
+      'POST',
+      '/media/$mediaId/memory',
+      body: {
+        if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+        'content': content.trim(),
+        if (occurredAt != null) 'occurred_at': occurredAt.toUtc().toIso8601String(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> createVoiceMemory({
+    required String mediaId,
+    String? title,
+    DateTime? occurredAt,
+  }) {
+    return _jsonRequest(
+      'POST',
+      '/media/$mediaId/voice-memory',
+      body: {
+        if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+        if (occurredAt != null) 'occurred_at': occurredAt.toUtc().toIso8601String(),
+      },
     );
   }
 

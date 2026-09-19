@@ -102,9 +102,14 @@ class FakeASRProvider:
         filename: str | None,
     ) -> ASRResult:
         self.calls += 1
-        assert audio.startswith(b"ID3")
-        assert content_type == "audio/mpeg"
-        assert filename == "voice.mp3"
+        if content_type == "audio/mpeg":
+            assert audio.startswith(b"ID3")
+            assert filename == "voice.mp3"
+        elif content_type == "audio/mp4":
+            assert len(audio) >= 12 and audio[4:8] == b"ftyp"
+            assert filename == "voice.m4a"
+        else:
+            raise AssertionError(f"unexpected audio content type: {content_type}")
         if self.error_code:
             raise ASRProviderError(self.error_code)
         return self.result
@@ -127,13 +132,19 @@ async def _new_headers(client, nickname: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
-def _audio_payload(*, size_bytes: int, client_upload_id=None) -> dict:
+def _audio_payload(
+    *,
+    size_bytes: int,
+    client_upload_id=None,
+    content_type: str = "audio/mpeg",
+    original_filename: str = "voice.mp3",
+) -> dict:
     return {
         "client_upload_id": str(client_upload_id or uuid4()),
         "kind": "AUDIO",
-        "content_type": "audio/mpeg",
+        "content_type": content_type,
         "size_bytes": size_bytes,
-        "original_filename": "voice.mp3",
+        "original_filename": original_filename,
     }
 
 
@@ -152,26 +163,70 @@ def _put_audio(
     storage.object_bytes[key] = data
 
 
-async def _ready_audio(client, headers, storage: FakeObjectStorage, data: bytes) -> str:
+async def _ready_audio(
+    client,
+    headers,
+    storage: FakeObjectStorage,
+    data: bytes,
+    *,
+    content_type: str = "audio/mpeg",
+    original_filename: str = "voice.mp3",
+) -> str:
     upload = await client.post(
         "/v1/media/uploads",
         headers=headers,
-        json=_audio_payload(size_bytes=len(data)),
+        json=_audio_payload(
+            size_bytes=len(data),
+            content_type=content_type,
+            original_filename=original_filename,
+        ),
     )
     assert upload.status_code == 201
     body = upload.json()
     assert body["kind"] == "AUDIO"
     assert body["status"] == "PENDING"
-    assert body["upload"]["headers"] == {"Content-Type": "audio/mpeg"}
+    assert body["upload"]["headers"] == {"Content-Type": content_type}
     media_id = body["id"]
     staging_key = storage.last_upload_key
     assert staging_key is not None
-    _put_audio(storage, staging_key, data)
+    _put_audio(storage, staging_key, data, content_type=content_type)
 
     complete = await client.post(f"/v1/media/{media_id}/complete", headers=headers)
     assert complete.status_code == 200
     assert complete.json()["status"] == "READY"
     return media_id
+
+
+@pytest.mark.asyncio
+async def test_m4a_audio_container_is_supported_and_transcribed(
+    client,
+    auth_headers,
+    voice_dependencies,
+):
+    storage, asr = voice_dependencies
+    audio = (
+        b"\x00\x00\x00\x20ftypM4A "
+        b"\x00\x00\x00\x00M4A mp42isom"
+        + (b"\x00" * 80)
+    )
+    media_id = await _ready_audio(
+        client,
+        auth_headers,
+        storage,
+        audio,
+        content_type="audio/mp4",
+        original_filename="voice.m4a",
+    )
+
+    created = await client.post(
+        f"/v1/media/{media_id}/voice-memory",
+        headers=auth_headers,
+        json={"title": "Flutter 语音"},
+    )
+    assert created.status_code == 201
+    assert created.json()["memory"]["source_type"] == "USER_VOICE"
+    assert created.json()["memory"]["content"] == "明天下午三点去医院复查"
+    assert asr.calls == 1
 
 
 @pytest.mark.asyncio
@@ -217,10 +272,31 @@ async def test_voice_requires_verified_audio_and_server_asr(
     duplicate = await client.post(
         f"/v1/media/{media_id}/voice-memory",
         headers=auth_headers,
-        json={},
+        json={"title": "复查安排"},
     )
     assert duplicate.status_code == 201
     assert duplicate.json()["memory"]["id"] == memory_id
+    assert asr.calls == 1
+
+    changed_title = await client.post(
+        f"/v1/media/{media_id}/voice-memory",
+        headers=auth_headers,
+        json={"title": "用户重试时改了标题"},
+    )
+    assert changed_title.status_code == 409
+    assert changed_title.json()["detail"] == "MEDIA_MEMORY_IDEMPOTENCY_CONFLICT"
+    assert asr.calls == 1
+
+    changed_time = await client.post(
+        f"/v1/media/{media_id}/voice-memory",
+        headers=auth_headers,
+        json={
+            "title": "复查安排",
+            "occurred_at": "2026-09-18T09:00:00+08:00",
+        },
+    )
+    assert changed_time.status_code == 409
+    assert changed_time.json()["detail"] == "MEDIA_MEMORY_IDEMPOTENCY_CONFLICT"
     assert asr.calls == 1
 
     query = await client.post(
