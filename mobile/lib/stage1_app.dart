@@ -672,7 +672,11 @@ class _CapturePageState extends State<CapturePage> {
     final content = contentController.text.trim();
     if (content.isEmpty) return;
     final title = titleController.text.trim();
-    final querySeed = title.isNotEmpty ? title : content;
+    // Query API accepts <= 2000 chars. Keep onboarding comfortably below that bound and
+    // avoid splitting surrogate pairs by truncating on Unicode code points.
+    final querySeed = title.isNotEmpty
+        ? title
+        : String.fromCharCodes(content.runes.take(512));
     setState(() {
       loading = true;
       result = null;
