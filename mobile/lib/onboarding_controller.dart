@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 
 import 'onboarding_state.dart';
 
+// [人工注释][S1-026] 引导状态机只编排真实 Capture/Query/Evidence 事件；不创建演示 Memory，也不绕过服务端可信门禁。
+
 // The controller owns onboarding lifecycle and persistence so AppShell only wires
 // real product events (capture/query/navigation) into a small state machine.
 class OnboardingController extends ChangeNotifier {
