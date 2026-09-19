@@ -14,13 +14,14 @@
 <!-- PR #22 / H Unified Capture 已完成多轮正式审查、recorder fail-closed 终止竞态收口、final clean replay 与四套 exact-head CI，并合并 main=1f0f9487；Issue #21 随 PR 合并完成，S1-008 转 ✅。Stage 1 最后一批 I/J/K/L 已以 Issue #23/#24/#25/#26 并行启动。 -->
 <!-- L：Onboarding / PR #30 已完成正式独立复审（P0=0 / P1=0）、exact-head Mobile #325 与 Visual #181 全绿，并以审核通过 HEAD 7622136e 锁定 squash 合并；merge commit=a4f02cb5，S1-026 转 ✅。 -->
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
-<!-- O：Location / Visit Foundation / Issue #35 / PR #36 已从 main=9a5a1f06 启动；实现 HEAD=b0878f40 已通过 Backend CI #317（migration/drift、真实 PostgreSQL location/visit invariants、116 pytest）与 Mini Program CI #225，当前转 🟠 等待正式独立审查；范围仅 S2-006/S2-007/S2-008/S2-014 服务端基础。 -->
+<!-- O：Location / Visit Foundation / Issue #35 / PR #36 第一轮正式审查 HOLD（P0=0 / P1=3 / P2=2）；durable client_uuid receipt、future-skew gate、独立 retention maintenance、orphan auto-Place cleanup 已完成窄修，代码 HEAD=9a985183 已通过 Backend CI #323（119 pytest）与 Mini #231，等待最终 docs-only exact-head CI / 第二轮 very narrow review。 -->
+<!-- N：Native Location Foundation / Issue #34 / PR #37 当前 Draft/Open/未合并，HEAD=8b41524c；owned S2-001/S2-002/S2-003/S2-016，Mobile CI #359 与 Visual #215 均 SUCCESS，状态为 🟠 待正式审查，不得在 O 线伪写成“未启动”。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
-> 当前阶段：Stage 1「记得住」已完成；Stage 2 O / Location & Visit Foundation 已完成本轮实现与自动验收，当前等待正式独立审查，其他 Stage 2 客户端/产品线仍未启动  
+> 当前阶段：Stage 1「记得住」已完成；Stage 2 当前并行推进 O / Location & Visit Foundation 与 N / Native Location Foundation，两条线均保持独立 Draft PR、尚未合并 main  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：O / Issue #35 / PR #36 / `feat/stage2-location-visit-foundation` 已完成权威 Location batch、确定性 Visit 聚类、Place 基础、raw-location durable lifecycle；实现 HEAD `b0878f40` 的 Backend CI #317 与 Mini Program CI #225 全绿，状态为 🟠 待正式审查/最终 latest-main replay
+> 当前开发重点：O / PR #36 第一轮审查的 3×P1 + 2×P2 已按窄范围收口，代码 HEAD `9a985183` 的 Backend CI #323（119 passed）与 Mini #231 全绿；N / PR #37 HEAD `8b41524c` 的 Mobile #359 / Visual #215 全绿。两条线均为 🟠 待正式审查/最终 latest-main replay
 
 ## 状态规则
 
@@ -170,32 +171,32 @@
 - 公共 API/schema/Evidence 协议只允许一个 PR 定义，其他端只消费。
 - 每个 PR 合并前都必须基于最新 `main` 做最终 replay / CI。
 - `S1-021 → S1-022` 顺序不可反。
-- Stage 1 PR 不得提前侵入 Stage 2；当前 Stage 2 仅 O / S2-006/S2-007/S2-008/S2-014 独立启动，原生后台定位、CoreLocation、Location Bridge 等仍保持 ⬜。
+- Stage 1 PR 不得提前侵入 Stage 2；当前 Stage 2 已独立启动 O（S2-006/S2-007/S2-008/S2-014）与 N（S2-001/S2-002/S2-003/S2-016），两条线必须继续保持独立分支/PR，禁止互相偷带范围。
 
 ---
 
 # 3. Stage 2：自动记
 
-> **Stage 2 已从 O / Location & Visit Foundation 的服务端基础开始；本线不包含 Android/iOS 原生后台定位，也不自动启动其他 Stage 2 工作线。**
+> **Stage 2 当前有两条并行独立工作线：O / Location & Visit Foundation（PR #36）与 N / Native Location Foundation（PR #37）。O 不包含原生定位；N 不拥有服务端 Visit/Place/retention 协议。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S2-001 | Android 原生后台定位模块 | ⬜ | 低功耗、权限分阶段申请 |
-| S2-002 | iOS CoreLocation 后台定位模块 | ⬜ | 适配系统后台限制 |
-| S2-003 | Flutter 统一 Location Bridge | ⬜ | `start / stop / pause / status` |
+| S2-001 | Android 原生后台定位模块 | 🟠 | N / Issue #34 / PR #37：Android native foundation 已实现并通过 Mobile #359；Draft/Open，待正式审查 |
+| S2-002 | iOS CoreLocation 后台定位模块 | 🟠 | N / PR #37：CoreLocation significant-change foundation 已实现并通过 iOS/native CI；待正式审查 |
+| S2-003 | Flutter 统一 Location Bridge | 🟠 | N / PR #37：status-only init + progressive enable/privacy gate bridge 已实现；Mobile #359 / Visual #215 全绿，待正式审查 |
 | S2-004 | 运动状态识别 | ⬜ | 静止 / 移动状态切换 |
 | S2-005 | 智能定位采样策略 | ⬜ | 不允许固定 5 秒高频上传 |
-| S2-006 | Location Point 批量同步 | 🟠 | O / Issue #35 / PR #36：复用既有 `/v1/location/batch`，同 UUID 异内容 fail-closed、privacy/location owner 共锁、乱序/重放回归已通过 CI；待正式审查 |
+| S2-006 | Location Point 批量同步 | 🟠 | O / PR #36：durable owner-scoped receipt 将 client_uuid 幂等生命周期与 raw GPS retention 分离；future-skew gate、冲突/重放回归已通过 Backend #323，待第二轮窄审 |
 | S2-007 | Visit 聚类 | 🟠 | O / PR #36：确定性时间/距离聚类、mutable/finalized 边界、稳定 derivation key 与 provenance 已通过真实 PostgreSQL invariant；待正式审查 |
-| S2-008 | Place 模型与地点库 | 🟠 | O / PR #36：owner-scoped 自动 Place 空间桶、访问统计与“未命名地点”基础已实现；明确不做 AI/POI 自动命名，待正式审查 |
+| S2-008 | Place 模型与地点库 | 🟠 | O / PR #36：自动 Place 空间桶/访问统计已实现；mutable Visit 撤销会清理无引用自动 orphan Place，用户命名/被事实引用 Place 不删；待第二轮窄审 |
 | S2-009 | Place 自动命名 | ⬜ | 地图 POI / 地址解析 |
 | S2-010 | Place 用户纠正 | ⬜ | 用户可纠正“家 / 公司 / 医院”等 |
 | S2-011 | 自动时间轴 | ⬜ | 地点事件 + 主动记忆统一时间轴 |
 | S2-012 | 今日足迹 | ⬜ | 今天去了哪里 |
 | S2-013 | 地点详情 | ⬜ | 首次、最近、累计次数、相关记忆 |
-| S2-014 | 原始位置生命周期 | 🟠 | O / PR #36：durable finalized watermark + late-arrival/gap 安全窗 + retention 已实现；raw 删除后 Visit provenance 独立存续，待正式审查 |
+| S2-014 | 原始位置生命周期 | 🟠 | O / PR #36：durable watermark + retention + 独立 `python -m app.maintenance.location_retention` 入口已实现；无需新 batch 也能最终清理 raw，Visit provenance/receipt 保留，待第二轮窄审 |
 | S2-015 | 定位耗电监控指标 | ⬜ | 核心质量指标 |
-| S2-016 | 定位权限渐进式引导 | ⬜ | 不能首次启动一次索取全部权限 |
+| S2-016 | 定位权限渐进式引导 | 🟠 | N / PR #37：前台权限与后台/Always 权限分阶段、显式用户动作触发；Mobile/Visual CI 已通过，待正式审查 |
 
 ---
 
