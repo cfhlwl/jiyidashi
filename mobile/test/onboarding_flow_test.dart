@@ -212,9 +212,14 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => startOnboarding
+          ? find.byKey(const ValueKey('onboarding-intro')).evaluate().isNotEmpty
+          : find.text('今天').evaluate().isNotEmpty,
+      reason: startOnboarding ? 'onboarding intro' : 'normal Today page',
+    );
   }
-
 
   testWidgets('successful registration auto-starts onboarding from the real auth page', (
     tester,
