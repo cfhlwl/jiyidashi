@@ -12,12 +12,13 @@
 <!-- PR #18 / E Voice Pipeline 已完成 final clean replay、exact-head Backend/Mini CI 并合并，merge commit=a1962100；Issue #14 已关闭 completed，S1-004/S1-007 转 ✅。 -->
 <!-- PR #20 / F Offline Sync 已完成两轮正式审查、final narrow Gate、latest-main single-commit replay 与三套 exact-head CI，并以 expected-head 锁定合并，merge commit=c4ee5734；Issue #15 已关闭 completed，S1-017 转 ✅。 -->
 <!-- PR #22 / H Unified Capture 已完成多轮正式审查、recorder fail-closed 终止竞态收口、final clean replay 与四套 exact-head CI，并合并 main=1f0f9487；Issue #21 随 PR 合并完成，S1-008 转 ✅。Stage 1 最后一批 I/J/K/L 已以 Issue #23/#24/#25/#26 并行启动。 -->
+<!-- L：Onboarding / PR #30 已完成正式独立复审（P0=0 / P1=0）、exact-head Mobile #325 与 Visual #181 全绿，并以审核通过 HEAD 7622136e 锁定 squash 合并；merge commit=a4f02cb5，S1-026 转 ✅。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
-> 当前阶段：Stage 1「记得住」最终收口；A～J 已完成并合并，K 继续收口，L 已实现并进入正式审查；S1-022 Account Delete 的前置依赖已满足但尚未启动；Stage 2 仍未开始  
-> 当前生产代码基线：`main=7e3e7682f3a368c222cae902fc9c591ffa44a7db`  
-> 当前开发重点：K / `S1-025` Reminder（Issue #25）继续推进；L / `S1-026` Onboarding（PR #30）已完成实现与自动验收，进入正式独立审查；J / `S1-021` 已完成，因此 `S1-022` Account Delete 的前置依赖已满足，可单独启动新分支/Issue；Stage 2 继续保持未启动
+> 当前阶段：Stage 1「记得住」最终收口；A～J 与 L 已完成并合并，K 继续收口；S1-022 Account Delete 的前置依赖已满足但尚未启动；Stage 2 仍未开始  
+> 当前生产代码基线（L 合并后产品代码）：`main=a4f02cb5dc1a18164a446e9256a2029bac5fa2ee`  
+> 当前开发重点：K / `S1-025` Reminder（Issue #25）继续推进；L / `S1-026` Onboarding 已完成正式复审并合并；J / `S1-021` 已完成，因此 `S1-022` Account Delete 的前置依赖已满足，可单独启动新分支/Issue；Stage 2 继续保持未启动
 
 ## 状态规则
 
@@ -41,7 +42,7 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A～H 已全部完成正式审查并合并；I/J/K/L 已并行启动，Account Delete 依赖 Data Delete；完成这些收口任务后再进入 Stage 2 |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🔵 | A～J 与 L 已完成正式审查并合并；K 继续收口，S1-022 Account Delete 尚未启动；完成这些收口任务后再进入 Stage 2 |
 | CI-001 | Backend CI | ✅ | PR #20 final HEAD `c654e65c` 的 Backend CI `35291953239` / #208 SUCCESS：Lint、SQLite/PostgreSQL migration、schema drift、ObjectLocation invariants、Voice single-flight、Offline idempotency concurrency 与 full pytest 全部通过 |
 | CI-002 | Flutter Android CI | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile CI `35291953331` / #228 SUCCESS：Analyze、完整 Flutter tests、Android debug APK 全部通过 |
 | CI-003 | Flutter iOS CI | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile CI `35291953331` / #228 SUCCESS：iOS no-codesign build 通过 |
@@ -114,7 +115,7 @@
 | S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ✅ | 单一 reference timestamp + DST 时区回归通过 |
 | S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
 | S1-025 | 基础提醒模型 | 🔵 | K 线 / Issue #25 / `feat/stage1-reminders`：复用现有 Reminder 模型，完成 memory-linked 最小提醒闭环，不扩展 Todo |
-| S1-026 | 首次使用引导 | 🟠 | L 线 / Issue #26 / PR #30 / `feat/stage1-onboarding`：真实 Unified Capture → 找回目标 Memory → Evidence Aha flow 已实现并通过 Mobile/Visual 自动验收；待正式独立审查与合并 |
+| S1-026 | 首次使用引导 | ✅ | L 线 / Issue #26 / PR #30：真实 Unified Capture → authoritative Memory ID → 同一 Memory + Evidence Aha flow 已通过正式独立复审与 exact-head Mobile/Visual CI，并 squash 合并为 main=`a4f02cb5` |
 | S1-027 | Product UI / Design System | ✅ | PR #17 已完成两轮正式审查、latest-main clean replay、exact-head Mobile/Visual CI 并合并；Theme/token/共享组件、5 个核心页面、Evidence/隐私/离线状态及 Golden 均已验证；merge commit `d470f662`；Stage 2 未启动 |
 
 ## 2.1 Stage 1 第三批 A/B/C/D 第一阶段收口
@@ -158,7 +159,7 @@
 | 已完成 J | Data Delete | `S1-021` | ✅ | PR #28 已基于 PR #27 后的新 main 完成 MemoryEdit 删除适配、0008 migration、单提交 clean replay 与 exact-head CI，并合并 main=`3abc1366` |
 | 下一步可启动 | Account Delete | `S1-022` | ⬜ | J / S1-021 已完整闭环；可创建独立分支/Issue 开始账号身份删除，但尚未正式启动 |
 | 并行 K | Reminder | `S1-025` | 🔵 | Issue #25 / `feat/stage1-reminders`；复用现有 Reminder 模型，只做 memory-linked 最小提醒闭环 |
-| 并行 L | Onboarding | `S1-026` | 🟠 | Issue #26 / PR #30 / `feat/stage1-onboarding`；真实 Unified Capture → 找回 → Evidence Aha flow 已实现，待正式独立审查与合并 |
+| 已完成 L | Onboarding | `S1-026` | ✅ | PR #30 已正式独立复审通过并 squash 合并，merge commit=`a4f02cb5`；真实 Unified Capture → target Memory → Evidence Aha flow 完整闭环 |
 
 ### 硬规则
 
