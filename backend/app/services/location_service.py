@@ -6,11 +6,19 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.models import LocationDerivationState, LocationPoint, Place, Visit
+from app.models import (
+    LocationDerivationState,
+    LocationIngestReceipt,
+    LocationPoint,
+    Memory,
+    ObjectLocation,
+    Place,
+    Visit,
+)
 from app.schemas import LocationBatchRequest, LocationPointCreate
 from app.services.privacy_service import (
     ensure_utc,
@@ -39,6 +47,13 @@ class LocationIngestResult:
     duplicates: int
     rejected_privacy: int
     rejected_finalized: int
+    derived_visits: int
+    raw_deleted: int
+    finalized_through: datetime | None
+
+
+@dataclass(frozen=True)
+class LocationMaintenanceResult:
     derived_visits: int
     raw_deleted: int
     finalized_through: datetime | None
@@ -84,6 +99,56 @@ def _signature(point: _Point) -> tuple[object, ...]:
         point.speed,
         point.recorded_at,
     )
+
+
+def _receipt_hash(point: _Point) -> str:
+    # Stable canonical form is independent of JSON field ordering/number formatting.
+    payload = "|".join(
+        (
+            point.client_uuid,
+            point.recorded_at.isoformat(timespec="microseconds"),
+            f"{point.latitude:.8f}",
+            f"{point.longitude:.8f}",
+            "" if point.accuracy is None else f"{point.accuracy:.3f}",
+            "" if point.speed is None else f"{point.speed:.3f}",
+        )
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _ensure_receipts_for_raw_points(db: Session, user_id: UUID) -> int:
+    # [人工注释][S2-006] Stage 1 已可能存在 LocationPoint；0010 不能用跨数据库 SQL
+    # 可靠重算 Python canonical hash，所以在第一次 ingest/maintenance 时补账。
+    # 必须在任何 raw retention DELETE 之前完成，避免升级后的第一轮 sweep 丢失幂等记忆。
+    missing = list(
+        db.scalars(
+            select(LocationPoint)
+            .outerjoin(
+                LocationIngestReceipt,
+                and_(
+                    LocationIngestReceipt.user_id == LocationPoint.user_id,
+                    LocationIngestReceipt.client_uuid == LocationPoint.client_uuid,
+                ),
+            )
+            .where(
+                LocationPoint.user_id == user_id,
+                LocationIngestReceipt.user_id.is_(None),
+            )
+        )
+    )
+    for raw in missing:
+        point = _stored_point(raw)
+        db.add(
+            LocationIngestReceipt(
+                user_id=user_id,
+                client_uuid=point.client_uuid,
+                payload_hash=_receipt_hash(point),
+                recorded_at=point.recorded_at,
+            )
+        )
+    if missing:
+        db.flush()
+    return len(missing)
 
 
 def _distance_m(point: _Point, latitude: float, longitude: float) -> float:
@@ -234,9 +299,33 @@ def _refresh_place_stats(db: Session, user_id: UUID) -> None:
             .group_by(Visit.place_id)
         )
     }
-    for place in db.scalars(select(Place).where(Place.user_id == user_id)):
+    for place in list(db.scalars(select(Place).where(Place.user_id == user_id))):
         row = stats.get(place.id)
         if row is None:
+            # [人工注释][S2-008] mutable Visit 撤销后，纯自动 Place 不能作为“幽灵地点”
+            # 继续公开。只删除仍是自动 bucket 且没有任何 Memory/ObjectLocation 引用的 Place；
+            # 用户命名/纠正或被其它事实引用的 Place 永远不在这里清理。
+            has_memory_reference = db.scalar(
+                select(Memory.id)
+                .where(Memory.user_id == user_id, Memory.place_id == place.id)
+                .limit(1)
+            )
+            has_object_reference = db.scalar(
+                select(ObjectLocation.id)
+                .where(
+                    ObjectLocation.user_id == user_id,
+                    ObjectLocation.place_id == place.id,
+                )
+                .limit(1)
+            )
+            if (
+                place.cluster_key is not None
+                and not place.is_user_named
+                and has_memory_reference is None
+                and has_object_reference is None
+            ):
+                db.delete(place)
+                continue
             place.first_visited_at = None
             place.last_visited_at = None
             place.visit_count = 0
@@ -257,6 +346,7 @@ def _rebuild(
     settings: Settings,
     now: datetime,
 ) -> tuple[int, int, datetime]:
+    _ensure_receipts_for_raw_points(db, user_id)
     previous = ensure_utc(state.finalized_through) if state.finalized_through else None
     statement = select(LocationPoint).where(LocationPoint.user_id == user_id)
     if previous is not None:
@@ -398,12 +488,13 @@ def ingest_location_batch(
         else:
             duplicates += 1
 
-    existing = {
+    _ensure_receipts_for_raw_points(db, user_id)
+    receipts = {
         row.client_uuid: row
         for row in db.scalars(
-            select(LocationPoint).where(
-                LocationPoint.user_id == user_id,
-                LocationPoint.client_uuid.in_(normalized),
+            select(LocationIngestReceipt).where(
+                LocationIngestReceipt.user_id == user_id,
+                LocationIngestReceipt.client_uuid.in_(normalized),
             )
         )
     }
@@ -413,13 +504,16 @@ def ingest_location_batch(
 
     candidates: list[_Point] = []
     rejected_finalized = 0
+    future_limit = now + timedelta(seconds=settings.location_future_skew_seconds)
     for client_uuid, point in normalized.items():
-        stored = existing.get(client_uuid)
-        if stored is not None:
-            if _signature(_stored_point(stored)) != _signature(point):
+        receipt = receipts.get(client_uuid)
+        if receipt is not None:
+            if receipt.payload_hash != _receipt_hash(point):
                 raise LocationIngestError("LOCATION_CLIENT_UUID_CONFLICT", 409)
             duplicates += 1
             continue
+        if point.recorded_at > future_limit:
+            raise LocationIngestError("LOCATION_RECORDED_AT_IN_FUTURE", 422)
         if point.recorded_at <= cutoff:
             rejected_finalized += 1
             continue
@@ -451,6 +545,14 @@ def ingest_location_batch(
                 recorded_at=point.recorded_at,
             )
         )
+        db.add(
+            LocationIngestReceipt(
+                user_id=user_id,
+                client_uuid=point.client_uuid,
+                payload_hash=_receipt_hash(point),
+                recorded_at=point.recorded_at,
+            )
+        )
     if rows:
         db.add_all(rows)
         db.flush()
@@ -468,6 +570,36 @@ def ingest_location_batch(
         duplicates=duplicates,
         rejected_privacy=rejected_privacy,
         rejected_finalized=rejected_finalized,
+        derived_visits=derived_visits,
+        raw_deleted=raw_deleted,
+        finalized_through=ensure_utc(finalized_through),
+    )
+
+
+
+def maintain_location_history(
+    db: Session,
+    *,
+    user_id: UUID,
+    now: datetime | None = None,
+    settings: Settings | None = None,
+) -> LocationMaintenanceResult:
+    """Advance Visit finalization and raw retention without requiring new uploads."""
+
+    settings = settings or get_settings()
+    now = ensure_utc(now or datetime.now(UTC))
+    state = lock_location_derivation_state(db, user_id)
+    # [人工注释][S2-014] maintenance 与 ingest 复用同一 owner lock 和 rebuild；
+    # 因此用户关闭定位后，cron/CLI 仍能独立推进 watermark、finalize Visit 并删除过期 raw。
+    derived_visits, raw_deleted, finalized_through = _rebuild(
+        db,
+        user_id=user_id,
+        state=state,
+        settings=settings,
+        now=now,
+    )
+    db.commit()
+    return LocationMaintenanceResult(
         derived_visits=derived_visits,
         raw_deleted=raw_deleted,
         finalized_through=ensure_utc(finalized_through),
