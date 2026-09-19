@@ -7,6 +7,8 @@ on:
     paths:
       - ".github/workflows/s1-026-golden-generator.yml"
       - "mobile/test/visual_golden_test.dart"
+      - "mobile/lib/onboarding_flow.dart"
+      - "mobile/lib/stage1_app.dart"
 
 permissions:
   contents: read
