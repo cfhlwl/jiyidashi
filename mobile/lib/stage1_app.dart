@@ -1564,7 +1564,7 @@ class ProfilePage extends StatelessWidget {
                     color: theme.colorScheme.primary,
                   ),
                   title: '新手引导',
-                  subtitle: '随时重新体验“记住 → 找回 → Evidence”，不会创建演示数据。',
+                  subtitle: '随时重新体验“记住、找回、查看 Evidence”，不会创建演示数据。',
                   child: OutlinedButton.icon(
                     key: const ValueKey('profile-restart-onboarding'),
                     onPressed: onStartOnboarding,
