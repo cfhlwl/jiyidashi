@@ -56,6 +56,11 @@ jobs:
           set -euo pipefail
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_COARSE_LOCATION' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_FINE_LOCATION' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_BACKGROUND_LOCATION' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:foregroundServiceType="location"' android/app/src/main/AndroidManifest.xml
 
       - name: Build Android debug APK
         # Debug 继续覆盖开发安装包；production dart-define 禁止静默回退 localhost。
@@ -63,6 +68,17 @@ jobs:
           flutter build apk --debug
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
+
+      # Flutter's Android migration creates the Gradle wrapper during the first Android
+      # build; the repository intentionally does not commit gradlew. Run JVM policy tests
+      # after debug build so this gate uses the exact Gradle toolchain Flutter selected.
+      - name: Test Android native location policy
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x android/gradlew
+          ./android/gradlew -p android app:testDebugUnitTest --stacktrace
 
       - name: Build Android release APK
         # Release build 使用 main manifest，防止 INTERNET 等正式权限被 debug/profile manifest 掩盖。
@@ -87,6 +103,31 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Test iOS native location policy
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          device_id="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          for runtime in data.get("devices", {}).values():
+              for device in runtime:
+                  if device.get("isAvailable") and str(device.get("name", "")).startswith("iPhone"):
+                      print(device["udid"])
+                      raise SystemExit(0)
+          raise SystemExit(1)
+          ')"
+          xcodebuild test             -project ios/Runner.xcodeproj             -scheme Runner             -destination "platform=iOS Simulator,id=$device_id"             -only-testing:RunnerTests             CODE_SIGNING_ALLOWED=NO
+
+      - name: Verify iOS progressive location declarations
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'NSLocationWhenInUseUsageDescription' ios/Runner/Info.plist
+          grep -q 'NSLocationAlwaysAndWhenInUseUsageDescription' ios/Runner/Info.plist
+          grep -q '<string>location</string>' ios/Runner/Info.plist
 
       - name: Build iOS without codesigning
         # [人工注释][S1-FIX-007] iOS 同样以 production dart-define 验证 build-time endpoint 契约。
