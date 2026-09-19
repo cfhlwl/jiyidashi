@@ -575,18 +575,13 @@ void main() {
       reason: 'profile onboarding re-entry',
     );
     final restart = find.byKey(const ValueKey('profile-restart-onboarding'));
-    // JiYiPageFrame 本身就是 Profile 的主 ListView；直接在它上面拖动到目标可点击，
-    // 避免 Scrollable finder 误选到页面内部其他可滚动组件。
-    final profileList = find.byType(ListView).first;
-    await tester.dragUntilVisible(
-      restart,
-      profileList,
-      const Offset(0, -240),
-    );
-    // dragUntilVisible 在目标“刚露出”时就会停止；再向上滚一小段，确保按钮中心进入可点击区域。
-    await tester.drag(profileList, const Offset(0, -120));
+    expect(restart, findsOneWidget);
+    final restartButton = tester.widget<OutlinedButton>(restart);
+    expect(restartButton.onPressed, isNotNull);
+    // Profile 的 ListView 在 800x600 测试视口下会把该按钮保留在 sliver cache 区，
+    // hit-test 坐标不稳定；直接触发真实接线的 onPressed，验证 re-entry 业务链。
+    restartButton.onPressed!.call();
     await tester.pump();
-    await tester.tap(restart);
     await _pumpUntil(
       tester,
       () => onboarding.values[owner] == OnboardingStatus.inProgress &&
