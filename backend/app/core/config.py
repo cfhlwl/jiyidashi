@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     storage_addressing_style: str = "virtual"
     storage_object_prefix: str = "media"
     storage_presign_ttl_seconds: int = Field(default=600, ge=60, le=3600)
+    # [人工注释][S1-021-FIX-002] Presigned PUT 在 expiry 前已经开始时可继续在过期后完成。
+    # Data Delete 因此必须在 capability expiry 之后再等待真实 settle window；
+    # 生产值应覆盖部署链路允许的最大 in-flight PUT 生命周期。
+    storage_delete_settle_seconds: int = Field(default=300, ge=30, le=86400)
     media_max_image_bytes: int = Field(
         default=20 * 1024 * 1024,
         ge=1,

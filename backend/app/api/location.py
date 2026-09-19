@@ -90,15 +90,19 @@ def upload_location_batch(
     if not rows:
         return LocationBatchResponse(accepted=0, rejected_privacy=rejected_privacy)
 
-    db.add_all(rows)
     try:
+        # [人工注释][S1-021-FIX-001] 唯一键竞争只回滚 SAVEPOINT，不回滚请求入口
+        # 的外层事务。这样 Location 自身不会主动释放 User KEY SHARE；即使未来别的
+        # 路径跨 transaction，GuardedSession generation gate 仍在每次 commit 前兜底。
+        with db.begin_nested():
+            db.add_all(rows)
+            db.flush()
         db.commit()
         return LocationBatchResponse(
             accepted=len(rows),
             rejected_privacy=rejected_privacy,
         )
     except IntegrityError:
-        db.rollback()
         retry_rows, retry_rejected = _new_points(db, user_id, payload)
         if not retry_rows:
             return LocationBatchResponse(accepted=0, rejected_privacy=retry_rejected)

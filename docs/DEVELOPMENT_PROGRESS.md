@@ -1,7 +1,7 @@
 <!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
-<!-- I：Memory Edit / PR #27 已完成实现收口：title/content-only PATCH、append-only MemoryEdit 审计、USER_EDIT Evidence、expected_revision 乐观并发门禁、Flutter 查询结果编辑入口与结构化位置 fail-closed；状态转 🟠，等待 exact-head CI 与正式复审，未合并 main。 -->
+<!-- I：Memory Edit / PR #27 已完成正式复审并合并 main=24901d76；S1-018 转 ✅。J / PR #28 随后基于该新 main 做 MemoryEdit 删除适配、0008 migration 顺延与单提交 clean replay，进入最终 exact-head CI / 正式复审。 -->
 <!-- Stage 1 第三批 A/B/C/D 第一阶段全部完成；Stage 1 本身仍未完成，下一阶段继续 S1-004/S1-007、S1-017、S1-008、S1-018、S1-021、S1-022、S1-025、S1-026；Stage 2 继续明确未开始。 -->
 <!-- E：Voice Pipeline / Issue #14 已从 main=677b6ce9 启动；分支 feat/stage1-voice-asr 仅推进 S1-004 + S1-007，先完成真实音频上传、ASR provider 边界与原始音频 Evidence，Stage 2 继续未开始。 -->
 <!-- E：Voice Pipeline / PR #18 初版实现生产/测试 HEAD=9ad68a3844，Backend CI 35216633743 与 Mini Program CI 35216633782 均 SUCCESS；第一轮正式审查随后 HOLD，发现 2×P1 + 1×阻塞 P2。 -->
@@ -15,9 +15,9 @@
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
-> 当前阶段：Stage 1「记得住」最终收口；A～H 已完成并合并，I/J/K/L 四条工作线并行开发；Stage 2 仍未开始  
-> 当前生产代码基线（A～H 产品代码）：`main=1f0f948711c51929161d980cd57c056a512b8cfd`；后续进度表 docs-only 提交不改变产品 tree  
-> 当前开发重点：I / `S1-018` Memory Edit（Issue #23）、J / `S1-021` Data Delete（Issue #24）、K / `S1-025` Reminder（Issue #25）、L / `S1-026` Onboarding（Issue #26）并行推进；`S1-022` Account Delete 必须等待 J 完整闭环后再启动；Stage 2 继续保持未启动
+> 当前阶段：Stage 1「记得住」最终收口；A～I 已完成并合并，J/K/L 三条工作线继续收口；Stage 2 仍未开始  
+> 当前生产代码基线（A～I 产品代码）：`main=24901d76e640e9e96ef2224dd87c630241ac90c6`  
+> 当前开发重点：J / `S1-021` Data Delete（Issue #24）、K / `S1-025` Reminder（Issue #25）、L / `S1-026` Onboarding（Issue #26）继续推进；`S1-022` Account Delete 必须等待 J 完整闭环后再启动；Stage 2 继续保持未启动
 
 ## 状态规则
 
@@ -106,10 +106,10 @@
 | S1-015 | 客户端本地 SQLite | ✅ | PR #6 已合并；版本化 SQLite、账号隔离、重启恢复完成 |
 | S1-016 | 离线记忆队列 | ✅ | PR #6 已合并；状态机、稳定 UUID、取消/重试、仅 TransportException fallback 均通过正式审查 |
 | S1-017 | 离线同步与幂等 | ✅ | PR #20 已完成服务端幂等账本、outbox-first、unknown-commit replay、auth/cancel/single-flight、时间水位与 retry 分类；final HEAD `c654e65c` 三套 exact-head CI 全绿并合并，merge commit `c4ee5734`；Issue #15 已关闭 completed |
-| S1-018 | 单条 Memory 编辑 | 🟠 | I 线 / Issue #23 / PR #27：Backend + Flutter 已实现；仅允许 title/content，保留原始 Evidence，append-only MemoryEdit + USER_EDIT source，expected_revision 防并发覆盖，OBJECT_LOCATION 通用编辑 fail-closed；待正式复审/合并 |
+| S1-018 | 单条 Memory 编辑 | ✅ | PR #27 已完成正式复审与四套 exact-head CI，并 squash 合并为 main=`24901d76`；原始 Evidence、USER_EDIT provenance、revision 并发门禁与 Flutter 编辑闭环均已验收 |
 | S1-019 | 单条 Memory 删除 | ✅ | 服务端 DELETE、删除后查询失效及 ObjectLocation 联动均已合并 |
 | S1-020 | 数据导出 | ✅ | PR #12 已合并；owner 隔离、JSON v1、媒体敏感字段保护、5000 上限/413、删除位置 tombstone 均通过正式审查 |
-| S1-021 | 全部数据删除 | 🔵 | J 线 / Issue #24 / `feat/stage1-data-delete`：DB / Cache / Storage 一致删除与 partial-failure durable retry；必须先于注销账号完成 |
+| S1-021 | 全部数据删除 | 🟠 | J 线 / Issue #24 / PR #28：durable DB/storage 删除、旧请求 generation gate、Presigned PUT expiry+quiet 收敛已实现；新 main 的 MemoryEdit 审计表已纳入删除 inventory，migration 顺延 0008；待最终 exact-head CI / 正式复审 |
 | S1-022 | 注销账号 | ⬜ | 依赖 `S1-021` 全量删除闭环 |
 | S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ✅ | 单一 reference timestamp + DST 时区回归通过 |
 | S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
@@ -154,8 +154,8 @@
 | 已完成 | F：Offline Sync | `S1-017` | ✅ | PR #20 已两轮审查、final narrow Gate、single-commit replay 与三套 exact-head CI 后合并；Issue #15 已关闭 |
 | 已完成 | G：Product UI / Design System | `S1-027` | ✅ | PR #17 Flutter 第一阶段已完成正式审查、最终 clean replay、exact-head CI 并合并；微信小程序视觉同步仍属后续独立工作 |
 | 已完成 | H：Unified Capture | `S1-008` | ✅ | PR #22 已正式审查、final clean replay、四套 exact-head CI 后合并；main=`1f0f9487` |
-| 并行 I | Memory Edit | `S1-018` | 🟠 | Issue #23 / PR #27 / `feat/stage1-memory-edit`；功能与回归已实现并通过开发态核心自动测试，进入 final clean replay / exact-head CI / 正式复审 |
-| 并行 J | Data Delete | `S1-021` | 🔵 | Issue #24 / `feat/stage1-data-delete`；DB / Cache / Storage 全删除，明确对象存储删除和失败恢复语义 |
+| 已完成 I | Memory Edit | `S1-018` | ✅ | PR #27 已正式复审、四套 exact-head CI 全绿并合并 main=`24901d76` |
+| 并行 J | Data Delete | `S1-021` | 🟠 | Issue #24 / PR #28 / `feat/stage1-data-delete`；已基于 Memory Edit 合并后的新 main 补齐 memory_edits 删除并 clean replay，待最终 exact-head CI / 正式复审 |
 | J 完成后 | Account Delete | `S1-022` | ⬜ | 禁止与 J 同时正式实现；必须建立在 S1-021 完整闭环之上 |
 | 并行 K | Reminder | `S1-025` | 🔵 | Issue #25 / `feat/stage1-reminders`；复用现有 Reminder 模型，只做 memory-linked 最小提醒闭环 |
 | 并行 L | Onboarding | `S1-026` | 🔵 | Issue #26 / `feat/stage1-onboarding`；真实 Unified Capture → 找回 → Evidence Aha flow |
@@ -285,7 +285,7 @@
 | SEC-004 | 敏感数据权限隔离 | ⬜ | 位置 / 健康 / 家庭 / 生物识别分级 |
 | SEC-005 | 服务端访问审计 | ⬜ | 敏感数据查询留痕 |
 | SEC-006 | 数据导出 | ✅ | PR #12 已合并；当前认证用户可导出版本化 JSON，严格 owner 隔离且不泄露内部 Storage 字段 |
-| SEC-007 | 数据彻底删除 | ⬜ | 对应 S1-021；DB / Cache / Storage 一致删除 |
+| SEC-007 | 数据彻底删除 | 🟠 | PR #28 已实现 durable DB / Storage 全删除、partial-failure retry 与 MemoryEdit 审计清理；待最终复审/合并 |
 | SEC-008 | 账户注销 | ⬜ | 对应 S1-022；与删除策略联动 |
 | SEC-009 | 位置权限单独同意 | ⬜ | 按平台规则实施 |
 | SEC-010 | 家庭查看逐项授权 | ⬜ | 默认关闭 |
