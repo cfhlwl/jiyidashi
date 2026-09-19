@@ -5,16 +5,24 @@ import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
+import 'onboarding_flow.dart';
+import 'onboarding_state.dart';
 import 'unified_capture_section.dart';
 import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
 class JiYiApp extends StatefulWidget {
-  const JiYiApp({super.key, this.api, this.offlineQueue});
+  const JiYiApp({
+    super.key,
+    this.api,
+    this.offlineQueue,
+    this.onboardingStore,
+  });
 
   final JiYiApiClient? api;
   final OfflineQueueStore? offlineQueue;
+  final OnboardingStateStore? onboardingStore;
 
   @override
   State<JiYiApp> createState() => _JiYiAppState();
@@ -29,13 +37,19 @@ class _JiYiAppState extends State<JiYiApp> {
     api: api,
     store: offlineQueue,
   );
+  late final OnboardingStateStore onboardingStore =
+      widget.onboardingStore ?? OnboardingStore();
   bool authenticated = false;
+  bool startOnboardingAfterAuth = false;
 
   @override
   void dispose() {
     // [人工注释][S1-015] 只关闭本组件自己创建的数据库句柄；外部注入 Store 的生命周期由调用方负责。
     if (widget.offlineQueue == null) {
       unawaited(offlineQueue.close());
+    }
+    if (widget.onboardingStore == null) {
+      unawaited(onboardingStore.close());
     }
     super.dispose();
   }
@@ -51,14 +65,22 @@ class _JiYiAppState extends State<JiYiApp> {
           ? AppShell(
               api: api,
               offlineQueue: offlineQueue,
+              onboardingStore: onboardingStore,
+              startOnboarding: startOnboardingAfterAuth,
               sync: sync,
               onLogout: () {
                 api.logout();
-                setState(() => authenticated = false);
+                setState(() {
+                  authenticated = false;
+                  startOnboardingAfterAuth = false;
+                });
               },
             )
           : AuthPage(
               api: api,
+              onRegistrationCompleted: () {
+                startOnboardingAfterAuth = true;
+              },
               onAuthenticated: () => setState(() => authenticated = true),
             ),
     );
@@ -66,10 +88,16 @@ class _JiYiAppState extends State<JiYiApp> {
 }
 
 class AuthPage extends StatefulWidget {
-  const AuthPage({super.key, required this.api, required this.onAuthenticated});
+  const AuthPage({
+    super.key,
+    required this.api,
+    required this.onAuthenticated,
+    this.onRegistrationCompleted,
+  });
 
   final JiYiApiClient api;
   final VoidCallback onAuthenticated;
+  final VoidCallback? onRegistrationCompleted;
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -113,6 +141,9 @@ class _AuthPageState extends State<AuthPage> {
           password: passwordController.text,
           nickname: nicknameController.text,
         );
+        // Only a confirmed new registration auto-starts onboarding. Existing users
+        // logging into an upgraded app are never inferred to be "new" from missing local state.
+        widget.onRegistrationCompleted?.call();
       } else {
         await widget.api.login(
           email: emailController.text,
@@ -291,12 +322,16 @@ class AppShell extends StatefulWidget {
     super.key,
     required this.api,
     required this.offlineQueue,
+    this.onboardingStore,
+    this.startOnboarding = false,
     this.sync,
     required this.onLogout,
   });
 
   final JiYiApiClient api;
   final OfflineQueueStore offlineQueue;
+  final OnboardingStateStore? onboardingStore;
+  final bool startOnboarding;
   final OfflineSyncCoordinator? sync;
   final VoidCallback onLogout;
 
@@ -309,6 +344,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
   int index = 0;
   int syncGeneration = 0;
+  OnboardingStep? onboardingStep;
+  String? onboardingQuerySeed;
 
   @override
   void initState() {
@@ -316,7 +353,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     // 登录进入生产 Shell 后立即尝试恢复当前账号的可重试 outbox。
     // coordinator 自身 single-flight，生命周期重复触发不会并发发送同一任务。
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_autoFlush()));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_autoFlush());
+      unawaited(_initializeOnboarding());
+    });
   }
 
   @override
@@ -352,6 +392,104 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (mounted) setState(() => syncGeneration += 1);
   }
 
+  String? get _ownerUserId {
+    final owner = widget.api.authenticatedUserId?.trim();
+    return owner == null || owner.isEmpty ? null : owner;
+  }
+
+  Future<void> _initializeOnboarding() async {
+    final store = widget.onboardingStore;
+    final owner = _ownerUserId;
+    if (store == null || owner == null) return;
+
+    try {
+      OnboardingStatus? status;
+      if (widget.startOnboarding) {
+        await store.markInProgress(owner);
+        status = OnboardingStatus.inProgress;
+      } else {
+        status = await store.read(owner);
+      }
+      if (!mounted || status != OnboardingStatus.inProgress) return;
+      setState(() {
+        onboardingStep = OnboardingStep.intro;
+        onboardingQuerySeed = null;
+        index = 0;
+      });
+    } catch (_) {
+      // Onboarding persistence is UX state, not user content. A local storage failure must
+      // never trap an authenticated user outside the product.
+    }
+  }
+
+  Future<void> _restartOnboarding() async {
+    final owner = _ownerUserId;
+    if (owner == null) return;
+    final store = widget.onboardingStore;
+    try {
+      await store?.markInProgress(owner);
+    } catch (_) {
+      // Re-entry still works for this session even if the local UX-state write fails.
+    }
+    if (!mounted) return;
+    setState(() {
+      onboardingStep = OnboardingStep.intro;
+      onboardingQuerySeed = null;
+      index = 0;
+    });
+  }
+
+  Future<void> _skipOnboarding() async {
+    final owner = _ownerUserId;
+    if (owner != null) {
+      try {
+        await widget.onboardingStore?.markSkipped(owner);
+      } catch (_) {
+        // Skip is fail-open: local UX-state failure cannot keep the user in onboarding.
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      onboardingStep = null;
+      onboardingQuerySeed = null;
+      index = 0;
+    });
+  }
+
+  void _startOnboardingFlow() {
+    setState(() {
+      onboardingStep = OnboardingStep.capture;
+      index = 2;
+    });
+  }
+
+  void _onOnboardingMemorySaved(String querySeed) {
+    if (onboardingStep != OnboardingStep.capture) return;
+    setState(() {
+      onboardingQuerySeed = querySeed;
+      onboardingStep = OnboardingStep.retrieve;
+      index = 3;
+    });
+  }
+
+  void _onOnboardingEvidenceShown() {
+    if (onboardingStep != OnboardingStep.retrieve) return;
+    setState(() => onboardingStep = OnboardingStep.trust);
+  }
+
+  Future<void> _completeOnboarding() async {
+    final owner = _ownerUserId;
+    if (owner != null) {
+      try {
+        await widget.onboardingStore?.markCompleted(owner);
+      } catch (_) {
+        // Completion also fails open; a storage problem must not create an onboarding loop.
+      }
+    }
+    if (!mounted) return;
+    setState(() => onboardingStep = null);
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
@@ -363,15 +501,51 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         sync: _sync,
         syncGeneration: syncGeneration,
         onQueueChanged: _queueChanged,
+        onAuthoritativeTextMemorySaved:
+            onboardingStep == OnboardingStep.capture
+                ? _onOnboardingMemorySaved
+                : null,
       ),
-      MemoryQueryPage(api: widget.api),
-      ProfilePage(api: widget.api, onLogout: widget.onLogout),
+      MemoryQueryPage(
+        api: widget.api,
+        initialQuestion: onboardingStep == OnboardingStep.retrieve ||
+                onboardingStep == OnboardingStep.trust
+            ? onboardingQuerySeed
+            : null,
+        onTrustedEvidenceShown: onboardingStep == OnboardingStep.retrieve
+            ? _onOnboardingEvidenceShown
+            : null,
+      ),
+      ProfilePage(
+        api: widget.api,
+        onLogout: widget.onLogout,
+        onStartOnboarding:
+            widget.onboardingStore == null ? null : _restartOnboarding,
+      ),
     ];
     return Scaffold(
-      body: SafeArea(child: pages[index]),
-      bottomNavigationBar: NavigationBar(
+      body: SafeArea(
+        child: OnboardingExperience(
+          step: onboardingStep,
+          child: pages[index],
+          onStart: _startOnboardingFlow,
+          onSkip: () => unawaited(_skipOnboarding()),
+          onComplete: () => unawaited(_completeOnboarding()),
+        ),
+      ),
+      bottomNavigationBar: onboardingStep == OnboardingStep.intro
+          ? null
+          : NavigationBar(
         selectedIndex: index,
-        onDestinationSelected: (value) => setState(() => index = value),
+        onDestinationSelected: (value) {
+          final step = onboardingStep;
+          if (step == OnboardingStep.capture && value != 2) return;
+          if ((step == OnboardingStep.retrieve || step == OnboardingStep.trust) &&
+              value != 3) {
+            return;
+          }
+          setState(() => index = value);
+        },
         // destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
         destinations: const [
           NavigationDestination(
