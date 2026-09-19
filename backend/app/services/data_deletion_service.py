@@ -22,6 +22,7 @@ from app.models import (
     FamilyMember,
     FamilyPermission,
     LocationDerivationState,
+    LocationIngestReceipt,
     LocationPoint,
     Memory,
     MemoryEdit,
@@ -57,6 +58,7 @@ USER_DATA_INVENTORY = (
     "memory_edits",
     "memory_sources",
     "location_derivation_states",
+    "location_ingest_receipts",
     "location_points",
     "objects",
     "object_locations",
@@ -590,6 +592,12 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
         db,
         delete(LocationDerivationState).where(
             LocationDerivationState.user_id == user_id
+        ),
+    )
+    counts["location_ingest_receipts"] = _delete_count(
+        db,
+        delete(LocationIngestReceipt).where(
+            LocationIngestReceipt.user_id == user_id
         ),
     )
     counts["location_points"] = _delete_count(

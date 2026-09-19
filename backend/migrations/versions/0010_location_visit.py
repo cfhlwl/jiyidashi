@@ -63,8 +63,22 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("user_id"),
     )
 
+    # [人工注释][S2-006] idempotency receipt 与 raw GPS 分生命周期：
+    # 经纬度可按 retention 删除；轻量 hash receipt 持续阻止 client_uuid 被重新解释。
+    op.create_table(
+        "location_ingest_receipts",
+        sa.Column("user_id", sa.Uuid(), nullable=False),
+        sa.Column("client_uuid", sa.String(length=80), nullable=False),
+        sa.Column("payload_hash", sa.String(length=64), nullable=False),
+        sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("user_id", "client_uuid"),
+    )
+
 
 def downgrade() -> None:
+    op.drop_table("location_ingest_receipts")
     op.drop_table("location_derivation_states")
 
     with op.batch_alter_table("visits") as batch_op:

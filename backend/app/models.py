@@ -230,6 +230,21 @@ class LocationPoint(Base):
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class LocationIngestReceipt(Base):
+    __tablename__ = "location_ingest_receipts"
+
+    # [人工注释][S2-006] raw GPS 可以按 retention 删除，但 client_uuid 的幂等记忆
+    # 必须活到用户主动删除数据。receipt 只留 canonical payload hash + recorded_at，
+    # 不长期保存纬度/经度本身。
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    client_uuid: Mapped[str] = mapped_column(String(80), primary_key=True)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Visit(Base):
     __tablename__ = "visits"
     __table_args__ = (

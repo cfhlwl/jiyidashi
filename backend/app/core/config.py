@@ -76,6 +76,9 @@ class Settings(BaseSettings):
         le=30 * 86400,
     )
     location_raw_retention_days: int = Field(default=30, ge=2, le=365)
+    # [人工注释][S2-006] 设备时钟允许有限漂移，但明显未来点不能进入 raw/Visit/Place，
+    # 否则既会制造未来事实，也会绕过以 server now 为基准的 retention。
+    location_future_skew_seconds: int = Field(default=300, ge=0, le=86400)
     location_place_geohash_precision: int = Field(default=7, ge=5, le=9)
 
     model_config = SettingsConfigDict(
