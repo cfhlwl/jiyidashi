@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.models import LocationPoint, Place, User, Visit
+from app.models import LocationIngestReceipt, LocationPoint, Place, User, Visit
 from app.schemas import LocationBatchRequest, LocationPointCreate
 from app.services.location_service import ingest_location_batch
 from app.services.privacy_service import lock_location_derivation_state
@@ -94,6 +94,11 @@ def _verify_concurrent_replay(engine, user_id) -> None:
             select(func.count()).select_from(LocationPoint).where(
                 LocationPoint.user_id == user_id
             )
+        ) == 3
+        assert db.scalar(
+            select(func.count())
+            .select_from(LocationIngestReceipt)
+            .where(LocationIngestReceipt.user_id == user_id)
         ) == 3
         assert db.scalar(
             select(func.count()).select_from(Visit).where(Visit.user_id == user_id)

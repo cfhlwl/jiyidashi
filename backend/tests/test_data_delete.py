@@ -29,6 +29,7 @@ from app.models import (
     FamilyMember,
     FamilyPermission,
     LocationDerivationState,
+    LocationIngestReceipt,
     LocationPoint,
     Memory,
     MemoryEdit,
@@ -181,6 +182,14 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
             LocationDerivationState(
                 user_id=owner_id,
                 finalized_through=now - timedelta(hours=1),
+            )
+        )
+        db.add(
+            LocationIngestReceipt(
+                user_id=owner_id,
+                client_uuid="delete-receipt",
+                payload_hash="a" * 64,
+                recorded_at=now,
             )
         )
         db.add(
@@ -428,6 +437,11 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
         assert _count_for_user(db, Memory, owner_id) == 0
         assert _count_for_user(db, LocationPoint, owner_id) == 0
         assert db.get(LocationDerivationState, owner_id) is None
+        assert db.scalar(
+            select(func.count())
+            .select_from(LocationIngestReceipt)
+            .where(LocationIngestReceipt.user_id == owner_id)
+        ) == 0
         assert _count_for_user(db, ObjectItem, owner_id) == 0
         assert _count_for_user(db, ObjectLocation, owner_id) == 0
         assert _count_for_user(db, Reminder, owner_id) == 0

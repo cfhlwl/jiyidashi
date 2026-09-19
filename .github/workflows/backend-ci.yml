@@ -94,6 +94,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_offline_idempotency_integration.py
 
+      - name: Location retention maintenance CLI
+        # [人工注释][S2-014] 部署可把同一入口挂到 cron/maintenance job；
+        # CI 在真实 PostgreSQL 上至少验证模块可直接执行而不依赖新 location batch。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python -m app.maintenance.location_retention
+
       - name: PostgreSQL location/visit invariants
         # [人工注释][S2-006~S2-014] 真实 PostgreSQL 验证 owner state 锁、
         # 并发 batch 幂等、Visit/Place 唯一性与跨 owner 隔离。
