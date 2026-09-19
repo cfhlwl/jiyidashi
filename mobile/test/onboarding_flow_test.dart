@@ -1,0 +1,258 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/offline_queue.dart';
+import 'package:jiyidashi/onboarding_flow.dart';
+import 'package:jiyidashi/onboarding_state.dart';
+import 'package:jiyidashi/stage1_app.dart';
+import 'package:jiyidashi/ui/jiyi_theme.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const memoryId = '11111111-1111-4111-8111-111111111111';
+
+class _MemoryOnboardingStore implements OnboardingStateStore {
+  final Map<String, OnboardingStatus> values = <String, OnboardingStatus>{};
+
+  @override
+  Future<OnboardingStatus?> read(String ownerUserId) async => values[ownerUserId];
+
+  @override
+  Future<void> markInProgress(String ownerUserId) async {
+    values[ownerUserId] = OnboardingStatus.inProgress;
+  }
+
+  @override
+  Future<void> markSkipped(String ownerUserId) async {
+    values[ownerUserId] = OnboardingStatus.skipped;
+  }
+
+  @override
+  Future<void> markCompleted(String ownerUserId) async {
+    values[ownerUserId] = OnboardingStatus.completed;
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+class _OnboardingApi extends JiYiApiClient {
+  _OnboardingApi() : super(baseUrl: 'https://onboarding.invalid/v1') {
+    accessToken = 'onboarding-token';
+    authenticatedUserId = owner;
+  }
+
+  String? savedContent;
+  String? queriedQuestion;
+
+  @override
+  Future<Map<String, dynamic>> createTextMemory({
+    String? title,
+    required String content,
+    DateTime? occurredAt,
+    String? clientUuid,
+  }) async {
+    savedContent = content;
+    return <String, dynamic>{
+      'id': memoryId,
+      'content': content,
+      'title': title,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> queryMemory(String question) async {
+    queriedQuestion = question;
+    final content = savedContent;
+    final found = content != null && question.trim() == content;
+    return <String, dynamic>{
+      'answer': found ? content : '',
+      'can_answer': found,
+      'certainty': found ? 'confirmed' : 'unknown',
+      'reason': found ? null : 'NO_EVIDENCE',
+      'intent': 'GENERAL',
+      'memory_ids': found ? <String>[memoryId] : <String>[],
+      'evidence': found
+          ? <Map<String, dynamic>>[
+              <String, dynamic>{
+                'kind': 'MEMORY_SOURCE',
+                'id': '22222222-2222-4222-8222-222222222222',
+                'source_type': 'USER_TEXT',
+                'memory_source_id': '33333333-3333-4333-8333-333333333333',
+                'occurred_at': '2026-09-19T03:00:00Z',
+                'confidence': 1.0,
+                'excerpt': content,
+              },
+            ]
+          : <Map<String, dynamic>>[],
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> getProfile() async => <String, dynamic>{
+        'id': owner,
+        'nickname': '引导测试用户',
+        'email': 'onboarding@example.test',
+        'timezone': 'Asia/Shanghai',
+        'locale': 'zh-CN',
+      };
+
+  @override
+  Future<Map<String, dynamic>> getPrivacyStatus() async => <String, dynamic>{
+        'recording_paused': false,
+        'paused_until': null,
+      };
+}
+
+void main() {
+  sqfliteFfiInit();
+  final factory = databaseFactoryFfiNoIsolate;
+
+  late Directory tempDirectory;
+  late String databasePath;
+  late OfflineQueueStore queue;
+  late _OnboardingApi api;
+  late _MemoryOnboardingStore onboarding;
+
+  setUp(() async {
+    tempDirectory = await Directory.systemTemp.createTemp('jiyidashi-onboarding-app-');
+    databasePath = '${tempDirectory.path}${Platform.pathSeparator}offline.sqlite3';
+    queue = OfflineQueueStore(
+      factory: factory,
+      databasePathProvider: () async => databasePath,
+    );
+    api = _OnboardingApi();
+    onboarding = _MemoryOnboardingStore();
+  });
+
+  tearDown(() async {
+    await queue.close();
+    await factory.deleteDatabase(databasePath);
+    if (await tempDirectory.exists()) {
+      await tempDirectory.delete(recursive: true);
+    }
+  });
+
+  Future<void> pumpShell(
+    WidgetTester tester, {
+    required bool startOnboarding,
+  }) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: AppShell(
+          api: api,
+          offlineQueue: queue,
+          onboardingStore: onboarding,
+          startOnboarding: startOnboarding,
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('existing user with no local onboarding row is never trapped', (tester) async {
+    await pumpShell(tester, startOnboarding: false);
+
+    expect(find.text('今天'), findsWidgets);
+    expect(find.byKey(const ValueKey('onboarding-intro')), findsNothing);
+    expect(onboarding.values[owner], isNull);
+  });
+
+  testWidgets('real capture then real evidence completes the Aha flow', (tester) async {
+    await pumpShell(tester, startOnboarding: true);
+
+    expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
+    expect(onboarding.values[owner], OnboardingStatus.inProgress);
+    expect(find.textContaining('不会申请后台定位'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('onboarding-start')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('第 1 步'), findsOneWidget);
+
+    const memory = '周五下午三点去公司前台取合同';
+    final contentField = find.byKey(const ValueKey('capture-text-content'));
+    await tester.ensureVisible(contentField);
+    await tester.enterText(contentField, memory);
+    final submit = find.byKey(const ValueKey('capture-text-submit'));
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+
+    expect(api.savedContent, memory);
+    expect(find.textContaining('第 2 步'), findsOneWidget);
+
+    final queryInput = tester.widget<TextField>(
+      find.byKey(const ValueKey('memory-query-input')),
+    );
+    expect(queryInput.controller?.text, memory);
+
+    final queryButton = find.byKey(const ValueKey('memory-query-submit'));
+    await tester.ensureVisible(queryButton);
+    await tester.tap(queryButton);
+    await tester.pumpAndSettle();
+
+    expect(api.queriedQuestion, memory);
+    expect(find.textContaining('第 3 步'), findsOneWidget);
+    expect(find.text('为什么这么回答'), findsOneWidget);
+    expect(find.text('用户文字记录'), findsOneWidget);
+    expect(onboarding.values[owner], OnboardingStatus.inProgress);
+
+    final complete = find.byKey(const ValueKey('onboarding-complete'));
+    await tester.ensureVisible(complete);
+    await tester.tap(complete);
+    await tester.pumpAndSettle();
+
+    expect(onboarding.values[owner], OnboardingStatus.completed);
+    expect(find.byType(OnboardingGuideBar), findsNothing);
+    expect(find.text('为什么这么回答'), findsOneWidget);
+  });
+
+  testWidgets('skip persists and profile provides deterministic re-entry', (tester) async {
+    await pumpShell(tester, startOnboarding: true);
+
+    await tester.tap(find.byKey(const ValueKey('onboarding-skip-intro')));
+    await tester.pumpAndSettle();
+    expect(onboarding.values[owner], OnboardingStatus.skipped);
+    expect(find.byKey(const ValueKey('onboarding-intro')), findsNothing);
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    final restart = find.byKey(const ValueKey('profile-restart-onboarding'));
+    await tester.ensureVisible(restart);
+    await tester.tap(restart);
+    await tester.pumpAndSettle();
+
+    expect(onboarding.values[owner], OnboardingStatus.inProgress);
+    expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
+  });
+
+  testWidgets('intro remains scrollable on a small phone viewport', (tester) async {
+    tester.view.physicalSize = const Size(320, 480);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: Scaffold(
+          body: SafeArea(
+            child: OnboardingIntroPage(onStart: () {}, onSkip: () {}),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const ValueKey('onboarding-start')));
+    expect(tester.takeException(), isNull);
+  });
+}
