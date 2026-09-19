@@ -440,6 +440,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 onboardingStep == OnboardingStep.trust
             ? onboarding?.querySeed
             : null,
+        requiredEvidenceMemoryId: onboardingStep == OnboardingStep.retrieve ||
+                onboardingStep == OnboardingStep.trust
+            ? onboarding?.targetMemoryId
+            : null,
         onTrustedEvidenceShown: onboardingStep == OnboardingStep.retrieve
             ? onboarding?.trustedEvidenceShown
             : null,
@@ -587,7 +591,8 @@ class CapturePage extends StatefulWidget {
   final OfflineSyncCoordinator? sync;
   final int syncGeneration;
   final VoidCallback? onQueueChanged;
-  final ValueChanged<String>? onAuthoritativeTextMemorySaved;
+  final void Function(String memoryId, String querySeed)?
+      onAuthoritativeTextMemorySaved;
 
   @override
   State<CapturePage> createState() => _CapturePageState();
@@ -687,7 +692,10 @@ class _CapturePageState extends State<CapturePage> {
         setState(() => result = '✓ 已记住 · ${current.serverResourceId}');
         // Onboarding may advance only after the outbox has received an authoritative
         // server resource id. Local-only queued data cannot be queried yet.
-        widget.onAuthoritativeTextMemorySaved?.call(querySeed);
+        widget.onAuthoritativeTextMemorySaved?.call(
+          current.serverResourceId!,
+          querySeed,
+        );
       } else if (current.status == OfflineQueueStatus.failed && current.retryable) {
         titleController.clear();
         contentController.clear();
@@ -1053,11 +1061,13 @@ class MemoryQueryPage extends StatefulWidget {
     super.key,
     required this.api,
     this.initialQuestion,
+    this.requiredEvidenceMemoryId,
     this.onTrustedEvidenceShown,
   });
 
   final JiYiApiClient api;
   final String? initialQuestion;
+  final String? requiredEvidenceMemoryId;
   final VoidCallback? onTrustedEvidenceShown;
 
   @override
@@ -1112,11 +1122,18 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       if (!mounted) return;
       setState(() => result = response);
       final evidence = response['evidence'];
+      final memoryIds = response['memory_ids'];
+      final requiredMemoryId = widget.requiredEvidenceMemoryId?.trim();
+      final containsRequiredMemory = requiredMemoryId == null ||
+          requiredMemoryId.isEmpty ||
+          (memoryIds is List<dynamic> &&
+              memoryIds.any((value) => value.toString() == requiredMemoryId));
       if (response['can_answer'] == true &&
           evidence is List<dynamic> &&
-          evidence.isNotEmpty) {
-        // The Aha flow advances only on the real query contract: an answer alone is not
-        // enough; the server must also return at least one actual Evidence item.
+          evidence.isNotEmpty &&
+          containsRequiredMemory) {
+        // Onboarding advances only when the real query points back to the Memory that
+        // this flow just saved. Evidence for an unrelated older Memory is not the Aha.
         widget.onTrustedEvidenceShown?.call();
       }
     } on ApiException catch (exc) {
