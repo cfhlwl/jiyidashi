@@ -1,9 +1,7 @@
 name: s1-026-golden-generator
 
 on:
-  push:
-    branches:
-      - feat/stage1-onboarding
+  pull_request:
     paths:
       - ".github/workflows/s1-026-golden-generator.yml"
       - "mobile/test/visual_golden_test.dart"
