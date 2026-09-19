@@ -112,6 +112,8 @@ class OnboardingController extends ChangeNotifier {
       // Completion is also fail-open to avoid a permanent onboarding loop.
     }
     _step = null;
+    _querySeed = null;
+    _targetMemoryId = null;
     notifyListeners();
   }
 
