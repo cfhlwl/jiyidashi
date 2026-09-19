@@ -53,6 +53,7 @@ jobs:
         run: >-
           flutter test
           test/onboarding_state_test.dart
+          test/onboarding_controller_test.dart
           test/onboarding_flow_test.dart
           --reporter expanded
 
