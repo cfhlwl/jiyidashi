@@ -32,14 +32,6 @@ class OnboardingController extends ChangeNotifier {
         null => null,
       };
 
-  bool allowsNavigation(int value) {
-    return switch (_step) {
-      OnboardingStep.capture => value == 2,
-      OnboardingStep.retrieve || OnboardingStep.trust => value == 3,
-      _ => true,
-    };
-  }
-
   Future<void> initialize() async {
     if (autoStartForNewRegistration) {
       try {
