@@ -307,6 +307,9 @@ void main() {
     expect(find.textContaining('第 1 步'), findsOneWidget);
 
     const memory = '周五下午三点去公司前台取合同';
+    final titleField = find.byKey(const ValueKey('capture-text-title'));
+    await tester.ensureVisible(titleField);
+    await tester.enterText(titleField, '与正文完全不同的标题');
     final contentField = find.byKey(const ValueKey('capture-text-content'));
     await tester.ensureVisible(contentField);
     await tester.enterText(contentField, memory);
