@@ -111,5 +111,14 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_reminder_integration.py
 
+      - name: PostgreSQL account deletion durability
+        # [人工注释][S1-022] 真实 PostgreSQL 覆盖 Account Delete gate、旧请求 stale commit
+        # 与最终 User/AuthIdentity 同事务删除。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_account_delete_integration.py
+
       - name: Test
         run: pytest -q

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -113,6 +114,10 @@ class OfflineQueueStore {
   final String Function() _clientUuidFactory;
   final DateTime Function() _now;
   Future<Database>? _databaseFuture;
+  final Set<String> _accountDeletionQuiescedOwners = <String>{};
+  final Map<String, int> _activeEnqueueCounts = <String, int>{};
+  final Map<String, Completer<void>> _enqueueIdleWaiters =
+      <String, Completer<void>>{};
 
   static Future<String> _defaultDatabasePath() async {
     final base = await getDatabasesPath();
@@ -143,6 +148,38 @@ class OfflineQueueStore {
       );
     }
     return normalized;
+  }
+
+  Future<void> quiesceForAccountDeletion(String ownerUserId) {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    // [人工注释][S1-022] 注销 PREPARE 后必须先封住 owner 的 outbox producer。
+    // 已经进入 enqueueLocalTask 的 Future 可以完成，但新的 enqueue 从这里开始全部 fail closed；
+    // 调用方等待此 Future 后再 purge，才能保证 purge 是该 owner 最后一次本机 payload 写入。
+    _accountDeletionQuiescedOwners.add(owner);
+    if ((_activeEnqueueCounts[owner] ?? 0) == 0) {
+      return Future<void>.value();
+    }
+    return (_enqueueIdleWaiters[owner] ??= Completer<void>()).future;
+  }
+
+  void _beginEnqueue(String owner) {
+    if (_accountDeletionQuiescedOwners.contains(owner)) {
+      throw StateError('Offline queue owner is quiesced for account deletion');
+    }
+    _activeEnqueueCounts[owner] = (_activeEnqueueCounts[owner] ?? 0) + 1;
+  }
+
+  void _finishEnqueue(String owner) {
+    final remaining = (_activeEnqueueCounts[owner] ?? 0) - 1;
+    if (remaining > 0) {
+      _activeEnqueueCounts[owner] = remaining;
+      return;
+    }
+    _activeEnqueueCounts.remove(owner);
+    final waiter = _enqueueIdleWaiters.remove(owner);
+    if (waiter != null && !waiter.isCompleted) {
+      waiter.complete();
+    }
   }
 
   Future<Database> _database() {
@@ -299,46 +336,58 @@ class OfflineQueueStore {
     }
     final stableUuid = (clientUuid ?? _clientUuidFactory()).trim();
     if (stableUuid.isEmpty) {
-      throw ArgumentError.value(clientUuid, 'clientUuid', 'client UUID must not be empty');
+      throw ArgumentError.value(
+        clientUuid,
+        'clientUuid',
+        'client UUID must not be empty',
+      );
     }
     final payloadJson = jsonEncode(payload);
-    final db = await _database();
-    return db.transaction((txn) async {
-      final existingRows = await txn.query(
-        'offline_queue',
-        where: 'owner_user_id = ? AND client_uuid = ?',
-        whereArgs: [owner, stableUuid],
-        limit: 1,
-      );
-      if (existingRows.isNotEmpty) {
-        final existing = OfflineQueueItem.fromRow(existingRows.single);
-        if (existing.operationType != normalizedType ||
-            jsonEncode(existing.payload) != payloadJson) {
-          throw StateError('client_uuid already belongs to another local task');
-        }
-        return existing;
-      }
 
-      final now = _utcNow().toIso8601String();
-      final id = await txn.insert('offline_queue', {
-        'owner_user_id': owner,
-        'client_uuid': stableUuid,
-        'operation_type': normalizedType,
-        'payload_json': payloadJson,
-        'status': OfflineQueueStatus.pending.storageValue,
-        'attempt_count': 0,
-        'retryable': 1,
-        'created_at': now,
-        'updated_at': now,
+    // 计数必须在第一次 await 之前登记。这样“已经点击保存、但 SQLite 尚未真正落盘”的
+    // Capture Future 会被账号注销 quiesce 等到结束，而 quiesce 之后的新 producer 直接拒绝。
+    _beginEnqueue(owner);
+    try {
+      final db = await _database();
+      return await db.transaction((txn) async {
+        final existingRows = await txn.query(
+          'offline_queue',
+          where: 'owner_user_id = ? AND client_uuid = ?',
+          whereArgs: [owner, stableUuid],
+          limit: 1,
+        );
+        if (existingRows.isNotEmpty) {
+          final existing = OfflineQueueItem.fromRow(existingRows.single);
+          if (existing.operationType != normalizedType ||
+              jsonEncode(existing.payload) != payloadJson) {
+            throw StateError('client_uuid already belongs to another local task');
+          }
+          return existing;
+        }
+
+        final now = _utcNow().toIso8601String();
+        final id = await txn.insert('offline_queue', {
+          'owner_user_id': owner,
+          'client_uuid': stableUuid,
+          'operation_type': normalizedType,
+          'payload_json': payloadJson,
+          'status': OfflineQueueStatus.pending.storageValue,
+          'attempt_count': 0,
+          'retryable': 1,
+          'created_at': now,
+          'updated_at': now,
+        });
+        final rows = await txn.query(
+          'offline_queue',
+          where: 'id = ?',
+          whereArgs: [id],
+          limit: 1,
+        );
+        return OfflineQueueItem.fromRow(rows.single);
       });
-      final rows = await txn.query(
-        'offline_queue',
-        where: 'id = ?',
-        whereArgs: [id],
-        limit: 1,
-      );
-      return OfflineQueueItem.fromRow(rows.single);
-    });
+    } finally {
+      _finishEnqueue(owner);
+    }
   }
 
   Future<List<OfflineQueueItem>> listAll(String ownerUserId) async {
@@ -388,6 +437,18 @@ class OfflineQueueStore {
       limit: 1,
     );
     return rows.isEmpty ? null : OfflineQueueItem.fromRow(rows.single);
+  }
+
+  Future<int> purgeOwner(String ownerUserId) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final db = await _database();
+    // [人工注释][S1-022] 普通 logout 保留账号隔离的 outbox；账号注销成功后则必须
+    // 按权威 user_id 删除全部本机任务（含 completed/cancelled），不能留下正文或位置 payload。
+    return db.delete(
+      'offline_queue',
+      where: 'owner_user_id = ?',
+      whereArgs: [owner],
+    );
   }
 
   Future<int> countAwaitingDelivery(String ownerUserId) async {

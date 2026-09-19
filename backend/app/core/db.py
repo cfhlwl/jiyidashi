@@ -43,6 +43,7 @@ class GuardedSession(Session):
         # [人工注释][S1-021-FIX-001] 每一次 commit 都重新拿 User KEY SHARE，
         # 不能依赖请求入口时那把锁跨越 commit/rollback。这样删除服务的 User FOR UPDATE
         # 要么先完成并改变 generation，要么等待本次 commit 完成后再删除本次写入。
+        from app.account_deletion_models import AccountDeletionOperation
         from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
         from app.models import User
 
@@ -68,11 +69,17 @@ class GuardedSession(Session):
                 )
                 .limit(1)
             )
+            active_account_deletion = self.scalar(
+                select(AccountDeletionOperation.id)
+                .where(AccountDeletionOperation.user_id == admission.user_id)
+                .limit(1)
+            )
 
         if (
             user_exists is None
             or current_generation != admission.deletion_generation
             or active_deletion is not None
+            or active_account_deletion is not None
         ):
             # Pending ORM writes may already exist in this transaction; rollback them before
             # surfacing the stale-request error so no caller can accidentally reuse them.
@@ -104,6 +111,7 @@ def create_schema() -> None:
     # create_all 必须显式加载认证、媒体、删除状态机和幂等模型，
     # 不能依赖 router / schema 的偶然 import 顺序决定数据库是否缺表。
     from app import (  # noqa: F401
+        account_deletion_models,
         auth_models,
         data_deletion_models,
         idempotency_models,

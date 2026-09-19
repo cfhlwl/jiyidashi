@@ -6,6 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.account_deletion_models import AccountDeletionOperation
 from app.core.db import (
     USER_DATA_ADMISSION_INFO_KEY,
     UserDataAdmission,
@@ -38,6 +39,17 @@ def get_current_user_id(user_id: AuthenticatedUser, db: DbSession) -> UUID:
     )
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="USER_NOT_FOUND")
+
+    active_account_deletion = db.scalar(
+        select(AccountDeletionOperation.id)
+        .where(AccountDeletionOperation.user_id == user_id)
+        .limit(1)
+    )
+    if active_account_deletion is not None:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="ACCOUNT_DELETION_IN_PROGRESS",
+        )
 
     active_deletion = db.scalar(
         select(DataDeletionOperation.id)

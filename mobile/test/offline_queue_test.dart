@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -270,6 +271,88 @@ void main() {
     expect(await store.countAwaitingDelivery(userB), 1);
     expect((await store.findByClientUuid(userA, sharedUuid))!.ownerUserId, userA);
     expect((await store.findByClientUuid(userB, sharedUuid))!.ownerUserId, userB);
+    await store.close();
+  });
+
+  test(
+    'account deletion quiesce waits started enqueue and makes purge the last write',
+    () async {
+      final databasePathRequested = Completer<void>();
+      final releaseDatabasePath = Completer<void>();
+      final store = OfflineQueueStore(
+        factory: testDatabaseFactory,
+        databasePathProvider: () async {
+          if (!databasePathRequested.isCompleted) {
+            databasePathRequested.complete();
+          }
+          await releaseDatabasePath.future;
+          return databasePath;
+        },
+      );
+
+      // [人工注释][S1-022] 模拟 Capture 已经进入 enqueue，但 SQLite 路径/句柄尚未返回；
+      // quiesce 必须把这条“旧 Future”计入在飞写入，而不能让 purge 先返回。
+      final delayedEnqueue = store.enqueueTextMemory(
+        ownerUserId: userA,
+        clientUuid: 'abababab-abab-4bab-8bab-abababababab',
+        content: '注销开始前已经点击保存',
+      );
+      await databasePathRequested.future;
+
+      var quiesced = false;
+      final waiting = store
+          .quiesceForAccountDeletion(userA)
+          .then((_) => quiesced = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(quiesced, isFalse);
+
+      // ObjectLocation 走同一个 enqueueLocalTask seam；gate 后的新 producer 必须同样拒绝。
+      await expectLater(
+        store.enqueueObjectLocation(
+          ownerUserId: userA,
+          clientUuid: 'bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc',
+          objectName: '护照',
+          locationText: '旧抽屉',
+        ),
+        throwsStateError,
+      );
+
+      releaseDatabasePath.complete();
+      await delayedEnqueue;
+      await waiting;
+      expect(quiesced, isTrue);
+
+      expect(await store.purgeOwner(userA), 1);
+      expect(await store.listAll(userA), isEmpty);
+      await expectLater(
+        store.enqueueTextMemory(
+          ownerUserId: userA,
+          clientUuid: 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd',
+          content: '注销 gate 后不能重新写回',
+        ),
+        throwsStateError,
+      );
+      expect(await store.listAll(userA), isEmpty);
+      await store.close();
+    },
+  );
+
+  test('account deletion purges only the deleted owner local payloads', () async {
+    final store = createStore();
+    await store.enqueueTextMemory(
+      ownerUserId: userA,
+      clientUuid: '99999999-9999-4999-8999-999999999999',
+      content: 'A must be purged',
+    );
+    await store.enqueueTextMemory(
+      ownerUserId: userB,
+      clientUuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      content: 'B must survive',
+    );
+
+    expect(await store.purgeOwner(userA), 1);
+    expect(await store.listAll(userA), isEmpty);
+    expect((await store.listAll(userB)).single.payload['content'], 'B must survive');
     await store.close();
   });
 

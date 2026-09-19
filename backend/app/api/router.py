@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api import (
+    account_delete,
     auth,
     data_delete,
     data_export,
@@ -15,6 +16,8 @@ from app.api import (
 
 api_router = APIRouter(prefix="/v1")
 api_router.include_router(auth.router)
+# [人工注释][S1-022] 账号注销使用独立 durable orchestrator，不复用普通 Profile CRUD。
+api_router.include_router(account_delete.router)
 api_router.include_router(users.router)
 # [人工注释][S1-020] 用户数据导出独立挂载，
 # 只读取当前认证用户的权威数据。

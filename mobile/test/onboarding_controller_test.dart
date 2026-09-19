@@ -11,6 +11,7 @@ const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 class _Store implements OnboardingStateStore {
   OnboardingStatus? status;
   Completer<OnboardingStatus?>? delayedRead;
+  Completer<void>? delayedCompletedWrite;
 
   @override
   Future<OnboardingStatus?> read(String ownerUserId) {
@@ -30,7 +31,16 @@ class _Store implements OnboardingStateStore {
 
   @override
   Future<void> markCompleted(String ownerUserId) async {
+    final delayed = delayedCompletedWrite;
+    if (delayed != null) {
+      await delayed.future;
+    }
     status = OnboardingStatus.completed;
+  }
+
+  @override
+  Future<void> deleteOwnerState(String ownerUserId) async {
+    status = null;
   }
 
   @override
@@ -74,6 +84,36 @@ void main() {
 
     expect(store.status, OnboardingStatus.inProgress);
     expect(controller.step, OnboardingStep.intro);
+    controller.dispose();
+  });
+
+  test('account deletion quiesce waits in-flight write and blocks later persistence',
+      () async {
+    final store = _Store()..delayedCompletedWrite = Completer<void>();
+    final controller = OnboardingController(
+      store: store,
+      ownerUserId: owner,
+      autoStartForNewRegistration: false,
+    );
+
+    final completing = controller.complete();
+    var quiesced = false;
+    final quiesce =
+        controller.quiesceForAccountDeletion().then((_) => quiesced = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(quiesced, isFalse);
+
+    store.delayedCompletedWrite!.complete();
+    await Future.wait([completing, quiesce]);
+    expect(store.status, OnboardingStatus.completed);
+
+    await store.deleteOwnerState(owner);
+    await controller.restart();
+    expect(
+      store.status,
+      isNull,
+      reason: 'quiesced controller must not reinsert owner state after purge',
+    );
     controller.dispose();
   });
 

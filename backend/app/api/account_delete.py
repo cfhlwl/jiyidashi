@@ -12,63 +12,63 @@ from app.data_deletion_models import DataDeletionStatus
 from app.deps import get_authenticated_user_id
 from app.services.account_deletion_service import (
     AccountDeletionError,
-    lock_external_data_delete_entry,
+    delete_current_account,
 )
-from app.services.data_deletion_service import DataDeletionError, delete_all_user_data
+from app.services.data_deletion_service import DataDeletionError
 from app.services.object_storage import ObjectStorage, get_object_storage
 
-router = APIRouter(prefix="/data", tags=["data"])
+router = APIRouter(prefix="/account", tags=["account"])
 AuthenticatedUser = Annotated[UUID, Depends(get_authenticated_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
 Storage = Annotated[ObjectStorage, Depends(get_object_storage)]
 
 
-class DataDeleteRequest(BaseModel):
+class AccountDeleteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: UUID
-    # [人工注释][S1-021] destructive confirmation is an exact protocol value, not a
-    # truthy boolean; accidental/malformed callers must fail schema validation before mutation.
-    confirmation: Literal["DELETE_MY_DATA"]
+    # [人工注释][S1-022] 与 DELETE_MY_DATA 使用不同精确确认值；
+    # 客户端误把“删除数据”按钮接到“注销账号”端点时必须在 schema 层直接失败。
+    confirmation: Literal["DELETE_MY_ACCOUNT"]
+    # [人工注释][S1-022-FIX-002] false=只建立 durable Account gate；true=官方客户端
+    # 已完成 owner-scoped 本机 purge，可以推进 S1-021 与最终身份删除。
+    local_cleanup_ready: bool
 
 
-class DataDeleteResponse(BaseModel):
+class AccountDeleteResponse(BaseModel):
     request_id: UUID
-    status: DataDeletionStatus
+    data_deletion_status: DataDeletionStatus | None
     completed: bool
     retry_after_seconds: int | None = None
     deleted_counts: dict[str, int]
 
 
-@router.post("/delete", response_model=DataDeleteResponse)
-def delete_current_user_data(
-    payload: DataDeleteRequest,
+@router.post("/delete", response_model=AccountDeleteResponse)
+def delete_account(
+    payload: AccountDeleteRequest,
     response: Response,
     user_id: AuthenticatedUser,
     db: DbSession,
     storage: Storage,
-) -> DataDeleteResponse:
-    # This endpoint intentionally bypasses the normal data-access deletion gate so the same
-    # authenticated account can retry a partially completed deletion operation.
-    # [人工注释][S1-022] Account Delete gate 建立后，外部 S1-021 入口必须停止接收
-    # 新/旧 data-delete intent；否则会在 M 已冻结 data_deletion_request_id 后抢占另一条 active op。
-    # M orchestrator 直接调用 delete_all_user_data()，因此自身恢复路径不受此 HTTP gate 影响。
+) -> AccountDeleteResponse:
+    # [人工注释][S1-022] 此端点只做 JWT 认证，不经过普通 user-data gate，
+    # 否则已经进入 Account/Delete gate 的账号将无法继续恢复对象存储或 DB 删除。
     try:
-        lock_external_data_delete_entry(db, user_id=user_id)
-        result = delete_all_user_data(
+        result = delete_current_account(
             db,
             user_id=user_id,
             request_id=payload.request_id,
             storage=storage,
+            local_cleanup_ready=payload.local_cleanup_ready,
         )
     except (AccountDeletionError, DataDeletionError) as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
     if not result.completed:
         response.status_code = status.HTTP_202_ACCEPTED
-    return DataDeleteResponse(
+    return AccountDeleteResponse(
         request_id=result.request_id,
-        status=result.status,
+        data_deletion_status=result.data_deletion_status,
         completed=result.completed,
         retry_after_seconds=result.retry_after_seconds,
         deleted_counts=result.deleted_counts,

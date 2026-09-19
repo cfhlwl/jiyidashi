@@ -34,6 +34,11 @@ class _MemoryOnboardingStore implements OnboardingStateStore {
   }
 
   @override
+  Future<void> deleteOwnerState(String ownerUserId) async {
+    values.remove(ownerUserId);
+  }
+
+  @override
   Future<void> close() async {}
 }
 

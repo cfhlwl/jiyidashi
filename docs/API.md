@@ -530,3 +530,35 @@ Stage 1 Reminder 是绑定既有 Memory 的最小提醒能力，不是 Todo/日�
 
 Memory 软删除会把仍为 `PENDING` 的关联 Reminder 自动改为 `CANCELLED`；已完成/已取消历史保留。
 本阶段不包含重复规则、优先级、项目/子任务、协作、日历同步、AI 自动创建或推送平台扩展。
+
+
+## Account Delete（S1-022）
+
+`POST /v1/account/delete`
+
+请求必须包含：
+
+```json
+{
+  "request_id": "UUID",
+  "confirmation": "DELETE_MY_ACCOUNT"
+}
+```
+
+账号注销会先完整复用 S1-021 Data Delete。只要数据清理尚未安全完成，`User` 与 `AuthIdentity` 都继续保留，但普通数据 API 会返回 `423 ACCOUNT_DELETION_IN_PROGRESS`，避免清理过程中又写入新数据。 Account Delete durable gate 建立后，外部 `POST /v1/data/delete` 也返回 423；只有 Account Delete orchestrator 内部可以推进它已绑定的 S1-021 operation，避免竞争删除 request。
+
+未完成阶段返回 HTTP 202，并携带 `data_deletion_status` / `retry_after_seconds`；调用方使用同一 request_id 重试。客户端若重启而丢失首次 request_id，新的账号注销请求也会 join 已存在的 durable gate，并返回 canonical request_id。
+
+最终完成后，身份、Data Delete receipt、Account Delete gate 与 User 在同一事务删除。旧 JWT 不能再通过普通 API 的 User 权威检查。相同邮箱以后可以重新注册，但会生成新的 user_id 和全新空账号。
+
+详见 `docs/ACCOUNT_DELETE_V1.md`。
+
+
+### Account Delete 两阶段提交（S1-022-FIX-002）
+
+`POST /v1/account/delete` 额外要求布尔字段 `local_cleanup_ready`：
+
+- `false`：PREPARE。只建立/复用 durable `AccountDeletionOperation` gate；返回 `202`，`data_deletion_status=null`。这一阶段不会推进 S1-021，也不会删除 User/AuthIdentity。
+- `true`：COMMIT。表示官方客户端已完成当前 owner 的本机 OfflineQueue/Onboarding purge，服务端才允许继续 S1-021 与最终账号身份事务。
+
+该顺序用于封闭两个崩溃窗口：App 重启时可通过恢复登录继续 PREPARE gate；服务端最终删号前，本机敏感 payload 已被清除。

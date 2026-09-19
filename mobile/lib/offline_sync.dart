@@ -30,13 +30,21 @@ class OfflineSyncCoordinator {
   final OfflineQueueStore _store;
   Future<OfflineFlushReport>? _activeFlush;
   String? _activeOwner;
+  final Set<String> _accountDeletionQuiescedOwners = <String>{};
 
   // 同一 coordinator 同一时刻只允许一个 flush；UI 连点和生命周期重复 resumed
   // 都复用同一个 Future，避免并发发送同一 SQLite outbox。
   Future<OfflineFlushReport> flush(String ownerUserId) {
     final owner = ownerUserId.trim();
     if (owner.isEmpty) {
-      throw ArgumentError.value(ownerUserId, 'ownerUserId', 'owner user ID is required');
+      throw ArgumentError.value(
+        ownerUserId,
+        'ownerUserId',
+        'owner user ID is required',
+      );
+    }
+    if (_accountDeletionQuiescedOwners.contains(owner)) {
+      throw StateError('Offline sync owner is quiesced for account deletion');
     }
     final active = _activeFlush;
     if (active != null) {
@@ -54,6 +62,44 @@ class OfflineSyncCoordinator {
     _activeOwner = owner;
     _activeFlush = tracked;
     return tracked;
+  }
+
+  Future<void> quiesceForAccountDeletion(String ownerUserId) async {
+    final owner = ownerUserId.trim();
+    if (owner.isEmpty) {
+      throw ArgumentError.value(
+        ownerUserId,
+        'ownerUserId',
+        'owner user ID is required',
+      );
+    }
+    // [人工注释][S1-022] 先永久封住这个进程内 owner 的后续 flush，再等待已经开始的
+    // single-flight 收尾。旧 Capture Future 即使在本机 purge 后才走到 flush()，也只能失败，
+    // 不能重新 markSending/markFailed/markCompleted 已注销账号的队列行。
+    _accountDeletionQuiescedOwners.add(owner);
+    await _waitForActiveOwner(owner);
+  }
+
+  Future<void> waitForIdle(String ownerUserId) async {
+    final owner = ownerUserId.trim();
+    if (owner.isEmpty) {
+      throw ArgumentError.value(
+        ownerUserId,
+        'ownerUserId',
+        'owner user ID is required',
+      );
+    }
+    await _waitForActiveOwner(owner);
+  }
+
+  Future<void> _waitForActiveOwner(String owner) async {
+    final active = _activeFlush;
+    if (active == null || _activeOwner != owner) return;
+    try {
+      await active;
+    } catch (_) {
+      // 原 flush 的真实失败状态由其自身路径处理；等待方只保证 owner 不再占用本地行。
+    }
   }
 
   Future<OfflineFlushReport> _flushOnce(String owner) async {
