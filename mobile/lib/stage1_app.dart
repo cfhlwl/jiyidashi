@@ -8,6 +8,8 @@ import 'offline_sync.dart';
 import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
+
+// [人工注释][S1-026] AppShell 只接线 Onboarding；首次自动触发仅来自注册成功，老账号不会因缺少本地状态被误判为新用户。
 import 'unified_capture_section.dart';
 import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
