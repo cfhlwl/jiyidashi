@@ -1,14 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'onboarding_state.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
-
-enum OnboardingStep {
-  intro,
-  capture,
-  retrieve,
-  trust,
-}
 
 class OnboardingExperience extends StatelessWidget {
   const OnboardingExperience({
