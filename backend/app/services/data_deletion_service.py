@@ -21,6 +21,8 @@ from app.models import (
     Device,
     FamilyMember,
     FamilyPermission,
+    LocationDerivationState,
+    LocationIngestReceipt,
     LocationPoint,
     Memory,
     MemoryEdit,
@@ -55,6 +57,8 @@ USER_DATA_INVENTORY = (
     "memories",
     "memory_edits",
     "memory_sources",
+    "location_derivation_states",
+    "location_ingest_receipts",
     "location_points",
     "objects",
     "object_locations",
@@ -582,6 +586,20 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
         db, delete(MemorySource).where(MemorySource.memory_id.in_(memory_ids))
     )
     counts["visits"] = _delete_count(db, delete(Visit).where(Visit.user_id == user_id))
+    # [人工注释][S2-014] finalized watermark 属于 owner 的位置数据控制面；
+    # S1-021 必须显式清掉，后续同账号不能继承已删除历史的 retention 水位。
+    counts["location_derivation_states"] = _delete_count(
+        db,
+        delete(LocationDerivationState).where(
+            LocationDerivationState.user_id == user_id
+        ),
+    )
+    counts["location_ingest_receipts"] = _delete_count(
+        db,
+        delete(LocationIngestReceipt).where(
+            LocationIngestReceipt.user_id == user_id
+        ),
+    )
     counts["location_points"] = _delete_count(
         db, delete(LocationPoint).where(LocationPoint.user_id == user_id)
     )

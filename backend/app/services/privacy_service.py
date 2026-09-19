@@ -2,9 +2,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import PrivacyPauseInterval, PrivacyState
+from app.models import LocationDerivationState, PrivacyPauseInterval, PrivacyState
 
 
 def ensure_utc(value: datetime) -> datetime:
@@ -17,6 +18,39 @@ def is_pause_active(paused_until: datetime | None) -> bool:
     if paused_until is None:
         return False
     return ensure_utc(paused_until) > datetime.now(UTC)
+
+
+def lock_location_derivation_state(
+    db: Session,
+    user_id: UUID,
+) -> LocationDerivationState:
+    """Serialize one owner's location derivation and privacy mutations."""
+
+    state = db.scalar(
+        select(LocationDerivationState)
+        .where(LocationDerivationState.user_id == user_id)
+        .with_for_update()
+    )
+    if state is not None:
+        return state
+
+    candidate = LocationDerivationState(user_id=user_id)
+    try:
+        # [人工注释][S2-006][SEC-011] 首次请求可能并发创建 owner state；
+        # SAVEPOINT 只吸收唯一键竞争，胜者提交后再锁同一行，privacy/location 共用此锁。
+        with db.begin_nested():
+            db.add(candidate)
+            db.flush()
+        return candidate
+    except IntegrityError:
+        state = db.scalar(
+            select(LocationDerivationState)
+            .where(LocationDerivationState.user_id == user_id)
+            .with_for_update()
+        )
+        if state is None:
+            raise
+        return state
 
 
 def get_privacy_state(db: Session, user_id: UUID) -> PrivacyState:
@@ -37,6 +71,7 @@ def pause_recording(
 ) -> PrivacyState:
     started_at = ensure_utc(started_at)
     ended_at = ensure_utc(ended_at)
+    lock_location_derivation_state(db, user_id)
     state = get_privacy_state(db, user_id)
 
     if is_pause_active(state.recording_paused_until) and state.recording_paused_since:
@@ -73,6 +108,7 @@ def resume_recording(
     resumed_at: datetime,
 ) -> PrivacyState:
     resumed_at = ensure_utc(resumed_at)
+    lock_location_derivation_state(db, user_id)
     state = get_privacy_state(db, user_id)
 
     if state.recording_paused_since is not None:

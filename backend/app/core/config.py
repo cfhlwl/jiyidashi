@@ -63,6 +63,24 @@ class Settings(BaseSettings):
     auth_login_backoff_after_failures: int = 3
     auth_login_backoff_max_seconds: int = 60
 
+    # [人工注释][S2-006~S2-014] Stage 2 第一条线只在服务端定义定位派生参数。
+    # late-arrival grace 决定历史点可回补多久；raw retention 必须明显长于它，
+    # 才能保证 Visit 已 durable finalization 后再清理原始位置证据。
+    location_visit_radius_m: float = Field(default=120.0, ge=20.0, le=1000.0)
+    location_visit_max_gap_seconds: int = Field(default=1800, ge=60, le=21600)
+    location_visit_min_duration_seconds: int = Field(default=300, ge=60, le=21600)
+    location_visit_min_points: int = Field(default=2, ge=2, le=50)
+    location_late_arrival_grace_seconds: int = Field(
+        default=86400,
+        ge=3600,
+        le=30 * 86400,
+    )
+    location_raw_retention_days: int = Field(default=30, ge=2, le=365)
+    # [人工注释][S2-006] 设备时钟允许有限漂移，但明显未来点不能进入 raw/Visit/Place，
+    # 否则既会制造未来事实，也会绕过以 server now 为基准的 retention。
+    location_future_skew_seconds: int = Field(default=300, ge=0, le=86400)
+    location_place_geohash_precision: int = Field(default=7, ge=5, le=9)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -76,6 +94,16 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self):
+        if (
+            self.location_raw_retention_days * 86400
+            <= self.location_late_arrival_grace_seconds
+            + self.location_visit_max_gap_seconds
+        ):
+            raise ValueError(
+                "LOCATION_RAW_RETENTION_DAYS must outlive late-arrival grace "
+                "plus the Visit gap window"
+            )
+
         # [人工注释][FND-019] 生产环境配置本身也必须拒绝 dev auth，避免误配置后服务带后门启动。
         if self.is_production and self.enable_dev_auth:
             raise ValueError("ENABLE_DEV_AUTH must be false in production")

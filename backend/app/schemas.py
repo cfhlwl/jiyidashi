@@ -59,6 +59,10 @@ ReminderContentText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=2000),
 ]
+LocationClientUuid = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+]
 
 
 class ORMModel(BaseModel):
@@ -397,21 +401,61 @@ class MemoryQueryResponse(BaseModel):
 
 
 class LocationPointCreate(BaseModel):
-    client_uuid: str = Field(min_length=1, max_length=80)
-    latitude: float = Field(ge=-90, le=90)
-    longitude: float = Field(ge=-180, le=180)
-    accuracy: float | None = Field(default=None, ge=0)
-    speed: float | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    client_uuid: LocationClientUuid
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    accuracy: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    speed: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     recorded_at: TimezoneAwareDateTime
 
 
 class LocationBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     points: list[LocationPointCreate] = Field(min_length=1, max_length=500)
 
 
 class LocationBatchResponse(BaseModel):
     accepted: int
+    duplicates: int = 0
     rejected_privacy: int = 0
+    rejected_finalized: int = 0
+    derived_visits: int = 0
+    raw_deleted: int = 0
+    finalized_through: datetime | None = None
+
+
+class VisitRead(ORMModel):
+    id: UUID
+    place_id: UUID
+    arrived_at: datetime
+    left_at: datetime | None
+    duration_seconds: int | None
+    confidence: float
+    source: str
+    centroid_latitude: float | None
+    centroid_longitude: float | None
+    source_point_count: int | None
+    source_started_at: datetime | None
+    source_ended_at: datetime | None
+    source_fingerprint: str | None
+    algorithm_version: str | None
+    finalized_at: datetime | None
+
+
+class PlaceRead(ORMModel):
+    id: UUID
+    name: str
+    latitude: float | None
+    longitude: float | None
+    address: str | None
+    category: str | None
+    first_visited_at: datetime | None
+    last_visited_at: datetime | None
+    visit_count: int
+    is_user_named: bool
 
 
 class PrivacyPauseRequest(BaseModel):
