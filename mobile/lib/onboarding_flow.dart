@@ -96,13 +96,13 @@ class OnboardingIntroPage extends StatelessWidget {
                 title: '1. 真的保存一条记忆',
                 message: '直接使用“记一下”的正式保存流程，不创建演示数据。',
               ),
-              const SizedBox(height: JiYiSpacing.md),
+              SizedBox(height: JiYiSpacing.md),
               _IntroItem(
                 icon: Icons.manage_search_outlined,
                 title: '2. 从自己的记忆里找回来',
                 message: '使用“问记忆”的正式查询入口。',
               ),
-              const SizedBox(height: JiYiSpacing.md),
+              SizedBox(height: JiYiSpacing.md),
               _IntroItem(
                 icon: Icons.fact_check_outlined,
                 title: '3. 看清回答为什么可信',
