@@ -70,7 +70,7 @@ class OnboardingIntroPage extends StatelessWidget {
         Semantics(
           header: true,
           child: Text(
-            '用 3 分钟体验一次“记住 → 找回”',
+            '用 3 分钟体验一次“记住并找回”',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w700,
             ),
