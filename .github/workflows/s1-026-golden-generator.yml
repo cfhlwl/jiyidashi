@@ -23,6 +23,10 @@ jobs:
         working-directory: mobile
     steps:
       - uses: actions/checkout@v4
+        with:
+          # PR 事件默认 checkout refs/pull/<n>/merge；生成 Golden 必须基于功能分支 HEAD，
+          # 否则生成后的 commit 无法安全 fast-forward 写回。
+          ref: feat/stage1-onboarding
 
       - uses: subosito/flutter-action@v2
         with:
