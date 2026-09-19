@@ -838,6 +838,105 @@ String _evidenceSourceLabel(String? sourceType) {
   return labels[sourceType] ?? sourceType ?? '未知来源';
 }
 
+class _MemoryEditDraft {
+  const _MemoryEditDraft({required this.title, required this.content});
+
+  final String? title;
+  final String content;
+}
+
+class _MemoryEditDialog extends StatefulWidget {
+  const _MemoryEditDialog({required this.title, required this.content});
+
+  final String? title;
+  final String content;
+
+  @override
+  State<_MemoryEditDialog> createState() => _MemoryEditDialogState();
+}
+
+class _MemoryEditDialogState extends State<_MemoryEditDialog> {
+  late final TextEditingController titleController =
+      TextEditingController(text: widget.title ?? '');
+  late final TextEditingController contentController =
+      TextEditingController(text: widget.content);
+  String? validationError;
+
+  @override
+  void dispose() {
+    titleController.dispose();
+    contentController.dispose();
+    super.dispose();
+  }
+
+  void save() {
+    final content = contentController.text.trim();
+    if (content.isEmpty) {
+      setState(() => validationError = '内容不能为空');
+      return;
+    }
+    final title = titleController.text.trim();
+    Navigator.pop(
+      context,
+      _MemoryEditDraft(
+        title: title.isEmpty ? null : title,
+        content: content,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('编辑这条记忆'),
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              key: const ValueKey('memory-edit-title'),
+              controller: titleController,
+              maxLength: 240,
+              decoration: const InputDecoration(labelText: '标题（可选）'),
+            ),
+            TextField(
+              key: const ValueKey('memory-edit-content'),
+              controller: contentController,
+              minLines: 4,
+              maxLines: 8,
+              maxLength: 20000,
+              decoration: InputDecoration(
+                labelText: '内容',
+                alignLabelWithHint: true,
+                errorText: validationError,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            Text(
+              '编辑会保留原始 Evidence；正文修改会记录为新的用户修正来源。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const ValueKey('memory-edit-save'),
+          onPressed: save,
+          child: const Text('保存修改'),
+        ),
+      ],
+    );
+  }
+}
+
 class MemoryQueryPage extends StatefulWidget {
   const MemoryQueryPage({super.key, required this.api});
 
@@ -880,6 +979,77 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       if (mounted) {
         setState(() => loading = false);
       }
+    }
+  }
+
+  Future<void> editFirstMemory() async {
+    final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
+    if (ids.isEmpty) return;
+    final memoryId = ids.first.toString();
+
+    setState(() {
+      loading = true;
+      error = null;
+      actionMessage = null;
+    });
+    late final Map<String, dynamic> memory;
+    try {
+      memory = await widget.api.getMemory(memoryId);
+    } on ApiException catch (exc) {
+      if (mounted) setState(() => error = exc.message);
+      return;
+    } catch (_) {
+      if (mounted) setState(() => error = '暂时无法读取这条记忆');
+      return;
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+    if (!mounted) return;
+    final revision = memory['edit_revision'];
+    if (revision is! int || revision < 0) {
+      setState(() => error = '服务端返回的记忆版本不正确，请重新查询后再试');
+      return;
+    }
+
+    final draft = await showDialog<_MemoryEditDraft>(
+      context: context,
+      builder: (context) => _MemoryEditDialog(
+        title: memory['title']?.toString(),
+        content: memory['content']?.toString() ?? '',
+      ),
+    );
+    if (draft == null || !mounted) return;
+
+    setState(() {
+      loading = true;
+      error = null;
+      actionMessage = null;
+    });
+    try {
+      await widget.api.updateMemory(
+        memoryId,
+        expectedRevision: revision,
+        title: draft.title,
+        content: draft.content,
+      );
+      // PATCH 成功后重新经过 query/Evidence gate；客户端不拼接“编辑后的可信答案”。
+      final refreshed = await widget.api.queryMemory(controller.text);
+      if (!mounted) return;
+      setState(() {
+        result = refreshed;
+        actionMessage = '✓ 记忆已更新；原始 Evidence 与编辑记录均已保留';
+      });
+    } on ApiException catch (exc) {
+      if (!mounted) return;
+      final message =
+          exc.statusCode == 409 && exc.message == 'MEMORY_EDIT_REVISION_CONFLICT'
+              ? '这条记忆已经在其他地方更新，请重新查询后再编辑'
+              : exc.message;
+      setState(() => error = message);
+    } catch (_) {
+      if (mounted) setState(() => error = '暂时无法保存修改');
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
   }
 
@@ -943,6 +1113,9 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     final answer = result?['answer']?.toString() ?? '';
     final certainty = result?['certainty']?.toString() ?? '未知';
     final intent = result?['intent']?.toString() ?? '未知';
+    // FIND_OBJECT 的 backing Memory 受结构化 ObjectLocation 状态约束，
+    // 通用编辑会被后端拒绝，因此 UI 直接隐藏编辑入口而不是让用户走到 409。
+    final canEditFirstMemory = memoryIds.isNotEmpty && intent != 'FIND_OBJECT';
 
     return JiYiPageFrame(
       title: '问记忆',
@@ -1050,12 +1223,18 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               const SizedBox(height: JiYiSpacing.sm),
               ...evidence.map((item) {
                 final e = item as Map<String, dynamic>;
-                // Evidence 卡片只格式化层级；source_type/kind/occurred_at/confidence 均展示服务端真实字段。
+                final sourceLabel =
+                    _evidenceSourceLabel(e['source_type']?.toString());
+                final provenance = e['provenance']?.toString();
+                // USER_EDIT 明确告诉用户当前文字来自后续手工修正，不能继续伪装成原始媒体证明。
+                final displayedSource = provenance == 'USER_EDIT'
+                    ? '$sourceLabel · 用户编辑'
+                    : sourceLabel;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
                   child: JiYiEvidenceCard(
                     excerpt: e['excerpt']?.toString() ?? '',
-                    source: _evidenceSourceLabel(e['source_type']?.toString()),
+                    source: displayedSource,
                     evidenceType: e['kind']?.toString() ?? '未知',
                     occurredAt: e['occurred_at']?.toString() ?? '未知',
                     confidence: e['confidence']?.toString() ?? '未知',
@@ -1079,15 +1258,29 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   color: theme.colorScheme.error,
                 ),
                 title: '管理这条记忆',
-                subtitle: '删除会真正影响后续检索，并同时影响依赖它的当前位置答案。',
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.colorScheme.error,
-                    side: BorderSide(color: theme.colorScheme.error),
-                  ),
-                  onPressed: loading ? null : deleteFirstMemory,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('删除最相关记忆'),
+                subtitle: '编辑保留原始 Evidence；删除会真正影响后续检索。',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (canEditFirstMemory) ...[
+                      FilledButton.tonalIcon(
+                        key: const ValueKey('memory-edit-open'),
+                        onPressed: loading ? null : editFirstMemory,
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('编辑最相关记忆'),
+                      ),
+                      const SizedBox(height: JiYiSpacing.sm),
+                    ],
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                        side: BorderSide(color: theme.colorScheme.error),
+                      ),
+                      onPressed: loading ? null : deleteFirstMemory,
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('删除最相关记忆'),
+                    ),
+                  ],
                 ),
               ),
             ],

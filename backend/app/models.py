@@ -147,6 +147,9 @@ class Memory(Base):
     is_confirmed: Mapped[bool] = mapped_column(Boolean, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 当前 Memory 是用户可见快照；编辑 revision 与时间不覆盖原始 MemorySource。
+    edit_revision: Mapped[int] = mapped_column(Integer, default=0)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -164,6 +167,36 @@ class MemorySource(Base):
     source_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MemoryEdit(Base):
+    __tablename__ = "memory_edits"
+    __table_args__ = (
+        UniqueConstraint("memory_id", "revision", name="uq_memory_edits_memory_revision"),
+        UniqueConstraint("memory_source_id", name="uq_memory_edits_memory_source"),
+        Index("ix_memory_edits_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    memory_id: Mapped[UUID] = mapped_column(
+        ForeignKey("memories.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer)
+    previous_title: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    previous_content: Mapped[str] = mapped_column(Text)
+    new_title: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    new_content: Mapped[str] = mapped_column(Text)
+    changed_title: Mapped[bool] = mapped_column(Boolean)
+    changed_content: Mapped[bool] = mapped_column(Boolean)
+    # 只有正文变化才会关联新的 USER_TEXT source；标题-only 编辑不能伪造正文 Evidence。
+    memory_source_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("memory_sources.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

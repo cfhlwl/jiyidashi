@@ -8,6 +8,7 @@
 
 - 当前用户 profile / timezone / locale；
 - 未删除的 Memory 与对应 MemorySource / Evidence；
+- Memory 当前编辑 revision、最后编辑时间与 append-only MemoryEdit 审计历史；
 - Object 与 ObjectLocation 历史，并保留 `CURRENT / STALE / UNKNOWN` 状态；
 - PrivacyState 与 PrivacyPauseInterval；
 - 当前用户媒体业务元数据及仍可用的 Evidence 关联。
@@ -23,3 +24,10 @@ backing Memory 已删除的位置行保留历史标识，但强制按 STALE 导�
 V1 每个集合最多导出 5000 条；任一集合超限返回 HTTP 413。后续如需超大账号导出，应单独设计异步/分片导出协议。
 
 响应带 `Cache-Control: no-store`，避免个人导出内容被中间缓存长期保存。
+
+
+<!-- Memory Edit 使用追加式审计；导出必须同时保留原始 source 与用户编辑 source，不能只输出最终文本而丢失来源差异。 -->
+Memory 正文被用户修改后，`memories[].content` 表示当前用户可见文本；原始
+`memory_sources` 保持不变，正文编辑产生的 USER_TEXT source 作为额外行导出，并由
+`memory_edits[].memory_source_id` 关联。标题-only 编辑的 `memory_source_id` 为
+`null`，避免把标题变化误当成新的正文 Evidence。

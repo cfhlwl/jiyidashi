@@ -44,6 +44,7 @@ async def test_empty_account_exports_versioned_json(client, auth_headers):
     assert body["format"] == "jiyidashi.user-export.v1"
     assert body["memories"] == []
     assert body["memory_sources"] == []
+    assert body["memory_edits"] == []
     assert body["objects"] == []
     assert body["object_locations"] == []
     assert body["privacy"]["pause_intervals"] == []
