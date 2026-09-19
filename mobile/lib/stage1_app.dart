@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 
 import 'account_delete_section.dart';
 import 'api_client.dart';
+import 'native_location_bridge.dart';
+import 'native_location_controller.dart';
+import 'native_location_section.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
 import 'onboarding_controller.dart';
@@ -23,11 +26,13 @@ class JiYiApp extends StatefulWidget {
     this.api,
     this.offlineQueue,
     this.onboardingStore,
+    this.locationBridge,
   });
 
   final JiYiApiClient? api;
   final OfflineQueueStore? offlineQueue;
   final OnboardingStateStore? onboardingStore;
+  final NativeLocationBridge? locationBridge;
 
   @override
   State<JiYiApp> createState() => _JiYiAppState();
@@ -44,6 +49,8 @@ class _JiYiAppState extends State<JiYiApp> {
   );
   late final OnboardingStateStore onboardingStore =
       widget.onboardingStore ?? OnboardingStore();
+  late final NativeLocationBridge locationBridge =
+      widget.locationBridge ?? MethodChannelNativeLocationBridge();
   bool authenticated = false;
   bool startOnboardingAfterAuth = false;
   bool resumeAccountDeletionAfterAuth = false;
@@ -74,6 +81,7 @@ class _JiYiAppState extends State<JiYiApp> {
               onboardingStore: onboardingStore,
               startOnboarding: startOnboardingAfterAuth,
               resumeAccountDeletion: resumeAccountDeletionAfterAuth,
+              locationBridge: locationBridge,
               sync: sync,
               onLogout: () {
                 api.logout();
@@ -344,6 +352,7 @@ class AppShell extends StatefulWidget {
     this.onboardingStore,
     this.startOnboarding = false,
     this.resumeAccountDeletion = false,
+    this.locationBridge,
     this.sync,
     required this.onLogout,
   });
@@ -353,6 +362,7 @@ class AppShell extends StatefulWidget {
   final OnboardingStateStore? onboardingStore;
   final bool startOnboarding;
   final bool resumeAccountDeletion;
+  final NativeLocationBridge? locationBridge;
   final OfflineSyncCoordinator? sync;
   final VoidCallback onLogout;
 
@@ -367,6 +377,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int syncGeneration = 0;
   bool _accountDeletionIntentActive = false;
   OnboardingController? _onboarding;
+  NativeLocationController? _nativeLocation;
 
   @override
   void initState() {
@@ -378,6 +389,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     final store = widget.onboardingStore;
     final owner = widget.api.authenticatedUserId?.trim();
+    if (owner != null && owner.isNotEmpty) {
+      _nativeLocation = NativeLocationController(
+        bridge: widget.locationBridge ?? MethodChannelNativeLocationBridge(),
+        ownerUserId: owner,
+      );
+    }
     if (!_accountDeletionIntentActive &&
         store != null &&
         owner != null &&
@@ -399,6 +416,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (onboarding != null) {
         unawaited(onboarding.initialize());
       }
+      final location = _nativeLocation;
+      if (location != null) {
+        if (_accountDeletionIntentActive) {
+          unawaited(location.disableForAccountDeletion());
+        } else {
+          // Native initialization only reads status. It never requests permission or starts
+          // production; server privacy is then reconciled fail-closed before user controls enable.
+          unawaited(_initializeNativeLocation(location));
+        }
+      }
     });
   }
 
@@ -407,6 +434,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _onboarding?.removeListener(_onboardingChanged);
     _onboarding?.dispose();
+    _nativeLocation?.dispose();
     super.dispose();
   }
 
@@ -414,7 +442,62 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_autoFlush());
+      final location = _nativeLocation;
+      if (!_accountDeletionIntentActive && location != null) {
+        // Returning from system settings is the authoritative point to observe permission
+        // revocation/grant. Refresh never starts location by itself.
+        unawaited(_initializeNativeLocation(location));
+      }
     }
+  }
+
+  Future<void> _initializeNativeLocation(
+    NativeLocationController location,
+  ) async {
+    await location.initialize();
+    if (!mounted || _accountDeletionIntentActive) return;
+
+    // Server privacy is authoritative. A producer that survived process/engine lifecycle
+    // must be quarantined immediately after status() and before any network wait; otherwise
+    // "privacy unknown" would still leak production time while getPrivacyStatus is slow.
+    final restoreAfterVerification =
+        await location.quarantineForPrivacyVerification();
+    if (!mounted || _accountDeletionIntentActive) return;
+    await _reconcileNativeLocationPrivacy(
+      location,
+      restoreAfterVerification: restoreAfterVerification,
+    );
+  }
+
+  Future<void> _reconcileNativeLocationPrivacy(
+    NativeLocationController location, {
+    required bool restoreAfterVerification,
+  }) async {
+    try {
+      final privacy = await widget.api.getPrivacyStatus();
+      if (!mounted || _accountDeletionIntentActive) return;
+      if (privacy['recording_paused'] == true) {
+        await location.pauseForPrivacy();
+      } else if (restoreAfterVerification) {
+        // Restore only the producer that was verifiably running before quarantine.
+        // This path calls start only; it can never request or upgrade location permission.
+        await location.resumeVerifiedProducerAfterQuarantine();
+      } else {
+        // An already-stopped producer remains stopped on login/app resume.
+        location.markPrivacyActive();
+      }
+    } catch (_) {
+      if (!mounted || _accountDeletionIntentActive) return;
+      await location.privacyStatusUnknown();
+    }
+  }
+
+  Future<void> _stopLocationAndLogout() async {
+    final location = _nativeLocation;
+    if (location != null) {
+      await location.stopForLogout();
+    }
+    if (mounted) widget.onLogout();
   }
 
   Future<void> _autoFlush() async {
@@ -447,6 +530,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         index = 4;
       });
     }
+    final location = _nativeLocation;
+    if (location != null) {
+      // Account deletion clears this account's automatic-location enablement before
+      // local data purge, so a later account on the same device cannot inherit it.
+      await location.disableForAccountDeletion();
+    }
+
     // [人工注释][S1-022] 两个 owner-local 门禁都必须在任何 await 之前建立：
     // Capture widget 即使已被移出树，旧 async Future 仍可能继续 enqueue/flush。
     // 先封 producer + future flush，再等待既有写入/同步，最后 purge 才是真正 last write。
@@ -519,10 +609,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       ),
       ProfilePage(
         api: widget.api,
-        onLogout: widget.onLogout,
+        onLogout: () => unawaited(_stopLocationAndLogout()),
         onAccountDeleteIntentConfirmed: _prepareLocalAccountDeletion,
-        onAccountDeleted: () async => widget.onLogout(),
+        onAccountDeleted: () async => _stopLocationAndLogout(),
         resumeAccountDeletion: _accountDeletionIntentActive,
+        nativeLocationController: _nativeLocation,
         onStartOnboarding: onboarding == null
             ? null
             : () => unawaited(onboarding.restart()),
@@ -1589,6 +1680,7 @@ class ProfilePage extends StatelessWidget {
     required this.onAccountDeleteIntentConfirmed,
     required this.onAccountDeleted,
     this.resumeAccountDeletion = false,
+    this.nativeLocationController,
     this.onStartOnboarding,
   });
 
@@ -1597,6 +1689,7 @@ class ProfilePage extends StatelessWidget {
   final Future<void> Function() onAccountDeleteIntentConfirmed;
   final Future<void> Function() onAccountDeleted;
   final bool resumeAccountDeletion;
+  final NativeLocationController? nativeLocationController;
   final VoidCallback? onStartOnboarding;
 
   @override
@@ -1710,7 +1803,14 @@ class ProfilePage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: JiYiSpacing.md),
-              _PrivacyControls(api: api),
+              _PrivacyControls(
+                api: api,
+                nativeLocationController: nativeLocationController,
+              ),
+              if (nativeLocationController != null) ...[
+                const SizedBox(height: JiYiSpacing.md),
+                NativeLocationSection(controller: nativeLocationController!),
+              ],
               if (onStartOnboarding != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 JiYiSectionCard(
@@ -1750,9 +1850,13 @@ class ProfilePage extends StatelessWidget {
 }
 
 class _PrivacyControls extends StatefulWidget {
-  const _PrivacyControls({required this.api});
+  const _PrivacyControls({
+    required this.api,
+    this.nativeLocationController,
+  });
 
   final JiYiApiClient api;
+  final NativeLocationController? nativeLocationController;
 
   @override
   State<_PrivacyControls> createState() => _PrivacyControlsState();
@@ -1787,6 +1891,15 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
           message = null;
           messageIsError = false;
         });
+        final location = widget.nativeLocationController;
+        if (location != null) {
+          if (next['recording_paused'] == true) {
+            await location.pauseForPrivacy();
+          } else {
+            // A passive refresh never resumes native production.
+            location.markPrivacyActive();
+          }
+        }
       }
     } on ApiException catch (exc) {
       if (mounted) {
@@ -1796,6 +1909,7 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
           message = exc.message;
           messageIsError = true;
         });
+        await widget.nativeLocationController?.privacyStatusUnknown();
       }
     } finally {
       if (mounted) {
@@ -1806,8 +1920,9 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
 
   Future<void> apply(
     Future<Map<String, dynamic>> Function() action,
-    String success,
-  ) async {
+    String success, {
+    Future<void> Function()? afterSuccess,
+  }) async {
     setState(() {
       // 新动作开始时只重置提示样式；暂停时长与业务状态仍由服务端决定。
       loading = true;
@@ -1824,6 +1939,7 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
           message = success;
           messageIsError = false;
         });
+        await afterSuccess?.call();
       }
     } on ApiException catch (exc) {
       if (mounted) {
@@ -1924,27 +2040,45 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
               OutlinedButton(
                 onPressed: loading
                     ? null
-                    : () =>
-                          apply(() => widget.api.pauseMemory(30), '已暂停 30 分钟'),
+                    : () => apply(
+                          () => widget.api.pauseMemory(30),
+                          '已暂停 30 分钟',
+                          afterSuccess:
+                              widget.nativeLocationController?.pauseForPrivacy,
+                        ),
                 child: const Text('30 分钟'),
               ),
               OutlinedButton(
                 onPressed: loading
                     ? null
-                    : () => apply(() => widget.api.pauseMemory(60), '已暂停 1 小时'),
+                    : () => apply(
+                          () => widget.api.pauseMemory(60),
+                          '已暂停 1 小时',
+                          afterSuccess:
+                              widget.nativeLocationController?.pauseForPrivacy,
+                        ),
                 child: const Text('1 小时'),
               ),
               OutlinedButton(
                 onPressed: loading
                     ? null
-                    : () =>
-                          apply(() => widget.api.pauseMemory(180), '已暂停 3 小时'),
+                    : () => apply(
+                          () => widget.api.pauseMemory(180),
+                          '已暂停 3 小时',
+                          afterSuccess:
+                              widget.nativeLocationController?.pauseForPrivacy,
+                        ),
                 child: const Text('3 小时'),
               ),
               OutlinedButton(
                 onPressed: loading
                     ? null
-                    : () => apply(widget.api.pauseMemoryToday, '今天剩余时间已暂停'),
+                    : () => apply(
+                          widget.api.pauseMemoryToday,
+                          '今天剩余时间已暂停',
+                          afterSuccess:
+                              widget.nativeLocationController?.pauseForPrivacy,
+                        ),
                 child: const Text('今天'),
               ),
             ],
@@ -1954,7 +2088,12 @@ class _PrivacyControlsState extends State<_PrivacyControls> {
           FilledButton.icon(
             onPressed: loading || !paused
                 ? null
-                : () => apply(widget.api.resumeMemory, '已恢复自动记录'),
+                : () => apply(
+                      widget.api.resumeMemory,
+                      '已恢复自动记录',
+                      afterSuccess:
+                          widget.nativeLocationController?.resumeAfterPrivacy,
+                    ),
             icon: loading
                 ? const SizedBox.square(
                     dimension: 18,

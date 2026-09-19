@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/native_location_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/stage1_app.dart';
@@ -69,6 +70,63 @@ class _GoldenApi extends JiYiApiClient {
   }
 }
 
+class _GoldenLocationBridge implements NativeLocationBridge {
+  NativeLocationStatus _status({
+    NativeLocationRuntime runtime = NativeLocationRuntime.stopped,
+  }) {
+    return NativeLocationStatus(
+      supported: true,
+      platform: 'golden',
+      permission: NativeLocationPermission.notDetermined,
+      runtime: runtime,
+      automaticEnabled: false,
+      locationServicesEnabled: true,
+      reason: runtime == NativeLocationRuntime.paused
+          ? 'paused'
+          : 'foreground_permission_required',
+    );
+  }
+
+  @override
+  Future<NativeLocationStatus> status(String ownerUserId) async => _status();
+
+  @override
+  Future<NativeLocationStatus> requestForegroundPermission(
+    String ownerUserId,
+  ) async =>
+      _status();
+
+  @override
+  Future<NativeLocationStatus> enableAutomaticLocation(
+    String ownerUserId,
+  ) async =>
+      _status();
+
+  @override
+  Future<NativeLocationStatus> openBackgroundLocationSettings(
+    String ownerUserId,
+  ) async =>
+      _status();
+
+  @override
+  Future<NativeLocationStatus> disableAutomaticLocation(
+    String ownerUserId,
+  ) async =>
+      _status();
+
+  @override
+  Future<NativeLocationStatus> start(String ownerUserId) async => _status();
+
+  @override
+  Future<NativeLocationStatus> pause(String ownerUserId) async =>
+      _status(runtime: NativeLocationRuntime.paused);
+
+  @override
+  Future<NativeLocationStatus> stop(String ownerUserId) async => _status();
+}
+
+// Golden tests must not depend on an unregistered platform channel. Native platform policy
+// is covered separately by Flutter bridge tests, Android JVM tests and iOS RunnerTests.
 class _GoldenQueue extends OfflineQueueStore {
   @override
   Future<int> countAwaitingDelivery(String ownerUserId) async => 0;
@@ -103,7 +161,12 @@ Future<Key> _pumpShell(WidgetTester tester, {JiYiApiClient? api}) async {
   final resolvedApi = api ?? _GoldenApi();
   return _pumpSurface(
     tester,
-    AppShell(api: resolvedApi, offlineQueue: _GoldenQueue(), onLogout: () {}),
+    AppShell(
+      api: resolvedApi,
+      offlineQueue: _GoldenQueue(),
+      locationBridge: _GoldenLocationBridge(),
+      onLogout: () {},
+    ),
   );
 }
 
@@ -220,7 +283,10 @@ void main() {
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
 
-    expect(find.text('自动采集已暂停'), findsOneWidget);
+    // Stage 2 adds a second, deliberate pause indicator for the native producer:
+    // one banner is the authoritative server privacy state, the other proves native
+    // location production has also converged to paused.
+    expect(find.text('自动采集已暂停'), findsNWidgets(2));
     expect(find.textContaining('2026-09-18T01:30:00+08:00'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, '恢复记录'), findsOneWidget);
     await expectLater(

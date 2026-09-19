@@ -3,6 +3,12 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 录音只在用户主动点击后开启；没有此权限时语音入口必须 fail closed。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 定位权限按用户动作分阶段请求；声明权限不等于启动采集。 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <application
         android:label="jiyidashi"
         android:name="${applicationName}"
@@ -29,6 +35,12 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- 后台定位只由 NativeLocationPlugin 在已授权、已明确启用后启动。 -->
+        <service
+            android:name=".NativeLocationTrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location"/>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
