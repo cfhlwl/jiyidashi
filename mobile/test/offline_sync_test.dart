@@ -160,6 +160,82 @@ void main() {
     expect(reports[1].completed, 1);
   });
 
+  test('account deletion can wait for the active owner flush before local purge', () async {
+    final api = _SyncApi(userId: userA);
+    final entered = Completer<void>();
+    final release = Completer<void>();
+    api.textHandler = (title, content, occurredAt, clientUuid) async {
+      if (!entered.isCompleted) entered.complete();
+      await release.future;
+      return {'id': 'flush-before-account-purge'};
+    };
+    final sync = OfflineSyncCoordinator(api: api, store: store);
+    await store.enqueueTextMemory(
+      ownerUserId: userA,
+      clientUuid: '23232323-2323-4232-8232-232323232323',
+      content: '注销前让当前 flush 收尾',
+    );
+
+    final flush = sync.flush(userA);
+    await entered.future;
+    var idleReached = false;
+    final waiting = sync.waitForIdle(userA).then((_) => idleReached = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(idleReached, isFalse);
+
+    release.complete();
+    await Future.wait([flush, waiting]);
+
+    expect(idleReached, isTrue);
+    expect(api.textCalls, 1);
+    expect((await store.listAll(userA)).single.status, OfflineQueueStatus.completed);
+  });
+
+  test(
+    'account deletion quiesce drains active flush and blocks every later flush',
+    () async {
+      final api = _SyncApi(userId: userA);
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      api.textHandler = (title, content, occurredAt, clientUuid) async {
+        if (!entered.isCompleted) entered.complete();
+        await release.future;
+        return {'id': 'quiesced-flush-memory'};
+      };
+      final sync = OfflineSyncCoordinator(api: api, store: store);
+      await store.enqueueTextMemory(
+        ownerUserId: userA,
+        clientUuid: '24242424-2424-4242-8242-242424242424',
+        content: '注销前已经进入 active flush',
+      );
+
+      final flush = sync.flush(userA);
+      await entered.future;
+      var quiesced = false;
+      final waiting = sync
+          .quiesceForAccountDeletion(userA)
+          .then((_) => quiesced = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(quiesced, isFalse);
+      expect(() => sync.flush(userA), throwsStateError);
+
+      release.complete();
+      await flush;
+      await waiting;
+      expect(quiesced, isTrue);
+      expect(api.textCalls, 1);
+
+      await store.purgeOwner(userA);
+      expect(await store.listAll(userA), isEmpty);
+      expect(() => sync.flush(userA), throwsStateError);
+      expect(
+        await store.listAll(userA),
+        isEmpty,
+        reason: 'a late Capture flush must not recreate or mutate purged rows',
+      );
+    },
+  );
+
   test('cancelled task is never sent by automatic flush', () async {
     final api = _SyncApi(userId: userA);
     final sync = OfflineSyncCoordinator(api: api, store: store);

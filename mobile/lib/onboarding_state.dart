@@ -39,6 +39,7 @@ abstract interface class OnboardingStateStore {
   Future<void> markInProgress(String ownerUserId);
   Future<void> markSkipped(String ownerUserId);
   Future<void> markCompleted(String ownerUserId);
+  Future<void> deleteOwnerState(String ownerUserId);
   Future<void> close();
 }
 
@@ -132,6 +133,19 @@ class OnboardingStore implements OnboardingStateStore {
   @override
   Future<void> markCompleted(String ownerUserId) =>
       _write(ownerUserId, OnboardingStatus.completed);
+
+  @override
+  Future<void> deleteOwnerState(String ownerUserId) async {
+    final owner = _normalizeOwner(ownerUserId);
+    final db = await _database();
+    // [人工注释][S1-022] Onboarding 是本机账号作用域状态；注销后删除当前 owner 行，
+    // 其他共享设备账号的引导状态必须保留。
+    await db.delete(
+      'onboarding_state',
+      where: 'owner_user_id = ?',
+      whereArgs: [owner],
+    );
+  }
 
   Future<void> _write(
     String ownerUserId,

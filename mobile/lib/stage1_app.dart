@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'account_delete_section.dart';
 import 'api_client.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
@@ -45,6 +46,7 @@ class _JiYiAppState extends State<JiYiApp> {
       widget.onboardingStore ?? OnboardingStore();
   bool authenticated = false;
   bool startOnboardingAfterAuth = false;
+  bool resumeAccountDeletionAfterAuth = false;
 
   @override
   void dispose() {
@@ -71,12 +73,14 @@ class _JiYiAppState extends State<JiYiApp> {
               offlineQueue: offlineQueue,
               onboardingStore: onboardingStore,
               startOnboarding: startOnboardingAfterAuth,
+              resumeAccountDeletion: resumeAccountDeletionAfterAuth,
               sync: sync,
               onLogout: () {
                 api.logout();
                 setState(() {
                   authenticated = false;
                   startOnboardingAfterAuth = false;
+                  resumeAccountDeletionAfterAuth = false;
                 });
               },
             )
@@ -84,6 +88,12 @@ class _JiYiAppState extends State<JiYiApp> {
               api: api,
               onRegistrationCompleted: () {
                 startOnboardingAfterAuth = true;
+                resumeAccountDeletionAfterAuth = false;
+              },
+              onAccountDeletionRecovery: () {
+                // [人工注释][S1-022-FIX-001] 恢复登录只进入注销收尾，不启动普通数据空间/离线同步。
+                resumeAccountDeletionAfterAuth = true;
+                startOnboardingAfterAuth = false;
               },
               onAuthenticated: () => setState(() => authenticated = true),
             ),
@@ -97,11 +107,13 @@ class AuthPage extends StatefulWidget {
     required this.api,
     required this.onAuthenticated,
     this.onRegistrationCompleted,
+    this.onAccountDeletionRecovery,
   });
 
   final JiYiApiClient api;
   final VoidCallback onAuthenticated;
   final VoidCallback? onRegistrationCompleted;
+  final VoidCallback? onAccountDeletionRecovery;
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -149,10 +161,13 @@ class _AuthPageState extends State<AuthPage> {
         // logging into an upgraded app are never inferred to be "new" from missing local state.
         widget.onRegistrationCompleted?.call();
       } else {
-        await widget.api.login(
+        final login = await widget.api.login(
           email: emailController.text,
           password: passwordController.text,
         );
+        if (login['account_deletion_in_progress'] == true) {
+          widget.onAccountDeletionRecovery?.call();
+        }
       }
       widget.onAuthenticated();
     } on ApiException catch (exc) {
@@ -328,6 +343,7 @@ class AppShell extends StatefulWidget {
     required this.offlineQueue,
     this.onboardingStore,
     this.startOnboarding = false,
+    this.resumeAccountDeletion = false,
     this.sync,
     required this.onLogout,
   });
@@ -336,6 +352,7 @@ class AppShell extends StatefulWidget {
   final OfflineQueueStore offlineQueue;
   final OnboardingStateStore? onboardingStore;
   final bool startOnboarding;
+  final bool resumeAccountDeletion;
   final OfflineSyncCoordinator? sync;
   final VoidCallback onLogout;
 
@@ -348,15 +365,23 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
   int index = 0;
   int syncGeneration = 0;
+  bool _accountDeletionIntentActive = false;
   OnboardingController? _onboarding;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _accountDeletionIntentActive = widget.resumeAccountDeletion;
+    if (_accountDeletionIntentActive) {
+      index = 4;
+    }
     final store = widget.onboardingStore;
     final owner = widget.api.authenticatedUserId?.trim();
-    if (store != null && owner != null && owner.isNotEmpty) {
+    if (!_accountDeletionIntentActive &&
+        store != null &&
+        owner != null &&
+        owner.isNotEmpty) {
       _onboarding = OnboardingController(
         store: store,
         ownerUserId: owner,
@@ -367,7 +392,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // 登录进入生产 Shell 后立即尝试恢复当前账号的可重试 outbox。
     // coordinator 自身 single-flight，生命周期重复触发不会并发发送同一任务。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_autoFlush());
+      if (!_accountDeletionIntentActive) {
+        unawaited(_autoFlush());
+      }
       final onboarding = _onboarding;
       if (onboarding != null) {
         unawaited(onboarding.initialize());
@@ -391,6 +418,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   Future<void> _autoFlush() async {
+    if (_accountDeletionIntentActive) return;
     final owner = widget.api.authenticatedUserId;
     if (owner == null || owner.trim().isEmpty) return;
     try {
@@ -403,6 +431,44 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // 自动同步失败时只保留 SQLite 的真实状态，不能把本地任务伪装成 completed。
     } finally {
       if (mounted) setState(() => syncGeneration += 1);
+    }
+  }
+
+  Future<void> _prepareLocalAccountDeletion() async {
+    final owner = widget.api.authenticatedUserId?.trim();
+    if (owner == null || owner.isEmpty) {
+      throw StateError('authenticated user id missing during account deletion');
+    }
+    if (mounted) {
+      setState(() {
+        // [人工注释][S1-022-FIX-002] 一旦用户确认不可逆注销，立即封住普通导航与新的自动同步；
+        // 即使后续服务端返回 202/网络失败，也不能重新进入会产生本地数据的普通工作流。
+        _accountDeletionIntentActive = true;
+        index = 4;
+      });
+    }
+    // [人工注释][S1-022] 两个 owner-local 门禁都必须在任何 await 之前建立：
+    // Capture widget 即使已被移出树，旧 async Future 仍可能继续 enqueue/flush。
+    // 先封 producer + future flush，再等待既有写入/同步，最后 purge 才是真正 last write。
+    final offlineQueueIdle =
+        widget.offlineQueue.quiesceForAccountDeletion(owner);
+    final syncIdle = _sync.quiesceForAccountDeletion(owner);
+
+    final onboarding = _onboarding;
+    if (onboarding != null) {
+      // [人工注释][S1-022-FIX-006] 先等账号作用域 onboarding 写入完全停住，再删本地行；
+      // purge 必须是该 owner 在本机的最后一次 onboarding 持久化动作。
+      await onboarding.quiesceForAccountDeletion();
+      onboarding.removeListener(_onboardingChanged);
+      onboarding.dispose();
+      _onboarding = null;
+    }
+    await offlineQueueIdle;
+    await syncIdle;
+    await widget.offlineQueue.purgeOwner(owner);
+    final localOnboarding = widget.onboardingStore;
+    if (localOnboarding != null) {
+      await localOnboarding.deleteOwnerState(owner);
     }
   }
 
@@ -454,6 +520,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       ProfilePage(
         api: widget.api,
         onLogout: widget.onLogout,
+        onAccountDeleteIntentConfirmed: _prepareLocalAccountDeletion,
+        onAccountDeleted: () async => widget.onLogout(),
+        resumeAccountDeletion: _accountDeletionIntentActive,
         onStartOnboarding: onboarding == null
             ? null
             : () => unawaited(onboarding.restart()),
@@ -462,7 +531,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     return Scaffold(
       body: SafeArea(
         child: OnboardingExperience(
-          step: onboardingStep,
+          step: _accountDeletionIntentActive ? null : onboardingStep,
           onStart: onboarding?.startFlow ?? () {},
           onSkip: () {
             if (onboarding != null) unawaited(onboarding.skip());
@@ -474,7 +543,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         ),
       ),
       // [人工注释][S1-026] 引导进行时由 GuideBar 提供唯一退出入口；隐藏而不是保留“看得见但点不动”的底部导航。
-      bottomNavigationBar: onboardingStep != null
+      bottomNavigationBar: onboardingStep != null || _accountDeletionIntentActive
           ? null
           : NavigationBar(
         selectedIndex: index,
@@ -1517,11 +1586,17 @@ class ProfilePage extends StatelessWidget {
     super.key,
     required this.api,
     required this.onLogout,
+    required this.onAccountDeleteIntentConfirmed,
+    required this.onAccountDeleted,
+    this.resumeAccountDeletion = false,
     this.onStartOnboarding,
   });
 
   final JiYiApiClient api;
   final VoidCallback onLogout;
+  final Future<void> Function() onAccountDeleteIntentConfirmed;
+  final Future<void> Function() onAccountDeleted;
+  final bool resumeAccountDeletion;
   final VoidCallback? onStartOnboarding;
 
   @override
@@ -1553,6 +1628,35 @@ class ProfilePage extends StatelessWidget {
             );
           }
           if (snapshot.hasError) {
+            final error = snapshot.error;
+            final deleting = error is ApiException &&
+                error.statusCode == 423 &&
+                error.message == 'ACCOUNT_DELETION_IN_PROGRESS';
+            if (deleting || resumeAccountDeletion) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const JiYiStatusBanner(
+                    kind: JiYiStatusKind.warning,
+                    title: '账号注销正在进行',
+                    message: '普通数据访问已锁定。请继续完成注销；你也可以退出后稍后重新登录恢复。',
+                  ),
+                  const SizedBox(height: JiYiSpacing.md),
+                  AccountDeleteSection(
+                    api: api,
+                    onIntentConfirmed: onAccountDeleteIntentConfirmed,
+                    onDeleted: onAccountDeleted,
+                    resumeInProgress: true,
+                  ),
+                  const SizedBox(height: JiYiSpacing.md),
+                  OutlinedButton.icon(
+                    onPressed: onLogout,
+                    icon: const Icon(Icons.logout),
+                    label: const Text('退出登录'),
+                  ),
+                ],
+              );
+            }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1624,6 +1728,13 @@ class ProfilePage extends StatelessWidget {
                   ),
                 ),
               ],
+              const SizedBox(height: JiYiSpacing.md),
+              AccountDeleteSection(
+                api: api,
+                onIntentConfirmed: onAccountDeleteIntentConfirmed,
+                onDeleted: onAccountDeleted,
+                resumeInProgress: resumeAccountDeletion,
+              ),
               const SizedBox(height: JiYiSpacing.md),
               OutlinedButton.icon(
                 onPressed: onLogout,

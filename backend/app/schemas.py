@@ -126,6 +126,9 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_id: UUID
+    # [人工注释][S1-022-FIX-001] 这是恢复导航提示，不是授权位；
+    # 账号删除中的所有普通 API 仍必须经过服务端 gate 返回 423。
+    account_deletion_in_progress: bool = False
 
 
 class UserRead(ORMModel):

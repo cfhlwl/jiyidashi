@@ -56,6 +56,18 @@ void main() {
     await reopened.close();
   });
 
+  test('account deletion purges only one owner onboarding state', () async {
+    final store = createStore();
+    await store.markCompleted(userA);
+    await store.markSkipped(userB);
+
+    await store.deleteOwnerState(userA);
+
+    expect(await store.read(userA), isNull);
+    expect(await store.read(userB), OnboardingStatus.skipped);
+    await store.close();
+  });
+
   test('empty owner is rejected instead of creating unscoped device state', () async {
     final store = createStore();
     await expectLater(store.markCompleted('  '), throwsArgumentError);

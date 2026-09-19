@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 # Alembic 显式加载认证、媒体、删除状态机与客户端幂等模型，
 # 保证这些表全部进入正式 schema drift gate。
 from app import (  # noqa: F401
+    account_deletion_models,
     auth_models,
     data_deletion_models,
     idempotency_models,

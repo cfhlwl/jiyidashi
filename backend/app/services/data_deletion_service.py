@@ -72,6 +72,7 @@ USER_DATA_INVENTORY = (
 )
 PRESERVED_ACCOUNT_SURFACES = (
     "users",
+    "account_deletion_operations",
     "auth_identities",
     "auth_rate_limit_buckets",
     "data_deletion_operations",

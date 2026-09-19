@@ -21,6 +21,8 @@ class OnboardingController extends ChangeNotifier {
   String? _querySeed;
   String? _targetMemoryId;
   bool _disposed = false;
+  bool _accountDeletionQuiesced = false;
+  final Set<Future<void>> _pendingPersistence = <Future<void>>{};
 
   OnboardingStep? get step => _step;
   String? get querySeed => _querySeed;
@@ -33,10 +35,39 @@ class OnboardingController extends ChangeNotifier {
         null => null,
       };
 
+  Future<void> _persist(Future<void> Function() action) {
+    if (_disposed || _accountDeletionQuiesced) {
+      return Future<void>.value();
+    }
+    late final Future<void> tracked;
+    tracked = action().whenComplete(() {
+      _pendingPersistence.remove(tracked);
+    });
+    _pendingPersistence.add(tracked);
+    return tracked;
+  }
+
+  Future<void> quiesceForAccountDeletion() async {
+    // [人工注释][S1-022-FIX-006] 注销本地 purge 前先禁止新 onboarding 写入，并等待
+    // 已经开始的 mark/restart/complete 持久化结束；否则它们可能在 deleteOwnerState()
+    // 之后把当前 owner 行重新插回本机 SQLite。
+    _accountDeletionQuiesced = true;
+    final pending = List<Future<void>>.of(_pendingPersistence);
+    if (pending.isNotEmpty) {
+      await Future.wait(
+        pending.map(
+          (future) => future.catchError((_) {
+            // Onboarding persistence 本来就是 fail-open UX 状态；quiesce 只关心 I/O 已结束。
+          }),
+        ),
+      );
+    }
+  }
+
   Future<void> initialize() async {
     if (autoStartForNewRegistration) {
       try {
-        await store.markInProgress(ownerUserId);
+        await _persist(() => store.markInProgress(ownerUserId));
       } catch (_) {
         // Persistence is UX state only. A new user still gets the in-memory guide, and
         // skip/complete remain fail-open so a local database fault cannot trap the account.
@@ -81,7 +112,7 @@ class OnboardingController extends ChangeNotifier {
 
   Future<void> restart() async {
     try {
-      await store.markInProgress(ownerUserId);
+      await _persist(() => store.markInProgress(ownerUserId));
     } catch (_) {
       // Explicit re-entry must still work in this session if local UX-state persistence fails.
     }
@@ -93,7 +124,7 @@ class OnboardingController extends ChangeNotifier {
 
   Future<void> skip() async {
     try {
-      await store.markSkipped(ownerUserId);
+      await _persist(() => store.markSkipped(ownerUserId));
     } catch (_) {
       // Skip is fail-open by design; onboarding may never become an access gate.
     }
@@ -106,7 +137,7 @@ class OnboardingController extends ChangeNotifier {
 
   Future<void> complete() async {
     try {
-      await store.markCompleted(ownerUserId);
+      await _persist(() => store.markCompleted(ownerUserId));
     } catch (_) {
       // Completion is also fail-open to avoid a permanent onboarding loop.
     }
@@ -134,6 +165,7 @@ class OnboardingController extends ChangeNotifier {
     // [人工注释][S1-026] 本地状态 I/O 可能跨过 AppShell 销毁边界；
     // disposed 后所有异步续体都必须静默停止，不能再向已经移除的监听器发事件。
     _disposed = true;
+    _accountDeletionQuiesced = true;
     super.dispose();
   }
 }

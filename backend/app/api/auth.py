@@ -9,7 +9,11 @@ from app.core.db import get_db
 from app.core.security import create_access_token
 from app.models import User
 from app.schemas import DevTokenRequest, LoginRequest, RegisterRequest, TokenResponse
-from app.services.auth_service import authenticate_email_password, register_email_password
+from app.services.auth_service import (
+    authenticate_email_password,
+    lock_login_for_token_issue,
+    register_email_password,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -35,10 +39,19 @@ def register(payload: RegisterRequest, request: Request, db: DbSession) -> Token
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenResponse:
     # [人工注释][S1-001] 登录只在凭证校验成功后签发正式访问 Token。
+    # [人工注释][S1-022-FIX-001] 注销进行中也允许重新认证以恢复 /account/delete；
+    # 返回 flag 只帮助客户端直接进入恢复 UI，普通数据 API 仍由账号删除 gate 拒绝。
     user = authenticate_email_password(db, payload, client_ip=_client_ip(request))
+    # [人工注释][S1-022-FIX-005] final token issuance gate：这次 KEY SHARE 不 commit，
+    # 由 request-scoped Session 在响应结束时释放，保证账号不会在 token 构造前被并发注销。
+    locked_user, account_deletion_in_progress = lock_login_for_token_issue(
+        db,
+        user.id,
+    )
     return TokenResponse(
-        access_token=create_access_token(user.id),
-        user_id=user.id,
+        access_token=create_access_token(locked_user.id),
+        user_id=locked_user.id,
+        account_deletion_in_progress=account_deletion_in_progress,
     )
 
 

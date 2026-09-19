@@ -82,6 +82,57 @@ def register_email_password(
     return user
 
 
+def _lock_login_user_for_authentication(
+    db: Session,
+    user_id,
+) -> User:
+    # [人工注释][S1-022-FIX-001] Account Delete 可能等待对象存储 capability/quiet 窗口，
+    # 而当前客户端不会持久化 access token。正式密码登录必须仍能拿到恢复 token；
+    # 普通用户 API 继续由 get_current_user_id() 的 AccountDeletionOperation gate 返回 423。
+    # 这里仍拿 User KEY SHARE，保证与首次建立 Account Delete gate 的 FOR UPDATE 有明确顺序。
+    user = db.scalar(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update(read=True, key_share=True)
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="INVALID_CREDENTIALS",
+        )
+    return user
+
+
+def lock_login_for_token_issue(
+    db: Session,
+    user_id,
+) -> tuple[User, bool]:
+    # [人工注释][S1-022-FIX-005] 密码校验内部的 User lock 会在 authenticate() commit 时释放；
+    # 真正签发 token 前必须再次拿 KEY SHARE，并一直持有到 HTTP 请求结束。这样 Account Delete
+    # 的 FOR UPDATE 无法插进“最后一次 User/account-gate 检查 -> TokenResponse”之间。
+    from app.account_deletion_models import AccountDeletionOperation
+
+    user = db.scalar(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update(read=True, key_share=True)
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="INVALID_CREDENTIALS",
+        )
+    in_progress = (
+        db.scalar(
+            select(AccountDeletionOperation.id)
+            .where(AccountDeletionOperation.user_id == user_id)
+            .limit(1)
+        )
+        is not None
+    )
+    return user, in_progress
+
+
 def authenticate_email_password(
     db: Session,
     payload: LoginRequest,
@@ -125,12 +176,7 @@ def authenticate_email_password(
 
     clear_login_account_penalty(db, client_ip, subject)
 
-    user = db.get(User, identity.user_id)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="INVALID_CREDENTIALS",
-        )
+    user = _lock_login_user_for_authentication(db, identity.user_id)
 
     if _password_hasher.check_needs_rehash(identity.secret_hash):
         identity.secret_hash = _password_hasher.hash(payload.password)
