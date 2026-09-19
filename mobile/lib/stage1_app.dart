@@ -674,11 +674,10 @@ class _CapturePageState extends State<CapturePage> {
     final content = contentController.text.trim();
     if (content.isEmpty) return;
     final title = titleController.text.trim();
-    // Query API accepts <= 2000 chars. Keep onboarding comfortably below that bound and
-    // avoid splitting surrogate pairs by truncating on Unicode code points.
-    final querySeed = title.isNotEmpty
-        ? title
-        : String.fromCharCodes(content.runes.take(512));
+    // [人工注释][S1-026] 后端普通检索当前只匹配 Memory.content，不匹配 title。
+    // 因此 Aha 自动查询必须来自真实正文；同时保持在 Query API 2000 字上限以内，
+    // 并按 Unicode code points 截断，避免切坏 surrogate pair。
+    final querySeed = String.fromCharCodes(content.runes.take(512));
     setState(() {
       loading = true;
       result = null;
