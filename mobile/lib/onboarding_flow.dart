@@ -200,7 +200,7 @@ class OnboardingGuideBar extends StatelessWidget {
       OnboardingStep.retrieve => (
           2 / 3,
           '第 2 步 · 把刚才的记忆找回来',
-          '问题已经带入刚才记录的关键词。点“从我的记忆里查找”，看看服务端能否找到真实记录。',
+          '刚才记录的正文已经带入查询。点“从我的记忆里查找”，看看服务端能否找到真实记录。',
         ),
       OnboardingStep.trust => (
           1.0,
