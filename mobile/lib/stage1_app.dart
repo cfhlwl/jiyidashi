@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
+import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
 import 'unified_capture_section.dart';
@@ -344,24 +345,38 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
   int index = 0;
   int syncGeneration = 0;
-  OnboardingStep? onboardingStep;
-  String? onboardingQuerySeed;
+  OnboardingController? _onboarding;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final store = widget.onboardingStore;
+    final owner = widget.api.authenticatedUserId?.trim();
+    if (store != null && owner != null && owner.isNotEmpty) {
+      _onboarding = OnboardingController(
+        store: store,
+        ownerUserId: owner,
+        autoStartForNewRegistration: widget.startOnboarding,
+      )..addListener(_onboardingChanged);
+    }
+
     // 登录进入生产 Shell 后立即尝试恢复当前账号的可重试 outbox。
     // coordinator 自身 single-flight，生命周期重复触发不会并发发送同一任务。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_autoFlush());
-      unawaited(_initializeOnboarding());
+      final onboarding = _onboarding;
+      if (onboarding != null) {
+        unawaited(onboarding.initialize());
+      }
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _onboarding?.removeListener(_onboardingChanged);
+    _onboarding?.dispose();
     super.dispose();
   }
 
@@ -392,106 +407,19 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (mounted) setState(() => syncGeneration += 1);
   }
 
-  String? get _ownerUserId {
-    final owner = widget.api.authenticatedUserId?.trim();
-    return owner == null || owner.isEmpty ? null : owner;
-  }
-
-  Future<void> _initializeOnboarding() async {
-    final store = widget.onboardingStore;
-    final owner = _ownerUserId;
-    if (store == null || owner == null) return;
-
-    try {
-      OnboardingStatus? status;
-      if (widget.startOnboarding) {
-        await store.markInProgress(owner);
-        status = OnboardingStatus.inProgress;
-      } else {
-        status = await store.read(owner);
-      }
-      if (!mounted || status != OnboardingStatus.inProgress) return;
-      setState(() {
-        onboardingStep = OnboardingStep.intro;
-        onboardingQuerySeed = null;
-        index = 0;
-      });
-    } catch (_) {
-      // Onboarding persistence is UX state, not user content. A local storage failure must
-      // never trap an authenticated user outside the product.
-    }
-  }
-
-  Future<void> _restartOnboarding() async {
-    final owner = _ownerUserId;
-    if (owner == null) return;
-    final store = widget.onboardingStore;
-    try {
-      await store?.markInProgress(owner);
-    } catch (_) {
-      // Re-entry still works for this session even if the local UX-state write fails.
-    }
-    if (!mounted) return;
+  void _onboardingChanged() {
+    final onboarding = _onboarding;
+    if (!mounted || onboarding == null) return;
+    final targetIndex = onboarding.navigationIndex;
     setState(() {
-      onboardingStep = OnboardingStep.intro;
-      onboardingQuerySeed = null;
-      index = 0;
+      if (targetIndex != null) index = targetIndex;
     });
-  }
-
-  Future<void> _skipOnboarding() async {
-    final owner = _ownerUserId;
-    if (owner != null) {
-      try {
-        await widget.onboardingStore?.markSkipped(owner);
-      } catch (_) {
-        // Skip is fail-open: local UX-state failure cannot keep the user in onboarding.
-      }
-    }
-    if (!mounted) return;
-    setState(() {
-      onboardingStep = null;
-      onboardingQuerySeed = null;
-      index = 0;
-    });
-  }
-
-  void _startOnboardingFlow() {
-    setState(() {
-      onboardingStep = OnboardingStep.capture;
-      index = 2;
-    });
-  }
-
-  void _onOnboardingMemorySaved(String querySeed) {
-    if (onboardingStep != OnboardingStep.capture) return;
-    setState(() {
-      onboardingQuerySeed = querySeed;
-      onboardingStep = OnboardingStep.retrieve;
-      index = 3;
-    });
-  }
-
-  void _onOnboardingEvidenceShown() {
-    if (onboardingStep != OnboardingStep.retrieve) return;
-    setState(() => onboardingStep = OnboardingStep.trust);
-  }
-
-  Future<void> _completeOnboarding() async {
-    final owner = _ownerUserId;
-    if (owner != null) {
-      try {
-        await widget.onboardingStore?.markCompleted(owner);
-      } catch (_) {
-        // Completion also fails open; a storage problem must not create an onboarding loop.
-      }
-    }
-    if (!mounted) return;
-    setState(() => onboardingStep = null);
   }
 
   @override
   Widget build(BuildContext context) {
+    final onboarding = _onboarding;
+    final onboardingStep = onboarding?.step;
     final pages = <Widget>[
       const TodayPage(),
       const TimelinePage(),
@@ -503,24 +431,25 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         onQueueChanged: _queueChanged,
         onAuthoritativeTextMemorySaved:
             onboardingStep == OnboardingStep.capture
-                ? _onOnboardingMemorySaved
+                ? onboarding?.authoritativeTextMemorySaved
                 : null,
       ),
       MemoryQueryPage(
         api: widget.api,
         initialQuestion: onboardingStep == OnboardingStep.retrieve ||
                 onboardingStep == OnboardingStep.trust
-            ? onboardingQuerySeed
+            ? onboarding?.querySeed
             : null,
         onTrustedEvidenceShown: onboardingStep == OnboardingStep.retrieve
-            ? _onOnboardingEvidenceShown
+            ? onboarding?.trustedEvidenceShown
             : null,
       ),
       ProfilePage(
         api: widget.api,
         onLogout: widget.onLogout,
-        onStartOnboarding:
-            widget.onboardingStore == null ? null : _restartOnboarding,
+        onStartOnboarding: onboarding == null
+            ? null
+            : () => unawaited(onboarding.restart()),
       ),
     ];
     return Scaffold(
@@ -528,9 +457,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         child: OnboardingExperience(
           step: onboardingStep,
           child: pages[index],
-          onStart: _startOnboardingFlow,
-          onSkip: () => unawaited(_skipOnboarding()),
-          onComplete: () => unawaited(_completeOnboarding()),
+          onStart: onboarding?.startFlow ?? () {},
+          onSkip: () {
+            if (onboarding != null) unawaited(onboarding.skip());
+          },
+          onComplete: () {
+            if (onboarding != null) unawaited(onboarding.complete());
+          },
         ),
       ),
       bottomNavigationBar: onboardingStep == OnboardingStep.intro
@@ -538,12 +471,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           : NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) {
-          final step = onboardingStep;
-          if (step == OnboardingStep.capture && value != 2) return;
-          if ((step == OnboardingStep.retrieve || step == OnboardingStep.trust) &&
-              value != 3) {
-            return;
-          }
+          if (onboarding != null && !onboarding.allowsNavigation(value)) return;
           setState(() => index = value);
         },
         // destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
