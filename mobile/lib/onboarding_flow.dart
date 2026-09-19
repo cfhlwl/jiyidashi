@@ -25,18 +25,22 @@ class OnboardingExperience extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = step;
-    if (current == null) return child;
     if (current == OnboardingStep.intro) {
       return OnboardingIntroPage(onStart: onStart, onSkip: onSkip);
     }
 
+    // [人工注释][S1-026] 完成/跳过引导时保持产品页始终位于 Column 的第二个槽位。
+    // 这样 Flutter 会复用真实 Capture/Query State，用户刚看到的 Evidence 不会因去掉 GuideBar 被重建清空。
     return Column(
       children: [
-        OnboardingGuideBar(
-          step: current,
-          onSkip: onSkip,
-          onComplete: onComplete,
-        ),
+        if (current == null)
+          const SizedBox.shrink()
+        else
+          OnboardingGuideBar(
+            step: current,
+            onSkip: onSkip,
+            onComplete: onComplete,
+          ),
         Expanded(child: child),
       ],
     );
