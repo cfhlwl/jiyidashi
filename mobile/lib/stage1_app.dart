@@ -651,6 +651,7 @@ class CapturePage extends StatefulWidget {
     this.sync,
     this.syncGeneration = 0,
     this.onQueueChanged,
+    this.onAuthoritativeTextMemorySaved,
   });
 
   final JiYiApiClient api;
@@ -658,6 +659,7 @@ class CapturePage extends StatefulWidget {
   final OfflineSyncCoordinator? sync;
   final int syncGeneration;
   final VoidCallback? onQueueChanged;
+  final ValueChanged<String>? onAuthoritativeTextMemorySaved;
 
   @override
   State<CapturePage> createState() => _CapturePageState();
@@ -737,6 +739,7 @@ class _CapturePageState extends State<CapturePage> {
     final content = contentController.text.trim();
     if (content.isEmpty) return;
     final title = titleController.text.trim();
+    final querySeed = title.isNotEmpty ? title : content;
     setState(() {
       loading = true;
       result = null;
@@ -754,6 +757,9 @@ class _CapturePageState extends State<CapturePage> {
         titleController.clear();
         contentController.clear();
         setState(() => result = '✓ 已记住 · ${current.serverResourceId}');
+        // Onboarding may advance only after the outbox has received an authoritative
+        // server resource id. Local-only queued data cannot be queried yet.
+        widget.onAuthoritativeTextMemorySaved?.call(querySeed);
       } else if (current.status == OfflineQueueStatus.failed && current.retryable) {
         titleController.clear();
         contentController.clear();
@@ -1112,9 +1118,16 @@ class _MemoryEditDialogState extends State<_MemoryEditDialog> {
 }
 
 class MemoryQueryPage extends StatefulWidget {
-  const MemoryQueryPage({super.key, required this.api});
+  const MemoryQueryPage({
+    super.key,
+    required this.api,
+    this.initialQuestion,
+    this.onTrustedEvidenceShown,
+  });
 
   final JiYiApiClient api;
+  final String? initialQuestion;
+  final VoidCallback? onTrustedEvidenceShown;
 
   @override
   State<MemoryQueryPage> createState() => _MemoryQueryPageState();
@@ -1126,6 +1139,27 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   String? error;
   String? actionMessage;
   bool loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialQuestion?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      controller.text = initial;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MemoryQueryPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.initialQuestion?.trim();
+    if (oldWidget.initialQuestion != widget.initialQuestion &&
+        controller.text.trim().isEmpty &&
+        next != null &&
+        next.isNotEmpty) {
+      controller.text = next;
+    }
+  }
 
   @override
   void dispose() {
@@ -1144,7 +1178,16 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     });
     try {
       final response = await widget.api.queryMemory(controller.text);
+      if (!mounted) return;
       setState(() => result = response);
+      final evidence = response['evidence'];
+      if (response['can_answer'] == true &&
+          evidence is List<dynamic> &&
+          evidence.isNotEmpty) {
+        // The Aha flow advances only on the real query contract: an answer alone is not
+        // enough; the server must also return at least one actual Evidence item.
+        widget.onTrustedEvidenceShown?.call();
+      }
     } on ApiException catch (exc) {
       setState(() => error = exc.message);
     } catch (_) {
@@ -1466,10 +1509,16 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
 }
 
 class ProfilePage extends StatelessWidget {
-  const ProfilePage({super.key, required this.api, required this.onLogout});
+  const ProfilePage({
+    super.key,
+    required this.api,
+    required this.onLogout,
+    this.onStartOnboarding,
+  });
 
   final JiYiApiClient api;
   final VoidCallback onLogout;
+  final VoidCallback? onStartOnboarding;
 
   @override
   Widget build(BuildContext context) {
@@ -1554,6 +1603,23 @@ class ProfilePage extends StatelessWidget {
               ),
               const SizedBox(height: JiYiSpacing.md),
               _PrivacyControls(api: api),
+              if (onStartOnboarding != null) ...[
+                const SizedBox(height: JiYiSpacing.md),
+                JiYiSectionCard(
+                  leading: Icon(
+                    Icons.route_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: '新手引导',
+                  subtitle: '随时重新体验“记住 → 找回 → Evidence”，不会创建演示数据。',
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('profile-restart-onboarding'),
+                    onPressed: onStartOnboarding,
+                    icon: const Icon(Icons.replay_outlined),
+                    label: const Text('重新查看新手引导'),
+                  ),
+                ),
+              ],
               const SizedBox(height: JiYiSpacing.md),
               OutlinedButton.icon(
                 onPressed: onLogout,
