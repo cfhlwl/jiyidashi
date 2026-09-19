@@ -1,0 +1,47 @@
+name: s1-026-golden-generator
+
+on:
+  push:
+    branches:
+      - feat/stage1-onboarding
+    paths:
+      - ".github/workflows/s1-026-golden-generator.yml"
+      - "mobile/test/visual_golden_test.dart"
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # [人工注释][S1-026] 临时生成器只运行正式 Golden 测试中的 Onboarding 用例；
+      # 产物人工核对并提交后删除本 workflow，不改变长期 CI 语义。
+      - name: Generate onboarding golden
+        run: >-
+          flutter test test/visual_golden_test.dart
+          --update-goldens
+          --plain-name "golden: onboarding intro"
+          --reporter expanded
+
+      - name: Upload generated onboarding golden
+        uses: actions/upload-artifact@v4
+        with:
+          name: s1-026-onboarding-golden
+          retention-days: 2
+          if-no-files-found: error
+          path: mobile/test/goldens/onboarding_intro.png
