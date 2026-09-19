@@ -63,7 +63,7 @@ class OnboardingController extends ChangeNotifier {
   }
 
   void authoritativeTextMemorySaved(String memoryId, String querySeed) {
-    if (_step != OnboardingStep.capture) return;
+    if (_disposed || _step != OnboardingStep.capture) return;
     final normalizedId = memoryId.trim();
     final normalizedQuery = querySeed.trim();
     if (normalizedId.isEmpty || normalizedQuery.isEmpty) return;
