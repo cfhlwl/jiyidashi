@@ -11,7 +11,11 @@ on:
       - "mobile/lib/stage1_app.dart"
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: s1-026-golden-generator-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   generate:
@@ -47,3 +51,17 @@ jobs:
           retention-days: 2
           if-no-files-found: error
           path: mobile/test/goldens/onboarding_intro.png
+
+      # [人工注释][S1-026] 该 PNG 已先通过 artifact 人工核对；这里只把同一 Linux/Flutter
+      # 渲染结果写回功能分支，随后本临时 workflow 会被删除。
+      - name: Commit reviewed onboarding golden
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/test/goldens/onboarding_intro.png
+          git diff --cached --check
+          git commit -m "test(onboarding): commit reviewed Linux golden baseline"
+          git push origin HEAD:feat/stage1-onboarding
