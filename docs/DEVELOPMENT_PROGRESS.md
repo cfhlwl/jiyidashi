@@ -13,13 +13,13 @@
 <!-- PR #20 / F Offline Sync 已完成两轮正式审查、final narrow Gate、latest-main single-commit replay 与三套 exact-head CI，并以 expected-head 锁定合并，merge commit=c4ee5734；Issue #15 已关闭 completed，S1-017 转 ✅。 -->
 <!-- PR #22 / H Unified Capture 已完成多轮正式审查、recorder fail-closed 终止竞态收口、final clean replay 与四套 exact-head CI，并合并 main=1f0f9487；Issue #21 随 PR 合并完成，S1-008 转 ✅。Stage 1 最后一批 I/J/K/L 已以 Issue #23/#24/#25/#26 并行启动。 -->
 <!-- L：Onboarding / PR #30 已完成正式独立复审（P0=0 / P1=0）、exact-head Mobile #325 与 Visual #181 全绿，并以审核通过 HEAD 7622136e 锁定 squash 合并；merge commit=a4f02cb5，S1-026 转 ✅。 -->
-<!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / Issue #31 已从该最新 main 启动，分支 feat/stage1-account-delete。 -->
+<!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
-> 当前阶段：Stage 1「记得住」最终收口；A～L 已完成并合并，M / S1-022 Account Delete 第一轮正式审查为 HOLD（P0=0 / P1=1 / P2=2），本轮已完成 OfflineQueue producer quiesce、future flush gate 与两项 P2 收口，当前处于新 HEAD exact-head 四套 CI / very narrow 复核阶段；Stage 2 仍未开始  
-> 当前生产代码基线（K/L 合并后产品代码）：`main=b000e8db8cfe40eb9cde8aafc69e8e3c8f6d9396`  
-> 当前开发重点：M / `S1-022` Account Delete（Issue #31 / PR #32）已按第一轮正式审查收口本机 purge-last-write 竞态：producer gate 在第一次 await 前登记在飞 enqueue，Sync gate 阻止后续 flush，并在 purge 前等待旧 enqueue/active flush；confirmation 独立门禁测试与进度基线也已修正。当前处于新 HEAD exact-head Backend/Mini/Mobile/Visual CI / very narrow 复核阶段；Stage 2 继续保持未启动
+> 当前阶段：Stage 1「记得住」已完成；A～M 全部完成正式审查并合并 `main`，S1-M1 / S1-M2 / S1-M3 均已收口；Stage 2 仍未开始  
+> Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
+> 当前开发重点：Stage 1 已完成，暂不启动新的功能线；下一步先做阶段切换/生产验收评审，再决定是否进入 Stage 2。当前继续保持 Stage 2 未启动
 
 ## 状态规则
 
@@ -43,12 +43,12 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | 🟠 | A～L 已完成正式审查并合并；M / S1-022 Account Delete 已实现并进入最终 CI / 正式复审，Stage 2 仍未开始 |
-| CI-001 | Backend CI | ✅ | PR #20 final HEAD `c654e65c` 的 Backend CI `35291953239` / #208 SUCCESS：Lint、SQLite/PostgreSQL migration、schema drift、ObjectLocation invariants、Voice single-flight、Offline idempotency concurrency 与 full pytest 全部通过 |
-| CI-002 | Flutter Android CI | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile CI `35291953331` / #228 SUCCESS：Analyze、完整 Flutter tests、Android debug APK 全部通过 |
-| CI-003 | Flutter iOS CI | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile CI `35291953331` / #228 SUCCESS：iOS no-codesign build 通过 |
-| CI-004 | 微信小程序 CI | ✅ | PR #18 final clean HEAD `f2f81190` 的 Mini Program CI `35228208019` / #160 SUCCESS：lockfile install、typecheck、capture tests、production WeChat build 均通过 |
-| CI-005 | UI Visual Preview / Golden Screenshot | ✅ | PR #20 final HEAD `c654e65c` 的 Mobile Visual Preview `35291953216` / #84 SUCCESS：Committed Goldens、intentional mismatch、artifact、Android/iOS 与 clean-worktree gate 全部通过 |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | ✅ | A～M 全部完成正式审查、latest-main replay / 精确 HEAD CI 并合并；PR #32 合并后 Stage 1 第三批正式收口，Stage 2 仍未开始 |
+| CI-001 | Backend CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Backend CI `35444809518` / #313 SUCCESS：Lint、SQLite/PostgreSQL migration、schema drift、既有 PostgreSQL invariants、Account Delete durability 与 full pytest（110 passed）全部通过 |
+| CI-002 | Flutter Android CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mobile CI `35444809482` / #354 SUCCESS：Analyze、117 Flutter tests、Android permissions、debug/release 全部通过 |
+| CI-003 | Flutter iOS CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mobile CI `35444809482` / #354 SUCCESS：iOS no-codesign build 通过 |
+| CI-004 | 微信小程序 CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mini Program CI `35444809464` / #222 SUCCESS：lockfile install、typecheck、capture tests、production WeChat build 均通过 |
+| CI-005 | UI Visual Preview / Golden Screenshot | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mobile Visual Preview `35444809519` / #210 SUCCESS：Committed Goldens、intentional mismatch、artifact、Android/iOS 与 clean-worktree gate 全部通过 |
 
 ---
 
@@ -112,7 +112,7 @@
 | S1-019 | 单条 Memory 删除 | ✅ | 服务端 DELETE、删除后查询失效及 ObjectLocation 联动均已合并 |
 | S1-020 | 数据导出 | ✅ | PR #12 已合并；owner 隔离、JSON v1、媒体敏感字段保护、5000 上限/413、删除位置 tombstone 均通过正式审查 |
 | S1-021 | 全部数据删除 | ✅ | PR #28 已完成正式收口、new-main clean replay 与 exact-head Backend CI，并 squash 合并为 main=`3abc1366`；durable DB/storage 删除、旧请求 generation gate、Presigned PUT expiry+quiet、MemoryEdit 审计清理均已验收 |
-| S1-022 | 注销账号 | 🟠 | M 线 / Issue #31 / PR #32：第一轮正式审查 P0=0/P1=1/P2=2；本轮已增加 OfflineQueue producer quiesce、Sync future-flush gate、delayed enqueue/purge-last-write 回归，并修正 confirmation 独立门禁测试与生产基线；当前处于新 HEAD exact-head CI / 窄复核阶段 |
+| S1-022 | 注销账号 | ✅ | M 线 / Issue #31 / PR #32 已完成两轮正式审查；durable Account gate、S1-021 复用、身份最终事务、恢复 token、旧 token fail-closed、本机 producer/sync/onboarding quiesce 与 purge-last-write 回归均通过；final reviewed HEAD `ba6270ab` 四套 exact-head CI 全绿并 squash 合并 `main=004ff28f` |
 | S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ✅ | 单一 reference timestamp + DST 时区回归通过 |
 | S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
 | S1-025 | 基础提醒模型 | ✅ | PR #29 已完成第一轮修复、PR #30 overlap latest-main replay、四套 exact-head CI 与 very narrow 最终确认，并合并 main=`b000e8db` |
@@ -158,7 +158,7 @@
 | 已完成 | H：Unified Capture | `S1-008` | ✅ | PR #22 已正式审查、final clean replay、四套 exact-head CI 后合并；main=`1f0f9487` |
 | 已完成 I | Memory Edit | `S1-018` | ✅ | PR #27 已正式复审、四套 exact-head CI 全绿并合并 main=`24901d76` |
 | 已完成 J | Data Delete | `S1-021` | ✅ | PR #28 已基于 PR #27 后的新 main 完成 MemoryEdit 删除适配、0008 migration、单提交 clean replay 与 exact-head CI，并合并 main=`3abc1366` |
-| 验收中 M | Account Delete | `S1-022` | 🟠 | Issue #31 / PR #32 / `feat/stage1-account-delete`；第一轮正式审查 HOLD 后的 P1/P2 窄修已完成并保持 latest-main 单提交 clean replay，当前处于新 HEAD exact-head 四套 CI / very narrow 复核阶段，不合并 main |
+| 已完成 M | Account Delete | `S1-022` | ✅ | Issue #31 / PR #32 已完成两轮正式审查、latest-main 单提交、四套 exact-head CI 并 squash 合并；merge commit=`004ff28f`，S1-022 / SEC-008 正式完成 |
 | 已完成 K | Reminder | `S1-025` | ✅ | PR #29 已 latest-main clean replay、very narrow 最终确认并合并 main=`b000e8db`；Issue #25 随合并闭环 |
 | 已完成 L | Onboarding | `S1-026` | ✅ | PR #30 已正式独立复审通过并 squash 合并，merge commit=`a4f02cb5`；真实 Unified Capture → target Memory → Evidence Aha flow 完整闭环 |
 
@@ -175,7 +175,7 @@
 
 # 3. Stage 2：自动记
 
-> **当前明确未开始。继续完成 Stage 1 剩余能力后，再单独评审是否进入后台定位。**
+> **当前明确未开始。Stage 1 已完成；进入 Stage 2 前仍需单独做阶段切换评审，不因 Stage 1 收口而自动启动后台定位。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
@@ -288,7 +288,7 @@
 | SEC-005 | 服务端访问审计 | ⬜ | 敏感数据查询留痕 |
 | SEC-006 | 数据导出 | ✅ | PR #12 已合并；当前认证用户可导出版本化 JSON，严格 owner 隔离且不泄露内部 Storage 字段 |
 | SEC-007 | 数据彻底删除 | ✅ | PR #28 已实现 durable DB / Storage 全删除、partial-failure retry、MemoryEdit 审计清理并通过 exact-head CI 后合并 |
-| SEC-008 | 账户注销 | 🟠 | M / S1-022 / Issue #31 / PR #32 第一轮正式审查的本机 OfflineQueue purge 回写竞态已按 producer/sync 双 quiesce 修复；S1-021 数据清理先行、身份最终同事务删除、恢复 token、竞争删除 fail closed、旧 token 失效及本地 owner payload/onboarding purge 均有回归，当前处于新 HEAD exact-head CI / 窄复核阶段 |
+| SEC-008 | 账户注销 | ✅ | M / S1-022 / Issue #31 / PR #32 已完成两轮正式审查并合并；S1-021 数据清理先行、身份最终同事务删除、恢复 token、竞争删除 fail closed、旧 token 失效及本地 producer/sync/onboarding quiesce + owner purge 均有回归 |
 | SEC-009 | 位置权限单独同意 | ⬜ | 按平台规则实施 |
 | SEC-010 | 家庭查看逐项授权 | ⬜ | 默认关闭 |
 | SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁与时区边界均已合并 |
