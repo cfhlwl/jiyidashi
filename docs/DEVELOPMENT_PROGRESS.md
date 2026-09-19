@@ -15,9 +15,9 @@
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
-> 当前阶段：Stage 1「记得住」最终收口；A～J 已完成并合并，K/L 继续收口；S1-022 Account Delete 的前置依赖已满足但尚未启动；Stage 2 仍未开始  
-> 当前生产代码基线（A～J 产品代码）：`main=3abc1366f9d3d73a212a73bd87f23a2bd2536589`  
-> 当前开发重点：K / `S1-025` Reminder（Issue #25）、L / `S1-026` Onboarding（Issue #26）继续推进；J / `S1-021` 已完成，因此 `S1-022` Account Delete 的前置依赖已满足，可单独启动新分支/Issue；Stage 2 继续保持未启动
+> 当前阶段：Stage 1「记得住」最终收口；A～J 已完成并合并，K 继续收口，L 已实现并进入正式审查；S1-022 Account Delete 的前置依赖已满足但尚未启动；Stage 2 仍未开始  
+> 当前生产代码基线：`main=7e3e7682f3a368c222cae902fc9c591ffa44a7db`  
+> 当前开发重点：K / `S1-025` Reminder（Issue #25）继续推进；L / `S1-026` Onboarding（PR #30）已完成实现与自动验收，进入正式独立审查；J / `S1-021` 已完成，因此 `S1-022` Account Delete 的前置依赖已满足，可单独启动新分支/Issue；Stage 2 继续保持未启动
 
 ## 状态规则
 
@@ -114,7 +114,7 @@
 | S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ✅ | 单一 reference timestamp + DST 时区回归通过 |
 | S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
 | S1-025 | 基础提醒模型 | 🔵 | K 线 / Issue #25 / `feat/stage1-reminders`：复用现有 Reminder 模型，完成 memory-linked 最小提醒闭环，不扩展 Todo |
-| S1-026 | 首次使用引导 | 🔵 | L 线 / Issue #26 / `feat/stage1-onboarding`：基于已稳定 Unified Capture，目标 3 分钟完成“记住 → 找回 → Evidence”Aha Moment |
+| S1-026 | 首次使用引导 | 🟠 | L 线 / Issue #26 / PR #30 / `feat/stage1-onboarding`：真实 Unified Capture → 找回目标 Memory → Evidence Aha flow 已实现并通过 Mobile/Visual 自动验收；待正式独立审查与合并 |
 | S1-027 | Product UI / Design System | ✅ | PR #17 已完成两轮正式审查、latest-main clean replay、exact-head Mobile/Visual CI 并合并；Theme/token/共享组件、5 个核心页面、Evidence/隐私/离线状态及 Golden 均已验证；merge commit `d470f662`；Stage 2 未启动 |
 
 ## 2.1 Stage 1 第三批 A/B/C/D 第一阶段收口
@@ -158,7 +158,7 @@
 | 已完成 J | Data Delete | `S1-021` | ✅ | PR #28 已基于 PR #27 后的新 main 完成 MemoryEdit 删除适配、0008 migration、单提交 clean replay 与 exact-head CI，并合并 main=`3abc1366` |
 | 下一步可启动 | Account Delete | `S1-022` | ⬜ | J / S1-021 已完整闭环；可创建独立分支/Issue 开始账号身份删除，但尚未正式启动 |
 | 并行 K | Reminder | `S1-025` | 🔵 | Issue #25 / `feat/stage1-reminders`；复用现有 Reminder 模型，只做 memory-linked 最小提醒闭环 |
-| 并行 L | Onboarding | `S1-026` | 🔵 | Issue #26 / `feat/stage1-onboarding`；真实 Unified Capture → 找回 → Evidence Aha flow |
+| 并行 L | Onboarding | `S1-026` | 🟠 | Issue #26 / PR #30 / `feat/stage1-onboarding`；真实 Unified Capture → 找回 → Evidence Aha flow 已实现，待正式独立审查与合并 |
 
 ### 硬规则
 
