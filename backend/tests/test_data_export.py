@@ -49,6 +49,10 @@ async def test_empty_account_exports_versioned_json(client, auth_headers):
     assert body["memory_edits"] == []
     assert body["objects"] == []
     assert body["object_locations"] == []
+    assert body["location"]["points"] == []
+    assert body["location"]["visits"] == []
+    assert body["location"]["places"] == []
+    assert body["location"]["finalized_through"] is None
     assert body["reminders"] == []
     assert body["privacy"]["pause_intervals"] == []
     assert body["media"]["assets"] == []
@@ -384,3 +388,52 @@ async def test_export_fails_closed_when_v1_section_limit_is_exceeded(
     response = await client.get("/v1/export/data", headers=auth_headers)
     assert response.status_code == 413
     assert response.json()["detail"] == "EXPORT_SECTION_TOO_LARGE:privacy_pause_intervals"
+
+
+@pytest.mark.asyncio
+async def test_export_includes_owner_scoped_location_history(client):
+    headers_a, _ = await _new_user(client, "Export location A")
+    headers_b, _ = await _new_user(client, "Export location B")
+    started = datetime.now(UTC) - timedelta(minutes=20)
+
+    def points(prefix: str):
+        return [
+            {
+                "client_uuid": f"{prefix}-{index}",
+                "latitude": 31.2304 + index * 0.00003,
+                "longitude": 121.4737 + index * 0.00003,
+                "recorded_at": (started + timedelta(minutes=index * 5)).isoformat(),
+            }
+            for index in range(3)
+        ]
+
+    assert (
+        await client.post(
+            "/v1/location/batch",
+            headers=headers_a,
+            json={"points": points("export-a")},
+        )
+    ).status_code == 200
+    assert (
+        await client.post(
+            "/v1/location/batch",
+            headers=headers_b,
+            json={"points": points("export-b")},
+        )
+    ).status_code == 200
+
+    response = await client.get("/v1/export/data", headers=headers_a)
+    assert response.status_code == 200
+    location = response.json()["location"]
+    assert [item["client_uuid"] for item in location["points"]] == [
+        "export-a-0",
+        "export-a-1",
+        "export-a-2",
+    ]
+    assert len(location["visits"]) == 1
+    assert location["visits"][0]["source_point_count"] == 3
+    assert len(location["visits"][0]["source_fingerprint"]) == 64
+    assert len(location["places"]) == 1
+    assert location["places"][0]["name"] == "未命名地点"
+    assert location["finalized_through"] is not None
+    assert "export-b" not in json.dumps(location, ensure_ascii=False)
