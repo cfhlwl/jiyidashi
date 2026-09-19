@@ -898,6 +898,7 @@ class _CapturePageState extends State<CapturePage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
+                  key: const ValueKey('capture-text-title'),
                   controller: titleController,
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
@@ -907,6 +908,7 @@ class _CapturePageState extends State<CapturePage> {
                 ),
                 const SizedBox(height: JiYiSpacing.sm),
                 TextField(
+                  key: const ValueKey('capture-text-content'),
                   controller: contentController,
                   minLines: 3,
                   maxLines: 6,
@@ -918,6 +920,7 @@ class _CapturePageState extends State<CapturePage> {
                 ),
                 const SizedBox(height: JiYiSpacing.md),
                 FilledButton.icon(
+                  key: const ValueKey('capture-text-submit'),
                   onPressed: loading ? null : saveTextMemory,
                   icon: loading
                       ? const SizedBox.square(
@@ -1351,6 +1354,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
+                  key: const ValueKey('memory-query-input'),
                   controller: controller,
                   textInputAction: TextInputAction.search,
                   onSubmitted: loading ? null : (_) => query(),
@@ -1362,6 +1366,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                 ),
                 const SizedBox(height: JiYiSpacing.md),
                 FilledButton.icon(
+                  key: const ValueKey('memory-query-submit'),
                   onPressed: loading ? null : query,
                   icon: loading
                       ? const SizedBox.square(
