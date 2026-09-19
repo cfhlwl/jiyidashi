@@ -14,7 +14,7 @@
 <!-- PR #22 / H Unified Capture 已完成多轮正式审查、recorder fail-closed 终止竞态收口、final clean replay 与四套 exact-head CI，并合并 main=1f0f9487；Issue #21 随 PR 合并完成，S1-008 转 ✅。Stage 1 最后一批 I/J/K/L 已以 Issue #23/#24/#25/#26 并行启动。 -->
 <!-- L：Onboarding / PR #30 已完成正式独立复审（P0=0 / P1=0）、exact-head Mobile #325 与 Visual #181 全绿，并以审核通过 HEAD 7622136e 锁定 squash 合并；merge commit=a4f02cb5，S1-026 转 ✅。 -->
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
-<!-- O：Location / Visit Foundation / Issue #35 / PR #36 第一轮正式审查 HOLD（P0=0 / P1=3 / P2=2）；durable client_uuid receipt、future-skew gate、独立 retention maintenance、orphan auto-Place cleanup 已完成窄修，代码 HEAD=9a985183 已通过 Backend CI #323（119 pytest）与 Mini #231，等待最终 docs-only exact-head CI / 第二轮 very narrow review。 -->
+<!-- O：Location / Visit Foundation / Issue #35 / PR #36 第一轮正式审查 HOLD（P0=0 / P1=3 / P2=2）；durable client_uuid receipt、future-skew gate、独立 retention maintenance、orphan auto-Place cleanup 已完成窄修，代码 HEAD=9a985183 已通过 Backend CI #323（119 pytest）与 Mini #231；当前保持 🟠 等待第二轮 very narrow review，最终合并前仍须 latest-main replay + exact-head CI。 -->
 <!-- N：Native Location Foundation / Issue #34 / PR #37 当前 Draft/Open/未合并，HEAD=8b41524c；owned S2-001/S2-002/S2-003/S2-016，Mobile CI #359 与 Visual #215 均 SUCCESS，状态为 🟠 待正式审查，不得在 O 线伪写成“未启动”。 -->
 # 迹忆开发进度总表
 
