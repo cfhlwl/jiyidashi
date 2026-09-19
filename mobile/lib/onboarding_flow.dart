@@ -88,7 +88,7 @@ class OnboardingIntroPage extends StatelessWidget {
             color: theme.colorScheme.primary,
           ),
           title: '这次会做三件真实的事',
-          child: Column(
+          child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _IntroItem(
