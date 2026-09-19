@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.core.config import get_settings
-from app.core.db import create_schema
+from app.core.db import UserDataRequestStale, create_schema
 
 settings = get_settings()
 
@@ -33,6 +34,16 @@ if settings.cors_origins:
     )
 
 app.include_router(api_router)
+
+
+@app.exception_handler(UserDataRequestStale)
+async def stale_user_data_request_handler(
+    _: Request,
+    exc: UserDataRequestStale,
+) -> JSONResponse:
+    # [人工注释][S1-021-FIX-001] 旧请求在删除 generation 变化后只能失败关闭；
+    # 409 区分“旧请求已失效”与当前仍在执行删除时入口返回的 423。
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
 @app.get("/health")

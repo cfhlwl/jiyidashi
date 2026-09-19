@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -52,6 +53,8 @@ class ObjectStorage(Protocol):
 
     def delete_object(self, object_key: str) -> None: ...
 
+    def iter_object_keys(self, prefix: str) -> Iterator[str]: ...
+
 
 class DisabledObjectStorage:
     # [人工注释][S1-006] 未配置对象存储时媒体接口 fail closed，不能退化成本机公开目录。
@@ -83,6 +86,10 @@ class DisabledObjectStorage:
 
     def delete_object(self, object_key: str) -> None:
         self._unavailable()
+
+    def iter_object_keys(self, prefix: str) -> Iterator[str]:
+        self._unavailable()
+        raise AssertionError("unreachable")
 
 
 class S3ObjectStorage:
@@ -258,6 +265,23 @@ class S3ObjectStorage:
             )
         except Exception as exc:
             raise ObjectStorageError("failed to delete object") from exc
+
+
+    def iter_object_keys(self, prefix: str) -> Iterator[str]:
+        # [人工注释][S1-021] Data Delete 必须扫 user-scoped final/staging 前缀，
+        # 才能删除数据库中已失去引用的 orphan blob；分页由 SDK 处理，避免只清第一页。
+        try:
+            paginator = self._client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(
+                Bucket=self._settings.storage_bucket,
+                Prefix=prefix,
+            ):
+                for item in page.get("Contents", []):
+                    key = item.get("Key")
+                    if isinstance(key, str) and key:
+                        yield key
+        except Exception as exc:
+            raise ObjectStorageError("failed to list objects") from exc
 
 
 @lru_cache

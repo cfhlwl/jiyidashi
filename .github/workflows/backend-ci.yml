@@ -94,5 +94,13 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_offline_idempotency_integration.py
 
+      - name: PostgreSQL data deletion durability
+        # [人工注释][S1-021] 真实 PostgreSQL 覆盖 user-row 锁、迁移约束与 owner-scoped 删除。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_data_delete_integration.py
+
       - name: Test
         run: pytest -q

@@ -1,12 +1,26 @@
 from fastapi import APIRouter
 
-from app.api import auth, data_export, location, media, memories, objects, privacy, users
+from app.api import (
+    auth,
+    data_delete,
+    data_export,
+    location,
+    media,
+    memories,
+    objects,
+    privacy,
+    users,
+)
 
 api_router = APIRouter(prefix="/v1")
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
-# [人工注释][S1-020] 用户数据导出独立挂载，只读取当前认证用户的权威数据。
+# [人工注释][S1-020] 用户数据导出独立挂载，
+# 只读取当前认证用户的权威数据。
 api_router.include_router(data_export.router)
+# [人工注释][S1-021] 全量数据删除独立走 durable orchestrator；
+# 不与普通 CRUD 分散混用。
+api_router.include_router(data_delete.router)
 api_router.include_router(memories.router)
 api_router.include_router(objects.router)
 api_router.include_router(location.router)
