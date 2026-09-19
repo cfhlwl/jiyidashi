@@ -17,9 +17,11 @@ class OnboardingController extends ChangeNotifier {
 
   OnboardingStep? _step;
   String? _querySeed;
+  String? _targetMemoryId;
 
   OnboardingStep? get step => _step;
   String? get querySeed => _querySeed;
+  String? get targetMemoryId => _targetMemoryId;
 
   int? get navigationIndex => switch (_step) {
         OnboardingStep.intro => 0,
@@ -63,11 +65,13 @@ class OnboardingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void authoritativeTextMemorySaved(String querySeed) {
+  void authoritativeTextMemorySaved(String memoryId, String querySeed) {
     if (_step != OnboardingStep.capture) return;
-    final normalized = querySeed.trim();
-    if (normalized.isEmpty) return;
-    _querySeed = normalized;
+    final normalizedId = memoryId.trim();
+    final normalizedQuery = querySeed.trim();
+    if (normalizedId.isEmpty || normalizedQuery.isEmpty) return;
+    _targetMemoryId = normalizedId;
+    _querySeed = normalizedQuery;
     _step = OnboardingStep.retrieve;
     notifyListeners();
   }
@@ -85,6 +89,7 @@ class OnboardingController extends ChangeNotifier {
       // Explicit re-entry must still work in this session if local UX-state persistence fails.
     }
     _querySeed = null;
+    _targetMemoryId = null;
     _showIntro();
   }
 
@@ -96,6 +101,7 @@ class OnboardingController extends ChangeNotifier {
     }
     _step = null;
     _querySeed = null;
+    _targetMemoryId = null;
     notifyListeners();
   }
 
@@ -112,6 +118,7 @@ class OnboardingController extends ChangeNotifier {
   void _showIntro() {
     _step = OnboardingStep.intro;
     _querySeed = null;
+    _targetMemoryId = null;
     notifyListeners();
   }
 }
