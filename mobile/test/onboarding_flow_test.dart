@@ -575,7 +575,11 @@ void main() {
       reason: 'profile onboarding re-entry',
     );
     final restart = find.byKey(const ValueKey('profile-restart-onboarding'));
-    await tester.ensureVisible(restart);
+    await tester.scrollUntilVisible(
+      restart,
+      220,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.tap(restart);
     await _pumpUntil(
       tester,
@@ -610,7 +614,13 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const ValueKey('onboarding-start')));
+    final start = find.byKey(const ValueKey('onboarding-start'));
+    await tester.scrollUntilVisible(
+      start,
+      160,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(start, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
