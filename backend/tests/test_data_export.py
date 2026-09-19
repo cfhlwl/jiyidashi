@@ -16,6 +16,8 @@ from app.models import (
     ObjectLocationStatus,
     PrivacyPauseInterval,
     PrivacyState,
+    Reminder,
+    ReminderStatus,
     SourceType,
     User,
 )
@@ -47,6 +49,7 @@ async def test_empty_account_exports_versioned_json(client, auth_headers):
     assert body["memory_edits"] == []
     assert body["objects"] == []
     assert body["object_locations"] == []
+    assert body["reminders"] == []
     assert body["privacy"]["pause_intervals"] == []
     assert body["media"]["assets"] == []
     assert body["media"]["evidence_links"] == []
@@ -163,6 +166,26 @@ async def test_export_is_owner_scoped_complete_and_storage_safe(client):
                 ),
             ]
         )
+        db.add_all(
+            [
+                Reminder(
+                    user_id=user_a,
+                    memory_id=memory_a.id,
+                    title="A reminder",
+                    content="A reminder note",
+                    remind_at=now + timedelta(hours=2),
+                    status=ReminderStatus.PENDING,
+                ),
+                Reminder(
+                    user_id=user_b,
+                    memory_id=memory_b.id,
+                    title="B reminder",
+                    content="B reminder secret",
+                    remind_at=now + timedelta(hours=3),
+                    status=ReminderStatus.PENDING,
+                ),
+            ]
+        )
         db.add(
             PrivacyState(
                 user_id=user_a,
@@ -224,6 +247,8 @@ async def test_export_is_owner_scoped_complete_and_storage_safe(client):
     assert [item["raw_text"] for item in body["memory_sources"]] == ["A evidence"]
     assert [item["name"] for item in body["objects"]] == ["护照"]
     assert [item["status"] for item in body["object_locations"]] == ["STALE", "CURRENT"]
+    assert [item["title"] for item in body["reminders"]] == ["A reminder"]
+    assert body["reminders"][0]["status"] == "PENDING"
     assert len(body["privacy"]["pause_intervals"]) == 1
     assert len(body["media"]["assets"]) == 1
     assert len(body["media"]["evidence_links"]) == 1
@@ -237,6 +262,7 @@ async def test_export_is_owner_scoped_complete_and_storage_safe(client):
         "B private memory",
         "B evidence",
         "B location",
+        "B reminder secret",
         "A deleted secret",
         "deleted evidence",
     ):

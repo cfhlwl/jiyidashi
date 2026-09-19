@@ -18,7 +18,7 @@
 > 最后更新：2026-09-19  
 > 当前阶段：Stage 1「记得住」最终收口；A～J 与 L 已完成并合并，K 继续收口；S1-022 Account Delete 的前置依赖已满足但尚未启动；Stage 2 仍未开始  
 > 当前生产代码基线（L 合并后产品代码）：`main=a4f02cb5dc1a18164a446e9256a2029bac5fa2ee`  
-> 当前开发重点：K / `S1-025` Reminder（Issue #25）继续推进；L / `S1-026` Onboarding 已完成正式复审并合并；J / `S1-021` 已完成，因此 `S1-022` Account Delete 的前置依赖已满足，可单独启动新分支/Issue；Stage 2 继续保持未启动
+> 当前开发重点：K / `S1-025` Reminder（Issue #25 / PR #29）已基于 L / PR #30 合并后的最新 main 做 clean replay，第一轮 2×P1 + 2×P2 已收口，等待 replay HEAD exact-head 四套 CI 后进入 very narrow 最终确认；L / `S1-026` Onboarding 已完成正式复审并合并；`S1-022` Account Delete 尚未启动；Stage 2 继续保持未启动
 
 ## 状态规则
 
@@ -114,7 +114,7 @@
 | S1-022 | 注销账号 | ⬜ | S1-021 已完成，前置依赖已满足；尚未启动，需独立分支/Issue 实现账号身份最终删除 |
 | S1-023 | 暂停记忆 30 分钟 / 1 小时 / 3 小时 / 今天 | ✅ | 单一 reference timestamp + DST 时区回归通过 |
 | S1-024 | 手动恢复记录 | ✅ | resume 保留 PrivacyPauseInterval 历史，延迟上传门禁通过 |
-| S1-025 | 基础提醒模型 | 🔵 | K 线 / Issue #25 / `feat/stage1-reminders`：复用现有 Reminder 模型，完成 memory-linked 最小提醒闭环，不扩展 Todo |
+| S1-025 | 基础提醒模型 | 🟠 | K 线 / Issue #25 / PR #29：第一轮 2×P1 + 2×P2 已修复；已在 PR #30 / Onboarding 合并后的最新 main 上完成语义 clean replay，保留 Onboarding Aha flow 与 Reminder 接线，等待 replay HEAD exact-head 四套 CI 后做 very narrow 最终确认 |
 | S1-026 | 首次使用引导 | ✅ | L 线 / Issue #26 / PR #30：真实 Unified Capture → authoritative Memory ID → 同一 Memory + Evidence Aha flow 已通过正式独立复审与 exact-head Mobile/Visual CI，并 squash 合并为 main=`a4f02cb5` |
 | S1-027 | Product UI / Design System | ✅ | PR #17 已完成两轮正式审查、latest-main clean replay、exact-head Mobile/Visual CI 并合并；Theme/token/共享组件、5 个核心页面、Evidence/隐私/离线状态及 Golden 均已验证；merge commit `d470f662`；Stage 2 未启动 |
 
@@ -158,7 +158,7 @@
 | 已完成 I | Memory Edit | `S1-018` | ✅ | PR #27 已正式复审、四套 exact-head CI 全绿并合并 main=`24901d76` |
 | 已完成 J | Data Delete | `S1-021` | ✅ | PR #28 已基于 PR #27 后的新 main 完成 MemoryEdit 删除适配、0008 migration、单提交 clean replay 与 exact-head CI，并合并 main=`3abc1366` |
 | 下一步可启动 | Account Delete | `S1-022` | ⬜ | J / S1-021 已完整闭环；可创建独立分支/Issue 开始账号身份删除，但尚未正式启动 |
-| 并行 K | Reminder | `S1-025` | 🔵 | Issue #25 / `feat/stage1-reminders`；复用现有 Reminder 模型，只做 memory-linked 最小提醒闭环 |
+| 并行 K | Reminder | `S1-025` | 🟠 | Issue #25 / PR #29 / `feat/stage1-reminders`；已处理与 PR #30 的 `stage1_app.dart` / 进度表重叠，latest-main single-commit replay 完成，待 exact-head 四套 CI 后进入最终极窄复核 |
 | 已完成 L | Onboarding | `S1-026` | ✅ | PR #30 已正式独立复审通过并 squash 合并，merge commit=`a4f02cb5`；真实 Unified Capture → target Memory → Evidence Aha flow 完整闭环 |
 
 ### 硬规则

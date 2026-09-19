@@ -8,6 +8,7 @@ import 'offline_sync.dart';
 import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
+import 'reminder_page.dart';
 
 // [人工注释][S1-026] AppShell 只接线 Onboarding；首次自动触发仅来自注册成功，老账号不会因缺少本地状态被误判为新用户。
 import 'unified_capture_section.dart';
@@ -1221,6 +1222,34 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     }
   }
 
+  Future<void> createReminderForFirstMemory() async {
+    final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
+    if (ids.isEmpty) return;
+
+    setState(() {
+      loading = true;
+      error = null;
+      actionMessage = null;
+    });
+    try {
+      // [人工注释][S1-025] Reminder 的表单、稳定幂等键与 response-loss 重试都封装在独立模块；
+      // Stage1 shared shell 只负责把当前真实 memory_id 接到该流程。Onboarding 的 query/Evidence Aha 状态不在这里改写。
+      final message = await showMemoryReminderCreateFlow(
+        context: context,
+        api: widget.api,
+        memoryId: ids.first.toString(),
+      );
+      if (!mounted || message == null) return;
+      setState(() => actionMessage = message);
+    } on ApiException catch (exc) {
+      if (mounted) setState(() => error = exc.message);
+    } catch (_) {
+      if (mounted) setState(() => error = '暂时无法打开提醒创建流程');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
   Future<void> deleteFirstMemory() async {
     final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
     if (ids.isEmpty) {
@@ -1428,10 +1457,32 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   color: theme.colorScheme.error,
                 ),
                 title: '管理这条记忆',
-                subtitle: '编辑保留原始 Evidence；删除会真正影响后续检索。',
+                subtitle: '可设置一次性提醒；编辑保留原始 Evidence，删除会影响后续检索。',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    FilledButton.tonalIcon(
+                      key: const ValueKey('memory-reminder-open'),
+                      onPressed: loading ? null : createReminderForFirstMemory,
+                      icon: const Icon(Icons.alarm_add_outlined),
+                      label: const Text('为这条记忆设置提醒'),
+                    ),
+                    const SizedBox(height: JiYiSpacing.sm),
+                    OutlinedButton.icon(
+                      key: const ValueKey('open-reminder-management'),
+                      onPressed: loading
+                          ? null
+                          : () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ReminderPage(api: widget.api),
+                                ),
+                              );
+                            },
+                      icon: const Icon(Icons.alarm_outlined),
+                      label: const Text('查看提醒管理'),
+                    ),
+                    const SizedBox(height: JiYiSpacing.sm),
                     if (canEditFirstMemory) ...[
                       FilledButton.tonalIcon(
                         key: const ValueKey('memory-edit-open'),

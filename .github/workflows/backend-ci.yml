@@ -102,5 +102,14 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_data_delete_integration.py
 
+      - name: PostgreSQL reminder-memory deletion race
+        # [人工注释][S1-025] 真实 PostgreSQL 证明 Reminder create 与 Memory soft-delete
+        # 共用行锁，删除后不能留下或重新创建 PENDING reminder。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_reminder_integration.py
+
       - name: Test
         run: pytest -q

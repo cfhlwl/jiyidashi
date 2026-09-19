@@ -22,6 +22,7 @@ from app.models import (
     ObjectLocationStatus,
     PrivacyPauseInterval,
     PrivacyState,
+    Reminder,
     User,
 )
 
@@ -172,6 +173,13 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 )
             ).all()
         )
+    reminders = _bounded_scalars(
+        db,
+        select(Reminder)
+        .where(Reminder.user_id == user_id)
+        .order_by(Reminder.created_at, Reminder.id),
+        "reminders",
+    )
     pause_intervals = _bounded_scalars(
         db,
         select(PrivacyPauseInterval)
@@ -261,6 +269,18 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
         "object_locations": [
             _object_location_payload(item, deleted_location_memory_ids)
             for item in object_locations
+        ],
+        "reminders": [
+            {
+                "id": item.id,
+                "memory_id": item.memory_id,
+                "title": item.title,
+                "content": item.content,
+                "remind_at": item.remind_at,
+                "status": item.status.value,
+                "created_at": item.created_at,
+            }
+            for item in reminders
         ],
         "privacy": {
             "state": None

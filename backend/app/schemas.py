@@ -15,7 +15,7 @@ from pydantic import (
 )
 
 from app.media_models import MediaKind, MediaStatus
-from app.models import MemoryType, ObjectLocationStatus, SourceType
+from app.models import MemoryType, ObjectLocationStatus, ReminderStatus, SourceType
 
 
 def _require_timezone_aware_datetime(value: datetime) -> datetime:
@@ -50,6 +50,14 @@ NicknameText = Annotated[
 LocaleText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=2, max_length=32),
+]
+ReminderTitleText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=240),
+]
+ReminderContentText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=2000),
 ]
 
 
@@ -198,6 +206,28 @@ class MemoryRead(ORMModel):
     metadata_json: dict
     edit_revision: int
     edited_at: datetime | None
+    created_at: datetime
+
+
+class ReminderCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: UUID
+    title: ReminderTitleText
+    content: ReminderContentText | None = None
+    # [人工注释][S1-025] remind_at 必须携带明确 offset/Z；客户端本地 naive 时间
+    # 不能由服务端猜测成某个时区，避免 DST/跨时区提醒落到错误时刻。
+    remind_at: TimezoneAwareDateTime
+
+
+class ReminderRead(ORMModel):
+    id: UUID
+    user_id: UUID
+    memory_id: UUID | None
+    title: str
+    content: str | None
+    remind_at: datetime
+    status: ReminderStatus
     created_at: datetime
 
 

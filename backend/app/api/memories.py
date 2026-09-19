@@ -99,7 +99,9 @@ def edit_memory_endpoint(
 
 @router.delete("/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_memory_endpoint(memory_id: UUID, user_id: CurrentUser, db: DbSession) -> None:
-    memory = get_memory_for_user(db, user_id, memory_id)
+    # [人工注释][S1-025] 删除时锁住 Memory，与 reminder create 串行化；
+    # 否则并发创建可能在软删除后留下新的 PENDING reminder。
+    memory = get_memory_for_user(db, user_id, memory_id, for_update=True)
     if memory is None:
         raise HTTPException(status_code=404, detail="MEMORY_NOT_FOUND")
 
