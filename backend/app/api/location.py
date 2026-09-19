@@ -61,4 +61,3 @@ def list_places(
             .limit(limit)
         )
     )
-)
