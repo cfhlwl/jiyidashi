@@ -154,6 +154,19 @@ class _OnboardingApi extends JiYiApiClient {
       };
 }
 
+Future<void> _pumpUntil(
+  WidgetTester tester,
+  bool Function() condition, {
+  String reason = 'condition was not reached',
+  int maxFrames = 120,
+}) async {
+  for (var frame = 0; frame < maxFrames; frame += 1) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (condition()) return;
+  }
+  throw TestFailure('Timed out waiting for onboarding test state: $reason');
+}
+
 void main() {
   sqfliteFfiInit();
   final factory = databaseFactoryFfiNoIsolate;
@@ -224,7 +237,11 @@ void main() {
     await tester.enterText(fields.at(1), 'example-password-123');
     await tester.enterText(fields.at(2), '新用户');
     await tester.tap(find.widgetWithText(FilledButton, '创建账号'));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const ValueKey('onboarding-intro')).evaluate().isNotEmpty,
+      reason: 'registration-triggered onboarding intro',
+    );
 
     expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
     expect(store.values[owner], OnboardingStatus.inProgress);
@@ -248,7 +265,11 @@ void main() {
     await tester.enterText(fields.at(0), 'existing@example.test');
     await tester.enterText(fields.at(1), 'example-password-123');
     await tester.tap(find.widgetWithText(FilledButton, '登录'));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.text('今天').evaluate().isNotEmpty,
+      reason: 'ordinary login Today page',
+    );
 
     expect(find.byKey(const ValueKey('onboarding-intro')), findsNothing);
     expect(find.text('今天'), findsWidgets);
@@ -271,7 +292,11 @@ void main() {
     expect(find.textContaining('不会申请后台定位'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('onboarding-start')));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('第 1 步').evaluate().isNotEmpty,
+      reason: 'capture onboarding step',
+    );
     expect(find.textContaining('第 1 步'), findsOneWidget);
 
     const memory = '周五下午三点去公司前台取合同';
@@ -281,7 +306,11 @@ void main() {
     final submit = find.byKey(const ValueKey('capture-text-submit'));
     await tester.ensureVisible(submit);
     await tester.tap(submit);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('第 2 步').evaluate().isNotEmpty,
+      reason: 'authoritative saved Memory to retrieval step',
+    );
 
     expect(api.savedContent, memory);
     expect(find.textContaining('第 2 步'), findsOneWidget);
@@ -294,7 +323,11 @@ void main() {
     final queryButton = find.byKey(const ValueKey('memory-query-submit'));
     await tester.ensureVisible(queryButton);
     await tester.tap(queryButton);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('第 3 步').evaluate().isNotEmpty,
+      reason: 'query returned target Memory with Evidence',
+    );
 
     expect(api.queriedQuestion, memory);
     expect(find.textContaining('第 3 步'), findsOneWidget);
@@ -305,7 +338,12 @@ void main() {
     final complete = find.byKey(const ValueKey('onboarding-complete'));
     await tester.ensureVisible(complete);
     await tester.tap(complete);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => onboarding.values[owner] == OnboardingStatus.completed &&
+          find.byType(OnboardingGuideBar).evaluate().isEmpty,
+      reason: 'persisted onboarding completion',
+    );
 
     expect(onboarding.values[owner], OnboardingStatus.completed);
     expect(find.byType(OnboardingGuideBar), findsNothing);
@@ -318,7 +356,11 @@ void main() {
   ) async {
     await pumpShell(tester, startOnboarding: true);
     await tester.tap(find.byKey(const ValueKey('onboarding-start')));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('第 1 步').evaluate().isNotEmpty,
+      reason: 'capture step before unrelated-evidence regression',
+    );
 
     const memory = '刚保存的唯一引导记忆';
     final contentField = find.byKey(const ValueKey('capture-text-content'));
@@ -327,13 +369,21 @@ void main() {
     final submit = find.byKey(const ValueKey('capture-text-submit'));
     await tester.ensureVisible(submit);
     await tester.tap(submit);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('第 2 步').evaluate().isNotEmpty,
+      reason: 'retrieval step before unrelated-evidence regression',
+    );
 
     api.queryMemoryId = '99999999-9999-4999-8999-999999999999';
     final queryButton = find.byKey(const ValueKey('memory-query-submit'));
     await tester.ensureVisible(queryButton);
     await tester.tap(queryButton);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.text('为什么这么回答').evaluate().isNotEmpty,
+      reason: 'unrelated Evidence rendered without advancing step',
+    );
 
     expect(find.textContaining('第 2 步'), findsOneWidget);
     expect(find.text('为什么这么回答'), findsOneWidget);
@@ -344,16 +394,33 @@ void main() {
     await pumpShell(tester, startOnboarding: true);
 
     await tester.tap(find.byKey(const ValueKey('onboarding-skip-intro')));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => onboarding.values[owner] == OnboardingStatus.skipped &&
+          find.byKey(const ValueKey('onboarding-intro')).evaluate().isEmpty,
+      reason: 'persisted skip',
+    );
     expect(onboarding.values[owner], OnboardingStatus.skipped);
     expect(find.byKey(const ValueKey('onboarding-intro')), findsNothing);
 
     await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find
+          .byKey(const ValueKey('profile-restart-onboarding'))
+          .evaluate()
+          .isNotEmpty,
+      reason: 'profile onboarding re-entry',
+    );
     final restart = find.byKey(const ValueKey('profile-restart-onboarding'));
     await tester.ensureVisible(restart);
     await tester.tap(restart);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => onboarding.values[owner] == OnboardingStatus.inProgress &&
+          find.byKey(const ValueKey('onboarding-intro')).evaluate().isNotEmpty,
+      reason: 'restarted onboarding intro',
+    );
 
     expect(onboarding.values[owner], OnboardingStatus.inProgress);
     expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
@@ -377,7 +444,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(tester.takeException(), isNull);
     expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
