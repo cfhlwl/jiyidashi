@@ -16,12 +16,13 @@
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
 <!-- O：Location / Visit Foundation / Issue #35 / PR #36 已完成正式审查、latest-main Git Gate 与合并；owned S2-006/S2-007/S2-008/S2-014 转 ✅。 -->
 <!-- N：Native Location Foundation / Issue #34 / PR #37：第二轮 very narrow review HOLD（P0=0 / P1=1 / P2=1）；iOS relaunch 已改为 privacy-gated pending restore，进度元数据改用稳定语义。当前 Draft/Open，待下一轮 very narrow review；不记录并行线瞬时 HEAD/CI。 -->
+<!-- Q：Place & Timeline Product / Issue #39 已从 main=54da97e2 启动；首个 PR 只实现 S2-009 + S2-010 的 Place 命名/用户纠正基础，S2-011~013 保持未开始，禁止侵入 O/N 的定位采集、Visit 派生和原生权限链。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
 > 当前阶段：Stage 1「记得住」已完成；Stage 2 的 O / Location & Visit Foundation 已合并 `main`，N / Native Location Foundation 继续独立 Draft PR 收口  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：N / PR #37 第二轮 very narrow review 剩余 1×P1 + 1×P2 已完成修复，当前 Draft/Open，待下一轮 very narrow review；合并前必须保持 latest-main replay + exact-head Mobile/Visual CI。O / PR #36 已完成并合并，不再在 N 线记录其瞬时 HEAD/CI
+> 当前开发重点：Q / Issue #39 已启动 Place 命名/纠正第一阶段（S2-009 + S2-010），当前 🔵 开发中；N / PR #37 继续独立收口原生定位与权限问题；O / PR #36 已完成并合并。Q 不侵入 O/N 的定位采集、Visit 派生和原生权限链
 
 ## 状态规则
 
@@ -177,7 +178,7 @@
 
 # 3. Stage 2：自动记
 
-> **Stage 2：O / Location & Visit Foundation（PR #36）已完成并合并；N / Native Location Foundation（PR #37）继续收口原生定位与渐进权限，仍不拥有服务端 Visit/Place/retention 协议。**
+> **Stage 2：O / Location & Visit Foundation（PR #36）已完成并合并；N / Native Location Foundation（PR #37）继续收口原生定位与渐进权限；Q / Place & Timeline Product（Issue #39）已独立启动，本 PR 仅实现 Place 命名/纠正基础。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
@@ -189,11 +190,11 @@
 | S2-006 | Location Point 批量同步 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
 | S2-007 | Visit 聚类 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
 | S2-008 | Place 模型与地点库 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
-| S2-009 | Place 自动命名 | ⬜ | 地图 POI / 地址解析 |
-| S2-010 | Place 用户纠正 | ⬜ | 用户可纠正“家 / 公司 / 医院”等 |
-| S2-011 | 自动时间轴 | ⬜ | 地点事件 + 主动记忆统一时间轴 |
-| S2-012 | 今日足迹 | ⬜ | 今天去了哪里 |
-| S2-013 | 地点详情 | ⬜ | 首次、最近、累计次数、相关记忆 |
+| S2-009 | Place 自动命名 | 🔵 | Q / Issue #39：本 PR 建立自动 label candidate 与用户确认命名分离的服务端基础；不引入 Stage 3 AI 事实，不覆盖 Visit provenance |
+| S2-010 | Place 用户纠正 | 🔵 | Q / Issue #39：本 PR 实现 owner-isolated 显式纠正、确定性 precedence、幂等/并发安全与历史审计 |
+| S2-011 | 自动时间轴 | ⬜ | Q 后续独立小 PR；本次只准备可复用读模型，不实现 Timeline UI |
+| S2-012 | 今日足迹 | ⬜ | Q 后续独立小 PR；本次不实现 Today Footprint UI |
+| S2-013 | 地点详情 | ⬜ | Q 后续独立小 PR；本次只准备命名后的 Place read model，不实现完整详情 UI |
 | S2-014 | 原始位置生命周期 | ✅ | O / PR #36 已完成独立 maintenance / deletion serialization 审查与 latest-main Gate，并合并 `main` |
 | S2-015 | 定位耗电监控指标 | ⬜ | 核心质量指标 |
 | S2-016 | 定位权限渐进式引导 | 🟠 | N / PR #37：Android 10 runtime / Android 11+ explicit Settings / iOS WhenInUse→Always 分流已收口；待下一轮 very narrow review |
