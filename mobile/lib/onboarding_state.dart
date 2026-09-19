@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:sqflite/sqflite.dart';
 
+// [人工注释][S1-026] 首次使用引导状态只保存在本机，并严格按服务端 user_id 隔离；不把 UX 状态写进用户 Memory。
+
 enum OnboardingStep {
   intro,
   capture,
