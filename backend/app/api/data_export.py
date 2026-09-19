@@ -14,16 +14,20 @@ from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.media_models import MediaAsset, MediaEvidenceLink
 from app.models import (
+    LocationDerivationState,
+    LocationPoint,
     Memory,
     MemoryEdit,
     MemorySource,
     ObjectItem,
     ObjectLocation,
     ObjectLocationStatus,
+    Place,
     PrivacyPauseInterval,
     PrivacyState,
     Reminder,
     User,
+    Visit,
 )
 
 router = APIRouter(prefix="/export", tags=["export"])
@@ -173,6 +177,29 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 )
             ).all()
         )
+    location_points = _bounded_scalars(
+        db,
+        select(LocationPoint)
+        .where(LocationPoint.user_id == user_id)
+        .order_by(LocationPoint.recorded_at, LocationPoint.id),
+        "location_points",
+    )
+    visits = _bounded_scalars(
+        db,
+        select(Visit)
+        .where(Visit.user_id == user_id)
+        .order_by(Visit.arrived_at, Visit.id),
+        "visits",
+    )
+    places = _bounded_scalars(
+        db,
+        select(Place)
+        .where(Place.user_id == user_id)
+        .order_by(Place.created_at, Place.id),
+        "places",
+    )
+    location_derivation_state = db.get(LocationDerivationState, user_id)
+
     reminders = _bounded_scalars(
         db,
         select(Reminder)
@@ -270,6 +297,63 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
             _object_location_payload(item, deleted_location_memory_ids)
             for item in object_locations
         ],
+        # [人工注释][S2-006~S2-014] 导出同时保留 retention 内 raw evidence
+        # 与长期 Visit/Place 派生事实；内部 cluster_key 不暴露为客户端稳定协议。
+        "location": {
+            "points": [
+                {
+                    "id": item.id,
+                    "client_uuid": item.client_uuid,
+                    "device_id": item.device_id,
+                    "latitude": item.latitude,
+                    "longitude": item.longitude,
+                    "accuracy": item.accuracy,
+                    "speed": item.speed,
+                    "recorded_at": item.recorded_at,
+                }
+                for item in location_points
+            ],
+            "visits": [
+                {
+                    "id": item.id,
+                    "place_id": item.place_id,
+                    "arrived_at": item.arrived_at,
+                    "left_at": item.left_at,
+                    "duration_seconds": item.duration_seconds,
+                    "confidence": item.confidence,
+                    "source": item.source,
+                    "centroid_latitude": item.centroid_latitude,
+                    "centroid_longitude": item.centroid_longitude,
+                    "source_point_count": item.source_point_count,
+                    "source_started_at": item.source_started_at,
+                    "source_ended_at": item.source_ended_at,
+                    "source_fingerprint": item.source_fingerprint,
+                    "algorithm_version": item.algorithm_version,
+                    "finalized_at": item.finalized_at,
+                }
+                for item in visits
+            ],
+            "places": [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "latitude": item.latitude,
+                    "longitude": item.longitude,
+                    "address": item.address,
+                    "category": item.category,
+                    "first_visited_at": item.first_visited_at,
+                    "last_visited_at": item.last_visited_at,
+                    "visit_count": item.visit_count,
+                    "is_user_named": item.is_user_named,
+                }
+                for item in places
+            ],
+            "finalized_through": (
+                None
+                if location_derivation_state is None
+                else location_derivation_state.finalized_through
+            ),
+        },
         "reminders": [
             {
                 "id": item.id,
