@@ -16,6 +16,11 @@ on:
 permissions:
   contents: read
 
+# [人工注释][S1-026] 同一 PR 只验收最新 HEAD；旧提交的 Flutter 构建自动取消，避免过期结果占用 Runner。
+concurrency:
+  group: mobile-visual-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   golden:
     runs-on: ubuntu-latest
