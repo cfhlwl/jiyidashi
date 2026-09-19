@@ -20,6 +20,7 @@ class OnboardingController extends ChangeNotifier {
   OnboardingStep? _step;
   String? _querySeed;
   String? _targetMemoryId;
+  bool _disposed = false;
 
   OnboardingStep? get step => _step;
   String? get querySeed => _querySeed;
@@ -46,6 +47,7 @@ class OnboardingController extends ChangeNotifier {
 
     try {
       final status = await store.read(ownerUserId);
+      if (_disposed) return;
       if (status == OnboardingStatus.inProgress) {
         _showIntro();
       }
@@ -55,8 +57,9 @@ class OnboardingController extends ChangeNotifier {
   }
 
   void startFlow() {
+    if (_disposed) return;
     _step = OnboardingStep.capture;
-    notifyListeners();
+    _emit();
   }
 
   void authoritativeTextMemorySaved(String memoryId, String querySeed) {
@@ -67,13 +70,13 @@ class OnboardingController extends ChangeNotifier {
     _targetMemoryId = normalizedId;
     _querySeed = normalizedQuery;
     _step = OnboardingStep.retrieve;
-    notifyListeners();
+    _emit();
   }
 
   void trustedEvidenceShown() {
-    if (_step != OnboardingStep.retrieve) return;
+    if (_disposed || _step != OnboardingStep.retrieve) return;
     _step = OnboardingStep.trust;
-    notifyListeners();
+    _emit();
   }
 
   Future<void> restart() async {
@@ -82,6 +85,7 @@ class OnboardingController extends ChangeNotifier {
     } catch (_) {
       // Explicit re-entry must still work in this session if local UX-state persistence fails.
     }
+    if (_disposed) return;
     _querySeed = null;
     _targetMemoryId = null;
     _showIntro();
@@ -93,10 +97,11 @@ class OnboardingController extends ChangeNotifier {
     } catch (_) {
       // Skip is fail-open by design; onboarding may never become an access gate.
     }
+    if (_disposed) return;
     _step = null;
     _querySeed = null;
     _targetMemoryId = null;
-    notifyListeners();
+    _emit();
   }
 
   Future<void> complete() async {
@@ -105,16 +110,30 @@ class OnboardingController extends ChangeNotifier {
     } catch (_) {
       // Completion is also fail-open to avoid a permanent onboarding loop.
     }
+    if (_disposed) return;
     _step = null;
     _querySeed = null;
     _targetMemoryId = null;
-    notifyListeners();
+    _emit();
   }
 
   void _showIntro() {
+    if (_disposed) return;
     _step = OnboardingStep.intro;
     _querySeed = null;
     _targetMemoryId = null;
-    notifyListeners();
+    _emit();
+  }
+
+  void _emit() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    // [人工注释][S1-026] 本地状态 I/O 可能跨过 AppShell 销毁边界；
+    // disposed 后所有异步续体都必须静默停止，不能再向已经移除的监听器发事件。
+    _disposed = true;
+    super.dispose();
   }
 }
