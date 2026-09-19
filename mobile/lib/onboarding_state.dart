@@ -2,6 +2,13 @@ import 'dart:io';
 
 import 'package:sqflite/sqflite.dart';
 
+enum OnboardingStep {
+  intro,
+  capture,
+  retrieve,
+  trust,
+}
+
 enum OnboardingStatus {
   inProgress,
   skipped,
