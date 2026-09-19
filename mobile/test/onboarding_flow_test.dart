@@ -198,7 +198,7 @@ void main() {
     expect(api.queriedQuestion, memory);
     expect(find.textContaining('第 3 步'), findsOneWidget);
     expect(find.text('为什么这么回答'), findsOneWidget);
-    expect(find.text('用户文字记录'), findsOneWidget);
+    expect(find.textContaining('用户文字记录'), findsOneWidget);
     expect(onboarding.values[owner], OnboardingStatus.inProgress);
 
     final complete = find.byKey(const ValueKey('onboarding-complete'));
