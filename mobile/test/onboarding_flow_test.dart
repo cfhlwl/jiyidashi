@@ -46,6 +46,7 @@ class _OnboardingApi extends JiYiApiClient {
 
   String? savedContent;
   String? queriedQuestion;
+  String queryMemoryId = memoryId;
 
   @override
   Future<Map<String, dynamic>> createTextMemory({
@@ -73,7 +74,7 @@ class _OnboardingApi extends JiYiApiClient {
       'certainty': found ? 'confirmed' : 'unknown',
       'reason': found ? null : 'NO_EVIDENCE',
       'intent': 'GENERAL',
-      'memory_ids': found ? <String>[memoryId] : <String>[],
+      'memory_ids': found ? <String>[queryMemoryId] : <String>[],
       'evidence': found
           ? <Map<String, dynamic>>[
               <String, dynamic>{
@@ -209,6 +210,34 @@ void main() {
     expect(onboarding.values[owner], OnboardingStatus.completed);
     expect(find.byType(OnboardingGuideBar), findsNothing);
     expect(find.text('为什么这么回答'), findsOneWidget);
+  });
+
+
+  testWidgets('evidence for another memory cannot satisfy the onboarding retrieval step', (
+    tester,
+  ) async {
+    await pumpShell(tester, startOnboarding: true);
+    await tester.tap(find.byKey(const ValueKey('onboarding-start')));
+    await tester.pumpAndSettle();
+
+    const memory = '刚保存的唯一引导记忆';
+    final contentField = find.byKey(const ValueKey('capture-text-content'));
+    await tester.ensureVisible(contentField);
+    await tester.enterText(contentField, memory);
+    final submit = find.byKey(const ValueKey('capture-text-submit'));
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+
+    api.queryMemoryId = '99999999-9999-4999-8999-999999999999';
+    final queryButton = find.byKey(const ValueKey('memory-query-submit'));
+    await tester.ensureVisible(queryButton);
+    await tester.tap(queryButton);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('第 2 步'), findsOneWidget);
+    expect(find.text('为什么这么回答'), findsOneWidget);
+    expect(find.byKey(const ValueKey('onboarding-complete')), findsNothing);
   });
 
   testWidgets('skip persists and profile provides deterministic re-entry', (tester) async {
