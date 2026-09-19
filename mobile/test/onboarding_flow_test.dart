@@ -10,6 +10,8 @@ import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+// [人工注释][S1-026] 验证注册触发、真实保存、目标 Memory 找回、Evidence、跳过与重新进入的完整闭环。
+
 const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const memoryId = '11111111-1111-4111-8111-111111111111';
 
