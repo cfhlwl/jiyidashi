@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/offline_queue.dart';
+import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 
@@ -122,6 +123,22 @@ void main() {
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/auth_login.png'),
+    );
+  });
+
+  testWidgets('golden: onboarding intro', (tester) async {
+    // [人工注释][S1-026] Golden 直接渲染正式 OnboardingIntroPage；固定字体/窗口仍复用本文件统一基线。
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: OnboardingIntroPage(onStart: () {}, onSkip: () {}),
+        ),
+      ),
+    );
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/onboarding_intro.png'),
     );
   });
 
