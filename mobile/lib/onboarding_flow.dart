@@ -4,6 +4,8 @@ import 'onboarding_state.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
+// [人工注释][S1-026] 引导 UI 只解释用户马上会执行的真实能力，并明确不申请后台定位/Stage 2 权限。
+
 class OnboardingExperience extends StatelessWidget {
   const OnboardingExperience({
     super.key,
