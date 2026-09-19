@@ -107,10 +107,10 @@ def _receipt_hash(point: _Point) -> str:
         (
             point.client_uuid,
             point.recorded_at.isoformat(timespec="microseconds"),
-            f"{point.latitude:.8f}",
-            f"{point.longitude:.8f}",
-            "" if point.accuracy is None else f"{point.accuracy:.3f}",
-            "" if point.speed is None else f"{point.speed:.3f}",
+            point.latitude.hex(),
+            point.longitude.hex(),
+            "" if point.accuracy is None else point.accuracy.hex(),
+            "" if point.speed is None else point.speed.hex(),
         )
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
