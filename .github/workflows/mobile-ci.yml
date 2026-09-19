@@ -31,8 +31,18 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      # [人工注释][S1-026] Onboarding 先单独跑，失败时能直接定位；全量测试继续作为正式回归门禁。
+      - name: Test onboarding
+        timeout-minutes: 5
+        run: >-
+          flutter test
+          test/onboarding_state_test.dart
+          test/onboarding_flow_test.dart
+          --reporter expanded
+
       - name: Test
-        run: flutter test
+        timeout-minutes: 10
+        run: flutter test --reporter expanded
 
       - name: Verify Android release permissions
         shell: bash
