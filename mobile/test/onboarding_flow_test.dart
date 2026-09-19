@@ -575,11 +575,14 @@ void main() {
       reason: 'profile onboarding re-entry',
     );
     final restart = find.byKey(const ValueKey('profile-restart-onboarding'));
-    await tester.scrollUntilVisible(
+    // JiYiPageFrame 本身就是 Profile 的主 ListView；直接在它上面拖动到目标可点击，
+    // 避免 Scrollable finder 误选到页面内部其他可滚动组件。
+    await tester.dragUntilVisible(
       restart,
-      220,
-      scrollable: find.byType(Scrollable).last,
+      find.byType(ListView).first,
+      const Offset(0, -240),
     );
+    await tester.pump();
     await tester.tap(restart);
     await _pumpUntil(
       tester,
