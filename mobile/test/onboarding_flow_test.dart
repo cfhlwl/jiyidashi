@@ -577,11 +577,14 @@ void main() {
     final restart = find.byKey(const ValueKey('profile-restart-onboarding'));
     // JiYiPageFrame 本身就是 Profile 的主 ListView；直接在它上面拖动到目标可点击，
     // 避免 Scrollable finder 误选到页面内部其他可滚动组件。
+    final profileList = find.byType(ListView).first;
     await tester.dragUntilVisible(
       restart,
-      find.byType(ListView).first,
+      profileList,
       const Offset(0, -240),
     );
+    // dragUntilVisible 在目标“刚露出”时就会停止；再向上滚一小段，确保按钮中心进入可点击区域。
+    await tester.drag(profileList, const Offset(0, -120));
     await tester.pump();
     await tester.tap(restart);
     await _pumpUntil(
