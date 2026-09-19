@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 正式包需要主动声明网络能力；debug/profile manifest 不能替代 release 权限。 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 录音只在用户主动点击后开启；没有此权限时语音入口必须 fail closed。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="jiyidashi"
         android:name="${applicationName}"

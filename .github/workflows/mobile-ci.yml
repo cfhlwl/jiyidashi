@@ -34,10 +34,24 @@ jobs:
       - name: Test
         run: flutter test
 
+      - name: Verify Android release permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
+
       - name: Build Android debug APK
-        # [人工注释][S1-FIX-007] CI 用 production dart-define 构建，证明生产产物必须走显式 HTTPS API 且不显示开发 endpoint。
+        # Debug 继续覆盖开发安装包；production dart-define 禁止静默回退 localhost。
         run: >-
           flutter build apk --debug
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
+
+      - name: Build Android release APK
+        # Release build 使用 main manifest，防止 INTERNET 等正式权限被 debug/profile manifest 掩盖。
+        run: >-
+          flutter build apk --release
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
 

@@ -143,6 +143,31 @@ void main() {
     );
   });
 
+  testWidgets('golden: unified capture media controls', (tester) async {
+    final key = await _pumpShell(tester);
+    await tester.tap(find.text('记一下'));
+    await tester.pumpAndSettle();
+
+    final voiceStart =
+        find.byKey(const ValueKey<String>('capture-voice-start'));
+    await tester.ensureVisible(voiceStart);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('capture-photo-camera')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('capture-photo-gallery')),
+      findsOneWidget,
+    );
+    expect(voiceStart, findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/capture_media.png'),
+    );
+  });
+
   testWidgets('golden: memory query', (tester) async {
     final key = await _pumpShell(tester);
     await tester.tap(find.text('问记忆'));

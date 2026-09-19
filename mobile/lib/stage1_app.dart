@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
+import 'unified_capture_section.dart';
 import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
@@ -799,6 +800,10 @@ class _CapturePageState extends State<CapturePage> {
             // 原始 result 仍保留给现有行为测试与状态机；展示层只隐藏无产品价值的内部 id/clientUuid 后缀。
             JiYiStatusBanner(kind: resultKind, message: visibleResult),
           ],
+          const SizedBox(height: JiYiSpacing.md),
+          // 图片与语音继续复用既有 verified media / ASR Evidence 协议；
+          // 文字与物品位置仍由上方 outbox-first 路径负责，避免媒体大文件进入 SQLite。
+          UnifiedMediaCaptureSection(api: widget.api),
         ],
       ),
     );

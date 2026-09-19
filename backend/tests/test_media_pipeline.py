@@ -196,23 +196,53 @@ async def test_verified_photo_becomes_queryable_media_evidence(
     assert fake_storage.objects[final_key].size_bytes == 11
     assert fake_storage.objects[final_key].content_type == "image/jpeg"
 
+    original_payload = {
+        "title": "旅行票据",
+        "content": "红色文件夹里有旅行票据",
+        "occurred_at": "2026-09-18T08:00:00+08:00",
+    }
     created = await client.post(
         f"/v1/media/{media_id}/memory",
         headers=auth_headers,
-        json={"content": "红色文件夹里有旅行票据"},
+        json=original_payload,
     )
     assert created.status_code == 201
     assert "storage_etag" not in created.json()["media"]
     memory_id = created.json()["memory"]["id"]
     assert created.json()["memory"]["source_type"] == "USER_PHOTO"
 
+    # 模拟服务端已经 commit、客户端响应丢失后的重放：同 payload 必须返回原 Memory。
     duplicate_memory = await client.post(
         f"/v1/media/{media_id}/memory",
         headers=auth_headers,
-        json={"content": "重复请求不会新建另一条"},
+        json=original_payload,
     )
     assert duplicate_memory.status_code == 201
     assert duplicate_memory.json()["memory"]["id"] == memory_id
+
+    changed_content = await client.post(
+        f"/v1/media/{media_id}/memory",
+        headers=auth_headers,
+        json={**original_payload, "content": "用户重试前改成了另一段内容"},
+    )
+    assert changed_content.status_code == 409
+    assert changed_content.json()["detail"] == "MEDIA_MEMORY_IDEMPOTENCY_CONFLICT"
+
+    changed_title = await client.post(
+        f"/v1/media/{media_id}/memory",
+        headers=auth_headers,
+        json={**original_payload, "title": "另一标题"},
+    )
+    assert changed_title.status_code == 409
+    assert changed_title.json()["detail"] == "MEDIA_MEMORY_IDEMPOTENCY_CONFLICT"
+
+    changed_time = await client.post(
+        f"/v1/media/{media_id}/memory",
+        headers=auth_headers,
+        json={**original_payload, "occurred_at": "2026-09-18T09:00:00+08:00"},
+    )
+    assert changed_time.status_code == 409
+    assert changed_time.json()["detail"] == "MEDIA_MEMORY_IDEMPOTENCY_CONFLICT"
 
     query = await client.post(
         "/v1/memory/query",
