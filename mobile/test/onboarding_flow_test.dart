@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
@@ -8,7 +6,6 @@ import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/onboarding_state.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // [人工注释][S1-026] 验证注册触发、真实保存、目标 Memory 找回、Evidence、跳过与重新进入的完整闭环。
 
@@ -41,6 +38,175 @@ class _MemoryOnboardingStore implements OnboardingStateStore {
 }
 
 
+class _MemoryQueue extends OfflineQueueStore {
+  OfflineQueueItem? _item;
+  var _nextId = 1;
+
+  OfflineQueueItem _copy(
+    OfflineQueueItem source, {
+    OfflineQueueStatus? status,
+    int? attemptCount,
+    bool? retryable,
+    String? lastError,
+    String? serverResourceId,
+    DateTime? completedAt,
+  }) {
+    return OfflineQueueItem(
+      id: source.id,
+      ownerUserId: source.ownerUserId,
+      clientUuid: source.clientUuid,
+      operationType: source.operationType,
+      payload: source.payload,
+      status: status ?? source.status,
+      attemptCount: attemptCount ?? source.attemptCount,
+      retryable: retryable ?? source.retryable,
+      lastError: lastError,
+      serverResourceId: serverResourceId,
+      createdAt: source.createdAt,
+      updatedAt: DateTime.utc(2026, 9, 19, 4),
+      completedAt: completedAt,
+      cancelledAt: source.cancelledAt,
+    );
+  }
+
+  @override
+  Future<int> countAwaitingDelivery(String ownerUserId) async {
+    final item = _item;
+    if (item == null || item.ownerUserId != ownerUserId || item.isTerminal) return 0;
+    return 1;
+  }
+
+  @override
+  Future<OfflineQueueItem> enqueueTextMemory({
+    required String ownerUserId,
+    String? title,
+    required String content,
+    DateTime? occurredAt,
+    String? clientUuid,
+  }) async {
+    final now = occurredAt?.toUtc() ?? DateTime.utc(2026, 9, 19, 3);
+    final item = OfflineQueueItem(
+      id: _nextId++,
+      ownerUserId: ownerUserId,
+      clientUuid: clientUuid ?? '44444444-4444-4444-8444-444444444444',
+      operationType: OfflineQueueStore.textMemoryOperation,
+      payload: <String, dynamic>{
+        if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+        'content': content.trim(),
+        'occurred_at': now.toIso8601String(),
+      },
+      status: OfflineQueueStatus.pending,
+      attemptCount: 0,
+      retryable: true,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _item = item;
+    return item;
+  }
+
+  @override
+  Future<List<OfflineQueueItem>> listDeliverable(String ownerUserId) async {
+    final item = _item;
+    if (item == null || item.ownerUserId != ownerUserId) return const [];
+    if (item.status == OfflineQueueStatus.pending ||
+        (item.status == OfflineQueueStatus.failed && item.retryable)) {
+      return <OfflineQueueItem>[item];
+    }
+    return const [];
+  }
+
+  @override
+  Future<OfflineQueueItem?> findByClientUuid(
+    String ownerUserId,
+    String clientUuid,
+  ) async {
+    final item = _item;
+    if (item == null ||
+        item.ownerUserId != ownerUserId ||
+        item.clientUuid != clientUuid) {
+      return null;
+    }
+    return item;
+  }
+
+  @override
+  Future<OfflineQueueItem> markSending(
+    String ownerUserId,
+    String clientUuid,
+  ) async {
+    final item = await findByClientUuid(ownerUserId, clientUuid);
+    if (item == null) throw StateError('queue item missing');
+    final next = _copy(
+      item,
+      status: OfflineQueueStatus.sending,
+      attemptCount: item.attemptCount + 1,
+      retryable: true,
+    );
+    _item = next;
+    return next;
+  }
+
+  @override
+  Future<OfflineQueueItem> markCompleted(
+    String ownerUserId,
+    String clientUuid, {
+    required String serverResourceId,
+  }) async {
+    final item = await findByClientUuid(ownerUserId, clientUuid);
+    if (item == null) throw StateError('queue item missing');
+    final next = _copy(
+      item,
+      status: OfflineQueueStatus.completed,
+      retryable: false,
+      serverResourceId: serverResourceId,
+      completedAt: DateTime.utc(2026, 9, 19, 4),
+    );
+    _item = next;
+    return next;
+  }
+
+  @override
+  Future<OfflineQueueItem> markFailed(
+    String ownerUserId,
+    String clientUuid,
+    String error, {
+    required bool retryable,
+  }) async {
+    final item = await findByClientUuid(ownerUserId, clientUuid);
+    if (item == null) throw StateError('queue item missing');
+    final next = _copy(
+      item,
+      status: OfflineQueueStatus.failed,
+      retryable: retryable,
+      lastError: error,
+    );
+    _item = next;
+    return next;
+  }
+
+  @override
+  Future<OfflineQueueItem> retryFailed(
+    String ownerUserId,
+    String clientUuid,
+  ) async {
+    final item = await findByClientUuid(ownerUserId, clientUuid);
+    if (item == null) throw StateError('queue item missing');
+    final next = _copy(
+      item,
+      status: OfflineQueueStatus.pending,
+      retryable: true,
+    );
+    _item = next;
+    return next;
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+// [人工注释][S1-026] Widget 流程只验证真实 AppShell/Capture/Query 编排；
+// SQLite 驱动和重启持久化由 onboarding_state_test 单独覆盖，避免 Flutter FakeAsync 与 FFI 数据库互锁。
 class _ZeroQueue extends OfflineQueueStore {
   @override
   Future<int> countAwaitingDelivery(String ownerUserId) async => 0;
@@ -170,32 +336,18 @@ Future<void> _pumpUntil(
 }
 
 void main() {
-  sqfliteFfiInit();
-  final factory = databaseFactoryFfiNoIsolate;
-
-  late Directory tempDirectory;
-  late String databasePath;
   late OfflineQueueStore queue;
   late _OnboardingApi api;
   late _MemoryOnboardingStore onboarding;
 
-  setUp(() async {
-    tempDirectory = await Directory.systemTemp.createTemp('jiyidashi-onboarding-app-');
-    databasePath = '${tempDirectory.path}${Platform.pathSeparator}offline.sqlite3';
-    queue = OfflineQueueStore(
-      factory: factory,
-      databasePathProvider: () async => databasePath,
-    );
+  setUp(() {
+    queue = _MemoryQueue();
     api = _OnboardingApi();
     onboarding = _MemoryOnboardingStore();
   });
 
   tearDown(() async {
     await queue.close();
-    await factory.deleteDatabase(databasePath);
-    if (await tempDirectory.exists()) {
-      await tempDirectory.delete(recursive: true);
-    }
   });
 
   Future<void> pumpShell(
