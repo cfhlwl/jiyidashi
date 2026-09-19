@@ -14,14 +14,14 @@
 <!-- PR #22 / H Unified Capture 已完成多轮正式审查、recorder fail-closed 终止竞态收口、final clean replay 与四套 exact-head CI，并合并 main=1f0f9487；Issue #21 随 PR 合并完成，S1-008 转 ✅。Stage 1 最后一批 I/J/K/L 已以 Issue #23/#24/#25/#26 并行启动。 -->
 <!-- L：Onboarding / PR #30 已完成正式独立复审（P0=0 / P1=0）、exact-head Mobile #325 与 Visual #181 全绿，并以审核通过 HEAD 7622136e 锁定 squash 合并；merge commit=a4f02cb5，S1-026 转 ✅。 -->
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
-<!-- O：Location / Visit Foundation / Issue #35 / PR #36：第一轮 3×P1+2×P2 已关闭；第二轮 very narrow review 再 HOLD（P0=0 / P1=2 / P2=1）。maintenance×Data Delete admission/无数据 no-op 与 orphan Place FOR UPDATE 引用串行已完成窄修；代码 HEAD=7c70fd66 通过 Backend CI #327（真实 PostgreSQL 并发 gate + 119 pytest）与 Mini #235，当前 🟠 等待下一轮极窄复审。 -->
+<!-- O：Location / Visit Foundation / Issue #35 / PR #36：三轮正式审查中的业务代码问题已全部关闭；最后仅剩的进度元数据 P2 也已完成收口。当前保持 Draft/Open、🟠，等待最终 Git / 合并 Gate，不再记录中间 HEAD 或 CI 瞬时编号。 -->
 <!-- N：Native Location Foundation / Issue #34 / PR #37：第一轮正式审查结论 HOLD（P0=0 / P1=4 / P2=2）；当前 Draft/Open、修复分支持续推进，owned S2-001/S2-002/S2-003/S2-016，尚未完成正式复审。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
 > 当前阶段：Stage 1「记得住」已完成；Stage 2 当前并行推进 O / Location & Visit Foundation 与 N / Native Location Foundation，两条线均保持独立 Draft PR、尚未合并 main  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：O / PR #36 第二轮新增 2×P1 + 1×P2 已完成窄修，代码 HEAD `7c70fd66` 的 Backend CI #327（119 passed + PostgreSQL maintenance/Data Delete 与 Place 引用并发回归）和 Mini #235 全绿，等待下一轮极窄复审；N / PR #37 第一轮审查 HOLD（P0=0 / P1=4 / P2=2），当前 Draft/Open、修复分支持续推进，尚未完成正式复审。两条线最终合并前均须 latest-main replay + exact-head CI
+> 当前开发重点：O / PR #36 的业务审查问题已全部关闭，最后的进度元数据 P2 已收口，当前 Draft/Open、等待最终 Git / 合并 Gate；N / PR #37 第一轮审查 HOLD（P0=0 / P1=4 / P2=2），当前 Draft/Open、修复分支持续推进，尚未完成正式复审。两条线最终合并前均须 latest-main replay + exact-head CI
 
 ## 状态规则
 
@@ -186,15 +186,15 @@
 | S2-003 | Flutter 统一 Location Bridge | 🟠 | N / PR #37：第一轮正式审查 HOLD；当前 Draft/Open、修复分支持续推进，尚未完成正式复审 |
 | S2-004 | 运动状态识别 | ⬜ | 静止 / 移动状态切换 |
 | S2-005 | 智能定位采样策略 | ⬜ | 不允许固定 5 秒高频上传 |
-| S2-006 | Location Point 批量同步 | 🟠 | O / PR #36：receipt / future gate 第一轮问题已关闭；第二轮新增 maintenance 删除串行问题已修，stale discovery 在 S1-021 COMPLETED 后 no-op，Backend #327 PostgreSQL gate 已通过，待极窄复审 |
-| S2-007 | Visit 聚类 | 🟠 | O / PR #36：确定性时间/距离聚类、mutable/finalized 边界、稳定 derivation key 与 provenance 已通过真实 PostgreSQL invariant；待正式审查 |
-| S2-008 | Place 模型与地点库 | 🟠 | O / PR #36：orphan cleanup 先锁 Place `FOR UPDATE` 再统计/查引用；真实 PostgreSQL 已验证并发 Memory/ObjectLocation FK 引用不会被静默清空，待极窄复审 |
+| S2-006 | Location Point 批量同步 | 🟠 | O / PR #36：receipt / future gate 与 maintenance×Data Delete 串行问题均已关闭；业务审查完成，等待最终 Git / 合并 Gate |
+| S2-007 | Visit 聚类 | 🟠 | O / PR #36：确定性聚类、mutable/finalized 边界、稳定 derivation key 与 provenance 已完成业务审查；等待最终 Git / 合并 Gate |
+| S2-008 | Place 模型与地点库 | 🟠 | O / PR #36：orphan cleanup 的 Place `FOR UPDATE` 与 Memory/ObjectLocation 引用串行问题已关闭；业务审查完成，等待最终 Git / 合并 Gate |
 | S2-009 | Place 自动命名 | ⬜ | 地图 POI / 地址解析 |
 | S2-010 | Place 用户纠正 | ⬜ | 用户可纠正“家 / 公司 / 医院”等 |
 | S2-011 | 自动时间轴 | ⬜ | 地点事件 + 主动记忆统一时间轴 |
 | S2-012 | 今日足迹 | ⬜ | 今天去了哪里 |
 | S2-013 | 地点详情 | ⬜ | 首次、最近、累计次数、相关记忆 |
-| S2-014 | 原始位置生命周期 | 🟠 | O / PR #36：独立 maintenance 已接入 UserDataAdmission/deletion generation；stale discovery 与 S1-021 完成态安全收敛为 no-op，真实 PostgreSQL 并发回归已通过 Backend #327，待极窄复审 |
+| S2-014 | 原始位置生命周期 | 🟠 | O / PR #36：独立 maintenance、UserDataAdmission/deletion generation 与 stale discovery no-op 已完成业务审查；等待最终 Git / 合并 Gate |
 | S2-015 | 定位耗电监控指标 | ⬜ | 核心质量指标 |
 | S2-016 | 定位权限渐进式引导 | 🟠 | N / PR #37：第一轮正式审查 HOLD；当前 Draft/Open、修复分支持续推进，尚未完成正式复审 |
 
