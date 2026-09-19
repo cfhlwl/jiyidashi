@@ -38,6 +38,53 @@ class _MemoryOnboardingStore implements OnboardingStateStore {
   Future<void> close() async {}
 }
 
+
+class _ZeroQueue extends OfflineQueueStore {
+  @override
+  Future<int> countAwaitingDelivery(String ownerUserId) async => 0;
+
+  @override
+  Future<void> close() async {}
+}
+
+class _AuthenticationApi extends JiYiApiClient {
+  _AuthenticationApi() : super(baseUrl: 'https://auth-onboarding.invalid/v1');
+
+  void _authenticate() {
+    accessToken = 'auth-onboarding-token';
+    authenticatedUserId = owner;
+  }
+
+  @override
+  Future<Map<String, dynamic>> register({
+    required String email,
+    required String password,
+    required String nickname,
+    String timezone = 'Asia/Shanghai',
+    String locale = 'zh-CN',
+  }) async {
+    _authenticate();
+    return <String, dynamic>{
+      'access_token': accessToken,
+      'token_type': 'bearer',
+      'user_id': owner,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> login({
+    required String email,
+    required String password,
+  }) async {
+    _authenticate();
+    return <String, dynamic>{
+      'access_token': accessToken,
+      'token_type': 'bearer',
+      'user_id': owner,
+    };
+  }
+}
+
 class _OnboardingApi extends JiYiApiClient {
   _OnboardingApi() : super(baseUrl: 'https://onboarding.invalid/v1') {
     accessToken = 'onboarding-token';
@@ -154,6 +201,59 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+
+  testWidgets('successful registration auto-starts onboarding from the real auth page', (
+    tester,
+  ) async {
+    final authApi = _AuthenticationApi();
+    final store = _MemoryOnboardingStore();
+    await tester.pumpWidget(
+      JiYiApp(
+        api: authApi,
+        offlineQueue: _ZeroQueue(),
+        onboardingStore: store,
+      ),
+    );
+
+    await tester.tap(find.text('第一次使用？创建账号'));
+    await tester.pump();
+    final fields = find.byType(TextField);
+    expect(fields, findsNWidgets(3));
+    await tester.enterText(fields.at(0), 'new@example.test');
+    await tester.enterText(fields.at(1), 'example-password-123');
+    await tester.enterText(fields.at(2), '新用户');
+    await tester.tap(find.widgetWithText(FilledButton, '创建账号'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
+    expect(store.values[owner], OnboardingStatus.inProgress);
+  });
+
+  testWidgets('ordinary login never infers a missing local row means new user', (
+    tester,
+  ) async {
+    final authApi = _AuthenticationApi();
+    final store = _MemoryOnboardingStore();
+    await tester.pumpWidget(
+      JiYiApp(
+        api: authApi,
+        offlineQueue: _ZeroQueue(),
+        onboardingStore: store,
+      ),
+    );
+
+    final fields = find.byType(TextField);
+    expect(fields, findsNWidgets(2));
+    await tester.enterText(fields.at(0), 'existing@example.test');
+    await tester.enterText(fields.at(1), 'example-password-123');
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('onboarding-intro')), findsNothing);
+    expect(find.text('今天'), findsWidgets);
+    expect(store.values[owner], isNull);
+  });
 
   testWidgets('existing user with no local onboarding row is never trapped', (tester) async {
     await pumpShell(tester, startOnboarding: false);
