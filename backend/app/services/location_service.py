@@ -471,10 +471,6 @@ def ingest_location_batch(
 ) -> LocationIngestResult:
     settings = settings or get_settings()
     now = ensure_utc(now or datetime.now(UTC))
-    state = lock_location_derivation_state(db, user_id)
-    privacy = get_privacy_state(db, user_id)
-    if is_pause_active(privacy.recording_paused_until):
-        raise LocationIngestError("RECORDING_PAUSED", 409)
 
     normalized: dict[str, _Point] = {}
     duplicates = 0
@@ -487,6 +483,17 @@ def ingest_location_batch(
             raise LocationIngestError("LOCATION_CLIENT_UUID_CONFLICT", 409)
         else:
             duplicates += 1
+
+    # [人工注释][S2-006] 明显未来批次在创建 owner derivation-state/拿 privacy 锁之前
+    # 就整体拒绝；这样坏设备时钟既不能制造未来事实，也不会留下空 watermark 控制行。
+    future_limit = now + timedelta(seconds=settings.location_future_skew_seconds)
+    if any(point.recorded_at > future_limit for point in normalized.values()):
+        raise LocationIngestError("LOCATION_RECORDED_AT_IN_FUTURE", 422)
+
+    state = lock_location_derivation_state(db, user_id)
+    privacy = get_privacy_state(db, user_id)
+    if is_pause_active(privacy.recording_paused_until):
+        raise LocationIngestError("RECORDING_PAUSED", 409)
 
     _ensure_receipts_for_raw_points(db, user_id)
     receipts = {
@@ -504,7 +511,6 @@ def ingest_location_batch(
 
     candidates: list[_Point] = []
     rejected_finalized = 0
-    future_limit = now + timedelta(seconds=settings.location_future_skew_seconds)
     for client_uuid, point in normalized.items():
         receipt = receipts.get(client_uuid)
         if receipt is not None:
@@ -512,8 +518,6 @@ def ingest_location_batch(
                 raise LocationIngestError("LOCATION_CLIENT_UUID_CONFLICT", 409)
             duplicates += 1
             continue
-        if point.recorded_at > future_limit:
-            raise LocationIngestError("LOCATION_RECORDED_AT_IN_FUTURE", 422)
         if point.recorded_at <= cutoff:
             rejected_finalized += 1
             continue
