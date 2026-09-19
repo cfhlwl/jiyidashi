@@ -354,12 +354,17 @@ def _rebuild(
     state.finalized_through = safe_through
     _refresh_place_stats(db, user_id)
     retention_cutoff = now - timedelta(days=settings.location_raw_retention_days)
+    # [人工注释][S2-014] retention 是纯数据库 bulk delete；本事务后续不会再读取
+    # 被删 raw-point ORM 实例。关闭 synchronize_session 也避免 SQLite 将 timezone-aware
+    # cutoff 与 identity-map 中的 naive datetime 做 Python 比较。
     result = db.execute(
-        delete(LocationPoint).where(
+        delete(LocationPoint)
+        .where(
             LocationPoint.user_id == user_id,
             LocationPoint.recorded_at <= safe_through,
             LocationPoint.recorded_at < retention_cutoff,
         )
+        .execution_options(synchronize_session=False)
     )
     rowcount = getattr(result, "rowcount", 0)
     raw_deleted = rowcount if isinstance(rowcount, int) and rowcount > 0 else 0
