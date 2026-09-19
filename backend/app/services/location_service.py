@@ -282,6 +282,16 @@ def _place(
 
 def _refresh_place_stats(db: Session, user_id: UUID) -> None:
     db.flush()
+    # [人工注释][S2-008] 必须先锁 Place，再计算 Visit / 检查其它引用。PostgreSQL 的
+    # FK 插入会在被引用 Place 上拿 KEY SHARE；FOR UPDATE 与它冲突，因此“新事实关联”
+    # 与 orphan 删除在数据库层串行，不能在无引用检查之后被 ON DELETE SET NULL 静默擦掉。
+    places = list(
+        db.scalars(
+            select(Place)
+            .where(Place.user_id == user_id)
+            .with_for_update()
+        )
+    )
     stats = {
         row.place_id: row
         for row in db.execute(
@@ -299,7 +309,7 @@ def _refresh_place_stats(db: Session, user_id: UUID) -> None:
             .group_by(Visit.place_id)
         )
     }
-    for place in list(db.scalars(select(Place).where(Place.user_id == user_id))):
+    for place in places:
         row = stats.get(place.id)
         if row is None:
             # [人工注释][S2-008] mutable Visit 撤销后，纯自动 Place 不能作为“幽灵地点”
