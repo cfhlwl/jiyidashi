@@ -97,12 +97,18 @@ class Device(Base):
 
 class Place(Base):
     __tablename__ = "places"
+    __table_args__ = (
+        UniqueConstraint("user_id", "cluster_key", name="uq_places_user_cluster_key"),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(200))
+    # [人工注释][S2-008] cluster_key 只用于服务端自动 Place 的稳定空间桶；
+    # 用户命名/纠正仍由后续 S2-009/S2-010 负责，不能把该 key 当作展示名称。
+    cluster_key: Mapped[str | None] = mapped_column(String(16), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -226,6 +232,14 @@ class LocationPoint(Base):
 
 class Visit(Base):
     __tablename__ = "visits"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "derivation_key",
+            name="uq_visits_user_derivation_key",
+        ),
+        Index("ix_visits_user_arrived", "user_id", "arrived_at"),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(
@@ -239,6 +253,39 @@ class Visit(Base):
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, default=0.85)
     source: Mapped[str] = mapped_column(String(64), default="LOCATION_CLUSTER")
+    # [人工注释][S2-007][S2-014] Visit 必须自带可长期保存的派生谱系摘要。
+    # raw LocationPoint 过期后，时间边界、点数和 fingerprint 仍能说明这条事实从哪批证据派生。
+    derivation_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    centroid_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    centroid_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_point_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    algorithm_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    finalized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class LocationDerivationState(Base):
+    __tablename__ = "location_derivation_states"
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # [人工注释][S2-014] finalized_through 是 raw cleanup 的 durable 安全水位：
+    # 只有 recorded_at <= 此值的点才允许进入 retention 删除候选。
+    finalized_through: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
 
 class ObjectItem(Base):

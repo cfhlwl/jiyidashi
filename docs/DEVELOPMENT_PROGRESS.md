@@ -14,12 +14,13 @@
 <!-- PR #22 / H Unified Capture 已完成多轮正式审查、recorder fail-closed 终止竞态收口、final clean replay 与四套 exact-head CI，并合并 main=1f0f9487；Issue #21 随 PR 合并完成，S1-008 转 ✅。Stage 1 最后一批 I/J/K/L 已以 Issue #23/#24/#25/#26 并行启动。 -->
 <!-- L：Onboarding / PR #30 已完成正式独立复审（P0=0 / P1=0）、exact-head Mobile #325 与 Visual #181 全绿，并以审核通过 HEAD 7622136e 锁定 squash 合并；merge commit=a4f02cb5，S1-026 转 ✅。 -->
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
+<!-- O：Location / Visit Foundation / Issue #35 已从 main=9a5a1f06 启动；分支 feat/stage2-location-visit-foundation 仅推进 S2-006/S2-007/S2-008/S2-014 的服务端基础，不包含原生定位、Place 自动命名/纠正、时间轴或地图 provider。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
-> 当前阶段：Stage 1「记得住」已完成；A～M 全部完成正式审查并合并 `main`，S1-M1 / S1-M2 / S1-M3 均已收口；Stage 2 仍未开始  
+> 当前阶段：Stage 1「记得住」已完成；Stage 2 已进入 O / Location & Visit Foundation 的服务端基础开发，其他 Stage 2 客户端/产品线仍未启动  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Stage 1 已完成，暂不启动新的功能线；下一步先做阶段切换/生产验收评审，再决定是否进入 Stage 2。当前继续保持 Stage 2 未启动
+> 当前开发重点：O / Issue #35 / `feat/stage2-location-visit-foundation`，仅推进 `S2-006 + S2-007 + S2-008 + S2-014`：权威 Location batch、确定性 Visit 聚类、Place 基础、raw-location durable lifecycle
 
 ## 状态规则
 
@@ -43,7 +44,7 @@
 | FND-000 | V1 Foundation 总体 | ✅ | PR #1 已通过最终复核并合并 `main` |
 | S1-M1 | Stage 1 第一批“记录 → 找回 → 相信”闭环 | ✅ | PR #2 已通过第二轮正式复审并合并 `main` |
 | S1-M2 | Stage 1 第二批“纠错 → 删除 → 暂停/恢复” | ✅ | PR #3 已通过三轮正式审查并合并；最终 HEAD 三端 CI 全部 SUCCESS |
-| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | ✅ | A～M 全部完成正式审查、latest-main replay / 精确 HEAD CI 并合并；PR #32 合并后 Stage 1 第三批正式收口，Stage 2 仍未开始 |
+| S1-M3 | Stage 1 第三批“多媒体记录 + 离线 + 数据控制” | ✅ | A～M 全部完成正式审查、latest-main replay / 精确 HEAD CI 并合并；PR #32 合并后 Stage 1 第三批正式收口 |
 | CI-001 | Backend CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Backend CI `35444809518` / #313 SUCCESS：Lint、SQLite/PostgreSQL migration、schema drift、既有 PostgreSQL invariants、Account Delete durability 与 full pytest（110 passed）全部通过 |
 | CI-002 | Flutter Android CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mobile CI `35444809482` / #354 SUCCESS：Analyze、117 Flutter tests、Android permissions、debug/release 全部通过 |
 | CI-003 | Flutter iOS CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mobile CI `35444809482` / #354 SUCCESS：iOS no-codesign build 通过 |
@@ -175,7 +176,7 @@
 
 # 3. Stage 2：自动记
 
-> **当前明确未开始。Stage 1 已完成；进入 Stage 2 前仍需单独做阶段切换评审，不因 Stage 1 收口而自动启动后台定位。**
+> **Stage 2 已从 O / Location & Visit Foundation 的服务端基础开始；本线不包含 Android/iOS 原生后台定位，也不自动启动其他 Stage 2 工作线。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
@@ -184,15 +185,15 @@
 | S2-003 | Flutter 统一 Location Bridge | ⬜ | `start / stop / pause / status` |
 | S2-004 | 运动状态识别 | ⬜ | 静止 / 移动状态切换 |
 | S2-005 | 智能定位采样策略 | ⬜ | 不允许固定 5 秒高频上传 |
-| S2-006 | Location Point 批量同步 | ⬜ | 后端入口已有 foundation，客户端未接 |
-| S2-007 | Visit 聚类 | ⬜ | 从原始位置点生成停留事件 |
-| S2-008 | Place 模型与地点库 | ⬜ | 名称、地址、类别、访问次数 |
+| S2-006 | Location Point 批量同步 | 🔵 | O / Issue #35：复用既有 `/v1/location/batch`，补强冲突幂等、隐私门禁和 durable 派生 |
+| S2-007 | Visit 聚类 | 🔵 | O / Issue #35：服务端确定性聚类、乱序/重放安全、持久化 provenance |
+| S2-008 | Place 模型与地点库 | 🔵 | O / Issue #35：仅建立自动 Place 基础与访问统计；不做 AI/POI 自动命名 |
 | S2-009 | Place 自动命名 | ⬜ | 地图 POI / 地址解析 |
 | S2-010 | Place 用户纠正 | ⬜ | 用户可纠正“家 / 公司 / 医院”等 |
 | S2-011 | 自动时间轴 | ⬜ | 地点事件 + 主动记忆统一时间轴 |
 | S2-012 | 今日足迹 | ⬜ | 今天去了哪里 |
 | S2-013 | 地点详情 | ⬜ | 首次、最近、累计次数、相关记忆 |
-| S2-014 | 原始位置生命周期 | ⬜ | 原始点短期保存，长期保存 Visit |
+| S2-014 | 原始位置生命周期 | 🔵 | O / Issue #35：durable finalized watermark + retention，派生安全后才允许删除 raw point |
 | S2-015 | 定位耗电监控指标 | ⬜ | 核心质量指标 |
 | S2-016 | 定位权限渐进式引导 | ⬜ | 不能首次启动一次索取全部权限 |
 
