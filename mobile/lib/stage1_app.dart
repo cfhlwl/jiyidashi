@@ -5,16 +5,27 @@ import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
+import 'onboarding_controller.dart';
+import 'onboarding_flow.dart';
+import 'onboarding_state.dart';
+
+// [人工注释][S1-026] AppShell 只接线 Onboarding；首次自动触发仅来自注册成功，老账号不会因缺少本地状态被误判为新用户。
 import 'unified_capture_section.dart';
 import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
 class JiYiApp extends StatefulWidget {
-  const JiYiApp({super.key, this.api, this.offlineQueue});
+  const JiYiApp({
+    super.key,
+    this.api,
+    this.offlineQueue,
+    this.onboardingStore,
+  });
 
   final JiYiApiClient? api;
   final OfflineQueueStore? offlineQueue;
+  final OnboardingStateStore? onboardingStore;
 
   @override
   State<JiYiApp> createState() => _JiYiAppState();
@@ -29,13 +40,19 @@ class _JiYiAppState extends State<JiYiApp> {
     api: api,
     store: offlineQueue,
   );
+  late final OnboardingStateStore onboardingStore =
+      widget.onboardingStore ?? OnboardingStore();
   bool authenticated = false;
+  bool startOnboardingAfterAuth = false;
 
   @override
   void dispose() {
     // [人工注释][S1-015] 只关闭本组件自己创建的数据库句柄；外部注入 Store 的生命周期由调用方负责。
     if (widget.offlineQueue == null) {
       unawaited(offlineQueue.close());
+    }
+    if (widget.onboardingStore == null) {
+      unawaited(onboardingStore.close());
     }
     super.dispose();
   }
@@ -51,14 +68,22 @@ class _JiYiAppState extends State<JiYiApp> {
           ? AppShell(
               api: api,
               offlineQueue: offlineQueue,
+              onboardingStore: onboardingStore,
+              startOnboarding: startOnboardingAfterAuth,
               sync: sync,
               onLogout: () {
                 api.logout();
-                setState(() => authenticated = false);
+                setState(() {
+                  authenticated = false;
+                  startOnboardingAfterAuth = false;
+                });
               },
             )
           : AuthPage(
               api: api,
+              onRegistrationCompleted: () {
+                startOnboardingAfterAuth = true;
+              },
               onAuthenticated: () => setState(() => authenticated = true),
             ),
     );
@@ -66,10 +91,16 @@ class _JiYiAppState extends State<JiYiApp> {
 }
 
 class AuthPage extends StatefulWidget {
-  const AuthPage({super.key, required this.api, required this.onAuthenticated});
+  const AuthPage({
+    super.key,
+    required this.api,
+    required this.onAuthenticated,
+    this.onRegistrationCompleted,
+  });
 
   final JiYiApiClient api;
   final VoidCallback onAuthenticated;
+  final VoidCallback? onRegistrationCompleted;
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -113,6 +144,9 @@ class _AuthPageState extends State<AuthPage> {
           password: passwordController.text,
           nickname: nicknameController.text,
         );
+        // Only a confirmed new registration auto-starts onboarding. Existing users
+        // logging into an upgraded app are never inferred to be "new" from missing local state.
+        widget.onRegistrationCompleted?.call();
       } else {
         await widget.api.login(
           email: emailController.text,
@@ -291,12 +325,16 @@ class AppShell extends StatefulWidget {
     super.key,
     required this.api,
     required this.offlineQueue,
+    this.onboardingStore,
+    this.startOnboarding = false,
     this.sync,
     required this.onLogout,
   });
 
   final JiYiApiClient api;
   final OfflineQueueStore offlineQueue;
+  final OnboardingStateStore? onboardingStore;
+  final bool startOnboarding;
   final OfflineSyncCoordinator? sync;
   final VoidCallback onLogout;
 
@@ -309,19 +347,38 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
   int index = 0;
   int syncGeneration = 0;
+  OnboardingController? _onboarding;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final store = widget.onboardingStore;
+    final owner = widget.api.authenticatedUserId?.trim();
+    if (store != null && owner != null && owner.isNotEmpty) {
+      _onboarding = OnboardingController(
+        store: store,
+        ownerUserId: owner,
+        autoStartForNewRegistration: widget.startOnboarding,
+      )..addListener(_onboardingChanged);
+    }
+
     // 登录进入生产 Shell 后立即尝试恢复当前账号的可重试 outbox。
     // coordinator 自身 single-flight，生命周期重复触发不会并发发送同一任务。
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_autoFlush()));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_autoFlush());
+      final onboarding = _onboarding;
+      if (onboarding != null) {
+        unawaited(onboarding.initialize());
+      }
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _onboarding?.removeListener(_onboardingChanged);
+    _onboarding?.dispose();
     super.dispose();
   }
 
@@ -352,8 +409,19 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (mounted) setState(() => syncGeneration += 1);
   }
 
+  void _onboardingChanged() {
+    final onboarding = _onboarding;
+    if (!mounted || onboarding == null) return;
+    final targetIndex = onboarding.navigationIndex;
+    setState(() {
+      if (targetIndex != null) index = targetIndex;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final onboarding = _onboarding;
+    final onboardingStep = onboarding?.step;
     final pages = <Widget>[
       const TodayPage(),
       const TimelinePage(),
@@ -363,13 +431,51 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         sync: _sync,
         syncGeneration: syncGeneration,
         onQueueChanged: _queueChanged,
+        onAuthoritativeTextMemorySaved:
+            onboardingStep == OnboardingStep.capture
+                ? onboarding?.authoritativeTextMemorySaved
+                : null,
       ),
-      MemoryQueryPage(api: widget.api),
-      ProfilePage(api: widget.api, onLogout: widget.onLogout),
+      MemoryQueryPage(
+        api: widget.api,
+        initialQuestion: onboardingStep == OnboardingStep.retrieve ||
+                onboardingStep == OnboardingStep.trust
+            ? onboarding?.querySeed
+            : null,
+        requiredEvidenceMemoryId: onboardingStep == OnboardingStep.retrieve ||
+                onboardingStep == OnboardingStep.trust
+            ? onboarding?.targetMemoryId
+            : null,
+        onTrustedEvidenceShown: onboardingStep == OnboardingStep.retrieve
+            ? onboarding?.trustedEvidenceShown
+            : null,
+      ),
+      ProfilePage(
+        api: widget.api,
+        onLogout: widget.onLogout,
+        onStartOnboarding: onboarding == null
+            ? null
+            : () => unawaited(onboarding.restart()),
+      ),
     ];
     return Scaffold(
-      body: SafeArea(child: pages[index]),
-      bottomNavigationBar: NavigationBar(
+      body: SafeArea(
+        child: OnboardingExperience(
+          step: onboardingStep,
+          onStart: onboarding?.startFlow ?? () {},
+          onSkip: () {
+            if (onboarding != null) unawaited(onboarding.skip());
+          },
+          onComplete: () {
+            if (onboarding != null) unawaited(onboarding.complete());
+          },
+          child: pages[index],
+        ),
+      ),
+      // [人工注释][S1-026] 引导进行时由 GuideBar 提供唯一退出入口；隐藏而不是保留“看得见但点不动”的底部导航。
+      bottomNavigationBar: onboardingStep != null
+          ? null
+          : NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
         // destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
@@ -477,6 +583,7 @@ class CapturePage extends StatefulWidget {
     this.sync,
     this.syncGeneration = 0,
     this.onQueueChanged,
+    this.onAuthoritativeTextMemorySaved,
   });
 
   final JiYiApiClient api;
@@ -484,6 +591,8 @@ class CapturePage extends StatefulWidget {
   final OfflineSyncCoordinator? sync;
   final int syncGeneration;
   final VoidCallback? onQueueChanged;
+  final void Function(String memoryId, String querySeed)?
+      onAuthoritativeTextMemorySaved;
 
   @override
   State<CapturePage> createState() => _CapturePageState();
@@ -563,6 +672,10 @@ class _CapturePageState extends State<CapturePage> {
     final content = contentController.text.trim();
     if (content.isEmpty) return;
     final title = titleController.text.trim();
+    // [人工注释][S1-026] 后端普通检索当前只匹配 Memory.content，不匹配 title。
+    // 因此 Aha 自动查询必须来自真实正文；同时保持在 Query API 2000 字上限以内，
+    // 并按 Unicode code points 截断，避免切坏 surrogate pair。
+    final querySeed = String.fromCharCodes(content.runes.take(512));
     setState(() {
       loading = true;
       result = null;
@@ -580,6 +693,12 @@ class _CapturePageState extends State<CapturePage> {
         titleController.clear();
         contentController.clear();
         setState(() => result = '✓ 已记住 · ${current.serverResourceId}');
+        // Onboarding may advance only after the outbox has received an authoritative
+        // server resource id. Local-only queued data cannot be queried yet.
+        widget.onAuthoritativeTextMemorySaved?.call(
+          current.serverResourceId!,
+          querySeed,
+        );
       } else if (current.status == OfflineQueueStatus.failed && current.retryable) {
         titleController.clear();
         contentController.clear();
@@ -718,6 +837,7 @@ class _CapturePageState extends State<CapturePage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
+                  key: const ValueKey('capture-text-title'),
                   controller: titleController,
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
@@ -727,6 +847,7 @@ class _CapturePageState extends State<CapturePage> {
                 ),
                 const SizedBox(height: JiYiSpacing.sm),
                 TextField(
+                  key: const ValueKey('capture-text-content'),
                   controller: contentController,
                   minLines: 3,
                   maxLines: 6,
@@ -738,6 +859,7 @@ class _CapturePageState extends State<CapturePage> {
                 ),
                 const SizedBox(height: JiYiSpacing.md),
                 FilledButton.icon(
+                  key: const ValueKey('capture-text-submit'),
                   onPressed: loading ? null : saveTextMemory,
                   icon: loading
                       ? const SizedBox.square(
@@ -938,9 +1060,18 @@ class _MemoryEditDialogState extends State<_MemoryEditDialog> {
 }
 
 class MemoryQueryPage extends StatefulWidget {
-  const MemoryQueryPage({super.key, required this.api});
+  const MemoryQueryPage({
+    super.key,
+    required this.api,
+    this.initialQuestion,
+    this.requiredEvidenceMemoryId,
+    this.onTrustedEvidenceShown,
+  });
 
   final JiYiApiClient api;
+  final String? initialQuestion;
+  final String? requiredEvidenceMemoryId;
+  final VoidCallback? onTrustedEvidenceShown;
 
   @override
   State<MemoryQueryPage> createState() => _MemoryQueryPageState();
@@ -952,6 +1083,27 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   String? error;
   String? actionMessage;
   bool loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialQuestion?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      controller.text = initial;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MemoryQueryPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.initialQuestion?.trim();
+    if (oldWidget.initialQuestion != widget.initialQuestion &&
+        controller.text.trim().isEmpty &&
+        next != null &&
+        next.isNotEmpty) {
+      controller.text = next;
+    }
+  }
 
   @override
   void dispose() {
@@ -970,7 +1122,23 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     });
     try {
       final response = await widget.api.queryMemory(controller.text);
+      if (!mounted) return;
       setState(() => result = response);
+      final evidence = response['evidence'];
+      final memoryIds = response['memory_ids'];
+      final requiredMemoryId = widget.requiredEvidenceMemoryId?.trim();
+      final containsRequiredMemory = requiredMemoryId == null ||
+          requiredMemoryId.isEmpty ||
+          (memoryIds is List<dynamic> &&
+              memoryIds.any((value) => value.toString() == requiredMemoryId));
+      if (response['can_answer'] == true &&
+          evidence is List<dynamic> &&
+          evidence.isNotEmpty &&
+          containsRequiredMemory) {
+        // Onboarding advances only when the real query points back to the Memory that
+        // this flow just saved. Evidence for an unrelated older Memory is not the Aha.
+        widget.onTrustedEvidenceShown?.call();
+      }
     } on ApiException catch (exc) {
       setState(() => error = exc.message);
     } catch (_) {
@@ -1134,6 +1302,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
+                  key: const ValueKey('memory-query-input'),
                   controller: controller,
                   textInputAction: TextInputAction.search,
                   onSubmitted: loading ? null : (_) => query(),
@@ -1145,6 +1314,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                 ),
                 const SizedBox(height: JiYiSpacing.md),
                 FilledButton.icon(
+                  key: const ValueKey('memory-query-submit'),
                   onPressed: loading ? null : query,
                   icon: loading
                       ? const SizedBox.square(
@@ -1292,10 +1462,16 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
 }
 
 class ProfilePage extends StatelessWidget {
-  const ProfilePage({super.key, required this.api, required this.onLogout});
+  const ProfilePage({
+    super.key,
+    required this.api,
+    required this.onLogout,
+    this.onStartOnboarding,
+  });
 
   final JiYiApiClient api;
   final VoidCallback onLogout;
+  final VoidCallback? onStartOnboarding;
 
   @override
   Widget build(BuildContext context) {
@@ -1380,6 +1556,23 @@ class ProfilePage extends StatelessWidget {
               ),
               const SizedBox(height: JiYiSpacing.md),
               _PrivacyControls(api: api),
+              if (onStartOnboarding != null) ...[
+                const SizedBox(height: JiYiSpacing.md),
+                JiYiSectionCard(
+                  leading: Icon(
+                    Icons.route_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: '新手引导',
+                  subtitle: '随时重新体验“记住、找回、查看 Evidence”，不会创建演示数据。',
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('profile-restart-onboarding'),
+                    onPressed: onStartOnboarding,
+                    icon: const Icon(Icons.replay_outlined),
+                    label: const Text('重新查看新手引导'),
+                  ),
+                ),
+              ],
               const SizedBox(height: JiYiSpacing.md),
               OutlinedButton.icon(
                 onPressed: onLogout,

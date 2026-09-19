@@ -16,6 +16,11 @@ on:
 permissions:
   contents: read
 
+# [人工注释][S1-026] 同一 PR 只验收最新 HEAD；旧提交的 Flutter 构建自动取消，避免过期结果占用 Runner。
+concurrency:
+  group: mobile-visual-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   golden:
     runs-on: ubuntu-latest
@@ -42,7 +47,18 @@ jobs:
         run: flutter analyze
 
       # [人工注释][CI-005] 普通 CI 只校验已经提交并人工审查过的 Golden，绝不自动执行 --update-goldens。
+      # [人工注释][S1-026] 先隔离真实 Onboarding 流程测试，避免全量/Golden 卡住时丢失故障定位。
+      - name: Test onboarding flow
+        timeout-minutes: 5
+        run: >-
+          flutter test
+          test/onboarding_state_test.dart
+          test/onboarding_controller_test.dart
+          test/onboarding_flow_test.dart
+          --reporter expanded
+
       - name: Run Flutter tests including committed goldens
+        timeout-minutes: 10
         run: flutter test --reporter expanded
 
       # [人工注释][CI-005] 用临时篡改后的基线证明 Flutter 会生成失败截图/diff；随后恢复原文件并再次通过。
