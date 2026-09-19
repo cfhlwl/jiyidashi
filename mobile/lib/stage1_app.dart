@@ -456,7 +456,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       body: SafeArea(
         child: OnboardingExperience(
           step: onboardingStep,
-          child: pages[index],
           onStart: onboarding?.startFlow ?? () {},
           onSkip: () {
             if (onboarding != null) unawaited(onboarding.skip());
@@ -464,6 +463,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           onComplete: () {
             if (onboarding != null) unawaited(onboarding.complete());
           },
+          child: pages[index],
         ),
       ),
       bottomNavigationBar: onboardingStep == OnboardingStep.intro
