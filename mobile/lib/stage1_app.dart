@@ -472,14 +472,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           child: pages[index],
         ),
       ),
-      bottomNavigationBar: onboardingStep == OnboardingStep.intro
+      // [人工注释][S1-026] 引导进行时由 GuideBar 提供唯一退出入口；隐藏而不是保留“看得见但点不动”的底部导航。
+      bottomNavigationBar: onboardingStep != null
           ? null
           : NavigationBar(
         selectedIndex: index,
-        onDestinationSelected: (value) {
-          if (onboarding != null && !onboarding.allowsNavigation(value)) return;
-          setState(() => index = value);
-        },
+        onDestinationSelected: (value) => setState(() => index = value),
         // destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
         destinations: const [
           NavigationDestination(
