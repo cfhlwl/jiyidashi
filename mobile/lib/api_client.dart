@@ -340,6 +340,37 @@ class JiYiApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> getMemory(String memoryId) {
+    return _jsonRequest('GET', '/memories/$memoryId');
+  }
+
+  Future<Map<String, dynamic>> updateMemory(
+    String memoryId, {
+    required int expectedRevision,
+    String? title,
+    required String content,
+  }) {
+    final normalizedTitle = title?.trim() ?? '';
+    final normalizedContent = content.trim();
+    if (normalizedContent.isEmpty) {
+      throw ArgumentError.value(
+        content,
+        'content',
+        'memory content must not be empty',
+      );
+    }
+    // Stage 1 编辑只提交用户可见 title/content；可信字段、来源和发生时间继续由服务端所有。
+    return _jsonRequest(
+      'PATCH',
+      '/memories/$memoryId',
+      body: {
+        'expected_revision': expectedRevision,
+        'title': normalizedTitle.isEmpty ? null : normalizedTitle,
+        'content': normalizedContent,
+      },
+    );
+  }
+
   Future<void> deleteMemory(String memoryId) async {
     // [人工注释][S1-019] 删除只调用服务端 soft-delete 入口；客户端删除后不得保留本地“可回答”状态。
     await _jsonRequest('DELETE', '/memories/$memoryId');

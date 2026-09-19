@@ -101,6 +101,7 @@ POST /v1/auth/dev-token
 ```http
 POST   /v1/memories
 GET    /v1/memories/{id}
+PATCH  /v1/memories/{id}
 DELETE /v1/memories/{id}
 GET    /v1/timeline
 POST   /v1/memory/query
@@ -130,6 +131,38 @@ POST /v1/memories
   "memory_type": "VOICE",
   "content": "护照放在书房左侧柜子第二层",
   "capture_source": "USER_VOICE"
+}
+```
+
+### 编辑单条 Memory
+
+```http
+PATCH /v1/memories/{id}
+```
+
+Stage 1 只允许修改 `title` / `content`。请求还必须携带最近一次 GET 返回的
+`expected_revision` 作为并发前置条件；它不是可编辑业务字段。客户端不能提交
+`occurred_at`、`memory_type`、`source_type`、`confidence`、`is_confirmed`
+或位置/metadata 等可信字段；额外字段返回 422。
+
+编辑不会重写原始 Evidence：
+
+- 原有 `MemorySource` / `MediaEvidenceLink` 永久保留；
+- 每次实际修改写入 append-only `MemoryEdit` revision；
+- 正文变化时服务端追加一个新的 `USER_TEXT` edit-source，并由“用户明确改写正文”这一服务端事实派生当前 Memory 为 `USER_TEXT / confirmed / confidence=1.0`；
+- 查询当前修正文案时 Evidence 必须指向该 edit-source，`provenance=USER_EDIT`，不能继续复用旧图片/语音媒体作为新文字的证明；
+- 标题-only 修改不制造新的正文 Evidence，也不改变当前正文来源；
+- 相同值重试是 no-op，不重复制造 revision，即使原 `expected_revision` 已落后也可安全返回当前结果；
+- 不同内容的过期编辑若 `expected_revision` 与当前 revision 不同，返回 409 `MEMORY_EDIT_REVISION_CONFLICT`，防止多设备静默覆盖；
+- `OBJECT_LOCATION` backing Memory 在 Stage 1 拒绝通用编辑，避免与结构化当前位置状态分叉；
+- 跨用户或已删除 Memory 统一返回 404。
+
+```json
+PATCH /v1/memories/11111111-1111-1111-1111-111111111111
+{
+  "expected_revision": 3,
+  "title": "新的标题",
+  "content": "用户修正后的正文"
 }
 ```
 
@@ -368,6 +401,7 @@ Evidence 字段语义：
 - `memory_source_id`：实际参与 Evidence gate 的 `MemorySource.id`，用于追溯证据记录。
 - `confidence`：该 `MemorySource` 的可信度。
 - `media_id`：只有服务端存在 MediaEvidenceLink 时才返回对应媒体 ID；否则为 `null`。
+- `provenance`：`ORIGINAL_SOURCE` 表示原始采集来源；`USER_EDIT` 表示当前正文由后续用户编辑产生的 USER_TEXT source 支撑。编辑后的文字不会继续复用旧图片/语音媒体作为证明。
 
 没有证据：
 

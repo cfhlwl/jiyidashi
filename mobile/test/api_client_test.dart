@@ -180,6 +180,49 @@ void main() {
     expect(calls, 3);
   });
 
+  test('memory edit sends only title and content to authenticated PATCH', () async {
+    var calls = 0;
+    late Map<String, dynamic> requestBody;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/v1/memories/edit-me');
+        expect(request.headers['authorization'], 'Bearer example-token');
+        requestBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({
+            'id': '22222222-2222-2222-2222-222222222222',
+            'title': requestBody['title'],
+            'content': requestBody['content'],
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    await api.updateMemory(
+      'edit-me',
+      expectedRevision: 7,
+      title: '  新标题  ',
+      content: '  修正后的正文  ',
+    );
+
+    expect(requestBody, {
+      'expected_revision': 7,
+      'title': '新标题',
+      'content': '修正后的正文',
+    });
+    expect(requestBody.containsKey('source_type'), isFalse);
+    expect(requestBody.containsKey('confidence'), isFalse);
+    expect(requestBody.containsKey('is_confirmed'), isFalse);
+    expect(requestBody.containsKey('occurred_at'), isFalse);
+  });
+
   test('delete memory uses authenticated DELETE endpoint', () async {
     var calls = 0;
     final api = JiYiApiClient(

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.media_models import MediaEvidenceLink
 from app.models import (
     Memory,
+    MemoryEdit,
     MemorySource,
     MemoryType,
     ObjectItem,
@@ -15,7 +16,7 @@ from app.models import (
     ObjectLocationStatus,
     SourceType,
 )
-from app.schemas import Evidence, MemoryQueryResponse
+from app.schemas import Evidence, EvidenceProvenance, MemoryQueryResponse
 
 OBJECT_LOCATION_MARKERS = (
     "在哪",
@@ -80,8 +81,29 @@ def _eligible_memory_exists() -> exists:
 
 
 def _best_memory_source(db: Session, memory_id: UUID) -> MemorySource | None:
-    # [人工注释][S1-FIX-002] 查询响应必须返回真正参与 Evidence gate 的 MemorySource，
-    # 不得用 MEMORY / OBJECT_LOCATION 这种实体 kind 冒充来源。
+    # 正文一旦被用户编辑，最新 content revision 的 edit-source 是当前文字的唯一直接 Evidence。
+    # 显式按 revision 找 source，不能只靠 created_at “猜最新”，否则旧媒体来源可能重新覆盖编辑语义。
+    edited_source_id = db.scalar(
+        select(MemoryEdit.memory_source_id)
+        .where(
+            MemoryEdit.memory_id == memory_id,
+            MemoryEdit.changed_content.is_(True),
+            MemoryEdit.memory_source_id.is_not(None),
+        )
+        .order_by(desc(MemoryEdit.revision))
+        .limit(1)
+    )
+    if edited_source_id is not None:
+        return db.scalar(
+            select(MemorySource).where(
+                MemorySource.id == edited_source_id,
+                MemorySource.memory_id == memory_id,
+                MemorySource.source_type == SourceType.USER_TEXT,
+                MemorySource.confidence >= 0.6,
+            )
+        )
+
+    # 未编辑正文继续使用原有 Evidence gate。
     return db.scalar(
         select(MemorySource)
         .where(
@@ -92,6 +114,20 @@ def _best_memory_source(db: Session, memory_id: UUID) -> MemorySource | None:
         .order_by(desc(MemorySource.confidence), desc(MemorySource.created_at))
         .limit(1)
     )
+
+
+def _source_provenance(
+    db: Session,
+    memory_source_id: UUID,
+) -> EvidenceProvenance:
+    edit_id = db.scalar(
+        select(MemoryEdit.id)
+        .where(MemoryEdit.memory_source_id == memory_source_id)
+        .limit(1)
+    )
+    if edit_id is not None:
+        return EvidenceProvenance.USER_EDIT
+    return EvidenceProvenance.ORIGINAL_SOURCE
 
 
 def _media_id_for_source(db: Session, memory_source_id: UUID) -> UUID | None:
@@ -253,6 +289,7 @@ def _search_memories(
                 id=item.id,
                 source_type=source.source_type,
                 memory_source_id=source.id,
+                provenance=_source_provenance(db, source.id),
                 occurred_at=item.occurred_at,
                 excerpt=item.content[:240],
                 confidence=source.confidence,

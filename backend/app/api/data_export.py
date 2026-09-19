@@ -15,6 +15,7 @@ from app.deps import get_current_user_id
 from app.media_models import MediaAsset, MediaEvidenceLink
 from app.models import (
     Memory,
+    MemoryEdit,
     MemorySource,
     ObjectItem,
     ObjectLocation,
@@ -64,6 +65,8 @@ def _memory_payload(memory: Memory) -> dict[str, Any]:
         "longitude": memory.longitude,
         "is_confirmed": memory.is_confirmed,
         "metadata": memory.metadata_json,
+        "edit_revision": memory.edit_revision,
+        "edited_at": memory.edited_at,
         "created_at": memory.created_at,
         "updated_at": memory.updated_at,
     }
@@ -129,6 +132,14 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
         .where(Memory.user_id == user_id, Memory.is_deleted.is_(False))
         .order_by(MemorySource.created_at, MemorySource.id),
         "memory_sources",
+    )
+    memory_edits = _bounded_scalars(
+        db,
+        select(MemoryEdit)
+        .join(Memory, MemoryEdit.memory_id == Memory.id)
+        .where(Memory.user_id == user_id, Memory.is_deleted.is_(False))
+        .order_by(MemoryEdit.created_at, MemoryEdit.id),
+        "memory_edits",
     )
     objects = _bounded_scalars(
         db,
@@ -220,6 +231,22 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 "created_at": item.created_at,
             }
             for item in memory_sources
+        ],
+        "memory_edits": [
+            {
+                "id": item.id,
+                "memory_id": item.memory_id,
+                "revision": item.revision,
+                "previous_title": item.previous_title,
+                "previous_content": item.previous_content,
+                "new_title": item.new_title,
+                "new_content": item.new_content,
+                "changed_title": item.changed_title,
+                "changed_content": item.changed_content,
+                "memory_source_id": item.memory_source_id,
+                "created_at": item.created_at,
+            }
+            for item in memory_edits
         ],
         "objects": [
             {

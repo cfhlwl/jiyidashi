@@ -71,6 +71,11 @@ class UserCaptureSource(StrEnum):
         return SourceType(self.value)
 
 
+class EvidenceProvenance(StrEnum):
+    ORIGINAL_SOURCE = "ORIGINAL_SOURCE"
+    USER_EDIT = "USER_EDIT"
+
+
 class ImageContentType(StrEnum):
     # [人工注释][S1-005] Stage 1 静态图片类型继续沿用已冻结协议。
     JPEG = "image/jpeg"
@@ -159,6 +164,24 @@ class MemoryCreate(BaseModel):
         return self
 
 
+class MemoryUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # expected_revision 是并发前置条件，不是可编辑业务字段；必须来自最近一次服务端 GET。
+    expected_revision: int = Field(ge=0)
+    title: str | None = Field(default=None, max_length=240)
+    content: str | None = Field(default=None, max_length=20000)
+
+    @model_validator(mode="after")
+    def validate_edit_fields(self):
+        if not self.model_fields_set.intersection({"title", "content"}):
+            raise ValueError("at least one editable field is required")
+        if "content" in self.model_fields_set:
+            if self.content is None or not self.content.strip():
+                raise ValueError("content must not be empty")
+        return self
+
+
 class MemoryRead(ORMModel):
     id: UUID
     user_id: UUID
@@ -173,6 +196,8 @@ class MemoryRead(ORMModel):
     longitude: float | None
     is_confirmed: bool
     metadata_json: dict
+    edit_revision: int
+    edited_at: datetime | None
     created_at: datetime
 
 
@@ -318,6 +343,8 @@ class Evidence(BaseModel):
     id: UUID
     source_type: SourceType
     memory_source_id: UUID
+    # 当前文字若来自用户后续修正，必须显式区别于最初采集来源。
+    provenance: EvidenceProvenance = EvidenceProvenance.ORIGINAL_SOURCE
     occurred_at: datetime
     excerpt: str
     confidence: float

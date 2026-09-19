@@ -15,11 +15,17 @@ from app.schemas import (
     MemoryQueryRequest,
     MemoryQueryResponse,
     MemoryRead,
+    MemoryUpdate,
 )
 from app.services.idempotency_service import (
     IdempotencyConflict,
     IdempotencyResourceGone,
     execute_idempotent_mutation,
+)
+from app.services.memory_edit_service import (
+    MemoryEditConflict,
+    MemoryEditUnsupported,
+    edit_memory,
 )
 from app.services.memory_service import create_user_memory, get_memory_for_user, soft_delete_memory
 from app.services.query_service import query_memory
@@ -68,6 +74,26 @@ def get_memory_endpoint(memory_id: UUID, user_id: CurrentUser, db: DbSession) ->
     memory = get_memory_for_user(db, user_id, memory_id)
     if memory is None:
         raise HTTPException(status_code=404, detail="MEMORY_NOT_FOUND")
+    return memory
+
+
+@router.patch("/memories/{memory_id}", response_model=MemoryRead)
+def edit_memory_endpoint(
+    memory_id: UUID,
+    payload: MemoryUpdate,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> Memory:
+    try:
+        memory = edit_memory(db, user_id=user_id, memory_id=memory_id, payload=payload)
+    except (MemoryEditConflict, MemoryEditUnsupported) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail) from exc
+    if memory is None:
+        # owner mismatch 与软删除共用 not-found 边界，编辑接口不能成为记录存在性探针。
+        raise HTTPException(status_code=404, detail="MEMORY_NOT_FOUND")
+
+    db.commit()
+    db.refresh(memory)
     return memory
 
 
