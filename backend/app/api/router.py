@@ -11,6 +11,7 @@ from app.api import (
     objects,
     privacy,
     reminders,
+    today_footprint,
     users,
 )
 
@@ -26,6 +27,9 @@ api_router.include_router(data_export.router)
 # 不与普通 CRUD 分散混用。
 api_router.include_router(data_delete.router)
 api_router.include_router(memories.router)
+# [人工注释][S2-012] Today Footprint 只读消费已合并 Timeline/Visit/Place；
+# 不建立第二套定位、聚类或持久化协议。
+api_router.include_router(today_footprint.router)
 # [人工注释][S1-025] Reminder 保持独立资源边界；只引用既有 Memory，不把提醒状态塞进 Memory API。
 api_router.include_router(reminders.router)
 api_router.include_router(objects.router)

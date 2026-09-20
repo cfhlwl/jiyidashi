@@ -16,6 +16,7 @@ import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
 import 'place_detail_page.dart';
 import 'reminder_page.dart';
+import 'today_footprint_page.dart';
 
 // [人工注释][S1-026] AppShell 只接线 Onboarding；首次自动触发仅来自注册成功，老账号不会因缺少本地状态被误判为新用户。
 import 'unified_capture_section.dart';
@@ -617,7 +618,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final onboarding = _onboarding;
     final onboardingStep = onboarding?.step;
     final pages = <Widget>[
-      const TodayPage(),
+      TodayPage(api: widget.api),
       TimelinePage(api: widget.api),
       CapturePage(
         api: widget.api,
@@ -702,51 +703,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: '我的',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class TodayPage extends StatelessWidget {
-  const TodayPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return JiYiPageFrame(
-      title: '今天',
-      subtitle: '把重要的事记下来，需要时再找回来。',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 首页只展示当前已经真实具备的记录、找回和隐私控制能力，不新增动态统计或虚构推荐。
-          JiYiSectionCard(
-            leading: Icon(
-              Icons.shield_outlined,
-              color: theme.colorScheme.primary,
-            ),
-            title: '你的记忆由你控制',
-            subtitle: '记录、找回、纠错、删除和暂停都由你决定。',
-            child: Text(
-              '先从“记一下”主动留下可信内容；需要回忆时到“问记忆”查找，并随时在“我的”里管理隐私。',
-              style: theme.textTheme.bodyLarge,
-            ),
-          ),
-          const SizedBox(height: JiYiSpacing.md),
-          JiYiSectionCard(
-            leading: Icon(
-              Icons.fact_check_outlined,
-              color: theme.colorScheme.primary,
-            ),
-            title: '只展示有依据的记忆',
-            child: Text(
-              '没有证据时不会生成记忆；现有 Evidence 规则保持不变。',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
           ),
         ],
       ),

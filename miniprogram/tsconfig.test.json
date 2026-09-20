@@ -6,16 +6,22 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "moduleResolution": "node",
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "rootDir": ".",
     "outDir": ".test-dist"
   },
   "include": [
+    "src/global.d.ts",
     "src/services/photoCapture.ts",
     "src/services/voiceCapture.ts",
+    "src/services/api.ts",
+    "src/services/todayFootprint.ts",
     "src/services/placeDetail.ts",
     "tests/photoCapture.test.ts",
     "tests/voiceCapture.test.ts",
+    "tests/todayFootprint.test.ts",
     "tests/placeDetail.test.ts"
   ]
 }
