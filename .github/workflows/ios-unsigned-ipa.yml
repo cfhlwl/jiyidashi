@@ -118,7 +118,15 @@ jobs:
             "$ipa_path"
 
           /usr/bin/unzip -l "$ipa_path" | grep -q 'Payload/Runner.app/Info.plist'
-          shasum -a 256 "$ipa_path" > "$ipa_path.sha256"
+
+          # [人工注释][CI-IOS-IPA] checksum sidecar must be portable after artifact
+          # extraction. Record only the IPA basename and prove it can be verified
+          # from the artifact directory itself; never leak the runner-internal path.
+          (
+            cd build/ios/ipa
+            shasum -a 256 "$ipa_name" > "$ipa_name.sha256"
+            shasum -a 256 -c "$ipa_name.sha256"
+          )
 
           echo "IPA_PATH=$ipa_path" >> "$GITHUB_ENV"
           echo "Unsigned IPA: $ipa_path"
