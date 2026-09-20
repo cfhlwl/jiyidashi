@@ -214,7 +214,7 @@
 | --- | --- | --- | --- |
 | S3-001 | AI Gateway | ⬜ | 客户端不得直接调用模型厂商 API |
 | S3-002 | Memory Pipeline | ⬜ | Capture → Normalize → Extract → Classify → Evidence → Store |
-| S3-003 | Intent Router | ⬜ | FIND_OBJECT / FIND_PLACE / FIND_EVENT 等 |
+| S3-003 | Intent Router | 🟠 | Issue #54 / PR #55：deterministic trusted routing 已实现；typed contract、owner-scoped precedence、UNKNOWN fail-closed 与既有 Object/Place/Memory 回归已通过 Backend exact-head CI，等待正式审查 |
 | S3-004 | 实体提取 | ⬜ | 人物 / 地点 / 物品 / 时间 / 事件 |
 | S3-005 | Entity Link | ⬜ | 新记录关联已有 Object / Place / Person |
 | S3-006 | OCR | ⬜ | 图片文字提取 |

@@ -562,3 +562,38 @@ Memory 软删除会把仍为 `PENDING` 的关联 Reminder 自动改为 `CANCELLE
 - `true`：COMMIT。表示官方客户端已完成当前 owner 的本机 OfflineQueue/Onboarding purge，服务端才允许继续 S1-021 与最终账号身份事务。
 
 该顺序用于封闭两个崩溃窗口：App 重启时可通过恢复登录继续 PREPARE gate；服务端最终删号前，本机敏感 payload 已被清除。
+
+---
+
+## Intent Router Foundation
+
+### `POST /v1/intent/route`
+
+Deterministically selects an existing trusted product capability. The endpoint does
+not answer the question and does not write Memory/Evidence.
+
+Request:
+
+```json
+{
+  "question": "我的护照放在哪里？"
+}
+```
+
+Response example:
+
+```json
+{
+  "intent": "FIND_OBJECT",
+  "capability": "OBJECT_LOCATION_QUERY",
+  "reason": "MATCHED"
+}
+```
+
+Possible intents: `FIND_OBJECT`, `FIND_PLACE`, `FIND_EVENT`,
+`MEMORY_SEARCH`, `UNKNOWN`.
+
+Unsupported, ambiguous, and insufficiently supported requests return
+`intent=UNKNOWN` with `capability=null`. Owner identity is always taken from
+the authenticated server context, never from the request body. See
+`docs/INTENT_ROUTER.md` for precedence and trust boundaries.

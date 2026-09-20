@@ -5,6 +5,7 @@ from app.api import (
     auth,
     data_delete,
     data_export,
+    intent,
     location,
     media,
     memories,
@@ -26,6 +27,9 @@ api_router.include_router(data_export.router)
 # [人工注释][S1-021] 全量数据删除独立走 durable orchestrator；
 # 不与普通 CRUD 分散混用。
 api_router.include_router(data_delete.router)
+# S3-003 routing is control metadata only; downstream services retain their own
+# trust, Evidence and owner-isolation boundaries.
+api_router.include_router(intent.router)
 api_router.include_router(memories.router)
 # [人工注释][S2-012] Today Footprint 只读消费已合并 Timeline/Visit/Place；
 # 不建立第二套定位、聚类或持久化协议。
