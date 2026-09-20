@@ -21,13 +21,14 @@
 <!-- R：Today Footprint / Issue #43 / PR #45 已完成正式审查、exact-head CI 与 Git Gate，并合并 main=e2789eff；S2-012 转 ✅。 -->
 <!-- S：Place Detail / Issue #44 / PR #46 已完成 Flutter + Mini Program 正式复审、latest-main single-commit clean replay、四套 exact-head CI 与最终 Git Gate，并 squash 合并 main=9e1b96da；S2-013 转 ✅。 -->
 <!-- T：Unsigned iOS IPA CI / Issue #47 / PR #48 已完成 portable checksum sidecar、自校验、IPA artifact、exact-head 与 Git Gate 审查，并合并 main=ce9b9d90；无签名 IPA CI 正式完成。 -->
-<!-- U：Software Copyright Annotation Gate / Issue #50 / PR #51：关键职责/不变量/平台边界注释与长期 Annotation Gate 已实现；源码净变化仅注释，Stage 2 状态已收口，当前等待正式审查与最终合并。 -->
+<!-- U：Software Copyright Annotation Gate / Issue #50 / PR #51 已完成正式审查并合并。 -->
+<!-- V：Intent Router Foundation / Issue #54 / PR #55 已完成 typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、旧可信链回归、Annotation Gate 与 exact-head Backend CI，并 squash 合并 main=8c0758bd；S3-003 转 ✅。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-20  
-> 当前阶段：Stage 1「记得住」已完成；Stage 2「自动记」16 项功能已全部完成并合并 `main`；当前进入维护收口与 Stage 3 启动前准备  
+> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」已启动，S3-003 Intent Router Foundation 已完成并合并 `main`  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Stage 2 与软件著作权注释维护线均已完成并合并；下一阶段可独立启动 Stage 3，不与已完成维护线混用分支
+> 当前开发重点：Stage 3 各能力继续保持独立 Issue / 分支 / PR；S3-003 Intent Router 已完成，后续能力不得回写或绕过既有 Evidence / owner trust boundary
 
 ## 状态规则
 
@@ -214,7 +215,7 @@
 | --- | --- | --- | --- |
 | S3-001 | AI Gateway | ⬜ | 客户端不得直接调用模型厂商 API |
 | S3-002 | Memory Pipeline | ⬜ | Capture → Normalize → Extract → Classify → Evidence → Store |
-| S3-003 | Intent Router | 🟠 | Issue #54 / PR #55：deterministic trusted routing 已实现；typed contract、owner-scoped precedence、UNKNOWN fail-closed 与既有 Object/Place/Memory 回归已通过 Backend exact-head CI，等待正式审查 |
+| S3-003 | Intent Router | ✅ | Issue #54 / PR #55 已完成正式 very narrow review（P0/P1/P2=0/0/0）、typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、Annotation Gate、既有 Object/Place/Memory 回归与 exact-head Backend CI `35507973659`，并 squash 合并 `main=8c0758bd` |
 | S3-004 | 实体提取 | ⬜ | 人物 / 地点 / 物品 / 时间 / 事件 |
 | S3-005 | Entity Link | ⬜ | 新记录关联已有 Object / Place / Person |
 | S3-006 | OCR | ⬜ | 图片文字提取 |
