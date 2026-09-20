@@ -192,7 +192,7 @@
 | S2-008 | Place 模型与地点库 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
 | S2-009 | Place 自动命名 | ✅ | Q / PR #40 已完成正式审查、legacy seeded migration 与 automatic↔USER PostgreSQL race 验收并合并 main |
 | S2-010 | Place 用户纠正 | ✅ | Q / PR #40 已完成 owner isolation、ClientMutation、Place FOR UPDATE、Export/Data Delete 与并发验收并合并 main |
-| S2-011 | 自动时间轴 | 🔵 | Q / Timeline Foundation：升级既有 /v1/timeline 为统一 Memory + Visit read model，服务端负责 owner isolation、用户时区日界线、稳定排序/分页与 retained evidence 语义；不实现 Timeline UI |
+| S2-011 | 自动时间轴 | 🔵 | Q / Timeline Foundation：保留 Stage 1 /v1/timeline Memory-only 兼容契约，新建 /v1/timeline/events 统一 Memory + Visit read model；服务端负责 owner isolation、用户时区日界线、稳定排序/分页与 retained evidence 语义；不实现 Timeline UI |
 | S2-012 | 今日足迹 | ⬜ | Q 后续独立小 PR；本次不实现 Today Footprint UI |
 | S2-013 | 地点详情 | ⬜ | Q 后续独立小 PR；本次只准备命名后的 Place read model，不实现完整详情 UI |
 | S2-014 | 原始位置生命周期 | ✅ | O / PR #36 已完成独立 maintenance / deletion serialization 审查与 latest-main Gate，并合并 `main` |
