@@ -1,4 +1,5 @@
 name: ios-unsigned-ipa
+# temporary current-main IPA build trigger; no application code changes
 
 on:
   pull_request:
