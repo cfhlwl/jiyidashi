@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
-
 from app.core.db import SessionLocal
 from app.models import Memory, Place, User, Visit
 
@@ -18,7 +16,6 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
 
 def _seed_timeline_owner(user_id: UUID) -> dict[str, UUID]:
     place_id = uuid4()
-    finalized_visit_id = uuid4()
     mutable_visit_id = uuid4()
     memory_id = uuid4()
     deleted_memory_id = uuid4()
