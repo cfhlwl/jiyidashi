@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
@@ -96,6 +96,11 @@ class PlaceDisplayNameSource(StrEnum):
     UNNAMED = "UNNAMED"
     AUTOMATIC = "AUTOMATIC"
     USER = "USER"
+
+
+class TimelineItemKind(StrEnum):
+    MEMORY = "MEMORY"
+    VISIT = "VISIT"
 
 
 class ImageContentType(StrEnum):
@@ -491,6 +496,36 @@ class PlaceRead(ORMModel):
     last_visited_at: datetime | None
     visit_count: int
     is_user_named: bool
+
+
+class TimelineItem(BaseModel):
+    # [人工注释][S2-011] Timeline 是只读聚合，不复制成新的事实表；id 始终指向
+    # 原始 Memory/Visit，客户端必须结合 kind 解释其来源。
+    kind: TimelineItemKind
+    id: UUID
+    occurred_at: datetime
+    ended_at: datetime | None = None
+    place_id: UUID | None = None
+    place_name: str | None = None
+
+    # Memory-only fields.
+    memory_type: MemoryType | None = None
+    title: str | None = None
+    content: str | None = None
+    source_type: SourceType | None = None
+    is_confirmed: bool | None = None
+
+    # Shared/Visit evidence metadata.
+    confidence: float
+    visit_source: str | None = None
+    visit_finalized: bool | None = None
+
+
+class TimelinePageResponse(BaseModel):
+    timezone: str
+    day: date | None
+    items: list[TimelineItem] = Field(default_factory=list)
+    next_cursor: str | None = None
 
 
 class PrivacyPauseRequest(BaseModel):

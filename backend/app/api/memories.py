@@ -16,6 +16,7 @@ from app.schemas import (
     MemoryQueryResponse,
     MemoryRead,
     MemoryUpdate,
+    TimelinePageResponse,
 )
 from app.services.idempotency_service import (
     IdempotencyConflict,
@@ -30,6 +31,7 @@ from app.services.memory_edit_service import (
 from app.services.memory_service import create_user_memory, get_memory_for_user, soft_delete_memory
 from app.services.query_service import query_memory
 from app.services.time_service import local_today, user_day_bounds_utc
+from app.services.timeline_service import TimelineCursorError, list_timeline
 
 router = APIRouter(tags=["memories"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -116,6 +118,8 @@ def timeline(
     day: Annotated[date | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[Memory]:
+    # [人工注释][S2-011] Stage 1 已公开 Memory-only /timeline 数组契约，现有调用方
+    # 仍依赖该 shape。S2-011 不原地破坏它；统一事件协议使用 /timeline/events。
     query = select(Memory).where(
         Memory.user_id == user_id,
         Memory.is_deleted.is_(False),
@@ -125,6 +129,26 @@ def timeline(
         query = query.where(Memory.occurred_at >= start, Memory.occurred_at < end)
 
     return list(db.scalars(query.order_by(Memory.occurred_at.desc()).limit(limit)).all())
+
+
+@router.get("/timeline/events", response_model=TimelinePageResponse)
+def timeline_events(
+    user_id: CurrentUser,
+    db: DbSession,
+    day: Annotated[date | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
+) -> TimelinePageResponse:
+    try:
+        return list_timeline(
+            db,
+            user_id=user_id,
+            day=day,
+            limit=limit,
+            cursor_value=cursor,
+        )
+    except TimelineCursorError as exc:
+        raise HTTPException(status_code=422, detail=exc.code) from exc
 
 
 @router.post("/memory/query", response_model=MemoryQueryResponse)

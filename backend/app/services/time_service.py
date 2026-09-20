@@ -16,6 +16,19 @@ def _user_zone(db: Session, user_id: UUID) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def user_timezone_name(db: Session, user_id: UUID) -> str:
+    # [人工注释][S2-011] Timeline/Today 等产品层统一读取服务端 User.timezone；
+    # 客户端不能在同一账号下自行选择另一套日界线。
+    user = db.get(User, user_id)
+    if user is None:
+        return "UTC"
+    try:
+        ZoneInfo(user.timezone)
+    except ZoneInfoNotFoundError:
+        return "UTC"
+    return user.timezone
+
+
 def local_today(
     db: Session,
     user_id: UUID,

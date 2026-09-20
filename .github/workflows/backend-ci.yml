@@ -36,6 +36,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # [人工注释][CI-GATE] pull_request 默认会 checkout 临时 merge ref，
+          # 不能用于严格 exact-head Gate；PR 明确测试 head SHA，push 仍测试 github.sha。
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
 
       - uses: actions/setup-python@v5
         with:
@@ -129,6 +143,15 @@ jobs:
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_place_naming_integration.py
+
+      - name: PostgreSQL Timeline invariants
+        # [人工注释][S2-011] 真实 PostgreSQL 锁死 Memory+Visit 同时间戳下的跨表稳定排序、
+        # UUID tie-break 与 cursor 翻页，避免 SQLite 类型行为掩盖生产漏页/重复。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_timeline_integration.py
 
       - name: PostgreSQL data deletion durability
         # [人工注释][S1-021] 真实 PostgreSQL 覆盖 user-row 锁、迁移约束与 owner-scoped 删除。
