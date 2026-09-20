@@ -119,6 +119,65 @@ class MediaUploadSession {
   }
 }
 
+class LocationUploadPoint {
+  const LocationUploadPoint({
+    required this.clientUuid,
+    required this.latitude,
+    required this.longitude,
+    required this.recordedAt,
+    this.accuracyMeters,
+    this.speedMetersPerSecond,
+  });
+
+  final String clientUuid;
+  final double latitude;
+  final double longitude;
+  final double? accuracyMeters;
+  final double? speedMetersPerSecond;
+  final DateTime recordedAt;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'client_uuid': clientUuid,
+        'latitude': latitude,
+        'longitude': longitude,
+        if (accuracyMeters != null) 'accuracy': accuracyMeters,
+        if (speedMetersPerSecond != null) 'speed': speedMetersPerSecond,
+        'recorded_at': recordedAt.toUtc().toIso8601String(),
+      };
+}
+
+class LocationBatchResult {
+  const LocationBatchResult({
+    required this.accepted,
+    required this.duplicates,
+    required this.rejectedPrivacy,
+    required this.rejectedFinalized,
+  });
+
+  final int accepted;
+  final int duplicates;
+  final int rejectedPrivacy;
+  final int rejectedFinalized;
+
+  int get terminalCount =>
+      accepted + duplicates + rejectedPrivacy + rejectedFinalized;
+
+  factory LocationBatchResult.fromJson(Map<String, dynamic> data) {
+    int requiredInt(String key) {
+      final value = data[key];
+      if (value is int && value >= 0) return value;
+      throw ProtocolException('服务端位置批量响应格式不正确');
+    }
+
+    return LocationBatchResult(
+      accepted: requiredInt('accepted'),
+      duplicates: requiredInt('duplicates'),
+      rejectedPrivacy: requiredInt('rejected_privacy'),
+      rejectedFinalized: requiredInt('rejected_finalized'),
+    );
+  }
+}
+
 class JiYiApiClient {
   JiYiApiClient({http.Client? httpClient, String? baseUrl})
       : _http = httpClient ?? http.Client(),
@@ -497,6 +556,28 @@ class JiYiApiClient {
       throw ApiException(404, '没有找到这个物品');
     }
     return _jsonRequest('POST', '/objects/${matched['id']}/location/stale');
+  }
+
+  Future<LocationBatchResult> uploadLocationBatch(
+    List<LocationUploadPoint> points,
+  ) async {
+    if (points.isEmpty || points.length > 500) {
+      throw ArgumentError.value(
+        points.length,
+        'points',
+        'location batch must contain 1..500 points',
+      );
+    }
+    // P consumes the already-merged S2-006 contract verbatim. Stable client_uuid lives
+    // inside each point; no second idempotency header/protocol is invented here.
+    final data = await _jsonRequest(
+      'POST',
+      '/location/batch',
+      body: {
+        'points': points.map((point) => point.toJson()).toList(growable: false),
+      },
+    );
+    return LocationBatchResult.fromJson(data);
   }
 
   Future<Map<String, dynamic>> getPrivacyStatus() {

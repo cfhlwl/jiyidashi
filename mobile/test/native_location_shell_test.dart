@@ -121,6 +121,7 @@ class _SpyBridge implements NativeLocationBridge {
   }
 }
 
+
 Future<void> _pumpShell(
   WidgetTester tester, {
   required _PrivacyApi api,

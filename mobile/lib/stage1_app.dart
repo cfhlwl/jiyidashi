@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 
 import 'account_delete_section.dart';
 import 'api_client.dart';
+import 'location_sampling_coordinator.dart';
 import 'native_location_bridge.dart';
 import 'native_location_controller.dart';
 import 'native_location_section.dart';
+import 'native_motion_sampling_bridge.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
 import 'onboarding_controller.dart';
@@ -27,12 +29,14 @@ class JiYiApp extends StatefulWidget {
     this.offlineQueue,
     this.onboardingStore,
     this.locationBridge,
+    this.motionSamplingBridge,
   });
 
   final JiYiApiClient? api;
   final OfflineQueueStore? offlineQueue;
   final OnboardingStateStore? onboardingStore;
   final NativeLocationBridge? locationBridge;
+  final NativeMotionSamplingBridge? motionSamplingBridge;
 
   @override
   State<JiYiApp> createState() => _JiYiAppState();
@@ -82,6 +86,7 @@ class _JiYiAppState extends State<JiYiApp> {
               startOnboarding: startOnboardingAfterAuth,
               resumeAccountDeletion: resumeAccountDeletionAfterAuth,
               locationBridge: locationBridge,
+              motionSamplingBridge: widget.motionSamplingBridge,
               sync: sync,
               onLogout: () {
                 api.logout();
@@ -353,6 +358,7 @@ class AppShell extends StatefulWidget {
     this.startOnboarding = false,
     this.resumeAccountDeletion = false,
     this.locationBridge,
+    this.motionSamplingBridge,
     this.sync,
     required this.onLogout,
   });
@@ -363,6 +369,7 @@ class AppShell extends StatefulWidget {
   final bool startOnboarding;
   final bool resumeAccountDeletion;
   final NativeLocationBridge? locationBridge;
+  final NativeMotionSamplingBridge? motionSamplingBridge;
   final OfflineSyncCoordinator? sync;
   final VoidCallback onLogout;
 
@@ -378,6 +385,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   bool _accountDeletionIntentActive = false;
   OnboardingController? _onboarding;
   NativeLocationController? _nativeLocation;
+  LocationSamplingCoordinator? _locationSampling;
 
   @override
   void initState() {
@@ -390,9 +398,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final store = widget.onboardingStore;
     final owner = widget.api.authenticatedUserId?.trim();
     if (owner != null && owner.isNotEmpty) {
-      _nativeLocation = NativeLocationController(
+      final location = NativeLocationController(
         bridge: widget.locationBridge ?? MethodChannelNativeLocationBridge(),
         ownerUserId: owner,
+      );
+      _nativeLocation = location;
+      _locationSampling = LocationSamplingCoordinator(
+        api: widget.api,
+        store: widget.offlineQueue,
+        locationController: location,
+        nativeBridge:
+            widget.motionSamplingBridge ?? MethodChannelNativeMotionSamplingBridge(),
       );
     }
     if (!_accountDeletionIntentActive &&
@@ -421,9 +437,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         if (_accountDeletionIntentActive) {
           unawaited(location.disableForAccountDeletion());
         } else {
-          // Native initialization only reads status. It never requests permission or starts
-          // production; server privacy is then reconciled fail-closed before user controls enable.
-          unawaited(_initializeNativeLocation(location));
+          // Native initialization only reads status. P subscribes/drains only after N's
+          // authoritative privacy reconciliation; it never starts location by itself.
+          unawaited(
+            _initializeNativeLocation(location).then((_) async {
+              if (!mounted || _accountDeletionIntentActive) return;
+              await _locationSampling?.start();
+            }),
+          );
         }
       }
     });
@@ -434,6 +455,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _onboarding?.removeListener(_onboardingChanged);
     _onboarding?.dispose();
+    _locationSampling?.dispose();
     _nativeLocation?.dispose();
     super.dispose();
   }
@@ -446,7 +468,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (!_accountDeletionIntentActive && location != null) {
         // Returning from system settings is the authoritative point to observe permission
         // revocation/grant. Refresh never starts location by itself.
-        unawaited(_initializeNativeLocation(location));
+        unawaited(
+          _initializeNativeLocation(location).then((_) async {
+            if (!mounted || _accountDeletionIntentActive) return;
+            await _locationSampling?.pump(forceFlush: true);
+          }),
+        );
       }
     }
   }
@@ -493,6 +520,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   Future<void> _stopLocationAndLogout() async {
+    // Seal sampling first so a late native event cannot enqueue/upload after logout begins.
+    await _locationSampling?.suspendForLogout();
     final location = _nativeLocation;
     if (location != null) {
       await location.stopForLogout();
@@ -530,19 +559,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         index = 4;
       });
     }
+    // [人工注释][S1-022][S2-004/005] 注销确认后的所有 owner-local producer gate
+    // 必须在第一次 await 之前同步建立。P 的 quiesce() 进入函数即先置 _quiesced=true，
+    // OfflineQueue/Sync 也立即封住新写入/发送；后续只等待已经在飞的旧 Future 收尾。
+    final samplingIdle =
+        _locationSampling?.quiesceForAccountDeletion();
+    final offlineQueueIdle =
+        widget.offlineQueue.quiesceForAccountDeletion(owner);
+    final syncIdle = _sync.quiesceForAccountDeletion(owner);
+
     final location = _nativeLocation;
     if (location != null) {
       // Account deletion clears this account's automatic-location enablement before
       // local data purge, so a later account on the same device cannot inherit it.
       await location.disableForAccountDeletion();
     }
-
-    // [人工注释][S1-022] 两个 owner-local 门禁都必须在任何 await 之前建立：
-    // Capture widget 即使已被移出树，旧 async Future 仍可能继续 enqueue/flush。
-    // 先封 producer + future flush，再等待既有写入/同步，最后 purge 才是真正 last write。
-    final offlineQueueIdle =
-        widget.offlineQueue.quiesceForAccountDeletion(owner);
-    final syncIdle = _sync.quiesceForAccountDeletion(owner);
 
     final onboarding = _onboarding;
     if (onboarding != null) {
@@ -553,8 +584,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       onboarding.dispose();
       _onboarding = null;
     }
+    if (samplingIdle != null) {
+      await samplingIdle;
+    }
     await offlineQueueIdle;
     await syncIdle;
+    // All producers are now sealed and drained; this transaction is the final owner-local
+    // SQLite payload write/delete boundary for Stage 1 + Stage 2 raw location rows.
     await widget.offlineQueue.purgeOwner(owner);
     final localOnboarding = widget.onboardingStore;
     if (localOnboarding != null) {

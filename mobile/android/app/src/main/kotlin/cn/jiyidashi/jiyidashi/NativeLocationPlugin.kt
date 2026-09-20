@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -35,10 +37,14 @@ class NativeLocationPlugin :
         store = NativeLocationStore(applicationContext)
         channel = MethodChannel(binding.binaryMessenger, CHANNEL_NAME)
         channel.setMethodCallHandler(this)
+        sampleChannel = channel
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        if (sampleChannel === channel) {
+            sampleChannel = null
+        }
         pendingRequest?.result?.error("bridge_detached", "Location bridge detached", null)
         pendingRequest = null
     }
@@ -93,6 +99,31 @@ class NativeLocationPlugin :
             "start" -> result.success(start(ownerUserId))
             "pause" -> result.success(pause(ownerUserId))
             "stop" -> result.success(stop(ownerUserId))
+            "drainLocationSamples" -> result.success(drainLocationSamples(call, ownerUserId))
+            "takeMotionObservation" -> result.success(takeMotionObservation(ownerUserId))
+            "ackLocationSamples" -> {
+                acknowledgeLocationSamples(call, ownerUserId)
+                result.success(null)
+            }
+            "applySamplingProfile" -> applySamplingProfile(call, ownerUserId, result)
+            "locationMetrics" -> result.success(store.metrics(ownerUserId))
+            "recordLocationUploadBatch" -> {
+                val count = (call.argument<Number>("sample_count")?.toInt() ?: 0)
+                if (count > 0) store.recordUploadBatch(ownerUserId, count)
+                result.success(null)
+            }
+            "purgeLocationSamplingOwner" -> {
+                if (store.activeOwnerUserId == ownerUserId) {
+                    store.finishTracking(ownerUserId)
+                    applicationContext.stopService(
+                        Intent(applicationContext, NativeLocationTrackingService::class.java),
+                    )
+                    store.activeOwnerUserId = null
+                    store.runtime = NativeLocationRuntimeState.STOPPED
+                }
+                store.purgeLocationSamplingOwner(ownerUserId)
+                result.success(null)
+            }
             else -> result.notImplemented()
         }
     }
@@ -100,6 +131,84 @@ class NativeLocationPlugin :
     private fun ownerFrom(call: MethodCall): String? {
         val owner = call.argument<String>("owner_user_id")?.trim().orEmpty()
         return owner.takeIf { it.isNotEmpty() }
+    }
+
+    private fun drainLocationSamples(
+        call: MethodCall,
+        ownerUserId: String,
+    ): List<Map<String, Any?>> {
+        val limit = (call.argument<Number>("limit")?.toInt() ?: 100).coerceIn(1, 500)
+        return store.pendingLocationSamples(ownerUserId, limit).map { sample ->
+            mapOf(
+                "client_uuid" to sample.clientUuid,
+                "latitude" to sample.latitude,
+                "longitude" to sample.longitude,
+                "accuracy" to sample.accuracyMeters,
+                "speed" to sample.speedMetersPerSecond,
+                "recorded_at" to isoTimestamp(sample.recordedAtMillis),
+            )
+        }
+    }
+
+    private fun takeMotionObservation(ownerUserId: String): Map<String, Any?>? {
+        val observation = store.takeLatestMotionObservation(ownerUserId) ?: return null
+        return mapOf(
+            "accuracy" to observation.accuracyMeters,
+            "speed" to observation.speedMetersPerSecond,
+            "recorded_at_millis" to observation.recordedAtMillis,
+        )
+    }
+
+    private fun acknowledgeLocationSamples(
+        call: MethodCall,
+        ownerUserId: String,
+    ) {
+        val ids = call.argument<List<String>>("client_uuids")
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            ?: emptySet()
+        store.acknowledgeLocationSamples(ownerUserId, ids)
+    }
+
+    private fun applySamplingProfile(
+        call: MethodCall,
+        ownerUserId: String,
+        result: MethodChannel.Result,
+    ) {
+        if (store.enabledOwnerUserId != ownerUserId) {
+            result.error("owner_mismatch", "Automatic location owner does not match", null)
+            return
+        }
+        val interval = call.argument<Number>("min_interval_ms")?.toLong()
+        val distance = call.argument<Number>("min_distance_m")?.toDouble()
+        val maxAccuracy = call.argument<Number>("max_accuracy_m")?.toDouble()
+        if (interval == null || distance == null || maxAccuracy == null) {
+            result.error("invalid_sampling_profile", "Sampling profile is incomplete", null)
+            return
+        }
+        val profile = NativeSamplingProfile.validated(
+            motionState = NativeMotionState.fromWire(call.argument<String>("motion_state")),
+            minIntervalMs = interval,
+            minDistanceMeters = distance,
+            maxAccuracyMeters = maxAccuracy,
+        )
+        if (profile == null) {
+            result.error("invalid_sampling_profile", "Sampling profile is invalid", null)
+            return
+        }
+        store.setSamplingProfile(ownerUserId, profile)
+        if (NativeLocationTrackingService.isActive &&
+            store.activeOwnerUserId == ownerUserId
+        ) {
+            // Reconfigure the already-running FGS; never re-enter permission/start flows.
+            applicationContext.startService(
+                Intent(applicationContext, NativeLocationTrackingService::class.java)
+                    .setAction(NativeLocationTrackingService.ACTION_UPDATE_SAMPLING)
+                    .putExtra(NativeLocationTrackingService.EXTRA_OWNER_USER_ID, ownerUserId),
+            )
+        }
+        result.success(null)
     }
 
     private fun requestForegroundPermission(
@@ -271,6 +380,7 @@ class NativeLocationPlugin :
                 Intent(applicationContext, NativeLocationTrackingService::class.java),
             )
             store.runtime = NativeLocationRuntimeState.STOPPED
+            store.activeOwnerUserId?.let(store::finishTracking)
             store.activeOwnerUserId = null
             // Diagnostics are owner-local UX state. Clearing on owner switch prevents the
             // next account from seeing the previous account's last-fix time/accuracy.
@@ -282,6 +392,7 @@ class NativeLocationPlugin :
 
     private fun disableAutomaticLocation(ownerUserId: String): Map<String, Any?> {
         if (store.enabledOwnerUserId == ownerUserId || store.activeOwnerUserId == ownerUserId) {
+            store.finishTracking(ownerUserId)
             store.clearAutomaticOwner(ownerUserId)
             store.clearDiagnostics()
             store.runtime = NativeLocationRuntimeState.STOPPED
@@ -308,6 +419,7 @@ class NativeLocationPlugin :
                     Intent(applicationContext, NativeLocationTrackingService::class.java),
                 )
             }
+            store.finishTracking(ownerUserId)
             store.runtime = NativeLocationRuntimeState.STOPPED
             store.activeOwnerUserId = null
             return status(ownerUserId, forcedReason = startFailureReason(permission, servicesEnabled))
@@ -336,6 +448,7 @@ class NativeLocationPlugin :
 
     private fun pause(ownerUserId: String): Map<String, Any?> {
         if (store.activeOwnerUserId == ownerUserId || store.enabledOwnerUserId == ownerUserId) {
+            store.finishTracking(ownerUserId)
             store.runtime = NativeLocationRuntimeState.PAUSED
             store.activeOwnerUserId = null
             applicationContext.stopService(
@@ -347,6 +460,7 @@ class NativeLocationPlugin :
 
     private fun stop(ownerUserId: String): Map<String, Any?> {
         if (store.activeOwnerUserId == ownerUserId || store.enabledOwnerUserId == ownerUserId) {
+            store.finishTracking(ownerUserId)
             store.runtime = NativeLocationRuntimeState.STOPPED
             store.activeOwnerUserId = null
             applicationContext.stopService(
@@ -370,6 +484,7 @@ class NativeLocationPlugin :
         ) {
             // FGS may outlive the Flutter engine. A newly authenticated account must
             // reconcile and stop any old account's producer even if normal Logout never ran.
+            storedActiveOwner?.let(store::finishTracking)
             applicationContext.stopService(
                 Intent(applicationContext, NativeLocationTrackingService::class.java),
             )
@@ -520,5 +635,17 @@ class NativeLocationPlugin :
         private const val CHANNEL_NAME = "cn.jiyidashi/native_location"
         private const val REQUEST_FOREGROUND_LOCATION = 2401
         private const val REQUEST_BACKGROUND_LOCATION = 2402
+
+        @Volatile
+        private var sampleChannel: MethodChannel? = null
+
+        fun notifySamplesAvailable() {
+            val current = sampleChannel ?: return
+            Handler(Looper.getMainLooper()).post {
+                if (sampleChannel === current) {
+                    current.invokeMethod("samplesAvailable", null)
+                }
+            }
+        }
     }
 }

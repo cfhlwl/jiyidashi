@@ -356,7 +356,141 @@ void main() {
     await store.close();
   });
 
-  test('schema version 2 is persisted without destructive downgrade policy', () async {
+  test('location samples survive reopen and identical UUID enqueue is idempotent', () async {
+    const uuid = '10101010-1010-4010-8010-101010101010';
+    final recordedAt = DateTime.utc(2026, 9, 20, 0, 15);
+    final firstStore = createStore();
+    final first = await firstStore.enqueueLocationSample(
+      ownerUserId: userA,
+      clientUuid: uuid,
+      latitude: 3.139,
+      longitude: 101.6869,
+      accuracyMeters: 18,
+      speedMetersPerSecond: 1.4,
+      recordedAt: recordedAt,
+    );
+    final duplicate = await firstStore.enqueueLocationSample(
+      ownerUserId: userA,
+      clientUuid: uuid,
+      latitude: 3.139,
+      longitude: 101.6869,
+      accuracyMeters: 18,
+      speedMetersPerSecond: 1.4,
+      recordedAt: recordedAt,
+    );
+    expect(duplicate.id, first.id);
+    expect(await firstStore.countLocationSamples(userA), 1);
+    await firstStore.close();
+
+    final reopened = createStore();
+    final recovered = await reopened.listLocationSamples(userA);
+    expect(recovered, hasLength(1));
+    expect(recovered.single.clientUuid, uuid);
+    expect(recovered.single.recordedAt, recordedAt);
+    await reopened.close();
+  });
+
+  test('location UUID conflict and owner isolation fail closed', () async {
+    const uuid = '11101010-1010-4010-8010-101010101010';
+    final store = createStore();
+    final recordedAt = DateTime.utc(2026, 9, 20, 0, 20);
+    await store.enqueueLocationSample(
+      ownerUserId: userA,
+      clientUuid: uuid,
+      latitude: 3.1,
+      longitude: 101.6,
+      recordedAt: recordedAt,
+    );
+    await expectLater(
+      store.enqueueLocationSample(
+        ownerUserId: userA,
+        clientUuid: uuid,
+        latitude: 3.2,
+        longitude: 101.6,
+        recordedAt: recordedAt,
+      ),
+      throwsStateError,
+    );
+    await store.enqueueLocationSample(
+      ownerUserId: userB,
+      clientUuid: uuid,
+      latitude: 3.2,
+      longitude: 101.7,
+      recordedAt: recordedAt,
+    );
+
+    expect((await store.listLocationSamples(userA)).single.latitude, 3.1);
+    expect((await store.listLocationSamples(userB)).single.latitude, 3.2);
+    await store.close();
+  });
+
+  test('location rows delete only by owner and exact stable UUIDs', () async {
+    final store = createStore();
+    final at = DateTime.utc(2026, 9, 20, 0, 30);
+    const first = '12101010-1010-4010-8010-101010101010';
+    const second = '13101010-1010-4010-8010-101010101010';
+    await store.enqueueLocationSample(
+      ownerUserId: userA,
+      clientUuid: first,
+      latitude: 3.1,
+      longitude: 101.6,
+      recordedAt: at,
+    );
+    await store.enqueueLocationSample(
+      ownerUserId: userA,
+      clientUuid: second,
+      latitude: 3.2,
+      longitude: 101.7,
+      recordedAt: at.add(const Duration(minutes: 1)),
+    );
+    await store.enqueueLocationSample(
+      ownerUserId: userB,
+      clientUuid: first,
+      latitude: 4.1,
+      longitude: 102.6,
+      recordedAt: at,
+    );
+
+    expect(await store.deleteLocationSamples(userA, <String>[first]), 1);
+    expect(
+      (await store.listLocationSamples(userA)).map((item) => item.clientUuid),
+      <String>[second],
+    );
+    expect(await store.countLocationSamples(userB), 1);
+    await store.close();
+  });
+
+  test('account deletion purge also removes raw location outbox for only that owner', () async {
+    final store = createStore();
+    final at = DateTime.utc(2026, 9, 20, 0, 40);
+    await store.enqueueTextMemory(
+      ownerUserId: userA,
+      clientUuid: '14101010-1010-4010-8010-101010101010',
+      content: 'delete me',
+    );
+    await store.enqueueLocationSample(
+      ownerUserId: userA,
+      clientUuid: '15101010-1010-4010-8010-101010101010',
+      latitude: 3.1,
+      longitude: 101.6,
+      recordedAt: at,
+    );
+    await store.enqueueLocationSample(
+      ownerUserId: userB,
+      clientUuid: '16101010-1010-4010-8010-101010101010',
+      latitude: 4.1,
+      longitude: 102.6,
+      recordedAt: at,
+    );
+
+    expect(await store.purgeOwner(userA), 2);
+    expect(await store.listAll(userA), isEmpty);
+    expect(await store.countLocationSamples(userA), 0);
+    expect(await store.countLocationSamples(userB), 1);
+    await store.close();
+  });
+
+  test('schema version 3 is persisted without destructive downgrade policy', () async {
     final store = createStore();
     await store.enqueueTextMemory(
       ownerUserId: userA,
@@ -370,6 +504,21 @@ void main() {
     final columns = await database.rawQuery('PRAGMA table_info(offline_queue)');
     final names = columns.map((column) => column['name']).toSet();
     expect(names, containsAll(<String>{'retryable', 'server_resource_id'}));
+    final locationColumns =
+        await database.rawQuery('PRAGMA table_info(location_sample_queue)');
+    final locationNames =
+        locationColumns.map((column) => column['name']).toSet();
+    expect(
+      locationNames,
+      containsAll(<String>{
+        'owner_user_id',
+        'client_uuid',
+        'latitude',
+        'longitude',
+        'recorded_at',
+        'blocked_error',
+      }),
+    );
     await database.close();
   });
 }

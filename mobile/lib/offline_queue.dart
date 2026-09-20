@@ -92,7 +92,51 @@ class OfflineQueueItem {
   }
 }
 
-// SQLite 继续只允许增量 migration；v2 只增加同步元数据，不清库、不重建 PR #6 队列。
+class LocationSampleQueueItem {
+  const LocationSampleQueueItem({
+    required this.id,
+    required this.ownerUserId,
+    required this.clientUuid,
+    required this.latitude,
+    required this.longitude,
+    required this.recordedAt,
+    required this.createdAt,
+    this.accuracyMeters,
+    this.speedMetersPerSecond,
+    this.blockedError,
+  });
+
+  final int id;
+  final String ownerUserId;
+  final String clientUuid;
+  final double latitude;
+  final double longitude;
+  final double? accuracyMeters;
+  final double? speedMetersPerSecond;
+  final DateTime recordedAt;
+  final DateTime createdAt;
+  final String? blockedError;
+
+  factory LocationSampleQueueItem.fromRow(Map<String, Object?> row) {
+    double? nullableDouble(Object? value) =>
+        value == null ? null : (value as num).toDouble();
+    return LocationSampleQueueItem(
+      id: row['id']! as int,
+      ownerUserId: row['owner_user_id']! as String,
+      clientUuid: row['client_uuid']! as String,
+      latitude: (row['latitude']! as num).toDouble(),
+      longitude: (row['longitude']! as num).toDouble(),
+      accuracyMeters: nullableDouble(row['accuracy']),
+      speedMetersPerSecond: nullableDouble(row['speed']),
+      recordedAt: DateTime.parse(row['recorded_at']! as String).toUtc(),
+      createdAt: DateTime.parse(row['created_at']! as String).toUtc(),
+      blockedError: row['blocked_error'] as String?,
+    );
+  }
+}
+
+// SQLite 继续只允许增量 migration；v3 新增独立 location outbox，
+// 不改变 Stage 1 Memory/Object outbox 的资源 ID 完成语义。
 class OfflineQueueStore {
   OfflineQueueStore({
     DatabaseFactory? factory,
@@ -104,7 +148,7 @@ class OfflineQueueStore {
         _clientUuidFactory = clientUuidFactory ?? _newClientUuid,
         _now = now ?? DateTime.now;
 
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
   static const String databaseFileName = 'jiyidashi_stage1.sqlite3';
   static const String textMemoryOperation = 'text_memory';
   static const String objectLocationOperation = 'object_location';
@@ -236,6 +280,28 @@ class OfflineQueueStore {
           await db.execute('''
             ALTER TABLE offline_queue
             ADD COLUMN server_resource_id TEXT
+          ''');
+        case 3:
+          // Location batch 的服务端协议只返回 aggregate receipt，不返回逐点资源 ID。
+          // 因此使用独立 durable outbox：成功前不删行，response-loss 后原 UUID 可安全重放。
+          await db.execute('''
+            CREATE TABLE location_sample_queue (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              owner_user_id TEXT NOT NULL,
+              client_uuid TEXT NOT NULL,
+              latitude REAL NOT NULL,
+              longitude REAL NOT NULL,
+              accuracy REAL,
+              speed REAL,
+              recorded_at TEXT NOT NULL,
+              blocked_error TEXT,
+              created_at TEXT NOT NULL,
+              UNIQUE(owner_user_id, client_uuid)
+            )
+          ''');
+          await db.execute('''
+            CREATE INDEX idx_location_sample_owner_created
+            ON location_sample_queue(owner_user_id, created_at, id)
           ''');
       }
     }
@@ -390,6 +456,159 @@ class OfflineQueueStore {
     }
   }
 
+  Future<LocationSampleQueueItem> enqueueLocationSample({
+    required String ownerUserId,
+    required String clientUuid,
+    required double latitude,
+    required double longitude,
+    double? accuracyMeters,
+    double? speedMetersPerSecond,
+    required DateTime recordedAt,
+  }) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final stableUuid = clientUuid.trim();
+    if (stableUuid.isEmpty) {
+      throw ArgumentError.value(clientUuid, 'clientUuid', 'client UUID must not be empty');
+    }
+    if (!latitude.isFinite || latitude < -90 || latitude > 90) {
+      throw ArgumentError.value(latitude, 'latitude', 'invalid latitude');
+    }
+    if (!longitude.isFinite || longitude < -180 || longitude > 180) {
+      throw ArgumentError.value(longitude, 'longitude', 'invalid longitude');
+    }
+    if (accuracyMeters != null &&
+        (!accuracyMeters.isFinite || accuracyMeters < 0)) {
+      throw ArgumentError.value(accuracyMeters, 'accuracyMeters', 'invalid accuracy');
+    }
+    if (speedMetersPerSecond != null &&
+        (!speedMetersPerSecond.isFinite || speedMetersPerSecond < 0)) {
+      throw ArgumentError.value(speedMetersPerSecond, 'speedMetersPerSecond', 'invalid speed');
+    }
+
+    final stableRecordedAt = recordedAt.toUtc();
+    _beginEnqueue(owner);
+    try {
+      final db = await _database();
+      return await db.transaction((txn) async {
+        final existingRows = await txn.query(
+          'location_sample_queue',
+          where: 'owner_user_id = ? AND client_uuid = ?',
+          whereArgs: [owner, stableUuid],
+          limit: 1,
+        );
+        if (existingRows.isNotEmpty) {
+          final existing = LocationSampleQueueItem.fromRow(existingRows.single);
+          final samePayload =
+              existing.latitude == latitude &&
+              existing.longitude == longitude &&
+              existing.accuracyMeters == accuracyMeters &&
+              existing.speedMetersPerSecond == speedMetersPerSecond &&
+              existing.recordedAt == stableRecordedAt;
+          if (!samePayload) {
+            throw StateError('location client_uuid already belongs to another sample');
+          }
+          return existing;
+        }
+
+        final createdAt = _utcNow().toIso8601String();
+        final id = await txn.insert('location_sample_queue', {
+          'owner_user_id': owner,
+          'client_uuid': stableUuid,
+          'latitude': latitude,
+          'longitude': longitude,
+          'accuracy': accuracyMeters,
+          'speed': speedMetersPerSecond,
+          'recorded_at': stableRecordedAt.toIso8601String(),
+          'blocked_error': null,
+          'created_at': createdAt,
+        });
+        final rows = await txn.query(
+          'location_sample_queue',
+          where: 'id = ?',
+          whereArgs: [id],
+          limit: 1,
+        );
+        return LocationSampleQueueItem.fromRow(rows.single);
+      });
+    } finally {
+      _finishEnqueue(owner);
+    }
+  }
+
+  Future<List<LocationSampleQueueItem>> listLocationSamples(
+    String ownerUserId, {
+    int limit = 100,
+  }) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final db = await _database();
+    final rows = await db.query(
+      'location_sample_queue',
+      where: 'owner_user_id = ? AND blocked_error IS NULL',
+      whereArgs: [owner],
+      orderBy: 'recorded_at ASC, id ASC',
+      limit: limit.clamp(1, 500),
+    );
+    return rows.map(LocationSampleQueueItem.fromRow).toList(growable: false);
+  }
+
+  Future<int> countLocationSamples(String ownerUserId) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final db = await _database();
+    final rows = await db.rawQuery(
+      '''
+        SELECT COUNT(*) AS total
+        FROM location_sample_queue
+        WHERE owner_user_id = ? AND blocked_error IS NULL
+      ''',
+      [owner],
+    );
+    return (rows.single['total'] as int?) ?? 0;
+  }
+
+  Future<int> deleteLocationSamples(
+    String ownerUserId,
+    List<String> clientUuids,
+  ) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    if (clientUuids.isEmpty) return 0;
+    final normalized = clientUuids.map((value) => value.trim()).toSet().toList();
+    final placeholders = List.filled(normalized.length, '?').join(',');
+    final db = await _database();
+    return db.delete(
+      'location_sample_queue',
+      where: 'owner_user_id = ? AND client_uuid IN ($placeholders)',
+      whereArgs: [owner, ...normalized],
+    );
+  }
+
+  Future<int> blockLocationSamples(
+    String ownerUserId,
+    List<String> clientUuids,
+    String error,
+  ) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    if (clientUuids.isEmpty) return 0;
+    final normalized = clientUuids.map((value) => value.trim()).toSet().toList();
+    final placeholders = List.filled(normalized.length, '?').join(',');
+    final db = await _database();
+    return db.update(
+      'location_sample_queue',
+      {'blocked_error': error.trim().isEmpty ? 'location upload blocked' : error.trim()},
+      where: 'owner_user_id = ? AND client_uuid IN ($placeholders)',
+      whereArgs: [owner, ...normalized],
+    );
+  }
+
+  Future<int> purgeLocationSamples(String ownerUserId) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final db = await _database();
+    return db.delete(
+      'location_sample_queue',
+      where: 'owner_user_id = ?',
+      whereArgs: [owner],
+    );
+  }
+
   Future<List<OfflineQueueItem>> listAll(String ownerUserId) async {
     final owner = _normalizeOwnerUserId(ownerUserId);
     final db = await _database();
@@ -442,13 +661,21 @@ class OfflineQueueStore {
   Future<int> purgeOwner(String ownerUserId) async {
     final owner = _normalizeOwnerUserId(ownerUserId);
     final db = await _database();
-    // [人工注释][S1-022] 普通 logout 保留账号隔离的 outbox；账号注销成功后则必须
-    // 按权威 user_id 删除全部本机任务（含 completed/cancelled），不能留下正文或位置 payload。
-    return db.delete(
-      'offline_queue',
-      where: 'owner_user_id = ?',
-      whereArgs: [owner],
-    );
+    // 账号注销必须同时删除 Stage 1 outbox 与 Stage 2 raw location outbox。
+    // 两张表放在同一事务里，避免崩溃后留下半清理的敏感位置 payload。
+    return db.transaction((txn) async {
+      final offline = await txn.delete(
+        'offline_queue',
+        where: 'owner_user_id = ?',
+        whereArgs: [owner],
+      );
+      final location = await txn.delete(
+        'location_sample_queue',
+        where: 'owner_user_id = ?',
+        whereArgs: [owner],
+      );
+      return offline + location;
+    });
   }
 
   Future<int> countAwaitingDelivery(String ownerUserId) async {
