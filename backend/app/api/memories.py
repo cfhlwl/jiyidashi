@@ -111,16 +111,34 @@ def delete_memory_endpoint(memory_id: UUID, user_id: CurrentUser, db: DbSession)
     db.commit()
 
 
-@router.get("/timeline", response_model=TimelinePageResponse)
+@router.get("/timeline", response_model=list[MemoryRead])
 def timeline(
+    user_id: CurrentUser,
+    db: DbSession,
+    day: Annotated[date | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[Memory]:
+    # [人工注释][S2-011] Stage 1 已公开 Memory-only /timeline 数组契约，现有调用方
+    # 仍依赖该 shape。S2-011 不原地破坏它；统一事件协议使用 /timeline/events。
+    query = select(Memory).where(
+        Memory.user_id == user_id,
+        Memory.is_deleted.is_(False),
+    )
+    if day is not None:
+        start, end = user_day_bounds_utc(db, user_id, day)
+        query = query.where(Memory.occurred_at >= start, Memory.occurred_at < end)
+
+    return list(db.scalars(query.order_by(Memory.occurred_at.desc()).limit(limit)).all())
+
+
+@router.get("/timeline/events", response_model=TimelinePageResponse)
+def timeline_events(
     user_id: CurrentUser,
     db: DbSession,
     day: Annotated[date | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     cursor: Annotated[str | None, Query(max_length=512)] = None,
 ) -> TimelinePageResponse:
-    # [人工注释][S2-011] 旧入口保留 URL，但升级为统一 Memory+Visit read model。
-    # 当前 Flutter/小程序没有消费旧的纯 Memory 数组协议，因此不另造第二套 timeline。
     try:
         return list_timeline(
             db,
