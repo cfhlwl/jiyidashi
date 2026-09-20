@@ -217,8 +217,8 @@
 | S3-001 | AI Gateway | 🟠 | Issue #53 / PR #56：typed contract、server-only provider boundary、fail-closed config/parser、hard timeout/cancellation、provenance/trust_class 与 no-persistence-side-effects 已通过第一轮正式 review；当前完成 latest-main replay 后等待 final Git Gate |
 | S3-002 | Memory Pipeline | ⬜ | Capture → Normalize → Extract → Classify → Evidence → Store |
 | S3-003 | Intent Router | ✅ | Issue #54 / PR #55 已完成正式 very narrow review（P0/P1/P2=0/0/0）、typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、Annotation Gate、既有 Object/Place/Memory 回归与 exact-head Backend CI `35507973659`，并 squash 合并 `main=8c0758bd` |
-| S3-004 | 实体提取 | ⬜ | 人物 / 地点 / 物品 / 时间 / 事件 |
-| S3-005 | Entity Link | ⬜ | 新记录关联已有 Object / Place / Person |
+| S3-004 | 实体提取 | 🟠 | Issue #58 / PR #59：candidate-only typed extraction、strict literal-span parser、AIGateway provenance 已实现；Backend exact-head CI 已通过，174 passed；等待正式审查/合并 |
+| S3-005 | Entity Link | 🟠 | Issue #58 / PR #59：owner-scoped deterministic Object/Place linking、ambiguous/no-match/cross-owner fail-closed 已实现；无实体/Memory 持久化，等待正式审查/合并 |
 | S3-006 | OCR | ⬜ | 图片文字提取 |
 | S3-007 | Vision 图片理解 | ⬜ | 只作为证据辅助，不能凭空制造事实 |
 | S3-008 | pgvector | ⬜ | 语义检索基础 |
