@@ -15,14 +15,14 @@
 <!-- L：Onboarding / PR #30 已完成正式独立复审（P0=0 / P1=0）、exact-head Mobile #325 与 Visual #181 全绿，并以审核通过 HEAD 7622136e 锁定 squash 合并；merge commit=a4f02cb5，S1-026 转 ✅。 -->
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
 <!-- O：Location / Visit Foundation / Issue #35 / PR #36 已完成正式审查、latest-main Git Gate 与合并；owned S2-006/S2-007/S2-008/S2-014 转 ✅。 -->
-<!-- N：Native Location Foundation / Issue #34 / PR #37：第二轮 very narrow review HOLD（P0=0 / P1=1 / P2=1）；iOS relaunch 已改为 privacy-gated pending restore，进度元数据改用稳定语义。当前 Draft/Open，待下一轮 very narrow review；不记录并行线瞬时 HEAD/CI。 -->
+<!-- N：Native Location Foundation / Issue #34 / PR #37 已完成正式审查并合并 main；owned S2-001/S2-002/S2-003/S2-016 转 ✅。Q 只消费其已合并原生定位基础，不记录 N 的瞬时 HEAD/CI。 -->
 <!-- Q：Place & Timeline Product / Issue #39 / PR #40：首个 PR 的 S2-009 + S2-010 Place 命名/用户纠正基础已实现并通过当前自动验收，现为 Draft/Open、🟠 待第一轮正式审查；S2-011~013 保持未开始，禁止侵入 O/N 定位采集、Visit 派生和原生权限链。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
 > 当前阶段：Stage 1「记得住」已完成；Stage 2 的 O / Location & Visit Foundation 已合并 `main`，N / Native Location Foundation 继续独立 Draft PR 收口  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Q / Issue #39 / PR #40 的 Place 命名/纠正第一阶段（S2-009 + S2-010）已完成实现与当前自动验收，现为 🟠 Draft/Open、等待第一轮正式审查；N / PR #37 继续独立收口原生定位与权限问题；O / PR #36 已完成并合并。Q 不侵入 O/N 的定位采集、Visit 派生和原生权限链
+> 当前开发重点：Q / Issue #39 / PR #40 的 Place 命名/纠正第一阶段（S2-009 + S2-010）已完成实现与当前自动验收，现为 🟠 Draft/Open、等待第一轮正式审查；O / PR #36 与 N / PR #37 均已完成并合并。Q 只在已合并基础上实现 Place 产品层，不侵入定位采集、Visit 派生和原生权限链
 
 ## 状态规则
 
@@ -172,19 +172,19 @@
 - 公共 API/schema/Evidence 协议只允许一个 PR 定义，其他端只消费。
 - 每个 PR 合并前都必须基于最新 `main` 做最终 replay / CI。
 - `S1-021 → S1-022` 顺序不可反。
-- Stage 1 PR 不得提前侵入 Stage 2；当前 Stage 2 已独立启动 O（S2-006/S2-007/S2-008/S2-014）与 N（S2-001/S2-002/S2-003/S2-016），两条线必须继续保持独立分支/PR，禁止互相偷带范围。
+- Stage 1 PR 不得提前侵入 Stage 2；O（S2-006/S2-007/S2-008/S2-014）与 N（S2-001/S2-002/S2-003/S2-016）均已独立完成并合并；当前 Q 必须继续保持自己的产品层范围，禁止回写 O/N 的定位与派生协议。
 
 ---
 
 # 3. Stage 2：自动记
 
-> **Stage 2：O / Location & Visit Foundation（PR #36）已完成并合并；N / Native Location Foundation（PR #37）继续收口原生定位与渐进权限；Q / Place & Timeline Product（Issue #39）已独立启动，本 PR 仅实现 Place 命名/纠正基础。**
+> **Stage 2：O / Location & Visit Foundation（PR #36）与 N / Native Location Foundation（PR #37）均已完成并合并；Q / Place & Timeline Product（Issue #39）已独立启动，本 PR 仅实现 Place 命名/纠正基础。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S2-001 | Android 原生后台定位模块 | 🟠 | N / PR #37：Android 11+ Settings 授权、cross-owner FGS reconcile 等问题已关闭；当前 Draft/Open，待下一轮 very narrow review |
-| S2-002 | iOS CoreLocation 后台定位模块 | 🟠 | N / PR #37：location relaunch 只记录 restore pending，server privacy 明确 active 后才允许恢复 significant-change producer；待下一轮 very narrow review |
-| S2-003 | Flutter 统一 Location Bridge | 🟠 | N / PR #37：privacy quarantine + restore_pending 已接入 authoritative server privacy gate；paused/unknown 不恢复，待下一轮 very narrow review |
+| S2-001 | Android 原生后台定位模块 | ✅ | N / PR #37 已完成正式审查并合并 main |
+| S2-002 | iOS CoreLocation 后台定位模块 | ✅ | N / PR #37 已完成正式审查并合并 main |
+| S2-003 | Flutter 统一 Location Bridge | ✅ | N / PR #37 已完成正式审查并合并 main |
 | S2-004 | 运动状态识别 | ⬜ | 静止 / 移动状态切换 |
 | S2-005 | 智能定位采样策略 | ⬜ | 不允许固定 5 秒高频上传 |
 | S2-006 | Location Point 批量同步 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
@@ -197,7 +197,7 @@
 | S2-013 | 地点详情 | ⬜ | Q 后续独立小 PR；本次只准备命名后的 Place read model，不实现完整详情 UI |
 | S2-014 | 原始位置生命周期 | ✅ | O / PR #36 已完成独立 maintenance / deletion serialization 审查与 latest-main Gate，并合并 `main` |
 | S2-015 | 定位耗电监控指标 | ⬜ | 核心质量指标 |
-| S2-016 | 定位权限渐进式引导 | 🟠 | N / PR #37：Android 10 runtime / Android 11+ explicit Settings / iOS WhenInUse→Always 分流已收口；待下一轮 very narrow review |
+| S2-016 | 定位权限渐进式引导 | ✅ | N / PR #37 已完成正式审查并合并 main |
 
 ---
 
