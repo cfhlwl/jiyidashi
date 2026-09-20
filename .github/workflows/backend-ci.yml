@@ -130,6 +130,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_place_naming_integration.py
 
+      - name: PostgreSQL Timeline invariants
+        # [人工注释][S2-011] 真实 PostgreSQL 锁死 Memory+Visit 同时间戳下的跨表稳定排序、
+        # UUID tie-break 与 cursor 翻页，避免 SQLite 类型行为掩盖生产漏页/重复。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_timeline_integration.py
+
       - name: PostgreSQL data deletion durability
         # [人工注释][S1-021] 真实 PostgreSQL 覆盖 user-row 锁、迁移约束与 owner-scoped 删除。
         env:
