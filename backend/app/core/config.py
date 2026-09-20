@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     asr_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
     asr_min_confidence: float = Field(default=0.60, ge=0.0, le=1.0)
 
+    # [人工注释][S3-001] Stage 3 模型调用默认关闭，密钥和 provider endpoint 只在后端。
+    # Gateway 对输入大小、输出上限、timeout 和 provider 响应统一 fail closed。
+    ai_provider: str = "disabled"
+    ai_base_url: str = "https://api.openai.com/v1"
+    ai_api_key: str = ""
+    ai_model: str = ""
+    ai_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
+    ai_max_input_chars: int = Field(default=64000, ge=1, le=1_000_000)
+    ai_max_output_tokens: int = Field(default=4096, ge=1, le=65536)
+
     # [人工注释][S1-FIX-003] 正式认证的滥用保护默认开启，生产环境禁止关闭。
     auth_rate_limit_enabled: bool = True
     auth_register_ip_limit: int = 20
@@ -159,6 +169,21 @@ class Settings(BaseSettings):
                 raise ValueError("ASR_BASE_URL must be an absolute URL")
             if self.is_production and parsed_asr.scheme.lower() != "https":
                 raise ValueError("ASR_BASE_URL must use HTTPS in production")
+
+        # [人工注释][S3-001] AI provider 选择在服务启动配置期失败关闭；生产 provider
+        # endpoint 必须 HTTPS，客户端不会获得 key、base URL 或 provider 选择权。
+        if self.ai_provider not in {"disabled", "openai"}:
+            raise ValueError("AI_PROVIDER must be disabled or openai")
+        if self.ai_provider == "openai":
+            if not self.ai_api_key.strip() or not self.ai_model.strip():
+                raise ValueError(
+                    "AI_API_KEY and AI_MODEL are required when AI_PROVIDER=openai"
+                )
+            parsed_ai = urlparse(self.ai_base_url.strip())
+            if not parsed_ai.scheme or not parsed_ai.netloc:
+                raise ValueError("AI_BASE_URL must be an absolute URL")
+            if self.is_production and parsed_ai.scheme.lower() != "https":
+                raise ValueError("AI_BASE_URL must use HTTPS in production")
         return self
 
 

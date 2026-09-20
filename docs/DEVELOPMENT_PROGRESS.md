@@ -23,12 +23,13 @@
 <!-- T：Unsigned iOS IPA CI / Issue #47 / PR #48 已完成 portable checksum sidecar、自校验、IPA artifact、exact-head 与 Git Gate 审查，并合并 main=ce9b9d90；无签名 IPA CI 正式完成。 -->
 <!-- U：Software Copyright Annotation Gate / Issue #50 / PR #51 已完成正式审查并合并。 -->
 <!-- V：Intent Router Foundation / Issue #54 / PR #55 已完成 typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、旧可信链回归、Annotation Gate 与 exact-head Backend CI，并 squash 合并 main=8c0758bd；S3-003 转 ✅。 -->
+<!-- Stage 3A：AI Gateway / Issue #53 / PR #56 已完成第一轮代码审查 PASS，当前只剩 latest-main replay / exact-head Backend / final Git Gate；只拥有 S3-001，不创建/修改 Memory、Evidence、Object、Place、Visit 或 Reminder。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-20  
-> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」已启动，S3-003 Intent Router Foundation 已完成并合并 `main`  
+> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」已启动，S3-003 Intent Router 已完成，S3-001 AI Gateway 已完成代码审查并进入 final Gate  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Stage 3 各能力继续保持独立 Issue / 分支 / PR；S3-003 Intent Router 已完成，后续能力不得回写或绕过既有 Evidence / owner trust boundary
+> 当前开发重点：S3-001 AI Gateway final Gate：服务端 provider trust boundary、typed inference/provenance、hard timeout/cancellation 与 fail-closed parser 已通过正式代码审查；S3-003 Intent Router 已完成并合并，后续能力不得回写或绕过既有 Evidence / owner trust boundary
 
 ## 状态规则
 
@@ -213,7 +214,7 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S3-001 | AI Gateway | ⬜ | 客户端不得直接调用模型厂商 API |
+| S3-001 | AI Gateway | 🟠 | Issue #53 / PR #56：typed contract、server-only provider boundary、fail-closed config/parser、hard timeout/cancellation、provenance/trust_class 与 no-persistence-side-effects 已通过第一轮正式 review；当前完成 latest-main replay 后等待 final Git Gate |
 | S3-002 | Memory Pipeline | ⬜ | Capture → Normalize → Extract → Classify → Evidence → Store |
 | S3-003 | Intent Router | ✅ | Issue #54 / PR #55 已完成正式 very narrow review（P0/P1/P2=0/0/0）、typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、Annotation Gate、既有 Object/Place/Memory 回归与 exact-head Backend CI `35507973659`，并 squash 合并 `main=8c0758bd` |
 | S3-004 | 实体提取 | ⬜ | 人物 / 地点 / 物品 / 时间 / 事件 |
