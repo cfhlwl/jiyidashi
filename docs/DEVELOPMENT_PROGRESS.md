@@ -27,7 +27,7 @@
 > 最后更新：2026-09-20  
 > 当前阶段：Stage 1「记得住」已完成；Stage 2「自动记」16 项功能已全部完成并合并 `main`；当前进入维护收口与 Stage 3 启动前准备  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：U / Issue #50 / PR #51 软件著作权注释门禁已完成实现并进入正式审查；Stage 2 已全部收口，维护线不进入 Stage 3 业务开发
+> 当前开发重点：Stage 2 与软件著作权注释维护线均已完成并合并；下一阶段可独立启动 Stage 3，不与已完成维护线混用分支
 
 ## 状态规则
 
@@ -58,7 +58,7 @@
 | CI-004 | 微信小程序 CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mini Program CI `35444809464` / #222 SUCCESS：lockfile install、typecheck、capture tests、production WeChat build 均通过 |
 | CI-005 | UI Visual Preview / Golden Screenshot | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mobile Visual Preview `35444809519` / #210 SUCCESS：Committed Goldens、intentional mismatch、artifact、Android/iOS 与 clean-worktree gate 全部通过 |
 | CI-006 | 无签名 iOS IPA 测试产物 | ✅ | PR #48 已完成 portable checksum sidecar、自校验、IPA artifact、exact-head 与 Git Gate，并合并 `main=ce9b9d90` |
-| MAINT-001 | 软件著作权注释门禁 | 🟠 | Issue #50 / PR #51：9 个关键源码文件已完成 comments-only 注释补强，Annotation Gate 与 Stage 2 收口文档已完成；等待正式审查、最终 Git Gate 与合并 |
+| MAINT-001 | 软件著作权注释门禁 | ✅ | Issue #50 / PR #51 已完成 9 个关键源码文件 comments-only 注释补强、Annotation Gate、Stage 2 文档收口、正式审查、exact-head CI 与 Git Gate，并 squash 合并 `main=7227fe18` |
 
 ---
 
