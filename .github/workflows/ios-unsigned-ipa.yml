@@ -1,0 +1,143 @@
+name: ios-unsigned-ipa
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ios-unsigned-ipa.yml"
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Real API base URL including /v1"
+        required: true
+        type: string
+      build_mode:
+        description: "Unsigned IPA build mode"
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - debug
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-unsigned-ipa-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'release' }}
+      API_BASE_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url || 'https://api.example.invalid/v1' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Validate build inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$BUILD_MODE" in
+            release|debug) ;;
+            *)
+              echo "Unsupported build mode: $BUILD_MODE"
+              exit 1
+              ;;
+          esac
+          case "$API_BASE_URL" in
+            http://*|https://*) ;;
+            *)
+              echo "API_BASE_URL must start with http:// or https://"
+              exit 1
+              ;;
+          esac
+          echo "build mode: $BUILD_MODE"
+          echo "API endpoint configured for this artifact."
+
+      - name: Build unsigned iOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$BUILD_MODE" = "release" ]; then
+            flutter build ios --release --no-codesign \
+              --dart-define=APP_ENV=production \
+              --dart-define=API_BASE_URL="$API_BASE_URL"
+          else
+            flutter build ios --debug --no-codesign \
+              --dart-define=APP_ENV=production \
+              --dart-define=API_BASE_URL="$API_BASE_URL"
+          fi
+
+          test -d build/ios/iphoneos/Runner.app
+          test -f build/ios/iphoneos/Runner.app/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/ios/unsigned-ipa build/ios/ipa
+          mkdir -p build/ios/unsigned-ipa/Payload build/ios/ipa
+
+          /usr/bin/ditto \
+            build/ios/iphoneos/Runner.app \
+            build/ios/unsigned-ipa/Payload/Runner.app
+
+          ipa_name="jiyidashi-${BUILD_MODE}-unsigned-${EXPECTED_SHA:0:12}.ipa"
+          ipa_path="build/ios/ipa/$ipa_name"
+
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent \
+            build/ios/unsigned-ipa/Payload \
+            "$ipa_path"
+
+          /usr/bin/unzip -l "$ipa_path" | grep -q 'Payload/Runner.app/Info.plist'
+
+          # [人工注释][CI-IOS-IPA] checksum sidecar must be portable after artifact
+          # extraction. Record only the IPA basename and prove it can be verified
+          # from the artifact directory itself; never leak the runner-internal path.
+          (
+            cd build/ios/ipa
+            shasum -a 256 "$ipa_name" > "$ipa_name.sha256"
+            shasum -a 256 -c "$ipa_name.sha256"
+          )
+
+          echo "IPA_PATH=$ipa_path" >> "$GITHUB_ENV"
+          echo "Unsigned IPA: $ipa_path"
+          cat "$ipa_path.sha256"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: jiyidashi-ios-unsigned-${{ github.event.pull_request.head.sha || github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            mobile/build/ios/ipa/*.ipa
+            mobile/build/ios/ipa/*.sha256

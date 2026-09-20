@@ -18,12 +18,13 @@
 <!-- N：Native Location Foundation / Issue #34 / PR #37 已完成正式审查并合并 main；owned S2-001/S2-002/S2-003/S2-016 转 ✅。Q 只消费其已合并原生定位基础，不记录 N 的瞬时 HEAD/CI。 -->
 <!-- Q：Place & Timeline Product / Issue #39：PR #40 已完成并合并，S2-009/S2-010 转 ✅；Timeline Foundation / PR #42 已完成正式审查、exact-head Backend/Mini CI 与 Git Gate 并合并 main=27111542，S2-011 转 ✅。Q 后续继续独立推进 S2-012/S2-013。 -->
 <!-- P：Motion & Smart Sampling / Issue #38 / PR #41：第一轮 3×P1+1×P2 与第二轮 exact-head checkout P2 均已关闭，代码审查 PASS，手动 exact-head Mobile #416 / Visual #272 SUCCESS；因 #42 先合并导致 main 前进，本提交已 clean replay 到 main=27111542，当前等待 replay 后新 HEAD 的最终 exact-head Mobile/Visual CI + Git Gate，不合并。 -->
+<!-- T：Unsigned iOS IPA CI / Issue #47 / 分支 ci/ios-unsigned-ipa：独立新增 GitHub macOS no-codesign release/debug IPA 打包工作流，标准 Payload/Runner.app 结构，手动 dispatch 注入真实 API_BASE_URL，上传 IPA + SHA256；不引入 Apple 证书/Provisioning/TestFlight，不修改业务代码，当前等待 CI 与正式审查。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-20  
 > 当前阶段：Stage 1「记得住」已完成；Stage 2 的 O / Location & Visit Foundation、N / Native Location Foundation、Q / Place Naming 与 Timeline Foundation 均已完成并合并 `main`；P / Motion & Smart Sampling / PR #41 代码审查已 PASS，已 clean replay 到最新 main，等待 replay 后最终 exact-head CI / Git Gate  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：P / PR #41 的 S2-004/S2-005/S2-015 已完成两轮代码审查与 pre-replay exact-head Mobile/Visual 验收；当前仅收口 latest-main replay 后的新 HEAD exact-head CI 与最终 Git Gate。Q / S2-011 已随 PR #42 合并，S2-012 今日足迹与 S2-013 地点详情保持未开始
+> 当前开发重点：P / PR #41 的 S2-004/S2-005/S2-015 已完成两轮代码审查与 pre-replay exact-head Mobile/Visual 验收；当前仅收口 latest-main replay 后的新 HEAD exact-head CI 与最终 Git Gate。Q / S2-011 已随 PR #42 合并，S2-012 今日足迹与 S2-013 地点详情保持未开始；T / Issue #47 正在独立补充无签名 iOS IPA 测试产物，不改变 Stage 2 产品 scope
 
 ## 状态规则
 
