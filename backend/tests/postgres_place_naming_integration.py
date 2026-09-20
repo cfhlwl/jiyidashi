@@ -1,7 +1,7 @@
 """PostgreSQL integration coverage for Stage 2Q Place naming serialization."""
 
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, Event
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
@@ -12,6 +12,7 @@ from app.models import Place, PlaceNameCorrection, User
 from app.services.place_naming_service import (
     PLACE_NAME_CORRECTION_OPERATION,
     PlaceNamingError,
+    apply_automatic_place_label_candidate,
     correct_place_name,
 )
 
@@ -31,9 +32,153 @@ def _correct(place_id: UUID, client_uuid: UUID, name: str, barrier: Barrier) -> 
         return place.name
 
 
+def _automatic_first_user_second(place_id: UUID) -> None:
+    automatic_locked = Event()
+    allow_automatic_commit = Event()
+    user_finished = Event()
+    errors: list[BaseException] = []
+
+    def automatic_writer() -> None:
+        try:
+            with SessionLocal() as db:
+                place = apply_automatic_place_label_candidate(
+                    db,
+                    user_id=USER_ID,
+                    place_id=place_id,
+                    label="自动候选-A",
+                    source="POI_RACE_A",
+                )
+                assert place.name == "自动候选-A"
+                automatic_locked.set()
+                if not allow_automatic_commit.wait(timeout=15):
+                    raise AssertionError("automatic transaction was not released")
+                db.commit()
+        except BaseException as exc:  # noqa: BLE001 - thread returns race assertion
+            errors.append(exc)
+            automatic_locked.set()
+            allow_automatic_commit.set()
+
+    def user_writer() -> None:
+        try:
+            if not automatic_locked.wait(timeout=15):
+                raise AssertionError("automatic writer did not acquire Place lock")
+            with SessionLocal() as db:
+                place = correct_place_name(
+                    db,
+                    user_id=USER_ID,
+                    place_id=place_id,
+                    client_uuid=uuid4(),
+                    name="用户地点-A",
+                )
+                assert place.name == "用户地点-A"
+        except BaseException as exc:  # noqa: BLE001 - thread returns race assertion
+            errors.append(exc)
+        finally:
+            user_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        automatic_future = executor.submit(automatic_writer)
+        assert automatic_locked.wait(timeout=15)
+        user_future = executor.submit(user_writer)
+
+        # [人工注释][S2-009][S2-010] automatic 已持有 FOR UPDATE 时，
+        # user correction 必须等待；automatic commit 后 USER 再成为最终展示 precedence。
+        assert not user_finished.wait(timeout=0.25)
+        allow_automatic_commit.set()
+        automatic_future.result(timeout=20)
+        user_future.result(timeout=20)
+
+    if errors:
+        raise errors[0]
+
+    with SessionLocal() as db:
+        place = db.get(Place, place_id)
+        assert place is not None
+        assert place.user_name == "用户地点-A"
+        assert place.name == "用户地点-A"
+        assert place.name_source == "USER"
+        assert place.automatic_name == "自动候选-A"
+        assert place.automatic_name_source == "POI_RACE_A"
+
+
+def _user_first_automatic_second(place_id: UUID) -> None:
+    user_locked = Event()
+    automatic_started = Event()
+    automatic_finished = Event()
+    errors: list[BaseException] = []
+
+    def automatic_writer() -> None:
+        try:
+            if not user_locked.wait(timeout=15):
+                raise AssertionError("user writer did not acquire Place lock")
+            automatic_started.set()
+            with SessionLocal() as db:
+                place = apply_automatic_place_label_candidate(
+                    db,
+                    user_id=USER_ID,
+                    place_id=place_id,
+                    label="自动候选-B",
+                    source="ADDRESS_RACE_B",
+                )
+                db.commit()
+                assert place.automatic_name == "自动候选-B"
+        except BaseException as exc:  # noqa: BLE001 - thread returns race assertion
+            errors.append(exc)
+        finally:
+            automatic_finished.set()
+
+    def user_writer() -> None:
+        try:
+            with SessionLocal() as db:
+                # 先用与生产逻辑相同的 Place FOR UPDATE 锁住行，再让 automatic writer
+                # 发起竞争；correct_place_name 在同一 Session 上重入该锁并负责最终 commit。
+                locked = db.scalar(
+                    select(Place)
+                    .where(Place.id == place_id, Place.user_id == USER_ID)
+                    .with_for_update()
+                )
+                assert locked is not None
+                user_locked.set()
+                if not automatic_started.wait(timeout=15):
+                    raise AssertionError("automatic writer did not start")
+                assert not automatic_finished.wait(timeout=0.25)
+                place = correct_place_name(
+                    db,
+                    user_id=USER_ID,
+                    place_id=place_id,
+                    client_uuid=uuid4(),
+                    name="用户地点-B",
+                )
+                assert place.name == "用户地点-B"
+        except BaseException as exc:  # noqa: BLE001 - thread returns race assertion
+            errors.append(exc)
+            user_locked.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        user_future = executor.submit(user_writer)
+        automatic_future = executor.submit(automatic_writer)
+        user_future.result(timeout=20)
+        automatic_future.result(timeout=20)
+
+    if errors:
+        raise errors[0]
+
+    with SessionLocal() as db:
+        place = db.get(Place, place_id)
+        assert place is not None
+        # automatic 在 USER commit 后才拿到锁，但 _sync_display_name 仍必须保持 USER。
+        assert place.user_name == "用户地点-B"
+        assert place.name == "用户地点-B"
+        assert place.name_source == "USER"
+        assert place.automatic_name == "自动候选-B"
+        assert place.automatic_name_source == "ADDRESS_RACE_B"
+
+
 def main() -> None:
     place_serial = uuid4()
     place_replay = uuid4()
+    place_auto_first = uuid4()
+    place_user_first = uuid4()
     with SessionLocal() as db:
         db.query(User).filter(User.id == USER_ID).delete()
         db.add(User(id=USER_ID, nickname="place-naming-pg"))
@@ -51,6 +196,18 @@ def main() -> None:
                     user_id=USER_ID,
                     name="未命名地点",
                     cluster_key=f"q{place_replay.hex[:10]}",
+                ),
+                Place(
+                    id=place_auto_first,
+                    user_id=USER_ID,
+                    name="未命名地点",
+                    cluster_key=f"q{place_auto_first.hex[:10]}",
+                ),
+                Place(
+                    id=place_user_first,
+                    user_id=USER_ID,
+                    name="未命名地点",
+                    cluster_key=f"q{place_user_first.hex[:10]}",
                 ),
             ]
         )
@@ -111,6 +268,9 @@ def main() -> None:
                 ClientMutation.client_uuid == replay_uuid,
             )
         ) == 1
+
+    _automatic_first_user_second(place_auto_first)
+    _user_first_automatic_second(place_user_first)
 
     with SessionLocal() as db:
         try:
