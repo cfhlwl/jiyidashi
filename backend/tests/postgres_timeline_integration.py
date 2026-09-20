@@ -28,6 +28,9 @@ def main() -> None:
             db.commit()
 
         db.add(User(id=USER_ID, nickname="timeline-pg", timezone="Asia/Shanghai"))
+        # [人工注释][S2-011] 测试 seed 不依赖 ORM relationship 排序；先把 owner
+        # 真正写入数据库，再创建带 FK 的 Place，避免把 seed 时序误当 Timeline 失败。
+        db.flush()
         db.add(
             Place(
                 id=PLACE_ID,
