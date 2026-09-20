@@ -69,6 +69,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: alembic check
 
+      - name: PostgreSQL Place naming legacy migration
+        # [人工注释][S2-009][S2-010] 真正 downgrade 到 0010 写入 legacy Place，
+        # 再 upgrade 到 0011，锁死 USER/AUTOMATIC/UNNAMED 三类 backfill。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_place_naming_migration_integration.py
+
       - name: PostgreSQL ObjectLocation invariants
         env:
           DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
@@ -111,6 +120,15 @@ jobs:
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_location_visit_integration.py
+
+      - name: PostgreSQL Place naming invariants
+        # [人工注释][S2-009][S2-010] 真实 PostgreSQL 验证 Place FOR UPDATE revision 串行、
+        # 同 client_uuid 并发重放收敛，以及纠正历史/ClientMutation 唯一性。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_place_naming_integration.py
 
       - name: PostgreSQL data deletion durability
         # [人工注释][S1-021] 真实 PostgreSQL 覆盖 user-row 锁、迁移约束与 owner-scoped 删除。

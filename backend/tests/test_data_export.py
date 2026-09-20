@@ -52,6 +52,7 @@ async def test_empty_account_exports_versioned_json(client, auth_headers):
     assert body["location"]["points"] == []
     assert body["location"]["visits"] == []
     assert body["location"]["places"] == []
+    assert body["location"]["place_name_corrections"] == []
     assert body["location"]["finalized_through"] is None
     assert body["reminders"] == []
     assert body["privacy"]["pause_intervals"] == []

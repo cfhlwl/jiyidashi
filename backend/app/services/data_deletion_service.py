@@ -30,6 +30,7 @@ from app.models import (
     ObjectItem,
     ObjectLocation,
     Place,
+    PlaceNameCorrection,
     PrivacyPauseInterval,
     PrivacyState,
     Reminder,
@@ -53,6 +54,7 @@ OBJECT_KEY_DB_BATCH_SIZE = 500
 USER_DATA_INVENTORY = (
     "devices",
     "places",
+    "place_name_corrections",
     "visits",
     "memories",
     "memory_edits",
@@ -586,6 +588,12 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
         db, delete(MemorySource).where(MemorySource.memory_id.in_(memory_ids))
     )
     counts["visits"] = _delete_count(db, delete(Visit).where(Visit.user_id == user_id))
+    # [人工注释][S2-010] 纠正历史保存用户曾输入的地点名称，属于完整 user data；
+    # 在 Place 之前显式删除并计数，不能只依赖 ON DELETE CASCADE。
+    counts["place_name_corrections"] = _delete_count(
+        db,
+        delete(PlaceNameCorrection).where(PlaceNameCorrection.user_id == user_id),
+    )
     # [人工注释][S2-014] finalized watermark 属于 owner 的位置数据控制面；
     # S1-021 必须显式清掉，后续同账号不能继承已删除历史的 retention 水位。
     counts["location_derivation_states"] = _delete_count(

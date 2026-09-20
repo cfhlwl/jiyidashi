@@ -37,6 +37,7 @@ from app.models import (
     ObjectItem,
     ObjectLocation,
     Place,
+    PlaceNameCorrection,
     PrivacyPauseInterval,
     PrivacyState,
     Reminder,
@@ -102,6 +103,7 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
     ids = {
         "device": uuid4(),
         "place": uuid4(),
+        "place_name_correction": uuid4(),
         "memory": uuid4(),
         "memory_edit": uuid4(),
         "source": uuid4(),
@@ -143,7 +145,21 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
                 id=ids["place"],
                 user_id=owner_id,
                 name="私密地点",
+                user_name="私密地点",
+                name_revision=1,
+                is_user_named=True,
                 address="private address",
+            )
+        )
+        db.add(
+            PlaceNameCorrection(
+                id=ids["place_name_correction"],
+                user_id=owner_id,
+                place_id=ids["place"],
+                client_uuid=uuid4(),
+                revision=1,
+                previous_user_name=None,
+                new_user_name="私密地点",
             )
         )
         db.add(
@@ -426,6 +442,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert retry.json()["status"] == "COMPLETED"
     assert retry.json()["completed"] is True
     assert retry.json()["deleted_counts"]["memory_edits"] == 1
+    assert retry.json()["deleted_counts"]["place_name_corrections"] == 1
     assert other_key in delete_storage.objects
 
     with SessionLocal() as db:
@@ -433,6 +450,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
         assert db.scalar(select(AuthIdentity).where(AuthIdentity.user_id == owner_id)) is not None
         assert _count_for_user(db, Device, owner_id) == 0
         assert _count_for_user(db, Place, owner_id) == 0
+        assert _count_for_user(db, PlaceNameCorrection, owner_id) == 0
         assert _count_for_user(db, Visit, owner_id) == 0
         assert _count_for_user(db, Memory, owner_id) == 0
         assert _count_for_user(db, LocationPoint, owner_id) == 0
@@ -478,6 +496,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert body["location"]["points"] == []
     assert body["location"]["visits"] == []
     assert body["location"]["places"] == []
+    assert body["location"]["place_name_corrections"] == []
     assert body["location"]["finalized_through"] is None
     assert body["privacy"]["state"] is None
     assert body["privacy"]["pause_intervals"] == []
