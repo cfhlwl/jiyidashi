@@ -93,7 +93,7 @@ async def test_timeline_unifies_memory_and_visit_with_stable_cursor(client):
     headers, user_id = await _new_user(client, "timeline-mixed")
     ids = _seed_timeline_owner(user_id)
 
-    first = await client.get("/v1/timeline?limit=2", headers=headers)
+    first = await client.get("/v1/timeline/events?limit=2", headers=headers)
     assert first.status_code == 200
     first_body = first.json()
     assert first_body["timezone"] == "Asia/Shanghai"
@@ -105,7 +105,7 @@ async def test_timeline_unifies_memory_and_visit_with_stable_cursor(client):
     assert first_body["next_cursor"]
 
     second = await client.get(
-        "/v1/timeline",
+        "/v1/timeline/events",
         headers=headers,
         params={"limit": 2, "cursor": first_body["next_cursor"]},
     )
@@ -184,7 +184,7 @@ async def test_timeline_day_uses_user_timezone_boundaries_and_owner_isolation(cl
         db.commit()
 
     response = await client.get(
-        "/v1/timeline",
+        "/v1/timeline/events",
         headers=headers_a,
         params={"day": "2026-09-20", "limit": 20},
     )
@@ -203,7 +203,7 @@ async def test_timeline_day_uses_user_timezone_boundaries_and_owner_isolation(cl
 async def test_timeline_rejects_invalid_cursor(client):
     headers, _ = await _new_user(client, "timeline-bad-cursor")
     response = await client.get(
-        "/v1/timeline",
+        "/v1/timeline/events",
         headers=headers,
         params={"cursor": "not-a-valid-cursor"},
     )
