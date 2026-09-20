@@ -32,6 +32,14 @@
 	<string>迹忆仅在你主动选择图片记录时访问照片。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>迹忆仅在你主动录一句时使用麦克风。</string>
+	<!-- 临时局域网测试构建：允许访问开发电脑上的 HTTP API；不会合并 main。 -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>迹忆测试版需要访问同一局域网内的开发电脑 API。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>迹忆仅在你主动开启位置能力时，先申请“使用 App 时”定位，用于建立自动位置记忆权限基础。</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
