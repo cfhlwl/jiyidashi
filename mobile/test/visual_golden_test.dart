@@ -64,6 +64,38 @@ class _GoldenApi extends JiYiApiClient {
   };
 
   @override
+  Future<Map<String, dynamic>> getTodayFootprint() async => {
+    'timezone': 'Asia/Shanghai',
+    'day': '2026-09-20',
+    'visits': [
+      {
+        'id': '11111111-1111-4111-8111-111111111111',
+        'place_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        'place_name': '书房',
+        'arrived_at': '2026-09-19T23:10:00Z',
+        'left_at': '2026-09-20T00:00:00Z',
+        'arrived_at_local': '2026-09-20T07:10:00+08:00',
+        'left_at_local': '2026-09-20T08:00:00+08:00',
+        'confidence': 0.94,
+        'visit_source': 'LOCATION_CLUSTER',
+        'visit_finalized': true,
+      },
+      {
+        'id': '22222222-2222-4222-8222-222222222222',
+        'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'place_name': '公司',
+        'arrived_at': '2026-09-20T00:35:00Z',
+        'left_at': null,
+        'arrived_at_local': '2026-09-20T08:35:00+08:00',
+        'left_at_local': null,
+        'confidence': 0.88,
+        'visit_source': 'LOCATION_CLUSTER',
+        'visit_finalized': false,
+      },
+    ],
+  };
+
+  @override
   Future<Map<String, dynamic>> getPrivacyStatus() async {
     final error = privacyError;
     if (error != null) throw error;

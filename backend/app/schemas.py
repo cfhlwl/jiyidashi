@@ -498,6 +498,27 @@ class PlaceRead(ORMModel):
     is_user_named: bool
 
 
+class TodayFootprintVisit(BaseModel):
+    # [人工注释][S2-012] Today Footprint 是 Timeline/Visit 的只读产品投影；
+    # 不复制坐标、不新建事实，只保留用户可解释的 Place + Visit 时间/状态。
+    id: UUID
+    place_id: UUID
+    place_name: str
+    arrived_at: datetime
+    left_at: datetime | None = None
+    arrived_at_local: datetime
+    left_at_local: datetime | None = None
+    confidence: float
+    visit_source: str
+    visit_finalized: bool
+
+
+class TodayFootprintResponse(BaseModel):
+    timezone: str
+    day: date
+    visits: list[TodayFootprintVisit] = Field(default_factory=list)
+
+
 class TimelineItem(BaseModel):
     # [人工注释][S2-011] Timeline 是只读聚合，不复制成新的事实表；id 始终指向
     # 原始 Memory/Visit，客户端必须结合 kind 解释其来源。

@@ -427,4 +427,33 @@ void main() {
     expect(seen[1], isNot(contains('user_id=')));
   });
 
+  test('today footprint delegates current local day to authenticated server', () async {
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/today/footprint');
+        expect(request.url.queryParameters, isEmpty);
+        expect(request.headers['authorization'], 'Bearer example-token');
+        return http.Response(
+          jsonEncode({
+            'timezone': 'Asia/Shanghai',
+            'day': '2026-09-20',
+            'visits': <Map<String, dynamic>>[],
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+    api.accessToken = 'example-token';
+    api.authenticatedUserId = '11111111-1111-1111-1111-111111111111';
+
+    final result = await api.getTodayFootprint();
+
+    // [人工注释][S2-012] 不允许 Flutter 用设备时钟拼 ?day=；服务端是“今天”的唯一所有者。
+    expect(result['day'], '2026-09-20');
+    expect(result['timezone'], 'Asia/Shanghai');
+  });
+
 }

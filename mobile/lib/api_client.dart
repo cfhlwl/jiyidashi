@@ -278,6 +278,12 @@ class JiYiApiClient {
     return _jsonRequest('GET', '/user');
   }
 
+  Future<Map<String, dynamic>> getTodayFootprint() {
+    // [人工注释][S2-012] “今天”完全由服务端按账号 IANA timezone 决定；
+    // 客户端不上传本机日期/时区，避免同一账号在多设备出现两套日界线。
+    return _jsonRequest('GET', '/today/footprint');
+  }
+
   Future<Map<String, dynamic>> deleteAccount({
     required String requestId,
     required bool localCleanupReady,

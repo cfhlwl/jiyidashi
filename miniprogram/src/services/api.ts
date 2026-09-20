@@ -21,6 +21,14 @@ import type {
   AudioMediaUploadResponse,
   VoiceMemoryResponse,
 } from './voiceCapture'
+import {
+  parseTodayFootprintResponse,
+  type TodayFootprintResponse,
+} from './todayFootprint'
+export type {
+  TodayFootprintResponse,
+  TodayFootprintVisit,
+} from './todayFootprint'
 
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
@@ -142,6 +150,14 @@ export async function loginAccount(email: string, password: string): Promise<voi
 
 export function getProfile(): Promise<UserProfile> {
   return request('GET', '/user')
+}
+
+export async function getTodayFootprint(): Promise<TodayFootprintResponse> {
+  // [人工注释][S2-012] 小程序与 Flutter 共用服务端“今天”边界；
+  // 不上传设备日期/时区。200 response 也必须先过 runtime parser，
+  // 禁止 TypeScript 类型断言把 malformed JSON 降级成真实足迹状态。
+  const raw = await request<unknown>('GET', '/today/footprint')
+  return parseTodayFootprintResponse(raw)
 }
 
 export function updateProfile(input: {
