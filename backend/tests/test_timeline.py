@@ -202,10 +202,19 @@ async def test_timeline_day_uses_user_timezone_boundaries_and_owner_isolation(cl
 
 async def test_timeline_rejects_invalid_cursor(client):
     headers, _ = await _new_user(client, "timeline-bad-cursor")
-    response = await client.get(
-        "/v1/timeline/events",
-        headers=headers,
-        params={"cursor": "not-a-valid-cursor"},
-    )
-    assert response.status_code == 422
-    assert response.json()["detail"] == "TIMELINE_CURSOR_INVALID"
+
+    # 覆盖两类 malformed：无法形成合法 cursor，以及 base64/JSON 都合法但
+    # 顶层 schema 不是 object。后者过去会在 payload.get() 处逃逸为 HTTP 500。
+    for cursor in (
+        "not-a-valid-cursor",
+        "W10",  # []
+        "bnVsbA",  # null
+        "MQ",  # 1
+    ):
+        response = await client.get(
+            "/v1/timeline/events",
+            headers=headers,
+            params={"cursor": cursor},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "TIMELINE_CURSOR_INVALID"

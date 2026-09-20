@@ -59,6 +59,11 @@ def _decode_cursor(value: str | None) -> _TimelineCursor | None:
         payload = json.loads(
             base64.urlsafe_b64decode((value + padding).encode("ascii")).decode("utf-8")
         )
+        # [人工注释][S2-011] base64/JSON 合法不代表 cursor schema 合法；
+        # JSON array/null/number 都必须在访问 object 字段前 fail closed 为协议级 422，
+        # 不能让 AttributeError 逃逸成 HTTP 500。
+        if not isinstance(payload, dict):
+            raise ValueError("cursor payload must be a JSON object")
         if payload.get("v") != _CURSOR_VERSION:
             raise ValueError("unsupported cursor version")
         occurred_at = datetime.fromisoformat(payload["t"])
