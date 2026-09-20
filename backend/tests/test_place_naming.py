@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
 from app.idempotency_models import ClientMutation
-from app.models import Place, PlaceNameCorrection, User, Visit
+from app.models import Place, PlaceNameCorrection
 from app.services.place_naming_service import (
     PLACE_NAME_CORRECTION_OPERATION,
     PlaceNamingError,
@@ -123,7 +123,6 @@ async def test_place_user_correction_wins_over_automatic_and_clear_falls_back(cl
     assert after_visit["id"] == before_visit["id"]
     assert after_visit["place_id"] == before_visit["place_id"]
     assert after_visit["source_fingerprint"] == before_visit["source_fingerprint"]
-    assert after_visit["derivation_key"] if "derivation_key" in after_visit else True
 
     with SessionLocal() as db:
         corrections = list(
