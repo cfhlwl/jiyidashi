@@ -20,7 +20,7 @@
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
-> 当前阶段：Stage 1「记得住」已完成；Stage 2 的 O / Location & Visit Foundation 已合并 `main`，N / Native Location Foundation 继续独立 Draft PR 收口  
+> 当前阶段：Stage 1「记得住」已完成；Stage 2 的 O / Location & Visit Foundation 与 N / Native Location Foundation 均已完成并合并 `main`；Q / Place & Timeline Product 当前独立推进  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
 > 当前开发重点：Q / Issue #39 / PR #40 第一轮正式审查仅剩的 3×P2 已完成收口，当前 🟠 Draft/Open、等待第二轮 very narrow review；O / PR #36 与 N / PR #37 均已完成并合并。Q 只在已合并基础上实现 Place 产品层，不侵入定位采集、Visit 派生和原生权限链
 
