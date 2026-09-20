@@ -1,3 +1,5 @@
+// 网络响应先经过运行时 parser 再进入 UI；TypeScript 静态类型不能替代对不可信 JSON 的校验。
+// Place/Visit/cursor/identity 任一字段异常都 fail closed，且分页只有整页验证成功后才能原子合并。
 export type PlaceNameSource = 'USER' | 'AUTOMATIC' | 'UNNAMED'
 
 export type PlaceRead = {
@@ -168,8 +170,8 @@ function parseCursor(value: unknown): string | null {
 export function parsePlaceDetail(value: unknown): PlaceDetailPage {
   const data = record(value, 'response')
   if (!Array.isArray(data.visits)) throw new PlaceDetailProtocolError('visits 必须是数组')
-  // [人工注释][S2-013] 小程序与 Flutter 使用相同可信展示边界：
-  // Place、整页 Visit 与 cursor 全部验证成功后，页面才允许一次性提交状态。
+  // 小程序与 Flutter 使用相同可信展示边界：Place、整页 Visit 与 cursor 全部验证成功后，
+  // 页面才允许一次性提交状态，避免 malformed response 产生部分可信 UI。
   return {
     place: parsePlace(data.place),
     visits: data.visits.map((item, index) => parseVisit(item, index)),
