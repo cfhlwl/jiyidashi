@@ -16,17 +16,18 @@
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
 <!-- O：Location / Visit Foundation / Issue #35 / PR #36 已完成正式审查、latest-main Git Gate 与合并；owned S2-006/S2-007/S2-008/S2-014 转 ✅。 -->
 <!-- N：Native Location Foundation / Issue #34 / PR #37 已完成正式审查并合并 main；owned S2-001/S2-002/S2-003/S2-016 转 ✅。Q 只消费其已合并原生定位基础，不记录 N 的瞬时 HEAD/CI。 -->
-<!-- Q：Place & Timeline Product / Issue #39：PR #40 已完成并合并，S2-009/S2-010 转 ✅；Timeline Foundation / PR #42 已完成正式审查、exact-head Backend/Mini CI 与 Git Gate 并合并 main=27111542，S2-011 转 ✅。Q 后续继续独立推进 S2-012/S2-013。 -->
+<!-- Q：Place & Timeline Product / Issue #39：PR #40 已完成并合并，S2-009/S2-010 转 ✅；Timeline Foundation / PR #42 已完成正式审查、exact-head Backend/Mini CI 与 Git Gate 并合并 main=27111542，S2-011 转 ✅；后续 S2-012/S2-013 已分别由 R/S 独立工作线完成。 -->
 <!-- P：Motion & Smart Sampling / Issue #38 / PR #41 已完成两轮正式审查、latest-main clean replay、exact-head Mobile #418 / Visual #274 与 Git Gate，并 squash 合并 main=07f91dfc；S2-004/S2-005/S2-015 转 ✅。 -->
-<!-- R：Today Footprint / Issue #43 / 分支 feat/stage2-today-footprint 已从 main=07f91dfc 启动；只拥有 S2-012，消费已合并 Timeline/Visit/Place，禁止回写定位采集、Visit 聚类或 Place 命名协议。 -->
-<!-- S：Place Detail / Issue #44 / PR #46 已完成 Flutter + Mini Program 正式复审、latest-main single-commit clean replay、四套 exact-head CI 与最终 Git Gate，并 squash 合并 main=9e1b96da；S2-013 转 ✅。S2-012 今日足迹继续保持未开始。 -->
-<!-- T：Unsigned iOS IPA CI / Issue #47 / 分支 ci/ios-unsigned-ipa：独立新增 GitHub macOS no-codesign release/debug IPA 打包工作流，标准 Payload/Runner.app 结构，手动 dispatch 注入真实 API_BASE_URL，上传 IPA + SHA256；不引入 Apple 证书/Provisioning/TestFlight，不修改业务代码，当前等待 CI 与正式审查。 -->
+<!-- R：Today Footprint / Issue #43 / PR #45 已完成正式审查、exact-head CI 与 Git Gate，并合并 main=e2789eff；S2-012 转 ✅。 -->
+<!-- S：Place Detail / Issue #44 / PR #46 已完成 Flutter + Mini Program 正式复审、latest-main single-commit clean replay、四套 exact-head CI 与最终 Git Gate，并 squash 合并 main=9e1b96da；S2-013 转 ✅。 -->
+<!-- T：Unsigned iOS IPA CI / Issue #47 / PR #48 已完成 portable checksum sidecar、自校验、IPA artifact、exact-head 与 Git Gate 审查，并合并 main=ce9b9d90；无签名 IPA CI 正式完成。 -->
+<!-- U：Software Copyright Annotation Gate / Issue #50 / PR #51：关键职责/不变量/平台边界注释与长期 Annotation Gate 已实现；源码净变化仅注释，Stage 2 状态已收口，当前等待正式审查与最终合并。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-20  
-> 当前阶段：Stage 1「记得住」已完成；Stage 2 的 O / N / P、Q 的 Place Naming + Timeline Foundation 与 S / Place Detail 均已完成并合并 `main`；R / Today Footprint / Issue #43 正在独立推进 S2-012  
+> 当前阶段：Stage 1「记得住」已完成；Stage 2「自动记」16 项功能已全部完成并合并 `main`；当前进入维护收口与 Stage 3 启动前准备  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：R / S2-012 今日足迹：服务端按账号 IANA timezone 决定“今天”，以 Visit 与本地日窗口 overlap 语义只读投影权威 Visit + 当前 Place 展示名；Flutter/小程序共享同一接口并保留 deterministic ordering 与 mutable/finalized 状态。S / S2-013 地点详情已随 PR #46 合并；T / Issue #47 无签名 iOS IPA CI 已合并，不改变 Stage 2 产品 scope
+> 当前开发重点：U / Issue #50 / PR #51 软件著作权注释门禁已完成实现并进入正式审查；Stage 2 已全部收口，维护线不进入 Stage 3 业务开发
 
 ## 状态规则
 
@@ -56,6 +57,8 @@
 | CI-003 | Flutter iOS CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mobile CI `35444809482` / #354 SUCCESS：iOS no-codesign build 通过 |
 | CI-004 | 微信小程序 CI | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mini Program CI `35444809464` / #222 SUCCESS：lockfile install、typecheck、capture tests、production WeChat build 均通过 |
 | CI-005 | UI Visual Preview / Golden Screenshot | ✅ | PR #32 final reviewed HEAD `ba6270ab` 的 Mobile Visual Preview `35444809519` / #210 SUCCESS：Committed Goldens、intentional mismatch、artifact、Android/iOS 与 clean-worktree gate 全部通过 |
+| CI-006 | 无签名 iOS IPA 测试产物 | ✅ | PR #48 已完成 portable checksum sidecar、自校验、IPA artifact、exact-head 与 Git Gate，并合并 `main=ce9b9d90` |
+| MAINT-001 | 软件著作权注释门禁 | 🟠 | Issue #50 / PR #51：9 个关键源码文件已完成 comments-only 注释补强，Annotation Gate 与 Stage 2 收口文档已完成；等待正式审查、最终 Git Gate 与合并 |
 
 ---
 
@@ -182,7 +185,7 @@
 
 # 3. Stage 2：自动记
 
-> **Stage 2：O / Location & Visit Foundation、N / Native Location Foundation、P / Motion & Smart Sampling、Q / Place Naming + Timeline Foundation、S / Place Detail 已完成并合并；R / Today Footprint（Issue #43）当前独立实现 S2-012。**
+> **Stage 2「自动记」已完成：O / Location & Visit Foundation、N / Native Location Foundation、P / Motion & Smart Sampling、Q / Place Naming + Timeline、R / Today Footprint、S / Place Detail 均已正式审查并合并。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
@@ -197,7 +200,7 @@
 | S2-009 | Place 自动命名 | ✅ | Q / PR #40 已完成正式审查、legacy seeded migration 与 automatic↔USER PostgreSQL race 验收并合并 main |
 | S2-010 | Place 用户纠正 | ✅ | Q / PR #40 已完成 owner isolation、ClientMutation、Place FOR UPDATE、Export/Data Delete 与并发验收并合并 main |
 | S2-011 | 自动时间轴 | ✅ | Q / Timeline Foundation / PR #42 已完成正式审查、exact-head Backend/Mini CI 与 Git Gate并合并 `main=27111542` |
-| S2-012 | 今日足迹 | 🔵 | R / Issue #43：服务端 owner-timezone Visit-overlap Today Footprint 只读投影 + Flutter/小程序今日足迹 UI 已实现；Mini 200 response 增加 runtime parser/fail-closed，严格保护 mutable/finalized；不新增持久化，等待正式复审 |
+| S2-012 | 今日足迹 | ✅ | R / Issue #43 / PR #45 已完成服务端 owner-timezone Visit-overlap 投影、Flutter/小程序同步、正式复审、exact-head CI 与 Git Gate，并合并 `main=e2789eff` |
 | S2-013 | 地点详情 | ✅ | S / PR #46 已完成 Backend + Flutter + Mini Program 正式审查、原 P2 收口、latest-main single-commit clean replay 与四套 exact-head CI，并 squash 合并 main=`9e1b96da` |
 | S2-014 | 原始位置生命周期 | ✅ | O / PR #36 已完成独立 maintenance / deletion serialization 审查与 latest-main Gate，并合并 `main` |
 | S2-015 | 定位耗电监控指标 | ✅ | P / PR #41 已完成无坐标 metrics 审查、exact-head CI 与合并 |

@@ -4,6 +4,8 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
+// 这是设备本地的 owner-scoped 采样/运行状态持久层，不是服务器授权来源。
+// owner ID 只用于隔离队列、采样 profile 与指标；真正的账号权限和隐私 gate 仍由上层认证/控制器决定。
 internal class NativeLocationStore(context: Context) {
     private val prefs =
         context.getSharedPreferences("jiyidashi_native_location", Context.MODE_PRIVATE)
@@ -116,8 +118,8 @@ internal class NativeLocationStore(context: Context) {
 
     @Synchronized
     fun setLatestMotionObservation(observation: NativeMotionObservation) {
-        // [人工注释][S2-004/005] Quality/motion observation intentionally excludes
-        // latitude/longitude. A poor raw fix may be rejected while its quality signal survives.
+        // Quality/motion observation intentionally excludes latitude/longitude: a poor raw fix may be
+        // rejected while its coordinate-free quality signal survives for adaptive sampling decisions.
         val json = JSONObject()
             .put("accuracy", observation.accuracyMeters ?: JSONObject.NULL)
             .put("speed", observation.speedMetersPerSecond ?: JSONObject.NULL)

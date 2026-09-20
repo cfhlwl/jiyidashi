@@ -4,6 +4,8 @@ import 'api_client.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
+// 地点详情只消费服务端权威 Place/Visit read model；客户端负责严格解析与展示，不重算命名优先级或 Visit 可信状态。
+// 初始页与分页都必须整页验证后再提交 UI state，避免半页数据被误当成可信历史。
 class PlaceDetailPage extends StatefulWidget {
   const PlaceDetailPage({
     super.key,
@@ -66,7 +68,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         widget.placeId,
         cursor: cursor,
       );
-      // [人工注释][S2-013] 分页必须先完整验证整页协议，再一次性提交到 UI state。
+      // 分页必须先完整验证整页协议，再一次性提交到 UI state；
       // 任何 Visit 或 next_cursor 字段异常都不能留下半页“看起来可信”的到访记录。
       final parsed = _PlaceDetailPayload.parse(response);
       final currentPlace = _place;

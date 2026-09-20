@@ -5,6 +5,8 @@ import 'native_location_controller.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
+// 此组件只是 controller 状态的展示与“显式用户操作”入口，不是第二套定位生命周期状态机。
+// 权限、自动定位授权与原生 producer 是否运行都由 controller/native bridge 决定；build/refresh 绝不能隐式申请权限或启动采集。
 class NativeLocationSection extends StatefulWidget {
   const NativeLocationSection({
     super.key,
@@ -91,6 +93,8 @@ class _NativeLocationSectionState extends State<NativeLocationSection> {
             ),
           ],
           const SizedBox(height: JiYiSpacing.md),
+          // 只有隐私 gate 明确 active 时才呈现权限/启用/启动操作；这些状态迁移均来自用户点击，
+          // 单纯观察到系统权限或重建 UI 不代表用户同意自动采集。
           if (privacyActive && status != null && status.supported) ...[
             if (!status.hasForegroundPermission)
               FilledButton.icon(

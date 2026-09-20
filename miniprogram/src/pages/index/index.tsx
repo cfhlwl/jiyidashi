@@ -11,6 +11,8 @@ import { toTodayFootprintRow } from '../../services/todayFootprint'
 import { placeDetailRoute, placeListPresentation, type PlaceRead } from '../../services/placeDetail'
 import './index.scss'
 
+// Today Footprint 与地点列表是两个独立的服务端权威 read model。
+// 本页可以并排展示二者，但不能从 Place 列表反推“今天去过哪里”，否则会绕过账号时区与 Visit overlap 语义。
 export default function Page() {
   const [footprint, setFootprint] = useState<TodayFootprintResponse | null>(null)
   const [loading, setLoading] = useState(false)
@@ -49,6 +51,7 @@ export default function Page() {
     setPlacesLoaded(false)
     setPlaceError('')
     try {
+      // 200 [] 是成功的空状态，不写入 placeError；只有请求/协议失败才允许出现“重试”。
       const result = await listPlaces(25)
       setPlaces(result)
     } catch (error) {
@@ -72,6 +75,8 @@ export default function Page() {
   }
 
   const authenticated = isAuthenticated()
+  // 展示状态集中由同一状态机决定 loading / signed-out / empty / error / ready，
+  // 避免页面分支把 successful-empty 再次误当成可重试错误。
   const presentation = placeListPresentation({
     loading: loadingPlaces,
     loaded: placesLoaded,

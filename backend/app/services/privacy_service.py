@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.models import LocationDerivationState, PrivacyPauseInterval, PrivacyState
 
+# 隐私暂停既有“当前状态”也有不可丢失的历史区间；延迟到达的数据必须按历史区间继续 fail closed。
+# location derivation 与 privacy mutation 共用 owner 行锁，避免并发恢复/暂停与派生写入互相越过。
+
 
 def ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
@@ -140,6 +143,7 @@ def pause_intervals_for_range(
 ) -> list[tuple[datetime, datetime | None]]:
     start = ensure_utc(start)
     end = ensure_utc(end)
+    # 查询 overlap 而不是只看当前 pause state：用户恢复后，历史暂停窗口仍是永久的数据接收边界。
     rows = db.scalars(
         select(PrivacyPauseInterval).where(
             PrivacyPauseInterval.user_id == user_id,

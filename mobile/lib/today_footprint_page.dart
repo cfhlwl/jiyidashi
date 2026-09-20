@@ -4,6 +4,8 @@ import 'api_client.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
+// Today Footprint 是服务端按账号时区和 Visit overlap 生成的权威只读投影。
+// Flutter 只做严格协议解析与展示；网络/协议失败时 fail closed，不用设备当前位置或客户端猜测补足“今天”。
 class TodayPage extends StatefulWidget {
   const TodayPage({super.key, required this.api});
 
@@ -202,8 +204,8 @@ class _FootprintVisitRow extends StatelessWidget {
 }
 
 String _clock(String serverLocalIso) {
-  // [人工注释][S2-012] local timestamp 已由服务端按账号 IANA timezone 计算；
-  // 这里只取 wall-clock HH:mm，不调用 DateTime.toLocal()，避免设备时区再次改写。
+  // local timestamp 已由服务端按账号 IANA timezone 计算；这里只取 wall-clock HH:mm，
+  // 不调用 DateTime.toLocal()，避免设备时区再次改写服务端已经确定的“今天”语义。
   final match = RegExp(r'T(\d{2}):(\d{2})').firstMatch(serverLocalIso);
   if (match == null) {
     throw const FormatException('invalid server-local datetime');
