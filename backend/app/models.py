@@ -105,9 +105,18 @@ class Place(Base):
     user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    # [人工注释][S2-009][S2-010] name 继续作为向后兼容的“当前展示名”缓存；
+    # 自动候选和用户纠正必须分别持久化，不能再靠一个字符串推断来源。
     name: Mapped[str] = mapped_column(String(200))
+    automatic_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    automatic_name_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    name_revision: Mapped[int] = mapped_column(Integer, default=0)
+    name_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # [人工注释][S2-008] cluster_key 只用于服务端自动 Place 的稳定空间桶；
-    # 用户命名/纠正仍由后续 S2-009/S2-010 负责，不能把该 key 当作展示名称。
+    # 用户命名/纠正不能改写该 key，也不能改写 Visit provenance。
     cluster_key: Mapped[str | None] = mapped_column(String(16), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -121,6 +130,45 @@ class Place(Base):
     )
     visit_count: Mapped[int] = mapped_column(Integer, default=0)
     is_user_named: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    @property
+    def name_source(self) -> str:
+        if self.user_name is not None:
+            return "USER"
+        if self.automatic_name is not None:
+            return "AUTOMATIC"
+        return "UNNAMED"
+
+
+class PlaceNameCorrection(Base):
+    __tablename__ = "place_name_corrections"
+    __table_args__ = (
+        UniqueConstraint(
+            "place_id",
+            "revision",
+            name="uq_place_name_corrections_place_revision",
+        ),
+        Index(
+            "ix_place_name_corrections_user_created",
+            "user_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    place_id: Mapped[UUID] = mapped_column(
+        ForeignKey("places.id", ondelete="CASCADE"), index=True
+    )
+    # client_uuid 同时进入 ClientMutation 幂等账本；这里保留它是为了用户数据导出/审计，
+    # 但不让本表承担跨资源的通用幂等职责。
+    client_uuid: Mapped[UUID] = mapped_column()
+    revision: Mapped[int] = mapped_column(Integer)
+    previous_user_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    new_user_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

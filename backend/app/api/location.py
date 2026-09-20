@@ -8,8 +8,15 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.models import Place, Visit
-from app.schemas import LocationBatchRequest, LocationBatchResponse, PlaceRead, VisitRead
+from app.schemas import (
+    LocationBatchRequest,
+    LocationBatchResponse,
+    PlaceNameCorrectionRequest,
+    PlaceRead,
+    VisitRead,
+)
 from app.services.location_service import LocationIngestError, ingest_location_batch
+from app.services.place_naming_service import PlaceNamingError, correct_place_name
 
 router = APIRouter(prefix="/location", tags=["location"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -61,3 +68,25 @@ def list_places(
             .limit(limit)
         )
     )
+
+
+@router.put("/places/{place_id}/name", response_model=PlaceRead)
+def update_place_name(
+    place_id: UUID,
+    payload: PlaceNameCorrectionRequest,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> Place:
+    # [人工注释][S2-010] owner 只来自 token；服务层对 Place 行加锁并使用 ClientMutation
+    # 收敛重放。客户端只提交“用户想叫什么”，不能提交 name_source/is_user_named。
+    try:
+        return correct_place_name(
+            db,
+            user_id=user_id,
+            place_id=place_id,
+            client_uuid=payload.client_uuid,
+            name=payload.name,
+        )
+    except PlaceNamingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc

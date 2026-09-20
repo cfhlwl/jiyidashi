@@ -63,6 +63,10 @@ LocationClientUuid = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
 ]
+PlaceNameText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+]
 
 
 class ORMModel(BaseModel):
@@ -86,6 +90,12 @@ class UserCaptureSource(StrEnum):
 class EvidenceProvenance(StrEnum):
     ORIGINAL_SOURCE = "ORIGINAL_SOURCE"
     USER_EDIT = "USER_EDIT"
+
+
+class PlaceDisplayNameSource(StrEnum):
+    UNNAMED = "UNNAMED"
+    AUTOMATIC = "AUTOMATIC"
+    USER = "USER"
 
 
 class ImageContentType(StrEnum):
@@ -445,9 +455,34 @@ class VisitRead(ORMModel):
     finalized_at: datetime | None
 
 
+class PlaceNameCorrectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_uuid: UUID
+    # null 表示显式撤销用户纠正，展示名回退到最新 automatic candidate / 未命名地点。
+    name: PlaceNameText | None
+
+
+class PlaceNameCorrectionRead(ORMModel):
+    id: UUID
+    place_id: UUID
+    client_uuid: UUID
+    revision: int
+    previous_user_name: str | None
+    new_user_name: str | None
+    created_at: datetime
+
+
 class PlaceRead(ORMModel):
     id: UUID
+    # name 是服务端按 USER > AUTOMATIC > UNNAMED 计算后的兼容展示字段。
     name: str
+    automatic_name: str | None
+    automatic_name_source: str | None
+    user_name: str | None
+    name_source: PlaceDisplayNameSource
+    name_revision: int
+    name_updated_at: datetime | None
     latitude: float | None
     longitude: float | None
     address: str | None
