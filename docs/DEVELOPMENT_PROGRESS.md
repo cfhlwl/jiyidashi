@@ -16,13 +16,14 @@
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
 <!-- O：Location / Visit Foundation / Issue #35 / PR #36 已完成正式审查、latest-main Git Gate 与合并；owned S2-006/S2-007/S2-008/S2-014 转 ✅。 -->
 <!-- N：Native Location Foundation / Issue #34 / PR #37 已完成正式审查并合并 main；owned S2-001/S2-002/S2-003/S2-016 转 ✅。Q 只消费其已合并原生定位基础，不记录 N 的瞬时 HEAD/CI。 -->
-<!-- Q：Place & Timeline Product / Issue #39 / PR #40 已完成并合并；Q / Timeline Foundation / PR #42 第一轮 P1 已关闭，第二轮 very narrow review 仅剩 CI actual checkout 非 exact HEAD 的 1×P2。Backend/Mini workflow 已固定 PR head SHA checkout 并加入 self-verifying exact-checkout Gate；最终仍以 exact-head CI + Git Gate 为合并条件。 -->
+<!-- Q：Place & Timeline Product / Issue #39：PR #40 已完成并合并，S2-009/S2-010 转 ✅；Timeline Foundation / PR #42 已完成正式审查、exact-head Backend/Mini CI 与 Git Gate 并合并 main=27111542，S2-011 转 ✅。Q 后续继续独立推进 S2-012/S2-013。 -->
+<!-- P：Motion & Smart Sampling / Issue #38 / PR #41：第一轮 3×P1+1×P2 与第二轮 exact-head checkout P2 均已关闭，代码审查 PASS，手动 exact-head Mobile #416 / Visual #272 SUCCESS；因 #42 先合并导致 main 前进，本提交已 clean replay 到 main=27111542，当前等待 replay 后新 HEAD 的最终 exact-head Mobile/Visual CI + Git Gate，不合并。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-09-19  
-> 当前阶段：Stage 1「记得住」已完成；Stage 2 的 O / Location & Visit Foundation 与 N / Native Location Foundation 均已完成并合并 `main`；Q / Place & Timeline Product 当前独立推进  
+> 最后更新：2026-09-20  
+> 当前阶段：Stage 1「记得住」已完成；Stage 2 的 O / Location & Visit Foundation、N / Native Location Foundation、Q / Place Naming 与 Timeline Foundation 均已完成并合并 `main`；P / Motion & Smart Sampling / PR #41 代码审查已 PASS，已 clean replay 到最新 main，等待 replay 后最终 exact-head CI / Git Gate  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Q / Timeline Foundation / PR #42 代码审查已 PASS，当前仅收口 CI exact-head Gate；Backend/Mini 均要求 actual checkout SHA 与 PR head SHA 完全一致。S2-012 今日足迹与 S2-013 地点详情保持未开始
+> 当前开发重点：P / PR #41 的 S2-004/S2-005/S2-015 已完成两轮代码审查与 pre-replay exact-head Mobile/Visual 验收；当前仅收口 latest-main replay 后的新 HEAD exact-head CI 与最终 Git Gate。Q / S2-011 已随 PR #42 合并，S2-012 今日足迹与 S2-013 地点详情保持未开始
 
 ## 状态规则
 
@@ -178,25 +179,25 @@
 
 # 3. Stage 2：自动记
 
-> **Stage 2：O / Location & Visit Foundation（PR #36）与 N / Native Location Foundation（PR #37）均已完成并合并；Q / Place & Timeline Product（Issue #39）已独立启动，本 PR 仅实现 Place 命名/纠正基础。**
+> **Stage 2：O / Location & Visit Foundation、N / Native Location Foundation、Q / Place Naming + Timeline Foundation 已完成并合并；P / Motion & Smart Sampling（PR #41）代码审查已 PASS，并已 clean replay 到最新 main，等待 replay 后 exact-head CI / 最终 Git Gate。P 只拥有 S2-004/S2-005/S2-015。**
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | S2-001 | Android 原生后台定位模块 | ✅ | N / PR #37 已完成正式审查并合并 main |
 | S2-002 | iOS CoreLocation 后台定位模块 | ✅ | N / PR #37 已完成正式审查并合并 main |
 | S2-003 | Flutter 统一 Location Bridge | ✅ | N / PR #37 已完成正式审查并合并 main |
-| S2-004 | 运动状态识别 | ⬜ | 静止 / 移动状态切换 |
-| S2-005 | 智能定位采样策略 | ⬜ | 不允许固定 5 秒高频上传 |
+| S2-004 | 运动状态识别 | 🟠 | P / PR #41：deterministic motion-state abstraction、owner-local quota 与 coordinate-free quality observation 已通过代码审查；latest-main replay 后待最终 exact-head CI / 合并 Gate |
+| S2-005 | 智能定位采样策略 | 🟠 | P / PR #41：motion/quality-aware cadence、distance、batch、stable UUID durable replay 与 FUTURE 422 same-UUID retry 已通过代码审查；无固定 5 秒 loop，待最终 Gate |
 | S2-006 | Location Point 批量同步 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
 | S2-007 | Visit 聚类 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
 | S2-008 | Place 模型与地点库 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
 | S2-009 | Place 自动命名 | ✅ | Q / PR #40 已完成正式审查、legacy seeded migration 与 automatic↔USER PostgreSQL race 验收并合并 main |
 | S2-010 | Place 用户纠正 | ✅ | Q / PR #40 已完成 owner isolation、ClientMutation、Place FOR UPDATE、Export/Data Delete 与并发验收并合并 main |
-| S2-011 | 自动时间轴 | 🟠 | Q / Timeline Foundation / PR #42：代码审查 PASS；当前仅剩 CI exact-head Gate 收口，workflow 已固定并自验 PR head SHA checkout，合并前仍需 exact-head Backend/Mini SUCCESS + Git Gate |
+| S2-011 | 自动时间轴 | ✅ | Q / Timeline Foundation / PR #42 已完成正式审查、exact-head Backend/Mini CI 与 Git Gate并合并 `main=27111542` |
 | S2-012 | 今日足迹 | ⬜ | Q 后续独立小 PR；本次不实现 Today Footprint UI |
 | S2-013 | 地点详情 | ⬜ | Q 后续独立小 PR；本次只准备命名后的 Place read model，不实现完整详情 UI |
 | S2-014 | 原始位置生命周期 | ✅ | O / PR #36 已完成独立 maintenance / deletion serialization 审查与 latest-main Gate，并合并 `main` |
-| S2-015 | 定位耗电监控指标 | ⬜ | 核心质量指标 |
+| S2-015 | 定位耗电监控指标 | 🟠 | P / PR #41：wakeups、accepted/dropped、upload batches、uploaded samples、active tracking duration 已通过代码审查；metrics 不含经纬度，待 replay 后最终 exact-head CI / 合并 Gate |
 | S2-016 | 定位权限渐进式引导 | ✅ | N / PR #37 已完成正式审查并合并 main |
 
 ---

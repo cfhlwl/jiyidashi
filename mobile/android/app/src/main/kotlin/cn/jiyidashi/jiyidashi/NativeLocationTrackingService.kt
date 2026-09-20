@@ -10,6 +10,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
+import java.util.UUID
 
 class NativeLocationTrackingService : Service(), LocationListener {
     private lateinit var locationManager: LocationManager
@@ -25,6 +26,13 @@ class NativeLocationTrackingService : Service(), LocationListener {
         val ownerUserId = intent?.getStringExtra(EXTRA_OWNER_USER_ID)?.trim().orEmpty()
         if (ownerUserId.isEmpty()) {
             stopProduction(NativeLocationRuntimeState.STOPPED)
+            return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_UPDATE_SAMPLING) {
+            if (isActive && store.activeOwnerUserId == ownerUserId) {
+                requestAdaptiveUpdates(store.samplingProfile(ownerUserId))
+            }
             return START_NOT_STICKY
         }
 
@@ -64,8 +72,9 @@ class NativeLocationTrackingService : Service(), LocationListener {
 
             store.activeOwnerUserId = ownerUserId
             store.runtime = NativeLocationRuntimeState.RUNNING
+            store.beginTracking(ownerUserId)
             isActive = true
-            requestLowFrequencyUpdates()
+            requestAdaptiveUpdates(store.samplingProfile(ownerUserId))
             START_NOT_STICKY
         } catch (_: SecurityException) {
             stopProduction(NativeLocationRuntimeState.STOPPED)
@@ -77,11 +86,15 @@ class NativeLocationTrackingService : Service(), LocationListener {
     }
 
     /**
-     * Foundation sampling intentionally uses minute/distance thresholds and passive/network
-     * signals instead of a fixed high-frequency loop. Smart motion-aware sampling belongs to
-     * S2-004/S2-005 and must not be smuggled into this foundation PR.
+     * Android can honor both cadence and distance at the provider boundary. Profiles never go
+     * below 15 seconds, so P cannot regress into a fixed 5-second wake loop.
      */
-    private fun requestLowFrequencyUpdates() {
+    private fun requestAdaptiveUpdates(profile: NativeSamplingProfile) {
+        try {
+            locationManager.removeUpdates(this)
+        } catch (_: SecurityException) {
+            return
+        }
         val enabledProviders = locationManager.getProviders(true)
         val providers = listOf(
             LocationManager.PASSIVE_PROVIDER,
@@ -92,18 +105,75 @@ class NativeLocationTrackingService : Service(), LocationListener {
         for (provider in providers) {
             locationManager.requestLocationUpdates(
                 provider,
-                MIN_UPDATE_INTERVAL_MS,
-                MIN_UPDATE_DISTANCE_METERS,
+                profile.minIntervalMs,
+                profile.minDistanceMeters,
                 this,
             )
         }
     }
 
     override fun onLocationChanged(location: Location) {
-        // No latitude/longitude is persisted in this foundation line. Until S2-006 defines
-        // the owner-scoped sync/lifecycle contract, status keeps only non-location diagnostics.
-        store.lastFixAtMillis = location.time.takeIf { it > 0L } ?: System.currentTimeMillis()
-        store.lastAccuracyMeters = location.accuracy
+        val ownerUserId = store.activeOwnerUserId ?: return
+        if (store.runtime != NativeLocationRuntimeState.RUNNING) return
+
+        store.recordWakeup(ownerUserId)
+        val recordedAtMillis =
+            location.time.takeIf { it > 0L } ?: System.currentTimeMillis()
+        val accuracy = NativeMotionSignalMapper.normalizedAccuracy(
+            location.hasAccuracy(),
+            location.accuracy,
+        )
+        val speed = NativeMotionSignalMapper.normalizedSpeed(
+            location.hasSpeed(),
+            location.speed,
+        )
+
+        store.lastFixAtMillis = recordedAtMillis
+        store.lastAccuracyMeters = accuracy
+
+        val profile = store.samplingProfile(ownerUserId)
+        // [人工注释][S2-004/005] Publish only quality/motion metadata before the raw GPS gate.
+        // This makes adaptive backoff reachable without persisting a rejected coordinate.
+        store.setLatestMotionObservation(
+            NativeMotionObservation(
+                ownerUserId = ownerUserId,
+                accuracyMeters = accuracy,
+                speedMetersPerSecond = speed,
+                recordedAtMillis = recordedAtMillis,
+            ),
+        )
+        if (!NativeLocationSampleAdmission.accepts(accuracy, profile) ||
+            !NativeLocationSampleAdmission.cadenceAllows(
+                previousRecordedAtMillis = store.lastQueuedAtMillis(ownerUserId),
+                candidateRecordedAtMillis = recordedAtMillis,
+                minIntervalMs = profile.minIntervalMs,
+            )
+        ) {
+            store.recordSampleDropped(ownerUserId)
+            NativeLocationPlugin.notifySamplesAvailable()
+            return
+        }
+
+        val queued = store.enqueueLocationSample(
+            NativeQueuedLocationSample(
+                ownerUserId = ownerUserId,
+                clientUuid = UUID.randomUUID().toString(),
+                latitude = location.latitude,
+                longitude = location.longitude,
+                accuracyMeters = accuracy,
+                speedMetersPerSecond = speed,
+                recordedAtMillis = recordedAtMillis,
+            ),
+        )
+        if (queued) {
+            store.setLastQueuedAtMillis(ownerUserId, recordedAtMillis)
+            store.recordSampleAccepted(ownerUserId)
+        } else {
+            // A full durable native queue is a measurable backpressure drop, never an
+            // invitation to overwrite older unsent points.
+            store.recordSampleDropped(ownerUserId)
+        }
+        NativeLocationPlugin.notifySamplesAvailable()
     }
 
     override fun onProviderDisabled(provider: String) {
@@ -120,6 +190,10 @@ class NativeLocationTrackingService : Service(), LocationListener {
         } catch (_: SecurityException) {
             // Permission revocation may race service teardown; removing updates is best-effort.
         }
+        val ownerUserId = store.activeOwnerUserId
+        if (ownerUserId != null) {
+            store.finishTracking(ownerUserId)
+        }
         isActive = false
         store.activeOwnerUserId = null
         if (store.runtime == NativeLocationRuntimeState.RUNNING) {
@@ -133,6 +207,10 @@ class NativeLocationTrackingService : Service(), LocationListener {
             locationManager.removeUpdates(this)
         } catch (_: SecurityException) {
             // A revoked permission must still converge to stopped.
+        }
+        val ownerUserId = store.activeOwnerUserId
+        if (ownerUserId != null) {
+            store.finishTracking(ownerUserId)
         }
         isActive = false
         store.activeOwnerUserId = null
@@ -160,11 +238,11 @@ class NativeLocationTrackingService : Service(), LocationListener {
 
     companion object {
         const val EXTRA_OWNER_USER_ID = "owner_user_id"
+        const val ACTION_UPDATE_SAMPLING =
+            "cn.jiyidashi.jiyidashi.action.UPDATE_LOCATION_SAMPLING"
 
         private const val NOTIFICATION_CHANNEL_ID = "native_location_tracking"
         private const val NOTIFICATION_ID = 2301
-        private const val MIN_UPDATE_INTERVAL_MS = 60_000L
-        private const val MIN_UPDATE_DISTANCE_METERS = 50f
 
         @Volatile
         var isActive: Boolean = false
