@@ -16,13 +16,13 @@
 <!-- K：Reminder / PR #29 已完成 very narrow 最终确认并合并 main=b000e8db；S1-025 转 ✅。M：Account Delete / PR #32 随后完成两轮正式审查、latest-main 单提交、四套 exact-head CI，并 squash 合并 main=004ff28f；S1-022 / SEC-008 / S1-M3 转 ✅，Stage 1「记得住」正式收口。 -->
 <!-- O：Location / Visit Foundation / Issue #35 / PR #36 已完成正式审查、latest-main Git Gate 与合并；owned S2-006/S2-007/S2-008/S2-014 转 ✅。 -->
 <!-- N：Native Location Foundation / Issue #34 / PR #37 已完成正式审查并合并 main；owned S2-001/S2-002/S2-003/S2-016 转 ✅。Q 只消费其已合并原生定位基础，不记录 N 的瞬时 HEAD/CI。 -->
-<!-- Q：Place & Timeline Product / Issue #39 / PR #40 已完成并合并；Q / Timeline Foundation / PR #42 的 S2-011 已实现统一 Memory+Visit Timeline read model、服务端用户时区日界线、稳定 cursor 分页与 legacy /v1/timeline 兼容边界，并通过当前自动验收。当前 Draft/Open、🟠，等待第一轮正式审查；S2-012/S2-013 保持未开始。 -->
+<!-- Q：Place & Timeline Product / Issue #39 / PR #40 已完成并合并；Q / Timeline Foundation / PR #42 第一轮正式审查 HOLD（P0=0 / P1=1 / P2=0），唯一 malformed opaque cursor 500 边界已修复并补结构型 regression。当前 Draft/Open、🟠，等待第二轮 very narrow review；S2-012/S2-013 保持未开始。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-19  
 > 当前阶段：Stage 1「记得住」已完成；Stage 2 的 O / Location & Visit Foundation 与 N / Native Location Foundation 均已完成并合并 `main`；Q / Place & Timeline Product 当前独立推进  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Q / Timeline Foundation / PR #42 的 S2-011 自动时间轴已完成实现与当前自动验收，现为 🟠 Draft/Open、等待第一轮正式审查；S2-012 今日足迹与 S2-013 地点详情保持未开始。Timeline 只聚合已存在的 Memory/Visit/Place read model，不回写定位采集、Visit 派生、Place 命名或原生权限链
+> 当前开发重点：Q / Timeline Foundation / PR #42 第一轮唯一 P1 已修复，当前 🟠 Draft/Open、等待第二轮 very narrow review；S2-012 今日足迹与 S2-013 地点详情保持未开始。Timeline 只聚合已存在的 Memory/Visit/Place read model，不回写定位采集、Visit 派生、Place 命名或原生权限链
 
 ## 状态规则
 
@@ -192,7 +192,7 @@
 | S2-008 | Place 模型与地点库 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
 | S2-009 | Place 自动命名 | ✅ | Q / PR #40 已完成正式审查、legacy seeded migration 与 automatic↔USER PostgreSQL race 验收并合并 main |
 | S2-010 | Place 用户纠正 | ✅ | Q / PR #40 已完成 owner isolation、ClientMutation、Place FOR UPDATE、Export/Data Delete 与并发验收并合并 main |
-| S2-011 | 自动时间轴 | 🟠 | Q / Timeline Foundation / PR #42：保留 Stage 1 /v1/timeline Memory-only 兼容契约，新建 /v1/timeline/events 统一 Memory + Visit read model；owner isolation、用户时区日界线、稳定 cursor 分页、mutable/finalized Visit 语义与真实 PostgreSQL mixed pagination 已完成验收，待第一轮正式审查 |
+| S2-011 | 自动时间轴 | 🟠 | Q / Timeline Foundation / PR #42：第一轮业务/排序/时区/PG pagination 均 PASS；malformed non-object JSON cursor 已 fail-closed 为 422 并补 regression，等待第二轮 very narrow review |
 | S2-012 | 今日足迹 | ⬜ | Q 后续独立小 PR；本次不实现 Today Footprint UI |
 | S2-013 | 地点详情 | ⬜ | Q 后续独立小 PR；本次只准备命名后的 Place read model，不实现完整详情 UI |
 | S2-014 | 原始位置生命周期 | ✅ | O / PR #36 已完成独立 maintenance / deletion serialization 审查与 latest-main Gate，并合并 `main` |
