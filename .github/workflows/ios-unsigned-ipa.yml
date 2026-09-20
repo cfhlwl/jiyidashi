@@ -1,4 +1,5 @@
 name: ios-unsigned-ipa
+# temporary LAN iPhone test build; no merge to main
 
 on:
   pull_request:
@@ -35,7 +36,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'release' }}
-      API_BASE_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url || 'https://api.example.invalid/v1' }}
+      API_BASE_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.api_base_url || 'http://192.168.20.248:8000/v1' }}
 
     steps:
       - uses: actions/checkout@v4
