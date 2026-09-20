@@ -16,6 +16,7 @@ from app.schemas import (
     MemoryQueryResponse,
     MemoryRead,
     MemoryUpdate,
+    TimelinePageResponse,
 )
 from app.services.idempotency_service import (
     IdempotencyConflict,
@@ -30,6 +31,7 @@ from app.services.memory_edit_service import (
 from app.services.memory_service import create_user_memory, get_memory_for_user, soft_delete_memory
 from app.services.query_service import query_memory
 from app.services.time_service import local_today, user_day_bounds_utc
+from app.services.timeline_service import TimelineCursorError, list_timeline
 
 router = APIRouter(tags=["memories"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -109,22 +111,26 @@ def delete_memory_endpoint(memory_id: UUID, user_id: CurrentUser, db: DbSession)
     db.commit()
 
 
-@router.get("/timeline", response_model=list[MemoryRead])
+@router.get("/timeline", response_model=TimelinePageResponse)
 def timeline(
     user_id: CurrentUser,
     db: DbSession,
     day: Annotated[date | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
-) -> list[Memory]:
-    query = select(Memory).where(
-        Memory.user_id == user_id,
-        Memory.is_deleted.is_(False),
-    )
-    if day is not None:
-        start, end = user_day_bounds_utc(db, user_id, day)
-        query = query.where(Memory.occurred_at >= start, Memory.occurred_at < end)
-
-    return list(db.scalars(query.order_by(Memory.occurred_at.desc()).limit(limit)).all())
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
+) -> TimelinePageResponse:
+    # [人工注释][S2-011] 旧入口保留 URL，但升级为统一 Memory+Visit read model。
+    # 当前 Flutter/小程序没有消费旧的纯 Memory 数组协议，因此不另造第二套 timeline。
+    try:
+        return list_timeline(
+            db,
+            user_id=user_id,
+            day=day,
+            limit=limit,
+            cursor_value=cursor,
+        )
+    except TimelineCursorError as exc:
+        raise HTTPException(status_code=422, detail=exc.code) from exc
 
 
 @router.post("/memory/query", response_model=MemoryQueryResponse)
