@@ -1,1 +1,30 @@
 @import '../../app.scss';
+
+.place-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 24rpx 0;
+  border-top: 2rpx solid #eef1ef;
+}
+
+.place-row:first-of-type {
+  margin-top: 18rpx;
+}
+
+.place-name {
+  margin-bottom: 6rpx;
+  font-weight: 600;
+}
+
+.place-arrow {
+  flex: 0 0 auto;
+  color: #78817c;
+  font-size: 44rpx;
+}
+
+.place-status {
+  margin-top: 18rpx;
+  color: #68726c;
+}

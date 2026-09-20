@@ -1,0 +1,41 @@
+@import '../../app.scss';
+
+.place-summary {
+  margin-top: 18rpx;
+  font-weight: 600;
+}
+
+.visit-row {
+  padding: 22rpx 0;
+  border-top: 2rpx solid #eef1ef;
+}
+
+.visit-row:first-of-type {
+  border-top: 0;
+}
+
+.visit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 10rpx;
+}
+
+.visit-finalized,
+.visit-mutable {
+  flex: 0 0 auto;
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+}
+
+.visit-finalized {
+  background: #edf3ef;
+  color: #294637;
+}
+
+.visit-mutable {
+  background: #fff4df;
+  color: #785500;
+}

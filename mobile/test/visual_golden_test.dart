@@ -7,6 +7,7 @@ import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/native_location_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/onboarding_flow.dart';
+import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 
@@ -67,6 +68,56 @@ class _GoldenApi extends JiYiApiClient {
     final error = privacyError;
     if (error != null) throw error;
     return privacyStatus;
+  }
+}
+
+class _GoldenPlaceDetailApi extends JiYiApiClient {
+  _GoldenPlaceDetailApi() : super(baseUrl: 'http://golden-place.invalid/v1') {
+    accessToken = 'golden-token';
+    authenticatedUserId = '00000000-0000-4000-8000-000000000001';
+  }
+
+  @override
+  Future<Map<String, dynamic>> getPlaceDetail(
+    String placeId, {
+    int limit = 50,
+    String? cursor,
+  }) async {
+    return {
+      'place': {
+        'id': 'place-golden-1',
+        'name': '常去的咖啡店',
+        'name_source': 'USER',
+        'address': '上海市静安区测试路 88 号',
+        'category': 'CAFE',
+        'visit_count': 8,
+        'first_visited_at': '2026-09-01T01:10:00Z',
+        'last_visited_at': '2026-09-20T03:30:00Z',
+      },
+      'visits': [
+        {
+          'id': 'visit-golden-finalized',
+          'arrived_at': '2026-09-20T02:20:00Z',
+          'left_at': '2026-09-20T03:30:00Z',
+          'duration_seconds': 4200,
+          'confidence': 0.96,
+          'source': 'GPS',
+          'finalized_at': '2026-09-20T04:00:00Z',
+          'visit_finalized': true,
+        },
+        {
+          'id': 'visit-golden-mutable',
+          'arrived_at': '2026-09-19T09:10:00Z',
+          'left_at': null,
+          'duration_seconds': null,
+          'confidence': 0.82,
+          'source': 'GPS',
+          'finalized_at': null,
+          'visit_finalized': false,
+        },
+      ],
+      'next_cursor': 'golden-next-page',
+    };
   }
 }
 
@@ -314,4 +365,24 @@ void main() {
       matchesGoldenFile('goldens/profile_privacy_error.png'),
     );
   });
+  testWidgets('golden: place detail loaded', (tester) async {
+    // [人工注释][S2-013] 固定一条 finalized + 一条 mutable Visit，并保留分页入口，
+    // 视觉基线专门覆盖“可信状态标签 + 地点概况 + 加载更多”的产品展示边界。
+    final key = await _pumpSurface(
+      tester,
+      PlaceDetailPage(
+        api: _GoldenPlaceDetailApi(),
+        placeId: 'place-golden-1',
+      ),
+    );
+    expect(find.text('常去的咖啡店'), findsOneWidget);
+    expect(find.text('已稳定的到访'), findsOneWidget);
+    expect(find.text('仍在更新的到访'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '加载更多'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/place_detail_loaded.png'),
+    );
+  });
+
 }

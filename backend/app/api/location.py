@@ -11,11 +11,17 @@ from app.models import Place, Visit
 from app.schemas import (
     LocationBatchRequest,
     LocationBatchResponse,
+    PlaceDetailResponse,
     PlaceNameCorrectionRequest,
     PlaceRead,
     VisitRead,
 )
 from app.services.location_service import LocationIngestError, ingest_location_batch
+from app.services.place_detail_service import (
+    PlaceDetailCursorError,
+    PlaceDetailError,
+    get_place_detail,
+)
 from app.services.place_naming_service import PlaceNamingError, correct_place_name
 
 router = APIRouter(prefix="/location", tags=["location"])
@@ -68,6 +74,28 @@ def list_places(
             .limit(limit)
         )
     )
+
+
+@router.get("/places/{place_id}", response_model=PlaceDetailResponse)
+def place_detail(
+    place_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
+) -> PlaceDetailResponse:
+    try:
+        return get_place_detail(
+            db,
+            user_id=user_id,
+            place_id=place_id,
+            limit=limit,
+            cursor_value=cursor,
+        )
+    except PlaceDetailCursorError as exc:
+        raise HTTPException(status_code=422, detail=exc.code) from exc
+    except PlaceDetailError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
 
 @router.put("/places/{place_id}/name", response_model=PlaceRead)

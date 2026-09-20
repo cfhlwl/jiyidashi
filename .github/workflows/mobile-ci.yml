@@ -23,6 +23,19 @@ jobs:
         working-directory: mobile
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -94,6 +107,19 @@ jobs:
         working-directory: mobile
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
 
       - uses: subosito/flutter-action@v2
         with:

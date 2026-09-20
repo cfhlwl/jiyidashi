@@ -14,6 +14,7 @@ import 'offline_sync.dart';
 import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
+import 'place_detail_page.dart';
 import 'reminder_page.dart';
 
 // [人工注释][S1-026] AppShell 只接线 Onboarding；首次自动触发仅来自注册成功，老账号不会因缺少本地状态被误判为新用户。
@@ -617,7 +618,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final onboardingStep = onboarding?.step;
     final pages = <Widget>[
       const TodayPage(),
-      const TimelinePage(),
+      TimelinePage(api: widget.api),
       CapturePage(
         api: widget.api,
         offlineQueue: widget.offlineQueue,
@@ -753,20 +754,120 @@ class TodayPage extends StatelessWidget {
   }
 }
 
-class TimelinePage extends StatelessWidget {
-  const TimelinePage({super.key});
+class TimelinePage extends StatefulWidget {
+  const TimelinePage({super.key, required this.api});
+
+  final JiYiApiClient api;
+
+  @override
+  State<TimelinePage> createState() => _TimelinePageState();
+}
+
+class _TimelinePageState extends State<TimelinePage> {
+  late Future<List<Map<String, dynamic>>> _places = widget.api.listPlaces();
+
+  void _retryPlaces() {
+    setState(() => _places = widget.api.listPlaces());
+  }
 
   @override
   Widget build(BuildContext context) {
-    return const JiYiPageFrame(
+    return JiYiPageFrame(
       title: '时间轴',
       subtitle: '按时间回看已经形成的可信记忆。',
-      child: JiYiSectionCard(
-        child: JiYiEmptyState(
-          icon: Icons.route_outlined,
-          title: '自动足迹尚未开放',
-          message: '当前不会在后台自动记录位置；这里后续只会展示真实、可解释的时间记录。',
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const JiYiSectionCard(
+            child: JiYiEmptyState(
+              icon: Icons.route_outlined,
+              title: '自动足迹尚未开放',
+              message: '今日足迹仍由后续 S2-012 实现；这里不提前推断今天去了哪里。',
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.md),
+          JiYiSectionCard(
+            title: '地点',
+            subtitle: '查看已经形成的地点和 retained Visit 详情。',
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _places,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(JiYiSpacing.md),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  final error = snapshot.error;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      JiYiStatusBanner(
+                        kind: JiYiStatusKind.error,
+                        title: '地点列表读取失败',
+                        message: error is ApiException
+                            ? error.message
+                            : '暂时无法读取地点',
+                      ),
+                      const SizedBox(height: JiYiSpacing.sm),
+                      OutlinedButton(
+                        onPressed: _retryPlaces,
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  );
+                }
+                final places = snapshot.data ?? const <Map<String, dynamic>>[];
+                if (places.isEmpty) {
+                  return const JiYiEmptyState(
+                    icon: Icons.place_outlined,
+                    title: '还没有地点',
+                    message: '形成 retained Visit 后，这里才会出现可查看的地点。',
+                  );
+                }
+                return Column(
+                  children: [
+                    for (var i = 0; i < places.length; i++) ...[
+                      // [人工注释][S2-013] JiYiSectionCard 使用 DecoratedBox；
+                      // ListTile 需要自己的透明 Material 承载 ink，不能让点击反馈被卡片背景遮住。
+                      Material(
+                        type: MaterialType.transparency,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.place_outlined),
+                          title: Text(
+                            places[i]['name']?.toString() ?? '未命名地点',
+                          ),
+                          subtitle: Text(
+                            places[i]['address']?.toString() ?? '暂无地址信息',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            final placeId = places[i]['id']?.toString() ?? '';
+                            if (placeId.isEmpty) return;
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => PlaceDetailPage(
+                                  api: widget.api,
+                                  placeId: placeId,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      if (i != places.length - 1)
+                        const Divider(height: JiYiSpacing.sm),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

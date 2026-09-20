@@ -580,6 +580,44 @@ class JiYiApiClient {
     return LocationBatchResult.fromJson(data);
   }
 
+  Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) {
+    if (limit < 1 || limit > 500) {
+      throw ArgumentError.value(limit, 'limit', 'place limit must be 1..500');
+    }
+    return _jsonListRequest(
+      Uri(
+        path: '/location/places',
+        queryParameters: {'limit': limit.toString()},
+      ).toString(),
+    );
+  }
+
+  Future<Map<String, dynamic>> getPlaceDetail(
+    String placeId, {
+    int limit = 50,
+    String? cursor,
+  }) {
+    final normalized = placeId.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(placeId, 'placeId', 'place ID must not be empty');
+    }
+    if (limit < 1 || limit > 200) {
+      throw ArgumentError.value(limit, 'limit', 'visit limit must be 1..200');
+    }
+    final query = <String, String>{'limit': limit.toString()};
+    final normalizedCursor = cursor?.trim();
+    if (normalizedCursor != null && normalizedCursor.isNotEmpty) {
+      query['cursor'] = normalizedCursor;
+    }
+    return _jsonRequest(
+      'GET',
+      Uri(
+        path: '/location/places/$normalized',
+        queryParameters: query,
+      ).toString(),
+    );
+  }
+
   Future<Map<String, dynamic>> getPrivacyStatus() {
     return _jsonRequest('GET', '/privacy/status');
   }
