@@ -23,6 +23,7 @@ from app.models import (
     ObjectLocation,
     ObjectLocationStatus,
     Place,
+    PlaceNameCorrection,
     PrivacyPauseInterval,
     PrivacyState,
     Reminder,
@@ -198,6 +199,13 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
         .order_by(Place.created_at, Place.id),
         "places",
     )
+    place_name_corrections = _bounded_scalars(
+        db,
+        select(PlaceNameCorrection)
+        .where(PlaceNameCorrection.user_id == user_id)
+        .order_by(PlaceNameCorrection.created_at, PlaceNameCorrection.id),
+        "place_name_corrections",
+    )
     location_derivation_state = db.get(LocationDerivationState, user_id)
 
     reminders = _bounded_scalars(
@@ -337,6 +345,12 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 {
                     "id": item.id,
                     "name": item.name,
+                    "automatic_name": item.automatic_name,
+                    "automatic_name_source": item.automatic_name_source,
+                    "user_name": item.user_name,
+                    "name_source": item.name_source,
+                    "name_revision": item.name_revision,
+                    "name_updated_at": item.name_updated_at,
                     "latitude": item.latitude,
                     "longitude": item.longitude,
                     "address": item.address,
@@ -347,6 +361,20 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                     "is_user_named": item.is_user_named,
                 }
                 for item in places
+            ],
+            # [人工注释][S2-010] 用户纠正历史本身也是 user-owned data；
+            # 导出它才能解释当前 user_name 如何演变，同时不复制 Visit/GPS provenance。
+            "place_name_corrections": [
+                {
+                    "id": item.id,
+                    "place_id": item.place_id,
+                    "client_uuid": item.client_uuid,
+                    "revision": item.revision,
+                    "previous_user_name": item.previous_user_name,
+                    "new_user_name": item.new_user_name,
+                    "created_at": item.created_at,
+                }
+                for item in place_name_corrections
             ],
             "finalized_through": (
                 None
