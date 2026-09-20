@@ -6,7 +6,8 @@
     "dev:weapp": "taro build --type weapp --watch",
     "build:weapp": "taro build --type weapp",
     "typecheck": "tsc --noEmit",
-    "test:capture": "tsc -p tsconfig.test.json && node --test .test-dist/tests/photoCapture.test.js .test-dist/tests/voiceCapture.test.js"
+    "test:capture": "tsc -p tsconfig.test.json && node --test .test-dist/tests/photoCapture.test.js .test-dist/tests/voiceCapture.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/photoCapture.test.js .test-dist/tests/voiceCapture.test.js .test-dist/tests/placeDetail.test.js"
   },
   "dependencies": {
     "@babel/runtime": "^7.27.0",

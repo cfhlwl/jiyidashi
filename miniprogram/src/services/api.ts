@@ -6,6 +6,15 @@ import type {
   PhotoMemoryResponse,
   SignedTransfer,
 } from './photoCapture'
+import {
+  assertPlaceDetailIdentity,
+  buildPlaceDetailPath,
+  buildPlacesPath,
+  parsePlaceDetail,
+  parsePlaceList,
+  type PlaceDetailPage,
+  type PlaceRead,
+} from './placeDetail'
 import type {
   AudioContentType,
   AudioMediaRead,
@@ -261,6 +270,23 @@ export async function markObjectLocationStale(objectName: string): Promise<void>
   const matched = objects.find((item) => item.name.trim().toLocaleLowerCase() === normalized)
   if (!matched) throw new Error('没有找到这个物品')
   await request('POST', `/objects/${matched.id}/location/stale`)
+}
+
+export async function listPlaces(limit = 25): Promise<PlaceRead[]> {
+  const raw = await request<unknown>('GET', buildPlacesPath(limit))
+  return parsePlaceList(raw)
+}
+
+export async function getPlaceDetail(
+  placeId: string,
+  options: { limit?: number; cursor?: string | null } = {},
+): Promise<PlaceDetailPage> {
+  const normalized = placeId.trim()
+  const raw = await request<unknown>(
+    'GET',
+    buildPlaceDetailPath(normalized, options.limit ?? 20, options.cursor),
+  )
+  return assertPlaceDetailIdentity(parsePlaceDetail(raw), normalized)
 }
 
 export function getPrivacyStatus(): Promise<PrivacyStatus> {

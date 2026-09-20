@@ -370,4 +370,61 @@ void main() {
   });
 
 
+  test('place detail client keeps owner implicit and forwards stable visit cursor', () async {
+    var calls = 0;
+    final seen = <String>[];
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        seen.add(request.url.toString());
+        expect(request.headers['authorization'], 'Bearer example-token');
+        if (request.url.path == '/v1/location/places') {
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                'name': '家',
+                'address': '测试地址',
+              }
+            ]),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        expect(
+          request.url.path,
+          '/v1/location/places/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        );
+        return http.Response(
+          jsonEncode({
+            'place': {
+              'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              'name': '家',
+            },
+            'visits': [],
+            'next_cursor': null,
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    final places = await api.listPlaces(limit: 25);
+    expect(places.single['name'], '家');
+    await api.getPlaceDetail(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      limit: 20,
+      cursor: 'cursor-token',
+    );
+
+    expect(seen[0], contains('/v1/location/places?limit=25'));
+    expect(seen[1], contains('limit=20'));
+    expect(seen[1], contains('cursor=cursor-token'));
+    expect(seen[1], isNot(contains('user_id=')));
+  });
+
 }

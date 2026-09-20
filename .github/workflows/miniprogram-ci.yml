@@ -5,12 +5,14 @@ on:
     paths:
       - ".github/workflows/miniprogram-ci.yml"
       - "miniprogram/**"
-      # Mini Program consumes these public media/voice protocol surfaces;
-      # changes here must prove the existing WeChat capture client still builds and passes its workflow tests.
+      # Mini Program consumes these public media/voice/location protocol surfaces;
+      # changes here must prove the existing WeChat client still builds and passes its workflow tests.
       - "backend/app/api/media.py"
       - "backend/app/schemas.py"
       - "backend/app/services/media_service.py"
       - "backend/app/services/asr.py"
+      - "backend/app/api/location.py"
+      - "backend/app/services/place_detail_service.py"
   workflow_dispatch:
 
 # [人工注释][CI-004] package-lock 已纳入仓库；长期 CI 只读并统一使用 npm ci 保证可复现。
@@ -52,9 +54,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Capture workflow tests
-        # 真实图片失败语义与麦克风权限恢复必须在生产构建前先过自动回归。
-        run: npm run test:capture
+      - name: Mini Program unit tests
+        # 图片/语音工作流与 Place Detail 严格协议解析都必须在生产构建前先过自动回归。
+        run: npm test
 
       - name: Build WeChat mini program
         # CI 以生产模式验证：必须注入非本地 HTTPS endpoint，且产物关闭 API 编辑入口。

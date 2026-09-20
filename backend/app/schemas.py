@@ -528,6 +528,25 @@ class TimelinePageResponse(BaseModel):
     next_cursor: str | None = None
 
 
+class PlaceDetailVisitRead(BaseModel):
+    id: UUID
+    arrived_at: datetime
+    left_at: datetime | None
+    duration_seconds: int | None
+    confidence: float
+    source: str
+    finalized_at: datetime | None
+    visit_finalized: bool
+
+
+class PlaceDetailResponse(BaseModel):
+    # [人工注释][S2-013] Place detail 只组合现有 retained facts；
+    # place 继续使用 S2-009/S2-010 的权威命名 read model，不复制第二份名称语义。
+    place: PlaceRead
+    visits: list[PlaceDetailVisitRead] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
 class PrivacyPauseRequest(BaseModel):
     duration_minutes: int | None = Field(default=None, ge=1, le=60 * 24)
     until: datetime | None = None
