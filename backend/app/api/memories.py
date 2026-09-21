@@ -3,12 +3,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.deps import get_current_user_id
-from app.models import Memory
+from app.models import Memory, MemorySource, SourceType
 from app.schemas import (
     DaySummaryResponse,
     MemoryCreate,
@@ -37,6 +37,24 @@ router = APIRouter(tags=["memories"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
 IdempotencyKey = Annotated[UUID | None, Header(alias="Idempotency-Key")]
+
+
+def _trusted_summary_memory_filters():
+    # 日总结会把多条 Memory 压成一段用户可见自然语言，因此不能像 Timeline 一样
+    # 依赖逐条 trust metadata 让客户端解释。这里只允许与 query_memory 一致的
+    # confirmed + non-AI + evidenced Memory，避免 inference 从摘要路径重新变成“事实”。
+    return (
+        Memory.is_confirmed.is_(True),
+        Memory.source_type != SourceType.AI_INFERENCE,
+        Memory.confidence >= 0.6,
+        exists(
+            select(MemorySource.id).where(
+                MemorySource.memory_id == Memory.id,
+                MemorySource.source_type != SourceType.AI_INFERENCE,
+                MemorySource.confidence >= 0.6,
+            )
+        ),
+    )
 
 
 @router.post("/memories", response_model=MemoryRead, status_code=status.HTTP_201_CREATED)
@@ -173,6 +191,7 @@ def summarize_day(
         select(func.count(Memory.id)).where(
             Memory.user_id == user_id,
             Memory.is_deleted.is_(False),
+            *_trusted_summary_memory_filters(),
             Memory.occurred_at >= start,
             Memory.occurred_at < end,
         )
@@ -182,6 +201,7 @@ def summarize_day(
         .where(
             Memory.user_id == user_id,
             Memory.is_deleted.is_(False),
+            *_trusted_summary_memory_filters(),
             Memory.occurred_at >= start,
             Memory.occurred_at < end,
         )
