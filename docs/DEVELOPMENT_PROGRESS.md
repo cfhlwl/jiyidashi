@@ -24,13 +24,14 @@
 <!-- U：Software Copyright Annotation Gate / Issue #50 / PR #51 已完成正式审查并合并。 -->
 <!-- V：Intent Router Foundation / Issue #54 / PR #55 已完成 typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、旧可信链回归、Annotation Gate 与 exact-head Backend CI，并 squash 合并 main=8c0758bd；S3-003 转 ✅。 -->
 <!-- Stage 3A：AI Gateway / Issue #53 / PR #56 已完成第一轮代码审查 PASS，当前只剩 latest-main replay / exact-head Backend / final Git Gate；只拥有 S3-001，不创建/修改 Memory、Evidence、Object、Place、Visit 或 Reminder。 -->
-<!-- Stage 3C：Memory Pipeline Foundation / Issue #57 / PR #60：核心 Pipeline 第一轮 review 已 PASS；P1 user-facing trust isolation 已修复，等待 latest-main replay / exact-head Backend / final merge Gate。 -->
+<!-- Stage 3C：Memory Pipeline Foundation / Issue #57 / PR #60 已完成正式审查、user-facing trust isolation 修复、exact-head Backend CI 与最终 Gate，并合并 main=d3f61b4d；S3-002 转 ✅。 -->
+<!-- Stage 3E：Entity → Memory Pipeline Integration / Issue #61 / feat/stage3-entity-pipeline-integration：以 trusted execution context 将已合并 Entity service 接入 Extract stage，Entity metadata 仅作 inference-only internal annotations，不改变 Evidence/Store Gate。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-09-20  
-> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001 AI Gateway、S3-003 Intent Router、S3-004 实体提取、S3-005 Entity Link 已完成并合并；S3-002 Memory Pipeline Foundation 正在 final Gate  
+> 最后更新：2026-09-21  
+> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-005 基础能力已全部合并，当前进入 Entity → Memory Pipeline trusted integration  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：S3-002 Memory Pipeline Foundation / PR #60 final Gate：核心 Pipeline、Evidence/inference trust boundary、replay/idempotency、owner isolation、query 与 day-summary user-facing fail-closed 已完成正式 review 修复；等待 replay 后 exact-head Backend CI 与合并
+> 当前开发重点：Issue #61 / Stage 3E：复用已合并 `extract_and_link_entities(...)`，由 Pipeline trusted execution context 提供 owner/execution identity；Entity link/provenance 仅作为 inference-only internal annotations，Evidence、Store anti-bypass、query/day-summary fail-closed 保持不变
 
 ## 状态规则
 
@@ -216,7 +217,7 @@
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | S3-001 | AI Gateway | ✅ | Issue #53 / PR #56 已完成正式审查、latest-main replay、exact-head Backend CI 与最终 Git Gate，并合并 `main=db2f7fcc` |
-| S3-002 | Memory Pipeline | 🟠 | Issue #57 / PR #60：核心 Pipeline 第一轮 review 已 PASS；P1 user-facing trust isolation 已修复，`/memory/query` 与 `/memory/summarize/day` 均 fail-closed 排除 unconfirmed AI inference；等待 replay 后 final Gate |
+| S3-002 | Memory Pipeline | ✅ | Issue #57 / PR #60 已完成核心 Pipeline、Evidence/inference trust boundary、replay/idempotency、owner isolation、query/day-summary user-facing fail-closed、exact-head Backend CI 与最终 Gate，并合并 `main=d3f61b4d` |
 | S3-003 | Intent Router | ✅ | Issue #54 / PR #55 已完成正式 very narrow review（P0/P1/P2=0/0/0）、typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、Annotation Gate、既有 Object/Place/Memory 回归与 exact-head Backend CI `35507973659`，并 squash 合并 `main=8c0758bd` |
 | S3-004 | 实体提取 | ✅ | Issue #58 / PR #59 已完成 candidate-only typed extraction、strict literal-span parser、AIGateway provenance、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
 | S3-005 | Entity Link | ✅ | Issue #58 / PR #59 已完成 owner-scoped deterministic Object/Place linking、ambiguous/no-match/cross-owner fail-closed、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
