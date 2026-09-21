@@ -33,6 +33,8 @@ from app.services.media_service import (
 )
 from app.services.object_storage import ObjectStorage, PresignedTransfer, get_object_storage
 from app.services.ocr_service import OCRError, extract_ocr
+from app.services.vision_service import VisionError, observe_vision
+from app.vision_models import VisionRequest, VisionResult
 
 router = APIRouter(prefix="/media", tags=["media"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -47,6 +49,10 @@ def _raise_http(exc: MediaError) -> None:
 
 
 def _raise_ocr_http(exc: OCRError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+
+
+def _raise_vision_http(exc: VisionError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
 
@@ -146,6 +152,28 @@ async def extract_text_from_image(
         )
     except OCRError as exc:
         _raise_ocr_http(exc)
+
+
+@router.post("/{media_id}/vision", response_model=VisionResult)
+async def observe_image(
+    media_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+    storage: Storage,
+    gateway: AI,
+) -> VisionResult:
+    # Vision is an explicit read-only inference action over one owner-scoped Media row.
+    # The request cannot choose storage/provider/trust fields, and no result enters Store.
+    try:
+        return await observe_vision(
+            db,
+            user_id=user_id,
+            request=VisionRequest(media_id=media_id),
+            storage=storage,
+            gateway=gateway,
+        )
+    except VisionError as exc:
+        _raise_vision_http(exc)
 
 
 @router.post(

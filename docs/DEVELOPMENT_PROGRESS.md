@@ -27,13 +27,14 @@
 <!-- Stage 3C：Memory Pipeline Foundation / Issue #57 / PR #60 已完成正式审查、user-facing trust isolation 修复、exact-head Backend CI 与最终 Gate，并合并 main=d3f61b4d；S3-002 转 ✅。 -->
 <!-- Stage 3F：OCR Foundation / Issue #62 / PR #64 已完成两轮 very narrow review、latest-main clean replay、exact-head Backend/Mini CI 与最终 Git Gate，并合并 main=b94c46f；S3-006 转 ✅。 -->
 <!-- Stage 3E：Entity → Memory Pipeline Integration / Issue #61 / PR #63 已完成 trusted execution integration 并合并 main=1e28b975；Entity metadata 保持 inference-only internal annotations。 -->
-<!-- Stage 3H：pgvector Foundation / Issue #66 / feat/stage3-pgvector-foundation：只铺 PostgreSQL vector extension + SQLAlchemy 类型基础，不创建用户 embedding、不提供语义检索。 -->
+<!-- Stage 3H：pgvector Foundation / Issue #66 / PR #67 已完成 PostgreSQL vector extension + SQLAlchemy 类型基础、真实 PostgreSQL CI、正式 review 与合并 main=b7579c4d；S3-008 转 ✅。 -->
+<!-- Stage 3G：Vision Foundation / Issue #65 / PR #68：用户主动触发 owner-scoped READY IMAGE 可见场景/物品/活动候选观察；provider 仅可返回受控 kind/code，server-owned labels + trust_class=inference，不写 Memory/Evidence/Entity/Visit/Reminder；正式 review PASS，等待 latest-main exact-head Gate/合并。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-21  
-> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-006 已合并，当前进入 S3-008 pgvector Foundation  
+> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-006、S3-008 已合并，当前收口 S3-007 Vision Foundation
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Issue #66 / S3-008 pgvector Foundation：只启用 PostgreSQL `vector` extension、提供 SQLAlchemy 类型 seam 与 migration/capability CI；Embedding 生成、向量列、索引与检索全部留给 S3-009 之后
+> 当前开发重点：Issue #65 / PR #68 / S3-007 Vision Foundation：受控 SCENE/OBJECT/ACTIVITY inference candidates、server-owned labels、no persistence / no OCR-Entity coupling；正式 review PASS，等待 latest-main exact-head Gate/合并
 
 ## 状态规则
 
@@ -224,8 +225,8 @@
 | S3-004 | 实体提取 | ✅ | Issue #58 / PR #59 已完成 candidate-only typed extraction、strict literal-span parser、AIGateway provenance、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
 | S3-005 | Entity Link | ✅ | Issue #58 / PR #59 已完成 owner-scoped deterministic Object/Place linking、ambiguous/no-match/cross-owner fail-closed、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
 | S3-006 | OCR | ✅ | Issue #62 / PR #64 已完成 user-triggered owner-scoped READY IMAGE OCR、AIGateway image boundary、strict parser/provenance、no-persistence/query regression、两轮正式审查、latest-main replay 与 exact-head CI，并合并 `main=b94c46f` |
-| S3-007 | Vision 图片理解 | ⬜ | 只作为证据辅助，不能凭空制造事实 |
-| S3-008 | pgvector | 🟠 | Issue #66 / PR #67：PostgreSQL vector extension、SQLAlchemy pgvector seam、SQLite no-op migration、保守 downgrade、no-vector-column scope gate 与真实 PostgreSQL CI 已实现；Backend exact-head CI 已通过，219 passed；等待正式审查/合并 |
+| S3-007 | Vision 图片理解 | 🟠 | Issue #65 / PR #68：user-triggered owner-scoped READY IMAGE Vision 已实现；provider 仅可返回受控 kind/code，server-owned labels + `trust_class=inference`，no persistence / no OCR-Entity coupling；正式 very narrow review PASS，等待 latest-main exact-head Gate/合并 |
+| S3-008 | pgvector | ✅ | Issue #66 / PR #67 已完成 PostgreSQL vector extension、SQLAlchemy pgvector seam、SQLite no-op migration、保守 downgrade、zero-VECTOR-column scope gate、真实 PostgreSQL CI 与正式审查，并合并 `main=b7579c4d` |
 | S3-009 | Embedding 生成与索引 | ⬜ | Memory 文本 / 结构化描述 |
 | S3-010 | Structured First 检索 | ⬜ | 结构化 > 关键词 > Vector > LLM |
 | S3-011 | Memory RAG | ⬜ | 只从用户自己的可用 Evidence 回答 |
