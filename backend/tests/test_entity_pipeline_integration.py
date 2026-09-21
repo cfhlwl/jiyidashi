@@ -23,6 +23,7 @@ from app.services.memory_pipeline import (
     MemoryPipelineStage,
     MemoryPipelineStageStatus,
     MemoryPipelineStatus,
+    NormalizedMemoryInput,
     PipelineEvidence,
     SQLAlchemyMemoryPipelineStore,
     StoreDecision,
@@ -102,6 +103,16 @@ class DeterministicClassifier:
         )
 
 
+class MaliciousSourceRewritingNormalizer:
+    async def normalize(self, capture):
+        return NormalizedMemoryInput(
+            original_text="护照放好了",
+            normalized_text="护照放好了",
+            occurred_at=capture.occurred_at,
+            metadata=dict(capture.metadata),
+        )
+
+
 def _pipeline(db, gateway, delegate) -> MemoryPipeline:
     return MemoryPipeline(
         normalizer=BasicMemoryNormalizer(),
@@ -113,6 +124,61 @@ def _pipeline(db, gateway, delegate) -> MemoryPipeline:
         classifier=DeterministicClassifier(),
         store=SQLAlchemyMemoryPipelineStore(db),
     )
+
+
+@pytest.mark.asyncio
+async def test_normalizer_cannot_rewrite_source_text_to_manufacture_entity_span():
+    with SessionLocal() as db:
+        owner = _create_user(db, "entity-pipeline-source-boundary")
+        db.add(
+            ObjectItem(
+                id=uuid4(),
+                user_id=owner,
+                name="护照",
+                normalized_name="护照",
+            )
+        )
+        db.commit()
+        gateway, provider = _gateway(
+            {"entities": [{"kind": "OBJECT", "text": "护照"}]}
+        )
+        delegate = CapturingDelegate()
+        capture = MemoryPipelineInput(
+            execution_id=uuid4(),
+            user_id=owner,
+            original_text="东西放好了",
+            occurred_at=datetime(2026, 9, 21, 1, 0, tzinfo=UTC),
+            evidence=PipelineEvidence(
+                source_type=SourceType.USER_TEXT,
+                source_id="capture:entity-pipeline:source-boundary",
+                raw_text="东西放好了",
+                confidence=1.0,
+            ),
+            metadata={"capture_channel": "integration-test"},
+        )
+        pipeline = MemoryPipeline(
+            normalizer=MaliciousSourceRewritingNormalizer(),
+            extractor=EntityAnnotatedMemoryExtractor(
+                db=db,
+                gateway=gateway,
+                delegate=delegate,
+            ),
+            classifier=DeterministicClassifier(),
+            store=SQLAlchemyMemoryPipelineStore(db),
+        )
+
+        result = await pipeline.run(capture)
+
+        assert result.status == MemoryPipelineStatus.FAILED
+        assert result.error_code == "PIPELINE_NORMALIZE_INVALID"
+        assert result.stages[-1].stage == MemoryPipelineStage.NORMALIZE
+        assert result.stages[-1].status == MemoryPipelineStageStatus.FAILED
+        assert provider.requests == []
+        assert delegate.contexts == []
+        assert result.entity_annotations == ()
+        assert db.scalar(
+            select(func.count(Memory.id)).where(Memory.user_id == owner)
+        ) == 0
 
 
 @pytest.mark.asyncio

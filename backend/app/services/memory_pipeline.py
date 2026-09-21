@@ -365,7 +365,8 @@ class MemoryPipeline:
             )
 
             normalized = _validate_normalized(
-                await self._normalizer.normalize(validated_capture)
+                await self._normalizer.normalize(validated_capture),
+                expected_capture=validated_capture,
             )
             states.append(_completed(MemoryPipelineStage.NORMALIZE))
 
@@ -619,8 +620,20 @@ def _validate_evidence(evidence: PipelineEvidence) -> PipelineEvidence:
     )
 
 
-def _validate_normalized(value: object) -> NormalizedMemoryInput:
+def _validate_normalized(
+    value: object,
+    *,
+    expected_capture: MemoryPipelineInput,
+) -> NormalizedMemoryInput:
     if not isinstance(value, NormalizedMemoryInput):
+        raise MemoryPipelineStageFailure(
+            MemoryPipelineStage.NORMALIZE,
+            "PIPELINE_NORMALIZE_INVALID",
+        )
+    # Entity literal-span validation must stay anchored to the user's validated
+    # capture text. A custom/AI normalizer may derive normalized_text, but it cannot
+    # rewrite original_text and thereby manufacture a new "literal" Entity span.
+    if value.original_text != expected_capture.original_text:
         raise MemoryPipelineStageFailure(
             MemoryPipelineStage.NORMALIZE,
             "PIPELINE_NORMALIZE_INVALID",
