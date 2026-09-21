@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.deps import get_current_user_id
+from app.ocr_models import OCRRequest, OCRResult
 from app.schemas import (
     MediaDownloadResponse,
     MediaRead,
@@ -19,6 +20,7 @@ from app.schemas import (
     VoiceMemoryCreate,
     VoiceMemoryResponse,
 )
+from app.services.ai_gateway import AIGateway, get_ai_gateway
 from app.services.asr import ASRProvider, get_asr_provider
 from app.services.media_service import (
     MediaError,
@@ -30,15 +32,21 @@ from app.services.media_service import (
     start_media_upload,
 )
 from app.services.object_storage import ObjectStorage, PresignedTransfer, get_object_storage
+from app.services.ocr_service import OCRError, extract_ocr
 
 router = APIRouter(prefix="/media", tags=["media"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
 Storage = Annotated[ObjectStorage, Depends(get_object_storage)]
 ASR = Annotated[ASRProvider, Depends(get_asr_provider)]
+AI = Annotated[AIGateway, Depends(get_ai_gateway)]
 
 
 def _raise_http(exc: MediaError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+
+
+def _raise_ocr_http(exc: OCRError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
 
@@ -116,6 +124,28 @@ def create_download(
         media_id=asset.id,
         download=_signed_transfer(transfer),
     )
+
+
+@router.post("/{media_id}/ocr", response_model=OCRResult)
+async def extract_text_from_image(
+    media_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+    storage: Storage,
+    gateway: AI,
+) -> OCRResult:
+    # [人工注释][S3-006] OCR 只能由用户对一个明确 media_id 主动触发。
+    # API 不接受 object URL/key/provider/key；结果仅作为 inference 返回，不写 Memory/Store。
+    try:
+        return await extract_ocr(
+            db,
+            user_id=user_id,
+            request=OCRRequest(media_id=media_id),
+            storage=storage,
+            gateway=gateway,
+        )
+    except OCRError as exc:
+        _raise_ocr_http(exc)
 
 
 @router.post(

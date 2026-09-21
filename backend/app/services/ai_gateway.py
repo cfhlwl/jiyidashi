@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import re
 from dataclasses import dataclass, replace
 from functools import lru_cache
@@ -56,6 +57,17 @@ class AIInferenceRequest:
 
 
 @dataclass(frozen=True)
+class AIImageInferenceRequest:
+    purpose: str
+    system_instruction: str
+    input_text: str
+    image_bytes: bytes
+    content_type: str
+    detail: Literal["auto", "low", "high"] = "high"
+    max_output_tokens: int | None = None
+
+
+@dataclass(frozen=True)
 class AIProviderResult:
     output_text: str
     provider: str
@@ -91,9 +103,15 @@ class AIInferenceResult:
 class AIProvider(Protocol):
     async def infer(self, request: AIInferenceRequest) -> AIProviderResult: ...
 
+    async def infer_image(self, request: AIImageInferenceRequest) -> AIProviderResult: ...
+
 
 class DisabledAIProvider:
     async def infer(self, request: AIInferenceRequest) -> AIProviderResult:
+        del request
+        raise AIProviderError("AI_PROVIDER_UNAVAILABLE")
+
+    async def infer_image(self, request: AIImageInferenceRequest) -> AIProviderResult:
         del request
         raise AIProviderError("AI_PROVIDER_UNAVAILABLE")
 
@@ -112,6 +130,7 @@ class DeterministicAIProvider:
         self.provider = provider
         self.model = model
         self.requests: list[AIInferenceRequest] = []
+        self.image_requests: list[AIImageInferenceRequest] = []
 
     async def infer(self, request: AIInferenceRequest) -> AIProviderResult:
         self.requests.append(request)
@@ -120,6 +139,15 @@ class DeterministicAIProvider:
             provider=self.provider,
             model=self.model,
             provider_request_id="deterministic-request",
+        )
+
+    async def infer_image(self, request: AIImageInferenceRequest) -> AIProviderResult:
+        self.image_requests.append(request)
+        return AIProviderResult(
+            output_text=self.output_text,
+            provider=self.provider,
+            model=self.model,
+            provider_request_id="deterministic-image-request",
         )
 
 
@@ -210,6 +238,93 @@ class OpenAIResponsesProvider:
             output_tokens=output_tokens,
         )
 
+    async def infer_image(self, request: AIImageInferenceRequest) -> AIProviderResult:
+        # [人工注释][S3-006] 图片字节只在服务端 Gateway 内编码并发送给 provider。
+        # feature/API 层没有 vendor URL/key；store=false 防止 provider 侧持久化请求内容。
+        encoded = base64.b64encode(request.image_bytes).decode("ascii")
+        endpoint = f"{self._settings.ai_base_url.rstrip('/')}/responses"
+        body = {
+            "model": self._settings.ai_model,
+            "instructions": request.system_instruction,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": request.input_text},
+                        {
+                            "type": "input_image",
+                            "image_url": (
+                                f"data:{request.content_type};base64,{encoded}"
+                            ),
+                            "detail": request.detail,
+                        },
+                    ],
+                }
+            ],
+            "max_output_tokens": request.max_output_tokens,
+            "store": False,
+        }
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._settings.ai_timeout_seconds,
+                transport=self._transport,
+            ) as client:
+                async with asyncio.timeout(self._settings.ai_timeout_seconds):
+                    response = await client.post(
+                        endpoint,
+                        headers={
+                            "Authorization": f"Bearer {self._settings.ai_api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=body,
+                    )
+        except (TimeoutError, httpx.TimeoutException) as exc:
+            raise AITransportError("AI_GATEWAY_TIMEOUT", retryable=True) from exc
+        except httpx.RequestError as exc:
+            raise AITransportError("AI_GATEWAY_TRANSPORT_ERROR", retryable=True) from exc
+
+        if response.status_code < 200 or response.status_code >= 300:
+            retryable = response.status_code == 429 or response.status_code >= 500
+            raise AIProviderError(
+                "AI_PROVIDER_FAILED",
+                retryable=retryable,
+                status_code=response.status_code,
+            )
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise AIMalformedResponseError("AI_PROVIDER_INVALID_RESPONSE") from exc
+        if not isinstance(payload, dict):
+            raise AIMalformedResponseError("AI_PROVIDER_INVALID_RESPONSE")
+
+        status = payload.get("status")
+        if status != "completed":
+            if isinstance(status, str) and status in {
+                "failed",
+                "incomplete",
+                "cancelled",
+                "queued",
+                "in_progress",
+            }:
+                raise AIProviderError("AI_PROVIDER_INCOMPLETE")
+            raise AIMalformedResponseError("AI_PROVIDER_INVALID_RESPONSE")
+        if payload.get("error") is not None or payload.get("incomplete_details") is not None:
+            raise AIMalformedResponseError("AI_PROVIDER_INVALID_RESPONSE")
+
+        provider_request_id = _required_string(payload.get("id"))
+        model = _required_string(payload.get("model"))
+        output_text = _extract_openai_output(payload.get("output"))
+        input_tokens, output_tokens = _parse_openai_usage(payload.get("usage"))
+        return AIProviderResult(
+            output_text=output_text,
+            provider="openai",
+            model=model,
+            provider_request_id=provider_request_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
 
 class AIGateway:
     def __init__(self, settings: Settings, provider: AIProvider):
@@ -220,6 +335,35 @@ class AIGateway:
         validated = self._validate_request(request)
         # Cancellation intentionally propagates; it must never become a synthetic AI result.
         provider_result = await self._provider.infer(validated)
+        checked = _validate_provider_result(provider_result)
+        return AIInferenceResult(
+            output_text=checked.output_text,
+            provenance=AIProvenance(
+                gateway_request_id=str(uuid4()),
+                purpose=validated.purpose,
+                provider_request_id=checked.provider_request_id,
+                provider=checked.provider,
+                model=checked.model,
+            ),
+            usage=AIUsage(
+                input_tokens=checked.input_tokens,
+                output_tokens=checked.output_tokens,
+            ),
+        )
+
+    async def infer_image(
+        self,
+        request: AIImageInferenceRequest,
+    ) -> AIInferenceResult:
+        validated = self._validate_image_request(request)
+        # The Gateway owns the wall-clock bound even for future image adapters that
+        # do not implement their own HTTP timeout.
+        try:
+            async with asyncio.timeout(self._settings.ai_timeout_seconds):
+                provider_result = await self._provider.infer_image(validated)
+        except TimeoutError as exc:
+            raise AITransportError("AI_GATEWAY_TIMEOUT", retryable=True) from exc
+
         checked = _validate_provider_result(provider_result)
         return AIInferenceResult(
             output_text=checked.output_text,
@@ -261,6 +405,49 @@ class AIGateway:
         return replace(
             request,
             purpose=purpose,
+            max_output_tokens=max_output_tokens,
+        )
+
+    def _validate_image_request(
+        self,
+        request: AIImageInferenceRequest,
+    ) -> AIImageInferenceRequest:
+        purpose = request.purpose.strip()
+        if not _PURPOSE_PATTERN.fullmatch(purpose):
+            raise AIPolicyError("AI_REQUEST_PURPOSE_INVALID")
+        if not request.system_instruction.strip() or not request.input_text.strip():
+            raise AIPolicyError("AI_REQUEST_EMPTY")
+
+        input_chars = len(request.system_instruction) + len(request.input_text)
+        if input_chars > self._settings.ai_max_input_chars:
+            raise AIPolicyError("AI_REQUEST_TOO_LARGE")
+
+        if not isinstance(request.image_bytes, bytes) or not request.image_bytes:
+            raise AIPolicyError("AI_IMAGE_EMPTY")
+        if len(request.image_bytes) > self._settings.media_max_image_bytes:
+            raise AIPolicyError("AI_IMAGE_TOO_LARGE")
+
+        content_type = request.content_type.split(";", 1)[0].strip().lower()
+        if content_type not in {"image/jpeg", "image/png", "image/webp"}:
+            raise AIPolicyError("AI_IMAGE_TYPE_UNSUPPORTED")
+        if request.detail not in {"auto", "low", "high"}:
+            raise AIPolicyError("AI_IMAGE_DETAIL_INVALID")
+
+        max_output_tokens = request.max_output_tokens
+        if max_output_tokens is None:
+            max_output_tokens = self._settings.ai_max_output_tokens
+        if (
+            not isinstance(max_output_tokens, int)
+            or isinstance(max_output_tokens, bool)
+            or max_output_tokens < 1
+            or max_output_tokens > self._settings.ai_max_output_tokens
+        ):
+            raise AIPolicyError("AI_MAX_OUTPUT_TOKENS_INVALID")
+
+        return replace(
+            request,
+            purpose=purpose,
+            content_type=content_type,
             max_output_tokens=max_output_tokens,
         )
 

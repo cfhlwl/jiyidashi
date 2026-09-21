@@ -25,6 +25,7 @@
 <!-- V：Intent Router Foundation / Issue #54 / PR #55 已完成 typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、旧可信链回归、Annotation Gate 与 exact-head Backend CI，并 squash 合并 main=8c0758bd；S3-003 转 ✅。 -->
 <!-- Stage 3A：AI Gateway / Issue #53 / PR #56 已完成第一轮代码审查 PASS，当前只剩 latest-main replay / exact-head Backend / final Git Gate；只拥有 S3-001，不创建/修改 Memory、Evidence、Object、Place、Visit 或 Reminder。 -->
 <!-- Stage 3C：Memory Pipeline Foundation / Issue #57 / PR #60 已完成正式审查、user-facing trust isolation 修复、exact-head Backend CI 与最终 Gate，并合并 main=d3f61b4d；S3-002 转 ✅。 -->
+<!-- Stage 3F：OCR Foundation / Issue #62：只处理用户主动选择的 owner-scoped READY IMAGE；OCR 输出保持 inference，不自动写入 Memory / Evidence / Entity / Visit / Reminder。 -->
 <!-- Stage 3E：Entity → Memory Pipeline Integration / Issue #61 / feat/stage3-entity-pipeline-integration：以 trusted execution context 将已合并 Entity service 接入 Extract stage，Entity metadata 仅作 inference-only internal annotations，不改变 Evidence/Store Gate。 -->
 # 迹忆开发进度总表
 
@@ -221,7 +222,7 @@
 | S3-003 | Intent Router | ✅ | Issue #54 / PR #55 已完成正式 very narrow review（P0/P1/P2=0/0/0）、typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、Annotation Gate、既有 Object/Place/Memory 回归与 exact-head Backend CI `35507973659`，并 squash 合并 `main=8c0758bd` |
 | S3-004 | 实体提取 | ✅ | Issue #58 / PR #59 已完成 candidate-only typed extraction、strict literal-span parser、AIGateway provenance、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
 | S3-005 | Entity Link | ✅ | Issue #58 / PR #59 已完成 owner-scoped deterministic Object/Place linking、ambiguous/no-match/cross-owner fail-closed、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
-| S3-006 | OCR | ⬜ | 图片文字提取 |
+| S3-006 | OCR | 🟠 | Issue #62 / `feat/stage3-ocr-foundation`：user-triggered owner-scoped READY IMAGE OCR、AIGateway image boundary、strict blocks parser、provider provenance / `trust_class=inference`、no-persistence/query regression 已实现；Backend exact-head CI 已通过，210 passed；等待正式审查/合并 |
 | S3-007 | Vision 图片理解 | ⬜ | 只作为证据辅助，不能凭空制造事实 |
 | S3-008 | pgvector | ⬜ | 语义检索基础 |
 | S3-009 | Embedding 生成与索引 | ⬜ | Memory 文本 / 结构化描述 |
