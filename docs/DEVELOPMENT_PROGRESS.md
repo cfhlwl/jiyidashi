@@ -25,14 +25,15 @@
 <!-- V：Intent Router Foundation / Issue #54 / PR #55 已完成 typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、旧可信链回归、Annotation Gate 与 exact-head Backend CI，并 squash 合并 main=8c0758bd；S3-003 转 ✅。 -->
 <!-- Stage 3A：AI Gateway / Issue #53 / PR #56 已完成第一轮代码审查 PASS，当前只剩 latest-main replay / exact-head Backend / final Git Gate；只拥有 S3-001，不创建/修改 Memory、Evidence、Object、Place、Visit 或 Reminder。 -->
 <!-- Stage 3C：Memory Pipeline Foundation / Issue #57 / PR #60 已完成正式审查、user-facing trust isolation 修复、exact-head Backend CI 与最终 Gate，并合并 main=d3f61b4d；S3-002 转 ✅。 -->
-<!-- Stage 3F：OCR Foundation / Issue #62：只处理用户主动选择的 owner-scoped READY IMAGE；OCR 输出保持 inference，不自动写入 Memory / Evidence / Entity / Visit / Reminder。 -->
-<!-- Stage 3E：Entity → Memory Pipeline Integration / Issue #61 / feat/stage3-entity-pipeline-integration：以 trusted execution context 将已合并 Entity service 接入 Extract stage，Entity metadata 仅作 inference-only internal annotations，不改变 Evidence/Store Gate。 -->
+<!-- Stage 3F：OCR Foundation / Issue #62 / PR #64 已完成两轮 very narrow review、latest-main clean replay、exact-head Backend/Mini CI 与最终 Git Gate，并合并 main=b94c46f；S3-006 转 ✅。 -->
+<!-- Stage 3E：Entity → Memory Pipeline Integration / Issue #61 / PR #63 已完成 trusted execution integration 并合并 main=1e28b975；Entity metadata 保持 inference-only internal annotations。 -->
+<!-- Stage 3H：pgvector Foundation / Issue #66 / feat/stage3-pgvector-foundation：只铺 PostgreSQL vector extension + SQLAlchemy 类型基础，不创建用户 embedding、不提供语义检索。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-21  
-> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-005 基础能力已全部合并，当前进入 Entity → Memory Pipeline trusted integration  
+> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-006 已合并，当前进入 S3-008 pgvector Foundation  
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Issue #61 / Stage 3E：复用已合并 `extract_and_link_entities(...)`，由 Pipeline trusted execution context 提供 owner/execution identity；Entity link/provenance 仅作为 inference-only internal annotations，Evidence、Store anti-bypass、query/day-summary fail-closed 保持不变
+> 当前开发重点：Issue #66 / S3-008 pgvector Foundation：只启用 PostgreSQL `vector` extension、提供 SQLAlchemy 类型 seam 与 migration/capability CI；Embedding 生成、向量列、索引与检索全部留给 S3-009 之后
 
 ## 状态规则
 
@@ -222,9 +223,9 @@
 | S3-003 | Intent Router | ✅ | Issue #54 / PR #55 已完成正式 very narrow review（P0/P1/P2=0/0/0）、typed contract、deterministic precedence、owner isolation、UNKNOWN fail-closed、Annotation Gate、既有 Object/Place/Memory 回归与 exact-head Backend CI `35507973659`，并 squash 合并 `main=8c0758bd` |
 | S3-004 | 实体提取 | ✅ | Issue #58 / PR #59 已完成 candidate-only typed extraction、strict literal-span parser、AIGateway provenance、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
 | S3-005 | Entity Link | ✅ | Issue #58 / PR #59 已完成 owner-scoped deterministic Object/Place linking、ambiguous/no-match/cross-owner fail-closed、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
-| S3-006 | OCR | 🟠 | Issue #62 / `feat/stage3-ocr-foundation`：user-triggered owner-scoped READY IMAGE OCR、AIGateway image boundary、strict blocks parser、provider provenance / `trust_class=inference`、no-persistence/query regression 已实现；Backend exact-head CI 已通过，210 passed；等待正式审查/合并 |
+| S3-006 | OCR | ✅ | Issue #62 / PR #64 已完成 user-triggered owner-scoped READY IMAGE OCR、AIGateway image boundary、strict parser/provenance、no-persistence/query regression、两轮正式审查、latest-main replay 与 exact-head CI，并合并 `main=b94c46f` |
 | S3-007 | Vision 图片理解 | ⬜ | 只作为证据辅助，不能凭空制造事实 |
-| S3-008 | pgvector | ⬜ | 语义检索基础 |
+| S3-008 | pgvector | 🟠 | Issue #66 / PR #67：PostgreSQL vector extension、SQLAlchemy pgvector seam、SQLite no-op migration、保守 downgrade、no-vector-column scope gate 与真实 PostgreSQL CI 已实现；Backend exact-head CI 已通过，219 passed；等待正式审查/合并 |
 | S3-009 | Embedding 生成与索引 | ⬜ | Memory 文本 / 结构化描述 |
 | S3-010 | Structured First 检索 | ⬜ | 结构化 > 关键词 > Vector > LLM |
 | S3-011 | Memory RAG | ⬜ | 只从用户自己的可用 Evidence 回答 |
