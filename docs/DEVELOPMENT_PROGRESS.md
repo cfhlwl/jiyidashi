@@ -233,8 +233,8 @@
 | S3-010 | Structured First 检索 | ✅ | Issue #73 / PR #76 已完成 STRUCTURED > KEYWORD > VECTOR、Object CURRENT terminal-miss、server-side Object 32+1 cap、vector keyset paging + fingerprint validation + typed scan-limit、Evidence Ranking enrichment、正式两轮审查与 exact-head CI，并合并 `main=e9225739` |
 | S3-011 | Memory RAG | ⬜ | 只从用户自己的可用 Evidence 回答 |
 | S3-012 | Evidence Ranking | ✅ | Issue #70 / PR #71 已完成固定 `USER_DIRECT > SENSOR_DIRECT > SYSTEM_DERIVED > AI_INFERENCE`、owner/deleted isolation、deterministic tie-break、no-autoflush read-only seam、正式 review 与 exact-head CI，并合并 `main=f3c84899` |
-| S3-013 | “已确认 / 有证据 / AI推测”答案状态 | 🟠 | Issue #74 / PR #75：内部 `CONFIRMED / EVIDENCE_SUPPORTED / INFERENCE_ONLY / NO_EVIDENCE` server-owned resolver、latest content-edit source fail-closed、独立 read Session/identity-map isolation、owner/deleted/CURRENT-stale regressions均已实现；第二轮 review PASS，等待 latest-main exact-head Gate/合并 |
-| S3-014 | Reminder 意图提取 | ⬜ | 用户确认后才创建提醒 |
+| S3-013 | “已确认 / 有证据 / AI推测”答案状态 | ✅ | Issue #74 / PR #75 已完成四态 server-owned resolver、latest edit-source fail-closed、独立 persisted-state read Session、两轮正式审查与 final Gate，并合并 `main=a0636479` |
+| S3-014 | Reminder 意图提取 | 🟠 | Issue #78 / PR #79：AIGateway-only inference candidate、strict exact-key/literal-span parser、server-owned persisted IANA timezone、有限 deterministic time grammar、DST/past fail-closed、显式用户确认门禁与 no-write 回归已实现；第一轮 review 唯一 P2（`has_reminder_intent` 类型强转）已改 `StrictBool` 并锁住 `"true"/"false"/1/0` fail-closed，Backend #505 324 passed；等待第二轮复审/合并 |
 | S3-015 | Daily Summary | ⬜ | “今天发生了什么” |
 | S3-016 | 月度回忆 | ⬜ | 月度事件整理 |
 | S3-017 | 年度回忆 | ⬜ | 年度报告 |
