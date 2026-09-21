@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.entity_models import EntityLinkResult
 from app.models import Memory, MemorySource, MemoryType, SourceType
 from app.services.idempotency_service import (
     IdempotencyConflict,
@@ -75,6 +76,22 @@ class MemoryPipelineInput:
 
 
 @dataclass(frozen=True)
+class MemoryPipelineExecutionContext:
+    """Trusted per-run identity passed to internal stage adapters only."""
+
+    execution_id: UUID
+    user_id: UUID
+
+
+@dataclass(frozen=True)
+class EntityPipelineAnnotation:
+    """Inference-only Entity metadata; never Evidence or a confirmed fact."""
+
+    link: EntityLinkResult
+    trust_class: Literal["inference"] = "inference"
+
+
+@dataclass(frozen=True)
 class NormalizedMemoryInput:
     original_text: str
     normalized_text: str
@@ -88,6 +105,7 @@ class ExtractedMemoryCandidate:
     title: str | None = None
     confidence: float = 0.5
     attributes: dict[str, str] = field(default_factory=dict)
+    entity_annotations: tuple[EntityPipelineAnnotation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,6 +137,7 @@ class MemoryPipelineResult:
     memory_id: UUID | None = None
     error_code: str | None = None
     retryable: bool = False
+    entity_annotations: tuple[EntityPipelineAnnotation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -136,6 +155,8 @@ class MemoryExtractor(Protocol):
     async def extract(
         self,
         normalized: NormalizedMemoryInput,
+        *,
+        context: MemoryPipelineExecutionContext,
     ) -> ExtractedMemoryCandidate | None: ...
 
 
@@ -332,16 +353,27 @@ class MemoryPipeline:
 
     async def run(self, capture: MemoryPipelineInput) -> MemoryPipelineResult:
         states: list[MemoryPipelineStageState] = []
+        entity_annotations: tuple[EntityPipelineAnnotation, ...] = ()
         try:
             validated_capture = _validate_capture(capture)
             states.append(_completed(MemoryPipelineStage.CAPTURE))
+            # Owner/execution identity is constructed only from the validated capture.
+            # It is never sourced from normalizer/model output or free-form metadata.
+            context = MemoryPipelineExecutionContext(
+                execution_id=validated_capture.execution_id,
+                user_id=validated_capture.user_id,
+            )
 
             normalized = _validate_normalized(
-                await self._normalizer.normalize(validated_capture)
+                await self._normalizer.normalize(validated_capture),
+                expected_capture=validated_capture,
             )
             states.append(_completed(MemoryPipelineStage.NORMALIZE))
 
-            extracted = await self._extractor.extract(normalized)
+            extracted = await self._extractor.extract(
+                normalized,
+                context=context,
+            )
             if extracted is None:
                 states.append(_completed(MemoryPipelineStage.EXTRACT))
                 states.extend(
@@ -362,6 +394,7 @@ class MemoryPipeline:
                 )
 
             extracted = _validate_extracted(extracted)
+            entity_annotations = extracted.entity_annotations
             states.append(_completed(MemoryPipelineStage.EXTRACT))
 
             candidate = _validate_classified(await self._classifier.classify(extracted))
@@ -384,6 +417,7 @@ class MemoryPipeline:
                     candidate=candidate,
                     evidence_decision=evidence_decision,
                     store_decision=StoreDecision.SKIP_NO_EVIDENCE,
+                    entity_annotations=entity_annotations,
                 )
 
             evidence = validated_capture.evidence
@@ -405,6 +439,7 @@ class MemoryPipeline:
                 evidence_decision=evidence_decision,
                 store_decision=StoreDecision.STORE,
                 memory_id=memory.id,
+                entity_annotations=entity_annotations,
             )
         except MemoryPipelineStageFailure as exc:
             if not states or states[-1].stage != exc.stage:
@@ -425,6 +460,7 @@ class MemoryPipeline:
                 store_decision=StoreDecision.FAILED,
                 error_code=exc.code,
                 retryable=exc.retryable,
+                entity_annotations=entity_annotations,
             )
 
     def _decide_evidence(self, evidence: PipelineEvidence | None) -> EvidenceDecision:
@@ -519,6 +555,11 @@ def _validate_capture(capture: MemoryPipelineInput) -> MemoryPipelineInput:
             MemoryPipelineStage.CAPTURE,
             "PIPELINE_CAPTURE_INVALID",
         )
+    if not isinstance(capture.execution_id, UUID) or not isinstance(capture.user_id, UUID):
+        raise MemoryPipelineStageFailure(
+            MemoryPipelineStage.CAPTURE,
+            "PIPELINE_CAPTURE_INVALID",
+        )
     original_text = _require_text(
         capture.original_text,
         code="PIPELINE_CAPTURE_INVALID",
@@ -579,8 +620,20 @@ def _validate_evidence(evidence: PipelineEvidence) -> PipelineEvidence:
     )
 
 
-def _validate_normalized(value: object) -> NormalizedMemoryInput:
+def _validate_normalized(
+    value: object,
+    *,
+    expected_capture: MemoryPipelineInput,
+) -> NormalizedMemoryInput:
     if not isinstance(value, NormalizedMemoryInput):
+        raise MemoryPipelineStageFailure(
+            MemoryPipelineStage.NORMALIZE,
+            "PIPELINE_NORMALIZE_INVALID",
+        )
+    # Entity literal-span validation must stay anchored to the user's validated
+    # capture text. A custom/AI normalizer may derive normalized_text, but it cannot
+    # rewrite original_text and thereby manufacture a new "literal" Entity span.
+    if value.original_text != expected_capture.original_text:
         raise MemoryPipelineStageFailure(
             MemoryPipelineStage.NORMALIZE,
             "PIPELINE_NORMALIZE_INVALID",
@@ -630,6 +683,24 @@ def _validate_extracted(value: object) -> ExtractedMemoryCandidate:
         stage=MemoryPipelineStage.EXTRACT,
         code="PIPELINE_EXTRACT_INVALID",
     )
+    if not isinstance(value.entity_annotations, tuple) or len(value.entity_annotations) > 20:
+        raise MemoryPipelineStageFailure(
+            MemoryPipelineStage.EXTRACT,
+            "PIPELINE_ENTITY_ANNOTATION_INVALID",
+        )
+    for annotation in value.entity_annotations:
+        if (
+            not isinstance(annotation, EntityPipelineAnnotation)
+            or annotation.trust_class != "inference"
+            or not isinstance(annotation.link, EntityLinkResult)
+            or annotation.link.candidate.provenance.trust_class != "inference"
+        ):
+            # Entity metadata may enrich internal processing, but it can never promote
+            # model output into Evidence or a trusted fact.
+            raise MemoryPipelineStageFailure(
+                MemoryPipelineStage.EXTRACT,
+                "PIPELINE_ENTITY_ANNOTATION_INVALID",
+            )
     return value
 
 

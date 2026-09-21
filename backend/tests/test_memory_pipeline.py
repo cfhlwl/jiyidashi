@@ -32,7 +32,8 @@ class DeterministicExtractor:
         self.candidate = candidate
         self.calls = 0
 
-    async def extract(self, normalized):
+    async def extract(self, normalized, *, context):
+        del normalized, context
         self.calls += 1
         return self.candidate
 
@@ -48,7 +49,8 @@ class DeterministicClassifier:
 
 
 class FailingExtractor:
-    async def extract(self, normalized):
+    async def extract(self, normalized, *, context):
+        del normalized, context
         raise MemoryPipelineStageFailure(
             MemoryPipelineStage.EXTRACT,
             "EXTRACTOR_FAILED",

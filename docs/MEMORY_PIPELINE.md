@@ -13,9 +13,9 @@ Capture
   -> Store decision
 \`\`\`
 
-The foundation intentionally does not implement real entity semantics. Extraction and
-classification are injected stage adapters so later Entity work can plug in without
-rewriting Evidence, owner or idempotency rules.
+Extraction and classification remain injected stage adapters. Issue #61 adds a small
+Entity adapter that reuses the merged Entity Extraction + Link service without rewriting
+Evidence, owner or idempotency rules.
 
 ## Trust rules
 
@@ -41,16 +41,30 @@ The same \`user_id + execution_id + fingerprint\` returns the existing Memory.
 Reusing the same execution ID with a changed capture/candidate/evidence fails closed.
 The same execution ID remains isolated between different owners.
 
+## Entity adapter boundary
+
+The Entity integration receives a typed \`MemoryPipelineExecutionContext\` created by the
+orchestrator from the already-validated capture. \`user_id\` and \`execution_id\` are not
+read from model output or free-form metadata. The adapter calls the merged
+\`extract_and_link_entities(...)\` service and attaches its validated \`EntityLinkResult\`
+objects as \`trust_class=inference\` internal annotations. Linked Object/Place IDs therefore
+remain owner-scoped references, not Evidence and not confirmation of the Memory candidate.
+Unresolved/ambiguous/cross-owner results remain unresolved.
+
+Entity annotations do not participate in the Evidence decision and are not a bypass into
+Store. \`NO EVIDENCE -> NO MEMORY\` and Store anti-bypass checks remain unchanged.
+
 ## AI boundary
 
-This foundation performs no model call itself. Any future AI-backed Normalize/Extract/
-Classify adapter must depend on the merged \`AIGateway\`; provider SDKs, provider API
-keys and direct model HTTP calls do not belong in pipeline stages.
+The pipeline core performs no model call itself. AI-backed stage adapters must depend on
+the merged \`AIGateway\`; provider SDKs, provider API keys and direct model HTTP calls do
+not belong in pipeline stages. Entity extraction follows the same boundary through the
+existing Entity service.
 
 ## Out of scope
 
-- concrete Person/Object/Place/Event extraction rules
-- Entity Link or automatic entity creation
+- automatic entity creation or Person persistence
+- fuzzy/AI entity linking
 - embeddings / pgvector / RAG
 - Reminder intent
 - public Memory Pipeline API
