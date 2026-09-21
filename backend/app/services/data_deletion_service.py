@@ -37,6 +37,7 @@ from app.models import (
     User,
     Visit,
 )
+from app.services.embedding_service import delete_owner_memory_embeddings
 from app.services.object_storage import (
     DisabledObjectStorage,
     ObjectStorage,
@@ -59,6 +60,7 @@ USER_DATA_INVENTORY = (
     "memories",
     "memory_edits",
     "memory_sources",
+    "memory_embeddings",
     "location_derivation_states",
     "location_ingest_receipts",
     "location_points",
@@ -584,6 +586,7 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
     counts["memory_edits"] = _delete_count(
         db, delete(MemoryEdit).where(MemoryEdit.user_id == user_id)
     )
+    counts["memory_embeddings"] = delete_owner_memory_embeddings(db, user_id)
     counts["memory_sources"] = _delete_count(
         db, delete(MemorySource).where(MemorySource.memory_id.in_(memory_ids))
     )

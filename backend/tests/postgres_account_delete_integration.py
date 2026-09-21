@@ -16,6 +16,8 @@ from app.core.db import (
 )
 from app.data_deletion_models import DataDeletionOperation
 from app.deps import get_current_user_id
+from app.embedding_models import MemoryEmbedding
+from app.embedding_policy import MEMORY_EMBEDDING_DIMENSIONS, MEMORY_EMBEDDING_MODEL
 from app.models import Memory, User
 from app.services.account_deletion_service import (
     AccountDeletionError,
@@ -310,6 +312,7 @@ def main() -> None:
     first_request = uuid4()
     second_request = uuid4()
     identity_id = uuid4()
+    owner_memory_id = uuid4()
     other_memory_id = uuid4()
 
     with SessionLocal() as seed:
@@ -329,11 +332,40 @@ def main() -> None:
                     subject=f"{uuid4()}@example.test",
                     secret_hash="integration-only",
                 ),
-                Memory(user_id=owner_id, content="delete me"),
+                Memory(
+                    id=owner_memory_id,
+                    user_id=owner_id,
+                    content="delete me",
+                ),
                 Memory(
                     id=other_memory_id,
                     user_id=other_id,
                     content="keep other user",
+                ),
+            ]
+        )
+        seed.flush()
+        seed.add_all(
+            [
+                MemoryEmbedding(
+                    memory_id=owner_memory_id,
+                    user_id=owner_id,
+                    memory_revision=0,
+                    content_fingerprint="a" * 64,
+                    provider="fixture",
+                    model=MEMORY_EMBEDDING_MODEL,
+                    dimensions=MEMORY_EMBEDDING_DIMENSIONS,
+                    embedding=[0.01] * MEMORY_EMBEDDING_DIMENSIONS,
+                ),
+                MemoryEmbedding(
+                    memory_id=other_memory_id,
+                    user_id=other_id,
+                    memory_revision=0,
+                    content_fingerprint="b" * 64,
+                    provider="fixture",
+                    model=MEMORY_EMBEDDING_MODEL,
+                    dimensions=MEMORY_EMBEDDING_DIMENSIONS,
+                    embedding=[0.02] * MEMORY_EMBEDDING_DIMENSIONS,
                 ),
             ]
         )
@@ -400,9 +432,15 @@ def main() -> None:
             DataDeletionOperation,
             DataDeletionOperation.user_id == owner_id,
         ) == 0
-        # Owner isolation: another account and its data are untouched.
+        assert db_count(
+            verify,
+            MemoryEmbedding,
+            MemoryEmbedding.user_id == owner_id,
+        ) == 0
+        # Owner isolation: another account and its derived index are untouched.
         assert verify.get(User, other_id) is not None
         assert verify.get(Memory, other_memory_id) is not None
+        assert verify.get(MemoryEmbedding, other_memory_id) is not None
         verify.delete(verify.get(User, other_id))
         verify.commit()
 

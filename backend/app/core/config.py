@@ -4,6 +4,12 @@ from urllib.parse import urlparse
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.embedding_policy import (
+    MEMORY_EMBEDDING_DIMENSIONS,
+    MEMORY_EMBEDDING_MAX_INPUT_CHARS,
+    MEMORY_EMBEDDING_MODEL,
+)
+
 
 class Settings(BaseSettings):
     app_env: str = "development"
@@ -62,6 +68,20 @@ class Settings(BaseSettings):
     ai_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
     ai_max_input_chars: int = Field(default=64000, ge=1, le=1_000_000)
     ai_max_output_tokens: int = Field(default=4096, ge=1, le=65536)
+
+    # [人工注释][S3-009] Embedding 是服务端派生索引，模型/维度由 schema policy 固定；
+    # provider endpoint/key 不进入客户端，也不能由单次生成请求覆盖。
+    embedding_provider: str = "disabled"
+    embedding_base_url: str = "https://api.openai.com/v1"
+    embedding_api_key: str = ""
+    embedding_model: str = MEMORY_EMBEDDING_MODEL
+    embedding_dimensions: int = Field(default=MEMORY_EMBEDDING_DIMENSIONS, ge=1, le=4096)
+    embedding_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
+    embedding_max_input_chars: int = Field(
+        default=MEMORY_EMBEDDING_MAX_INPUT_CHARS,
+        ge=1,
+        le=MEMORY_EMBEDDING_MAX_INPUT_CHARS,
+    )
 
     # [人工注释][S1-FIX-003] 正式认证的滥用保护默认开启，生产环境禁止关闭。
     auth_rate_limit_enabled: bool = True
@@ -184,6 +204,26 @@ class Settings(BaseSettings):
                 raise ValueError("AI_BASE_URL must be an absolute URL")
             if self.is_production and parsed_ai.scheme.lower() != "https":
                 raise ValueError("AI_BASE_URL must use HTTPS in production")
+
+        if self.embedding_provider not in {"disabled", "openai"}:
+            raise ValueError("EMBEDDING_PROVIDER must be disabled or openai")
+        if (
+            self.embedding_model != MEMORY_EMBEDDING_MODEL
+            or self.embedding_dimensions != MEMORY_EMBEDDING_DIMENSIONS
+        ):
+            raise ValueError(
+                "Embedding model/dimensions must match the reviewed S3-009 policy"
+            )
+        if self.embedding_provider == "openai":
+            if not self.embedding_api_key.strip():
+                raise ValueError(
+                    "EMBEDDING_API_KEY is required when EMBEDDING_PROVIDER=openai"
+                )
+            parsed_embedding = urlparse(self.embedding_base_url.strip())
+            if not parsed_embedding.scheme or not parsed_embedding.netloc:
+                raise ValueError("EMBEDDING_BASE_URL must be an absolute URL")
+            if self.is_production and parsed_embedding.scheme.lower() != "https":
+                raise ValueError("EMBEDDING_BASE_URL must use HTTPS in production")
         return self
 
 

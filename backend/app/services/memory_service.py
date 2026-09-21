@@ -16,6 +16,7 @@ from app.models import (
     SourceType,
 )
 from app.schemas import MemoryCreate
+from app.services.embedding_service import invalidate_memory_embedding
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,9 @@ def get_memory_for_user(
 
 def soft_delete_memory(db: Session, memory: Memory) -> None:
     memory.is_deleted = True
+    # A deleted Memory must not retain a nearest-neighbor candidate. The trusted
+    # owner-scoped Memory lock is already held by the caller before invalidation.
+    invalidate_memory_embedding(db, memory.id)
     db.execute(
         update(ObjectLocation)
         .where(

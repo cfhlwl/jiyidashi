@@ -225,9 +225,9 @@
 | S3-004 | 实体提取 | ✅ | Issue #58 / PR #59 已完成 candidate-only typed extraction、strict literal-span parser、AIGateway provenance、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
 | S3-005 | Entity Link | ✅ | Issue #58 / PR #59 已完成 owner-scoped deterministic Object/Place linking、ambiguous/no-match/cross-owner fail-closed、正式审查与 exact-head Backend CI，并合并 `main=da0662a7` |
 | S3-006 | OCR | ✅ | Issue #62 / PR #64 已完成 user-triggered owner-scoped READY IMAGE OCR、AIGateway image boundary、strict parser/provenance、no-persistence/query regression、两轮正式审查、latest-main replay 与 exact-head CI，并合并 `main=b94c46f` |
-| S3-007 | Vision 图片理解 | 🟠 | Issue #65 / PR #68：user-triggered owner-scoped READY IMAGE Vision 已实现；provider 仅可返回受控 kind/code，server-owned labels + `trust_class=inference`，no persistence / no OCR-Entity coupling；正式 very narrow review PASS，等待 latest-main exact-head Gate/合并 |
+| S3-007 | Vision 图片理解 | ✅ | Issue #65 / PR #68 已完成 controlled kind/code Vision、server-owned labels、no-persistence/query regression、正式审查与 exact-head CI，并合并 `main=d77dca2d` |
 | S3-008 | pgvector | ✅ | Issue #66 / PR #67 已完成 PostgreSQL vector extension、SQLAlchemy pgvector seam、SQLite no-op migration、保守 downgrade、zero-VECTOR-column scope gate、真实 PostgreSQL CI 与正式审查，并合并 `main=b7579c4d` |
-| S3-009 | Embedding 生成与索引 | ⬜ | Memory 文本 / 结构化描述 |
+| S3-009 | Embedding 生成与索引 | 🟠 | Issue #69 / `feat/stage3-memory-embedding-index`：owner-scoped Memory derived index 已实现；server-owned canonical text、固定 `text-embedding-3-small / 1536`、VECTOR + HNSW cosine、幂等/并发收敛、编辑/软删除失效、Data/Account Delete 生命周期已通过真实 PostgreSQL Gate；等待正式审查/合并 |
 | S3-010 | Structured First 检索 | ⬜ | 结构化 > 关键词 > Vector > LLM |
 | S3-011 | Memory RAG | ⬜ | 只从用户自己的可用 Evidence 回答 |
 | S3-012 | Evidence Ranking | ⬜ | 用户主动 > GPS/EXIF > 系统识别 > AI 推断 |
