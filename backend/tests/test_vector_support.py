@@ -5,6 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.dialects import postgresql
 
 from app.core.db import Base
+from app.embedding_models import MemoryEmbedding
+from app.embedding_policy import MEMORY_EMBEDDING_DIMENSIONS
 from app.vector_support import inspect_vector_capability, vector_type
 
 
@@ -36,11 +38,12 @@ def test_sqlite_non_vector_path_remains_available():
     assert capability.extension_version is None
 
 
-def test_foundation_adds_no_user_vector_columns():
+def test_s3_009_owns_exactly_one_reviewed_memory_vector_column():
     vector_columns = [
         f"{table.name}.{column.name}"
         for table in Base.metadata.sorted_tables
         for column in table.columns
         if isinstance(column.type, VECTOR)
     ]
-    assert vector_columns == []
+    assert vector_columns == ["memory_embeddings.embedding"]
+    assert MemoryEmbedding.__table__.c.embedding.type.dim == MEMORY_EMBEDDING_DIMENSIONS

@@ -175,6 +175,9 @@ class PlaceNameCorrection(Base):
 class Memory(Base):
     __tablename__ = "memories"
     __table_args__ = (
+        # [人工注释][S3-009] MemoryEmbedding 的 owner partition 必须由数据库直接
+        # 绑定到 authoritative Memory owner；复合 UNIQUE 为下游复合 FK 提供可信锚点。
+        UniqueConstraint("id", "user_id", name="uq_memories_id_user_id"),
         Index("ix_memories_user_occurred", "user_id", "occurred_at"),
         Index("ix_memories_user_type", "user_id", "memory_type"),
     )

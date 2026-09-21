@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Memory, MemoryEdit, MemorySource, MemoryType, SourceType
 from app.schemas import MemoryUpdate
+from app.services.embedding_service import invalidate_memory_embedding
 
 
 class MemoryEditUnsupported(Exception):
@@ -109,6 +110,9 @@ def edit_memory(
     memory.content = new_content
     memory.edit_revision = revision
     memory.edited_at = now
+    # S3-009 vectors are derived from title/content/revision. Delete the old row in
+    # this same trusted edit transaction so it cannot remain current after commit.
+    invalidate_memory_embedding(db, memory.id)
     if changed_content:
         # 这是服务端根据“用户明确改写正文”派生的当前来源，不是客户端写 trust 字段。
         # 原照片/语音/AI 来源仍完整留在旧 MemorySource，当前文本则由新的 USER_TEXT source 证明。

@@ -114,6 +114,7 @@ def create_schema() -> None:
         account_deletion_models,
         auth_models,
         data_deletion_models,
+        embedding_models,
         idempotency_models,
         media_models,
         models,

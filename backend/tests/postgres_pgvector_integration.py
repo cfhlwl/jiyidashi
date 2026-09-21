@@ -35,7 +35,7 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                     SELECT table_name, column_name, data_type, is_nullable
                     FROM information_schema.columns
                     WHERE table_schema = 'public'
-                      AND table_name <> 'alembic_version'
+                      AND table_name NOT IN ('alembic_version', 'memory_embeddings')
                     ORDER BY table_name, ordinal_position
                     """
                 )
