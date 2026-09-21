@@ -29,12 +29,13 @@
 <!-- Stage 3E：Entity → Memory Pipeline Integration / Issue #61 / PR #63 已完成 trusted execution integration 并合并 main=1e28b975；Entity metadata 保持 inference-only internal annotations。 -->
 <!-- Stage 3H：pgvector Foundation / Issue #66 / PR #67 已完成 PostgreSQL vector extension + SQLAlchemy 类型基础、真实 PostgreSQL CI、正式 review 与合并 main=b7579c4d；S3-008 转 ✅。 -->
 <!-- Stage 3G：Vision Foundation / Issue #65 / PR #68：用户主动触发 owner-scoped READY IMAGE 可见场景/物品/活动候选观察；provider 仅可返回受控 kind/code，server-owned labels + trust_class=inference，不写 Memory/Evidence/Entity/Visit/Reminder；正式 review PASS，等待 latest-main exact-head Gate/合并。 -->
+<!-- Stage 3J：Evidence Ranking Foundation / Issue #70 / PR #71 已完成实现、第一轮 P2 no-autoflush 修复、第二轮 very narrow review PASS 与 exact-head Backend CI；等待 latest-main final Gate/合并。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-21  
-> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-006、S3-008 已合并，当前收口 S3-007 Vision Foundation
+> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-009 已完成，当前收口 S3-012 Evidence Ranking Foundation
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Issue #65 / PR #68 / S3-007 Vision Foundation：受控 SCENE/OBJECT/ACTIVITY inference candidates、server-owned labels、no persistence / no OCR-Entity coupling；正式 review PASS，等待 latest-main exact-head Gate/合并
+> 当前开发重点：Issue #70 / PR #71 / S3-012 Evidence Ranking Foundation：固定 trust-first classes、owner-scoped persisted Evidence、no-autoflush read-only seam；第二轮 review PASS，等待 latest-main exact-head Gate/合并
 
 ## 状态规则
 
@@ -227,10 +228,10 @@
 | S3-006 | OCR | ✅ | Issue #62 / PR #64 已完成 user-triggered owner-scoped READY IMAGE OCR、AIGateway image boundary、strict parser/provenance、no-persistence/query regression、两轮正式审查、latest-main replay 与 exact-head CI，并合并 `main=b94c46f` |
 | S3-007 | Vision 图片理解 | ✅ | Issue #65 / PR #68 已完成 controlled kind/code Vision、server-owned labels、no-persistence/query regression、正式审查与 exact-head CI，并合并 `main=d77dca2d` |
 | S3-008 | pgvector | ✅ | Issue #66 / PR #67 已完成 PostgreSQL vector extension、SQLAlchemy pgvector seam、SQLite no-op migration、保守 downgrade、zero-VECTOR-column scope gate、真实 PostgreSQL CI 与正式审查，并合并 `main=b7579c4d` |
-| S3-009 | Embedding 生成与索引 | 🟠 | Issue #69 / `feat/stage3-memory-embedding-index`：owner-scoped Memory derived index 已实现；server-owned canonical text、固定 `text-embedding-3-small / 1536`、VECTOR + HNSW cosine、幂等/并发收敛、编辑/软删除失效、Data/Account Delete 生命周期已通过真实 PostgreSQL Gate；等待正式审查/合并 |
+| S3-009 | Embedding 生成与索引 | ✅ | Issue #69 / PR #72 已完成 MemoryEmbedding 派生索引、VECTOR(1536)、HNSW cosine、owner-binding 复合 FK、编辑/删除/Data Delete 生命周期、正式两轮审查与 exact-head CI，并合并 `main=0766d027` |
 | S3-010 | Structured First 检索 | ⬜ | 结构化 > 关键词 > Vector > LLM |
 | S3-011 | Memory RAG | ⬜ | 只从用户自己的可用 Evidence 回答 |
-| S3-012 | Evidence Ranking | ⬜ | 用户主动 > GPS/EXIF > 系统识别 > AI 推断 |
+| S3-012 | Evidence Ranking | 🟠 | Issue #70 / PR #71：固定 `USER_DIRECT > SENSOR_DIRECT > SYSTEM_DERIVED > AI_INFERENCE`、owner/deleted isolation、同类 deterministic tie-break、no-autoflush read-only seam 均已实现；第二轮 very narrow review PASS，等待 latest-main final Gate/合并 |
 | S3-013 | “已确认 / 有证据 / AI推测”答案状态 | ⬜ | 前端必须明确展示 |
 | S3-014 | Reminder 意图提取 | ⬜ | 用户确认后才创建提醒 |
 | S3-015 | Daily Summary | ⬜ | “今天发生了什么” |
