@@ -34,9 +34,9 @@
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-21  
-> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-009、S3-012 已完成，当前进入 S3-010 Structured First Retrieval
+> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-010、S3-012 已完成，当前收口 S3-013 Answer Trust State Foundation
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Issue #73 / S3-010 Structured First Retrieval：内部候选检索固定 STRUCTURED > KEYWORD > VECTOR；Evidence Ranking 只作 metadata enrichment，LLM fallback 暂为 typed NOT_ATTEMPTED，不引入 RAG/答案生成
+> 当前开发重点：Issue #74 / PR #75 / S3-013 Answer Trust State Foundation：typed trust states、latest edit-source fail-closed、persisted-state isolation；第二轮 review PASS，等待 latest-main exact-head Gate/合并
 
 ## 状态规则
 
@@ -230,10 +230,10 @@
 | S3-007 | Vision 图片理解 | ✅ | Issue #65 / PR #68 已完成 controlled kind/code Vision、server-owned labels、no-persistence/query regression、正式审查与 exact-head CI，并合并 `main=d77dca2d` |
 | S3-008 | pgvector | ✅ | Issue #66 / PR #67 已完成 PostgreSQL vector extension、SQLAlchemy pgvector seam、SQLite no-op migration、保守 downgrade、zero-VECTOR-column scope gate、真实 PostgreSQL CI 与正式审查，并合并 `main=b7579c4d` |
 | S3-009 | Embedding 生成与索引 | ✅ | Issue #69 / PR #72 已完成 MemoryEmbedding 派生索引、VECTOR(1536)、HNSW cosine、owner-binding 复合 FK、编辑/删除/Data Delete 生命周期、正式两轮审查与 exact-head CI，并合并 `main=0766d027` |
-| S3-010 | Structured First 检索 | 🟠 | Issue #73 / `feat/stage3-structured-first-retrieval`：内部 read-only retrieval seam 已实现；STRUCTURED > KEYWORD > VECTOR、authoritative Object CURRENT terminal-miss、deterministic keyword、owner-scoped pgvector + stale embedding revalidation、Evidence Ranking metadata enrichment、typed LLM NOT_ATTEMPTED；开发 HEAD exact-head Backend CI 已通过，等待正式审查/合并 |
+| S3-010 | Structured First 检索 | ✅ | Issue #73 / PR #76 已完成 STRUCTURED > KEYWORD > VECTOR、Object CURRENT terminal-miss、server-side Object 32+1 cap、vector keyset paging + fingerprint validation + typed scan-limit、Evidence Ranking enrichment、正式两轮审查与 exact-head CI，并合并 `main=e9225739` |
 | S3-011 | Memory RAG | ⬜ | 只从用户自己的可用 Evidence 回答 |
 | S3-012 | Evidence Ranking | ✅ | Issue #70 / PR #71 已完成固定 `USER_DIRECT > SENSOR_DIRECT > SYSTEM_DERIVED > AI_INFERENCE`、owner/deleted isolation、deterministic tie-break、no-autoflush read-only seam、正式 review 与 exact-head CI，并合并 `main=f3c84899` |
-| S3-013 | “已确认 / 有证据 / AI推测”答案状态 | ⬜ | 前端必须明确展示 |
+| S3-013 | “已确认 / 有证据 / AI推测”答案状态 | 🟠 | Issue #74 / PR #75：内部 `CONFIRMED / EVIDENCE_SUPPORTED / INFERENCE_ONLY / NO_EVIDENCE` server-owned resolver、latest content-edit source fail-closed、独立 read Session/identity-map isolation、owner/deleted/CURRENT-stale regressions均已实现；第二轮 review PASS，等待 latest-main exact-head Gate/合并 |
 | S3-014 | Reminder 意图提取 | ⬜ | 用户确认后才创建提醒 |
 | S3-015 | Daily Summary | ⬜ | “今天发生了什么” |
 | S3-016 | 月度回忆 | ⬜ | 月度事件整理 |
