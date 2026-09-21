@@ -12,6 +12,8 @@ dependencies = [
   "uvicorn[standard]>=0.30,<1.0",
   "sqlalchemy[asyncio]>=2.0.36,<3.0",
   "psycopg[binary]>=3.2,<4.0",
+  # [人工注释][S3-008] 仅提供 PostgreSQL vector 类型适配；S3-008 不创建 embedding 列或检索逻辑。
+  "pgvector>=0.5,<0.6",
   "pydantic>=2.10,<3.0",
   "pydantic-settings>=2.6,<3.0",
   "email-validator>=2.2,<3.0",

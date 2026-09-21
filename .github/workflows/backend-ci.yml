@@ -18,7 +18,9 @@ jobs:
     services:
       # [人工注释][FND-024] 正式 CI 使用真实 PostgreSQL 验证 migration、partial unique index 与 FOR UPDATE。
       postgres:
-        image: postgres:16
+        # [人工注释][S3-008] CI 必须使用实际包含 vector extension 的 PostgreSQL 16 镜像，
+        # 否则普通 postgres 镜像会让 migration 的 CREATE EXTENSION 在生产前无法被验证。
+        image: pgvector/pgvector:0.8.6-pg16-bookworm
         env:
           POSTGRES_USER: jiyi
           POSTGRES_PASSWORD: jiyi
@@ -74,6 +76,15 @@ jobs:
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: alembic upgrade head
+
+      - name: PostgreSQL pgvector foundation
+        # [人工注释][S3-008] fresh upgrade 已在上一步启用 extension；这里再验证 SQLAlchemy seam、
+        # downgrade 不删除共享 extension、re-upgrade 幂等，以及既有用户 schema/data 不被改写。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_pgvector_integration.py
 
       - name: PostgreSQL schema drift check
         # [人工注释][S1-FIX-001] upgrade 成功不代表 ORM metadata 与 migration head 一致；alembic check 是正式漂移门禁。

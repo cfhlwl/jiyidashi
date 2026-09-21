@@ -1,6 +1,7 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # S3-008: 开发 PostgreSQL 与 CI 使用同一 pgvector 扩展族，保证 alembic upgrade head 可真实启用 vector。
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
     environment:
       POSTGRES_DB: jiyi
       POSTGRES_USER: jiyi
