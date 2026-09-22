@@ -243,7 +243,7 @@
 | S3-016 | 月度回忆 | 🔵 | Issue #86 / `feat/stage3-monthly-summary-foundation`：server-owned local month → bounded complete Memory/Visit snapshot → S3-013 authority → opaque slots → strict AIGateway summary；禁止用 top-k 或 AI Daily Summary 冒充完整月事实 |
 | S3-017 | 年度回忆 | ⬜ | 年度报告 |
 | S3-018 | 记忆纠错 / 用户确认反馈 | ✅ | Issue #83 / PR #85 已完成显式 CONFIRM/CORRECT/DELETE、revision-bound audit、PostgreSQL advisory single-flight、既有 Edit/Delete 复用、Data/Account Delete 生命周期、两轮正式审查与 latest-main exact-head CI，并 squash 合并 `main=964723d4` |
-| S3-019 | False Memory Rate 指标 | 🔵 | Issue #87 / `feat/stage3-false-memory-rate-foundation`：仅基于 S3-018 显式 revision-bound feedback 计算；CORRECT=FALSE，CONFIRM=CONFIRMED_TRUE，DELETE-only 不进入 judged denominator |
+| S3-019 | False Memory Rate 指标 | 🟠 | Issue #87 / PR #89：仅基于 persisted S3-018 revision-bound feedback；CORRECT 优先于 CONFIRM、DELETE-only 不进 judged denominator、result_revision 不自动判定；owner isolation、独立 read Session、Data/Account Delete 生命周期与 PostgreSQL canonical aggregation gate 已实现；Backend #550 382 passed，等待正式审查/合并 |
 
 ---
 
@@ -335,7 +335,7 @@
 | BIZ-007 | 北极星指标：成功找回记忆数 | ⬜ | 需要埋点系统 |
 | BIZ-008 | D1 / D7 / D30 留存 | ⬜ | 上线后持续监控 |
 | BIZ-009 | Memory Retrieval Success | ⬜ | 核心产品指标 |
-| BIZ-010 | False Memory Rate | 🔵 | 由 S3-019 / Issue #87 启动基础指标定义；首版仅显式用户反馈驱动，不做 AI 质量打分 |
+| BIZ-010 | False Memory Rate | 🟠 | S3-019 / Issue #87 / PR #89 已实现首版显式用户反馈驱动的 revision 指标基础：counts + denominator + rate；不做 AI 质量打分/看板，等待正式审查/合并 |
 
 ---
 
