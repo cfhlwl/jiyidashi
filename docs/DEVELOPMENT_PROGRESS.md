@@ -241,7 +241,7 @@
 | S3-015 | Daily Summary | 🟠 | Issue #82 / PR #84：server-owned local day → bounded complete Memory/Visit inventory → S3-013 authoritative Memory + finalized Visit provenance → opaque D1/D2 slots → strict AIGateway summary；provider 前后复核完整 inventory + 全 visible slots；开发 HEAD exact-head Backend CI / PostgreSQL Daily Summary Gate 已通过，等待正式审查/合并 |
 | S3-016 | 月度回忆 | ⬜ | 月度事件整理 |
 | S3-017 | 年度回忆 | ⬜ | 年度报告 |
-| S3-018 | 记忆纠错 / 用户确认反馈 | 🔵 | Issue #83 / `feat/stage3-memory-feedback-foundation`：显式用户 CONFIRM / CORRECT / DELETE；复用既有 Memory Edit / Delete 权威链，新增 revision-bound audit seam，为 S3-019 False Memory Rate 提供可信反馈数据 |
+| S3-018 | 记忆纠错 / 用户确认反馈 | 🟠 | Issue #83 / PR #85：显式用户 CONFIRM / CORRECT / DELETE、revision-bound audit、稳定幂等键、owner/current-revision FOR UPDATE、既有 Memory Edit/Delete 复用、ObjectLocation boundary、Data/Account Delete 生命周期与 PostgreSQL correction race gate 已实现；等待正式审查/合并 |
 | S3-019 | False Memory Rate 指标 | ⬜ | 最高优先级质量指标之一 |
 
 ---

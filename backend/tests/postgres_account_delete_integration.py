@@ -18,6 +18,7 @@ from app.data_deletion_models import DataDeletionOperation
 from app.deps import get_current_user_id
 from app.embedding_models import MemoryEmbedding
 from app.embedding_policy import MEMORY_EMBEDDING_DIMENSIONS, MEMORY_EMBEDDING_MODEL
+from app.memory_feedback_models import MemoryFeedback, MemoryFeedbackAction
 from app.models import Memory, User
 from app.services.account_deletion_service import (
     AccountDeletionError,
@@ -369,6 +370,24 @@ def main() -> None:
                 ),
             ]
         )
+        seed.add_all(
+            [
+                MemoryFeedback(
+                    user_id=owner_id,
+                    memory_id=owner_memory_id,
+                    client_uuid=uuid4(),
+                    memory_revision=0,
+                    action=MemoryFeedbackAction.CONFIRM.value,
+                ),
+                MemoryFeedback(
+                    user_id=other_id,
+                    memory_id=other_memory_id,
+                    client_uuid=uuid4(),
+                    memory_revision=0,
+                    action=MemoryFeedbackAction.CONFIRM.value,
+                ),
+            ]
+        )
         seed.commit()
 
     stale = SessionLocal()
@@ -437,7 +456,17 @@ def main() -> None:
             MemoryEmbedding,
             MemoryEmbedding.user_id == owner_id,
         ) == 0
-        # Owner isolation: another account and its derived index are untouched.
+        assert db_count(
+            verify,
+            MemoryFeedback,
+            MemoryFeedback.user_id == owner_id,
+        ) == 0
+        # Owner isolation: another account and its derived index/audit are untouched.
+        assert db_count(
+            verify,
+            MemoryFeedback,
+            MemoryFeedback.user_id == other_id,
+        ) == 1
         assert verify.get(User, other_id) is not None
         assert verify.get(Memory, other_memory_id) is not None
         assert verify.get(MemoryEmbedding, other_memory_id) is not None

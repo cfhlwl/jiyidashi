@@ -25,10 +25,12 @@ def _run_one() -> UUID:
         capture_source=SourceType.USER_TEXT.value,
     )
     with SessionLocal() as db:
+        # [人工注释][S3-018-FIX-001] 两个独立 Session 同时进入 generic idempotency
+        # seam。新的 PostgreSQL advisory single-flight 必须在 create_resource() 前仲裁，
+        # 因此 barrier 不能再放进 create_resource()，否则正确的 loser 永远不会进入那里。
+        barrier.wait(timeout=10)
+
         def create_resource(session):
-            # 两个独立 Session 都先确认账本不存在，再同时继续创建，
-            # 强制触发数据库唯一键竞争，证明去重不是单进程时序巧合。
-            barrier.wait(timeout=10)
             return create_user_memory(session, USER_ID, payload)
 
         memory = execute_idempotent_mutation(

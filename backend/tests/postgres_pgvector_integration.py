@@ -35,7 +35,14 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                     SELECT table_name, column_name, data_type, is_nullable
                     FROM information_schema.columns
                     WHERE table_schema = 'public'
-                      AND table_name NOT IN ('alembic_version', 'memory_embeddings')
+                      -- S3-008 owns neither later derived/vector rows nor S3-018 feedback audit.
+                      -- Exclude later-migration tables so this historical gate compares only
+                      -- schema surfaces that should survive the 0012/0013 round trip.
+                      AND table_name NOT IN (
+                          'alembic_version',
+                          'memory_embeddings',
+                          'memory_feedbacks'
+                      )
                     ORDER BY table_name, ordinal_position
                     """
                 )

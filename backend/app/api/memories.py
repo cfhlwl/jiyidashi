@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.deps import get_current_user_id
+from app.memory_feedback_contracts import MemoryFeedbackCreate, MemoryFeedbackRead
+from app.memory_feedback_models import MemoryFeedback
 from app.models import Memory, MemorySource, SourceType
 from app.schemas import (
     DaySummaryResponse,
@@ -28,6 +30,13 @@ from app.services.memory_edit_service import (
     MemoryEditUnsupported,
     edit_memory,
 )
+from app.services.memory_feedback_service import (
+    MemoryFeedbackConflict,
+    MemoryFeedbackNotFound,
+    MemoryFeedbackUnsupported,
+    apply_memory_feedback,
+    get_memory_feedback_for_user,
+)
 from app.services.memory_service import create_user_memory, get_memory_for_user, soft_delete_memory
 from app.services.query_service import query_memory
 from app.services.time_service import local_today, user_day_bounds_utc
@@ -37,6 +46,7 @@ router = APIRouter(tags=["memories"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
 IdempotencyKey = Annotated[UUID | None, Header(alias="Idempotency-Key")]
+FeedbackIdempotencyKey = Annotated[UUID, Header(alias="Idempotency-Key")]
 
 
 def _trusted_summary_memory_filters():
@@ -127,6 +137,56 @@ def delete_memory_endpoint(memory_id: UUID, user_id: CurrentUser, db: DbSession)
 
     soft_delete_memory(db, memory)
     db.commit()
+
+
+@router.post(
+    "/memories/{memory_id}/feedback",
+    response_model=MemoryFeedbackRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_memory_feedback_endpoint(
+    memory_id: UUID,
+    payload: MemoryFeedbackCreate,
+    user_id: CurrentUser,
+    db: DbSession,
+    idempotency_key: FeedbackIdempotencyKey,
+) -> MemoryFeedback:
+    # [人工注释][S3-018] Path memory_id 也必须进入 fingerprint；同一个稳定操作键
+    # 不能在不同 Memory 间重放成另一条用户反馈。
+    fingerprint_payload = {
+        "memory_id": str(memory_id),
+        **payload.model_dump(mode="json"),
+    }
+    try:
+        return execute_idempotent_mutation(
+            db,
+            user_id=user_id,
+            operation_type="MEMORY_FEEDBACK",
+            client_uuid=idempotency_key,
+            fingerprint_payload=fingerprint_payload,
+            resource_type="MEMORY_FEEDBACK",
+            create_resource=lambda session: apply_memory_feedback(
+                session,
+                user_id=user_id,
+                memory_id=memory_id,
+                client_uuid=idempotency_key,
+                payload=payload,
+            ),
+            resource_id=lambda feedback: feedback.id,
+            load_resource=lambda session, resource_id: get_memory_feedback_for_user(
+                session,
+                user_id=user_id,
+                feedback_id=resource_id,
+            ),
+        )
+    except MemoryFeedbackNotFound as exc:
+        raise HTTPException(status_code=404, detail=exc.code) from exc
+    except (MemoryFeedbackConflict, MemoryFeedbackUnsupported) as exc:
+        raise HTTPException(status_code=409, detail=exc.code) from exc
+    except IdempotencyConflict as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except IdempotencyResourceGone as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
 
 
 @router.get("/timeline", response_model=list[MemoryRead])

@@ -207,6 +207,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_place_detail_integration.py
 
+      - name: PostgreSQL Memory feedback invariants
+        # [人工注释][S3-018] 真实 PostgreSQL 验证 feedback revision 行锁、
+        # 并发 correction 单赢与 Data Delete owner-scoped audit 清理。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_memory_feedback_integration.py
+
       - name: PostgreSQL data deletion durability
         # [人工注释][S1-021] 真实 PostgreSQL 覆盖 user-row 锁、迁移约束与 owner-scoped 删除。
         env:
