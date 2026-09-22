@@ -1,1 +1,109 @@
 @import '../../app.scss';
+
+.answer-row,
+.review-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.answer-title {
+  flex: 1;
+  line-height: 1.55;
+}
+
+.trust-badge {
+  flex: 0 0 auto;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.trust-supported {
+  background: #e9f5ee;
+  color: #2d6848;
+}
+
+.trust-insufficient {
+  background: #f3f4f3;
+  color: #626b65;
+}
+
+.trust-neutral {
+  background: #fff4df;
+  color: #795c24;
+}
+
+.trust-detail {
+  margin: 14rpx 0 8rpx;
+  line-height: 1.55;
+}
+
+.evidence {
+  margin-top: 20rpx;
+  padding: 20rpx;
+  border-radius: 16rpx;
+  background: #f7f9f7;
+  line-height: 1.6;
+}
+
+.review-card,
+.correction-card,
+.retry-card {
+  margin-top: 20rpx;
+}
+
+.memory-title {
+  margin-top: 22rpx;
+  font-weight: 600;
+}
+
+.memory-content {
+  margin: 14rpx 0;
+  padding: 20rpx;
+  border-radius: 16rpx;
+  background: #f7f9f7;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.review-note {
+  margin-top: 22rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 16rpx;
+  background: #fff4df;
+  color: #795c24;
+  line-height: 1.55;
+}
+
+.feedback-actions,
+.correction-actions {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 22rpx;
+}
+
+.compact-button {
+  flex: 1;
+  min-width: 0;
+}
+
+.danger-button {
+  background: #fff0ee;
+  color: #9d241d;
+  border-radius: 18rpx;
+}
+
+.correction-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 240rpx;
+  margin-top: 18rpx;
+  padding: 20rpx;
+}
+
+.retry-card {
+  border: 2rpx solid #ead8aa;
+}
