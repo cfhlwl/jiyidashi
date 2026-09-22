@@ -33,13 +33,14 @@
 <!-- Stage 3K：Structured First Retrieval / Issue #73 / PR #76 已完成正式两轮审查、latest-main exact-head Gate 与合并 main=e9225739；S3-010 转 ✅。 -->
 <!-- Stage 3L：Answer Trust State / Issue #74 / PR #75 已完成 latest edit-source fail-closed、persisted-state isolation、正式两轮审查与合并 main=a0636479；S3-013 转 ✅。 -->
 <!-- Stage 3M：Memory RAG Foundation / Issue #77 / PR #80 已完成两轮正式审查；provider 后复核全部实际 prompt slots、uncited-slot PostgreSQL race gate 与 exact-head CI 均通过，并合并 main=1ad715b1；S3-011 转 ✅。Stage 3N：Reminder Intent / Issue #78 / PR #79 已完成 StrictBool fail-closed、final exact-head Gate 并合并 main=a7366e89；S3-014 转 ✅。 -->
-<!-- Stage 3O：Daily Summary / Issue #82 与 Stage 3P：Memory Feedback / Issue #83 已建立并行边界；两条线只共享已合并 trust/edit/delete 基础，不共同定义新公共协议，均从本次收口后的最新 main 独立起分支。 -->
+<!-- Stage 3O：Daily Summary / Issue #82 / PR #84 已完成两轮正式审查、excluded-NO_EVIDENCE authority race 修复、latest-main exact-head Backend CI，并合并 main=9728d46b；S3-015 转 ✅。Stage 3P：Memory Feedback / Issue #83 / PR #85 已完成 same-key advisory single-flight 修复、latest-main clean replay、exact-head Backend CI，并合并 main=964723d4；S3-018 转 ✅。 -->
+<!-- Stage 3Q：Monthly Summary / Issue #86 与 Stage 3R：False Memory Rate / Issue #87 并行启动；Monthly 只消费底层 authoritative Memory/Visit，不把 AI Daily Summary 当事实；False Memory Rate 只消费显式 revision-bound feedback，DELETE 不自动视为假记忆。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-22  
-> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-014 已完成（S3-015~S3-019 待推进）
+> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-015、S3-018 已完成；S3-016 / S3-019 已启动
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Issue #82 / S3-015 Daily Summary 与 Issue #83 / S3-018 Memory Feedback 两条独立工作线并行启动；Daily 负责可信完整日总结，Feedback 负责显式 CONFIRM / CORRECT / DELETE 审计
+> 当前开发重点：Issue #86 / S3-016 Monthly Summary 与 Issue #87 / S3-019 False Memory Rate 两条独立工作线并行；Monthly 负责可信完整月总结，False Memory Rate 负责显式用户反馈驱动的 revision 级质量指标
 
 ## 状态规则
 
@@ -238,11 +239,11 @@
 | S3-012 | Evidence Ranking | ✅ | Issue #70 / PR #71 已完成固定 `USER_DIRECT > SENSOR_DIRECT > SYSTEM_DERIVED > AI_INFERENCE`、owner/deleted isolation、deterministic tie-break、no-autoflush read-only seam、正式 review 与 exact-head CI，并合并 `main=f3c84899` |
 | S3-013 | “已确认 / 有证据 / AI推测”答案状态 | ✅ | Issue #74 / PR #75 已完成四态 server-owned resolver、latest edit-source fail-closed、独立 persisted-state read Session、两轮正式审查与 final Gate，并合并 `main=a0636479` |
 | S3-014 | Reminder 意图提取 | ✅ | Issue #78 / PR #79 已完成 AIGateway-only inference candidate、StrictBool exact provider contract、literal-span gate、server-owned timezone/time grammar、DST/past fail-closed、显式确认与 no-write 回归；正式复审与 current-head exact CI 通过，并合并 `main=a7366e89` |
-| S3-015 | Daily Summary | 🟠 | Issue #82 / PR #84：server-owned local day → bounded complete Memory/Visit inventory → S3-013 authoritative Memory + finalized Visit provenance → opaque D1/D2 slots → strict AIGateway summary；provider 前后复核完整 inventory + 全 visible slots；开发 HEAD exact-head Backend CI / PostgreSQL Daily Summary Gate 已通过，等待正式审查/合并 |
-| S3-016 | 月度回忆 | ⬜ | 月度事件整理 |
+| S3-015 | Daily Summary | ✅ | Issue #82 / PR #84 已完成完整日 authoritative snapshot、all-raw-Memory authority revalidation、provider-I/O race gates、两轮正式审查与 exact-head Backend CI，并 squash 合并 `main=9728d46b` |
+| S3-016 | 月度回忆 | 🔵 | Issue #86 / `feat/stage3-monthly-summary-foundation`：server-owned local month → bounded complete Memory/Visit snapshot → S3-013 authority → opaque slots → strict AIGateway summary；禁止用 top-k 或 AI Daily Summary 冒充完整月事实 |
 | S3-017 | 年度回忆 | ⬜ | 年度报告 |
-| S3-018 | 记忆纠错 / 用户确认反馈 | 🟠 | Issue #83 / PR #85：显式用户 CONFIRM / CORRECT / DELETE、revision-bound audit、稳定幂等键、owner/current-revision FOR UPDATE、既有 Memory Edit/Delete 复用、ObjectLocation boundary、Data/Account Delete 生命周期与 PostgreSQL correction race gate 已实现；等待正式审查/合并 |
-| S3-019 | False Memory Rate 指标 | ⬜ | 最高优先级质量指标之一 |
+| S3-018 | 记忆纠错 / 用户确认反馈 | ✅ | Issue #83 / PR #85 已完成显式 CONFIRM/CORRECT/DELETE、revision-bound audit、PostgreSQL advisory single-flight、既有 Edit/Delete 复用、Data/Account Delete 生命周期、两轮正式审查与 latest-main exact-head CI，并 squash 合并 `main=964723d4` |
+| S3-019 | False Memory Rate 指标 | 🔵 | Issue #87 / `feat/stage3-false-memory-rate-foundation`：仅基于 S3-018 显式 revision-bound feedback 计算；CORRECT=FALSE，CONFIRM=CONFIRMED_TRUE，DELETE-only 不进入 judged denominator |
 
 ---
 
@@ -334,7 +335,7 @@
 | BIZ-007 | 北极星指标：成功找回记忆数 | ⬜ | 需要埋点系统 |
 | BIZ-008 | D1 / D7 / D30 留存 | ⬜ | 上线后持续监控 |
 | BIZ-009 | Memory Retrieval Success | ⬜ | 核心产品指标 |
-| BIZ-010 | False Memory Rate | ⬜ | 核心安全指标 |
+| BIZ-010 | False Memory Rate | 🔵 | 由 S3-019 / Issue #87 启动基础指标定义；首版仅显式用户反馈驱动，不做 AI 质量打分 |
 
 ---
 
