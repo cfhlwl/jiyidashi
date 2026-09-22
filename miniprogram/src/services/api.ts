@@ -45,10 +45,26 @@ import {
   type DailyTrustedSummary,
   type MonthlyTrustedSummary,
 } from './memorySummaries'
+import {
+  buildApiHeaders,
+  parseMemoryFeedbackRead,
+  parseMemoryRead,
+  type MemoryFeedbackPayload,
+  type MemoryFeedbackRead,
+  type MemoryRead,
+  type SafeRequestOptions,
+} from './memoryFeedback'
 export type {
   TodayFootprintResponse,
   TodayFootprintVisit,
 } from './todayFootprint'
+export type {
+  MemoryFeedbackAction,
+  MemoryFeedbackOperation,
+  MemoryFeedbackPayload,
+  MemoryFeedbackRead,
+  MemoryRead,
+} from './memoryFeedback'
 
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
@@ -61,6 +77,7 @@ export type Evidence = {
   occurred_at: string
   excerpt: string
   confidence: number
+  provenance?: 'ORIGINAL_SOURCE' | 'USER_EDIT'
   // [人工注释][S1-005][S1-007] 图片/语音 Evidence 的 media_id 只能消费服务端 MediaEvidenceLink 返回值；客户端不自行合成。
   media_id?: string | null
 }
@@ -139,16 +156,18 @@ export function apiErrorCode(error: unknown): string | null {
   return error instanceof ApiRequestError ? error.code : null
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, data?: unknown): Promise<T> {
+async function request<T>(
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  data?: unknown,
+  options: SafeRequestOptions = {},
+): Promise<T> {
   const token = Taro.getStorageSync<string>(TOKEN_KEY)
   const response = await Taro.request<T>({
     url: `${getApiBaseUrl()}${path}`,
     method,
     data,
-    header: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    header: buildApiHeaders(token, options),
   })
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -405,8 +424,33 @@ export function createVoiceMemory(
   })
 }
 
+export async function getMemory(memoryId: string): Promise<MemoryRead> {
+  const raw = await request<unknown>('GET', `/memories/${encodeURIComponent(memoryId)}`)
+  return parseMemoryRead(raw, memoryId)
+}
+
+export async function submitMemoryFeedback(
+  memoryId: string,
+  payload: MemoryFeedbackPayload,
+  idempotencyKey: string,
+): Promise<MemoryFeedbackRead> {
+  // [人工注释][S3-018] Idempotency-Key 由一次显式用户操作创建并由重试复用；
+  // Authorization / Content-Type 仍由统一传输层控制，调用方不能覆盖。
+  const raw = await request<unknown>(
+    'POST',
+    `/memories/${encodeURIComponent(memoryId)}/feedback`,
+    payload,
+    { idempotencyKey },
+  )
+  return parseMemoryFeedbackRead(raw, {
+    memoryId,
+    action: payload.action,
+    memoryRevision: payload.expected_revision,
+  })
+}
+
 export function deleteMemory(memoryId: string): Promise<void> {
-  // [人工注释][S1-019] 删除必须调用服务端 DELETE，客户端不能只隐藏本地 UI。
+  // [人工注释][S1-019] 其他产品面仍可使用通用直接删除；Query 反馈 UX 不调用此函数。
   return request('DELETE', `/memories/${memoryId}`)
 }
 

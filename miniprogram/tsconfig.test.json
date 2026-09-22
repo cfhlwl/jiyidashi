@@ -26,6 +26,8 @@
     "src/services/family.ts",
     "tests/family.test.ts",
     "src/services/memorySummaries.ts",
-    "tests/memorySummaries.test.ts"
+    "tests/memorySummaries.test.ts",
+    "src/services/memoryFeedback.ts",
+    "tests/memoryFeedback.test.ts"
   ]
 }
