@@ -35,13 +35,13 @@
 <!-- Stage 3M：Memory RAG Foundation / Issue #77 / PR #80 已完成两轮正式审查；provider 后复核全部实际 prompt slots、uncited-slot PostgreSQL race gate 与 exact-head CI 均通过，并合并 main=1ad715b1；S3-011 转 ✅。Stage 3N：Reminder Intent / Issue #78 / PR #79 已完成 StrictBool fail-closed、final exact-head Gate 并合并 main=a7366e89；S3-014 转 ✅。 -->
 <!-- Stage 3O：Daily Summary / Issue #82 / PR #84 已完成两轮正式审查、excluded-NO_EVIDENCE authority race 修复、latest-main exact-head Backend CI，并合并 main=9728d46b；S3-015 转 ✅。Stage 3P：Memory Feedback / Issue #83 / PR #85 已完成 same-key advisory single-flight 修复、latest-main clean replay、exact-head Backend CI，并合并 main=964723d4；S3-018 转 ✅。 -->
 <!-- Stage 3Q：Monthly Summary / Issue #86 / PR #90 已完成 complete-month snapshot、all-raw-Memory authority、provider 前后完整重验、正式审查与 latest-main Gate，并合并 main=f6aa0fb3；S3-016 转 ✅。Stage 3R：False Memory Rate / Issue #87 / PR #89 已完成 revision-level canonical aggregation、DELETE-only denominator boundary、两轮正式审查与 exact-head CI，并合并 main=512e45db；S3-019 / BIZ-010 转 ✅。 -->
-<!-- Stage 3S：Annual Summary / Issue #91 已启动；仅消费底层 authoritative Memory/Visit，禁止把 AI Daily/Monthly Summary 当事实或用 top-k/semantic sampling 冒充完整年度。 -->
+<!-- Stage 3S：Annual Summary / Issue #91 / PR #93 已完成 complete-year snapshot、512+1/256+1 bounded inventory、all-raw S3-013 authority、strict Y-slot provider boundary、provider 前后完整重验与 PostgreSQL Annual Gate，并合并 main=dd558913；S3-017 转 ✅，Stage 3 S3-001~S3-019 正式收口。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-22  
-> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」进入最后收口：S3-001~S3-016、S3-018~S3-019 已完成；S3-017 Annual Summary 实现完成，等待正式审查/合并
+> 当前阶段：Stage 1「记得住」、Stage 2「自动记」、Stage 3「懂生活 / AI Memory」均已完成；S3-001~S3-019 已全部正式审查并合并 `main`
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：PR #93 / S3-017 Annual Summary Foundation 正式审查；代码已完成 complete-year snapshot、all-raw authority、严格 Y-slot provider boundary 与 provider-I/O race protection，继续保持 Draft，未合并
+> 当前开发重点：Stage 3 已正式收口；下一阶段进入 Stage 4「连接家庭」，先建设家庭邀请 / 成员绑定 / 默认拒绝权限矩阵基础，不直接开放位置、足迹、记忆或照片访问
 
 ## 状态规则
 
@@ -242,7 +242,7 @@
 | S3-014 | Reminder 意图提取 | ✅ | Issue #78 / PR #79 已完成 AIGateway-only inference candidate、StrictBool exact provider contract、literal-span gate、server-owned timezone/time grammar、DST/past fail-closed、显式确认与 no-write 回归；正式复审与 current-head exact CI 通过，并合并 `main=a7366e89` |
 | S3-015 | Daily Summary | ✅ | Issue #82 / PR #84 已完成完整日 authoritative snapshot、all-raw-Memory authority revalidation、provider-I/O race gates、两轮正式审查与 exact-head Backend CI，并 squash 合并 `main=9728d46b` |
 | S3-016 | 月度回忆 | ✅ | Issue #86 / PR #90 已完成 server-owned local month、bounded complete Memory/Visit inventory、all-raw-Memory S3-013 authority、opaque M-slots、strict provider contract 与 provider-I/O race gates；正式审查、latest-main replay / exact-head CI 后合并 `main=f6aa0fb3` |
-| S3-017 | 年度回忆 | 🟠 | Issue #91 / PR #93：server-owned local year → Memory 512+1 / Visit 256+1 complete inventory → all-raw-Memory S3-013 authority → 192-slot / 64k complete-or-fail provider context → strict opaque Y-slots；provider 前后重验 persisted timezone/year bounds、完整 inventory、所有 raw Memory authority 与全部 visible slots；不使用 top-k/semantic sampling，也不把 AI Daily/Monthly Summary 当事实；开发 Backend / PostgreSQL Annual Summary Gate 已通过，等待正式 very narrow review / merge |
+| S3-017 | 年度回忆 | ✅ | Issue #91 / PR #93 已完成 server-owned local year、Memory 512+1 / Visit 256+1 complete inventory、all-raw-Memory S3-013 authority、192-slot / 64k complete-or-fail provider context、strict opaque Y-slots、provider 前后完整重验与 PostgreSQL Annual Gate；exact-head Backend #562（445 passed）后合并 `main=dd558913` |
 | S3-018 | 记忆纠错 / 用户确认反馈 | ✅ | Issue #83 / PR #85 已完成显式 CONFIRM/CORRECT/DELETE、revision-bound audit、PostgreSQL advisory single-flight、既有 Edit/Delete 复用、Data/Account Delete 生命周期、两轮正式审查与 latest-main exact-head CI，并 squash 合并 `main=964723d4` |
 | S3-019 | False Memory Rate 指标 | ✅ | Issue #87 / PR #89 已完成 persisted S3-018 revision-bound feedback 的 canonical revision aggregation；`CORRECT > CONFIRM > DELETE-only`、result_revision 不自动判定、owner/persisted-state isolation、Data/Account Delete 生命周期与 PostgreSQL Gate 均通过；两轮正式审查后合并 `main=512e45db` |
 
@@ -252,9 +252,9 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S4-001 | 家庭邀请 | ⬜ | 用户主动邀请 |
-| S4-002 | 家庭成员绑定 | ⬜ | 本人 / 家庭成员基础角色 |
-| S4-003 | 家庭权限矩阵 | ⬜ | 默认全部关闭，逐项授权 |
+| S4-001 | 家庭邀请 | 🔵 | Issue #95 / Stage 4A：owner-only 创建/撤销短时高熵邀请；raw token 仅创建时返回，DB 只存 hash；接受需认证、单次使用、并发 fail-closed |
+| S4-002 | 家庭成员绑定 | 🔵 | Issue #95 / Stage 4A：V1 单一 active Family、OWNER/MEMBER server-owned membership；移除/退出必须使旧权限立即失效，owner transfer 暂不做 |
+| S4-003 | 家庭权限矩阵 | 🔵 | Issue #95 / Stage 4A：explicit ALLOW / absence=DENY；权限只允许数据 owner 授权给同 Family active member；Family OWNER 无敏感数据隐式旁路 |
 | S4-004 | 查看当前位置授权 | ⬜ | 独立权限 |
 | S4-005 | 查看足迹授权 | ⬜ | 独立权限 |
 | S4-006 | 查看个人记忆授权 | ⬜ | 默认关闭 |
@@ -314,7 +314,7 @@
 | SEC-007 | 数据彻底删除 | ✅ | PR #28 已实现 durable DB / Storage 全删除、partial-failure retry、MemoryEdit 审计清理并通过 exact-head CI 后合并 |
 | SEC-008 | 账户注销 | ✅ | M / S1-022 / Issue #31 / PR #32 已完成两轮正式审查并合并；S1-021 数据清理先行、身份最终同事务删除、恢复 token、竞争删除 fail closed、旧 token 失效及本地 producer/sync/onboarding quiesce + owner purge 均有回归 |
 | SEC-009 | 位置权限单独同意 | ⬜ | 按平台规则实施 |
-| SEC-010 | 家庭查看逐项授权 | ⬜ | 默认关闭 |
+| SEC-010 | 家庭查看逐项授权 | 🔵 | Issue #95 建立 default-deny per-scope authorization foundation；首版只定义 VIEW_CURRENT_LOCATION / VIEW_FOOTPRINT / VIEW_MEMORY / VIEW_PHOTOS 权限与 resolver，不接入真实敏感数据读取 |
 | SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁与时区边界均已合并 |
 | SEC-012 | AI 不知道就说不知道 | 🟠 | Evidence gate 已实现；完整 AI 层尚未进入 |
 | SEC-013 | AI 推断显式标记 | ⬜ | UI 层尚未实现 |
