@@ -252,9 +252,9 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S4-001 | 家庭邀请 | ⬜ | 用户主动邀请 |
-| S4-002 | 家庭成员绑定 | ⬜ | 本人 / 家庭成员基础角色 |
-| S4-003 | 家庭权限矩阵 | ⬜ | 默认全部关闭，逐项授权 |
+| S4-001 | 家庭邀请 | 🔵 | Issue #95 / Stage 4A：owner-only 创建/撤销短时高熵邀请；raw token 仅创建时返回，DB 只存 hash；接受需认证、单次使用、并发 fail-closed |
+| S4-002 | 家庭成员绑定 | 🔵 | Issue #95 / Stage 4A：V1 单一 active Family、OWNER/MEMBER server-owned membership；移除/退出必须使旧权限立即失效，owner transfer 暂不做 |
+| S4-003 | 家庭权限矩阵 | 🔵 | Issue #95 / Stage 4A：explicit ALLOW / absence=DENY；权限只允许数据 owner 授权给同 Family active member；Family OWNER 无敏感数据隐式旁路 |
 | S4-004 | 查看当前位置授权 | ⬜ | 独立权限 |
 | S4-005 | 查看足迹授权 | ⬜ | 独立权限 |
 | S4-006 | 查看个人记忆授权 | ⬜ | 默认关闭 |
@@ -314,7 +314,7 @@
 | SEC-007 | 数据彻底删除 | ✅ | PR #28 已实现 durable DB / Storage 全删除、partial-failure retry、MemoryEdit 审计清理并通过 exact-head CI 后合并 |
 | SEC-008 | 账户注销 | ✅ | M / S1-022 / Issue #31 / PR #32 已完成两轮正式审查并合并；S1-021 数据清理先行、身份最终同事务删除、恢复 token、竞争删除 fail closed、旧 token 失效及本地 producer/sync/onboarding quiesce + owner purge 均有回归 |
 | SEC-009 | 位置权限单独同意 | ⬜ | 按平台规则实施 |
-| SEC-010 | 家庭查看逐项授权 | ⬜ | 默认关闭 |
+| SEC-010 | 家庭查看逐项授权 | 🔵 | Issue #95 建立 default-deny per-scope authorization foundation；首版只定义 VIEW_CURRENT_LOCATION / VIEW_FOOTPRINT / VIEW_MEMORY / VIEW_PHOTOS 权限与 resolver，不接入真实敏感数据读取 |
 | SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁与时区边界均已合并 |
 | SEC-012 | AI 不知道就说不知道 | 🟠 | Evidence gate 已实现；完整 AI 层尚未进入 |
 | SEC-013 | AI 推断显式标记 | ⬜ | UI 层尚未实现 |
