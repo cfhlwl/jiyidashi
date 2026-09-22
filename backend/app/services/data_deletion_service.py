@@ -17,6 +17,7 @@ from app.data_deletion_models import (
 )
 from app.idempotency_models import ClientMutation
 from app.media_models import MediaASRClaim, MediaAsset, MediaEvidenceLink
+from app.memory_feedback_models import MemoryFeedback
 from app.models import (
     Device,
     FamilyMember,
@@ -59,6 +60,7 @@ USER_DATA_INVENTORY = (
     "visits",
     "memories",
     "memory_edits",
+    "memory_feedbacks",
     "memory_sources",
     "memory_embeddings",
     "location_derivation_states",
@@ -583,6 +585,9 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
     )
     # [人工注释][S1-021][S1-018] MemoryEdit 保存 before/after 用户正文，属于完整用户数据。
     # 必须在 MemorySource/Memory 之前显式删除并计数，不能只依赖 FK cascade 隐式收敛。
+    counts["memory_feedbacks"] = _delete_count(
+        db, delete(MemoryFeedback).where(MemoryFeedback.user_id == user_id)
+    )
     counts["memory_edits"] = _delete_count(
         db, delete(MemoryEdit).where(MemoryEdit.user_id == user_id)
     )

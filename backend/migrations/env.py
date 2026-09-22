@@ -12,6 +12,7 @@ from app import (  # noqa: F401
     embedding_models,
     idempotency_models,
     media_models,
+    memory_feedback_models,
     models,
 )
 from app.core.config import get_settings
