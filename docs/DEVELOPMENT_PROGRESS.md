@@ -41,7 +41,7 @@
 > 最后更新：2026-09-22  
 > 当前阶段：Stage 1「记得住」、Stage 2「自动记」、Stage 3「懂生活 / AI Memory」均已完成；S3-001~S3-019 已全部正式审查并合并 `main`
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Stage 4A Family Permission Foundation 已正式审查并合并；进入 Stage 4B / Issue #97，只接入家庭当前位置与 Today Footprint 的 exact-grant read，不开放 Memory / Photos / emergency sharing
+> 当前开发重点：Stage 4B / Issue #97 首版实现与真实 PostgreSQL Sensitive Read Gate 已完成，PR #99 保持 Draft 并进入正式 very narrow review 准备；范围仅限家庭当前位置与 Today Footprint exact-grant read，不开放 Memory / Photos / emergency sharing
 
 ## 状态规则
 
@@ -255,8 +255,8 @@
 | S4-001 | 家庭邀请 | ✅ | Issue #95 / PR #96 已完成 24h 高熵 hash-only invite、单次接受/撤销、并发串行、cross-family IDOR 与正式两轮审查；合并 `main=c933f2a6` |
 | S4-002 | 家庭成员绑定 | ✅ | Issue #95 / PR #96 已完成 V1 单一 active Family、OWNER/MEMBER server-owned membership、canonical pair locking、成员移除/退出 grant 清理与 Data/Account Delete 生命周期；合并 `main=c933f2a6` |
 | S4-003 | 家庭权限矩阵 | ✅ | Issue #95 / PR #96 已完成固定四类 explicit ALLOW / absence=DENY、resource-owner-only grant、OWNER 无旁路、same-Family composite FK、committed-state resolver 与 reverse/reciprocal PostgreSQL race Gate；合并 `main=c933f2a6` |
-| S4-004 | 查看当前位置授权 | 🔵 | Issue #97 / Stage 4B：独立 `VIEW_CURRENT_LOCATION` exact grant；只读最新 committed LocationPoint 的 15 分钟 fresh projection，active Privacy Pause 时不可用；不开放 raw history / device / speed |
-| S4-005 | 查看足迹授权 | 🔵 | Issue #97 / Stage 4B：独立 `VIEW_FOOTPRINT` exact grant；仅开放 owner-timezone Today Footprint projection，不开放任意日期、Timeline、Place detail 或 `/location/visits` cross-user |
+| S4-004 | 查看当前位置授权 | 🟠 | Issue #97 / PR #99：独立 `VIEW_CURRENT_LOCATION` exact grant；canonical active-membership pair lock + 同事务 grant revalidation 后，只读 owner 最新 committed LocationPoint（`recorded_at DESC, id DESC`），固定 15 分钟 freshness、future-skew fail-closed、active Privacy Pause 不可用；response whitelist 不含 raw id/client/device/speed；final exact-head Backend #583（run 35703078380）+ PostgreSQL Sensitive Read Gate + 460 passed 已通过，等待正式审查 / merge |
+| S4-005 | 查看足迹授权 | 🟠 | Issue #97 / PR #99：独立 `VIEW_FOOTPRINT` exact grant；复用 owner persisted timezone → local today → Visit overlap + owner Place join 的既有 Today Footprint projection；read/revoke 与 read/remove 在真实 PostgreSQL 中串行，无 arbitrary date / Timeline / Place detail / `/location/visits` cross-user seam；final exact-head Backend #583（run 35703078380）+ 460 passed 已通过，等待正式审查 / merge |
 | S4-006 | 查看个人记忆授权 | ⬜ | 默认关闭 |
 | S4-007 | 查看照片授权 | ⬜ | 默认关闭 |
 | S4-008 | 紧急位置共享 | ⬜ | 用户明确授权 |

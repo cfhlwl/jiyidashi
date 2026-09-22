@@ -1,0 +1,206 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.config import get_settings
+from app.family_models import (
+    FamilyMembership,
+    FamilyPermissionCode,
+    FamilyPermissionGrant,
+)
+from app.models import LocationPoint, PrivacyState
+from app.schemas import TodayFootprintResponse
+from app.services.privacy_service import ensure_utc, lock_location_derivation_state
+from app.services.today_footprint_service import get_today_footprint
+
+CURRENT_LOCATION_MAX_AGE = timedelta(minutes=15)
+
+
+class FamilySensitiveReadError(RuntimeError):
+    def __init__(self, code: str, status_code: int):
+        super().__init__(code)
+        self.code = code
+        self.status_code = status_code
+
+
+@dataclass(frozen=True)
+class FamilyCurrentLocationView:
+    resource_owner_user_id: UUID
+    latitude: float
+    longitude: float
+    accuracy: float | None
+    recorded_at: datetime
+    fresh_until: datetime
+
+
+def _require_exact_family_grant(
+    db: Session,
+    *,
+    resource_owner_user_id: UUID,
+    grantee_user_id: UUID,
+    permission_code: FamilyPermissionCode,
+) -> None:
+    if resource_owner_user_id == grantee_user_id:
+        raise FamilySensitiveReadError("FAMILY_SELF_READ_NOT_APPLICABLE", 409)
+
+    # [人工注释][S4-004~005] 与 Stage 4A mutation 使用同一 canonical user_id 顺序。
+    # 一次 SELECT 锁完整 pair，避免 read/revoke、read/remove 形成反向 row-lock 顺序。
+    rows = db.execute(
+        select(
+            FamilyMembership.user_id,
+            FamilyMembership.family_id,
+        )
+        .where(
+            FamilyMembership.user_id.in_(
+                (resource_owner_user_id, grantee_user_id)
+            )
+        )
+        .order_by(FamilyMembership.user_id.asc())
+        .with_for_update()
+    ).all()
+    memberships = {row.user_id: row.family_id for row in rows}
+
+    owner_family_id = memberships.get(resource_owner_user_id)
+    grantee_family_id = memberships.get(grantee_user_id)
+    if (
+        owner_family_id is None
+        or grantee_family_id is None
+        or owner_family_id != grantee_family_id
+    ):
+        raise FamilySensitiveReadError("FAMILY_READ_NOT_AUTHORIZED", 403)
+
+    grant_id = db.scalar(
+        select(FamilyPermissionGrant.id)
+        .where(
+            FamilyPermissionGrant.family_id == owner_family_id,
+            FamilyPermissionGrant.resource_owner_user_id
+            == resource_owner_user_id,
+            FamilyPermissionGrant.grantee_user_id == grantee_user_id,
+            FamilyPermissionGrant.permission_code == permission_code.value,
+        )
+        .limit(1)
+    )
+    if grant_id is None:
+        raise FamilySensitiveReadError("FAMILY_READ_NOT_AUTHORIZED", 403)
+
+
+def _privacy_pause_active(
+    db: Session,
+    *,
+    user_id: UUID,
+    now: datetime,
+) -> bool:
+    paused_until = db.scalar(
+        select(PrivacyState.recording_paused_until).where(
+            PrivacyState.user_id == user_id
+        )
+    )
+    return paused_until is not None and ensure_utc(paused_until) > now
+
+
+def get_family_current_location(
+    db: Session,
+    *,
+    resource_owner_user_id: UUID,
+    grantee_user_id: UUID,
+    now: datetime | None = None,
+) -> FamilyCurrentLocationView:
+    reference = ensure_utc(now or datetime.now(UTC))
+
+    # [人工注释][S4-004] Current Location 同时依赖 Family authority 与 owner
+    # Privacy Pause。使用独立 authoritative Session，避免 request Session 的 pending
+    # ORM state 被 owner serialization helper 的显式 flush 意外变成权限或敏感事实。
+    with Session(bind=db.get_bind(), autoflush=False, expire_on_commit=False) as authority:
+        try:
+            _require_exact_family_grant(
+                authority,
+                resource_owner_user_id=resource_owner_user_id,
+                grantee_user_id=grantee_user_id,
+                permission_code=FamilyPermissionCode.VIEW_CURRENT_LOCATION,
+            )
+
+            # 与 pause_recording()/resume_recording()/location derivation 共用 owner row lock。
+            # 因此 PrivacyState 判断与 LocationPoint projection 处在同一线性化边界内。
+            lock_location_derivation_state(authority, resource_owner_user_id)
+
+            if _privacy_pause_active(
+                authority,
+                user_id=resource_owner_user_id,
+                now=reference,
+            ):
+                raise FamilySensitiveReadError("CURRENT_LOCATION_UNAVAILABLE", 404)
+
+            row = authority.execute(
+                select(
+                    LocationPoint.latitude,
+                    LocationPoint.longitude,
+                    LocationPoint.accuracy,
+                    LocationPoint.recorded_at,
+                )
+                .where(LocationPoint.user_id == resource_owner_user_id)
+                .order_by(
+                    LocationPoint.recorded_at.desc(),
+                    LocationPoint.id.desc(),
+                )
+                .limit(1)
+            ).one_or_none()
+            if row is None:
+                raise FamilySensitiveReadError("CURRENT_LOCATION_UNAVAILABLE", 404)
+
+            recorded_at = ensure_utc(row.recorded_at)
+            settings = get_settings()
+            if recorded_at > reference + timedelta(
+                seconds=settings.location_future_skew_seconds
+            ):
+                raise FamilySensitiveReadError("CURRENT_LOCATION_UNAVAILABLE", 404)
+
+            # Exactly-at-boundary remains current; only strictly older is stale.
+            if recorded_at < reference - CURRENT_LOCATION_MAX_AGE:
+                raise FamilySensitiveReadError("CURRENT_LOCATION_UNAVAILABLE", 404)
+
+            result = FamilyCurrentLocationView(
+                resource_owner_user_id=resource_owner_user_id,
+                latitude=row.latitude,
+                longitude=row.longitude,
+                accuracy=row.accuracy,
+                recorded_at=recorded_at,
+                fresh_until=recorded_at + CURRENT_LOCATION_MAX_AGE,
+            )
+        except BaseException:
+            authority.rollback()
+            raise
+
+        # Read-only boundary: release Family + owner privacy/location locks together.
+        authority.rollback()
+        return result
+
+
+def get_family_today_footprint(
+    db: Session,
+    *,
+    resource_owner_user_id: UUID,
+    grantee_user_id: UUID,
+) -> TodayFootprintResponse:
+    try:
+        with db.no_autoflush:
+            _require_exact_family_grant(
+                db,
+                resource_owner_user_id=resource_owner_user_id,
+                grantee_user_id=grantee_user_id,
+                permission_code=FamilyPermissionCode.VIEW_FOOTPRINT,
+            )
+            result = get_today_footprint(
+                db,
+                user_id=resource_owner_user_id,
+            )
+    except BaseException:
+        db.rollback()
+        raise
+
+    db.rollback()
+    return result
