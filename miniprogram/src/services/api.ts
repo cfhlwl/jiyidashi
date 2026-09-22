@@ -25,6 +25,18 @@ import {
   parseTodayFootprintResponse,
   type TodayFootprintResponse,
 } from './todayFootprint'
+import {
+  parseFamilyCurrentLocation,
+  parseFamilyInvite,
+  parseFamilyPermissionGrant,
+  parseFamilyPermissions,
+  parseFamilyResponse,
+  parseFamilyTodayFootprint,
+  type FamilyCurrentLocation,
+  type FamilyInvite,
+  type FamilyPermissionGrant,
+  type FamilyResponse,
+} from './family'
 export type {
   TodayFootprintResponse,
   TodayFootprintVisit,
@@ -56,6 +68,7 @@ export type MemoryQueryResult = {
 }
 
 export type UserProfile = {
+  id: string
   nickname: string
   email?: string | null
   timezone: string
@@ -102,7 +115,23 @@ export function logout(): void {
 
 // [人工注释][S1-019] 统一传输层显式包含 DELETE，单条记忆删除必须真正到达服务端；
 // 非 2xx 始终抛出服务端错误，客户端不能把失败请求当作本地删除成功。
-async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, data?: unknown): Promise<T> {
+export class ApiRequestError extends Error {
+  readonly statusCode: number
+  readonly code: string
+
+  constructor(statusCode: number, code: string, message: string) {
+    super(message)
+    this.name = 'ApiRequestError'
+    this.statusCode = statusCode
+    this.code = code
+  }
+}
+
+export function apiErrorCode(error: unknown): string | null {
+  return error instanceof ApiRequestError ? error.code : null
+}
+
+async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, data?: unknown): Promise<T> {
   const token = Taro.getStorageSync<string>(TOKEN_KEY)
   const response = await Taro.request<T>({
     url: `${getApiBaseUrl()}${path}`,
@@ -119,7 +148,14 @@ async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: str
     const detail = Array.isArray(payload?.detail)
       ? payload.detail.map((item) => item.msg).filter(Boolean).join('；')
       : payload?.detail
-    throw new Error(detail || `HTTP_${response.statusCode}`)
+    const code = typeof payload?.detail === 'string'
+      ? payload.detail
+      : `HTTP_${response.statusCode}`
+    throw new ApiRequestError(
+      response.statusCode,
+      code,
+      detail || `HTTP_${response.statusCode}`,
+    )
   }
   return response.data
 }
@@ -158,6 +194,75 @@ export async function getTodayFootprint(): Promise<TodayFootprintResponse> {
   // 禁止 TypeScript 类型断言把 malformed JSON 降级成真实足迹状态。
   const raw = await request<unknown>('GET', '/today/footprint')
   return parseTodayFootprintResponse(raw)
+}
+
+export async function getFamily(): Promise<FamilyResponse> {
+  const raw = await request<unknown>('GET', '/family')
+  return parseFamilyResponse(raw)
+}
+
+export async function createFamily(): Promise<FamilyResponse> {
+  const raw = await request<unknown>('POST', '/family')
+  return parseFamilyResponse(raw)
+}
+
+export async function createFamilyInvite(): Promise<FamilyInvite> {
+  const raw = await request<unknown>('POST', '/family/invites')
+  return parseFamilyInvite(raw)
+}
+
+export async function acceptFamilyInvite(token: string): Promise<FamilyResponse> {
+  // [人工注释][S4-010] invite token 对客户端保持 opaque；仅移除用户粘贴时的首尾空白。
+  const raw = await request<unknown>('POST', '/family/invites/accept', {
+    token: token.trim(),
+  })
+  return parseFamilyResponse(raw)
+}
+
+export function revokeFamilyInvite(inviteId: string): Promise<void> {
+  return request('DELETE', `/family/invites/${encodeURIComponent(inviteId)}`)
+}
+
+export function removeFamilyMember(userId: string): Promise<void> {
+  return request('DELETE', `/family/members/${encodeURIComponent(userId)}`)
+}
+
+export async function getFamilyPermissions(): Promise<FamilyPermissionGrant[]> {
+  const raw = await request<unknown>('GET', '/family/permissions')
+  return parseFamilyPermissions(raw)
+}
+
+export async function replaceFamilyPermissions(
+  granteeUserId: string,
+  permissions: readonly string[],
+): Promise<FamilyPermissionGrant> {
+  // [人工注释][S4-010] 这是服务端权威 complete replacement，而不是 toggle endpoint。
+  const raw = await request<unknown>(
+    'PUT',
+    `/family/permissions/${encodeURIComponent(granteeUserId)}`,
+    { permissions: [...permissions] },
+  )
+  return parseFamilyPermissionGrant(raw)
+}
+
+export async function getFamilyCurrentLocation(
+  resourceOwnerUserId: string,
+): Promise<FamilyCurrentLocation> {
+  const raw = await request<unknown>(
+    'GET',
+    `/family/members/${encodeURIComponent(resourceOwnerUserId)}/current-location`,
+  )
+  return parseFamilyCurrentLocation(raw, resourceOwnerUserId)
+}
+
+export async function getFamilyTodayFootprint(
+  resourceOwnerUserId: string,
+): Promise<TodayFootprintResponse> {
+  const raw = await request<unknown>(
+    'GET',
+    `/family/members/${encodeURIComponent(resourceOwnerUserId)}/today/footprint`,
+  )
+  return parseFamilyTodayFootprint(raw)
 }
 
 export function updateProfile(input: {

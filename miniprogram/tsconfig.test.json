@@ -22,6 +22,8 @@
     "tests/photoCapture.test.ts",
     "tests/voiceCapture.test.ts",
     "tests/todayFootprint.test.ts",
-    "tests/placeDetail.test.ts"
+    "tests/placeDetail.test.ts",
+    "src/services/family.ts",
+    "tests/family.test.ts"
   ]
 }
