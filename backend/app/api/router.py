@@ -5,6 +5,7 @@ from app.api import (
     auth,
     data_delete,
     data_export,
+    family,
     intent,
     location,
     media,
@@ -27,6 +28,8 @@ api_router.include_router(data_export.router)
 # [人工注释][S1-021] 全量数据删除独立走 durable orchestrator；
 # 不与普通 CRUD 分散混用。
 api_router.include_router(data_delete.router)
+# Stage 4A family relationship/permission foundation; membership alone grants no data access.
+api_router.include_router(family.router)
 # S3-003 routing is control metadata only; downstream services retain their own
 # trust, Evidence and owner-isolation boundaries.
 api_router.include_router(intent.router)

@@ -10,6 +10,7 @@ from app import (  # noqa: F401
     auth_models,
     data_deletion_models,
     embedding_models,
+    family_models,
     idempotency_models,
     media_models,
     memory_feedback_models,
