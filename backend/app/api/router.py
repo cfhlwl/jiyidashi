@@ -10,6 +10,7 @@ from app.api import (
     location,
     media,
     memories,
+    memory_summaries,
     objects,
     privacy,
     reminders,
@@ -34,6 +35,9 @@ api_router.include_router(family.router)
 # trust, Evidence and owner-isolation boundaries.
 api_router.include_router(intent.router)
 api_router.include_router(memories.router)
+# [人工注释][#103] Trusted summaries use a dedicated POST generation surface;
+# the legacy GET /memory/summarize/day contract remains untouched.
+api_router.include_router(memory_summaries.router)
 # [人工注释][S2-012] Today Footprint 只读消费已合并 Timeline/Visit/Place；
 # 不建立第二套定位、聚类或持久化协议。
 api_router.include_router(today_footprint.router)

@@ -37,6 +37,14 @@ import {
   type FamilyPermissionGrant,
   type FamilyResponse,
 } from './family'
+import {
+  parseAnnualTrustedSummary,
+  parseDailyTrustedSummary,
+  parseMonthlyTrustedSummary,
+  type AnnualTrustedSummary,
+  type DailyTrustedSummary,
+  type MonthlyTrustedSummary,
+} from './memorySummaries'
 export type {
   TodayFootprintResponse,
   TodayFootprintVisit,
@@ -194,6 +202,35 @@ export async function getTodayFootprint(): Promise<TodayFootprintResponse> {
   // 禁止 TypeScript 类型断言把 malformed JSON 降级成真实足迹状态。
   const raw = await request<unknown>('GET', '/today/footprint')
   return parseTodayFootprintResponse(raw)
+}
+
+export async function generateDailyTrustedSummary(): Promise<DailyTrustedSummary> {
+  // [人工注释][#103] AI generation is POST-only and only called by an explicit UI action.
+  // The client supplies no user_id, timezone, or arbitrary UTC range.
+  const raw = await request<unknown>('POST', '/memory/summaries/daily', {})
+  return parseDailyTrustedSummary(raw)
+}
+
+export async function generateMonthlyTrustedSummary(
+  targetMonth?: string,
+): Promise<MonthlyTrustedSummary> {
+  const raw = await request<unknown>(
+    'POST',
+    '/memory/summaries/monthly',
+    targetMonth ? { target_month: targetMonth } : {},
+  )
+  return parseMonthlyTrustedSummary(raw)
+}
+
+export async function generateAnnualTrustedSummary(
+  targetYear?: string,
+): Promise<AnnualTrustedSummary> {
+  const raw = await request<unknown>(
+    'POST',
+    '/memory/summaries/annual',
+    targetYear ? { target_year: targetYear } : {},
+  )
+  return parseAnnualTrustedSummary(raw)
 }
 
 export async function getFamily(): Promise<FamilyResponse> {
