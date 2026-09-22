@@ -41,7 +41,7 @@
 > 最后更新：2026-09-22  
 > 当前阶段：Stage 1「记得住」、Stage 2「自动记」、Stage 3「懂生活 / AI Memory」均已完成；S3-001~S3-019 已全部正式审查并合并 `main`
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Stage 4A Family Permission Foundation 已完成首版实现并进入 PR #96 Draft 审查准备；继续保持 default-deny，不直接开放位置、足迹、记忆或照片访问
+> 当前开发重点：Stage 4A Family Permission Foundation 已正式审查并合并；进入 Stage 4B / Issue #97，只接入家庭当前位置与 Today Footprint 的 exact-grant read，不开放 Memory / Photos / emergency sharing
 
 ## 状态规则
 
@@ -252,11 +252,11 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S4-001 | 家庭邀请 | 🟠 | Issue #95 / PR #96：owner-only 创建/撤销 24h 高熵邀请；raw token 仅创建时返回、DB 仅存 SHA-256；认证接受、单次使用、accept/revoke 并发串行与 cross-family IDOR 均由 PostgreSQL Family Gate 验证；等待正式 very narrow review / merge |
-| S4-002 | 家庭成员绑定 | 🟠 | Issue #95 / PR #96：V1 单一 active Family、OWNER/MEMBER server-owned membership；DB 唯一 membership + partial unique OWNER，成员移除/退出立即清理 grant；直接 Data Delete 的 MEMBER 退出与 OWNER 解散 Family 生命周期已由 PostgreSQL Gate 验证；等待正式审查 / merge |
-| S4-003 | 家庭权限矩阵 | 🟠 | Issue #95 / PR #96：固定四类 explicit ALLOW / absence=DENY；resource owner 只能授权自己的数据给同 Family active member；Family OWNER 无隐式旁路；grant/remove race、cross-family mutation 与 persisted-state resolver 已验证；等待正式审查 / merge |
-| S4-004 | 查看当前位置授权 | ⬜ | 独立权限 |
-| S4-005 | 查看足迹授权 | ⬜ | 独立权限 |
+| S4-001 | 家庭邀请 | ✅ | Issue #95 / PR #96 已完成 24h 高熵 hash-only invite、单次接受/撤销、并发串行、cross-family IDOR 与正式两轮审查；合并 `main=c933f2a6` |
+| S4-002 | 家庭成员绑定 | ✅ | Issue #95 / PR #96 已完成 V1 单一 active Family、OWNER/MEMBER server-owned membership、canonical pair locking、成员移除/退出 grant 清理与 Data/Account Delete 生命周期；合并 `main=c933f2a6` |
+| S4-003 | 家庭权限矩阵 | ✅ | Issue #95 / PR #96 已完成固定四类 explicit ALLOW / absence=DENY、resource-owner-only grant、OWNER 无旁路、same-Family composite FK、committed-state resolver 与 reverse/reciprocal PostgreSQL race Gate；合并 `main=c933f2a6` |
+| S4-004 | 查看当前位置授权 | 🔵 | Issue #97 / Stage 4B：独立 `VIEW_CURRENT_LOCATION` exact grant；只读最新 committed LocationPoint 的 15 分钟 fresh projection，active Privacy Pause 时不可用；不开放 raw history / device / speed |
+| S4-005 | 查看足迹授权 | 🔵 | Issue #97 / Stage 4B：独立 `VIEW_FOOTPRINT` exact grant；仅开放 owner-timezone Today Footprint projection，不开放任意日期、Timeline、Place detail 或 `/location/visits` cross-user |
 | S4-006 | 查看个人记忆授权 | ⬜ | 默认关闭 |
 | S4-007 | 查看照片授权 | ⬜ | 默认关闭 |
 | S4-008 | 紧急位置共享 | ⬜ | 用户明确授权 |
@@ -314,7 +314,7 @@
 | SEC-007 | 数据彻底删除 | ✅ | PR #28 已实现 durable DB / Storage 全删除、partial-failure retry、MemoryEdit 审计清理并通过 exact-head CI 后合并 |
 | SEC-008 | 账户注销 | ✅ | M / S1-022 / Issue #31 / PR #32 已完成两轮正式审查并合并；S1-021 数据清理先行、身份最终同事务删除、恢复 token、竞争删除 fail closed、旧 token 失效及本地 producer/sync/onboarding quiesce + owner purge 均有回归 |
 | SEC-009 | 位置权限单独同意 | ⬜ | 按平台规则实施 |
-| SEC-010 | 家庭查看逐项授权 | 🟠 | Issue #95 / PR #96 已建立 default-deny per-scope foundation：VIEW_CURRENT_LOCATION / VIEW_FOOTPRINT / VIEW_MEMORY / VIEW_PHOTOS + committed persisted-state resolver；没有接入任何真实 Location / Visit / Memory / media 读取；开发基线 Backend #572（run 35687542488）exact-head、PostgreSQL Family Gate、schema drift、454 passed 均通过，等待正式审查 / merge |
+| SEC-010 | 家庭查看逐项授权 | ✅ | Issue #95 / PR #96 已完成 default-deny per-scope foundation、canonical membership locks、committed persisted-state resolver、PostgreSQL Family Gate 与 exact-head #575（454 passed）；已合并 `main=c933f2a6`，真实敏感读取按 S4-004+ 分阶段接入 |
 | SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁与时区边界均已合并 |
 | SEC-012 | AI 不知道就说不知道 | 🟠 | Evidence gate 已实现；完整 AI 层尚未进入 |
 | SEC-013 | AI 推断显式标记 | ⬜ | UI 层尚未实现 |
