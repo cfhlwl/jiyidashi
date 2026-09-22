@@ -35,13 +35,18 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                     SELECT table_name, column_name, data_type, is_nullable
                     FROM information_schema.columns
                     WHERE table_schema = 'public'
-                      -- S3-008 owns neither later derived/vector rows nor S3-018 feedback audit.
-                      -- Exclude later-migration tables so this historical gate compares only
-                      -- schema surfaces that should survive the 0012/0013 round trip.
+                      -- S3-008 owns neither later derived/vector rows, S3-018 feedback audit,
+                      -- nor Stage 4 family tables. This historical gate must compare only
+                      -- schema surfaces present on both sides of its 0011 downgrade boundary;
+                      -- later migrations are expected to disappear and be recreated.
                       AND table_name NOT IN (
                           'alembic_version',
                           'memory_embeddings',
-                          'memory_feedbacks'
+                          'memory_feedbacks',
+                          'families',
+                          'family_memberships',
+                          'family_invites',
+                          'family_permission_grants'
                       )
                     ORDER BY table_name, ordinal_position
                     """

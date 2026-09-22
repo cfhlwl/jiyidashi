@@ -15,6 +15,13 @@ from app.data_deletion_models import (
     DataDeletionOperation,
     DataDeletionStatus,
 )
+from app.family_models import (
+    Family,
+    FamilyInvite,
+    FamilyMembership,
+    FamilyPermissionGrant,
+    FamilyRole,
+)
 from app.idempotency_models import ClientMutation
 from app.media_models import MediaASRClaim, MediaAsset, MediaEvidenceLink
 from app.memory_feedback_models import MemoryFeedback
@@ -73,6 +80,10 @@ USER_DATA_INVENTORY = (
     "privacy_pause_intervals",
     "family_members",
     "family_permissions",
+    "families",
+    "family_memberships",
+    "family_invites",
+    "family_permission_grants",
     "media_assets",
     "media_asr_claims",
     "media_evidence_links",
@@ -619,6 +630,57 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
     counts["location_points"] = _delete_count(
         db, delete(LocationPoint).where(LocationPoint.user_id == user_id)
     )
+    # [人工注释][S4-001~003] 正式 Family foundation 与 0001 legacy 占位表并存期间，
+    # Data Delete 必须先清正式 grant/membership。OWNER 删除数据会解散整个 Family；
+    # MEMBER 删除数据只退出自身 membership，不能影响同 Family 其他成员事实数据。
+    family_membership = db.scalar(
+        select(FamilyMembership).where(FamilyMembership.user_id == user_id)
+    )
+    if family_membership is not None and family_membership.role == FamilyRole.OWNER.value:
+        family_id = family_membership.family_id
+        counts["family_permission_grants"] = _delete_count(
+            db,
+            delete(FamilyPermissionGrant).where(
+                FamilyPermissionGrant.family_id == family_id
+            ),
+        )
+        counts["family_invites"] = _delete_count(
+            db, delete(FamilyInvite).where(FamilyInvite.family_id == family_id)
+        )
+        counts["family_memberships"] = _delete_count(
+            db,
+            delete(FamilyMembership).where(FamilyMembership.family_id == family_id),
+        )
+        counts["families"] = _delete_count(
+            db, delete(Family).where(Family.id == family_id)
+        )
+    else:
+        counts["family_permission_grants"] = _delete_count(
+            db,
+            delete(FamilyPermissionGrant).where(
+                or_(
+                    FamilyPermissionGrant.resource_owner_user_id == user_id,
+                    FamilyPermissionGrant.grantee_user_id == user_id,
+                )
+            ),
+        )
+        counts["family_invites"] = _delete_count(
+            db,
+            delete(FamilyInvite).where(
+                or_(
+                    FamilyInvite.inviter_user_id == user_id,
+                    FamilyInvite.accepted_by_user_id == user_id,
+                )
+            ),
+        )
+        counts["family_memberships"] = _delete_count(
+            db,
+            delete(FamilyMembership).where(FamilyMembership.user_id == user_id),
+        )
+        counts["families"] = 0
+
+    # Legacy pre-Stage4 placeholders are non-authoritative but remain part of the old
+    # deletion inventory until a dedicated compatibility migration removes them.
     counts["family_permissions"] = _delete_count(
         db,
         delete(FamilyPermission).where(
