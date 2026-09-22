@@ -74,6 +74,11 @@ export default function Page() {
     void Taro.navigateTo({ url: placeDetailRoute(placeId) })
   }
 
+  const openSummaries = () => {
+    // [人工注释][#103] Today only navigates to the product page. It never triggers AI generation.
+    void Taro.navigateTo({ url: '/pages/summaries/index' })
+  }
+
   const authenticated = isAuthenticated()
   // 展示状态集中由同一状态机决定 loading / signed-out / empty / error / ready，
   // 避免页面分支把 successful-empty 再次误当成可重试错误。
@@ -144,6 +149,12 @@ export default function Page() {
         {presentation.showRetry && (
           <Button className='secondary-button' onClick={refreshPlaces}>重试</Button>
         )}
+      </View>
+
+      <View className='card'>
+        <View className='card-title'>回忆总结</View>
+        <Text className='muted'>按可信记录生成今天、本月或年度回忆；只有你主动点击后才会调用 AI。</Text>
+        <Button className='secondary-button' onClick={openSummaries}>打开回忆总结</Button>
       </View>
 
       <View className='card'>

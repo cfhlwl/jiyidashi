@@ -24,6 +24,8 @@
     "tests/todayFootprint.test.ts",
     "tests/placeDetail.test.ts",
     "src/services/family.ts",
-    "tests/family.test.ts"
+    "tests/family.test.ts",
+    "src/services/memorySummaries.ts",
+    "tests/memorySummaries.test.ts"
   ]
 }
