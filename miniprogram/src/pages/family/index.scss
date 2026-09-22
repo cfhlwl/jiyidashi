@@ -1,1 +1,120 @@
 @import '../../app.scss';
+
+.privacy-note {
+  margin-bottom: 20rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 18rpx;
+  background: #eef3f0;
+  color: #3f574a;
+  line-height: 1.55;
+}
+
+.empty-card {
+  padding-top: 38rpx;
+  padding-bottom: 38rpx;
+}
+
+.family-summary {
+  display: flex;
+  gap: 20rpx;
+}
+
+.summary-item {
+  flex: 1;
+  padding: 12rpx 0;
+}
+
+.summary-value {
+  margin-bottom: 6rpx;
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.section-title {
+  margin: 34rpx 0 16rpx;
+  font-size: 34rpx;
+  font-weight: 600;
+}
+
+.member-card {
+  overflow: hidden;
+}
+
+.member-title {
+  margin-bottom: 6rpx;
+}
+
+.member-section {
+  margin-top: 24rpx;
+  padding-top: 24rpx;
+  border-top: 2rpx solid #eef1ef;
+}
+
+.member-section-title {
+  margin-bottom: 14rpx;
+  font-weight: 600;
+}
+
+.permission-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  min-height: 86rpx;
+  border-bottom: 2rpx solid #f2f4f2;
+}
+
+.future-permission {
+  display: flex;
+  justify-content: space-between;
+  padding: 18rpx 0;
+}
+
+.invite-box,
+.sensitive-result {
+  margin-top: 18rpx;
+  padding: 22rpx;
+  border-radius: 16rpx;
+  background: #f7f9f7;
+}
+
+.invite-token {
+  margin-bottom: 12rpx;
+  font-family: monospace;
+  font-size: 30rpx;
+  word-break: break-all;
+}
+
+.button-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.compact-button {
+  flex: 1;
+}
+
+.danger-button {
+  margin-top: 18rpx;
+  background: #fff0ee;
+  color: #9d241d;
+  border-radius: 18rpx;
+}
+
+.read-state {
+  margin-top: 14rpx;
+}
+
+.footprint-row {
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid #eef1ef;
+}
+
+.footprint-row:last-child {
+  border-bottom: 0;
+}
+
+.footprint-place {
+  margin-bottom: 4rpx;
+  font-weight: 600;
+}
