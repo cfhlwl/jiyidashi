@@ -216,6 +216,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_memory_feedback_integration.py
 
+      - name: PostgreSQL False Memory Rate invariants
+        # [人工注释][S3-019] 真实 PostgreSQL 验证 revision 聚合、CORRECT 优先级、
+        # owner isolation，以及 Data/Account Delete 后指标立即失去已删除 feedback authority。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_false_memory_rate_integration.py
+
       - name: PostgreSQL data deletion durability
         # [人工注释][S1-021] 真实 PostgreSQL 覆盖 user-row 锁、迁移约束与 owner-scoped 删除。
         env:
