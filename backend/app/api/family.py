@@ -11,6 +11,12 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.family_models import FamilyPermissionCode
+from app.schemas import TodayFootprintResponse
+from app.services.family_sensitive_read_service import (
+    FamilySensitiveReadError,
+    get_family_current_location,
+    get_family_today_footprint,
+)
 from app.services.family_service import (
     FamilyServiceError,
     accept_invite,
@@ -61,6 +67,15 @@ class FamilyPermissionReplaceRequest(BaseModel):
 class FamilyPermissionResponse(BaseModel):
     grantee_user_id: UUID
     permissions: list[FamilyPermissionCode]
+
+
+class FamilyCurrentLocationResponse(BaseModel):
+    resource_owner_user_id: UUID
+    latitude: float
+    longitude: float
+    accuracy: float | None
+    recorded_at: datetime
+    fresh_until: datetime
 
 
 def _raise(exc: FamilyServiceError) -> None:
@@ -204,3 +219,42 @@ def put_family_permissions(
         grantee_user_id=result.grantee_user_id,
         permissions=[FamilyPermissionCode(code) for code in result.permission_codes],
     )
+
+
+@router.get(
+    "/members/{resource_owner_user_id}/current-location",
+    response_model=FamilyCurrentLocationResponse,
+)
+def family_member_current_location(
+    resource_owner_user_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> FamilyCurrentLocationResponse:
+    try:
+        result = get_family_current_location(
+            db,
+            resource_owner_user_id=resource_owner_user_id,
+            grantee_user_id=user_id,
+        )
+    except FamilySensitiveReadError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return FamilyCurrentLocationResponse(**result.__dict__)
+
+
+@router.get(
+    "/members/{resource_owner_user_id}/today/footprint",
+    response_model=TodayFootprintResponse,
+)
+def family_member_today_footprint(
+    resource_owner_user_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> TodayFootprintResponse:
+    try:
+        return get_family_today_footprint(
+            db,
+            resource_owner_user_id=resource_owner_user_id,
+            grantee_user_id=user_id,
+        )
+    except FamilySensitiveReadError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc

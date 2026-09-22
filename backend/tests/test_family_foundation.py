@@ -380,7 +380,7 @@ def test_cross_family_mutation_fails_closed():
         assert exc.value.status_code == 404
 
 
-def test_family_foundation_does_not_add_sensitive_read_routes():
+def test_family_router_exposes_only_reviewed_stage4a_and_stage4b_routes():
     # Inspect the family router itself: unrelated tests may temporarily alter global
     # FastAPI app routes, while this invariant is specifically about Stage 4A's surface.
     family_paths = {
@@ -396,4 +396,8 @@ def test_family_foundation_does_not_add_sensitive_read_routes():
         "/family/members/{target_user_id}",
         "/family/permissions",
         "/family/permissions/{grantee_user_id}",
+        "/family/members/{resource_owner_user_id}/current-location",
+        "/family/members/{resource_owner_user_id}/today/footprint",
     }
+    assert all("memory" not in path.lower() for path in family_paths)
+    assert all("photo" not in path.lower() for path in family_paths)
