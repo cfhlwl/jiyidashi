@@ -33,12 +33,13 @@
 <!-- Stage 3K：Structured First Retrieval / Issue #73 / PR #76 已完成正式两轮审查、latest-main exact-head Gate 与合并 main=e9225739；S3-010 转 ✅。 -->
 <!-- Stage 3L：Answer Trust State / Issue #74 / PR #75 已完成 latest edit-source fail-closed、persisted-state isolation、正式两轮审查与合并 main=a0636479；S3-013 转 ✅。 -->
 <!-- Stage 3M：Memory RAG Foundation / Issue #77 / PR #80 已完成两轮正式审查；provider 后复核全部实际 prompt slots、uncited-slot PostgreSQL race gate 与 exact-head CI 均通过，并合并 main=1ad715b1；S3-011 转 ✅。Stage 3N：Reminder Intent / Issue #78 / PR #79 已完成 StrictBool fail-closed、final exact-head Gate 并合并 main=a7366e89；S3-014 转 ✅。 -->
+<!-- Stage 3O：Daily Summary / Issue #82 与 Stage 3P：Memory Feedback / Issue #83 已建立并行边界；两条线只共享已合并 trust/edit/delete 基础，不共同定义新公共协议，均从本次收口后的最新 main 独立起分支。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-22  
 > 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-014 已完成（S3-015~S3-019 待推进）
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：完成 S3-011 Memory RAG 与 S3-014 Reminder Intent 合并收口；下一批按独立工作线启动 S3-015 Daily Summary 与 S3-018 记忆纠错 / 用户确认反馈
+> 当前开发重点：Issue #82 / S3-015 Daily Summary 与 Issue #83 / S3-018 Memory Feedback 两条独立工作线并行启动；Daily 负责可信完整日总结，Feedback 负责显式 CONFIRM / CORRECT / DELETE 审计
 
 ## 状态规则
 
@@ -237,10 +238,10 @@
 | S3-012 | Evidence Ranking | ✅ | Issue #70 / PR #71 已完成固定 `USER_DIRECT > SENSOR_DIRECT > SYSTEM_DERIVED > AI_INFERENCE`、owner/deleted isolation、deterministic tie-break、no-autoflush read-only seam、正式 review 与 exact-head CI，并合并 `main=f3c84899` |
 | S3-013 | “已确认 / 有证据 / AI推测”答案状态 | ✅ | Issue #74 / PR #75 已完成四态 server-owned resolver、latest edit-source fail-closed、独立 persisted-state read Session、两轮正式审查与 final Gate，并合并 `main=a0636479` |
 | S3-014 | Reminder 意图提取 | ✅ | Issue #78 / PR #79 已完成 AIGateway-only inference candidate、StrictBool exact provider contract、literal-span gate、server-owned timezone/time grammar、DST/past fail-closed、显式确认与 no-write 回归；正式复审与 current-head exact CI 通过，并合并 `main=a7366e89` |
-| S3-015 | Daily Summary | ⬜ | “今天发生了什么” |
+| S3-015 | Daily Summary | 🔵 | Issue #82 / `feat/stage3-daily-summary-foundation`：server-owned local day → bounded complete snapshot → authoritative Memory/Visit slots → strict AIGateway summary → 全 provider-visible slots 后置 revalidation；禁止用 top-k RAG 冒充完整日总结 |
 | S3-016 | 月度回忆 | ⬜ | 月度事件整理 |
 | S3-017 | 年度回忆 | ⬜ | 年度报告 |
-| S3-018 | 记忆纠错 / 用户确认反馈 | ⬜ | AI 整理结果可正确 / 修改 / 删除 |
+| S3-018 | 记忆纠错 / 用户确认反馈 | 🔵 | Issue #83 / `feat/stage3-memory-feedback-foundation`：显式用户 CONFIRM / CORRECT / DELETE；复用既有 Memory Edit / Delete 权威链，新增 revision-bound audit seam，为 S3-019 False Memory Rate 提供可信反馈数据 |
 | S3-019 | False Memory Rate 指标 | ⬜ | 最高优先级质量指标之一 |
 
 ---
