@@ -238,7 +238,7 @@
 | S3-012 | Evidence Ranking | ✅ | Issue #70 / PR #71 已完成固定 `USER_DIRECT > SENSOR_DIRECT > SYSTEM_DERIVED > AI_INFERENCE`、owner/deleted isolation、deterministic tie-break、no-autoflush read-only seam、正式 review 与 exact-head CI，并合并 `main=f3c84899` |
 | S3-013 | “已确认 / 有证据 / AI推测”答案状态 | ✅ | Issue #74 / PR #75 已完成四态 server-owned resolver、latest edit-source fail-closed、独立 persisted-state read Session、两轮正式审查与 final Gate，并合并 `main=a0636479` |
 | S3-014 | Reminder 意图提取 | ✅ | Issue #78 / PR #79 已完成 AIGateway-only inference candidate、StrictBool exact provider contract、literal-span gate、server-owned timezone/time grammar、DST/past fail-closed、显式确认与 no-write 回归；正式复审与 current-head exact CI 通过，并合并 `main=a7366e89` |
-| S3-015 | Daily Summary | 🔵 | Issue #82 / `feat/stage3-daily-summary-foundation`：server-owned local day → bounded complete snapshot → authoritative Memory/Visit slots → strict AIGateway summary → 全 provider-visible slots 后置 revalidation；禁止用 top-k RAG 冒充完整日总结 |
+| S3-015 | Daily Summary | 🟠 | Issue #82 / PR #84：server-owned local day → bounded complete Memory/Visit inventory → S3-013 authoritative Memory + finalized Visit provenance → opaque D1/D2 slots → strict AIGateway summary；provider 前后复核完整 inventory + 全 visible slots；开发 HEAD exact-head Backend CI / PostgreSQL Daily Summary Gate 已通过，等待正式审查/合并 |
 | S3-016 | 月度回忆 | ⬜ | 月度事件整理 |
 | S3-017 | 年度回忆 | ⬜ | 年度报告 |
 | S3-018 | 记忆纠错 / 用户确认反馈 | 🔵 | Issue #83 / `feat/stage3-memory-feedback-foundation`：显式用户 CONFIRM / CORRECT / DELETE；复用既有 Memory Edit / Delete 权威链，新增 revision-bound audit seam，为 S3-019 False Memory Rate 提供可信反馈数据 |
