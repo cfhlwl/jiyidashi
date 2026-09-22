@@ -30,13 +30,15 @@
 <!-- Stage 3H：pgvector Foundation / Issue #66 / PR #67 已完成 PostgreSQL vector extension + SQLAlchemy 类型基础、真实 PostgreSQL CI、正式 review 与合并 main=b7579c4d；S3-008 转 ✅。 -->
 <!-- Stage 3G：Vision Foundation / Issue #65 / PR #68：用户主动触发 owner-scoped READY IMAGE 可见场景/物品/活动候选观察；provider 仅可返回受控 kind/code，server-owned labels + trust_class=inference，不写 Memory/Evidence/Entity/Visit/Reminder；正式 review PASS，等待 latest-main exact-head Gate/合并。 -->
 <!-- Stage 3J：Evidence Ranking Foundation / Issue #70 / PR #71 已完成实现、P2 no-autoflush 修复、正式 review、latest-main final Gate 与合并 main=f3c84899；S3-012 转 ✅。 -->
-<!-- Stage 3K：Structured First Retrieval / Issue #73 / feat/stage3-structured-first-retrieval：内部 read-only candidate seam，固定 STRUCTURED > KEYWORD > VECTOR > typed LLM handoff；不改 /memory/query，不做 RAG/答案生成。 -->
+<!-- Stage 3K：Structured First Retrieval / Issue #73 / PR #76 已完成正式两轮审查、latest-main exact-head Gate 与合并 main=e9225739；S3-010 转 ✅。 -->
+<!-- Stage 3L：Answer Trust State / Issue #74 / PR #75 已完成 latest edit-source fail-closed、persisted-state isolation、正式两轮审查与合并 main=a0636479；S3-013 转 ✅。 -->
+<!-- Stage 3M：Memory RAG Foundation / Issue #77 / PR #80：内部 read-only answer seam；第一轮 P1 已修复为 provider 后复核所有实际 prompt slots，等待 latest-main final Gate/合并。 -->
 # 迹忆开发进度总表
 
 > 最后更新：2026-09-21  
-> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-010、S3-012 已完成，当前收口 S3-013 Answer Trust State Foundation
+> 当前阶段：Stage 1「记得住」与 Stage 2「自动记」均已完成；Stage 3「懂生活 / AI Memory」持续推进：S3-001~S3-010、S3-012、S3-013 已完成；当前并行收口 S3-011 Memory RAG 与 S3-014 Reminder Intent
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Issue #74 / PR #75 / S3-013 Answer Trust State Foundation：typed trust states、latest edit-source fail-closed、persisted-state isolation；第二轮 review PASS，等待 latest-main exact-head Gate/合并
+> 当前开发重点：Issue #77 / PR #80 / S3-011 Memory RAG：S3-010 retrieval → S3-013 current trust → authoritative E1/E2 slots → strict provider output → provider 后复核全部 prompt slots；同时保留 main 上 S3-014 / PR #79 的 Reminder Intent 进度
 
 ## 状态规则
 
@@ -231,7 +233,7 @@
 | S3-008 | pgvector | ✅ | Issue #66 / PR #67 已完成 PostgreSQL vector extension、SQLAlchemy pgvector seam、SQLite no-op migration、保守 downgrade、zero-VECTOR-column scope gate、真实 PostgreSQL CI 与正式审查，并合并 `main=b7579c4d` |
 | S3-009 | Embedding 生成与索引 | ✅ | Issue #69 / PR #72 已完成 MemoryEmbedding 派生索引、VECTOR(1536)、HNSW cosine、owner-binding 复合 FK、编辑/删除/Data Delete 生命周期、正式两轮审查与 exact-head CI，并合并 `main=0766d027` |
 | S3-010 | Structured First 检索 | ✅ | Issue #73 / PR #76 已完成 STRUCTURED > KEYWORD > VECTOR、Object CURRENT terminal-miss、server-side Object 32+1 cap、vector keyset paging + fingerprint validation + typed scan-limit、Evidence Ranking enrichment、正式两轮审查与 exact-head CI，并合并 `main=e9225739` |
-| S3-011 | Memory RAG | ⬜ | 只从用户自己的可用 Evidence 回答 |
+| S3-011 | Memory RAG | 🟠 | Issue #77 / PR #80：内部 read-only RAG seam 已实现；S3-010 retrieval → S3-013 current trust re-resolution → authoritative Evidence E1/E2 槽位 → strict AIGateway JSON/citation；第一轮 P1 已关闭为 provider 后重验全部 prompt slots，等待 latest-main final Gate/合并 |
 | S3-012 | Evidence Ranking | ✅ | Issue #70 / PR #71 已完成固定 `USER_DIRECT > SENSOR_DIRECT > SYSTEM_DERIVED > AI_INFERENCE`、owner/deleted isolation、deterministic tie-break、no-autoflush read-only seam、正式 review 与 exact-head CI，并合并 `main=f3c84899` |
 | S3-013 | “已确认 / 有证据 / AI推测”答案状态 | ✅ | Issue #74 / PR #75 已完成四态 server-owned resolver、latest edit-source fail-closed、独立 persisted-state read Session、两轮正式审查与 final Gate，并合并 `main=a0636479` |
 | S3-014 | Reminder 意图提取 | 🟠 | Issue #78 / PR #79：AIGateway-only inference candidate、strict exact-key/literal-span parser、server-owned persisted IANA timezone、有限 deterministic time grammar、DST/past fail-closed、显式用户确认门禁与 no-write 回归已实现；第一轮 review 唯一 P2（`has_reminder_intent` 类型强转）已改 `StrictBool` 并锁住 `"true"/"false"/1/0` fail-closed，Backend #508 324 passed；等待第二轮复审/合并 |
