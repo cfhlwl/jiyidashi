@@ -28,11 +28,13 @@ import {
 import {
   parseFamilyCurrentLocation,
   parseFamilyInvite,
+  parseFamilyMemories,
   parseFamilyPermissionGrant,
   parseFamilyPermissions,
   parseFamilyResponse,
   parseFamilyTodayFootprint,
   type FamilyCurrentLocation,
+  type FamilyMemory,
   type FamilyInvite,
   type FamilyPermissionGrant,
   type FamilyResponse,
@@ -319,6 +321,17 @@ export async function getFamilyTodayFootprint(
     `/family/members/${encodeURIComponent(resourceOwnerUserId)}/today/footprint`,
   )
   return parseFamilyTodayFootprint(raw)
+}
+
+export async function getFamilyMemories(
+  resourceOwnerUserId: string,
+): Promise<FamilyMemory[]> {
+  // #107 is bounded list/read-only. No query/RAG/summary endpoint is involved.
+  const raw = await request<unknown>(
+    'GET',
+    `/family/members/${encodeURIComponent(resourceOwnerUserId)}/memories?limit=50`,
+  )
+  return parseFamilyMemories(raw)
 }
 
 export function updateProfile(input: {
