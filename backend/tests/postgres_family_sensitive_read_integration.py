@@ -12,7 +12,16 @@ from app.family_models import (
     FamilyPermissionCode,
     FamilyRole,
 )
-from app.models import LocationPoint, Memory, MemoryType, Place, PrivacyState, SourceType, User, Visit
+from app.models import (
+    LocationPoint,
+    Memory,
+    MemoryType,
+    Place,
+    PrivacyState,
+    SourceType,
+    User,
+    Visit,
+)
 from app.services.family_sensitive_read_service import (
     FamilySensitiveReadError,
     get_family_current_location,
