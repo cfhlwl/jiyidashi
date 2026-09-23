@@ -12,6 +12,7 @@ import {
   INTERACTIVE_FAMILY_PERMISSIONS,
   parseFamilyCurrentLocation,
   parseFamilyInvite,
+  parseFamilyMemories,
   parseFamilyPermissions,
   parseFamilyResponse,
   parseFamilyTodayFootprint,
@@ -113,6 +114,47 @@ test('current-location parser verifies owner and returns only display whitelist 
   }, MEMBER_ID), /家庭数据异常/)
 })
 
+test('Family Memory parser is bounded, fail-closed and returns only safe projection fields', () => {
+  const raw = {
+    memory_id: OWNER_ID,
+    memory_type: 'NOTE',
+    title: '家人的记忆',
+    content: '只展示允许的记忆正文',
+    occurred_at: '2026-09-23T10:00:00Z',
+    source_type: 'USER_TEXT',
+    is_confirmed: true,
+    edit_revision: 2,
+    created_at: '2026-09-23T09:00:00Z',
+    metadata_json: { private: true },
+    latitude: 31.2,
+    longitude: 121.4,
+    memory_source_id: OTHER_ID,
+  }
+  const parsed = parseFamilyMemories([raw])
+  assert.deepEqual(Object.keys(parsed[0]).sort(), [
+    'content',
+    'created_at',
+    'edit_revision',
+    'is_confirmed',
+    'memory_id',
+    'memory_type',
+    'occurred_at',
+    'source_type',
+    'title',
+  ])
+  assert.equal((parsed[0] as Record<string, unknown>).metadata_json, undefined)
+  assert.equal((parsed[0] as Record<string, unknown>).latitude, undefined)
+  assert.deepEqual(parseFamilyMemories([]), [])
+  assert.throws(() => parseFamilyMemories([{ ...raw, memory_id: 'bad' }]), /家庭数据异常/)
+  assert.throws(() => parseFamilyMemories([{ ...raw, is_confirmed: 'true' }]), /家庭数据异常/)
+  assert.throws(() => parseFamilyMemories([{ ...raw, edit_revision: -1 }]), /家庭数据异常/)
+  assert.throws(() => parseFamilyMemories([raw, raw]), /家庭数据异常/)
+  assert.throws(() => parseFamilyMemories(Array.from({ length: 51 }, (_, index) => ({
+    ...raw,
+    memory_id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+  }))), /家庭数据异常/)
+})
+
 test('family Today Footprint reuses strict Today parser', () => {
   const parsed = parseFamilyTodayFootprint({
     timezone: 'Asia/Shanghai',
@@ -154,14 +196,15 @@ test('OWNER and MEMBER presentation keeps self actions and cross-member actions 
   assert.equal(memberSelf.showSensitiveReads, false)
 })
 
-test('permission labels are outbound authority and MEMORY/PHOTOS are not interactive controls', () => {
+test('permission labels are outbound authority; MEMORY is interactive while PHOTOS stays unavailable', () => {
   assert.match(permissionLabel(FAMILY_PERMISSION.VIEW_CURRENT_LOCATION), /我允许 TA 查看我的当前位置/)
   assert.match(permissionLabel(FAMILY_PERMISSION.VIEW_FOOTPRINT), /我允许 TA 查看我的今日足迹/)
+  assert.match(permissionLabel(FAMILY_PERMISSION.VIEW_MEMORY), /我允许 TA 查看我的个人记忆/)
   assert.deepEqual(INTERACTIVE_FAMILY_PERMISSIONS, [
     FAMILY_PERMISSION.VIEW_CURRENT_LOCATION,
     FAMILY_PERMISSION.VIEW_FOOTPRINT,
+    FAMILY_PERMISSION.VIEW_MEMORY,
   ])
-  assert.equal(INTERACTIVE_FAMILY_PERMISSIONS.includes(FAMILY_PERMISSION.VIEW_MEMORY as never), false)
   assert.equal(INTERACTIVE_FAMILY_PERMISSIONS.includes(FAMILY_PERMISSION.VIEW_PHOTOS as never), false)
 })
 
@@ -179,6 +222,18 @@ test('visible permission toggle preserves the other visible and unknown future c
     replaceVisiblePermission(current, FAMILY_PERMISSION.VIEW_FOOTPRINT, false),
     [FAMILY_PERMISSION.VIEW_CURRENT_LOCATION, 'VIEW_FUTURE_SAFE_CAPABILITY'],
   )
+  assert.deepEqual(
+    replaceVisiblePermission(
+      [...current, FAMILY_PERMISSION.VIEW_MEMORY],
+      FAMILY_PERMISSION.VIEW_MEMORY,
+      false,
+    ),
+    [
+      FAMILY_PERMISSION.VIEW_CURRENT_LOCATION,
+      FAMILY_PERMISSION.VIEW_FOOTPRINT,
+      'VIEW_FUTURE_SAFE_CAPABILITY',
+    ],
+  )
 })
 
 test('per-member permission mutation gate rejects rapid concurrent replacement', () => {
@@ -190,10 +245,13 @@ test('per-member permission mutation gate rejects rapid concurrent replacement',
   assert.equal(gate.begin(MEMBER_ID), true)
 })
 
-test('sensitive-read errors keep unauthorized and unavailable states distinct', () => {
+test('sensitive-read errors keep unauthorized, unavailable and empty Memory states distinct', () => {
   assert.equal(familyErrorMessage('FAMILY_READ_NOT_AUTHORIZED', 'current-location'), '对方未授权查看当前位置')
   assert.equal(familyErrorMessage('CURRENT_LOCATION_UNAVAILABLE', 'current-location'), '当前位置暂不可用')
   assert.equal(familyErrorMessage('FAMILY_READ_NOT_AUTHORIZED', 'footprint'), '对方未授权查看今日足迹')
+  assert.equal(familyErrorMessage('FAMILY_READ_NOT_AUTHORIZED', 'memory'), '对方未授权查看个人记忆')
+  // 200 [] is not an error code; the page renders its dedicated empty copy.
+  assert.equal(familyErrorMessage(null, 'memory'), null)
 })
 
 test('location stale success cannot repopulate sensitive state after refresh invalidation', async () => {
@@ -234,8 +292,27 @@ test('footprint stale success cannot repopulate sensitive state after refresh in
   assert.deepEqual(sensitiveState, {})
 })
 
-test('stale location and footprint errors cannot repopulate sensitive state after refresh invalidation', async () => {
-  for (const key of ['location', 'footprint'] as const) {
+test('Family Memory stale success cannot repopulate sensitive state after refresh invalidation', async () => {
+  const epoch = new FamilySensitiveReadEpoch()
+  const request = deferred<Array<{ memory_id: string }>>()
+  let sensitiveState: Record<string, unknown> = {}
+
+  const captured = epoch.capture()
+  const completion = request.promise.then((data) => {
+    if (!epoch.isCurrent(captured)) return
+    sensitiveState = { memory: data }
+  })
+
+  epoch.invalidate()
+  sensitiveState = {}
+  request.resolve([{ memory_id: OWNER_ID }])
+  await completion
+
+  assert.deepEqual(sensitiveState, {})
+})
+
+test('stale location, footprint and Memory errors cannot repopulate sensitive state after refresh invalidation', async () => {
+  for (const key of ['location', 'footprint', 'memory'] as const) {
     const epoch = new FamilySensitiveReadEpoch()
     const request = deferred<never>()
     let sensitiveState: Record<string, unknown> = {}
@@ -288,7 +365,7 @@ test('page contract has explicit states and does not auto-fetch family sensitive
   assert.notEqual(refreshStart, -1)
   assert.notEqual(refreshEnd, -1)
   const refreshBody = page.slice(refreshStart, refreshEnd)
-  assert.doesNotMatch(refreshBody, /getFamilyCurrentLocation|getFamilyTodayFootprint/)
+  assert.doesNotMatch(refreshBody, /getFamilyCurrentLocation|getFamilyTodayFootprint|getFamilyMemories/)
   assert.match(refreshBody, /sensitiveReadEpoch\.current\.invalidate\(\)/)
   assert.match(refreshBody, /setMemberReads\(\{\}\)/)
   assert.match(
@@ -299,6 +376,13 @@ test('page contract has explicit states and does not auto-fetch family sensitive
     page,
     /const readEpoch = sensitiveReadEpoch\.current\.capture\(\)[\s\S]*?getFamilyTodayFootprint[\s\S]*?isCurrent\(readEpoch\)[\s\S]*?catch \(error\)[\s\S]*?isCurrent\(readEpoch\)/,
   )
+  assert.match(
+    page,
+    /const readEpoch = sensitiveReadEpoch\.current\.capture\(\)[\s\S]*?getFamilyMemories[\s\S]*?isCurrent\(readEpoch\)[\s\S]*?catch \(error\)[\s\S]*?isCurrent\(readEpoch\)/,
+  )
+  assert.match(page, /查看个人记忆/)
+  assert.match(page, /对方当前没有可显示的记忆/)
+  assert.match(page, /照片 <Text className='muted'>暂未开放<\/Text>/)
   assert.match(page, /return familyErrorMessage\(apiErrorCode\(error\), context\) \|\| fallback/)
 })
 
@@ -308,5 +392,9 @@ test('Family permission replacement is wired through PUT in the shared API trans
   assert.match(
     api,
     /request<unknown>\(\s*'PUT',\s*`\/family\/permissions\/\$\{encodeURIComponent\(granteeUserId\)\}`/,
+  )
+  assert.match(
+    api,
+    /`\/family\/members\/\$\{encodeURIComponent\(resourceOwnerUserId\)\}\/memories\?limit=50`/,
   )
 })

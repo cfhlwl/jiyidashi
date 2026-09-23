@@ -12,10 +12,20 @@ from app.family_models import (
     FamilyPermissionCode,
     FamilyRole,
 )
-from app.models import LocationPoint, Place, PrivacyState, User, Visit
+from app.models import (
+    LocationPoint,
+    Memory,
+    MemoryType,
+    Place,
+    PrivacyState,
+    SourceType,
+    User,
+    Visit,
+)
 from app.services.family_sensitive_read_service import (
     FamilySensitiveReadError,
     get_family_current_location,
+    get_family_memories,
     get_family_today_footprint,
 )
 from app.services.family_service import create_family, remove_member, replace_permissions
@@ -75,6 +85,30 @@ def _point(user_id: UUID, *, latitude: float = 31.2304) -> None:
             )
         )
         db.commit()
+
+
+def _memory(user_id: UUID, *, title: str = "PG Family Memory") -> UUID:
+    memory_id = uuid4()
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        db.add(
+            Memory(
+                id=memory_id,
+                user_id=user_id,
+                memory_type=MemoryType.NOTE,
+                title=title,
+                content="family memory read gate",
+                occurred_at=now,
+                source_type=SourceType.USER_TEXT,
+                is_confirmed=True,
+                is_deleted=False,
+                edit_revision=0,
+                metadata_json={"private": "must-not-leak"},
+                created_at=now,
+            )
+        )
+        db.commit()
+    return memory_id
 
 
 def _cleanup(*user_ids: UUID) -> None:
@@ -447,6 +481,177 @@ def _assert_current_read_vs_privacy_pause_serializes() -> None:
 
     _cleanup(member, owner)
 
+def _assert_memory_exact_grant_and_projection() -> None:
+    owner, member = _family_pair("memory-exact")
+    memory_id = _memory(owner)
+
+    _grant(owner, member, FamilyPermissionCode.VIEW_PHOTOS.value)
+    with SessionLocal() as db:
+        try:
+            get_family_memories(
+                db,
+                resource_owner_user_id=owner,
+                grantee_user_id=member,
+            )
+            raise AssertionError("VIEW_PHOTOS unexpectedly authorized Family Memory")
+        except FamilySensitiveReadError as exc:
+            assert exc.code == "FAMILY_READ_NOT_AUTHORIZED"
+
+    _grant(owner, member, FamilyPermissionCode.VIEW_MEMORY.value)
+    with SessionLocal() as db:
+        memories = get_family_memories(
+            db,
+            resource_owner_user_id=owner,
+            grantee_user_id=member,
+        )
+        assert len(memories) == 1
+        assert memories[0].memory_id == memory_id
+        assert memories[0].title == "PG Family Memory"
+        assert not hasattr(memories[0], "metadata_json")
+        assert not hasattr(memories[0], "latitude")
+        assert not hasattr(memories[0], "longitude")
+
+    _cleanup(member, owner)
+
+
+def _assert_memory_read_vs_permission_revoke_serializes() -> None:
+    owner, member = _family_pair("memory-revoke")
+    _memory(owner)
+
+    for _ in range(6):
+        _grant(owner, member, FamilyPermissionCode.VIEW_MEMORY.value)
+        barrier = Barrier(2)
+        outcomes: list[str] = []
+        errors: list[BaseException] = []
+
+        def reader(
+            barrier: Barrier = barrier,
+            outcomes: list[str] = outcomes,
+            errors: list[BaseException] = errors,
+        ) -> None:
+            try:
+                barrier.wait(timeout=15)
+                with SessionLocal() as db:
+                    try:
+                        get_family_memories(
+                            db,
+                            resource_owner_user_id=owner,
+                            grantee_user_id=member,
+                        )
+                        outcomes.append("read-allowed")
+                    except FamilySensitiveReadError as exc:
+                        assert exc.code == "FAMILY_READ_NOT_AUTHORIZED"
+                        outcomes.append("read-denied")
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        def revoker(
+            barrier: Barrier = barrier,
+            outcomes: list[str] = outcomes,
+            errors: list[BaseException] = errors,
+        ) -> None:
+            try:
+                barrier.wait(timeout=15)
+                with SessionLocal() as db:
+                    replace_permissions(
+                        db,
+                        resource_owner_user_id=owner,
+                        grantee_user_id=member,
+                        permission_codes=[],
+                    )
+                    outcomes.append("revoked")
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [Thread(target=reader), Thread(target=revoker)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=20)
+            assert not thread.is_alive()
+        if errors:
+            raise errors[0]
+
+        assert "revoked" in outcomes
+        assert set(outcomes).issubset({"read-allowed", "read-denied", "revoked"})
+        with SessionLocal() as db:
+            try:
+                get_family_memories(
+                    db,
+                    resource_owner_user_id=owner,
+                    grantee_user_id=member,
+                )
+                raise AssertionError("post-revoke Family Memory unexpectedly allowed")
+            except FamilySensitiveReadError as exc:
+                assert exc.code == "FAMILY_READ_NOT_AUTHORIZED"
+
+    _cleanup(member, owner)
+
+
+def _assert_memory_read_vs_member_removal_serializes() -> None:
+    owner, member = _family_pair("memory-remove")
+    _grant(owner, member, FamilyPermissionCode.VIEW_MEMORY.value)
+    _memory(owner)
+
+    barrier = Barrier(2)
+    outcomes: list[str] = []
+    errors: list[BaseException] = []
+
+    def reader() -> None:
+        try:
+            barrier.wait(timeout=15)
+            with SessionLocal() as db:
+                try:
+                    get_family_memories(
+                        db,
+                        resource_owner_user_id=owner,
+                        grantee_user_id=member,
+                    )
+                    outcomes.append("read-allowed")
+                except FamilySensitiveReadError as exc:
+                    assert exc.code == "FAMILY_READ_NOT_AUTHORIZED"
+                    outcomes.append("read-denied")
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def remover() -> None:
+        try:
+            barrier.wait(timeout=15)
+            with SessionLocal() as db:
+                remove_member(
+                    db,
+                    actor_user_id=owner,
+                    target_user_id=member,
+                )
+                outcomes.append("removed")
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [Thread(target=reader), Thread(target=remover)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+        assert not thread.is_alive()
+    if errors:
+        raise errors[0]
+
+    assert "removed" in outcomes
+    assert set(outcomes).issubset({"read-allowed", "read-denied", "removed"})
+    with SessionLocal() as db:
+        try:
+            get_family_memories(
+                db,
+                resource_owner_user_id=owner,
+                grantee_user_id=member,
+            )
+            raise AssertionError("post-removal Family Memory unexpectedly allowed")
+        except FamilySensitiveReadError as exc:
+            assert exc.code == "FAMILY_READ_NOT_AUTHORIZED"
+
+    _cleanup(member, owner)
+
+
 def main() -> None:
     _assert_exact_grant_and_cross_family_isolation()
     _assert_owner_privacy_pause_blocks_current_location()
@@ -454,6 +659,9 @@ def main() -> None:
     _assert_read_vs_permission_revoke_serializes()
     _assert_read_vs_member_removal_serializes()
     _assert_current_read_vs_privacy_pause_serializes()
+    _assert_memory_exact_grant_and_projection()
+    _assert_memory_read_vs_permission_revoke_serializes()
+    _assert_memory_read_vs_member_removal_serializes()
     print("PostgreSQL Family Sensitive Read invariants PASS")
 
 

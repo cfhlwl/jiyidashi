@@ -8,6 +8,7 @@ import {
   createFamilyInvite,
   getFamily,
   getFamilyCurrentLocation,
+  getFamilyMemories,
   getFamilyPermissions,
   getFamilyTodayFootprint,
   getProfile,
@@ -18,16 +19,17 @@ import {
 } from '../../services/api'
 import {
   assertCurrentFamilyMember,
-  FAMILY_PERMISSION,
   familyErrorMessage,
   familyMemberActions,
   FamilyPermissionMutationGate,
   FamilySensitiveReadEpoch,
+  INTERACTIVE_FAMILY_PERMISSIONS,
   permissionLabel,
   replaceVisiblePermission,
   shortMemberId,
   type FamilyCurrentLocation,
   type FamilyInvite,
+  type FamilyMemory,
   type FamilyPermissionGrant,
   type FamilyResponse,
   type InteractiveFamilyPermissionCode,
@@ -58,6 +60,7 @@ type AsyncRead<T> =
 type MemberReads = Record<string, {
   location?: AsyncRead<FamilyCurrentLocation>
   footprint?: AsyncRead<TodayFootprintResponse>
+  memory?: AsyncRead<FamilyMemory[]>
 }>
 
 function fallbackError(error: unknown, fallback: string): string {
@@ -111,8 +114,8 @@ export default function Page() {
     if (clearTransient) clearFamilyTransientState()
 
     try {
-      // [人工注释][S4-010] tab 激活只读取 Family 自身与“我授权给别人”的 outbound grants。
-      // 任何家人位置/足迹都不在这里探测，必须由用户点击对应按钮后再读取。
+      // [人工注释][S4-010][S4-006] tab 激活只读取 Family 自身与“我授权给别人”的 outbound grants。
+      // 任何家人位置/足迹/个人记忆都不在这里探测，必须由用户点击对应按钮后再读取。
       const family = await getFamily()
       const profile = await getProfile()
       assertCurrentFamilyMember(family, profile.id)
@@ -355,6 +358,40 @@ export default function Page() {
     }
   }
 
+  const readMemory = async (resourceOwnerUserId: string) => {
+    const readEpoch = sensitiveReadEpoch.current.capture()
+    setMemberReads((current) => ({
+      ...current,
+      [resourceOwnerUserId]: {
+        ...current[resourceOwnerUserId],
+        memory: { state: 'loading' },
+      },
+    }))
+    try {
+      const data = await getFamilyMemories(resourceOwnerUserId)
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
+      setMemberReads((current) => ({
+        ...current,
+        [resourceOwnerUserId]: {
+          ...current[resourceOwnerUserId],
+          memory: { state: 'ready', data },
+        },
+      }))
+    } catch (error) {
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
+      setMemberReads((current) => ({
+        ...current,
+        [resourceOwnerUserId]: {
+          ...current[resourceOwnerUserId],
+          memory: {
+            state: 'error',
+            message: mappedError(error, 'memory', '个人记忆读取失败'),
+          },
+        },
+      }))
+    }
+  }
+
   const renderLocation = (read: AsyncRead<FamilyCurrentLocation> | undefined) => {
     if (!read || read.state === 'idle') return null
     if (read.state === 'loading') return <View className='muted read-state'>正在读取当前位置…</View>
@@ -384,6 +421,29 @@ export default function Page() {
             <View className='footprint-place'>{row.placeName}</View>
             <View>{row.timeRange}</View>
             <View className='muted'>{row.stateLabel} · {row.source}</View>
+          </View>
+        ))}
+      </View>
+    )
+  }
+
+  const renderMemory = (read: AsyncRead<FamilyMemory[]> | undefined) => {
+    if (!read || read.state === 'idle') return null
+    if (read.state === 'loading') return <View className='muted read-state'>正在读取个人记忆…</View>
+    if (read.state === 'error') return <View className='error read-state'>{read.message}</View>
+    return (
+      <View className='sensitive-result'>
+        {read.data.length === 0 && (
+          <View className='read-state'>对方当前没有可显示的记忆</View>
+        )}
+        {read.data.map((memory) => (
+          <View className='memory-row' key={memory.memory_id}>
+            <View className='memory-title'>{memory.title || '未命名记忆'}</View>
+            <View className='memory-content'>{memory.content}</View>
+            <View className='muted'>{memory.occurred_at}</View>
+            <View className='muted'>
+              {memory.memory_type} · {memory.source_type} · {memory.is_confirmed ? '已确认' : '待确认'}
+            </View>
           </View>
         ))}
       </View>
@@ -526,7 +586,7 @@ export default function Page() {
             {actions.showPermissionControls && (
               <View className='member-section'>
                 <View className='member-section-title'>我允许 TA 查看：</View>
-                {([FAMILY_PERMISSION.VIEW_CURRENT_LOCATION, FAMILY_PERMISSION.VIEW_FOOTPRINT] as const).map((code) => (
+                {INTERACTIVE_FAMILY_PERMISSIONS.map((code) => (
                   <View className='permission-row' key={code}>
                     <Text>{permissionLabel(code)}</Text>
                     <Switch
@@ -536,7 +596,6 @@ export default function Page() {
                     />
                   </View>
                 ))}
-                <View className='future-permission'>个人记忆 <Text className='muted'>暂未开放</Text></View>
                 <View className='future-permission'>照片 <Text className='muted'>暂未开放</Text></View>
                 {busy && <View className='muted'>正在保存授权…</View>}
               </View>
@@ -562,6 +621,14 @@ export default function Page() {
                   查看今日足迹
                 </Button>
                 {renderFootprint(reads?.footprint)}
+                <Button
+                  className='secondary-button'
+                  disabled={reads?.memory?.state === 'loading'}
+                  onClick={() => readMemory(member.user_id)}
+                >
+                  查看个人记忆
+                </Button>
+                {renderMemory(reads?.memory)}
               </View>
             )}
 

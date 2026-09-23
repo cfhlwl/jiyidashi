@@ -380,9 +380,9 @@ def test_cross_family_mutation_fails_closed():
         assert exc.value.status_code == 404
 
 
-def test_family_router_exposes_only_reviewed_stage4a_and_stage4b_routes():
+def test_family_router_exposes_only_reviewed_stage4_routes():
     # Inspect the family router itself: unrelated tests may temporarily alter global
-    # FastAPI app routes, while this invariant is specifically about Stage 4A's surface.
+    # FastAPI app routes. #107 adds only the reviewed S4-006 Memory list surface.
     family_paths = {
         route.path
         for route in family_router.routes
@@ -397,7 +397,9 @@ def test_family_router_exposes_only_reviewed_stage4a_and_stage4b_routes():
         "/family/permissions",
         "/family/permissions/{grantee_user_id}",
         "/family/members/{resource_owner_user_id}/current-location",
+        "/family/members/{resource_owner_user_id}/memories",
         "/family/members/{resource_owner_user_id}/today/footprint",
     }
-    assert all("memory" not in path.lower() for path in family_paths)
     assert all("photo" not in path.lower() for path in family_paths)
+    assert all("query" not in path.lower() for path in family_paths)
+    assert all("summar" not in path.lower() for path in family_paths)
