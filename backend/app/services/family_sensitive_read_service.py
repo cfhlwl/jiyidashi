@@ -13,7 +13,7 @@ from app.family_models import (
     FamilyPermissionCode,
     FamilyPermissionGrant,
 )
-from app.models import LocationPoint, PrivacyState
+from app.models import LocationPoint, Memory, PrivacyState
 from app.schemas import TodayFootprintResponse
 from app.services.privacy_service import ensure_utc, lock_location_derivation_state
 from app.services.today_footprint_service import get_today_footprint
@@ -36,6 +36,19 @@ class FamilyCurrentLocationView:
     accuracy: float | None
     recorded_at: datetime
     fresh_until: datetime
+
+
+@dataclass(frozen=True)
+class FamilyMemoryView:
+    memory_id: UUID
+    memory_type: str
+    title: str | None
+    content: str
+    occurred_at: datetime
+    source_type: str
+    is_confirmed: bool
+    edit_revision: int
+    created_at: datetime
 
 
 def _require_exact_family_grant(
@@ -83,6 +96,9 @@ def _require_exact_family_grant(
             FamilyPermissionGrant.grantee_user_id == grantee_user_id,
             FamilyPermissionGrant.permission_code == permission_code.value,
         )
+        # [人工注释][S4-006] exact grant 本身也进入 read authority 锁集。
+        # replace_permissions() 删除同一 grant 时必须与读串行，避免已撤销授权被旧快照继续披露。
+        .with_for_update()
         .limit(1)
     )
     if grant_id is None:
@@ -176,6 +192,76 @@ def get_family_current_location(
             raise
 
         # Read-only boundary: release Family + owner privacy/location locks together.
+        authority.rollback()
+        return result
+
+
+def get_family_memories(
+    db: Session,
+    *,
+    resource_owner_user_id: UUID,
+    grantee_user_id: UUID,
+    limit: int = 50,
+) -> list[FamilyMemoryView]:
+    if limit < 1 or limit > 50:
+        raise ValueError("family memory limit must be between 1 and 50")
+
+    # [人工注释][S4-006] Family Memory 是一个独立、只读的受限 projection。
+    # 使用 authoritative Session 避免 request Session 的 pending ORM state 参与授权或内容读取。
+    with Session(bind=db.get_bind(), autoflush=False, expire_on_commit=False) as authority:
+        try:
+            _require_exact_family_grant(
+                authority,
+                resource_owner_user_id=resource_owner_user_id,
+                grantee_user_id=grantee_user_id,
+                permission_code=FamilyPermissionCode.VIEW_MEMORY,
+            )
+
+            rows = authority.execute(
+                select(
+                    Memory.id,
+                    Memory.memory_type,
+                    Memory.title,
+                    Memory.content,
+                    Memory.occurred_at,
+                    Memory.source_type,
+                    Memory.is_confirmed,
+                    Memory.edit_revision,
+                    Memory.created_at,
+                )
+                .where(
+                    Memory.user_id == resource_owner_user_id,
+                    Memory.is_deleted.is_(False),
+                )
+                .order_by(
+                    Memory.occurred_at.desc(),
+                    Memory.id.desc(),
+                )
+                # Lock only the bounded disclosed rows so a concurrent soft-delete
+                # linearizes either before this read (excluded) or after it (read wins).
+                .with_for_update()
+                .limit(limit)
+            ).all()
+
+            result = [
+                FamilyMemoryView(
+                    memory_id=row.id,
+                    memory_type=row.memory_type.value,
+                    title=row.title,
+                    content=row.content,
+                    occurred_at=ensure_utc(row.occurred_at),
+                    source_type=row.source_type.value,
+                    is_confirmed=row.is_confirmed,
+                    edit_revision=row.edit_revision,
+                    created_at=ensure_utc(row.created_at),
+                )
+                for row in rows
+            ]
+        except BaseException:
+            authority.rollback()
+            raise
+
+        # Release canonical membership, exact grant and disclosed Memory row locks together.
         authority.rollback()
         return result
 
