@@ -11,12 +11,14 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.family_models import FamilyPermissionCode
-from app.schemas import TodayFootprintResponse
+from app.schemas import SignedTransfer, TodayFootprintResponse
 from app.services.family_sensitive_read_service import (
     FamilySensitiveReadError,
     get_family_current_location,
     get_family_memories,
+    get_family_photos,
     get_family_today_footprint,
+    sign_family_photo_download,
 )
 from app.services.family_service import (
     FamilyServiceError,
@@ -29,10 +31,12 @@ from app.services.family_service import (
     replace_permissions,
     revoke_invite,
 )
+from app.services.object_storage import ObjectStorage, get_object_storage
 
 router = APIRouter(prefix="/family", tags=["family"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
+Storage = Annotated[ObjectStorage, Depends(get_object_storage)]
 
 
 class FamilyMemberResponse(BaseModel):
@@ -89,6 +93,19 @@ class FamilyMemoryResponse(BaseModel):
     is_confirmed: bool
     edit_revision: int
     created_at: datetime
+
+
+class FamilyPhotoResponse(BaseModel):
+    media_id: UUID
+    content_type: str
+    size_bytes: int
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class FamilyPhotoDownloadResponse(BaseModel):
+    media_id: UUID
+    download: SignedTransfer
 
 
 def _raise(exc: FamilyServiceError) -> None:
@@ -293,3 +310,56 @@ def family_member_today_footprint(
         )
     except FamilySensitiveReadError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+
+
+
+@router.get(
+    "/members/{resource_owner_user_id}/photos",
+    response_model=list[FamilyPhotoResponse],
+)
+def family_member_photos(
+    resource_owner_user_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> list[FamilyPhotoResponse]:
+    try:
+        rows = get_family_photos(
+            db,
+            resource_owner_user_id=resource_owner_user_id,
+            grantee_user_id=user_id,
+        )
+    except FamilySensitiveReadError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return [FamilyPhotoResponse(**row.__dict__) for row in rows]
+
+
+@router.post(
+    "/members/{resource_owner_user_id}/photos/{media_id}/download",
+    response_model=FamilyPhotoDownloadResponse,
+)
+def family_member_photo_download(
+    resource_owner_user_id: UUID,
+    media_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+    storage: Storage,
+) -> FamilyPhotoDownloadResponse:
+    try:
+        transfer = sign_family_photo_download(
+            db,
+            resource_owner_user_id=resource_owner_user_id,
+            grantee_user_id=user_id,
+            media_id=media_id,
+            storage=storage,
+        )
+    except FamilySensitiveReadError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return FamilyPhotoDownloadResponse(
+        media_id=media_id,
+        download=SignedTransfer(
+            method=transfer.method,
+            url=transfer.url,
+            headers=transfer.headers,
+            expires_at=transfer.expires_at,
+        ),
+    )
