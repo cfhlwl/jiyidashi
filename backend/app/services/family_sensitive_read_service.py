@@ -13,12 +13,15 @@ from app.family_models import (
     FamilyPermissionCode,
     FamilyPermissionGrant,
 )
+from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import LocationPoint, Memory, PrivacyState
 from app.schemas import TodayFootprintResponse
+from app.services.object_storage import ObjectStorage, ObjectStorageError, PresignedTransfer
 from app.services.privacy_service import ensure_utc, lock_location_derivation_state
 from app.services.today_footprint_service import get_today_footprint
 
 CURRENT_LOCATION_MAX_AGE = timedelta(minutes=15)
+FAMILY_PHOTO_LIST_LIMIT = 50
 
 
 class FamilySensitiveReadError(RuntimeError):
@@ -49,6 +52,15 @@ class FamilyMemoryView:
     is_confirmed: bool
     edit_revision: int
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class FamilyPhotoView:
+    media_id: UUID
+    content_type: str
+    size_bytes: int
+    created_at: datetime
+    completed_at: datetime | None
 
 
 def _require_exact_family_grant(
@@ -103,6 +115,100 @@ def _require_exact_family_grant(
     )
     if grant_id is None:
         raise FamilySensitiveReadError("FAMILY_READ_NOT_AUTHORIZED", 403)
+
+
+
+def get_family_photos(
+    db: Session,
+    *,
+    resource_owner_user_id: UUID,
+    grantee_user_id: UUID,
+) -> tuple[FamilyPhotoView, ...]:
+    with Session(bind=db.get_bind(), autoflush=False, expire_on_commit=False) as authority:
+        try:
+            _require_exact_family_grant(
+                authority,
+                resource_owner_user_id=resource_owner_user_id,
+                grantee_user_id=grantee_user_id,
+                permission_code=FamilyPermissionCode.VIEW_PHOTOS,
+            )
+            rows = authority.execute(
+                select(
+                    MediaAsset.id.label("media_id"),
+                    MediaAsset.content_type,
+                    MediaAsset.size_bytes,
+                    MediaAsset.created_at,
+                    MediaAsset.completed_at,
+                )
+                .where(
+                    MediaAsset.user_id == resource_owner_user_id,
+                    MediaAsset.kind == MediaKind.IMAGE,
+                    MediaAsset.status == MediaStatus.READY,
+                )
+                .order_by(MediaAsset.created_at.desc(), MediaAsset.id.desc())
+                .limit(FAMILY_PHOTO_LIST_LIMIT)
+            ).all()
+            result = tuple(
+                FamilyPhotoView(
+                    media_id=row.media_id,
+                    content_type=row.content_type,
+                    size_bytes=row.size_bytes,
+                    created_at=row.created_at,
+                    completed_at=row.completed_at,
+                )
+                for row in rows
+            )
+        except BaseException:
+            authority.rollback()
+            raise
+
+        authority.rollback()
+        return result
+
+
+def sign_family_photo_download(
+    db: Session,
+    *,
+    resource_owner_user_id: UUID,
+    grantee_user_id: UUID,
+    media_id: UUID,
+    storage: ObjectStorage,
+) -> PresignedTransfer:
+    with Session(bind=db.get_bind(), autoflush=False, expire_on_commit=False) as authority:
+        try:
+            _require_exact_family_grant(
+                authority,
+                resource_owner_user_id=resource_owner_user_id,
+                grantee_user_id=grantee_user_id,
+                permission_code=FamilyPermissionCode.VIEW_PHOTOS,
+            )
+            row = authority.execute(
+                select(MediaAsset.id.label("media_id"), MediaAsset.object_key).where(
+                    MediaAsset.id == media_id,
+                    MediaAsset.user_id == resource_owner_user_id,
+                    MediaAsset.kind == MediaKind.IMAGE,
+                    MediaAsset.status == MediaStatus.READY,
+                )
+            ).one_or_none()
+            if row is None:
+                raise FamilySensitiveReadError("FAMILY_PHOTO_UNAVAILABLE", 404)
+
+            try:
+                transfer = storage.sign_download(row.object_key)
+            except ObjectStorageError as exc:
+                raise FamilySensitiveReadError("FAMILY_PHOTO_STORAGE_UNAVAILABLE", 503) from exc
+
+            if (
+                transfer.method.upper() != "GET"
+                or ensure_utc(transfer.expires_at) <= datetime.now(UTC)
+            ):
+                raise FamilySensitiveReadError("FAMILY_PHOTO_STORAGE_UNAVAILABLE", 503)
+        except BaseException:
+            authority.rollback()
+            raise
+
+        authority.rollback()
+        return transfer
 
 
 def _privacy_pause_active(
