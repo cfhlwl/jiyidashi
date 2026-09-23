@@ -118,3 +118,25 @@
   margin-bottom: 4rpx;
   font-weight: 600;
 }
+
+
+.memory-row {
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid #eef1ef;
+}
+
+.memory-row:last-child {
+  border-bottom: 0;
+}
+
+.memory-title {
+  margin-bottom: 6rpx;
+  font-weight: 600;
+}
+
+.memory-content {
+  margin-bottom: 8rpx;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
