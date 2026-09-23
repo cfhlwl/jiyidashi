@@ -16,10 +16,12 @@ export type FamilyPermissionCode = typeof FAMILY_PERMISSION[keyof typeof FAMILY_
 export type InteractiveFamilyPermissionCode =
   | typeof FAMILY_PERMISSION.VIEW_CURRENT_LOCATION
   | typeof FAMILY_PERMISSION.VIEW_FOOTPRINT
+  | typeof FAMILY_PERMISSION.VIEW_MEMORY
 
 export const INTERACTIVE_FAMILY_PERMISSIONS: readonly InteractiveFamilyPermissionCode[] = [
   FAMILY_PERMISSION.VIEW_CURRENT_LOCATION,
   FAMILY_PERMISSION.VIEW_FOOTPRINT,
+  FAMILY_PERMISSION.VIEW_MEMORY,
 ]
 
 export type FamilyMember = {
@@ -54,6 +56,18 @@ export type FamilyCurrentLocation = {
   accuracy: number | null
   recorded_at: string
   fresh_until: string
+}
+
+export type FamilyMemory = {
+  memory_id: string
+  memory_type: string
+  title: string | null
+  content: string
+  occurred_at: string
+  source_type: string
+  is_confirmed: boolean
+  edit_revision: number
+  created_at: string
 }
 
 export type FamilyPagePhase =
@@ -135,6 +149,29 @@ function isoDateTime(value: unknown): string {
 
 function finiteNumber(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return invalidFamilyResponse()
+  }
+  return value
+}
+
+function stringValue(value: unknown, maxLength?: number): string {
+  if (typeof value !== 'string') return invalidFamilyResponse()
+  if (maxLength !== undefined && value.length > maxLength) return invalidFamilyResponse()
+  return value
+}
+
+function nullableString(value: unknown, maxLength: number): string | null {
+  if (value === null) return null
+  return stringValue(value, maxLength)
+}
+
+function booleanValue(value: unknown): boolean {
+  if (typeof value !== 'boolean') return invalidFamilyResponse()
+  return value
+}
+
+function nonNegativeInteger(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     return invalidFamilyResponse()
   }
   return value
@@ -247,6 +284,32 @@ export function parseFamilyTodayFootprint(value: unknown): TodayFootprintRespons
   return parseTodayFootprintResponse(value)
 }
 
+function parseFamilyMemory(value: unknown): FamilyMemory {
+  const raw = asRecord(value)
+  return {
+    memory_id: uuid(raw.memory_id),
+    memory_type: nonEmptyString(raw.memory_type),
+    title: nullableString(raw.title, 240),
+    content: stringValue(raw.content),
+    occurred_at: isoDateTime(raw.occurred_at),
+    source_type: nonEmptyString(raw.source_type),
+    is_confirmed: booleanValue(raw.is_confirmed),
+    edit_revision: nonNegativeInteger(raw.edit_revision),
+    created_at: isoDateTime(raw.created_at),
+  }
+}
+
+export function parseFamilyMemories(value: unknown): FamilyMemory[] {
+  if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
+  const memories = value.map(parseFamilyMemory)
+  const ids = memories.map((item) => item.memory_id.toLowerCase())
+  if (new Set(ids).size !== ids.length) return invalidFamilyResponse()
+
+  // Return only the explicit Family-safe projection. Unknown server fields are ignored
+  // so metadata/location/internal source identifiers cannot become UI state.
+  return memories
+}
+
 export function assertCurrentFamilyMember(
   family: FamilyResponse,
   currentUserId: string,
@@ -283,7 +346,10 @@ export function permissionLabel(code: InteractiveFamilyPermissionCode): string {
   if (code === FAMILY_PERMISSION.VIEW_CURRENT_LOCATION) {
     return '我允许 TA 查看我的当前位置'
   }
-  return '我允许 TA 查看我的今日足迹'
+  if (code === FAMILY_PERMISSION.VIEW_FOOTPRINT) {
+    return '我允许 TA 查看我的今日足迹'
+  }
+  return '我允许 TA 查看我的个人记忆'
 }
 
 export function replaceVisiblePermission(
@@ -343,6 +409,7 @@ export type FamilyErrorContext =
   | 'permission'
   | 'current-location'
   | 'footprint'
+  | 'memory'
 
 export function familyErrorMessage(code: string | null, context: FamilyErrorContext): string | null {
   if (!code) return null
@@ -374,6 +441,7 @@ export function familyErrorMessage(code: string | null, context: FamilyErrorCont
     case 'FAMILY_READ_NOT_AUTHORIZED':
       if (context === 'current-location') return '对方未授权查看当前位置'
       if (context === 'footprint') return '对方未授权查看今日足迹'
+      if (context === 'memory') return '对方未授权查看个人记忆'
       return '当前家庭读取未获授权'
     case 'FAMILY_SELF_READ_NOT_APPLICABLE':
       return '不能通过家庭共享入口查看自己的数据'
