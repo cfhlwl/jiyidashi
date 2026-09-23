@@ -19,7 +19,6 @@ import {
 } from '../../services/api'
 import {
   assertCurrentFamilyMember,
-  FAMILY_PERMISSION,
   familyErrorMessage,
   familyMemberActions,
   FamilyPermissionMutationGate,
