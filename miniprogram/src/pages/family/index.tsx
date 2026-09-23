@@ -1,5 +1,5 @@
 import Taro, { useDidShow } from '@tarojs/taro'
-import { Button, Input, Switch, Text, View } from '@tarojs/components'
+import { Button, Image, Input, Switch, Text, View } from '@tarojs/components'
 import { useRef, useState } from 'react'
 import {
   acceptFamilyInvite,
@@ -10,6 +10,8 @@ import {
   getFamilyCurrentLocation,
   getFamilyMemories,
   getFamilyPermissions,
+  getFamilyPhotoDownload,
+  getFamilyPhotos,
   getFamilyTodayFootprint,
   getProfile,
   isAuthenticated,
@@ -31,6 +33,7 @@ import {
   type FamilyInvite,
   type FamilyMemory,
   type FamilyPermissionGrant,
+  type FamilyPhoto,
   type FamilyResponse,
   type InteractiveFamilyPermissionCode,
 } from '../../services/family'
@@ -57,10 +60,17 @@ type AsyncRead<T> =
   | { state: 'ready'; data: T }
   | { state: 'error'; message: string }
 
+type FamilyPhotoPreview = {
+  media_id: string
+  tempFilePath: string
+}
+
 type MemberReads = Record<string, {
   location?: AsyncRead<FamilyCurrentLocation>
   footprint?: AsyncRead<TodayFootprintResponse>
   memory?: AsyncRead<FamilyMemory[]>
+  photos?: AsyncRead<FamilyPhoto[]>
+  photoPreview?: AsyncRead<FamilyPhotoPreview>
 }>
 
 function fallbackError(error: unknown, fallback: string): string {
@@ -114,8 +124,8 @@ export default function Page() {
     if (clearTransient) clearFamilyTransientState()
 
     try {
-      // [人工注释][S4-010][S4-006] tab 激活只读取 Family 自身与“我授权给别人”的 outbound grants。
-      // 任何家人位置/足迹/个人记忆都不在这里探测，必须由用户点击对应按钮后再读取。
+      // [人工注释][S4-010][S4-006][S4-007] tab 激活只读取 Family 自身与 outbound grants。
+      // 家人位置/足迹/个人记忆/照片都不在这里探测，必须由用户点击对应按钮后再读取。
       const family = await getFamily()
       const profile = await getProfile()
       assertCurrentFamilyMember(family, profile.id)
@@ -250,6 +260,9 @@ export default function Page() {
   ) => {
     if (pageState.phase !== 'family-ready') return
     if (!permissionGate.current.begin(granteeUserId)) return
+
+    sensitiveReadEpoch.current.invalidate()
+    setMemberReads({})
 
     setPermissionBusy((current) => ({ ...current, [granteeUserId]: true }))
     setStatus('')
@@ -390,6 +403,131 @@ export default function Page() {
         },
       }))
     }
+  }
+
+  const readPhotos = async (resourceOwnerUserId: string) => {
+    const readEpoch = sensitiveReadEpoch.current.capture()
+    setMemberReads((current) => ({
+      ...current,
+      [resourceOwnerUserId]: {
+        ...current[resourceOwnerUserId],
+        photos: { state: 'loading' },
+        photoPreview: undefined,
+      },
+    }))
+    try {
+      const data = await getFamilyPhotos(resourceOwnerUserId)
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
+      setMemberReads((current) => ({
+        ...current,
+        [resourceOwnerUserId]: {
+          ...current[resourceOwnerUserId],
+          photos: { state: 'ready', data },
+          photoPreview: undefined,
+        },
+      }))
+    } catch (error) {
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
+      setMemberReads((current) => ({
+        ...current,
+        [resourceOwnerUserId]: {
+          ...current[resourceOwnerUserId],
+          photos: {
+            state: 'error',
+            message: mappedError(error, 'photos', '照片读取失败'),
+          },
+          photoPreview: undefined,
+        },
+      }))
+    }
+  }
+
+  const openPhoto = async (resourceOwnerUserId: string, mediaId: string) => {
+    const currentPreview = memberReads[resourceOwnerUserId]?.photoPreview
+    if (currentPreview?.state === 'loading') return
+
+    const readEpoch = sensitiveReadEpoch.current.capture()
+    setMemberReads((current) => ({
+      ...current,
+      [resourceOwnerUserId]: {
+        ...current[resourceOwnerUserId],
+        photoPreview: { state: 'loading' },
+      },
+    }))
+
+    try {
+      const signed = await getFamilyPhotoDownload(resourceOwnerUserId, mediaId)
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
+      const downloaded = await Taro.downloadFile({
+        url: signed.download.url,
+        header: signed.download.headers,
+      })
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
+      if (
+        downloaded.statusCode < 200
+        || downloaded.statusCode >= 300
+        || !downloaded.tempFilePath
+      ) {
+        throw new Error('family photo download failed')
+      }
+      setMemberReads((current) => ({
+        ...current,
+        [resourceOwnerUserId]: {
+          ...current[resourceOwnerUserId],
+          photoPreview: {
+            state: 'ready',
+            data: { media_id: mediaId, tempFilePath: downloaded.tempFilePath },
+          },
+        },
+      }))
+    } catch (error) {
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
+      setMemberReads((current) => ({
+        ...current,
+        [resourceOwnerUserId]: {
+          ...current[resourceOwnerUserId],
+          photoPreview: {
+            state: 'error',
+            message: mappedError(error, 'photo-download', '照片暂时无法打开，请稍后重试'),
+          },
+        },
+      }))
+    }
+  }
+
+  const renderPhotos = (
+    resourceOwnerUserId: string,
+    read: AsyncRead<FamilyPhoto[]> | undefined,
+    preview: AsyncRead<FamilyPhotoPreview> | undefined,
+  ) => {
+    if (!read || read.state === 'idle') return null
+    if (read.state === 'loading') return <View className='muted read-state'>正在读取照片…</View>
+    if (read.state === 'error') return <View className='error read-state'>{read.message}</View>
+
+    return (
+      <View className='sensitive-result'>
+        {read.data.length === 0 && <View className='read-state'>对方当前没有可查看的照片</View>}
+        {read.data.map((photo) => (
+          <View className='photo-row' key={photo.media_id}>
+            <View className='photo-meta'>
+              <View>{photo.content_type}</View>
+              <View className='muted'>{photo.size_bytes} 字节 · {photo.created_at}</View>
+            </View>
+            <Button
+              className='secondary-button photo-open-button'
+              disabled={preview?.state === 'loading'}
+              onClick={() => openPhoto(resourceOwnerUserId, photo.media_id)}
+            >
+              {preview?.state === 'loading' ? '正在打开…' : '打开照片'}
+            </Button>
+            {preview?.state === 'ready' && preview.data.media_id === photo.media_id && (
+              <Image className='family-photo-preview' mode='widthFix' src={preview.data.tempFilePath} />
+            )}
+          </View>
+        ))}
+        {preview?.state === 'error' && <View className='error read-state'>{preview.message}</View>}
+      </View>
+    )
   }
 
   const renderLocation = (read: AsyncRead<FamilyCurrentLocation> | undefined) => {
@@ -596,8 +734,7 @@ export default function Page() {
                     />
                   </View>
                 ))}
-                <View className='future-permission'>照片 <Text className='muted'>暂未开放</Text></View>
-                {busy && <View className='muted'>正在保存授权…</View>}
+                 {busy && <View className='muted'>正在保存授权…</View>}
               </View>
             )}
 
@@ -629,6 +766,14 @@ export default function Page() {
                   查看个人记忆
                 </Button>
                 {renderMemory(reads?.memory)}
+                <Button
+                  className='secondary-button'
+                  disabled={reads?.photos?.state === 'loading'}
+                  onClick={() => readPhotos(member.user_id)}
+                >
+                  查看照片
+                </Button>
+                {renderPhotos(member.user_id, reads?.photos, reads?.photoPreview)}
               </View>
             )}
 
