@@ -14,6 +14,8 @@ import {
   parseFamilyInvite,
   parseFamilyMemories,
   parseFamilyPermissions,
+  parseFamilyPhotoDownload,
+  parseFamilyPhotos,
   parseFamilyResponse,
   parseFamilyTodayFootprint,
   permissionLabel,
@@ -155,6 +157,63 @@ test('Family Memory parser is bounded, fail-closed and returns only safe project
   }))), /家庭数据异常/)
 })
 
+test('family photo parser keeps only safe metadata and enforces bounded image contract', () => {
+  const parsed = parseFamilyPhotos([{
+    media_id: OTHER_ID,
+    content_type: 'image/jpeg',
+    size_bytes: 2048,
+    created_at: '2026-09-23T10:00:00Z',
+    completed_at: '2026-09-23T10:00:01Z',
+    object_key: 'must-not-leak',
+    original_filename: 'private.jpg',
+    storage_etag: 'private',
+    exif: { gps: 'private' },
+  }])
+
+  assert.deepEqual(Object.keys(parsed[0]).sort(), [
+    'completed_at', 'content_type', 'created_at', 'media_id', 'size_bytes',
+  ])
+  assert.equal((parsed[0] as Record<string, unknown>).object_key, undefined)
+  assert.throws(() => parseFamilyPhotos([{
+    media_id: OTHER_ID,
+    content_type: 'audio/mpeg',
+    size_bytes: 2048,
+    created_at: '2026-09-23T10:00:00Z',
+    completed_at: '2026-09-23T10:00:01Z',
+  }]), /家庭数据异常/)
+  assert.throws(() => parseFamilyPhotos(Array.from({ length: 51 }, (_, index) => ({
+    media_id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    content_type: 'image/jpeg',
+    size_bytes: 1,
+    created_at: '2026-09-23T10:00:00Z',
+    completed_at: '2026-09-23T10:00:01Z',
+  }))), /家庭数据异常/)
+})
+
+test('family photo signed transfer is media-bound GET-only HTTPS-only and whitelisted', () => {
+  const parsed = parseFamilyPhotoDownload({
+    media_id: OTHER_ID,
+    download: {
+      method: 'GET',
+      url: 'https://private-storage.test/photo?temporary=1',
+      headers: { 'X-Capability': 'short-lived' },
+      expires_at: '2026-09-23T10:05:00Z',
+      object_key: 'must-not-leak',
+    },
+  }, OTHER_ID)
+  assert.equal(parsed.media_id, OTHER_ID)
+  assert.deepEqual(Object.keys(parsed.download).sort(), ['expires_at', 'headers', 'method', 'url'])
+  assert.throws(() => parseFamilyPhotoDownload({
+    media_id: OTHER_ID,
+    download: {
+      method: 'PUT',
+      url: 'https://private-storage.test/photo',
+      headers: {},
+      expires_at: '2026-09-23T10:05:00Z',
+    },
+  }, OTHER_ID), /家庭数据异常/)
+})
+
 test('family Today Footprint reuses strict Today parser', () => {
   const parsed = parseFamilyTodayFootprint({
     timezone: 'Asia/Shanghai',
@@ -196,16 +255,17 @@ test('OWNER and MEMBER presentation keeps self actions and cross-member actions 
   assert.equal(memberSelf.showSensitiveReads, false)
 })
 
-test('permission labels are outbound authority; MEMORY is interactive while PHOTOS stays unavailable', () => {
+test('permission labels expose all four independent outbound authorities', () => {
   assert.match(permissionLabel(FAMILY_PERMISSION.VIEW_CURRENT_LOCATION), /我允许 TA 查看我的当前位置/)
   assert.match(permissionLabel(FAMILY_PERMISSION.VIEW_FOOTPRINT), /我允许 TA 查看我的今日足迹/)
   assert.match(permissionLabel(FAMILY_PERMISSION.VIEW_MEMORY), /我允许 TA 查看我的个人记忆/)
+  assert.match(permissionLabel(FAMILY_PERMISSION.VIEW_PHOTOS), /我允许 TA 查看我的照片/)
   assert.deepEqual(INTERACTIVE_FAMILY_PERMISSIONS, [
     FAMILY_PERMISSION.VIEW_CURRENT_LOCATION,
     FAMILY_PERMISSION.VIEW_FOOTPRINT,
     FAMILY_PERMISSION.VIEW_MEMORY,
+    FAMILY_PERMISSION.VIEW_PHOTOS,
   ])
-  assert.equal(INTERACTIVE_FAMILY_PERMISSIONS.includes(FAMILY_PERMISSION.VIEW_PHOTOS as never), false)
 })
 
 test('visible permission toggle preserves the other visible and unknown future codes', () => {
@@ -250,6 +310,9 @@ test('sensitive-read errors keep unauthorized, unavailable and empty Memory stat
   assert.equal(familyErrorMessage('CURRENT_LOCATION_UNAVAILABLE', 'current-location'), '当前位置暂不可用')
   assert.equal(familyErrorMessage('FAMILY_READ_NOT_AUTHORIZED', 'footprint'), '对方未授权查看今日足迹')
   assert.equal(familyErrorMessage('FAMILY_READ_NOT_AUTHORIZED', 'memory'), '对方未授权查看个人记忆')
+  assert.equal(familyErrorMessage('FAMILY_READ_NOT_AUTHORIZED', 'photos'), '对方未授权查看照片')
+  assert.equal(familyErrorMessage('FAMILY_READ_NOT_AUTHORIZED', 'photo-download'), '对方未授权查看照片')
+  assert.equal(familyErrorMessage('FAMILY_PHOTO_UNAVAILABLE', 'photo-download'), '这张照片已不可用')
   // 200 [] is not an error code; the page renders its dedicated empty copy.
   assert.equal(familyErrorMessage(null, 'memory'), null)
 })
@@ -332,6 +395,46 @@ test('stale location, footprint and Memory errors cannot repopulate sensitive st
   }
 })
 
+test('photo list and signing stale completion cannot repopulate state after invalidation', async () => {
+  for (const key of ['photos', 'photoPreview'] as const) {
+    const epoch = new FamilySensitiveReadEpoch()
+    const request = deferred<{ value: string }>()
+    let sensitiveState: Record<string, unknown> = {}
+
+    const captured = epoch.capture()
+    const completion = request.promise.then((data) => {
+      if (!epoch.isCurrent(captured)) return
+      sensitiveState = { [key]: data }
+    })
+
+    epoch.invalidate()
+    sensitiveState = {}
+    request.resolve({ value: 'stale-sensitive-result' })
+    await completion
+    assert.deepEqual(sensitiveState, {})
+  }
+})
+
+test('photo list and signing stale errors are discarded after invalidation', async () => {
+  for (const key of ['photos', 'photoPreview'] as const) {
+    const epoch = new FamilySensitiveReadEpoch()
+    const request = deferred<never>()
+    let sensitiveState: Record<string, unknown> = {}
+
+    const captured = epoch.capture()
+    const completion = request.promise.catch((error) => {
+      if (!epoch.isCurrent(captured)) return
+      sensitiveState = { [key]: String(error) }
+    })
+
+    epoch.invalidate()
+    sensitiveState = {}
+    request.reject(new Error('stale photo failure'))
+    await completion
+    assert.deepEqual(sensitiveState, {})
+  }
+})
+
 test('unknown Family server codes are not promoted into user-facing copy', () => {
   assert.equal(familyErrorMessage('FAMILY_FUTURE_INTERNAL_DETAIL', 'load'), null)
 })
@@ -365,7 +468,10 @@ test('page contract has explicit states and does not auto-fetch family sensitive
   assert.notEqual(refreshStart, -1)
   assert.notEqual(refreshEnd, -1)
   const refreshBody = page.slice(refreshStart, refreshEnd)
-  assert.doesNotMatch(refreshBody, /getFamilyCurrentLocation|getFamilyTodayFootprint|getFamilyMemories/)
+  assert.doesNotMatch(
+    refreshBody,
+    /getFamilyCurrentLocation|getFamilyTodayFootprint|getFamilyMemories|getFamilyPhotos|getFamilyPhotoDownload/,
+  )
   assert.match(refreshBody, /sensitiveReadEpoch\.current\.invalidate\(\)/)
   assert.match(refreshBody, /setMemberReads\(\{\}\)/)
   assert.match(
@@ -382,11 +488,24 @@ test('page contract has explicit states and does not auto-fetch family sensitive
   )
   assert.match(page, /查看个人记忆/)
   assert.match(page, /对方当前没有可显示的记忆/)
-  assert.match(page, /照片 <Text className='muted'>暂未开放<\/Text>/)
+  assert.match(
+    page,
+    /const readPhotos = async[\s\S]*?getFamilyPhotos\(resourceOwnerUserId\)[\s\S]*?isCurrent\(readEpoch\)[\s\S]*?catch \(error\)[\s\S]*?isCurrent\(readEpoch\)/,
+  )
+  assert.match(
+    page,
+    /const signed = await getFamilyPhotoDownload\(resourceOwnerUserId, mediaId\)[\s\S]*?Taro\.downloadFile\([\s\S]*?signed\.download\.url[\s\S]*?isCurrent\(readEpoch\)/,
+  )
+  assert.match(page, /查看照片/)
+  assert.doesNotMatch(page, /照片 <Text className='muted'>暂未开放<\/Text>/)
+  assert.match(
+    page,
+    /sensitiveReadEpoch\.current\.invalidate\(\)[\s\S]*?setMemberReads\(\{\}\)[\s\S]*?setPermissionBusy/,
+  )
   assert.match(page, /return familyErrorMessage\(apiErrorCode\(error\), context\) \|\| fallback/)
 })
 
-test('Family permission replacement is wired through PUT in the shared API transport', () => {
+test('Family permission, Memory and Photo APIs use the shared authenticated transport', () => {
   const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
   assert.match(api, /method: 'GET' \| 'POST' \| 'PUT' \| 'PATCH' \| 'DELETE'/)
   assert.match(
@@ -396,5 +515,13 @@ test('Family permission replacement is wired through PUT in the shared API trans
   assert.match(
     api,
     /`\/family\/members\/\$\{encodeURIComponent\(resourceOwnerUserId\)\}\/memories\?limit=50`/,
+  )
+  assert.match(
+    api,
+    /'GET',\s*`\/family\/members\/\$\{encodeURIComponent\(resourceOwnerUserId\)\}\/photos`/,
+  )
+  assert.match(
+    api,
+    /'POST',\s*`\/family\/members\/\$\{encodeURIComponent\(resourceOwnerUserId\)\}\/photos\/\$\{encodeURIComponent\(mediaId\)\}\/download`/,
   )
 })
