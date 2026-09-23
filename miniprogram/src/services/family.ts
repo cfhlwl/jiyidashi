@@ -17,11 +17,13 @@ export type InteractiveFamilyPermissionCode =
   | typeof FAMILY_PERMISSION.VIEW_CURRENT_LOCATION
   | typeof FAMILY_PERMISSION.VIEW_FOOTPRINT
   | typeof FAMILY_PERMISSION.VIEW_MEMORY
+  | typeof FAMILY_PERMISSION.VIEW_PHOTOS
 
 export const INTERACTIVE_FAMILY_PERMISSIONS: readonly InteractiveFamilyPermissionCode[] = [
   FAMILY_PERMISSION.VIEW_CURRENT_LOCATION,
   FAMILY_PERMISSION.VIEW_FOOTPRINT,
   FAMILY_PERMISSION.VIEW_MEMORY,
+  FAMILY_PERMISSION.VIEW_PHOTOS,
 ]
 
 export type FamilyMember = {
@@ -68,6 +70,26 @@ export type FamilyMemory = {
   is_confirmed: boolean
   edit_revision: number
   created_at: string
+}
+
+export type FamilyPhoto = {
+  media_id: string
+  content_type: string
+  size_bytes: number
+  created_at: string
+  completed_at: string | null
+}
+
+export type FamilyPhotoSignedTransfer = {
+  method: 'GET'
+  url: string
+  headers: Record<string, string>
+  expires_at: string
+}
+
+export type FamilyPhotoDownload = {
+  media_id: string
+  download: FamilyPhotoSignedTransfer
 }
 
 export type FamilyPagePhase =
@@ -310,6 +332,59 @@ export function parseFamilyMemories(value: unknown): FamilyMemory[] {
   return memories
 }
 
+export function parseFamilyPhotos(value: unknown): FamilyPhoto[] {
+  if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
+  const photos = value.map((item) => {
+    const raw = asRecord(item)
+    const contentType = nonEmptyString(raw.content_type)
+    if (!contentType.startsWith('image/') || contentType.length > 100) return invalidFamilyResponse()
+    if (typeof raw.size_bytes !== 'number' || !Number.isSafeInteger(raw.size_bytes) || raw.size_bytes <= 0) {
+      return invalidFamilyResponse()
+    }
+    return {
+      media_id: uuid(raw.media_id),
+      content_type: contentType,
+      size_bytes: raw.size_bytes,
+      created_at: isoDateTime(raw.created_at),
+      completed_at: raw.completed_at === null ? null : isoDateTime(raw.completed_at),
+    }
+  })
+  const ids = photos.map((item) => item.media_id.toLowerCase())
+  if (new Set(ids).size !== ids.length) return invalidFamilyResponse()
+  return photos
+}
+
+export function parseFamilyPhotoDownload(
+  value: unknown,
+  expectedMediaId: string,
+): FamilyPhotoDownload {
+  if (!isUuid(expectedMediaId)) return invalidFamilyResponse()
+  const raw = asRecord(value)
+  const mediaId = uuid(raw.media_id)
+  if (mediaId.toLowerCase() !== expectedMediaId.toLowerCase()) return invalidFamilyResponse()
+
+  const transfer = asRecord(raw.download)
+  if (transfer.method !== 'GET') return invalidFamilyResponse()
+  const url = nonEmptyString(transfer.url)
+  if (!/^https:\/\//i.test(url) || url.length > 4096) return invalidFamilyResponse()
+
+  const rawHeaders = asRecord(transfer.headers)
+  const headers: Record<string, string> = {}
+  for (const [key, headerValue] of Object.entries(rawHeaders)) {
+    if (!key.trim() || key.length > 200 || typeof headerValue !== 'string') return invalidFamilyResponse()
+    headers[key] = headerValue
+  }
+  return {
+    media_id: mediaId,
+    download: {
+      method: 'GET',
+      url,
+      headers,
+      expires_at: isoDateTime(transfer.expires_at),
+    },
+  }
+}
+
 export function assertCurrentFamilyMember(
   family: FamilyResponse,
   currentUserId: string,
@@ -349,7 +424,10 @@ export function permissionLabel(code: InteractiveFamilyPermissionCode): string {
   if (code === FAMILY_PERMISSION.VIEW_FOOTPRINT) {
     return '我允许 TA 查看我的今日足迹'
   }
-  return '我允许 TA 查看我的个人记忆'
+  if (code === FAMILY_PERMISSION.VIEW_MEMORY) {
+    return '我允许 TA 查看我的个人记忆'
+  }
+  return '我允许 TA 查看我的照片'
 }
 
 export function replaceVisiblePermission(
@@ -410,6 +488,8 @@ export type FamilyErrorContext =
   | 'current-location'
   | 'footprint'
   | 'memory'
+  | 'photos'
+  | 'photo-download'
 
 export function familyErrorMessage(code: string | null, context: FamilyErrorContext): string | null {
   if (!code) return null
@@ -442,7 +522,12 @@ export function familyErrorMessage(code: string | null, context: FamilyErrorCont
       if (context === 'current-location') return '对方未授权查看当前位置'
       if (context === 'footprint') return '对方未授权查看今日足迹'
       if (context === 'memory') return '对方未授权查看个人记忆'
+      if (context === 'photos' || context === 'photo-download') return '对方未授权查看照片'
       return '当前家庭读取未获授权'
+    case 'FAMILY_PHOTO_UNAVAILABLE':
+      return '这张照片已不可用'
+    case 'FAMILY_PHOTO_STORAGE_UNAVAILABLE':
+      return '照片暂时无法打开，请稍后重试'
     case 'FAMILY_SELF_READ_NOT_APPLICABLE':
       return '不能通过家庭共享入口查看自己的数据'
     case 'CURRENT_LOCATION_UNAVAILABLE':
