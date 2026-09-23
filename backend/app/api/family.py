@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from app.schemas import TodayFootprintResponse
 from app.services.family_sensitive_read_service import (
     FamilySensitiveReadError,
     get_family_current_location,
+    get_family_memories,
     get_family_today_footprint,
 )
 from app.services.family_service import (
@@ -76,6 +77,18 @@ class FamilyCurrentLocationResponse(BaseModel):
     accuracy: float | None
     recorded_at: datetime
     fresh_until: datetime
+
+
+class FamilyMemoryResponse(BaseModel):
+    memory_id: UUID
+    memory_type: str
+    title: str | None
+    content: str
+    occurred_at: datetime
+    source_type: str
+    is_confirmed: bool
+    edit_revision: int
+    created_at: datetime
 
 
 def _raise(exc: FamilyServiceError) -> None:
@@ -239,6 +252,28 @@ def family_member_current_location(
     except FamilySensitiveReadError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
     return FamilyCurrentLocationResponse(**result.__dict__)
+
+
+@router.get(
+    "/members/{resource_owner_user_id}/memories",
+    response_model=list[FamilyMemoryResponse],
+)
+def family_member_memories(
+    resource_owner_user_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=50)] = 50,
+) -> list[FamilyMemoryResponse]:
+    try:
+        rows = get_family_memories(
+            db,
+            resource_owner_user_id=resource_owner_user_id,
+            grantee_user_id=user_id,
+            limit=limit,
+        )
+    except FamilySensitiveReadError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return [FamilyMemoryResponse(**item.__dict__) for item in rows]
 
 
 @router.get(
