@@ -140,3 +140,29 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+
+.photo-row {
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid #eef1ef;
+}
+
+.photo-row:last-child {
+  border-bottom: 0;
+}
+
+.photo-meta {
+  margin-bottom: 12rpx;
+  line-height: 1.55;
+}
+
+.photo-open-button {
+  margin-top: 10rpx;
+}
+
+.family-photo-preview {
+  display: block;
+  width: 100%;
+  margin-top: 18rpx;
+  border-radius: 16rpx;
+}

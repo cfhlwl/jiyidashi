@@ -31,12 +31,16 @@ import {
   parseFamilyMemories,
   parseFamilyPermissionGrant,
   parseFamilyPermissions,
+  parseFamilyPhotoDownload,
+  parseFamilyPhotos,
   parseFamilyResponse,
   parseFamilyTodayFootprint,
   type FamilyCurrentLocation,
   type FamilyMemory,
   type FamilyInvite,
   type FamilyPermissionGrant,
+  type FamilyPhoto,
+  type FamilyPhotoDownload,
   type FamilyResponse,
 } from './family'
 import {
@@ -332,6 +336,27 @@ export async function getFamilyMemories(
     `/family/members/${encodeURIComponent(resourceOwnerUserId)}/memories?limit=50`,
   )
   return parseFamilyMemories(raw)
+}
+
+export async function getFamilyPhotos(
+  resourceOwnerUserId: string,
+): Promise<FamilyPhoto[]> {
+  const raw = await request<unknown>(
+    'GET',
+    `/family/members/${encodeURIComponent(resourceOwnerUserId)}/photos`,
+  )
+  return parseFamilyPhotos(raw)
+}
+
+export async function getFamilyPhotoDownload(
+  resourceOwnerUserId: string,
+  mediaId: string,
+): Promise<FamilyPhotoDownload> {
+  const raw = await request<unknown>(
+    'POST',
+    `/family/members/${encodeURIComponent(resourceOwnerUserId)}/photos/${encodeURIComponent(mediaId)}/download`,
+  )
+  return parseFamilyPhotoDownload(raw, mediaId)
 }
 
 export function updateProfile(input: {
