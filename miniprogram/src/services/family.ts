@@ -448,8 +448,12 @@ export function parseFamilyAudit(value: unknown): FamilyAuditEvent[] {
     ) return invalidFamilyResponse()
     const action = auditAction(raw.action)
     if (
-      authorityType === 'EMERGENCY_SHARE'
-      && action !== 'READ_EMERGENCY_LOCATION'
+      (authorityType === 'EMERGENCY_SHARE'
+        && (
+          action !== 'READ_EMERGENCY_LOCATION'
+          || raw.resource_type !== 'CURRENT_LOCATION'
+        ))
+      || (authorityType === 'EXACT_GRANT' && action === 'READ_EMERGENCY_LOCATION')
     ) return invalidFamilyResponse()
     return {
       event_id: uuid(raw.event_id),
