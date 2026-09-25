@@ -38,6 +38,10 @@ SUPPORTED_EMERGENCY_SHARE_DURATIONS = frozenset(
 EMERGENCY_SHARE_LIST_LIMIT = 50
 
 
+def _reference_now(now: datetime | None) -> datetime:
+    return ensure_utc(now or datetime.now(UTC))
+
+
 class FamilyEmergencyShareError(RuntimeError):
     def __init__(self, code: str, status_code: int):
         super().__init__(code)
@@ -290,8 +294,6 @@ def get_emergency_shared_location(
     grantee_user_id: UUID,
     now: datetime | None = None,
 ) -> FamilyCurrentLocationView:
-    reference = ensure_utc(now or datetime.now(UTC))
-
     with Session(bind=db.get_bind(), autoflush=False, expire_on_commit=False) as authority:
         try:
             probe = authority.scalar(
@@ -330,10 +332,11 @@ def get_emergency_shared_location(
                 )
                 .with_for_update()
             )
+            lock_reference = _reference_now(now)
             if (
                 share is None
                 or share.revoked_at is not None
-                or ensure_utc(share.expires_at) <= reference
+                or ensure_utc(share.expires_at) <= lock_reference
             ):
                 raise FamilyEmergencyShareError(
                     "EMERGENCY_SHARE_NOT_AVAILABLE",
@@ -344,6 +347,13 @@ def get_emergency_shared_location(
                 authority,
                 share.resource_owner_user_id,
             )
+            location_reference = _reference_now(now)
+            if ensure_utc(share.expires_at) <= location_reference:
+                raise FamilyEmergencyShareError(
+                    "EMERGENCY_SHARE_NOT_AVAILABLE",
+                    404,
+                )
+
             paused_until = authority.scalar(
                 select(PrivacyState.recording_paused_until).where(
                     PrivacyState.user_id == share.resource_owner_user_id
@@ -351,7 +361,7 @@ def get_emergency_shared_location(
             )
             if (
                 paused_until is not None
-                and ensure_utc(paused_until) > reference
+                and ensure_utc(paused_until) > location_reference
             ):
                 _unavailable(
                     authority,
@@ -386,16 +396,23 @@ def get_emergency_shared_location(
             settings = get_settings()
             if (
                 recorded_at
-                > reference + timedelta(
+                > location_reference + timedelta(
                     seconds=settings.location_future_skew_seconds
                 )
-                or recorded_at < reference - CURRENT_LOCATION_MAX_AGE
+                or recorded_at < location_reference - CURRENT_LOCATION_MAX_AGE
             ):
                 _unavailable(
                     authority,
                     family_id=share.family_id,
                     actor_user_id=grantee_user_id,
                     resource_owner_user_id=share.resource_owner_user_id,
+                )
+
+            final_reference = _reference_now(now)
+            if ensure_utc(share.expires_at) <= final_reference:
+                raise FamilyEmergencyShareError(
+                    "EMERGENCY_SHARE_NOT_AVAILABLE",
+                    404,
                 )
 
             result = FamilyCurrentLocationView(
