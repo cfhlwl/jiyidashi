@@ -84,6 +84,14 @@ def upgrade() -> None:
             "OR (authority_type = 'EMERGENCY_SHARE' AND permission_code IS NULL)",
         )
         batch.create_check_constraint(
+            "ck_family_access_audit_authority_action",
+            "(authority_type = 'EMERGENCY_SHARE' "
+            "AND action = 'READ_EMERGENCY_LOCATION' "
+            "AND resource_type = 'CURRENT_LOCATION') "
+            "OR (authority_type = 'EXACT_GRANT' "
+            "AND action <> 'READ_EMERGENCY_LOCATION')",
+        )
+        batch.create_check_constraint(
             "ck_family_access_audit_action",
             "action IN "
             "('READ_CURRENT_LOCATION', 'READ_TODAY_FOOTPRINT', 'READ_MEMORY', "
@@ -106,6 +114,10 @@ def downgrade() -> None:
         )
         batch.drop_constraint(
             "ck_family_access_audit_authority_permission",
+            type_="check",
+        )
+        batch.drop_constraint(
+            "ck_family_access_audit_authority_action",
             type_="check",
         )
         batch.drop_constraint(
