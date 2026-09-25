@@ -37,7 +37,7 @@ void main() {
     final normal = JiYiTheme.light();
     final elder = JiYiTheme.light(elderMode: true);
 
-    final normalSize = normal.filledButtonTheme.style?.minimumSize?.resolve({});
+    final normalSize = normal.filledButtonTheme.style?.minimumSize?.resolve(<WidgetState>{});
     final elderSize = elder.filledButtonTheme.style?.minimumSize?.resolve({});
     expect(normalSize?.height, 48);
     expect(elderSize?.height, 56);
@@ -145,7 +145,6 @@ void main() {
         home: Scaffold(
           body: ProfilePage(
             api: api,
-            elderModeEnabled: false,
             onElderModeChanged: (value) => changed = value,
             onLogout: () {},
             onAccountDeleteIntentConfirmed: () async {},
