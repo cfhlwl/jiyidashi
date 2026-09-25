@@ -371,9 +371,47 @@ def _race_photo_remove() -> None:
     _cleanup(member, owner)
 
 
+
+def _assert_account_delete_cascades_family_audit() -> None:
+    owner, member = _family_pair("account-delete")
+    with SessionLocal() as db:
+        try:
+            get_family_current_location(
+                db,
+                resource_owner_user_id=owner,
+                grantee_user_id=member,
+            )
+            raise AssertionError("missing exact grant unexpectedly authorized")
+        except FamilySensitiveReadError as exc:
+            assert exc.code == "FAMILY_READ_NOT_AUTHORIZED"
+
+    with SessionLocal() as db:
+        assert db.scalar(
+            select(FamilyAccessAuditEvent.id).where(
+                FamilyAccessAuditEvent.actor_user_id == member,
+                FamilyAccessAuditEvent.result == FamilyAuditResult.DENIED.value,
+            )
+        ) is not None
+
+        actor = db.get(User, member)
+        assert actor is not None
+        db.delete(actor)
+        db.commit()
+
+    with SessionLocal() as db:
+        assert db.scalar(
+            select(FamilyAccessAuditEvent.id).where(
+                FamilyAccessAuditEvent.actor_user_id == member
+            )
+        ) is None
+
+    _cleanup(owner)
+
+
 if __name__ == "__main__":
     _race_location_revoke()
     _race_location_remove()
     _race_photo_revoke()
     _race_photo_remove()
-    print("PostgreSQL Family Privacy Audit race gate: PASS")
+    _assert_account_delete_cascades_family_audit()
+    print("PostgreSQL Family Privacy Audit race/lifecycle gate: PASS")
