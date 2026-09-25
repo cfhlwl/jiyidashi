@@ -167,6 +167,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_family_photos_integration.py
 
+      - name: PostgreSQL Family Privacy Audit race gate
+        # [S4-015] 真实 PostgreSQL 锁死 sensitive read/sign 与 revoke/remove 的
+        # authority + audit 同步线性化：DENIED 不得残留 ALLOWED，ALLOWED 必须恰有一条。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_family_privacy_audit_integration.py
+
       - name: PostgreSQL schema drift check
         # [人工注释][S1-FIX-001] upgrade 成功不代表 ORM metadata 与 migration head 一致；alembic check 是正式漂移门禁。
         env:
