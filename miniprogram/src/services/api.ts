@@ -82,6 +82,7 @@ export type {
 
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
+const AUTH_OWNER_KEY = 'jiyi_authenticated_user_id'
 const ELDER_MODE_KEY = 'jiyi_elder_mode_enabled'
 const ELDER_MODE_OWNER_KEY = 'jiyi_elder_mode_owner'
 let authSessionEpoch = 0
@@ -148,6 +149,7 @@ export function isAuthenticated(): boolean {
 export function logout(): void {
   authSessionEpoch += 1
   Taro.removeStorageSync(TOKEN_KEY)
+  Taro.removeStorageSync(AUTH_OWNER_KEY)
   Taro.removeStorageSync(ELDER_MODE_KEY)
   Taro.removeStorageSync(ELDER_MODE_OWNER_KEY)
 }
@@ -159,6 +161,8 @@ function resetElderProjection(): void {
 
 function publishElderProjection(profile: UserProfile, epoch: number): void {
   if (epoch !== authSessionEpoch) throw new Error('登录状态已变化，请重试')
+  const owner = Taro.getStorageSync<string>(AUTH_OWNER_KEY)
+  if (!owner || profile.id !== owner) throw new Error('个人资料账号不匹配')
   Taro.setStorageSync(ELDER_MODE_OWNER_KEY, profile.id)
   Taro.setStorageSync(ELDER_MODE_KEY, profile.elder_mode_enabled)
 }
@@ -222,7 +226,7 @@ export async function registerAccount(input: {
   nickname: string
 }): Promise<void> {
   // [人工注释][S1-001] 小程序正式注册只提交凭证与公开资料，user_id 永远由服务端生成。
-  const result = await request<{ access_token: string }>('POST', '/auth/register', {
+  const result = await request<{ access_token: string; user_id: string }>('POST', '/auth/register', {
     email: input.email.trim(),
     password: input.password,
     nickname: input.nickname.trim(),
@@ -232,16 +236,18 @@ export async function registerAccount(input: {
   authSessionEpoch += 1
   resetElderProjection()
   Taro.setStorageSync(TOKEN_KEY, result.access_token)
+  Taro.setStorageSync(AUTH_OWNER_KEY, result.user_id)
 }
 
 export async function loginAccount(email: string, password: string): Promise<void> {
-  const result = await request<{ access_token: string }>('POST', '/auth/login', {
+  const result = await request<{ access_token: string; user_id: string }>('POST', '/auth/login', {
     email: email.trim(),
     password,
   })
   authSessionEpoch += 1
   resetElderProjection()
   Taro.setStorageSync(TOKEN_KEY, result.access_token)
+  Taro.setStorageSync(AUTH_OWNER_KEY, result.user_id)
 }
 
 export async function getProfile(): Promise<UserProfile> {
