@@ -45,6 +45,7 @@ class FamilyAuditAction(StrEnum):
     READ_MEMORY = "READ_MEMORY"
     LIST_PHOTOS = "LIST_PHOTOS"
     DOWNLOAD_PHOTO = "DOWNLOAD_PHOTO"
+    READ_EMERGENCY_LOCATION = "READ_EMERGENCY_LOCATION"
 
 
 class FamilyAuditResult(StrEnum):
