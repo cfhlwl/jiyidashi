@@ -890,6 +890,30 @@ test('arrival reminder parser enforces participant direction, terminal fields an
   }], MEMBER_ID), /家庭数据异常/)
 })
 
+test('arrival reminder parser rejects arrival at or after exact expiry boundary', () => {
+  const base = {
+    reminder_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    resource_owner_user_id: OWNER_ID,
+    grantee_user_id: MEMBER_ID,
+    destination_place_id: OTHER_ID,
+    destination_display_name: '家',
+    status: 'ARRIVED',
+    created_at: '2026-09-25T10:00:00Z',
+    expires_at: '2026-09-25T12:00:00Z',
+    direction: 'INCOMING',
+  }
+
+  assert.throws(() => parseFamilyArrivalReminders([{
+    ...base,
+    arrived_at: '2026-09-25T12:00:00Z',
+  }], MEMBER_ID), /家庭数据异常/)
+
+  assert.throws(() => parseFamilyArrivalReminders([{
+    ...base,
+    arrived_at: '2026-09-25T13:00:00Z',
+  }], MEMBER_ID), /家庭数据异常/)
+})
+
 test('arrival reminder ARRIVED parser requires a safe arrival timestamp', () => {
   const rows = parseFamilyArrivalReminders([{
     reminder_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
