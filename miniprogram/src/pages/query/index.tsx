@@ -5,11 +5,13 @@ import {
   ApiRequestError,
   apiErrorCode,
   getMemory,
+  currentElderModeEnabled,
   isAuthenticated,
   MemoryQueryResult,
   queryMemory,
   submitMemoryFeedback,
 } from '../../services/api'
+import { elderClassName } from '../../services/elderMode'
 import {
   buildCorrectionFeedback,
   createMemoryFeedbackOperation,
@@ -413,7 +415,7 @@ export default function Page() {
     : []
 
   return (
-    <View className='page'>
+    <View className={elderClassName(currentElderModeEnabled())}>
       <View className='title'>问记忆</View>
       <View className='subtitle'>只从你的真实记忆证据里找答案。</View>
       <View className='card'>
