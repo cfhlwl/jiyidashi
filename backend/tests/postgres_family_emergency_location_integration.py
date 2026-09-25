@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from threading import Barrier, Thread
+from threading import Barrier, Event, Thread
+from time import sleep
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
 from app.core.db import SessionLocal
 from app.family_models import (
+    FamilyAccessAuditEvent,
+    FamilyAuditAction,
+    FamilyAuditResult,
     FamilyEmergencyLocationShare,
     FamilyMembership,
     FamilyRole,
@@ -245,6 +249,78 @@ def _race_read_pause() -> None:
     _cleanup(member, owner)
 
 
+
+def _race_read_expires_while_waiting_for_lock() -> None:
+    owner, member = _family_pair("read-expiry")
+    _fresh_point(owner)
+    share_id = _share(owner, member)
+
+    with SessionLocal() as db:
+        share = db.get(FamilyEmergencyLocationShare, share_id)
+        assert share is not None
+        now = datetime.now(UTC)
+        share.created_at = now - timedelta(minutes=29)
+        share.expires_at = now + timedelta(seconds=1)
+        expires_at = share.expires_at
+        db.commit()
+
+    started = Event()
+    outcome: list[str] = []
+    errors: list[BaseException] = []
+
+    # Hold the same canonical membership locks that the reader must acquire.
+    # The reader begins while the share is active, but cannot pass this point
+    # until after expires_at.
+    with SessionLocal() as blocker:
+        blocker.scalars(
+            select(FamilyMembership)
+            .where(FamilyMembership.user_id.in_((owner, member)))
+            .order_by(FamilyMembership.user_id.asc())
+            .with_for_update()
+        ).all()
+
+        def reader() -> None:
+            try:
+                started.set()
+                with SessionLocal() as db:
+                    try:
+                        get_emergency_shared_location(
+                            db,
+                            share_id=share_id,
+                            grantee_user_id=member,
+                        )
+                        outcome.append("allowed")
+                    except FamilyEmergencyShareError as exc:
+                        assert exc.code == "EMERGENCY_SHARE_NOT_AVAILABLE"
+                        outcome.append("expired")
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = Thread(target=reader)
+        thread.start()
+        assert started.wait(timeout=5)
+        assert datetime.now(UTC) < expires_at
+        sleep(max(0.0, (expires_at - datetime.now(UTC)).total_seconds()) + 0.35)
+        blocker.commit()
+
+    thread.join(timeout=15)
+    assert not thread.is_alive()
+    if errors:
+        raise errors[0]
+    assert outcome == ["expired"]
+
+    with SessionLocal() as db:
+        allowed_count = db.query(FamilyAccessAuditEvent).filter(
+            FamilyAccessAuditEvent.actor_user_id == member,
+            FamilyAccessAuditEvent.resource_owner_user_id == owner,
+            FamilyAccessAuditEvent.action
+            == FamilyAuditAction.READ_EMERGENCY_LOCATION.value,
+            FamilyAccessAuditEvent.result == FamilyAuditResult.ALLOWED.value,
+        ).count()
+        assert allowed_count == 0
+
+    _cleanup(member, owner)
+
 def _race_same_pair_create() -> None:
     owner, member = _family_pair("same-pair-create")
     barrier = Barrier(2)
@@ -299,5 +375,6 @@ if __name__ == "__main__":
     _race_read_revoke()
     _race_read_remove()
     _race_read_pause()
+    _race_read_expires_while_waiting_for_lock()
     _race_same_pair_create()
     print("PostgreSQL Emergency Location Sharing race gate: PASS")
