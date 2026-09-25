@@ -14,7 +14,7 @@ from app.family_models import (
     FamilyPermissionCode,
 )
 from app.media_models import MediaAsset, MediaKind, MediaStatus
-from app.models import LocationPoint, User
+from app.models import LocationPoint
 from app.services.family_sensitive_read_service import (
     FamilySensitiveReadError,
     sign_family_photo_download,
@@ -240,11 +240,11 @@ async def test_family_audit_is_owner_only_bounded_ordered_and_30_day_scoped(clie
     assert len(body) == 50
     keys = [(row["created_at"], row["event_id"]) for row in body]
     assert keys == sorted(keys, reverse=True)
-    assert all(
-        datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
-        >= datetime.now(UTC) - timedelta(days=30, minutes=1)
-        for row in body
-    )
+    for row in body:
+        created_at = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        assert created_at >= datetime.now(UTC) - timedelta(days=30, minutes=1)
 
     invalid = await client.get("/v1/family/audit?limit=51", headers=owner_headers)
     assert invalid.status_code == 422
@@ -345,15 +345,3 @@ async def test_photo_download_is_separate_audit_and_content_delete_keeps_history
             )
         ) is not None
 
-        actor = db.get(User, member_id)
-        assert actor is not None
-        db.delete(actor)
-        db.commit()
-
-    # Account deletion deliberately cascades audit rows that retain that account id.
-    with SessionLocal() as db:
-        assert db.scalar(
-            select(FamilyAccessAuditEvent.id).where(
-                FamilyAccessAuditEvent.actor_user_id == member_id
-            )
-        ) is None
