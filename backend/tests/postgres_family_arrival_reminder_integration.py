@@ -125,7 +125,7 @@ def _race_derive_cancel() -> None:
     owner, member = _family_pair("derive-cancel")
     place_id = _place(owner)
     reminder_id = _create(owner, member, place_id)
-    visit_id = _visit(owner, place_id, datetime.now(UTC) - timedelta(minutes=1))
+    visit_id = _visit(owner, place_id, datetime.now(UTC))
     barrier = Barrier(2)
     errors: list[BaseException] = []
 
@@ -172,7 +172,7 @@ def _race_derive_remove() -> None:
     owner, member = _family_pair("derive-remove")
     place_id = _place(owner)
     _create(owner, member, place_id)
-    visit_id = _visit(owner, place_id, datetime.now(UTC) - timedelta(minutes=1))
+    visit_id = _visit(owner, place_id, datetime.now(UTC))
     barrier = Barrier(2)
     errors: list[BaseException] = []
 
@@ -213,7 +213,7 @@ def _race_derive_expiry() -> None:
     owner, member = _family_pair("derive-expiry")
     place_id = _place(owner)
     reminder_id = _create(owner, member, place_id)
-    visit_id = _visit(owner, place_id, datetime.now(UTC) - timedelta(minutes=1))
+    visit_id = _visit(owner, place_id, datetime.now(UTC))
 
     with SessionLocal() as db:
         row = db.get(FamilyArrivalReminder, reminder_id)
@@ -280,7 +280,7 @@ def _duplicate_derivation() -> None:
     owner, member = _family_pair("duplicate")
     place_id = _place(owner)
     reminder_id = _create(owner, member, place_id)
-    visit_id = _visit(owner, place_id, datetime.now(UTC) - timedelta(minutes=1))
+    visit_id = _visit(owner, place_id, datetime.now(UTC))
 
     assert _derive(visit_id) == 1
     assert _derive(visit_id) == 0
