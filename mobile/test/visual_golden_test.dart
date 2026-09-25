@@ -61,6 +61,7 @@ class _GoldenApi extends JiYiApiClient {
     'email': 'golden@example.com',
     'timezone': 'Asia/Shanghai',
     'locale': 'zh-CN',
+    'elder_mode_enabled': false,
   };
 
   @override
