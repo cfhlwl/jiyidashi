@@ -608,7 +608,7 @@ test('Family page exposes OWNER-only explicit audit read and never fetches audit
   assert.match(page, /family\.current_user_role === 'OWNER'[\s\S]*?隐私访问记录/)
   assert.match(page, /const readAudit = async[\s\S]*?getFamilyAudit\(\)/)
   assert.match(page, /暂无访问记录/)
-  assert.match(page, /成员 \{shortMemberId\(event\.actor_user_id\)\}/)
+  assert.match(page, /成员 \{shortMemberId\(event\.actor_user_id\)\}[\s\S]*?数据所有者 \{shortMemberId\(event\.resource_owner_user_id\)\}/)
   assert.doesNotMatch(page, /event\.latitude|event\.longitude|event\.content|event\.url|event\.object_key/)
 })
 
