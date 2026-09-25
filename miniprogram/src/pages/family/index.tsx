@@ -6,8 +6,11 @@ import {
   apiErrorCode,
   createFamily,
   createFamilyInvite,
+  createFamilyEmergencyShare,
   getFamily,
   getFamilyAudit,
+  getFamilyEmergencyLocation,
+  getFamilyEmergencyShares,
   getFamilyCurrentLocation,
   getFamilyMemories,
   getFamilyPermissions,
@@ -17,6 +20,7 @@ import {
   getProfile,
   isAuthenticated,
   removeFamilyMember,
+  revokeFamilyEmergencyShare,
   replaceFamilyPermissions,
   revokeFamilyInvite,
 } from '../../services/api'
@@ -34,6 +38,7 @@ import {
   shortMemberId,
   type FamilyAuditEvent,
   type FamilyCurrentLocation,
+  type FamilyEmergencyLocationShare,
   type FamilyInvite,
   type FamilyMemory,
   type FamilyPermissionGrant,
@@ -99,6 +104,9 @@ export default function Page() {
   const [permissionBusy, setPermissionBusy] = useState<Record<string, boolean>>({})
   const [memberReads, setMemberReads] = useState<MemberReads>({})
   const [auditRead, setAuditRead] = useState<AsyncRead<FamilyAuditEvent[]>>({ state: 'idle' })
+  const [emergencyShares, setEmergencyShares] = useState<FamilyEmergencyLocationShare[]>([])
+  const [emergencyReads, setEmergencyReads] = useState<Record<string, AsyncRead<FamilyCurrentLocation>>>({})
+  const [emergencyBusy, setEmergencyBusy] = useState<Record<string, boolean>>({})
   const permissionGate = useRef(new FamilyPermissionMutationGate())
   const sensitiveReadEpoch = useRef(new FamilySensitiveReadEpoch())
 
@@ -106,6 +114,10 @@ export default function Page() {
     setInvite(null)
     setMemberReads({})
     setAuditRead({ state: 'idle' })
+    setEmergencyReads({})
+    setEmergencyShares([])
+    setEmergencyReads({})
+    setEmergencyBusy({})
     setMemberBusy({})
     setPermissionBusy({})
   }
@@ -137,6 +149,8 @@ export default function Page() {
       const profile = await getProfile()
       assertCurrentFamilyMember(family, profile.id)
       const permissions = await getFamilyPermissions()
+      const shares = await getFamilyEmergencyShares()
+      setEmergencyShares(shares)
       setPageState({
         phase: 'family-ready',
         family,
@@ -502,6 +516,86 @@ export default function Page() {
     }
   }
 
+  const createEmergencyShare = async (granteeUserId: string) => {
+    if (emergencyBusy[granteeUserId]) return
+    const choice = await Taro.showActionSheet({
+      itemList: ['30 分钟', '60 分钟', '180 分钟'],
+    })
+    const duration = ([30, 60, 180] as const)[choice.tapIndex]
+    if (!duration) return
+
+    const expiresAt = new Date(Date.now() + duration * 60_000).toISOString()
+    const confirm = await Taro.showModal({
+      title: '确认紧急共享位置？',
+      content: [
+        `接收成员：${shortMemberId(granteeUserId)}`,
+        `共享时长：${duration} 分钟`,
+        '仅共享：当前位置信息',
+        `预计到期：${expiresAt}`,
+        '共享后可随时停止。',
+      ].join('\n'),
+      confirmText: '开始共享',
+    })
+    if (!confirm.confirm) return
+
+    setEmergencyBusy((current) => ({ ...current, [granteeUserId]: true }))
+    try {
+      await createFamilyEmergencyShare(granteeUserId, duration)
+      sensitiveReadEpoch.current.invalidate()
+      setEmergencyReads({})
+      setEmergencyShares(await getFamilyEmergencyShares())
+      setStatus('紧急位置共享已开启')
+    } catch (error) {
+      setStatus(mappedError(error, 'emergency-share', '紧急位置共享创建失败'))
+    } finally {
+      setEmergencyBusy((current) => ({ ...current, [granteeUserId]: false }))
+    }
+  }
+
+  const revokeEmergencyShare = async (shareId: string) => {
+    if (emergencyBusy[shareId]) return
+    setEmergencyBusy((current) => ({ ...current, [shareId]: true }))
+    try {
+      await revokeFamilyEmergencyShare(shareId)
+      sensitiveReadEpoch.current.invalidate()
+      setEmergencyReads({})
+      setEmergencyShares(await getFamilyEmergencyShares())
+      setStatus('紧急位置共享已停止')
+    } catch (error) {
+      setStatus(mappedError(error, 'emergency-share', '停止紧急位置共享失败'))
+    } finally {
+      setEmergencyBusy((current) => ({ ...current, [shareId]: false }))
+    }
+  }
+
+  const readEmergencyLocation = async (share: FamilyEmergencyLocationShare) => {
+    const readEpoch = sensitiveReadEpoch.current.capture()
+    setEmergencyReads((current) => ({
+      ...current,
+      [share.share_id]: { state: 'loading' },
+    }))
+    try {
+      const data = await getFamilyEmergencyLocation(
+        share.share_id,
+        share.resource_owner_user_id,
+      )
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
+      setEmergencyReads((current) => ({
+        ...current,
+        [share.share_id]: { state: 'ready', data },
+      }))
+    } catch (error) {
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
+      setEmergencyReads((current) => ({
+        ...current,
+        [share.share_id]: {
+          state: 'error',
+          message: mappedError(error, 'emergency-location', '紧急位置暂不可用'),
+        },
+      }))
+    }
+  }
+
   const readAudit = async () => {
     if (pageState.phase !== 'family-ready' || pageState.family.current_user_role !== 'OWNER') return
     const readEpoch = sensitiveReadEpoch.current.capture()
@@ -699,7 +793,31 @@ export default function Page() {
             {joiningFamily ? '正在加入…' : '加入家庭'}
           </Button>
         </View>
-        {status && <View className='status'>{status}</View>}
+        {emergencyShares.filter((share) => share.direction === 'INCOMING').length > 0 && (
+        <View className='card'>
+          <View className='card-title'>收到的紧急位置共享</View>
+          {emergencyShares
+            .filter((share) => share.direction === 'INCOMING')
+            .map((share) => (
+              <View className='member-section' key={share.share_id}>
+                <View>
+                  成员 {shortMemberId(share.resource_owner_user_id)} 正在临时共享当前位置
+                </View>
+                <View className='muted'>到期：{share.expires_at}</View>
+                <Button
+                  className='secondary-button'
+                  disabled={emergencyReads[share.share_id]?.state === 'loading'}
+                  onClick={() => readEmergencyLocation(share)}
+                >
+                  查看紧急位置
+                </Button>
+                {renderLocation(emergencyReads[share.share_id])}
+              </View>
+            ))}
+        </View>
+      )}
+
+      {status && <View className='status'>{status}</View>}
       </View>
     )
   }
@@ -780,6 +898,42 @@ export default function Page() {
                 <View className='muted'>加入时间：{member.created_at}</View>
               </View>
             </View>
+
+            {!actions.isSelf && (
+              <View className='member-section'>
+                <View className='member-section-title'>紧急位置共享</View>
+                {emergencyShares
+                  .filter((share) => (
+                    share.direction === 'OUTGOING'
+                    && share.grantee_user_id.toLowerCase() === member.user_id.toLowerCase()
+                  ))
+                  .map((share) => (
+                    <View className='sensitive-result' key={share.share_id}>
+                      <View>共享中 · 成员 {shortMemberId(share.grantee_user_id)}</View>
+                      <View className='muted'>到期：{share.expires_at}</View>
+                      <Button
+                        className='danger-button compact-button'
+                        disabled={Boolean(emergencyBusy[share.share_id])}
+                        onClick={() => revokeEmergencyShare(share.share_id)}
+                      >
+                        停止共享
+                      </Button>
+                    </View>
+                  ))}
+                {!emergencyShares.some((share) => (
+                  share.direction === 'OUTGOING'
+                  && share.grantee_user_id.toLowerCase() === member.user_id.toLowerCase()
+                )) && (
+                  <Button
+                    className='secondary-button'
+                    disabled={Boolean(emergencyBusy[member.user_id])}
+                    onClick={() => createEmergencyShare(member.user_id)}
+                  >
+                    紧急共享我的位置
+                  </Button>
+                )}
+              </View>
+            )}
 
             {actions.showPermissionControls && (
               <View className='member-section'>
