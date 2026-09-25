@@ -309,3 +309,89 @@ async def test_emergency_revoke_is_owner_only_and_idempotent(client):
     )
     assert first.status_code == 204
     assert second.status_code == 204
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "recorded_at",
+    [
+        datetime.now(UTC) - timedelta(minutes=16),
+        datetime.now(UTC) + timedelta(hours=1),
+    ],
+)
+async def test_emergency_location_stale_or_future_point_is_unavailable(
+    client,
+    recorded_at: datetime,
+):
+    owner_headers, owner_id, member_headers, member_id = await _family_pair(
+        client, f"emergency-age-{uuid4().hex[:6]}"
+    )
+    _fresh_location(owner_id, recorded_at=recorded_at)
+    share = await _create_share(client, owner_headers, member_id, 30)
+
+    response = await client.get(
+        f"/v1/family/emergency-location-shares/{share['share_id']}/location",
+        headers=member_headers,
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "CURRENT_LOCATION_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_expired_emergency_share_is_not_returned_in_active_list(client):
+    owner_headers, owner_id, member_headers, member_id = await _family_pair(
+        client, "emergency-expired-list"
+    )
+    share = await _create_share(client, owner_headers, member_id, 30)
+
+    with SessionLocal() as db:
+        row = db.get(FamilyEmergencyLocationShare, UUID(share["share_id"]))
+        assert row is not None
+        expired_at = datetime.now(UTC) - timedelta(seconds=1)
+        row.created_at = expired_at - timedelta(minutes=30)
+        row.expires_at = expired_at
+        db.commit()
+
+    owner_list = await client.get(
+        "/v1/family/emergency-location-shares",
+        headers=owner_headers,
+    )
+    member_list = await client.get(
+        "/v1/family/emergency-location-shares",
+        headers=member_headers,
+    )
+    assert owner_list.status_code == 200
+    assert member_list.status_code == 200
+    assert owner_list.json() == []
+    assert member_list.json() == []
+
+
+@pytest.mark.asyncio
+async def test_family_owner_role_does_not_bypass_exact_emergency_grantee(client):
+    owner_headers, owner_id, member_headers, member_id = await _family_pair(
+        client, "emergency-role"
+    )
+    second_headers, second_id = await _new_user(client, "emergency-role-second")
+    invite = await client.post("/v1/family/invites", headers=owner_headers)
+    accepted = await client.post(
+        "/v1/family/invites/accept",
+        headers=second_headers,
+        json={"token": invite.json()["token"]},
+    )
+    assert accepted.status_code == 200
+
+    _fresh_location(member_id)
+    share = await _create_share(client, member_headers, second_id, 30)
+
+    owner_attempt = await client.get(
+        f"/v1/family/emergency-location-shares/{share['share_id']}/location",
+        headers=owner_headers,
+    )
+    exact_grantee = await client.get(
+        f"/v1/family/emergency-location-shares/{share['share_id']}/location",
+        headers=second_headers,
+    )
+    assert owner_attempt.status_code == 404
+    assert owner_attempt.json()["detail"] == "EMERGENCY_SHARE_NOT_AVAILABLE"
+    assert exact_grantee.status_code == 200
