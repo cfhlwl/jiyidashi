@@ -149,7 +149,7 @@ export default function Page() {
       const profile = await getProfile()
       assertCurrentFamilyMember(family, profile.id)
       const permissions = await getFamilyPermissions()
-      const shares = await getFamilyEmergencyShares()
+      const shares = await getFamilyEmergencyShares(profile.id)
       setEmergencyShares(shares)
       setPageState({
         phase: 'family-ready',
@@ -543,7 +543,9 @@ export default function Page() {
       await createFamilyEmergencyShare(granteeUserId, duration)
       sensitiveReadEpoch.current.invalidate()
       setEmergencyReads({})
-      setEmergencyShares(await getFamilyEmergencyShares())
+      if (pageState.phase === 'family-ready') {
+        setEmergencyShares(await getFamilyEmergencyShares(pageState.currentUserId))
+      }
       setStatus('紧急位置共享已开启')
     } catch (error) {
       setStatus(mappedError(error, 'emergency-share', '紧急位置共享创建失败'))
@@ -559,7 +561,9 @@ export default function Page() {
       await revokeFamilyEmergencyShare(shareId)
       sensitiveReadEpoch.current.invalidate()
       setEmergencyReads({})
-      setEmergencyShares(await getFamilyEmergencyShares())
+      if (pageState.phase === 'family-ready') {
+        setEmergencyShares(await getFamilyEmergencyShares(pageState.currentUserId))
+      }
       setStatus('紧急位置共享已停止')
     } catch (error) {
       setStatus(mappedError(error, 'emergency-share', '停止紧急位置共享失败'))
