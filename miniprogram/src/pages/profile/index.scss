@@ -1,1 +1,11 @@
 @import '../../app.scss';
+
+
+.elder-toggle-row {
+  margin-top: 20rpx;
+  min-height: 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+}
