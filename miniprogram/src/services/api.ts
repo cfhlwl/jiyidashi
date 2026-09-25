@@ -27,6 +27,7 @@ import {
 } from './todayFootprint'
 import {
   parseEmergencyFamilyCurrentLocation,
+  parseFamilyArrivalReminders,
   parseFamilyAudit,
   parseFamilyCurrentLocation,
   parseFamilyEmergencyShares,
@@ -38,6 +39,7 @@ import {
   parseFamilyPhotos,
   parseFamilyResponse,
   parseFamilyTodayFootprint,
+  type FamilyArrivalReminder,
   type FamilyAuditEvent,
   type FamilyEmergencyLocationShare,
   type FamilyCurrentLocation,
@@ -310,6 +312,38 @@ export async function replaceFamilyPermissions(
     { permissions: [...permissions] },
   )
   return parseFamilyPermissionGrant(raw)
+}
+
+export async function getFamilyArrivalReminders(
+  currentUserId: string,
+): Promise<FamilyArrivalReminder[]> {
+  const raw = await request<unknown>('GET', '/family/arrival-reminders')
+  return parseFamilyArrivalReminders(raw, currentUserId)
+}
+
+export async function createFamilyArrivalReminder(
+  granteeUserId: string,
+  destinationPlaceId: string,
+  validityMinutes: 120 | 360 | 720,
+  currentUserId: string,
+): Promise<FamilyArrivalReminder> {
+  const raw = await request<unknown>('POST', '/family/arrival-reminders', {
+    grantee_user_id: granteeUserId,
+    destination_place_id: destinationPlaceId,
+    validity_minutes: validityMinutes,
+  })
+  const rows = parseFamilyArrivalReminders([raw], currentUserId)
+  if (rows.length !== 1 || rows[0].direction !== 'OUTGOING') {
+    throw new Error('家庭数据异常')
+  }
+  return rows[0]
+}
+
+export function cancelFamilyArrivalReminder(reminderId: string): Promise<void> {
+  return request(
+    'POST',
+    `/family/arrival-reminders/${encodeURIComponent(reminderId)}/cancel`,
+  )
 }
 
 export async function getFamilyAudit(): Promise<FamilyAuditEvent[]> {
