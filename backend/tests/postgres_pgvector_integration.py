@@ -49,7 +49,8 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'family_invites',
                           'family_permission_grants',
                           'family_access_audit_events',
-                          'family_emergency_location_shares'
+                          'family_emergency_location_shares',
+                          'family_arrival_reminders'
                       )
                     ORDER BY table_name, ordinal_position
                     """
