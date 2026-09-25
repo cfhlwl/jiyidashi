@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from threading import Barrier, Thread
+from threading import Barrier, Event, Thread
+from time import sleep
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+from app.core.config import Settings
 from app.core.db import SessionLocal
 from app.family_models import (
     FamilyArrivalReminder,
@@ -15,7 +17,7 @@ from app.family_models import (
     FamilyMembership,
     FamilyRole,
 )
-from app.models import Place, User, Visit
+from app.models import LocationPoint, Place, User, Visit
 from app.services.family_arrival_reminder_service import (
     cancel_arrival_reminder,
     create_arrival_reminder,
@@ -23,6 +25,8 @@ from app.services.family_arrival_reminder_service import (
     list_arrival_reminders,
 )
 from app.services.family_service import create_family, remove_member
+from app.services.location_service import _geohash, maintain_location_history
+from app.services.privacy_service import lock_location_derivation_state
 
 
 def _user(label: str) -> UUID:
@@ -233,6 +237,115 @@ def _race_derive_expiry() -> None:
     _cleanup(member, owner)
 
 
+
+def _production_maintenance_waits_past_expiry() -> None:
+    owner, member = _family_pair("production-expiry")
+    settings = Settings(
+        location_late_arrival_grace_seconds=3600,
+        location_visit_max_gap_seconds=60,
+        location_visit_min_duration_seconds=60,
+        location_visit_min_points=2,
+    )
+    latitude = 31.23040
+    longitude = 121.47370
+    cluster_key = _geohash(
+        latitude,
+        longitude,
+        settings.location_place_geohash_precision,
+    )
+    place_id = uuid4()
+    now = datetime.now(UTC)
+
+    with SessionLocal() as db:
+        db.add(
+            Place(
+                id=place_id,
+                user_id=owner,
+                name="家",
+                user_name="家",
+                name_revision=1,
+                is_user_named=True,
+                cluster_key=cluster_key,
+                latitude=latitude,
+                longitude=longitude,
+            )
+        )
+        db.commit()
+
+    reminder_id = _create(owner, member, place_id, 120)
+    with SessionLocal() as db:
+        reminder = db.get(FamilyArrivalReminder, reminder_id)
+        assert reminder is not None
+        expires_at = datetime.now(UTC) + timedelta(seconds=2)
+        reminder.created_at = expires_at - timedelta(minutes=120)
+        reminder.expires_at = expires_at
+
+        started = now - timedelta(minutes=70)
+        db.add_all(
+            [
+                LocationPoint(
+                    user_id=owner,
+                    client_uuid=f"arrival-expiry-a-{uuid4().hex}",
+                    latitude=latitude,
+                    longitude=longitude,
+                    accuracy=8.0,
+                    speed=0.0,
+                    recorded_at=started,
+                ),
+                LocationPoint(
+                    user_id=owner,
+                    client_uuid=f"arrival-expiry-b-{uuid4().hex}",
+                    latitude=latitude + 0.00001,
+                    longitude=longitude + 0.00001,
+                    accuracy=8.0,
+                    speed=0.0,
+                    recorded_at=started + timedelta(minutes=2),
+                ),
+            ]
+        )
+        db.commit()
+
+    worker_started = Event()
+    errors: list[BaseException] = []
+
+    with SessionLocal() as blocker:
+        lock_location_derivation_state(blocker, owner)
+        blocker.flush()
+
+        def worker() -> None:
+            try:
+                worker_started.set()
+                with SessionLocal() as db:
+                    maintain_location_history(
+                        db,
+                        user_id=owner,
+                        settings=settings,
+                    )
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = Thread(target=worker)
+        thread.start()
+        assert worker_started.wait(timeout=5)
+        sleep(0.25)
+        assert thread.is_alive()
+        assert datetime.now(UTC) < expires_at
+        sleep(max(0.0, (expires_at - datetime.now(UTC)).total_seconds()) + 0.35)
+        blocker.commit()
+
+    thread.join(timeout=20)
+    assert not thread.is_alive()
+    if errors:
+        raise errors[0]
+
+    with SessionLocal() as db:
+        reminder = db.get(FamilyArrivalReminder, reminder_id)
+        assert reminder is not None
+        assert reminder.status == FamilyArrivalReminderStatus.EXPIRED.value
+        assert reminder.arrived_at is None
+
+    _cleanup(member, owner)
+
 def _race_same_tuple_create() -> None:
     owner, member = _family_pair("same-tuple")
     place_id = _place(owner)
@@ -302,6 +415,7 @@ if __name__ == "__main__":
     _race_derive_cancel()
     _race_derive_remove()
     _race_derive_expiry()
+    _production_maintenance_waits_past_expiry()
     _race_same_tuple_create()
     _duplicate_derivation()
     print("PostgreSQL Arrival-Home Reminder race gate: PASS")
