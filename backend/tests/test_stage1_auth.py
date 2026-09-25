@@ -263,3 +263,36 @@ async def test_elder_mode_rejects_malformed_values(client: AsyncClient):
     current = await client.get("/v1/user", headers=headers)
     assert current.status_code == 200
     assert current.json()["elder_mode_enabled"] is False
+
+
+
+async def test_family_owner_cannot_remotely_change_member_elder_mode(client: AsyncClient):
+    owner = await _register(client, email="elder-family-owner@example.com", nickname="Owner")
+    member = await _register(client, email="elder-family-member@example.com", nickname="Member")
+    owner_headers = {"Authorization": f"Bearer {owner.json()['access_token']}"}
+    member_headers = {"Authorization": f"Bearer {member.json()['access_token']}"}
+
+    assert (await client.post("/v1/family", headers=owner_headers)).status_code == 201
+    invite = await client.post("/v1/family/invites", headers=owner_headers)
+    assert invite.status_code == 201
+    accepted = await client.post(
+        "/v1/family/invites/accept",
+        headers=member_headers,
+        json={"token": invite.json()["token"]},
+    )
+    assert accepted.status_code == 200
+
+    # A target hint in query cannot redirect the self profile endpoint.
+    attempt = await client.patch(
+        f"/v1/user?target_user_id={member.json()['user_id']}",
+        headers=owner_headers,
+        json={"elder_mode_enabled": True},
+    )
+    assert attempt.status_code == 200
+    assert attempt.json()["id"] == owner.json()["user_id"]
+    assert attempt.json()["elder_mode_enabled"] is True
+
+    member_profile = await client.get("/v1/user", headers=member_headers)
+    assert member_profile.status_code == 200
+    assert member_profile.json()["id"] == member.json()["user_id"]
+    assert member_profile.json()["elder_mode_enabled"] is False
