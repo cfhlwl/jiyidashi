@@ -41,7 +41,7 @@
 > 最后更新：2026-09-22  
 > 当前阶段：Stage 1「记得住」、Stage 2「自动记」、Stage 3「懂生活 / AI Memory」均已完成；S3-001~S3-019 已全部正式审查并合并 `main`
 > Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Stage 4B / Issue #97 / PR #99 已正式审查并合并；进入 Stage 4C / Issue #100，优先让微信小程序家庭端消费既有 Family API、exact-grant 当前位置与 Today Footprint，不新增 Memory / Photos / emergency sharing 后端能力
+> 当前开发重点：Stage 4E / PR #112 家庭隐私审计、Stage 4F-A / PR #114 紧急位置共享、Stage 4F-B / PR #116 到家提醒均已正式审查并合并；Stage 4 Family Safety baseline 已闭环。下一阶段进入 Stage 4G / S4-011~S4-014 长辈模式。
 
 ## 状态规则
 
@@ -257,16 +257,16 @@
 | S4-003 | 家庭权限矩阵 | ✅ | Issue #95 / PR #96 已完成固定四类 explicit ALLOW / absence=DENY、resource-owner-only grant、OWNER 无旁路、same-Family composite FK、committed-state resolver 与 reverse/reciprocal PostgreSQL race Gate；合并 `main=c933f2a6` |
 | S4-004 | 查看当前位置授权 | ✅ | Issue #97 / PR #99 已完成 exact `VIEW_CURRENT_LOCATION` family read、canonical Family pair + owner LocationDerivationState privacy serialization、15 分钟 freshness/future-skew、Privacy Pause fail-closed、response whitelist 与真实 PostgreSQL read/revoke/remove/pause races；final reviewed HEAD `216064d6` / Backend #585（run 35708015679）/ 460 passed；合并 `main=f1860ba4` |
 | S4-005 | 查看足迹授权 | ✅ | Issue #97 / PR #99 已完成 exact `VIEW_FOOTPRINT` family read，复用 owner persisted timezone → local today → Visit overlap + owner Place join；无 arbitrary date / Timeline / Place detail / `/location/visits` cross-user seam；final reviewed HEAD `216064d6` / Backend #585 / PostgreSQL Sensitive Read Gate / 460 passed；合并 `main=f1860ba4` |
-| S4-006 | 查看个人记忆授权 | ⬜ | 默认关闭 |
-| S4-007 | 查看照片授权 | ⬜ | 默认关闭 |
-| S4-008 | 紧急位置共享 | ⬜ | 用户明确授权 |
-| S4-009 | 到家提醒 | ⬜ | 家庭安全场景 |
-| S4-010 | 微信小程序家庭端 | 🔵 | Issue #100 / Stage 4C：把现有占位 Family tab 接入已合并 Family API；第一版覆盖创建/加入家庭、成员管理、owner→member 当前位置/今日足迹授权、显式查看家人当前位置与 Today Footprint；不新增 Family Memory/Photos、历史足迹、地图 SDK、邀请二维码、emergency sharing |
+| S4-006 | 查看个人记忆授权 | ✅ | PR #109 已完成 exact `VIEW_MEMORY` family read、canonical membership + exact grant authority、owner/non-deleted Memory bounded projection、limit <= 50、稳定排序、read/revoke/remove race 与 Mini stale-response gate；合并 `main=99d5e8ed` |
+| S4-007 | 查看照片授权 | ✅ | PR #110 已完成 exact `VIEW_PHOTOS`、照片列表与单张签名下载分离、显式点击读取、revoke/remove race、签名失败 fail-closed、Mini runtime parser / stale-response gate；合并 `main=4936e396` |
+| S4-008 | 紧急位置共享 | ✅ | Issue #113 / PR #114 已完成 self-share-only EmergencyShare 独立 authority、30/60/180 分钟固定时长、exact same-Family recipient、Privacy Pause / 15 分钟 freshness、与普通 `VIEW_CURRENT_LOCATION` grant 双向独立、truthful `EMERGENCY_SHARE` audit、revoke/remove/pause/expiry/same-pair PostgreSQL race Gate；final reviewed HEAD `39496c3d`；合并 `main=0ec77a68` |
+| S4-009 | 到家提醒 | ✅ | Issue #115 / PR #116 已完成 self-owned reminder、owner-owned Place、2h/6h/12h 固定有效期、trusted finalized Visit→Place arrival derivation、Privacy Pause、ACTIVE→ARRIVED/CANCELLED/EXPIRED 单向状态机、derive/cancel/remove/expiry/create/duplicate PostgreSQL Gate、Mini coarse-state/no-tracking projection；final reviewed HEAD `63716d4f` / Backend #660（run 36144474655）/ Mini #385（run 36144474774）；合并 `main=296bbc03` |
+| S4-010 | 微信小程序家庭端 | ✅ | Issue #100 / PR #102 已完成 Family tab V1：创建/加入家庭、成员管理、四类权限 UI 基础、显式敏感读取与 runtime fail-closed；后续 PR #109/#110/#112/#114 已继续接入 Family Memory / Photos / Privacy Audit / Emergency Sharing；基础版本合并 `main=9867c7f0` |
 | S4-011 | 长辈模式 | ⬜ | 大字体、大按钮、语音优先 |
 | S4-012 | 长辈模式“帮我记一下” | ⬜ | 一键语音入口 |
 | S4-013 | 长辈模式“我想找东西” | ⬜ | 优先语音问答 |
 | S4-014 | 长辈模式“今天去了哪里” | ⬜ | 简化足迹查看 |
-| S4-015 | 家庭隐私审计 | ⬜ | 谁在什么时候查看过什么 |
+| S4-015 | 家庭隐私审计 | ✅ | Issue #111 / PR #112 已完成 metadata-only `FamilyAccessAuditEvent`、actor→resource-owner 方向、OWNER-only bounded history、Location/Footprint/Memory/Photos audit、revoke/remove race 与 Mini explicit-only audit UI；PR #114 后续补充 truthful `EXACT_GRANT` / `EMERGENCY_SHARE` authority_type；合并 `main=c0e6c4bd` |
 
 ---
 
