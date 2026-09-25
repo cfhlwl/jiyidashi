@@ -254,6 +254,14 @@ class FamilyAccessAuditEvent(Base):
             name="ck_family_access_audit_authority_type",
         ),
         CheckConstraint(
+            "(authority_type = 'EMERGENCY_SHARE' "
+            "AND action = 'READ_EMERGENCY_LOCATION' "
+            "AND resource_type = 'CURRENT_LOCATION') "
+            "OR (authority_type = 'EXACT_GRANT' "
+            "AND action <> 'READ_EMERGENCY_LOCATION')",
+            name="ck_family_access_audit_authority_action",
+        ),
+        CheckConstraint(
             "resource_type IN ('CURRENT_LOCATION', 'TODAY_FOOTPRINT', 'MEMORY', 'PHOTO')",
             name="ck_family_access_audit_resource_type",
         ),
