@@ -560,9 +560,9 @@ test('family audit parser accepts only bounded known enum projection and stable 
   assert.deepEqual(Object.keys(rows[0]).sort(), [
     'action',
     'actor_user_id',
+    'authority_type',
     'created_at',
     'event_id',
-    'authority_type',
     'permission_code',
     'resource_owner_user_id',
     'resource_type',
