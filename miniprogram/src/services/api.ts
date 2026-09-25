@@ -1,4 +1,5 @@
 import Taro from '@tarojs/taro'
+import { parseElderUserProfile, type ElderUserProfile } from './elderMode'
 import type {
   ImageContentType,
   MediaRead,
@@ -81,6 +82,9 @@ export type {
 
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
+const ELDER_MODE_KEY = 'jiyi_elder_mode_enabled'
+const ELDER_MODE_OWNER_KEY = 'jiyi_elder_mode_owner'
+let authSessionEpoch = 0
 
 export type Evidence = {
   kind: string
@@ -105,13 +109,7 @@ export type MemoryQueryResult = {
   memory_ids: string[]
 }
 
-export type UserProfile = {
-  id: string
-  nickname: string
-  email?: string | null
-  timezone: string
-  locale: string
-}
+export type UserProfile = ElderUserProfile
 
 export type PrivacyStatus = {
   recording_paused: boolean
@@ -148,7 +146,25 @@ export function isAuthenticated(): boolean {
 }
 
 export function logout(): void {
+  authSessionEpoch += 1
   Taro.removeStorageSync(TOKEN_KEY)
+  Taro.removeStorageSync(ELDER_MODE_KEY)
+  Taro.removeStorageSync(ELDER_MODE_OWNER_KEY)
+}
+
+function resetElderProjection(): void {
+  Taro.removeStorageSync(ELDER_MODE_KEY)
+  Taro.removeStorageSync(ELDER_MODE_OWNER_KEY)
+}
+
+function publishElderProjection(profile: UserProfile, epoch: number): void {
+  if (epoch !== authSessionEpoch) throw new Error('登录状态已变化，请重试')
+  Taro.setStorageSync(ELDER_MODE_OWNER_KEY, profile.id)
+  Taro.setStorageSync(ELDER_MODE_KEY, profile.elder_mode_enabled)
+}
+
+export function currentElderModeEnabled(): boolean {
+  return Taro.getStorageSync<boolean>(ELDER_MODE_KEY) === true
 }
 
 // [人工注释][S1-019] 统一传输层显式包含 DELETE，单条记忆删除必须真正到达服务端；
@@ -213,6 +229,8 @@ export async function registerAccount(input: {
     timezone: 'Asia/Shanghai',
     locale: 'zh-CN',
   })
+  authSessionEpoch += 1
+  resetElderProjection()
   Taro.setStorageSync(TOKEN_KEY, result.access_token)
 }
 
@@ -221,11 +239,17 @@ export async function loginAccount(email: string, password: string): Promise<voi
     email: email.trim(),
     password,
   })
+  authSessionEpoch += 1
+  resetElderProjection()
   Taro.setStorageSync(TOKEN_KEY, result.access_token)
 }
 
-export function getProfile(): Promise<UserProfile> {
-  return request('GET', '/user')
+export async function getProfile(): Promise<UserProfile> {
+  const epoch = authSessionEpoch
+  const raw = await request<unknown>('GET', '/user')
+  const profile = parseElderUserProfile(raw)
+  publishElderProjection(profile, epoch)
+  return profile
 }
 
 export async function getTodayFootprint(): Promise<TodayFootprintResponse> {
@@ -444,17 +468,28 @@ export async function getFamilyPhotoDownload(
   return parseFamilyPhotoDownload(raw, mediaId)
 }
 
-export function updateProfile(input: {
-  nickname: string
-  timezone: string
+export async function updateProfile(input: {
+  nickname?: string
+  timezone?: string
   locale?: string
+  elder_mode_enabled?: boolean
 }): Promise<UserProfile> {
-  // [人工注释][S1-002] 小程序只提交 IANA timezone 名称，服务端再次校验后才更新用户自然日边界。
-  return request('PATCH', '/user', {
-    nickname: input.nickname.trim(),
-    timezone: input.timezone.trim(),
-    locale: (input.locale || 'zh-CN').trim(),
-  })
+  const epoch = authSessionEpoch
+  const payload: Record<string, unknown> = {}
+  if (input.nickname !== undefined) payload.nickname = input.nickname.trim()
+  if (input.timezone !== undefined) payload.timezone = input.timezone.trim()
+  if (input.locale !== undefined) payload.locale = input.locale.trim()
+  if (input.elder_mode_enabled !== undefined) {
+    payload.elder_mode_enabled = input.elder_mode_enabled
+  }
+  const raw = await request<unknown>('PATCH', '/user', payload)
+  const profile = parseElderUserProfile(raw)
+  publishElderProjection(profile, epoch)
+  return profile
+}
+
+export function updateElderMode(enabled: boolean): Promise<UserProfile> {
+  return updateProfile({ elder_mode_enabled: enabled })
 }
 
 export function createTextMemory(content: string, title?: string): Promise<{ id: string }> {
