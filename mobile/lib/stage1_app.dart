@@ -2038,15 +2038,18 @@ class _ElderModeControlsState extends State<_ElderModeControls> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Semantics(
-            label: '长辈模式',
-            toggled: enabled,
-            child: SwitchListTile(
-              key: const ValueKey('elder-mode-toggle'),
-              contentPadding: EdgeInsets.zero,
-              title: Text(enabled ? '已开启' : '未开启'),
-              value: enabled,
-              onChanged: loading ? null : (value) => unawaited(toggle(value)),
+          Material(
+            type: MaterialType.transparency,
+            child: Semantics(
+              label: '长辈模式',
+              toggled: enabled,
+              child: SwitchListTile(
+                key: const ValueKey('elder-mode-toggle'),
+                contentPadding: EdgeInsets.zero,
+                title: Text(enabled ? '已开启' : '未开启'),
+                value: enabled,
+                onChanged: loading ? null : (value) => unawaited(toggle(value)),
+              ),
             ),
           ),
           if (error != null)
