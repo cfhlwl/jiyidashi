@@ -616,3 +616,59 @@ test('Family audit API uses authenticated transport and bounded server query', (
   const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
   assert.match(api, /request<unknown>\('GET', '\/family\/audit\?limit=50'\)/)
 })
+
+
+test('Family audit stale success cannot repopulate audit state after refresh invalidation', async () => {
+  const epoch = new FamilySensitiveReadEpoch()
+  const request = deferred<Array<{ event_id: string }>>()
+  let auditState: Record<string, unknown> = {}
+
+  const captured = epoch.capture()
+  const completion = request.promise.then((data) => {
+    if (!epoch.isCurrent(captured)) return
+    auditState = { audit: { state: 'ready', data } }
+  })
+
+  epoch.invalidate()
+  auditState = {}
+  request.resolve([{ event_id: OWNER_ID }])
+  await completion
+
+  assert.deepEqual(auditState, {})
+})
+
+test('Family audit stale error cannot repopulate audit error after refresh invalidation', async () => {
+  const epoch = new FamilySensitiveReadEpoch()
+  const request = deferred<never>()
+  let auditState: Record<string, unknown> = {}
+
+  const captured = epoch.capture()
+  const completion = request.promise.catch((error) => {
+    if (!epoch.isCurrent(captured)) return
+    auditState = { audit: { state: 'error', message: String(error) } }
+  })
+
+  epoch.invalidate()
+  auditState = {}
+  request.reject(new Error('stale audit failure'))
+  await completion
+
+  assert.deepEqual(auditState, {})
+})
+
+test('Family audit page read reuses sensitive read epoch for success and error gating', () => {
+  const page = readFileSync(resolve(process.cwd(), 'src/pages/family/index.tsx'), 'utf8')
+  const readAuditStart = page.indexOf('const readAudit = async')
+  const renderAuditStart = page.indexOf('const renderAudit =')
+  const readAuditBody = page.slice(readAuditStart, renderAuditStart)
+
+  assert.match(readAuditBody, /const readEpoch = sensitiveReadEpoch\.current\.capture\(\)/)
+  assert.match(
+    readAuditBody,
+    /const data = await getFamilyAudit\(\)[\s\S]*?if \(!sensitiveReadEpoch\.current\.isCurrent\(readEpoch\)\) return[\s\S]*?setAuditRead\(\{ state: 'ready', data \}\)/,
+  )
+  assert.match(
+    readAuditBody,
+    /catch \(error\)[\s\S]*?if \(!sensitiveReadEpoch\.current\.isCurrent\(readEpoch\)\) return[\s\S]*?setAuditRead\(\{/,
+  )
+})
