@@ -391,6 +391,8 @@ def test_family_router_exposes_only_reviewed_stage4_routes():
     assert family_paths == {
         "/family",
         "/family/audit",
+        "/family/arrival-reminders",
+        "/family/arrival-reminders/{reminder_id}/cancel",
         "/family/emergency-location-shares",
         "/family/emergency-location-shares/{share_id}/revoke",
         "/family/emergency-location-shares/{share_id}/location",
