@@ -504,11 +504,14 @@ export default function Page() {
 
   const readAudit = async () => {
     if (pageState.phase !== 'family-ready' || pageState.family.current_user_role !== 'OWNER') return
+    const readEpoch = sensitiveReadEpoch.current.capture()
     setAuditRead({ state: 'loading' })
     try {
       const data = await getFamilyAudit()
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
       setAuditRead({ state: 'ready', data })
     } catch (error) {
+      if (!sensitiveReadEpoch.current.isCurrent(readEpoch)) return
       setAuditRead({
         state: 'error',
         message: mappedError(error, 'audit', '家庭隐私访问记录加载失败'),
