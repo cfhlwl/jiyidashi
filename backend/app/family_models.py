@@ -32,6 +32,27 @@ class FamilyPermissionCode(StrEnum):
     VIEW_PHOTOS = "VIEW_PHOTOS"
 
 
+class FamilyAuditResourceType(StrEnum):
+    CURRENT_LOCATION = "CURRENT_LOCATION"
+    TODAY_FOOTPRINT = "TODAY_FOOTPRINT"
+    MEMORY = "MEMORY"
+    PHOTO = "PHOTO"
+
+
+class FamilyAuditAction(StrEnum):
+    READ_CURRENT_LOCATION = "READ_CURRENT_LOCATION"
+    READ_TODAY_FOOTPRINT = "READ_TODAY_FOOTPRINT"
+    READ_MEMORY = "READ_MEMORY"
+    LIST_PHOTOS = "LIST_PHOTOS"
+    DOWNLOAD_PHOTO = "DOWNLOAD_PHOTO"
+
+
+class FamilyAuditResult(StrEnum):
+    ALLOWED = "ALLOWED"
+    DENIED = "DENIED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
 SUPPORTED_FAMILY_PERMISSION_CODES = frozenset(item.value for item in FamilyPermissionCode)
 
 
@@ -171,4 +192,56 @@ class FamilyPermissionGrant(Base):
     resource_owner_user_id: Mapped[UUID] = mapped_column()
     grantee_user_id: Mapped[UUID] = mapped_column()
     permission_code: Mapped[str] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+
+class FamilyAccessAuditEvent(Base):
+    __tablename__ = "family_access_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "permission_code IN "
+            "('VIEW_CURRENT_LOCATION', 'VIEW_FOOTPRINT', 'VIEW_MEMORY', 'VIEW_PHOTOS')",
+            name="ck_family_access_audit_permission_code",
+        ),
+        CheckConstraint(
+            "resource_type IN ('CURRENT_LOCATION', 'TODAY_FOOTPRINT', 'MEMORY', 'PHOTO')",
+            name="ck_family_access_audit_resource_type",
+        ),
+        CheckConstraint(
+            "action IN "
+            "('READ_CURRENT_LOCATION', 'READ_TODAY_FOOTPRINT', 'READ_MEMORY', "
+            "'LIST_PHOTOS', 'DOWNLOAD_PHOTO')",
+            name="ck_family_access_audit_action",
+        ),
+        CheckConstraint(
+            "result IN ('ALLOWED', 'DENIED', 'UNAVAILABLE')",
+            name="ck_family_access_audit_result",
+        ),
+        CheckConstraint(
+            "actor_user_id <> resource_owner_user_id",
+            name="ck_family_access_audit_distinct_users",
+        ),
+        Index(
+            "ix_family_access_audit_family_created",
+            "family_id",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    family_id: Mapped[UUID] = mapped_column(
+        ForeignKey("families.id", ondelete="CASCADE")
+    )
+    actor_user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    resource_owner_user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    permission_code: Mapped[str] = mapped_column(String(40))
+    resource_type: Mapped[str] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(40))
+    result: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
