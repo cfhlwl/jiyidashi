@@ -36,8 +36,9 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                     FROM information_schema.columns
                     WHERE table_schema = 'public'
                       -- S3-008 owns neither later derived/vector rows, S3-018 feedback audit,
-                      -- nor later Stage 4 family/audit tables. This historical gate must compare only
-                      -- schema surfaces present on both sides of its 0011 downgrade boundary;
+                      -- nor later Stage 4 family/audit tables. This historical gate must
+                      -- compare only schema surfaces present on both sides of its 0011
+                      -- downgrade boundary;
                       -- later migrations are expected to disappear and be recreated.
                       AND table_name NOT IN (
                           'alembic_version',
