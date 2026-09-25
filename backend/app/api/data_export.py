@@ -259,6 +259,7 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
             "email": user.email,
             "timezone": user.timezone,
             "locale": user.locale,
+            "elder_mode_enabled": user.elder_mode_enabled,
             "created_at": user.created_at,
             "updated_at": user.updated_at,
         },
