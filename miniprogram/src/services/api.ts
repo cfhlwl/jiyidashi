@@ -318,9 +318,11 @@ export async function getFamilyAudit(): Promise<FamilyAuditEvent[]> {
   return parseFamilyAudit(raw)
 }
 
-export async function getFamilyEmergencyShares(): Promise<FamilyEmergencyLocationShare[]> {
+export async function getFamilyEmergencyShares(
+  currentUserId: string,
+): Promise<FamilyEmergencyLocationShare[]> {
   const raw = await request<unknown>('GET', '/family/emergency-location-shares')
-  return parseFamilyEmergencyShares(raw)
+  return parseFamilyEmergencyShares(raw, currentUserId)
 }
 
 export async function createFamilyEmergencyShare(
