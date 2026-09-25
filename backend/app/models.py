@@ -68,6 +68,7 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     locale: Mapped[str] = mapped_column(String(32), default="zh-CN")
+    elder_mode_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
