@@ -402,6 +402,7 @@ def _rebuild(
     }
     desired: set[str] = set()
     desired_count = 0
+    arrival_candidates: list[Visit] = []
     for cluster in clusters:
         started = cluster[0].recorded_at
         ended = cluster[-1].recorded_at
@@ -446,6 +447,8 @@ def _rebuild(
         visit.source_fingerprint = fingerprint
         visit.algorithm_version = ALGORITHM_VERSION
         visit.finalized_at = now if ended <= safe_through else None
+        if visit.finalized_at is not None:
+            arrival_candidates.append(visit)
 
     for key, visit in mutable.items():
         if key not in desired:
@@ -458,16 +461,7 @@ def _rebuild(
         derive_arrival_for_finalized_visit,
     )
 
-    finalized_visits = tuple(
-        db.scalars(
-            select(Visit).where(
-                Visit.user_id == user_id,
-                Visit.finalized_at.is_not(None),
-                Visit.arrived_at <= now,
-            )
-        )
-    )
-    for visit in finalized_visits:
+    for visit in arrival_candidates:
         derive_arrival_for_finalized_visit(db, visit=visit, now=now)
 
     state.finalized_through = safe_through
