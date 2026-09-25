@@ -16,7 +16,6 @@ from app.family_models import (
 )
 from app.models import Place, Visit
 from app.services.family_arrival_reminder_service import (
-    FamilyArrivalReminderError,
     derive_arrival_for_finalized_visit,
     list_arrival_reminders,
 )
