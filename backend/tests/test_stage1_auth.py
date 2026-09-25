@@ -23,6 +23,15 @@ async def _register(
     )
 
 
+async def _elder_dev_user(client: AsyncClient, nickname: str):
+    response = await client.post(
+        "/v1/auth/dev-token",
+        json={"nickname": nickname},
+    )
+    assert response.status_code == 200
+    return response
+
+
 async def test_register_login_and_update_profile(client: AsyncClient):
     # [人工注释][S1-001] 正式注册必须直接得到可访问本人资源的 Token。
     register = await _register(client, email="stage1-auth@example.com")
@@ -204,10 +213,8 @@ async def test_profile_and_registration_reject_whitespace_only_text(client: Asyn
 
 
 async def test_elder_mode_is_self_controlled_persisted_and_patch_is_partial(client: AsyncClient):
-    first = await _register(client, email="elder-self@example.com", nickname="本人")
-    second = await _register(client, email="elder-other@example.com", nickname="其他人")
-    assert first.status_code == 201
-    assert second.status_code == 201
+    first = await _elder_dev_user(client, "本人")
+    second = await _elder_dev_user(client, "其他人")
     first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
     second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
 
@@ -249,8 +256,7 @@ async def test_elder_mode_is_self_controlled_persisted_and_patch_is_partial(clie
 
 
 async def test_elder_mode_rejects_malformed_values(client: AsyncClient):
-    register = await _register(client, email="elder-malformed@example.com")
-    assert register.status_code == 201
+    register = await _elder_dev_user(client, "Malformed Elder")
     headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
 
     for invalid in ("true", 1, 0, [], {}):
@@ -268,8 +274,8 @@ async def test_elder_mode_rejects_malformed_values(client: AsyncClient):
 
 
 async def test_family_owner_cannot_remotely_change_member_elder_mode(client: AsyncClient):
-    owner = await _register(client, email="elder-family-owner@example.com", nickname="Owner")
-    member = await _register(client, email="elder-family-member@example.com", nickname="Member")
+    owner = await _elder_dev_user(client, "Owner")
+    member = await _elder_dev_user(client, "Member")
     owner_headers = {"Authorization": f"Bearer {owner.json()['access_token']}"}
     member_headers = {"Authorization": f"Bearer {member.json()['access_token']}"}
 
