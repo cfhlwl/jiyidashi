@@ -41,10 +41,7 @@ void main() {
     final elderSize = elder.filledButtonTheme.style?.minimumSize?.resolve({});
     expect(normalSize?.height, 48);
     expect(elderSize?.height, 56);
-    expect(
-      elder.textTheme.bodyMedium!.fontSize!,
-      greaterThan(normal.textTheme.bodyMedium!.fontSize!),
-    );
+    expect(elder.textTheme.bodyMedium?.fontSize, 18);
     expect(
       elder.navigationBarTheme.height,
       greaterThan(normal.navigationBarTheme.height!),
@@ -157,7 +154,7 @@ void main() {
 
     expect(find.text('长辈模式'), findsOneWidget);
     expect(find.textContaining('不改变家庭、位置、记忆或隐私权限'), findsOneWidget);
-    expect(find.text('记忆暂停'), findsOneWidget);
+    expect(find.text('隐私与记录控制'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('elder-mode-toggle')));
     await tester.pumpAndSettle();
