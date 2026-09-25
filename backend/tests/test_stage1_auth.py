@@ -230,7 +230,8 @@ async def test_elder_mode_is_self_controlled_persisted_and_patch_is_partial(clie
     assert other.status_code == 200
     assert other.json()["elder_mode_enabled"] is False
 
-    # There is no target-user profile mutation surface; query/body ownership hints are ignored/rejected.
+    # There is no target-user profile mutation surface; query/body ownership
+    # hints are ignored/rejected.
     remote_attempt = await client.patch(
         f"/v1/user?user_id={first.json()['user_id']}",
         headers=second_headers,
