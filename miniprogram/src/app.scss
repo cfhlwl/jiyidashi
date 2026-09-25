@@ -81,3 +81,50 @@ page {
   padding-top: 16rpx;
   border-top: 2rpx solid #eef1ef;
 }
+
+
+.elder-mode {
+  font-size: 36rpx;
+  line-height: 1.7;
+}
+
+.elder-mode .title {
+  font-size: 60rpx;
+  line-height: 1.35;
+  margin-bottom: 20rpx;
+}
+
+.elder-mode .subtitle {
+  font-size: 34rpx;
+  line-height: 1.65;
+  margin-bottom: 42rpx;
+}
+
+.elder-mode .card {
+  padding: 36rpx;
+  margin-bottom: 28rpx;
+}
+
+.elder-mode .card-title {
+  font-size: 40rpx;
+  line-height: 1.5;
+  margin-bottom: 18rpx;
+}
+
+.elder-mode .field,
+.elder-mode button,
+.elder-mode .primary-button,
+.elder-mode .secondary-button {
+  min-height: 96rpx;
+  font-size: 34rpx;
+  line-height: 1.5;
+}
+
+.elder-mode .muted {
+  color: #59635d;
+}
+
+.elder-mode .primary-button,
+.elder-mode .secondary-button {
+  margin-top: 24rpx;
+}
