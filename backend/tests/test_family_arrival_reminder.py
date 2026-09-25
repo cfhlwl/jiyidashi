@@ -19,7 +19,7 @@ from app.services.family_arrival_reminder_service import (
     derive_arrival_for_finalized_visit,
     list_arrival_reminders,
 )
-from app.services.privacy_service import pause_recording
+from app.services.privacy_service import ensure_utc, pause_recording
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -318,7 +318,8 @@ async def test_arrival_transition_is_finalized_visit_exact_place_and_monotonic(c
         row = db.get(FamilyArrivalReminder, UUID(reminder["reminder_id"]))
         assert row is not None
         assert row.status == FamilyArrivalReminderStatus.ARRIVED.value
-        assert row.arrived_at == visit.arrived_at
+        assert row.arrived_at is not None
+        assert ensure_utc(row.arrived_at) == ensure_utc(visit.arrived_at)
 
     incoming = await client.get("/v1/family/arrival-reminders", headers=member_headers)
     assert incoming.status_code == 200
