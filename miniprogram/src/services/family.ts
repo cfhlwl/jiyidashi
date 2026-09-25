@@ -509,9 +509,6 @@ export function parseFamilyEmergencyShares(
       return invalidFamilyResponse()
     }
     const direction: FamilyEmergencyShareDirection = raw.direction
-    if (direction !== 'OUTGOING' && direction !== 'INCOMING') {
-      return invalidFamilyResponse()
-    }
     const ownerId = uuid(raw.resource_owner_user_id)
     const granteeId = uuid(raw.grantee_user_id)
     if (ownerId.toLowerCase() === granteeId.toLowerCase()) {
