@@ -37,7 +37,14 @@ test('profile mutation is self-only partial PATCH and session projection clears 
   assert.match(api, /updateElderMode\(enabled: boolean\)/)
   assert.match(api, /updateProfile\(\{ elder_mode_enabled: enabled \}\)/)
   assert.match(api, /payload\.elder_mode_enabled = input\.elder_mode_enabled/)
-  assert.doesNotMatch(api, /elder_mode_enabled[\s\S]{0,160}user_id/)
+  assert.match(
+    api,
+    /export function updateElderMode\(enabled: boolean\): Promise<UserProfile> \{[\s\S]*?updateProfile\(\{ elder_mode_enabled: enabled \}\)/,
+  )
+  assert.doesNotMatch(
+    api,
+    /updateElderMode\([^)]*userId|updateElderMode[\s\S]{0,180}target_user_id/,
+  )
   assert.match(api, /authSessionEpoch \+= 1[\s\S]*?resetElderProjection\(\)/)
   assert.match(api, /epoch !== authSessionEpoch/)
   assert.match(api, /removeStorageSync\(ELDER_MODE_KEY\)/)
