@@ -248,7 +248,7 @@ class FamilyAccessAuditEvent(Base):
     __tablename__ = "family_access_audit_events"
     __table_args__ = (
         CheckConstraint(
-            "(authority_type = 'EXACT_GRANT' AND permission_code IN "
+            "(authority_type = 'EXACT_GRANT' AND permission_code IS NOT NULL AND permission_code IN "
             "('VIEW_CURRENT_LOCATION', 'VIEW_FOOTPRINT', 'VIEW_MEMORY', 'VIEW_PHOTOS')) "
             "OR (authority_type = 'EMERGENCY_SHARE' AND permission_code IS NULL)",
             name="ck_family_access_audit_authority_permission",
