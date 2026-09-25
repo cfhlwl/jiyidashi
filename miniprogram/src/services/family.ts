@@ -93,23 +93,37 @@ export type FamilyPhotoDownload = {
 }
 
 export type FamilyAuditResourceType = 'CURRENT_LOCATION' | 'TODAY_FOOTPRINT' | 'MEMORY' | 'PHOTO'
+export type FamilyAuditAuthorityType = 'EXACT_GRANT' | 'EMERGENCY_SHARE'
 export type FamilyAuditAction =
   | 'READ_CURRENT_LOCATION'
   | 'READ_TODAY_FOOTPRINT'
   | 'READ_MEMORY'
   | 'LIST_PHOTOS'
   | 'DOWNLOAD_PHOTO'
+  | 'READ_EMERGENCY_LOCATION'
 export type FamilyAuditResult = 'ALLOWED' | 'DENIED' | 'UNAVAILABLE'
 
 export type FamilyAuditEvent = {
   event_id: string
   actor_user_id: string
   resource_owner_user_id: string
-  permission_code: FamilyPermissionCode
+  authority_type: FamilyAuditAuthorityType
+  permission_code: FamilyPermissionCode | null
   resource_type: FamilyAuditResourceType
   action: FamilyAuditAction
   result: FamilyAuditResult
   created_at: string
+}
+
+export type FamilyEmergencyShareDirection = 'OUTGOING' | 'INCOMING'
+
+export type FamilyEmergencyLocationShare = {
+  share_id: string
+  resource_owner_user_id: string
+  grantee_user_id: string
+  expires_at: string
+  created_at: string
+  direction: FamilyEmergencyShareDirection
 }
 
 export type FamilyPagePhase =
@@ -391,6 +405,13 @@ function auditResourceType(value: unknown): FamilyAuditResourceType {
   return value
 }
 
+function auditAuthorityType(value: unknown): FamilyAuditAuthorityType {
+  if (value !== 'EXACT_GRANT' && value !== 'EMERGENCY_SHARE') {
+    return invalidFamilyResponse()
+  }
+  return value
+}
+
 function auditAction(value: unknown): FamilyAuditAction {
   if (
     value !== 'READ_CURRENT_LOCATION'
@@ -398,6 +419,7 @@ function auditAction(value: unknown): FamilyAuditAction {
     && value !== 'READ_MEMORY'
     && value !== 'LIST_PHOTOS'
     && value !== 'DOWNLOAD_PHOTO'
+    && value !== 'READ_EMERGENCY_LOCATION'
   ) return invalidFamilyResponse()
   return value
 }
@@ -413,13 +435,27 @@ export function parseFamilyAudit(value: unknown): FamilyAuditEvent[] {
   if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
   const rows = value.map((item) => {
     const raw = asRecord(item)
+    const authorityType = auditAuthorityType(raw.authority_type)
+    const permission = raw.permission_code === null
+      ? null
+      : exactFamilyPermissionCode(raw.permission_code)
+    if (
+      (authorityType === 'EXACT_GRANT' && permission === null)
+      || (authorityType === 'EMERGENCY_SHARE' && permission !== null)
+    ) return invalidFamilyResponse()
+    const action = auditAction(raw.action)
+    if (
+      authorityType === 'EMERGENCY_SHARE'
+      && action !== 'READ_EMERGENCY_LOCATION'
+    ) return invalidFamilyResponse()
     return {
       event_id: uuid(raw.event_id),
       actor_user_id: uuid(raw.actor_user_id),
       resource_owner_user_id: uuid(raw.resource_owner_user_id),
-      permission_code: exactFamilyPermissionCode(raw.permission_code),
+      authority_type: authorityType,
+      permission_code: permission,
       resource_type: auditResourceType(raw.resource_type),
-      action: auditAction(raw.action),
+      action,
       result: auditResult(raw.result),
       created_at: isoDateTime(raw.created_at),
     }
@@ -445,13 +481,54 @@ export function familyAuditActionLabel(action: FamilyAuditAction): string {
   if (action === 'READ_TODAY_FOOTPRINT') return '查看今日足迹'
   if (action === 'READ_MEMORY') return '查看个人记忆'
   if (action === 'LIST_PHOTOS') return '查看照片列表'
-  return '打开照片'
+  if (action === 'DOWNLOAD_PHOTO') return '打开照片'
+  return '查看紧急位置'
 }
 
 export function familyAuditResultLabel(result: FamilyAuditResult): string {
   if (result === 'ALLOWED') return '已允许'
   if (result === 'DENIED') return '已拒绝'
   return '数据不可用'
+}
+
+export function parseFamilyEmergencyShares(value: unknown): FamilyEmergencyLocationShare[] {
+  if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
+  const rows = value.map((item) => {
+    const raw = asRecord(item)
+    const direction = raw.direction
+    if (direction !== 'OUTGOING' && direction !== 'INCOMING') {
+      return invalidFamilyResponse()
+    }
+    const ownerId = uuid(raw.resource_owner_user_id)
+    const granteeId = uuid(raw.grantee_user_id)
+    if (ownerId.toLowerCase() === granteeId.toLowerCase()) {
+      return invalidFamilyResponse()
+    }
+    const createdAt = isoDateTime(raw.created_at)
+    const expiresAt = isoDateTime(raw.expires_at)
+    const durationMs = Date.parse(expiresAt) - Date.parse(createdAt)
+    if (![30, 60, 180].includes(durationMs / 60000)) {
+      return invalidFamilyResponse()
+    }
+    return {
+      share_id: uuid(raw.share_id),
+      resource_owner_user_id: ownerId,
+      grantee_user_id: granteeId,
+      expires_at: expiresAt,
+      created_at: createdAt,
+      direction,
+    }
+  })
+  const ids = rows.map((item) => item.share_id.toLowerCase())
+  if (new Set(ids).size !== ids.length) return invalidFamilyResponse()
+  return rows
+}
+
+export function parseEmergencyFamilyCurrentLocation(
+  value: unknown,
+  expectedResourceOwnerUserId: string,
+): FamilyCurrentLocation {
+  return parseFamilyCurrentLocation(value, expectedResourceOwnerUserId)
 }
 
 export function parseFamilyPhotoDownload(
@@ -591,6 +668,8 @@ export type FamilyErrorContext =
   | 'photos'
   | 'photo-download'
   | 'audit'
+  | 'emergency-share'
+  | 'emergency-location'
 
 export function familyErrorMessage(code: string | null, context: FamilyErrorContext): string | null {
   if (!code) return null
@@ -635,6 +714,12 @@ export function familyErrorMessage(code: string | null, context: FamilyErrorCont
       return '当前位置暂不可用'
     case 'OWNER_REQUIRED':
       return context === 'audit' ? '无权查看家庭隐私访问记录' : '只有家庭 OWNER 可以执行此操作'
+    case 'EMERGENCY_SHARE_NOT_AVAILABLE':
+      return context === 'emergency-location' ? '紧急位置共享已不可用' : '紧急位置共享不可用'
+    case 'EMERGENCY_SHARE_TARGET_INVALID':
+      return '只能选择当前家庭中的其他成员'
+    case 'EMERGENCY_SHARE_DURATION_UNSUPPORTED':
+      return '请选择 30、60 或 180 分钟'
     default:
       return null
   }
