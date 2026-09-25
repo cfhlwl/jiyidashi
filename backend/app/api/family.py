@@ -10,8 +10,18 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.deps import get_current_user_id
-from app.family_models import FamilyAuditAuthorityType, FamilyPermissionCode
+from app.family_models import (
+    FamilyArrivalReminderStatus,
+    FamilyAuditAuthorityType,
+    FamilyPermissionCode,
+)
 from app.schemas import SignedTransfer, TodayFootprintResponse
+from app.services.family_arrival_reminder_service import (
+    FamilyArrivalReminderError,
+    cancel_arrival_reminder,
+    create_arrival_reminder,
+    list_arrival_reminders,
+)
 from app.services.family_audit_service import (
     FamilyAuditError,
     list_family_access_audit,
@@ -129,6 +139,29 @@ class FamilyAuditResponse(BaseModel):
     action: str
     result: str
     created_at: datetime
+
+
+
+
+class FamilyArrivalReminderCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    grantee_user_id: UUID
+    destination_place_id: UUID
+    validity_minutes: int
+
+
+class FamilyArrivalReminderResponse(BaseModel):
+    reminder_id: UUID
+    resource_owner_user_id: UUID
+    grantee_user_id: UUID
+    destination_place_id: UUID
+    destination_display_name: str
+    status: FamilyArrivalReminderStatus
+    created_at: datetime
+    expires_at: datetime
+    arrived_at: datetime | None
+    direction: str
 
 
 class FamilyEmergencyShareCreateRequest(BaseModel):
@@ -511,3 +544,62 @@ def family_emergency_shared_location(
     except FamilyEmergencyShareError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
     return FamilyCurrentLocationResponse(**result.__dict__)
+
+
+
+@router.post(
+    "/arrival-reminders",
+    response_model=FamilyArrivalReminderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_family_arrival_reminder(
+    payload: FamilyArrivalReminderCreateRequest,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> FamilyArrivalReminderResponse:
+    try:
+        result = create_arrival_reminder(
+            db,
+            resource_owner_user_id=user_id,
+            grantee_user_id=payload.grantee_user_id,
+            destination_place_id=payload.destination_place_id,
+            validity_minutes=payload.validity_minutes,
+        )
+    except FamilyArrivalReminderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return FamilyArrivalReminderResponse(**result.__dict__)
+
+
+@router.get(
+    "/arrival-reminders",
+    response_model=list[FamilyArrivalReminderResponse],
+)
+def get_family_arrival_reminders(
+    user_id: CurrentUser,
+    db: DbSession,
+) -> list[FamilyArrivalReminderResponse]:
+    try:
+        rows = list_arrival_reminders(db, user_id=user_id)
+    except FamilyArrivalReminderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return [FamilyArrivalReminderResponse(**row.__dict__) for row in rows]
+
+
+@router.post(
+    "/arrival-reminders/{reminder_id}/cancel",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def cancel_family_arrival_reminder(
+    reminder_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> Response:
+    try:
+        cancel_arrival_reminder(
+            db,
+            actor_user_id=user_id,
+            reminder_id=reminder_id,
+        )
+    except FamilyArrivalReminderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
