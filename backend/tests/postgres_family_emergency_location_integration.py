@@ -98,6 +98,7 @@ def _race_read_revoke() -> None:
             barrier: Barrier = barrier,
             outcome: list[str] = outcome,
             errors: list[BaseException] = errors,
+            share_id: UUID = share_id,
         ) -> None:
             try:
                 barrier.wait(timeout=15)
@@ -118,6 +119,7 @@ def _race_read_revoke() -> None:
         def revoker(
             barrier: Barrier = barrier,
             errors: list[BaseException] = errors,
+            share_id: UUID = share_id,
         ) -> None:
             try:
                 barrier.wait(timeout=15)
