@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StrictBool,
     StringConstraints,
     model_validator,
 )
@@ -168,7 +169,7 @@ class UserUpdate(BaseModel):
     nickname: NicknameText | None = None
     timezone: TimezoneName | None = None
     locale: LocaleText | None = None
-    elder_mode_enabled: bool | None = None
+    elder_mode_enabled: StrictBool | None = None
 
 
 class MemoryCreate(BaseModel):
