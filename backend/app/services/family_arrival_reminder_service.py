@@ -101,7 +101,6 @@ def create_arrival_reminder(
     if validity_minutes not in SUPPORTED_ARRIVAL_VALIDITIES:
         raise FamilyArrivalReminderError("ARRIVAL_REMINDER_VALIDITY_UNSUPPORTED", 422)
 
-    reference = _reference_now(now)
     locked = _lock_membership_pair(
         db,
         first_user_id=resource_owner_user_id,
@@ -142,6 +141,7 @@ def create_arrival_reminder(
             .with_for_update()
         )
     )
+    reference = _reference_now(now)
     for row in prior:
         _expire_locked(row, now=reference)
         if row.status == FamilyArrivalReminderStatus.ACTIVE.value:
@@ -179,7 +179,6 @@ def list_arrival_reminders(
     user_id: UUID,
     now: datetime | None = None,
 ) -> tuple[FamilyArrivalReminderView, ...]:
-    reference = _reference_now(now)
     membership = db.scalar(
         select(FamilyMembership).where(FamilyMembership.user_id == user_id)
     )
@@ -204,6 +203,7 @@ def list_arrival_reminders(
             .with_for_update()
         )
     )
+    reference = _reference_now(now)
     changed = False
     result: list[FamilyArrivalReminderView] = []
     for row in rows:
@@ -242,7 +242,6 @@ def cancel_arrival_reminder(
     reminder_id: UUID,
     now: datetime | None = None,
 ) -> None:
-    reference = _reference_now(now)
     probe = db.scalar(
         select(FamilyArrivalReminder).where(FamilyArrivalReminder.id == reminder_id)
     )
@@ -274,6 +273,7 @@ def cancel_arrival_reminder(
         db.rollback()
         raise FamilyArrivalReminderError("ARRIVAL_REMINDER_NOT_AVAILABLE", 404)
 
+    reference = _reference_now(now)
     _expire_locked(reminder, now=reference)
     if reminder.status == FamilyArrivalReminderStatus.ACTIVE.value:
         reminder.status = FamilyArrivalReminderStatus.CANCELLED.value
@@ -290,7 +290,6 @@ def derive_arrival_for_finalized_visit(
     if visit.finalized_at is None:
         return 0
 
-    reference = _reference_now(now)
     arrived_at = ensure_utc(visit.arrived_at)
     source_start = ensure_utc(visit.source_started_at or visit.arrived_at)
     source_end = ensure_utc(visit.source_ended_at or visit.left_at or visit.arrived_at)
@@ -347,7 +346,8 @@ def derive_arrival_for_finalized_visit(
         )
         if reminder is None:
             continue
-        _expire_locked(reminder, now=reference)
+        lock_reference = _reference_now(now)
+        _expire_locked(reminder, now=lock_reference)
         if reminder.status != FamilyArrivalReminderStatus.ACTIVE.value:
             continue
         if arrived_at < ensure_utc(reminder.created_at):
