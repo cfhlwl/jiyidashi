@@ -462,7 +462,10 @@ def _rebuild(
     )
 
     for visit in arrival_candidates:
-        derive_arrival_for_finalized_visit(db, visit=visit, now=now)
+        # [S4-009] The Visit rebuild clock may be frozen before waiting on the
+        # LocationDerivationState lock. Family authority must use a fresh clock
+        # after its own membership/reminder locks, so never forward rebuild `now`.
+        derive_arrival_for_finalized_visit(db, visit=visit)
 
     state.finalized_through = safe_through
     _refresh_place_stats(db, user_id)
