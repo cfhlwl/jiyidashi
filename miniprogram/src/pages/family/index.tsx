@@ -793,30 +793,6 @@ export default function Page() {
             {joiningFamily ? '正在加入…' : '加入家庭'}
           </Button>
         </View>
-        {emergencyShares.filter((share) => share.direction === 'INCOMING').length > 0 && (
-        <View className='card'>
-          <View className='card-title'>收到的紧急位置共享</View>
-          {emergencyShares
-            .filter((share) => share.direction === 'INCOMING')
-            .map((share) => (
-              <View className='member-section' key={share.share_id}>
-                <View>
-                  成员 {shortMemberId(share.resource_owner_user_id)} 正在临时共享当前位置
-                </View>
-                <View className='muted'>到期：{share.expires_at}</View>
-                <Button
-                  className='secondary-button'
-                  disabled={emergencyReads[share.share_id]?.state === 'loading'}
-                  onClick={() => readEmergencyLocation(share)}
-                >
-                  查看紧急位置
-                </Button>
-                {renderLocation(emergencyReads[share.share_id])}
-              </View>
-            ))}
-        </View>
-      )}
-
       {status && <View className='status'>{status}</View>}
       </View>
     )
@@ -1013,6 +989,30 @@ export default function Page() {
           </View>
         )
       })}
+
+      {emergencyShares.filter((share) => share.direction === 'INCOMING').length > 0 && (
+        <View className='card'>
+          <View className='card-title'>收到的紧急位置共享</View>
+          {emergencyShares
+            .filter((share) => share.direction === 'INCOMING')
+            .map((share) => (
+              <View className='member-section' key={share.share_id}>
+                <View>
+                  成员 {shortMemberId(share.resource_owner_user_id)} 正在临时共享当前位置
+                </View>
+                <View className='muted'>到期：{share.expires_at}</View>
+                <Button
+                  className='secondary-button'
+                  disabled={emergencyReads[share.share_id]?.state === 'loading'}
+                  onClick={() => readEmergencyLocation(share)}
+                >
+                  查看紧急位置
+                </Button>
+                {renderLocation(emergencyReads[share.share_id])}
+              </View>
+            ))}
+        </View>
+      )}
 
       {status && <View className='status'>{status}</View>}
     </View>
