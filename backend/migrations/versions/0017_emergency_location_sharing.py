@@ -93,6 +93,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # 0016 cannot represent emergency-authority audit rows. Remove only those
+    # Stage 4F rows before restoring the non-null exact-grant-only schema.
+    op.execute(
+        "DELETE FROM family_access_audit_events "
+        "WHERE authority_type = 'EMERGENCY_SHARE'"
+    )
     with op.batch_alter_table("family_access_audit_events") as batch:
         batch.drop_constraint(
             "ck_family_access_audit_action",
