@@ -242,7 +242,7 @@ def _production_maintenance_waits_past_expiry() -> None:
     owner, member = _family_pair("production-expiry")
     settings = Settings(
         location_late_arrival_grace_seconds=3600,
-        location_visit_max_gap_seconds=60,
+        location_visit_max_gap_seconds=180,
         location_visit_min_duration_seconds=60,
         location_visit_min_points=2,
     )
@@ -303,6 +303,12 @@ def _production_maintenance_waits_past_expiry() -> None:
                 ),
             ]
         )
+        db.commit()
+
+    # Pre-create and commit the owner state so the race is about waiting on
+    # an existing FOR UPDATE row, not first-use row creation.
+    with SessionLocal() as db:
+        lock_location_derivation_state(db, owner)
         db.commit()
 
     worker_started = Event()
