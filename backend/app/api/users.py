@@ -35,6 +35,8 @@ def update_user(payload: UserUpdate, user_id: CurrentUser, db: DbSession) -> Use
         user.timezone = payload.timezone
     if payload.locale is not None:
         user.locale = payload.locale.strip()
+    if payload.elder_mode_enabled is not None:
+        user.elder_mode_enabled = payload.elder_mode_enabled
 
     db.commit()
     db.refresh(user)
