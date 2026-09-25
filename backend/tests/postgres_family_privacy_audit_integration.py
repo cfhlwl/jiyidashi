@@ -288,7 +288,10 @@ def _race_photo_revoke() -> None:
             except BaseException as exc:
                 errors.append(exc)
 
-        def revoker() -> None:
+        def revoker(
+            barrier: Barrier = barrier,
+            errors: list[BaseException] = errors,
+        ) -> None:
             try:
                 barrier.wait(timeout=15)
                 with SessionLocal() as db:
