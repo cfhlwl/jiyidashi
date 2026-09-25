@@ -1,4 +1,4 @@
-import { Button, Input, Text, View } from '@tarojs/components'
+import { Button, Input, Switch, Text, View } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 import {
   canEditApiBaseUrl,
@@ -14,8 +14,10 @@ import {
   registerAccount,
   resumeMemory,
   setApiBaseUrl,
+  updateElderMode,
   updateProfile,
 } from '../../services/api'
+import { elderClassName } from '../../services/elderMode'
 import './index.scss'
 
 export default function Page() {
@@ -82,6 +84,20 @@ export default function Page() {
     }
   }
 
+  const toggleElderMode = async (enabled: boolean) => {
+    if (!profile || loading) return
+    setLoading(true)
+    setStatus('')
+    try {
+      applyProfile(await updateElderMode(enabled))
+      setStatus(enabled ? '长辈模式已开启' : '长辈模式已关闭')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '长辈模式更新失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const saveProfile = async () => {
     if (!nickname.trim() || !timezone.trim()) {
       setStatus('昵称和时区不能为空')
@@ -124,7 +140,7 @@ export default function Page() {
 
   if (profile) {
     return (
-      <View className='page'>
+      <View className={elderClassName(profile.elder_mode_enabled)}>
         <View className='title'>我的</View>
         <View className='subtitle'>你的记忆由你控制。</View>
         <View className='card'>
@@ -134,6 +150,20 @@ export default function Page() {
           <Input className='field' type='text' placeholder='IANA 时区，例如 Asia/Shanghai' value={timezone} onInput={(e) => setTimezone(e.detail.value)} />
           <View className='muted'>语言：{profile.locale}</View>
           <Button className='primary-button' disabled={loading} onClick={saveProfile}>保存资料</Button>
+        </View>
+
+        <View className='card elder-setting-card'>
+          <View className='card-title'>长辈模式</View>
+          <View className='muted'>只调整你自己的文字大小、按钮尺寸和页面层级，不改变任何家庭、位置、记忆或隐私权限。</View>
+          <View className='elder-toggle-row'>
+            <Text>{profile.elder_mode_enabled ? '已开启' : '未开启'}</Text>
+            <Switch
+              checked={profile.elder_mode_enabled}
+              disabled={loading}
+              aria-label='长辈模式'
+              onChange={(event) => void toggleElderMode(event.detail.value)}
+            />
+          </View>
         </View>
 
         <View className='card'>
