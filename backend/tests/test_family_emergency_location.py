@@ -16,6 +16,10 @@ from app.family_models import (
     FamilyPermissionGrant,
 )
 from app.models import LocationPoint
+from app.services.family_emergency_location_service import (
+    FamilyEmergencyShareError,
+    get_emergency_shared_location,
+)
 from app.services.privacy_service import pause_recording
 
 
@@ -395,3 +399,31 @@ async def test_family_owner_role_does_not_bypass_exact_emergency_grantee(client)
     assert owner_attempt.status_code == 404
     assert owner_attempt.json()["detail"] == "EMERGENCY_SHARE_NOT_AVAILABLE"
     assert exact_grantee.status_code == 200
+
+
+
+@pytest.mark.asyncio
+async def test_emergency_share_exact_expiry_boundary_is_expired(client):
+    owner_headers, owner_id, member_headers, member_id = await _family_pair(
+        client, "emergency-boundary"
+    )
+    _fresh_location(owner_id)
+    share = await _create_share(client, owner_headers, member_id, 30)
+
+    with SessionLocal() as db:
+        row = db.get(FamilyEmergencyLocationShare, UUID(share["share_id"]))
+        assert row is not None
+        expires_at = row.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+
+    with SessionLocal() as db:
+        with pytest.raises(FamilyEmergencyShareError) as expired:
+            get_emergency_shared_location(
+                db,
+                share_id=UUID(share["share_id"]),
+                grantee_user_id=member_id,
+                now=expires_at,
+            )
+        assert expired.value.code == "EMERGENCY_SHARE_NOT_AVAILABLE"
+        assert expired.value.status_code == 404
