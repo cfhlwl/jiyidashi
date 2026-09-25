@@ -9,11 +9,13 @@ import {
   createPhotoMemory,
   createTextMemory,
   createVoiceMemory,
+  currentElderModeEnabled,
   isAuthenticated,
   markObjectLocationStale,
   putSignedMediaObject,
   rememberObjectLocation,
 } from '../../services/api'
+import { elderClassName } from '../../services/elderMode'
 import {
   createClientUploadId,
   detectImageContentType,
@@ -499,7 +501,7 @@ export default function Page() {
   const busy = loading || photoSubmitting || voiceSubmitting
 
   return (
-    <View className='page'>
+    <View className={elderClassName(currentElderModeEnabled())}>
       <View className='title'>记一下</View>
       <View className='subtitle'>主动写下、拍下或录下需要记住的内容；图片和语音都必须通过服务端 Evidence 门禁后才算真正记录。</View>
 
