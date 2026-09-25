@@ -272,7 +272,9 @@ async def test_emergency_location_wrong_recipient_expiry_pause_and_audit_truth(c
     with SessionLocal() as db:
         row = db.get(FamilyEmergencyLocationShare, UUID(share["share_id"]))
         assert row is not None
-        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        expired_at = datetime.now(UTC) - timedelta(seconds=1)
+        row.created_at = expired_at - timedelta(minutes=30)
+        row.expires_at = expired_at
         db.commit()
 
     expired = await client.get(
