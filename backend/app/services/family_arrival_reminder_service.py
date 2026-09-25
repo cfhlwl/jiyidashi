@@ -124,6 +124,7 @@ def create_arrival_reminder(
         db.rollback()
         raise FamilyArrivalReminderError("ARRIVAL_REMINDER_DESTINATION_INVALID", 404)
 
+    reference = _reference_now(now)
     prior = tuple(
         db.scalars(
             select(FamilyArrivalReminder)
@@ -203,6 +204,7 @@ def list_arrival_reminders(
             .with_for_update()
         )
     )
+    reference = _reference_now(now)
     reference = _reference_now(now)
     changed = False
     result: list[FamilyArrivalReminderView] = []
