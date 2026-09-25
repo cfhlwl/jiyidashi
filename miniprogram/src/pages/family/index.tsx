@@ -7,6 +7,7 @@ import {
   createFamily,
   createFamilyInvite,
   getFamily,
+  getFamilyAudit,
   getFamilyCurrentLocation,
   getFamilyMemories,
   getFamilyPermissions,
@@ -21,6 +22,8 @@ import {
 } from '../../services/api'
 import {
   assertCurrentFamilyMember,
+  familyAuditActionLabel,
+  familyAuditResultLabel,
   familyErrorMessage,
   familyMemberActions,
   FamilyPermissionMutationGate,
@@ -29,6 +32,7 @@ import {
   permissionLabel,
   replaceVisiblePermission,
   shortMemberId,
+  type FamilyAuditEvent,
   type FamilyCurrentLocation,
   type FamilyInvite,
   type FamilyMemory,
@@ -94,12 +98,14 @@ export default function Page() {
   const [memberBusy, setMemberBusy] = useState<Record<string, boolean>>({})
   const [permissionBusy, setPermissionBusy] = useState<Record<string, boolean>>({})
   const [memberReads, setMemberReads] = useState<MemberReads>({})
+  const [auditRead, setAuditRead] = useState<AsyncRead<FamilyAuditEvent[]>>({ state: 'idle' })
   const permissionGate = useRef(new FamilyPermissionMutationGate())
   const sensitiveReadEpoch = useRef(new FamilySensitiveReadEpoch())
 
   const clearFamilyTransientState = () => {
     setInvite(null)
     setMemberReads({})
+    setAuditRead({ state: 'idle' })
     setMemberBusy({})
     setPermissionBusy({})
   }
@@ -121,6 +127,7 @@ export default function Page() {
     // Sensitive family reads are disclosure snapshots, not tab state. Clear them on
     // every authoritative refresh so returning to this tab requires another explicit tap.
     setMemberReads({})
+    setAuditRead({ state: 'idle' })
     if (clearTransient) clearFamilyTransientState()
 
     try {
@@ -495,6 +502,41 @@ export default function Page() {
     }
   }
 
+  const readAudit = async () => {
+    if (pageState.phase !== 'family-ready' || pageState.family.current_user_role !== 'OWNER') return
+    setAuditRead({ state: 'loading' })
+    try {
+      const data = await getFamilyAudit()
+      setAuditRead({ state: 'ready', data })
+    } catch (error) {
+      setAuditRead({
+        state: 'error',
+        message: mappedError(error, 'audit', '家庭隐私访问记录加载失败'),
+      })
+    }
+  }
+
+  const renderAudit = () => {
+    if (auditRead.state === 'idle') return null
+    if (auditRead.state === 'loading') return <View className='muted read-state'>正在读取隐私访问记录…</View>
+    if (auditRead.state === 'error') return <View className='error read-state'>{auditRead.message}</View>
+    if (auditRead.data.length === 0) return <View className='muted read-state'>暂无访问记录</View>
+    return (
+      <View className='sensitive-result'>
+        {auditRead.data.map((event) => (
+          <View className='memory-row' key={event.event_id}>
+            <View>
+              成员 {shortMemberId(event.actor_user_id)} {familyAuditActionLabel(event.action)}
+            </View>
+            <View className='muted'>
+              {event.created_at} · {familyAuditResultLabel(event.result)}
+            </View>
+          </View>
+        ))}
+      </View>
+    )
+  }
+
   const renderPhotos = (
     resourceOwnerUserId: string,
     read: AsyncRead<FamilyPhoto[]> | undefined,
@@ -697,6 +739,21 @@ export default function Page() {
               </View>
             </View>
           )}
+        </View>
+      )}
+
+      {family.current_user_role === 'OWNER' && (
+        <View className='card'>
+          <View className='card-title'>隐私访问记录</View>
+          <Text className='muted'>仅在你主动打开时读取最近 30 天的家庭敏感访问记录。</Text>
+          <Button
+            className='secondary-button'
+            disabled={auditRead.state === 'loading'}
+            onClick={readAudit}
+          >
+            {auditRead.state === 'loading' ? '正在加载…' : '查看隐私访问记录'}
+          </Button>
+          {renderAudit()}
         </View>
       )}
 
