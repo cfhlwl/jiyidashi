@@ -176,6 +176,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_family_photos_integration.py
 
+      - name: PostgreSQL Arrival-Home Reminder race gate
+        # [S4-009] 真实 PostgreSQL 验证 one-shot arrival state machine：
+        # derive/cancel/remove/expiry、同 tuple 并发 supersede 与重复 derivation 幂等。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_family_arrival_reminder_integration.py
+
       - name: PostgreSQL Emergency Location Sharing race gate
         # [S4-008] 真实 PostgreSQL 验证 emergency authority 与 revoke/remove/privacy pause
         # 共用序列化边界，以及同 owner→grantee 并发创建最终仅一个 active share。
