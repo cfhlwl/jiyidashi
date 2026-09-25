@@ -47,8 +47,12 @@ test('profile mutation is self-only partial PATCH and session projection clears 
   )
   assert.match(api, /authSessionEpoch \+= 1[\s\S]*?resetElderProjection\(\)/)
   assert.match(api, /epoch !== authSessionEpoch/)
-  assert.match(api, /removeStorageSync\(ELDER_MODE_KEY\)/)
-  assert.match(api, /removeStorageSync\(ELDER_MODE_OWNER_KEY\)/)
+  assert.match(api, /elderProjectionOwner = null/)
+  assert.match(api, /elderProjectionEnabled = false/)
+  assert.match(
+    api,
+    /currentElderModeEnabled[\s\S]*?elderProjectionOwner === owner[\s\S]*?elderProjectionEnabled === true/,
+  )
 })
 
 test('Mini elder mode is profile-driven and Family role never enables it', () => {
@@ -79,4 +83,12 @@ test('elder shared CSS keeps minimum logical touch target and same palette token
   assert.match(css, /\.elder-mode[\s\S]*?button[\s\S]*?min-height: 96rpx/)
   assert.match(css, /\.elder-mode \.primary-button/)
   assert.doesNotMatch(css, /\.elder-mode[\s\S]*?#(?:ff0000|000000)/i)
+})
+
+
+test('Mini process bootstrap is normal until authoritative profile publishes elder state', () => {
+  const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+  assert.match(api, /let elderProjectionOwner: string \| null = null/)
+  assert.match(api, /let elderProjectionEnabled = false/)
+  assert.doesNotMatch(api, /getStorageSync<boolean>\([^)]*elder/i)
 })
