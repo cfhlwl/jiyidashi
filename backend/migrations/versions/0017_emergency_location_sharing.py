@@ -30,6 +30,10 @@ def upgrade() -> None:
             "resource_owner_user_id <> grantee_user_id",
             name="ck_family_emergency_location_shares_distinct_users",
         ),
+        sa.CheckConstraint(
+            "expires_at > created_at",
+            name="ck_family_emergency_location_shares_positive_window",
+        ),
         sa.ForeignKeyConstraint(
             ["family_id", "resource_owner_user_id"],
             ["family_memberships.family_id", "family_memberships.user_id"],
