@@ -451,6 +451,25 @@ def _rebuild(
         if key not in desired:
             db.delete(visit)
 
+    db.flush()
+    # [S4-009] Arrival Reminder consumes the trusted finalized Visit -> Place seam.
+    # Import locally to avoid coupling the core location module at import time.
+    from app.services.family_arrival_reminder_service import (
+        derive_arrival_for_finalized_visit,
+    )
+
+    finalized_visits = tuple(
+        db.scalars(
+            select(Visit).where(
+                Visit.user_id == user_id,
+                Visit.finalized_at.is_not(None),
+                Visit.arrived_at <= now,
+            )
+        )
+    )
+    for visit in finalized_visits:
+        derive_arrival_for_finalized_visit(db, visit=visit, now=now)
+
     state.finalized_through = safe_through
     _refresh_place_stats(db, user_id)
     retention_cutoff = now - timedelta(days=settings.location_raw_retention_days)
