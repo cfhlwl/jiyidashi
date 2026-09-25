@@ -367,7 +367,7 @@ class AppShell extends StatefulWidget {
     this.locationBridge,
     this.motionSamplingBridge,
     this.sync,
-    required this.onElderModeChanged,
+    this.onElderModeChanged,
     required this.onLogout,
   });
 
@@ -379,7 +379,7 @@ class AppShell extends StatefulWidget {
   final NativeLocationBridge? locationBridge;
   final NativeMotionSamplingBridge? motionSamplingBridge;
   final OfflineSyncCoordinator? sync;
-  final ValueChanged<bool> onElderModeChanged;
+  final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
 
   @override
@@ -502,7 +502,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       }
       final enabled = profile['elder_mode_enabled'] == true;
       setState(() => _elderModeEnabled = enabled);
-      widget.onElderModeChanged(enabled);
+      widget.onElderModeChanged?.call(enabled);
     } catch (_) {
       if (!mounted ||
           widget.api.sessionVersion != sessionVersion ||
@@ -684,7 +684,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         elderModeEnabled: _elderModeEnabled,
         onElderModeChanged: (enabled) {
           setState(() => _elderModeEnabled = enabled);
-          widget.onElderModeChanged(enabled);
+          widget.onElderModeChanged?.call(enabled);
         },
         onLogout: () => unawaited(_stopLocationAndLogout()),
         onAccountDeleteIntentConfirmed: _prepareLocalAccountDeletion,
