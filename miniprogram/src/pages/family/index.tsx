@@ -6,8 +6,10 @@ import {
   apiErrorCode,
   createFamily,
   createFamilyInvite,
+  createFamilyArrivalReminder,
   createFamilyEmergencyShare,
   getFamily,
+  getFamilyArrivalReminders,
   getFamilyAudit,
   getFamilyEmergencyLocation,
   getFamilyEmergencyShares,
@@ -19,13 +21,16 @@ import {
   getFamilyTodayFootprint,
   getProfile,
   isAuthenticated,
+  listPlaces,
   removeFamilyMember,
+  cancelFamilyArrivalReminder,
   revokeFamilyEmergencyShare,
   replaceFamilyPermissions,
   revokeFamilyInvite,
 } from '../../services/api'
 import {
   assertCurrentFamilyMember,
+  familyArrivalStatusLabel,
   familyAuditActionLabel,
   familyAuditResultLabel,
   familyErrorMessage,
@@ -36,6 +41,7 @@ import {
   permissionLabel,
   replaceVisiblePermission,
   shortMemberId,
+  type FamilyArrivalReminder,
   type FamilyAuditEvent,
   type FamilyCurrentLocation,
   type FamilyEmergencyLocationShare,
@@ -46,6 +52,7 @@ import {
   type FamilyResponse,
   type InteractiveFamilyPermissionCode,
 } from '../../services/family'
+import type { PlaceRead } from '../../services/placeDetail'
 import { toTodayFootprintRow, type TodayFootprintResponse } from '../../services/todayFootprint'
 import './index.scss'
 
@@ -104,6 +111,8 @@ export default function Page() {
   const [permissionBusy, setPermissionBusy] = useState<Record<string, boolean>>({})
   const [memberReads, setMemberReads] = useState<MemberReads>({})
   const [auditRead, setAuditRead] = useState<AsyncRead<FamilyAuditEvent[]>>({ state: 'idle' })
+  const [arrivalReminders, setArrivalReminders] = useState<FamilyArrivalReminder[]>([])
+  const [arrivalBusy, setArrivalBusy] = useState<Record<string, boolean>>({})
   const [emergencyShares, setEmergencyShares] = useState<FamilyEmergencyLocationShare[]>([])
   const [emergencyReads, setEmergencyReads] = useState<Record<string, AsyncRead<FamilyCurrentLocation>>>({})
   const [emergencyBusy, setEmergencyBusy] = useState<Record<string, boolean>>({})
@@ -114,6 +123,8 @@ export default function Page() {
     setInvite(null)
     setMemberReads({})
     setAuditRead({ state: 'idle' })
+    setArrivalReminders([])
+    setArrivalBusy({})
     setEmergencyShares([])
     setEmergencyReads({})
     setEmergencyBusy({})
@@ -149,8 +160,12 @@ export default function Page() {
       const profile = await getProfile()
       assertCurrentFamilyMember(family, profile.id)
       const permissions = await getFamilyPermissions()
-      const shares = await getFamilyEmergencyShares(profile.id)
+      const [shares, reminders] = await Promise.all([
+        getFamilyEmergencyShares(profile.id),
+        getFamilyArrivalReminders(profile.id),
+      ])
       setEmergencyShares(shares)
+      setArrivalReminders(reminders)
       setPageState({
         phase: 'family-ready',
         family,
@@ -513,6 +528,80 @@ export default function Page() {
           },
         },
       }))
+    }
+  }
+
+  const createArrivalReminder = async (granteeUserId: string) => {
+    if (arrivalBusy[granteeUserId] || pageState.phase !== 'family-ready') return
+    setArrivalBusy((current) => ({ ...current, [granteeUserId]: true }))
+    try {
+      const places = await listPlaces(50)
+      if (places.length === 0) {
+        setStatus('请先在地点中建立可用目的地')
+        return
+      }
+
+      let placeChoice: { tapIndex: number }
+      try {
+        placeChoice = await Taro.showActionSheet({
+          itemList: places.map((place: PlaceRead) => place.name),
+        })
+      } catch {
+        return
+      }
+      const place = places[placeChoice.tapIndex]
+      if (!place) return
+
+      let durationChoice: { tapIndex: number }
+      try {
+        durationChoice = await Taro.showActionSheet({
+          itemList: ['2 小时', '6 小时', '12 小时'],
+        })
+      } catch {
+        return
+      }
+      const validity = ([120, 360, 720] as const)[durationChoice.tapIndex]
+      if (!validity) return
+
+      const confirm = await Taro.showModal({
+        title: '确认设置到家提醒？',
+        content: [
+          `接收成员：${shortMemberId(granteeUserId)}`,
+          `目的地：${place.name}`,
+          `有效期：${validity / 60} 小时`,
+          '仅共享：等待到达 / 已到达 / 已取消 / 已过期状态',
+          '不会持续共享位置、路线或预计到达时间。',
+        ].join('\n'),
+        confirmText: '设置提醒',
+      })
+      if (!confirm.confirm) return
+
+      await createFamilyArrivalReminder(
+        granteeUserId,
+        place.id,
+        validity,
+        pageState.currentUserId,
+      )
+      setArrivalReminders(await getFamilyArrivalReminders(pageState.currentUserId))
+      setStatus('到家提醒已设置')
+    } catch (error) {
+      setStatus(mappedError(error, 'arrival-reminder', '到家提醒设置失败'))
+    } finally {
+      setArrivalBusy((current) => ({ ...current, [granteeUserId]: false }))
+    }
+  }
+
+  const cancelArrivalReminderById = async (reminderId: string) => {
+    if (arrivalBusy[reminderId] || pageState.phase !== 'family-ready') return
+    setArrivalBusy((current) => ({ ...current, [reminderId]: true }))
+    try {
+      await cancelFamilyArrivalReminder(reminderId)
+      setArrivalReminders(await getFamilyArrivalReminders(pageState.currentUserId))
+      setStatus('到家提醒已取消')
+    } catch (error) {
+      setStatus(mappedError(error, 'arrival-reminder', '取消到家提醒失败'))
+    } finally {
+      setArrivalBusy((current) => ({ ...current, [reminderId]: false }))
     }
   }
 
@@ -886,6 +975,42 @@ export default function Page() {
 
             {!actions.isSelf && (
               <View className='member-section'>
+                <View className='member-section-title'>到家提醒</View>
+                {arrivalReminders
+                  .filter((reminder) => (
+                    reminder.direction === 'OUTGOING'
+                    && reminder.grantee_user_id.toLowerCase() === member.user_id.toLowerCase()
+                  ))
+                  .map((reminder) => (
+                    <View className='sensitive-result' key={reminder.reminder_id}>
+                      <View>{reminder.destination_display_name} · {familyArrivalStatusLabel(reminder.status)}</View>
+                      <View className='muted'>有效至：{reminder.expires_at}</View>
+                      {reminder.arrived_at && (
+                        <View className='muted'>到达时间：{reminder.arrived_at}</View>
+                      )}
+                      {reminder.status === 'ACTIVE' && (
+                        <Button
+                          className='danger-button compact-button'
+                          disabled={Boolean(arrivalBusy[reminder.reminder_id])}
+                          onClick={() => cancelArrivalReminderById(reminder.reminder_id)}
+                        >
+                          取消提醒
+                        </Button>
+                      )}
+                    </View>
+                  ))}
+                <Button
+                  className='secondary-button'
+                  disabled={Boolean(arrivalBusy[member.user_id])}
+                  onClick={() => createArrivalReminder(member.user_id)}
+                >
+                  设置到家提醒
+                </Button>
+              </View>
+            )}
+
+            {!actions.isSelf && (
+              <View className='member-section'>
                 <View className='member-section-title'>紧急位置共享</View>
                 {emergencyShares
                   .filter((share) => (
@@ -998,6 +1123,26 @@ export default function Page() {
           </View>
         )
       })}
+
+      {arrivalReminders.filter((reminder) => reminder.direction === 'INCOMING').length > 0 && (
+        <View className='card'>
+          <View className='card-title'>收到的到家提醒</View>
+          {arrivalReminders
+            .filter((reminder) => reminder.direction === 'INCOMING')
+            .map((reminder) => (
+              <View className='member-section' key={reminder.reminder_id}>
+                <View>
+                  成员 {shortMemberId(reminder.resource_owner_user_id)} · {reminder.destination_display_name}
+                </View>
+                <View>{familyArrivalStatusLabel(reminder.status)}</View>
+                <View className='muted'>有效至：{reminder.expires_at}</View>
+                {reminder.arrived_at && (
+                  <View className='muted'>到达时间：{reminder.arrived_at}</View>
+                )}
+              </View>
+            ))}
+        </View>
+      )}
 
       {emergencyShares.filter((share) => share.direction === 'INCOMING').length > 0 && (
         <View className='card'>
