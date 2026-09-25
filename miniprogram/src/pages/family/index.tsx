@@ -114,7 +114,6 @@ export default function Page() {
     setInvite(null)
     setMemberReads({})
     setAuditRead({ state: 'idle' })
-    setEmergencyReads({})
     setEmergencyShares([])
     setEmergencyReads({})
     setEmergencyBusy({})
@@ -140,6 +139,7 @@ export default function Page() {
     // every authoritative refresh so returning to this tab requires another explicit tap.
     setMemberReads({})
     setAuditRead({ state: 'idle' })
+    setEmergencyReads({})
     if (clearTransient) clearFamilyTransientState()
 
     try {
@@ -518,9 +518,14 @@ export default function Page() {
 
   const createEmergencyShare = async (granteeUserId: string) => {
     if (emergencyBusy[granteeUserId]) return
-    const choice = await Taro.showActionSheet({
-      itemList: ['30 分钟', '60 分钟', '180 分钟'],
-    })
+    let choice: { tapIndex: number }
+    try {
+      choice = await Taro.showActionSheet({
+        itemList: ['30 分钟', '60 分钟', '180 分钟'],
+      })
+    } catch {
+      return
+    }
     const duration = ([30, 60, 180] as const)[choice.tapIndex]
     if (!duration) return
 
