@@ -433,9 +433,6 @@ function auditResult(value: unknown): FamilyAuditResult {
 
 export function parseFamilyAudit(value: unknown): FamilyAuditEvent[] {
   if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
-  if (expectedCurrentUserId !== undefined && !isUuid(expectedCurrentUserId)) {
-    return invalidFamilyResponse()
-  }
   const rows = value.map((item) => {
     const raw = asRecord(item)
     const authorityType = auditAuthorityType(raw.authority_type)
@@ -503,9 +500,15 @@ export function parseFamilyEmergencyShares(
   expectedCurrentUserId?: string,
 ): FamilyEmergencyLocationShare[] {
   if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
+  if (expectedCurrentUserId !== undefined && !isUuid(expectedCurrentUserId)) {
+    return invalidFamilyResponse()
+  }
   const rows = value.map((item) => {
     const raw = asRecord(item)
-    const direction = raw.direction
+    if (raw.direction !== 'OUTGOING' && raw.direction !== 'INCOMING') {
+      return invalidFamilyResponse()
+    }
+    const direction: FamilyEmergencyShareDirection = raw.direction
     if (direction !== 'OUTGOING' && direction !== 'INCOMING') {
       return invalidFamilyResponse()
     }
