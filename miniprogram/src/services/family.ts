@@ -92,6 +92,26 @@ export type FamilyPhotoDownload = {
   download: FamilyPhotoSignedTransfer
 }
 
+export type FamilyAuditResourceType = 'CURRENT_LOCATION' | 'TODAY_FOOTPRINT' | 'MEMORY' | 'PHOTO'
+export type FamilyAuditAction =
+  | 'READ_CURRENT_LOCATION'
+  | 'READ_TODAY_FOOTPRINT'
+  | 'READ_MEMORY'
+  | 'LIST_PHOTOS'
+  | 'DOWNLOAD_PHOTO'
+export type FamilyAuditResult = 'ALLOWED' | 'DENIED' | 'UNAVAILABLE'
+
+export type FamilyAuditEvent = {
+  event_id: string
+  actor_user_id: string
+  resource_owner_user_id: string
+  permission_code: FamilyPermissionCode
+  resource_type: FamilyAuditResourceType
+  action: FamilyAuditAction
+  result: FamilyAuditResult
+  created_at: string
+}
+
 export type FamilyPagePhase =
   | 'signed-out'
   | 'loading'
@@ -354,6 +374,86 @@ export function parseFamilyPhotos(value: unknown): FamilyPhoto[] {
   return photos
 }
 
+function exactFamilyPermissionCode(value: unknown): FamilyPermissionCode {
+  if (
+    value !== FAMILY_PERMISSION.VIEW_CURRENT_LOCATION
+    && value !== FAMILY_PERMISSION.VIEW_FOOTPRINT
+    && value !== FAMILY_PERMISSION.VIEW_MEMORY
+    && value !== FAMILY_PERMISSION.VIEW_PHOTOS
+  ) return invalidFamilyResponse()
+  return value
+}
+
+function auditResourceType(value: unknown): FamilyAuditResourceType {
+  if (value !== 'CURRENT_LOCATION' && value !== 'TODAY_FOOTPRINT' && value !== 'MEMORY' && value !== 'PHOTO') {
+    return invalidFamilyResponse()
+  }
+  return value
+}
+
+function auditAction(value: unknown): FamilyAuditAction {
+  if (
+    value !== 'READ_CURRENT_LOCATION'
+    && value !== 'READ_TODAY_FOOTPRINT'
+    && value !== 'READ_MEMORY'
+    && value !== 'LIST_PHOTOS'
+    && value !== 'DOWNLOAD_PHOTO'
+  ) return invalidFamilyResponse()
+  return value
+}
+
+function auditResult(value: unknown): FamilyAuditResult {
+  if (value !== 'ALLOWED' && value !== 'DENIED' && value !== 'UNAVAILABLE') {
+    return invalidFamilyResponse()
+  }
+  return value
+}
+
+export function parseFamilyAudit(value: unknown): FamilyAuditEvent[] {
+  if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
+  const rows = value.map((item) => {
+    const raw = asRecord(item)
+    return {
+      event_id: uuid(raw.event_id),
+      actor_user_id: uuid(raw.actor_user_id),
+      resource_owner_user_id: uuid(raw.resource_owner_user_id),
+      permission_code: exactFamilyPermissionCode(raw.permission_code),
+      resource_type: auditResourceType(raw.resource_type),
+      action: auditAction(raw.action),
+      result: auditResult(raw.result),
+      created_at: isoDateTime(raw.created_at),
+    }
+  })
+  const ids = rows.map((item) => item.event_id.toLowerCase())
+  if (new Set(ids).size !== ids.length) return invalidFamilyResponse()
+  for (let index = 1; index < rows.length; index += 1) {
+    const previous = rows[index - 1]
+    const current = rows[index]
+    if (
+      Date.parse(previous.created_at) < Date.parse(current.created_at)
+      || (
+        previous.created_at === current.created_at
+        && previous.event_id.toLowerCase() < current.event_id.toLowerCase()
+      )
+    ) return invalidFamilyResponse()
+  }
+  return rows
+}
+
+export function familyAuditActionLabel(action: FamilyAuditAction): string {
+  if (action === 'READ_CURRENT_LOCATION') return '查看了你的当前位置'
+  if (action === 'READ_TODAY_FOOTPRINT') return '查看了你的今日足迹'
+  if (action === 'READ_MEMORY') return '查看了你的个人记忆'
+  if (action === 'LIST_PHOTOS') return '查看了你的照片列表'
+  return '打开了你的一张照片'
+}
+
+export function familyAuditResultLabel(result: FamilyAuditResult): string {
+  if (result === 'ALLOWED') return '已允许'
+  if (result === 'DENIED') return '已拒绝'
+  return '数据不可用'
+}
+
 export function parseFamilyPhotoDownload(
   value: unknown,
   expectedMediaId: string,
@@ -490,6 +590,7 @@ export type FamilyErrorContext =
   | 'memory'
   | 'photos'
   | 'photo-download'
+  | 'audit'
 
 export function familyErrorMessage(code: string | null, context: FamilyErrorContext): string | null {
   if (!code) return null
@@ -532,6 +633,8 @@ export function familyErrorMessage(code: string | null, context: FamilyErrorCont
       return '不能通过家庭共享入口查看自己的数据'
     case 'CURRENT_LOCATION_UNAVAILABLE':
       return '当前位置暂不可用'
+    case 'OWNER_REQUIRED':
+      return context === 'audit' ? '无权查看家庭隐私访问记录' : '只有家庭 OWNER 可以执行此操作'
     default:
       return null
   }
