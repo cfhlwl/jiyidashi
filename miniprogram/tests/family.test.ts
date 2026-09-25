@@ -689,7 +689,7 @@ test('emergency share parser enforces direction duration uniqueness and metadata
     direction: 'INCOMING',
     latitude: 39.9,
     longitude: 116.4,
-  }])
+  }], MEMBER_ID)
   assert.equal(rows.length, 1)
   assert.deepEqual(Object.keys(rows[0]).sort(), [
     'created_at',
@@ -773,7 +773,7 @@ test('Family page emergency flow is explicit and never auto-fetches coordinates'
   const refreshEnd = page.indexOf('const create = async')
   const refreshBody = page.slice(refreshStart, refreshEnd)
 
-  assert.match(refreshBody, /getFamilyEmergencyShares\(\)/)
+  assert.match(refreshBody, /getFamilyEmergencyShares\(profile\.id\)/)
   assert.doesNotMatch(refreshBody, /getFamilyEmergencyLocation\(/)
   assert.match(page, /紧急共享我的位置/)
   assert.match(page, /showActionSheet[\s\S]*?30 分钟[\s\S]*?60 分钟[\s\S]*?180 分钟/)
@@ -794,7 +794,40 @@ test('Family page emergency flow is explicit and never auto-fetches coordinates'
 test('emergency share APIs use authenticated transport and fixed server duration inputs', () => {
   const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
   assert.match(api, /request<unknown>\('GET', '\/family\/emergency-location-shares'\)/)
+  assert.match(api, /parseFamilyEmergencyShares\(raw, currentUserId\)/)
   assert.match(api, /durationMinutes: 30 \| 60 \| 180/)
   assert.match(api, /duration_minutes: durationMinutes/)
   assert.match(api, /emergency-location-shares\/\$\{encodeURIComponent\(shareId\)\}\/location/)
+})
+
+
+test('emergency share parser rejects direction that does not match current user', () => {
+  const raw = {
+    share_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    resource_owner_user_id: OWNER_ID,
+    grantee_user_id: MEMBER_ID,
+    expires_at: '2026-09-25T11:30:00Z',
+    created_at: '2026-09-25T11:00:00Z',
+  }
+  assert.throws(() => parseFamilyEmergencyShares([
+    { ...raw, direction: 'OUTGOING' },
+  ], MEMBER_ID), /家庭数据异常/)
+  assert.throws(() => parseFamilyEmergencyShares([
+    { ...raw, direction: 'INCOMING' },
+  ], OWNER_ID), /家庭数据异常/)
+})
+
+test('emergency sharing uses safe stable error copy', () => {
+  assert.equal(
+    familyErrorMessage('EMERGENCY_SHARE_NOT_AVAILABLE', 'emergency-location'),
+    '紧急位置共享已不可用',
+  )
+  assert.equal(
+    familyErrorMessage('EMERGENCY_SHARE_TARGET_INVALID', 'emergency-share'),
+    '只能选择当前家庭中的其他成员',
+  )
+  assert.equal(
+    familyErrorMessage('EMERGENCY_SHARE_DURATION_UNSUPPORTED', 'emergency-share'),
+    '请选择 30、60 或 180 分钟',
+  )
 })
