@@ -26,8 +26,10 @@ import {
   type TodayFootprintResponse,
 } from './todayFootprint'
 import {
+  parseEmergencyFamilyCurrentLocation,
   parseFamilyAudit,
   parseFamilyCurrentLocation,
+  parseFamilyEmergencyShares,
   parseFamilyInvite,
   parseFamilyMemories,
   parseFamilyPermissionGrant,
@@ -37,6 +39,7 @@ import {
   parseFamilyResponse,
   parseFamilyTodayFootprint,
   type FamilyAuditEvent,
+  type FamilyEmergencyLocationShare,
   type FamilyCurrentLocation,
   type FamilyMemory,
   type FamilyInvite,
@@ -313,6 +316,44 @@ export async function getFamilyAudit(): Promise<FamilyAuditEvent[]> {
   // [S4-015] Audit history is OWNER-only and explicit; Family tab refresh never calls this.
   const raw = await request<unknown>('GET', '/family/audit?limit=50')
   return parseFamilyAudit(raw)
+}
+
+export async function getFamilyEmergencyShares(): Promise<FamilyEmergencyLocationShare[]> {
+  const raw = await request<unknown>('GET', '/family/emergency-location-shares')
+  return parseFamilyEmergencyShares(raw)
+}
+
+export async function createFamilyEmergencyShare(
+  granteeUserId: string,
+  durationMinutes: 30 | 60 | 180,
+): Promise<FamilyEmergencyLocationShare> {
+  const raw = await request<unknown>('POST', '/family/emergency-location-shares', {
+    grantee_user_id: granteeUserId,
+    duration_minutes: durationMinutes,
+  })
+  const rows = parseFamilyEmergencyShares([raw])
+  if (rows.length !== 1 || rows[0].direction !== 'OUTGOING') {
+    throw new Error('家庭数据异常')
+  }
+  return rows[0]
+}
+
+export function revokeFamilyEmergencyShare(shareId: string): Promise<void> {
+  return request(
+    'POST',
+    `/family/emergency-location-shares/${encodeURIComponent(shareId)}/revoke`,
+  )
+}
+
+export async function getFamilyEmergencyLocation(
+  shareId: string,
+  resourceOwnerUserId: string,
+): Promise<FamilyCurrentLocation> {
+  const raw = await request<unknown>(
+    'GET',
+    `/family/emergency-location-shares/${encodeURIComponent(shareId)}/location`,
+  )
+  return parseEmergencyFamilyCurrentLocation(raw, resourceOwnerUserId)
 }
 
 export async function getFamilyCurrentLocation(
