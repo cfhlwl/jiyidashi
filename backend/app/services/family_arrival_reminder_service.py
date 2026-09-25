@@ -306,26 +306,52 @@ def derive_arrival_for_finalized_visit(
     ):
         return 0
 
-    reminders = tuple(
+    reminder_ids = tuple(
         db.scalars(
-            select(FamilyArrivalReminder)
+            select(FamilyArrivalReminder.id)
             .where(
                 FamilyArrivalReminder.resource_owner_user_id == visit.user_id,
                 FamilyArrivalReminder.destination_place_id == visit.place_id,
                 FamilyArrivalReminder.status == FamilyArrivalReminderStatus.ACTIVE.value,
             )
             .order_by(FamilyArrivalReminder.id.asc())
-            .with_for_update()
         )
     )
     transitioned = 0
-    for reminder in reminders:
+    for reminder_id in reminder_ids:
+        probe = db.scalar(
+            select(FamilyArrivalReminder).where(
+                FamilyArrivalReminder.id == reminder_id
+            )
+        )
+        if probe is None:
+            continue
+        locked = _lock_membership_pair(
+            db,
+            first_user_id=probe.resource_owner_user_id,
+            second_user_id=probe.grantee_user_id,
+        )
+        if (
+            locked.get(probe.resource_owner_user_id) != probe.family_id
+            or locked.get(probe.grantee_user_id) != probe.family_id
+        ):
+            continue
+        reminder = db.scalar(
+            select(FamilyArrivalReminder)
+            .where(
+                FamilyArrivalReminder.id == reminder_id,
+                FamilyArrivalReminder.resource_owner_user_id == visit.user_id,
+                FamilyArrivalReminder.destination_place_id == visit.place_id,
+            )
+            .with_for_update()
+        )
+        if reminder is None:
+            continue
         _expire_locked(reminder, now=reference)
         if reminder.status != FamilyArrivalReminderStatus.ACTIVE.value:
             continue
         if arrived_at < ensure_utc(reminder.created_at):
             continue
-        # Re-sample in production immediately before the one-way terminal transition.
         transition_reference = _reference_now(now)
         _expire_locked(reminder, now=transition_reference)
         if reminder.status != FamilyArrivalReminderStatus.ACTIVE.value:
