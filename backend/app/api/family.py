@@ -12,6 +12,10 @@ from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.family_models import FamilyPermissionCode
 from app.schemas import SignedTransfer, TodayFootprintResponse
+from app.services.family_audit_service import (
+    FamilyAuditError,
+    list_family_access_audit,
+)
 from app.services.family_sensitive_read_service import (
     FamilySensitiveReadError,
     get_family_current_location,
@@ -106,6 +110,17 @@ class FamilyPhotoResponse(BaseModel):
 class FamilyPhotoDownloadResponse(BaseModel):
     media_id: UUID
     download: SignedTransfer
+
+
+class FamilyAuditResponse(BaseModel):
+    event_id: UUID
+    actor_user_id: UUID
+    resource_owner_user_id: UUID
+    permission_code: FamilyPermissionCode
+    resource_type: str
+    action: str
+    result: str
+    created_at: datetime
 
 
 def _raise(exc: FamilyServiceError) -> None:
@@ -363,3 +378,29 @@ def family_member_photo_download(
             expires_at=transfer.expires_at,
         ),
     )
+
+
+
+@router.get("/audit", response_model=list[FamilyAuditResponse])
+def family_access_audit(
+    user_id: CurrentUser,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=50)] = 50,
+) -> list[FamilyAuditResponse]:
+    try:
+        rows = list_family_access_audit(db, actor_user_id=user_id, limit=limit)
+    except FamilyAuditError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return [
+        FamilyAuditResponse(
+            event_id=row.event_id,
+            actor_user_id=row.actor_user_id,
+            resource_owner_user_id=row.resource_owner_user_id,
+            permission_code=FamilyPermissionCode(row.permission_code),
+            resource_type=row.resource_type,
+            action=row.action,
+            result=row.result,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]

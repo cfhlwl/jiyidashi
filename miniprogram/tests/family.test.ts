@@ -10,6 +10,7 @@ import {
   FamilyPermissionMutationGate,
   FamilySensitiveReadEpoch,
   INTERACTIVE_FAMILY_PERMISSIONS,
+  parseFamilyAudit,
   parseFamilyCurrentLocation,
   parseFamilyInvite,
   parseFamilyMemories,
@@ -523,5 +524,151 @@ test('Family permission, Memory and Photo APIs use the shared authenticated tran
   assert.match(
     api,
     /'POST',\s*`\/family\/members\/\$\{encodeURIComponent\(resourceOwnerUserId\)\}\/photos\/\$\{encodeURIComponent\(mediaId\)\}\/download`/,
+  )
+})
+
+
+test('family audit parser accepts only bounded known enum projection and stable order', () => {
+  const rows = parseFamilyAudit([
+    {
+      event_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      actor_user_id: MEMBER_ID,
+      resource_owner_user_id: OWNER_ID,
+      permission_code: 'VIEW_PHOTOS',
+      resource_type: 'PHOTO',
+      action: 'DOWNLOAD_PHOTO',
+      result: 'ALLOWED',
+      created_at: '2026-09-25T14:20:00Z',
+      latitude: 39.9,
+      signed_url: 'https://must-not-surface.invalid/private',
+    },
+    {
+      event_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      actor_user_id: MEMBER_ID,
+      resource_owner_user_id: OWNER_ID,
+      permission_code: 'VIEW_CURRENT_LOCATION',
+      resource_type: 'CURRENT_LOCATION',
+      action: 'READ_CURRENT_LOCATION',
+      result: 'UNAVAILABLE',
+      created_at: '2026-09-25T14:05:00Z',
+    },
+  ])
+  assert.equal(rows.length, 2)
+  assert.deepEqual(Object.keys(rows[0]).sort(), [
+    'action',
+    'actor_user_id',
+    'created_at',
+    'event_id',
+    'permission_code',
+    'resource_owner_user_id',
+    'resource_type',
+    'result',
+  ])
+  assert.equal('latitude' in rows[0], false)
+  assert.equal('signed_url' in rows[0], false)
+})
+
+test('family audit parser rejects unknown enums, duplicate ids, malformed UUIDs and unstable order', () => {
+  const base = {
+    event_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    actor_user_id: MEMBER_ID,
+    resource_owner_user_id: OWNER_ID,
+    permission_code: 'VIEW_MEMORY',
+    resource_type: 'MEMORY',
+    action: 'READ_MEMORY',
+    result: 'ALLOWED',
+    created_at: '2026-09-25T14:20:00Z',
+  }
+  for (const patch of [
+    { permission_code: 'VIEW_FUTURE' },
+    { resource_type: 'SECRET' },
+    { action: 'EXPORT_ALL' },
+    { result: 'SUCCESS' },
+    { actor_user_id: 'bad' },
+  ]) {
+    assert.throws(() => parseFamilyAudit([{ ...base, ...patch }]), /家庭数据异常/)
+  }
+  assert.throws(() => parseFamilyAudit([base, base]), /家庭数据异常/)
+  assert.throws(() => parseFamilyAudit([
+    { ...base, event_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', created_at: '2026-09-25T14:00:00Z' },
+    { ...base, event_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', created_at: '2026-09-25T14:30:00Z' },
+  ]), /家庭数据异常/)
+  assert.throws(() => parseFamilyAudit(Array.from({ length: 51 }, (_, index) => ({
+    ...base,
+    event_id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+  }))), /家庭数据异常/)
+})
+
+test('Family page exposes OWNER-only explicit audit read and never fetches audit during refresh', () => {
+  const page = readFileSync(resolve(process.cwd(), 'src/pages/family/index.tsx'), 'utf8')
+  const refreshStart = page.indexOf('const refresh = async')
+  const refreshEnd = page.indexOf('const create = async')
+  const refreshBody = page.slice(refreshStart, refreshEnd)
+  assert.doesNotMatch(refreshBody, /getFamilyAudit/)
+  assert.match(page, /family\.current_user_role === 'OWNER'[\s\S]*?隐私访问记录/)
+  assert.match(page, /const readAudit = async[\s\S]*?getFamilyAudit\(\)/)
+  assert.match(page, /暂无访问记录/)
+  assert.match(page, /成员 \{shortMemberId\(event\.actor_user_id\)\}[\s\S]*?数据所有者 \{shortMemberId\(event\.resource_owner_user_id\)\}/)
+  assert.doesNotMatch(page, /event\.latitude|event\.longitude|event\.content|event\.url|event\.object_key/)
+})
+
+test('Family audit API uses authenticated transport and bounded server query', () => {
+  const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+  assert.match(api, /request<unknown>\('GET', '\/family\/audit\?limit=50'\)/)
+})
+
+
+test('Family audit stale success cannot repopulate audit state after refresh invalidation', async () => {
+  const epoch = new FamilySensitiveReadEpoch()
+  const request = deferred<Array<{ event_id: string }>>()
+  let auditState: Record<string, unknown> = {}
+
+  const captured = epoch.capture()
+  const completion = request.promise.then((data) => {
+    if (!epoch.isCurrent(captured)) return
+    auditState = { audit: { state: 'ready', data } }
+  })
+
+  epoch.invalidate()
+  auditState = {}
+  request.resolve([{ event_id: OWNER_ID }])
+  await completion
+
+  assert.deepEqual(auditState, {})
+})
+
+test('Family audit stale error cannot repopulate audit error after refresh invalidation', async () => {
+  const epoch = new FamilySensitiveReadEpoch()
+  const request = deferred<never>()
+  let auditState: Record<string, unknown> = {}
+
+  const captured = epoch.capture()
+  const completion = request.promise.catch((error) => {
+    if (!epoch.isCurrent(captured)) return
+    auditState = { audit: { state: 'error', message: String(error) } }
+  })
+
+  epoch.invalidate()
+  auditState = {}
+  request.reject(new Error('stale audit failure'))
+  await completion
+
+  assert.deepEqual(auditState, {})
+})
+
+test('Family audit page read reuses sensitive read epoch for success and error gating', () => {
+  const page = readFileSync(resolve(process.cwd(), 'src/pages/family/index.tsx'), 'utf8')
+  const readAuditStart = page.indexOf('const readAudit = async')
+  const renderAuditStart = page.indexOf('const renderAudit =')
+  const readAuditBody = page.slice(readAuditStart, renderAuditStart)
+
+  assert.match(readAuditBody, /const readEpoch = sensitiveReadEpoch\.current\.capture\(\)/)
+  assert.match(
+    readAuditBody,
+    /const data = await getFamilyAudit\(\)[\s\S]*?if \(!sensitiveReadEpoch\.current\.isCurrent\(readEpoch\)\) return[\s\S]*?setAuditRead\(\{ state: 'ready', data \}\)/,
+  )
+  assert.match(
+    readAuditBody,
+    /catch \(error\)[\s\S]*?if \(!sensitiveReadEpoch\.current\.isCurrent\(readEpoch\)\) return[\s\S]*?setAuditRead\(\{/,
   )
 })

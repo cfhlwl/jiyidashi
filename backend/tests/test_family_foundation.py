@@ -382,7 +382,7 @@ def test_cross_family_mutation_fails_closed():
 
 def test_family_router_exposes_only_reviewed_stage4_routes():
     # Inspect the family router itself: unrelated tests may temporarily alter global
-    # FastAPI app routes. #107 Memory and #108 Photos are the reviewed read surfaces.
+    # FastAPI app routes. #107 Memory, #108 Photos and #111 Privacy Audit are reviewed.
     family_paths = {
         route.path
         for route in family_router.routes
@@ -390,6 +390,7 @@ def test_family_router_exposes_only_reviewed_stage4_routes():
     }
     assert family_paths == {
         "/family",
+        "/family/audit",
         "/family/invites",
         "/family/invites/accept",
         "/family/invites/{invite_id}",

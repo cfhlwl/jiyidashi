@@ -26,6 +26,7 @@ import {
   type TodayFootprintResponse,
 } from './todayFootprint'
 import {
+  parseFamilyAudit,
   parseFamilyCurrentLocation,
   parseFamilyInvite,
   parseFamilyMemories,
@@ -35,6 +36,7 @@ import {
   parseFamilyPhotos,
   parseFamilyResponse,
   parseFamilyTodayFootprint,
+  type FamilyAuditEvent,
   type FamilyCurrentLocation,
   type FamilyMemory,
   type FamilyInvite,
@@ -305,6 +307,12 @@ export async function replaceFamilyPermissions(
     { permissions: [...permissions] },
   )
   return parseFamilyPermissionGrant(raw)
+}
+
+export async function getFamilyAudit(): Promise<FamilyAuditEvent[]> {
+  // [S4-015] Audit history is OWNER-only and explicit; Family tab refresh never calls this.
+  const raw = await request<unknown>('GET', '/family/audit?limit=50')
+  return parseFamilyAudit(raw)
 }
 
 export async function getFamilyCurrentLocation(
