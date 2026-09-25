@@ -197,12 +197,8 @@ class FamilyPermissionGrant(Base):
     family_id: Mapped[UUID] = mapped_column()
     resource_owner_user_id: Mapped[UUID] = mapped_column()
     grantee_user_id: Mapped[UUID] = mapped_column()
-    authority_type: Mapped[str] = mapped_column(
-        String(24), default=FamilyAuditAuthorityType.EXACT_GRANT.value
-    )
-    permission_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    permission_code: Mapped[str] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
 
 
 class FamilyEmergencyLocationShare(Base):
@@ -293,7 +289,10 @@ class FamilyAccessAuditEvent(Base):
     resource_owner_user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE")
     )
-    permission_code: Mapped[str] = mapped_column(String(40))
+    authority_type: Mapped[str] = mapped_column(
+        String(24), default=FamilyAuditAuthorityType.EXACT_GRANT.value
+    )
+    permission_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     resource_type: Mapped[str] = mapped_column(String(32))
     action: Mapped[str] = mapped_column(String(40))
     result: Mapped[str] = mapped_column(String(16))
