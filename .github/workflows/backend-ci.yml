@@ -77,6 +77,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: alembic upgrade head
 
+      - name: PostgreSQL Emergency audit migration backfill
+        # [S4-008] 从真实 0016 schema 写入 #112 风格 legacy audit，
+        # 再升级 0017，验证 authority_type 自动回填 EXACT_GRANT 且旧记录可读。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_family_emergency_migration_integration.py
+
       - name: PostgreSQL pgvector foundation
         # [人工注释][S3-008] fresh upgrade 已在上一步启用 extension；这里再验证 SQLAlchemy seam、
         # downgrade 不删除共享 extension、re-upgrade 幂等，以及既有用户 schema/data 不被改写。
@@ -166,6 +175,15 @@ jobs:
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_family_photos_integration.py
+
+      - name: PostgreSQL Emergency Location Sharing race gate
+        # [S4-008] 真实 PostgreSQL 验证 emergency authority 与 revoke/remove/privacy pause
+        # 共用序列化边界，以及同 owner→grantee 并发创建最终仅一个 active share。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_family_emergency_location_integration.py
 
       - name: PostgreSQL Family Privacy Audit race gate
         # [S4-015] 真实 PostgreSQL 锁死 sensitive read/sign 与 revoke/remove 的

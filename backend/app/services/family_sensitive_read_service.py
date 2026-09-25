@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.family_models import (
     FamilyAccessAuditEvent,
     FamilyAuditAction,
+    FamilyAuditAuthorityType,
     FamilyAuditResourceType,
     FamilyAuditResult,
     FamilyMembership,
@@ -85,6 +86,7 @@ def _record_family_access(
             family_id=family_id,
             actor_user_id=actor_user_id,
             resource_owner_user_id=resource_owner_user_id,
+            authority_type=FamilyAuditAuthorityType.EXACT_GRANT.value,
             permission_code=permission_code.value,
             resource_type=resource_type.value,
             action=action.value,

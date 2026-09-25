@@ -30,7 +30,8 @@ class FamilyAuditView:
     event_id: UUID
     actor_user_id: UUID
     resource_owner_user_id: UUID
-    permission_code: str
+    authority_type: str
+    permission_code: str | None
     resource_type: str
     action: str
     result: str
@@ -65,6 +66,7 @@ def list_family_access_audit(
             FamilyAccessAuditEvent.id,
             FamilyAccessAuditEvent.actor_user_id,
             FamilyAccessAuditEvent.resource_owner_user_id,
+            FamilyAccessAuditEvent.authority_type,
             FamilyAccessAuditEvent.permission_code,
             FamilyAccessAuditEvent.resource_type,
             FamilyAccessAuditEvent.action,
@@ -86,6 +88,7 @@ def list_family_access_audit(
             event_id=row.id,
             actor_user_id=row.actor_user_id,
             resource_owner_user_id=row.resource_owner_user_id,
+            authority_type=row.authority_type,
             permission_code=row.permission_code,
             resource_type=row.resource_type,
             action=row.action,

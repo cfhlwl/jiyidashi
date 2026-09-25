@@ -130,6 +130,7 @@ async def test_family_audit_tracks_allowed_denied_unavailable_without_payload_le
             "event_id",
             "actor_user_id",
             "resource_owner_user_id",
+            "authority_type",
             "permission_code",
             "resource_type",
             "action",
@@ -138,6 +139,7 @@ async def test_family_audit_tracks_allowed_denied_unavailable_without_payload_le
         }
         for row in rows
     )
+    assert all(row["authority_type"] == "EXACT_GRANT" for row in rows)
     assert all(row["actor_user_id"] == str(member_id) for row in rows)
     assert all(row["resource_owner_user_id"] == str(owner_id) for row in rows)
 

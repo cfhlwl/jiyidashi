@@ -12,6 +12,7 @@ import {
   INTERACTIVE_FAMILY_PERMISSIONS,
   parseFamilyAudit,
   parseFamilyCurrentLocation,
+  parseFamilyEmergencyShares,
   parseFamilyInvite,
   parseFamilyMemories,
   parseFamilyPermissions,
@@ -534,6 +535,7 @@ test('family audit parser accepts only bounded known enum projection and stable 
       event_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       actor_user_id: MEMBER_ID,
       resource_owner_user_id: OWNER_ID,
+      authority_type: 'EXACT_GRANT',
       permission_code: 'VIEW_PHOTOS',
       resource_type: 'PHOTO',
       action: 'DOWNLOAD_PHOTO',
@@ -546,6 +548,7 @@ test('family audit parser accepts only bounded known enum projection and stable 
       event_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       actor_user_id: MEMBER_ID,
       resource_owner_user_id: OWNER_ID,
+      authority_type: 'EXACT_GRANT',
       permission_code: 'VIEW_CURRENT_LOCATION',
       resource_type: 'CURRENT_LOCATION',
       action: 'READ_CURRENT_LOCATION',
@@ -557,6 +560,7 @@ test('family audit parser accepts only bounded known enum projection and stable 
   assert.deepEqual(Object.keys(rows[0]).sort(), [
     'action',
     'actor_user_id',
+    'authority_type',
     'created_at',
     'event_id',
     'permission_code',
@@ -573,6 +577,7 @@ test('family audit parser rejects unknown enums, duplicate ids, malformed UUIDs 
     event_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     actor_user_id: MEMBER_ID,
     resource_owner_user_id: OWNER_ID,
+    authority_type: 'EXACT_GRANT',
     permission_code: 'VIEW_MEMORY',
     resource_type: 'MEMORY',
     action: 'READ_MEMORY',
@@ -670,5 +675,159 @@ test('Family audit page read reuses sensitive read epoch for success and error g
   assert.match(
     readAuditBody,
     /catch \(error\)[\s\S]*?if \(!sensitiveReadEpoch\.current\.isCurrent\(readEpoch\)\) return[\s\S]*?setAuditRead\(\{/,
+  )
+})
+
+
+test('emergency share parser enforces direction duration uniqueness and metadata-only projection', () => {
+  const rows = parseFamilyEmergencyShares([{
+    share_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    resource_owner_user_id: OWNER_ID,
+    grantee_user_id: MEMBER_ID,
+    expires_at: '2026-09-25T11:30:00Z',
+    created_at: '2026-09-25T11:00:00Z',
+    direction: 'INCOMING',
+    latitude: 39.9,
+    longitude: 116.4,
+  }], MEMBER_ID)
+  assert.equal(rows.length, 1)
+  assert.deepEqual(Object.keys(rows[0]).sort(), [
+    'created_at',
+    'direction',
+    'expires_at',
+    'grantee_user_id',
+    'resource_owner_user_id',
+    'share_id',
+  ])
+  assert.equal((rows[0] as Record<string, unknown>).latitude, undefined)
+
+  assert.throws(() => parseFamilyEmergencyShares([{
+    ...rows[0],
+    direction: 'BROADCAST',
+  }]), /家庭数据异常/)
+  assert.throws(() => parseFamilyEmergencyShares([{
+    ...rows[0],
+    expires_at: '2026-09-25T11:31:00Z',
+  }]), /家庭数据异常/)
+  assert.throws(() => parseFamilyEmergencyShares([rows[0], rows[0]]), /家庭数据异常/)
+  assert.throws(() => parseFamilyEmergencyShares([{
+    ...rows[0],
+    grantee_user_id: OWNER_ID,
+  }]), /家庭数据异常/)
+})
+
+test('audit parser distinguishes exact grant from emergency authority truthfully', () => {
+  const emergency = parseFamilyAudit([{
+    event_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    actor_user_id: MEMBER_ID,
+    resource_owner_user_id: OWNER_ID,
+    authority_type: 'EMERGENCY_SHARE',
+    permission_code: null,
+    resource_type: 'CURRENT_LOCATION',
+    action: 'READ_EMERGENCY_LOCATION',
+    result: 'ALLOWED',
+    created_at: '2026-09-25T11:05:00Z',
+  }])
+  assert.equal(emergency[0].authority_type, 'EMERGENCY_SHARE')
+  assert.equal(emergency[0].permission_code, null)
+
+  assert.throws(() => parseFamilyAudit([{
+    ...emergency[0],
+    permission_code: 'VIEW_CURRENT_LOCATION',
+  }]), /家庭数据异常/)
+  assert.throws(() => parseFamilyAudit([{
+    ...emergency[0],
+    authority_type: 'EXACT_GRANT',
+    permission_code: null,
+  }]), /家庭数据异常/)
+})
+
+test('emergency location stale success and error are discarded after invalidation', async () => {
+  for (const mode of ['success', 'error'] as const) {
+    const epoch = new FamilySensitiveReadEpoch()
+    const request = deferred<{ latitude: number }>()
+    let state: Record<string, unknown> = {}
+    const captured = epoch.capture()
+    const completion = mode === 'success'
+      ? request.promise.then((data) => {
+        if (!epoch.isCurrent(captured)) return
+        state = { emergency: { state: 'ready', data } }
+      })
+      : request.promise.catch((error) => {
+        if (!epoch.isCurrent(captured)) return
+        state = { emergency: { state: 'error', message: String(error) } }
+      })
+
+    epoch.invalidate()
+    state = {}
+    if (mode === 'success') request.resolve({ latitude: 39.9 })
+    else request.reject(new Error('stale emergency failure'))
+    await completion
+    assert.deepEqual(state, {})
+  }
+})
+
+test('Family page emergency flow is explicit and never auto-fetches coordinates', () => {
+  const page = readFileSync(resolve(process.cwd(), 'src/pages/family/index.tsx'), 'utf8')
+  const refreshStart = page.indexOf('const refresh = async')
+  const refreshEnd = page.indexOf('const create = async')
+  const refreshBody = page.slice(refreshStart, refreshEnd)
+
+  assert.match(refreshBody, /getFamilyEmergencyShares\(profile\.id\)/)
+  assert.doesNotMatch(refreshBody, /getFamilyEmergencyLocation\(/)
+  assert.match(page, /紧急共享我的位置/)
+  assert.match(page, /showActionSheet[\s\S]*?30 分钟[\s\S]*?60 分钟[\s\S]*?180 分钟/)
+  assert.match(page, /确认紧急共享位置/)
+  assert.match(page, /仅共享：当前位置信息/)
+  assert.match(page, /共享后可随时停止/)
+  assert.match(page, /查看紧急位置/)
+  assert.match(
+    page,
+    /const readEmergencyLocation = async[\s\S]*?capture\(\)[\s\S]*?getFamilyEmergencyLocation[\s\S]*?isCurrent\(readEpoch\)[\s\S]*?catch \(error\)[\s\S]*?isCurrent\(readEpoch\)/,
+  )
+  assert.match(
+    page,
+    /revokeFamilyEmergencyShare[\s\S]*?sensitiveReadEpoch\.current\.invalidate\(\)[\s\S]*?setEmergencyReads\(\{\}\)/,
+  )
+})
+
+test('emergency share APIs use authenticated transport and fixed server duration inputs', () => {
+  const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+  assert.match(api, /request<unknown>\('GET', '\/family\/emergency-location-shares'\)/)
+  assert.match(api, /parseFamilyEmergencyShares\(raw, currentUserId\)/)
+  assert.match(api, /durationMinutes: 30 \| 60 \| 180/)
+  assert.match(api, /duration_minutes: durationMinutes/)
+  assert.match(api, /emergency-location-shares\/\$\{encodeURIComponent\(shareId\)\}\/location/)
+})
+
+
+test('emergency share parser rejects direction that does not match current user', () => {
+  const raw = {
+    share_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    resource_owner_user_id: OWNER_ID,
+    grantee_user_id: MEMBER_ID,
+    expires_at: '2026-09-25T11:30:00Z',
+    created_at: '2026-09-25T11:00:00Z',
+  }
+  assert.throws(() => parseFamilyEmergencyShares([
+    { ...raw, direction: 'OUTGOING' },
+  ], MEMBER_ID), /家庭数据异常/)
+  assert.throws(() => parseFamilyEmergencyShares([
+    { ...raw, direction: 'INCOMING' },
+  ], OWNER_ID), /家庭数据异常/)
+})
+
+test('emergency sharing uses safe stable error copy', () => {
+  assert.equal(
+    familyErrorMessage('EMERGENCY_SHARE_NOT_AVAILABLE', 'emergency-location'),
+    '紧急位置共享已不可用',
+  )
+  assert.equal(
+    familyErrorMessage('EMERGENCY_SHARE_TARGET_INVALID', 'emergency-share'),
+    '只能选择当前家庭中的其他成员',
+  )
+  assert.equal(
+    familyErrorMessage('EMERGENCY_SHARE_DURATION_UNSUPPORTED', 'emergency-share'),
+    '请选择 30、60 或 180 分钟',
   )
 })

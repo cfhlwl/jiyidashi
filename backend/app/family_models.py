@@ -45,12 +45,18 @@ class FamilyAuditAction(StrEnum):
     READ_MEMORY = "READ_MEMORY"
     LIST_PHOTOS = "LIST_PHOTOS"
     DOWNLOAD_PHOTO = "DOWNLOAD_PHOTO"
+    READ_EMERGENCY_LOCATION = "READ_EMERGENCY_LOCATION"
 
 
 class FamilyAuditResult(StrEnum):
     ALLOWED = "ALLOWED"
     DENIED = "DENIED"
     UNAVAILABLE = "UNAVAILABLE"
+
+
+class FamilyAuditAuthorityType(StrEnum):
+    EXACT_GRANT = "EXACT_GRANT"
+    EMERGENCY_SHARE = "EMERGENCY_SHARE"
 
 
 SUPPORTED_FAMILY_PERMISSION_CODES = frozenset(item.value for item in FamilyPermissionCode)
@@ -195,14 +201,70 @@ class FamilyPermissionGrant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class FamilyEmergencyLocationShare(Base):
+    __tablename__ = "family_emergency_location_shares"
+    __table_args__ = (
+        CheckConstraint(
+            "resource_owner_user_id <> grantee_user_id",
+            name="ck_family_emergency_location_shares_distinct_users",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_family_emergency_location_shares_positive_window",
+        ),
+        ForeignKeyConstraint(
+            ["family_id", "resource_owner_user_id"],
+            ["family_memberships.family_id", "family_memberships.user_id"],
+            name="fk_family_emergency_share_owner_membership",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["family_id", "grantee_user_id"],
+            ["family_memberships.family_id", "family_memberships.user_id"],
+            name="fk_family_emergency_share_grantee_membership",
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_family_emergency_shares_participants",
+            "family_id",
+            "resource_owner_user_id",
+            "grantee_user_id",
+            "expires_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    family_id: Mapped[UUID] = mapped_column()
+    resource_owner_user_id: Mapped[UUID] = mapped_column()
+    grantee_user_id: Mapped[UUID] = mapped_column()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 
 class FamilyAccessAuditEvent(Base):
     __tablename__ = "family_access_audit_events"
     __table_args__ = (
         CheckConstraint(
-            "permission_code IN "
-            "('VIEW_CURRENT_LOCATION', 'VIEW_FOOTPRINT', 'VIEW_MEMORY', 'VIEW_PHOTOS')",
-            name="ck_family_access_audit_permission_code",
+            "(authority_type = 'EXACT_GRANT' AND permission_code IS NOT NULL "
+            "AND permission_code IN "
+            "('VIEW_CURRENT_LOCATION', 'VIEW_FOOTPRINT', 'VIEW_MEMORY', 'VIEW_PHOTOS')) "
+            "OR (authority_type = 'EMERGENCY_SHARE' AND permission_code IS NULL)",
+            name="ck_family_access_audit_authority_permission",
+        ),
+        CheckConstraint(
+            "authority_type IN ('EXACT_GRANT', 'EMERGENCY_SHARE')",
+            name="ck_family_access_audit_authority_type",
+        ),
+        CheckConstraint(
+            "(authority_type = 'EMERGENCY_SHARE' "
+            "AND action = 'READ_EMERGENCY_LOCATION' "
+            "AND resource_type = 'CURRENT_LOCATION') "
+            "OR (authority_type = 'EXACT_GRANT' "
+            "AND action <> 'READ_EMERGENCY_LOCATION')",
+            name="ck_family_access_audit_authority_action",
         ),
         CheckConstraint(
             "resource_type IN ('CURRENT_LOCATION', 'TODAY_FOOTPRINT', 'MEMORY', 'PHOTO')",
@@ -211,7 +273,7 @@ class FamilyAccessAuditEvent(Base):
         CheckConstraint(
             "action IN "
             "('READ_CURRENT_LOCATION', 'READ_TODAY_FOOTPRINT', 'READ_MEMORY', "
-            "'LIST_PHOTOS', 'DOWNLOAD_PHOTO')",
+            "'LIST_PHOTOS', 'DOWNLOAD_PHOTO', 'READ_EMERGENCY_LOCATION')",
             name="ck_family_access_audit_action",
         ),
         CheckConstraint(
@@ -240,7 +302,10 @@ class FamilyAccessAuditEvent(Base):
     resource_owner_user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE")
     )
-    permission_code: Mapped[str] = mapped_column(String(40))
+    authority_type: Mapped[str] = mapped_column(
+        String(24), default=FamilyAuditAuthorityType.EXACT_GRANT.value
+    )
+    permission_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     resource_type: Mapped[str] = mapped_column(String(32))
     action: Mapped[str] = mapped_column(String(40))
     result: Mapped[str] = mapped_column(String(16))
