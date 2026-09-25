@@ -526,7 +526,7 @@ export default function Page() {
         {auditRead.data.map((event) => (
           <View className='memory-row' key={event.event_id}>
             <View>
-              成员 {shortMemberId(event.actor_user_id)} {familyAuditActionLabel(event.action)}
+              成员 {shortMemberId(event.actor_user_id)} {familyAuditActionLabel(event.action)} · 数据所有者 {shortMemberId(event.resource_owner_user_id)}
             </View>
             <View className='muted'>
               {event.created_at} · {familyAuditResultLabel(event.result)}
