@@ -1807,7 +1807,7 @@ class ProfilePage extends StatelessWidget {
   const ProfilePage({
     super.key,
     required this.api,
-    required this.onElderModeChanged,
+    this.onElderModeChanged,
     required this.onLogout,
     required this.onAccountDeleteIntentConfirmed,
     required this.onAccountDeleted,
@@ -1817,7 +1817,7 @@ class ProfilePage extends StatelessWidget {
   });
 
   final JiYiApiClient api;
-  final ValueChanged<bool> onElderModeChanged;
+  final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
   final Future<void> Function() onAccountDeleteIntentConfirmed;
   final Future<void> Function() onAccountDeleted;
@@ -1939,7 +1939,7 @@ class ProfilePage extends StatelessWidget {
               _ElderModeControls(
                 api: api,
                 initialEnabled: profile['elder_mode_enabled'] == true,
-                onChanged: onElderModeChanged,
+                onChanged: onElderModeChanged ?? (_) {},
               ),
               const SizedBox(height: JiYiSpacing.md),
               _PrivacyControls(
