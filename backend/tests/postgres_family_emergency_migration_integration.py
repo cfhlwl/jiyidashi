@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.family_models import (
@@ -109,6 +110,57 @@ def main() -> None:
         assert event.permission_code == FamilyPermissionCode.VIEW_CURRENT_LOCATION.value
         assert event.action == "READ_CURRENT_LOCATION"
 
+    # P1 regression: PostgreSQL CHECK must reject EXACT_GRANT + NULL permission.
+    invalid_event_id = uuid4()
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO family_access_audit_events (
+                        id,
+                        family_id,
+                        actor_user_id,
+                        resource_owner_user_id,
+                        authority_type,
+                        permission_code,
+                        resource_type,
+                        action,
+                        result,
+                        created_at
+                    ) VALUES (
+                        :id,
+                        :family_id,
+                        :actor_user_id,
+                        :resource_owner_user_id,
+                        'EXACT_GRANT',
+                        NULL,
+                        'CURRENT_LOCATION',
+                        'READ_CURRENT_LOCATION',
+                        'ALLOWED',
+                        :created_at
+                    )
+                    """
+                ),
+                {
+                    "id": invalid_event_id,
+                    "family_id": family_id,
+                    "actor_user_id": member_id,
+                    "resource_owner_user_id": owner_id,
+                    "created_at": datetime.now(UTC),
+                },
+            )
+        except IntegrityError:
+            transaction.rollback()
+        else:
+            transaction.rollback()
+            raise AssertionError(
+                "EXACT_GRANT + NULL permission_code must fail PostgreSQL CHECK"
+            )
+
+    with Session(engine) as db:
+        assert db.get(FamilyAccessAuditEvent, invalid_event_id) is None
         member = db.get(User, member_id)
         owner = db.get(User, owner_id)
         assert member is not None
