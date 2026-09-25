@@ -167,6 +167,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_family_photos_integration.py
 
+      - name: PostgreSQL Emergency Location Sharing race gate
+        # [S4-008] 真实 PostgreSQL 验证 emergency authority 与 revoke/remove/privacy pause
+        # 共用序列化边界，以及同 owner→grantee 并发创建最终仅一个 active share。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_family_emergency_location_integration.py
+
       - name: PostgreSQL Family Privacy Audit race gate
         # [S4-015] 真实 PostgreSQL 锁死 sensitive read/sign 与 revoke/remove 的
         # authority + audit 同步线性化：DENIED 不得残留 ALLOWED，ALLOWED 必须恰有一条。
