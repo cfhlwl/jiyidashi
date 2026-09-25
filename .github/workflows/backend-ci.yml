@@ -77,6 +77,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: alembic upgrade head
 
+      - name: PostgreSQL Emergency audit migration backfill
+        # [S4-008] 从真实 0016 schema 写入 #112 风格 legacy audit，
+        # 再升级 0017，验证 authority_type 自动回填 EXACT_GRANT 且旧记录可读。
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_family_emergency_migration_integration.py
+
       - name: PostgreSQL pgvector foundation
         # [人工注释][S3-008] fresh upgrade 已在上一步启用 extension；这里再验证 SQLAlchemy seam、
         # downgrade 不删除共享 extension、re-upgrade 幂等，以及既有用户 schema/data 不被改写。
