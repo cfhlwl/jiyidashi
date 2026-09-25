@@ -51,88 +51,79 @@ def upgrade() -> None:
         unique=False,
     )
 
-    op.add_column(
-        "family_access_audit_events",
-        sa.Column(
-            "authority_type",
-            sa.String(length=24),
-            nullable=False,
-            server_default="EXACT_GRANT",
-        ),
-    )
-    op.alter_column(
-        "family_access_audit_events",
-        "permission_code",
-        existing_type=sa.String(length=40),
-        nullable=True,
-    )
-    op.drop_constraint(
-        "ck_family_access_audit_permission_code",
-        "family_access_audit_events",
-        type_="check",
-    )
-    op.drop_constraint(
-        "ck_family_access_audit_action",
-        "family_access_audit_events",
-        type_="check",
-    )
-    op.create_check_constraint(
-        "ck_family_access_audit_authority_type",
-        "family_access_audit_events",
-        "authority_type IN ('EXACT_GRANT', 'EMERGENCY_SHARE')",
-    )
-    op.create_check_constraint(
-        "ck_family_access_audit_authority_permission",
-        "family_access_audit_events",
-        "(authority_type = 'EXACT_GRANT' AND permission_code IN "
-        "('VIEW_CURRENT_LOCATION', 'VIEW_FOOTPRINT', 'VIEW_MEMORY', 'VIEW_PHOTOS')) "
-        "OR (authority_type = 'EMERGENCY_SHARE' AND permission_code IS NULL)",
-    )
-    op.create_check_constraint(
-        "ck_family_access_audit_action",
-        "family_access_audit_events",
-        "action IN "
-        "('READ_CURRENT_LOCATION', 'READ_TODAY_FOOTPRINT', 'READ_MEMORY', "
-        "'LIST_PHOTOS', 'DOWNLOAD_PHOTO', 'READ_EMERGENCY_LOCATION')",
-    )
+    with op.batch_alter_table("family_access_audit_events") as batch:
+        batch.add_column(
+            sa.Column(
+                "authority_type",
+                sa.String(length=24),
+                nullable=False,
+                server_default="EXACT_GRANT",
+            )
+        )
+        batch.alter_column(
+            "permission_code",
+            existing_type=sa.String(length=40),
+            nullable=True,
+        )
+        batch.drop_constraint(
+            "ck_family_access_audit_permission_code",
+            type_="check",
+        )
+        batch.drop_constraint(
+            "ck_family_access_audit_action",
+            type_="check",
+        )
+        batch.create_check_constraint(
+            "ck_family_access_audit_authority_type",
+            "authority_type IN ('EXACT_GRANT', 'EMERGENCY_SHARE')",
+        )
+        batch.create_check_constraint(
+            "ck_family_access_audit_authority_permission",
+            "(authority_type = 'EXACT_GRANT' AND permission_code IN "
+            "('VIEW_CURRENT_LOCATION', 'VIEW_FOOTPRINT', 'VIEW_MEMORY', 'VIEW_PHOTOS')) "
+            "OR (authority_type = 'EMERGENCY_SHARE' AND permission_code IS NULL)",
+        )
+        batch.create_check_constraint(
+            "ck_family_access_audit_action",
+            "action IN "
+            "('READ_CURRENT_LOCATION', 'READ_TODAY_FOOTPRINT', 'READ_MEMORY', "
+            "'LIST_PHOTOS', 'DOWNLOAD_PHOTO', 'READ_EMERGENCY_LOCATION')",
+        )
+
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "ck_family_access_audit_action",
-        "family_access_audit_events",
-        type_="check",
-    )
-    op.drop_constraint(
-        "ck_family_access_audit_authority_permission",
-        "family_access_audit_events",
-        type_="check",
-    )
-    op.drop_constraint(
-        "ck_family_access_audit_authority_type",
-        "family_access_audit_events",
-        type_="check",
-    )
-    op.create_check_constraint(
-        "ck_family_access_audit_permission_code",
-        "family_access_audit_events",
-        "permission_code IN "
-        "('VIEW_CURRENT_LOCATION', 'VIEW_FOOTPRINT', 'VIEW_MEMORY', 'VIEW_PHOTOS')",
-    )
-    op.create_check_constraint(
-        "ck_family_access_audit_action",
-        "family_access_audit_events",
-        "action IN "
-        "('READ_CURRENT_LOCATION', 'READ_TODAY_FOOTPRINT', 'READ_MEMORY', "
-        "'LIST_PHOTOS', 'DOWNLOAD_PHOTO')",
-    )
-    op.alter_column(
-        "family_access_audit_events",
-        "permission_code",
-        existing_type=sa.String(length=40),
-        nullable=False,
-    )
-    op.drop_column("family_access_audit_events", "authority_type")
+    with op.batch_alter_table("family_access_audit_events") as batch:
+        batch.drop_constraint(
+            "ck_family_access_audit_action",
+            type_="check",
+        )
+        batch.drop_constraint(
+            "ck_family_access_audit_authority_permission",
+            type_="check",
+        )
+        batch.drop_constraint(
+            "ck_family_access_audit_authority_type",
+            type_="check",
+        )
+        batch.create_check_constraint(
+            "ck_family_access_audit_permission_code",
+            "permission_code IN "
+            "('VIEW_CURRENT_LOCATION', 'VIEW_FOOTPRINT', 'VIEW_MEMORY', 'VIEW_PHOTOS')",
+        )
+        batch.create_check_constraint(
+            "ck_family_access_audit_action",
+            "action IN "
+            "('READ_CURRENT_LOCATION', 'READ_TODAY_FOOTPRINT', 'READ_MEMORY', "
+            "'LIST_PHOTOS', 'DOWNLOAD_PHOTO')",
+        )
+        batch.alter_column(
+            "permission_code",
+            existing_type=sa.String(length=40),
+            nullable=False,
+        )
+        batch.drop_column("authority_type")
+
     op.drop_index(
         "ix_family_emergency_shares_participants",
         table_name="family_emergency_location_shares",
