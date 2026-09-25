@@ -191,13 +191,6 @@ async def test_family_audit_is_owner_only_bounded_ordered_and_30_day_scoped(clie
     assert member.status_code == 403
     assert member.json()["detail"] == "OWNER_REQUIRED"
 
-    with SessionLocal() as db:
-        family_id = db.scalar(
-            select(FamilyAccessAuditEvent.family_id).where(
-                FamilyAccessAuditEvent.resource_owner_user_id == owner_id
-            )
-        )
-
     # Seed through real denied reads so family_id is authoritative.
     denied = await client.get(
         f"/v1/family/members/{owner_id}/memories",
