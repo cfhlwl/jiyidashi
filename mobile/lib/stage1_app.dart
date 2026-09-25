@@ -510,7 +510,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         return;
       }
       setState(() => _elderModeEnabled = false);
-      widget.onElderModeChanged(false);
+      widget.onElderModeChanged?.call(false);
     }
   }
 
@@ -722,14 +722,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             selectedIcon: const Icon(Icons.today),
             label: _elderModeEnabled ? '今天去了哪里' : '今天',
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.timeline_outlined),
-            selectedIcon: const Icon(Icons.timeline),
+          const NavigationDestination(
+            icon: Icon(Icons.timeline_outlined),
+            selectedIcon: Icon(Icons.timeline),
             label: '时间轴',
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.add_circle_outline),
-            selectedIcon: const Icon(Icons.add_circle),
+          const NavigationDestination(
+            icon: Icon(Icons.add_circle_outline),
+            selectedIcon: Icon(Icons.add_circle),
             label: '记一下',
           ),
           NavigationDestination(
@@ -737,9 +737,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             selectedIcon: const Icon(Icons.psychology_alt),
             label: _elderModeEnabled ? '找东西' : '问记忆',
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.person_outline),
-            selectedIcon: const Icon(Icons.person),
+          const NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
             label: '我的',
           ),
         ],
