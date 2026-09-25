@@ -20,6 +20,7 @@ import {
   getFamilyPhotos,
   getFamilyTodayFootprint,
   getProfile,
+  currentElderModeEnabled,
   isAuthenticated,
   listPlaces,
   removeFamilyMember,
@@ -28,6 +29,7 @@ import {
   replaceFamilyPermissions,
   revokeFamilyInvite,
 } from '../../services/api'
+import { elderClassName } from '../../services/elderMode'
 import {
   assertCurrentFamilyMember,
   familyArrivalStatusLabel,
@@ -827,7 +829,7 @@ export default function Page() {
 
   if (pageState.phase === 'signed-out') {
     return (
-      <View className='page'>
+      <View className={elderClassName(currentElderModeEnabled())}>
         <View className='title'>家庭</View>
         <View className='subtitle'>共享必须逐项授权。</View>
         <View className='card empty-card'>
@@ -843,7 +845,7 @@ export default function Page() {
 
   if (pageState.phase === 'loading') {
     return (
-      <View className='page'>
+      <View className={elderClassName(currentElderModeEnabled())}>
         <View className='title'>家庭</View>
         <View className='subtitle'>共享必须逐项授权。</View>
         <View className='card'><Text className='muted'>正在加载家庭状态…</Text></View>
@@ -853,7 +855,7 @@ export default function Page() {
 
   if (pageState.phase === 'error') {
     return (
-      <View className='page'>
+      <View className={elderClassName(currentElderModeEnabled())}>
         <View className='title'>家庭</View>
         <View className='subtitle'>共享必须逐项授权。</View>
         <View className='card'>
@@ -866,7 +868,7 @@ export default function Page() {
 
   if (pageState.phase === 'no-family') {
     return (
-      <View className='page'>
+      <View className={elderClassName(currentElderModeEnabled())}>
         <View className='title'>家庭</View>
         <View className='subtitle'>共享必须逐项授权。</View>
         <View className='privacy-note'>加入同一个家庭 ≠ 自动共享数据。共享必须由本人逐项授权。</View>
@@ -899,7 +901,7 @@ export default function Page() {
   const { family, currentUserId, permissions } = pageState
 
   return (
-    <View className='page'>
+    <View className={elderClassName(currentElderModeEnabled())}>
       <View className='title'>家庭</View>
       <View className='subtitle'>共享必须逐项授权。</View>
       <View className='privacy-note'>加入同一个家庭 ≠ 自动共享数据。共享必须由本人逐项授权。</View>
