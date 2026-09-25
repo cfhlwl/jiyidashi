@@ -433,6 +433,9 @@ function auditResult(value: unknown): FamilyAuditResult {
 
 export function parseFamilyAudit(value: unknown): FamilyAuditEvent[] {
   if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
+  if (expectedCurrentUserId !== undefined && !isUuid(expectedCurrentUserId)) {
+    return invalidFamilyResponse()
+  }
   const rows = value.map((item) => {
     const raw = asRecord(item)
     const authorityType = auditAuthorityType(raw.authority_type)
@@ -491,7 +494,10 @@ export function familyAuditResultLabel(result: FamilyAuditResult): string {
   return '数据不可用'
 }
 
-export function parseFamilyEmergencyShares(value: unknown): FamilyEmergencyLocationShare[] {
+export function parseFamilyEmergencyShares(
+  value: unknown,
+  expectedCurrentUserId?: string,
+): FamilyEmergencyLocationShare[] {
   if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
   const rows = value.map((item) => {
     const raw = asRecord(item)
@@ -504,6 +510,15 @@ export function parseFamilyEmergencyShares(value: unknown): FamilyEmergencyLocat
     if (ownerId.toLowerCase() === granteeId.toLowerCase()) {
       return invalidFamilyResponse()
     }
+    if (
+      expectedCurrentUserId !== undefined
+      && (
+        (direction === 'OUTGOING'
+          && ownerId.toLowerCase() !== expectedCurrentUserId.toLowerCase())
+        || (direction === 'INCOMING'
+          && granteeId.toLowerCase() !== expectedCurrentUserId.toLowerCase())
+      )
+    ) return invalidFamilyResponse()
     const createdAt = isoDateTime(raw.created_at)
     const expiresAt = isoDateTime(raw.expires_at)
     const durationMs = Date.parse(expiresAt) - Date.parse(createdAt)
