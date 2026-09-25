@@ -352,9 +352,13 @@ def derive_arrival_for_finalized_visit(
         _expire_locked(reminder, now=lock_reference)
         if reminder.status != FamilyArrivalReminderStatus.ACTIVE.value:
             continue
-        if arrived_at < ensure_utc(reminder.created_at):
-            continue
         transition_reference = _reference_now(now)
+        created_at = ensure_utc(reminder.created_at)
+        expires_at = ensure_utc(reminder.expires_at)
+        if not (created_at <= arrived_at < expires_at):
+            continue
+        if arrived_at > transition_reference:
+            continue
         _expire_locked(reminder, now=transition_reference)
         if reminder.status != FamilyArrivalReminderStatus.ACTIVE.value:
             continue
