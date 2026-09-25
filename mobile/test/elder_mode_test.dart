@@ -32,6 +32,8 @@ Map<String, dynamic> _profile(String owner, Object? elder) => {
       'elder_mode_enabled': elder,
     };
 
+// S4-011 review anchor: Elder Mode is a presentation preference only; these
+// tests intentionally keep profile authority and account isolation explicit.
 void main() {
   test('Flutter elder theme keeps normal default and enlarges shared targets', () {
     final normal = JiYiTheme.light();
