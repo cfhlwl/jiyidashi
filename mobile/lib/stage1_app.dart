@@ -681,7 +681,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       ),
       ProfilePage(
         api: widget.api,
-        elderModeEnabled: _elderModeEnabled,
         onElderModeChanged: (enabled) {
           setState(() => _elderModeEnabled = enabled);
           widget.onElderModeChanged?.call(enabled);
@@ -1808,7 +1807,6 @@ class ProfilePage extends StatelessWidget {
   const ProfilePage({
     super.key,
     required this.api,
-    required this.elderModeEnabled,
     required this.onElderModeChanged,
     required this.onLogout,
     required this.onAccountDeleteIntentConfirmed,
@@ -1819,7 +1817,6 @@ class ProfilePage extends StatelessWidget {
   });
 
   final JiYiApiClient api;
-  final bool elderModeEnabled;
   final ValueChanged<bool> onElderModeChanged;
   final VoidCallback onLogout;
   final Future<void> Function() onAccountDeleteIntentConfirmed;
