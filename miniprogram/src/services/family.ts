@@ -441,11 +441,11 @@ export function parseFamilyAudit(value: unknown): FamilyAuditEvent[] {
 }
 
 export function familyAuditActionLabel(action: FamilyAuditAction): string {
-  if (action === 'READ_CURRENT_LOCATION') return '查看了你的当前位置'
-  if (action === 'READ_TODAY_FOOTPRINT') return '查看了你的今日足迹'
-  if (action === 'READ_MEMORY') return '查看了你的个人记忆'
-  if (action === 'LIST_PHOTOS') return '查看了你的照片列表'
-  return '打开了你的一张照片'
+  if (action === 'READ_CURRENT_LOCATION') return '查看当前位置'
+  if (action === 'READ_TODAY_FOOTPRINT') return '查看今日足迹'
+  if (action === 'READ_MEMORY') return '查看个人记忆'
+  if (action === 'LIST_PHOTOS') return '查看照片列表'
+  return '打开照片'
 }
 
 export function familyAuditResultLabel(result: FamilyAuditResult): string {
