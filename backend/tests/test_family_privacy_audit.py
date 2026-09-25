@@ -13,7 +13,13 @@ from app.family_models import (
     FamilyAuditResult,
     FamilyPermissionCode,
 )
-from app.models import LocationPoint
+from app.media_models import MediaAsset, MediaKind, MediaStatus
+from app.models import LocationPoint, User
+from app.services.family_sensitive_read_service import (
+    FamilySensitiveReadError,
+    sign_family_photo_download,
+)
+from app.services.object_storage import PresignedTransfer
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -136,12 +142,30 @@ async def test_family_audit_tracks_allowed_denied_unavailable_without_payload_le
     assert all(row["resource_owner_user_id"] == str(owner_id) for row in rows)
 
     outcomes = {(row["action"], row["result"]) for row in rows}
-    assert (FamilyAuditAction.READ_MEMORY.value, FamilyAuditResult.DENIED.value) in outcomes
-    assert (FamilyAuditAction.READ_MEMORY.value, FamilyAuditResult.ALLOWED.value) in outcomes
-    assert (FamilyAuditAction.READ_TODAY_FOOTPRINT.value, FamilyAuditResult.ALLOWED.value) in outcomes
-    assert (FamilyAuditAction.READ_CURRENT_LOCATION.value, FamilyAuditResult.UNAVAILABLE.value) in outcomes
-    assert (FamilyAuditAction.READ_CURRENT_LOCATION.value, FamilyAuditResult.ALLOWED.value) in outcomes
-    assert (FamilyAuditAction.LIST_PHOTOS.value, FamilyAuditResult.ALLOWED.value) in outcomes
+    assert (
+        FamilyAuditAction.READ_MEMORY.value,
+        FamilyAuditResult.DENIED.value,
+    ) in outcomes
+    assert (
+        FamilyAuditAction.READ_MEMORY.value,
+        FamilyAuditResult.ALLOWED.value,
+    ) in outcomes
+    assert (
+        FamilyAuditAction.READ_TODAY_FOOTPRINT.value,
+        FamilyAuditResult.ALLOWED.value,
+    ) in outcomes
+    assert (
+        FamilyAuditAction.READ_CURRENT_LOCATION.value,
+        FamilyAuditResult.UNAVAILABLE.value,
+    ) in outcomes
+    assert (
+        FamilyAuditAction.READ_CURRENT_LOCATION.value,
+        FamilyAuditResult.ALLOWED.value,
+    ) in outcomes
+    assert (
+        FamilyAuditAction.LIST_PHOTOS.value,
+        FamilyAuditResult.ALLOWED.value,
+    ) in outcomes
 
     serialized = str(rows).lower()
     for forbidden in (
@@ -231,3 +255,112 @@ async def test_family_audit_is_owner_only_bounded_ordered_and_30_day_scoped(clie
 
     invalid = await client.get("/v1/family/audit?limit=51", headers=owner_headers)
     assert invalid.status_code == 422
+
+
+
+class _AuditPhotoStorage:
+    def sign_download(self, object_key: str) -> PresignedTransfer:
+        return PresignedTransfer(
+            method="GET",
+            url=f"https://audit-photo.test/{object_key}?temporary=1",
+            headers={},
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        )
+
+
+@pytest.mark.asyncio
+async def test_photo_download_is_separate_audit_and_content_delete_keeps_history(client):
+    owner_headers, owner_id, member_headers, member_id = await _family_pair(
+        client, "audit-photo-download"
+    )
+    await _grant(
+        client,
+        owner_headers,
+        member_id,
+        FamilyPermissionCode.VIEW_PHOTOS.value,
+    )
+    media_id = uuid4()
+    with SessionLocal() as db:
+        db.add(
+            MediaAsset(
+                id=media_id,
+                user_id=owner_id,
+                client_upload_id=uuid4(),
+                kind=MediaKind.IMAGE,
+                status=MediaStatus.READY,
+                upload_object_key=f"staging/{owner_id}/{media_id.hex}",
+                object_key=f"final/{owner_id}/{media_id.hex}",
+                content_type="image/jpeg",
+                size_bytes=2048,
+                original_filename="private.jpg",
+                storage_etag="private-etag",
+                created_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        transfer = sign_family_photo_download(
+            db,
+            resource_owner_user_id=owner_id,
+            grantee_user_id=member_id,
+            media_id=media_id,
+            storage=_AuditPhotoStorage(),
+        )
+        assert transfer.method == "GET"
+
+    missing_id = uuid4()
+    with SessionLocal() as db:
+        with pytest.raises(FamilySensitiveReadError) as unavailable:
+            sign_family_photo_download(
+                db,
+                resource_owner_user_id=owner_id,
+                grantee_user_id=member_id,
+                media_id=missing_id,
+                storage=_AuditPhotoStorage(),
+            )
+        assert unavailable.value.code == "FAMILY_PHOTO_UNAVAILABLE"
+
+    with SessionLocal() as db:
+        rows = db.scalars(
+            select(FamilyAccessAuditEvent).where(
+                FamilyAccessAuditEvent.resource_owner_user_id == owner_id,
+                FamilyAccessAuditEvent.action
+                == FamilyAuditAction.DOWNLOAD_PHOTO.value,
+            )
+        ).all()
+        assert sorted(row.result for row in rows) == [
+            FamilyAuditResult.ALLOWED.value,
+            FamilyAuditResult.UNAVAILABLE.value,
+        ]
+
+        asset = db.get(MediaAsset, media_id)
+        assert asset is not None
+        db.delete(asset)
+        db.commit()
+
+    # Audit is access metadata, not a child of the photo. Ordinary content deletion
+    # must not erase the privacy history.
+    with SessionLocal() as db:
+        assert db.scalar(
+            select(FamilyAccessAuditEvent.id).where(
+                FamilyAccessAuditEvent.resource_owner_user_id == owner_id,
+                FamilyAccessAuditEvent.action
+                == FamilyAuditAction.DOWNLOAD_PHOTO.value,
+                FamilyAccessAuditEvent.result == FamilyAuditResult.ALLOWED.value,
+            )
+        ) is not None
+
+        actor = db.get(User, member_id)
+        assert actor is not None
+        db.delete(actor)
+        db.commit()
+
+    # Account deletion deliberately cascades audit rows that retain that account id.
+    with SessionLocal() as db:
+        assert db.scalar(
+            select(FamilyAccessAuditEvent.id).where(
+                FamilyAccessAuditEvent.actor_user_id == member_id
+            )
+        ) is None
