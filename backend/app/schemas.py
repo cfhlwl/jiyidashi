@@ -157,6 +157,7 @@ class UserRead(ORMModel):
     email: str | None
     timezone: str
     locale: str
+    elder_mode_enabled: bool
     created_at: datetime
     updated_at: datetime
 
@@ -167,6 +168,7 @@ class UserUpdate(BaseModel):
     nickname: NicknameText | None = None
     timezone: TimezoneName | None = None
     locale: LocaleText | None = None
+    elder_mode_enabled: bool | None = None
 
 
 class MemoryCreate(BaseModel):
