@@ -99,6 +99,7 @@ class Place(Base):
     __tablename__ = "places"
     __table_args__ = (
         UniqueConstraint("user_id", "cluster_key", name="uq_places_user_cluster_key"),
+        UniqueConstraint("id", "user_id", name="uq_places_id_user_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)

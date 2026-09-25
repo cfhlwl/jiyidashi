@@ -10,6 +10,8 @@ import {
   FamilyPermissionMutationGate,
   FamilySensitiveReadEpoch,
   INTERACTIVE_FAMILY_PERMISSIONS,
+  familyArrivalStatusLabel,
+  parseFamilyArrivalReminders,
   parseFamilyAudit,
   parseFamilyCurrentLocation,
   parseFamilyEmergencyShares,
@@ -829,5 +831,153 @@ test('emergency sharing uses safe stable error copy', () => {
   assert.equal(
     familyErrorMessage('EMERGENCY_SHARE_DURATION_UNSUPPORTED', 'emergency-share'),
     '请选择 30、60 或 180 分钟',
+  )
+})
+
+
+test('arrival reminder parser enforces participant direction, terminal fields and safe projection', () => {
+  const base = {
+    reminder_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    resource_owner_user_id: OWNER_ID,
+    grantee_user_id: MEMBER_ID,
+    destination_place_id: OTHER_ID,
+    destination_display_name: '家',
+    status: 'ACTIVE',
+    created_at: '2026-09-25T10:00:00Z',
+    expires_at: '2026-09-25T12:00:00Z',
+    arrived_at: null,
+    direction: 'INCOMING',
+    latitude: 39.9,
+    longitude: 116.4,
+    visit_id: 'must-not-leak',
+  }
+  const rows = parseFamilyArrivalReminders([base], MEMBER_ID)
+  assert.equal(rows.length, 1)
+  assert.deepEqual(Object.keys(rows[0]).sort(), [
+    'arrived_at',
+    'created_at',
+    'destination_display_name',
+    'destination_place_id',
+    'direction',
+    'expires_at',
+    'grantee_user_id',
+    'reminder_id',
+    'resource_owner_user_id',
+    'status',
+  ])
+  assert.equal((rows[0] as Record<string, unknown>).latitude, undefined)
+  assert.equal((rows[0] as Record<string, unknown>).visit_id, undefined)
+
+  assert.throws(() => parseFamilyArrivalReminders([
+    { ...base, direction: 'OUTGOING' },
+  ], MEMBER_ID), /家庭数据异常/)
+  assert.throws(() => parseFamilyArrivalReminders([
+    { ...base, status: 'ARRIVED', arrived_at: null },
+  ], MEMBER_ID), /家庭数据异常/)
+  assert.throws(() => parseFamilyArrivalReminders([
+    { ...base, status: 'ACTIVE', arrived_at: '2026-09-25T11:00:00Z' },
+  ], MEMBER_ID), /家庭数据异常/)
+  assert.throws(() => parseFamilyArrivalReminders([
+    { ...base, status: 'TRACKING' },
+  ], MEMBER_ID), /家庭数据异常/)
+  assert.throws(() => parseFamilyArrivalReminders([
+    { ...base, expires_at: '2026-09-25T12:01:00Z' },
+  ], MEMBER_ID), /家庭数据异常/)
+  assert.throws(() => parseFamilyArrivalReminders([base, base], MEMBER_ID), /家庭数据异常/)
+  assert.throws(() => parseFamilyArrivalReminders([{
+    ...base,
+    destination_display_name: '家'.repeat(201),
+  }], MEMBER_ID), /家庭数据异常/)
+})
+
+test('arrival reminder parser rejects arrival at or after exact expiry boundary', () => {
+  const base = {
+    reminder_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    resource_owner_user_id: OWNER_ID,
+    grantee_user_id: MEMBER_ID,
+    destination_place_id: OTHER_ID,
+    destination_display_name: '家',
+    status: 'ARRIVED',
+    created_at: '2026-09-25T10:00:00Z',
+    expires_at: '2026-09-25T12:00:00Z',
+    direction: 'INCOMING',
+  }
+
+  assert.throws(() => parseFamilyArrivalReminders([{
+    ...base,
+    arrived_at: '2026-09-25T12:00:00Z',
+  }], MEMBER_ID), /家庭数据异常/)
+
+  assert.throws(() => parseFamilyArrivalReminders([{
+    ...base,
+    arrived_at: '2026-09-25T13:00:00Z',
+  }], MEMBER_ID), /家庭数据异常/)
+})
+
+test('arrival reminder ARRIVED parser requires a safe arrival timestamp', () => {
+  const rows = parseFamilyArrivalReminders([{
+    reminder_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    resource_owner_user_id: OWNER_ID,
+    grantee_user_id: MEMBER_ID,
+    destination_place_id: OTHER_ID,
+    destination_display_name: '家',
+    status: 'ARRIVED',
+    created_at: '2026-09-25T10:00:00Z',
+    expires_at: '2026-09-25T16:00:00Z',
+    arrived_at: '2026-09-25T11:30:00Z',
+    direction: 'INCOMING',
+  }], MEMBER_ID)
+  assert.equal(rows[0].status, 'ARRIVED')
+  assert.equal(rows[0].arrived_at, '2026-09-25T11:30:00Z')
+  assert.equal(familyArrivalStatusLabel('ACTIVE'), '等待到达')
+  assert.equal(familyArrivalStatusLabel('ARRIVED'), '已到达')
+  assert.equal(familyArrivalStatusLabel('CANCELLED'), '已取消')
+  assert.equal(familyArrivalStatusLabel('EXPIRED'), '已过期')
+})
+
+test('Family page arrival reminder flow uses only own Places and coarse state', () => {
+  const page = readFileSync(resolve(process.cwd(), 'src/pages/family/index.tsx'), 'utf8')
+  const refreshStart = page.indexOf('const refresh = async')
+  const refreshEnd = page.indexOf('const create = async')
+  const refreshBody = page.slice(refreshStart, refreshEnd)
+
+  assert.match(refreshBody, /getFamilyArrivalReminders\(profile\.id\)/)
+  assert.doesNotMatch(refreshBody, /listPlaces\(/)
+  assert.match(
+    page,
+    /const createArrivalReminder = async[\s\S]*?listPlaces\(50\)[\s\S]*?2 小时[\s\S]*?6 小时[\s\S]*?12 小时/,
+  )
+  assert.match(page, /确认设置到家提醒/)
+  assert.match(page, /仅共享：等待到达 \/ 已到达 \/ 已取消 \/ 已过期状态/)
+  assert.match(page, /不会持续共享位置、路线或预计到达时间/)
+  assert.match(page, /设置到家提醒/)
+  assert.match(page, /收到的到家提醒/)
+  assert.doesNotMatch(
+    page,
+    /arrivalReminders[\s\S]{0,300}getFamilyEmergencyLocation/,
+  )
+})
+
+test('arrival reminder APIs expose no coordinate endpoint', () => {
+  const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+  assert.match(api, /request<unknown>\('GET', '\/family\/arrival-reminders'\)/)
+  assert.match(api, /validityMinutes: 120 \| 360 \| 720/)
+  assert.match(api, /destination_place_id: destinationPlaceId/)
+  assert.match(api, /arrival-reminders\/\$\{encodeURIComponent\(reminderId\)\}\/cancel/)
+  assert.doesNotMatch(api, /arrival-reminders\/.*location/)
+})
+
+test('arrival reminder error copy is bounded and non-tracking', () => {
+  assert.equal(
+    familyErrorMessage('ARRIVAL_REMINDER_NOT_AVAILABLE', 'arrival-reminder'),
+    '到家提醒已不可用',
+  )
+  assert.equal(
+    familyErrorMessage('ARRIVAL_REMINDER_DESTINATION_INVALID', 'arrival-reminder'),
+    '只能选择你自己的已有地点',
+  )
+  assert.equal(
+    familyErrorMessage('ARRIVAL_REMINDER_VALIDITY_UNSUPPORTED', 'arrival-reminder'),
+    '请选择 2、6 或 12 小时',
   )
 })

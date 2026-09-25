@@ -117,6 +117,22 @@ export type FamilyAuditEvent = {
 
 export type FamilyEmergencyShareDirection = 'OUTGOING' | 'INCOMING'
 
+export type FamilyArrivalReminderStatus = 'ACTIVE' | 'ARRIVED' | 'CANCELLED' | 'EXPIRED'
+export type FamilyArrivalReminderDirection = 'OUTGOING' | 'INCOMING'
+
+export type FamilyArrivalReminder = {
+  reminder_id: string
+  resource_owner_user_id: string
+  grantee_user_id: string
+  destination_place_id: string
+  destination_display_name: string
+  status: FamilyArrivalReminderStatus
+  created_at: string
+  expires_at: string
+  arrived_at: string | null
+  direction: FamilyArrivalReminderDirection
+}
+
 export type FamilyEmergencyLocationShare = {
   share_id: string
   resource_owner_user_id: string
@@ -495,6 +511,90 @@ export function familyAuditResultLabel(result: FamilyAuditResult): string {
   return '数据不可用'
 }
 
+
+function arrivalStatus(value: unknown): FamilyArrivalReminderStatus {
+  if (
+    value !== 'ACTIVE'
+    && value !== 'ARRIVED'
+    && value !== 'CANCELLED'
+    && value !== 'EXPIRED'
+  ) return invalidFamilyResponse()
+  return value
+}
+
+export function parseFamilyArrivalReminders(
+  value: unknown,
+  expectedCurrentUserId?: string,
+): FamilyArrivalReminder[] {
+  if (!Array.isArray(value) || value.length > 50) return invalidFamilyResponse()
+  if (expectedCurrentUserId !== undefined && !isUuid(expectedCurrentUserId)) {
+    return invalidFamilyResponse()
+  }
+  const rows = value.map((item) => {
+    const raw = asRecord(item)
+    if (raw.direction !== 'OUTGOING' && raw.direction !== 'INCOMING') {
+      return invalidFamilyResponse()
+    }
+    const direction: FamilyArrivalReminderDirection = raw.direction
+    const ownerId = uuid(raw.resource_owner_user_id)
+    const granteeId = uuid(raw.grantee_user_id)
+    if (ownerId.toLowerCase() === granteeId.toLowerCase()) return invalidFamilyResponse()
+    if (
+      expectedCurrentUserId !== undefined
+      && (
+        (direction === 'OUTGOING'
+          && ownerId.toLowerCase() !== expectedCurrentUserId.toLowerCase())
+        || (direction === 'INCOMING'
+          && granteeId.toLowerCase() !== expectedCurrentUserId.toLowerCase())
+      )
+    ) return invalidFamilyResponse()
+
+    const createdAt = isoDateTime(raw.created_at)
+    const expiresAt = isoDateTime(raw.expires_at)
+    const validityMinutes = (Date.parse(expiresAt) - Date.parse(createdAt)) / 60000
+    if (![120, 360, 720].includes(validityMinutes)) return invalidFamilyResponse()
+
+    const status = arrivalStatus(raw.status)
+    const arrivedAt = raw.arrived_at === null ? null : isoDateTime(raw.arrived_at)
+    if ((status === 'ARRIVED') !== (arrivedAt !== null)) return invalidFamilyResponse()
+    if (
+      arrivedAt !== null
+      && (
+        Date.parse(arrivedAt) < Date.parse(createdAt)
+        || Date.parse(arrivedAt) >= Date.parse(expiresAt)
+      )
+    ) {
+      return invalidFamilyResponse()
+    }
+
+    const displayName = nonEmptyString(raw.destination_display_name)
+    if (displayName.length > 200) return invalidFamilyResponse()
+
+    return {
+      reminder_id: uuid(raw.reminder_id),
+      resource_owner_user_id: ownerId,
+      grantee_user_id: granteeId,
+      destination_place_id: uuid(raw.destination_place_id),
+      destination_display_name: displayName,
+      status,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      arrived_at: arrivedAt,
+      direction,
+    }
+  })
+  const ids = rows.map((item) => item.reminder_id.toLowerCase())
+  if (new Set(ids).size !== ids.length) return invalidFamilyResponse()
+  return rows
+}
+
+export function familyArrivalStatusLabel(status: FamilyArrivalReminderStatus): string {
+  if (status === 'ACTIVE') return '等待到达'
+  if (status === 'ARRIVED') return '已到达'
+  if (status === 'CANCELLED') return '已取消'
+  return '已过期'
+}
+
 export function parseFamilyEmergencyShares(
   value: unknown,
   expectedCurrentUserId?: string,
@@ -689,6 +789,7 @@ export type FamilyErrorContext =
   | 'audit'
   | 'emergency-share'
   | 'emergency-location'
+  | 'arrival-reminder'
 
 export function familyErrorMessage(code: string | null, context: FamilyErrorContext): string | null {
   if (!code) return null
@@ -739,6 +840,14 @@ export function familyErrorMessage(code: string | null, context: FamilyErrorCont
       return '只能选择当前家庭中的其他成员'
     case 'EMERGENCY_SHARE_DURATION_UNSUPPORTED':
       return '请选择 30、60 或 180 分钟'
+    case 'ARRIVAL_REMINDER_NOT_AVAILABLE':
+      return '到家提醒已不可用'
+    case 'ARRIVAL_REMINDER_TARGET_INVALID':
+      return '只能选择当前家庭中的其他成员'
+    case 'ARRIVAL_REMINDER_DESTINATION_INVALID':
+      return '只能选择你自己的已有地点'
+    case 'ARRIVAL_REMINDER_VALIDITY_UNSUPPORTED':
+      return '请选择 2、6 或 12 小时'
     default:
       return null
   }

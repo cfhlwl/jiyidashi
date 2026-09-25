@@ -59,6 +59,13 @@ class FamilyAuditAuthorityType(StrEnum):
     EMERGENCY_SHARE = "EMERGENCY_SHARE"
 
 
+class FamilyArrivalReminderStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    ARRIVED = "ARRIVED"
+    CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
+
+
 SUPPORTED_FAMILY_PERMISSION_CODES = frozenset(item.value for item in FamilyPermissionCode)
 
 
@@ -199,6 +206,72 @@ class FamilyPermissionGrant(Base):
     grantee_user_id: Mapped[UUID] = mapped_column()
     permission_code: Mapped[str] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FamilyArrivalReminder(Base):
+    __tablename__ = "family_arrival_reminders"
+    __table_args__ = (
+        CheckConstraint(
+            "resource_owner_user_id <> grantee_user_id",
+            name="ck_family_arrival_reminders_distinct_users",
+        ),
+        CheckConstraint(
+            "status IN ('ACTIVE', 'ARRIVED', 'CANCELLED', 'EXPIRED')",
+            name="ck_family_arrival_reminders_status",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_family_arrival_reminders_positive_window",
+        ),
+        CheckConstraint(
+            "(status = 'ARRIVED' AND arrived_at IS NOT NULL AND cancelled_at IS NULL) "
+            "OR (status = 'CANCELLED' AND arrived_at IS NULL AND cancelled_at IS NOT NULL) "
+            "OR (status IN ('ACTIVE', 'EXPIRED') AND arrived_at IS NULL "
+            "AND cancelled_at IS NULL)",
+            name="ck_family_arrival_reminders_terminal_fields",
+        ),
+        ForeignKeyConstraint(
+            ["family_id", "resource_owner_user_id"],
+            ["family_memberships.family_id", "family_memberships.user_id"],
+            name="fk_family_arrival_owner_membership",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["family_id", "grantee_user_id"],
+            ["family_memberships.family_id", "family_memberships.user_id"],
+            name="fk_family_arrival_grantee_membership",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["destination_place_id", "resource_owner_user_id"],
+            ["places.id", "places.user_id"],
+            name="fk_family_arrival_destination_owner",
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_family_arrival_active_tuple",
+            "family_id",
+            "resource_owner_user_id",
+            "grantee_user_id",
+            "destination_place_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    family_id: Mapped[UUID] = mapped_column()
+    resource_owner_user_id: Mapped[UUID] = mapped_column()
+    grantee_user_id: Mapped[UUID] = mapped_column()
+    destination_place_id: Mapped[UUID] = mapped_column()
+    status: Mapped[str] = mapped_column(
+        String(16), default=FamilyArrivalReminderStatus.ACTIVE.value
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    arrived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class FamilyEmergencyLocationShare(Base):

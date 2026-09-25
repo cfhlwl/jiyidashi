@@ -402,6 +402,7 @@ def _rebuild(
     }
     desired: set[str] = set()
     desired_count = 0
+    arrival_candidates: list[Visit] = []
     for cluster in clusters:
         started = cluster[0].recorded_at
         ended = cluster[-1].recorded_at
@@ -446,10 +447,25 @@ def _rebuild(
         visit.source_fingerprint = fingerprint
         visit.algorithm_version = ALGORITHM_VERSION
         visit.finalized_at = now if ended <= safe_through else None
+        if visit.finalized_at is not None:
+            arrival_candidates.append(visit)
 
     for key, visit in mutable.items():
         if key not in desired:
             db.delete(visit)
+
+    db.flush()
+    # [S4-009] Arrival Reminder consumes the trusted finalized Visit -> Place seam.
+    # Import locally to avoid coupling the core location module at import time.
+    from app.services.family_arrival_reminder_service import (
+        derive_arrival_for_finalized_visit,
+    )
+
+    for visit in arrival_candidates:
+        # [S4-009] The Visit rebuild clock may be frozen before waiting on the
+        # LocationDerivationState lock. Family authority must use a fresh clock
+        # after its own membership/reminder locks, so never forward rebuild `now`.
+        derive_arrival_for_finalized_visit(db, visit=visit)
 
     state.finalized_through = safe_through
     _refresh_place_stats(db, user_id)
