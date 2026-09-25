@@ -557,7 +557,13 @@ export function parseFamilyArrivalReminders(
     const status = arrivalStatus(raw.status)
     const arrivedAt = raw.arrived_at === null ? null : isoDateTime(raw.arrived_at)
     if ((status === 'ARRIVED') !== (arrivedAt !== null)) return invalidFamilyResponse()
-    if (arrivedAt !== null && Date.parse(arrivedAt) < Date.parse(createdAt)) {
+    if (
+      arrivedAt !== null
+      && (
+        Date.parse(arrivedAt) < Date.parse(createdAt)
+        || Date.parse(arrivedAt) >= Date.parse(expiresAt)
+      )
+    ) {
       return invalidFamilyResponse()
     }
 
