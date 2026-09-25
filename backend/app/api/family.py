@@ -10,11 +10,18 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.deps import get_current_user_id
-from app.family_models import FamilyPermissionCode
+from app.family_models import FamilyAuditAuthorityType, FamilyPermissionCode
 from app.schemas import SignedTransfer, TodayFootprintResponse
 from app.services.family_audit_service import (
     FamilyAuditError,
     list_family_access_audit,
+)
+from app.services.family_emergency_location_service import (
+    FamilyEmergencyShareError,
+    create_emergency_location_share,
+    get_emergency_shared_location,
+    list_active_emergency_location_shares,
+    revoke_emergency_location_share,
 )
 from app.services.family_sensitive_read_service import (
     FamilySensitiveReadError,
@@ -116,11 +123,28 @@ class FamilyAuditResponse(BaseModel):
     event_id: UUID
     actor_user_id: UUID
     resource_owner_user_id: UUID
-    permission_code: FamilyPermissionCode
+    authority_type: FamilyAuditAuthorityType
+    permission_code: FamilyPermissionCode | None
     resource_type: str
     action: str
     result: str
     created_at: datetime
+
+
+class FamilyEmergencyShareCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    grantee_user_id: UUID
+    duration_minutes: int
+
+
+class FamilyEmergencyShareResponse(BaseModel):
+    share_id: UUID
+    resource_owner_user_id: UUID
+    grantee_user_id: UUID
+    expires_at: datetime
+    created_at: datetime
+    direction: str
 
 
 def _raise(exc: FamilyServiceError) -> None:
@@ -396,7 +420,12 @@ def family_access_audit(
             event_id=row.event_id,
             actor_user_id=row.actor_user_id,
             resource_owner_user_id=row.resource_owner_user_id,
-            permission_code=FamilyPermissionCode(row.permission_code),
+            authority_type=FamilyAuditAuthorityType(row.authority_type),
+            permission_code=(
+                FamilyPermissionCode(row.permission_code)
+                if row.permission_code is not None
+                else None
+            ),
             resource_type=row.resource_type,
             action=row.action,
             result=row.result,
@@ -404,3 +433,81 @@ def family_access_audit(
         )
         for row in rows
     ]
+
+
+
+@router.post(
+    "/emergency-location-shares",
+    response_model=FamilyEmergencyShareResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_family_emergency_location_share(
+    payload: FamilyEmergencyShareCreateRequest,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> FamilyEmergencyShareResponse:
+    try:
+        result = create_emergency_location_share(
+            db,
+            resource_owner_user_id=user_id,
+            grantee_user_id=payload.grantee_user_id,
+            duration_minutes=payload.duration_minutes,
+        )
+    except FamilyEmergencyShareError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return FamilyEmergencyShareResponse(**result.__dict__)
+
+
+@router.get(
+    "/emergency-location-shares",
+    response_model=list[FamilyEmergencyShareResponse],
+)
+def get_family_emergency_location_shares(
+    user_id: CurrentUser,
+    db: DbSession,
+) -> list[FamilyEmergencyShareResponse]:
+    try:
+        rows = list_active_emergency_location_shares(db, user_id=user_id)
+    except FamilyEmergencyShareError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return [FamilyEmergencyShareResponse(**row.__dict__) for row in rows]
+
+
+@router.post(
+    "/emergency-location-shares/{share_id}/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def revoke_family_emergency_location_share(
+    share_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> Response:
+    try:
+        revoke_emergency_location_share(
+            db,
+            actor_user_id=user_id,
+            share_id=share_id,
+        )
+    except FamilyEmergencyShareError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/emergency-location-shares/{share_id}/location",
+    response_model=FamilyCurrentLocationResponse,
+)
+def family_emergency_shared_location(
+    share_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> FamilyCurrentLocationResponse:
+    try:
+        result = get_emergency_shared_location(
+            db,
+            share_id=share_id,
+            grantee_user_id=user_id,
+        )
+    except FamilyEmergencyShareError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    return FamilyCurrentLocationResponse(**result.__dict__)
