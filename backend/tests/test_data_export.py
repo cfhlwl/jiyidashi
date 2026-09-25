@@ -44,6 +44,7 @@ async def test_empty_account_exports_versioned_json(client, auth_headers):
     assert response.status_code == 200
     body = response.json()
     assert body["format"] == "jiyidashi.user-export.v1"
+    assert body["profile"]["elder_mode_enabled"] is False
     assert body["memories"] == []
     assert body["memory_sources"] == []
     assert body["memory_edits"] == []
