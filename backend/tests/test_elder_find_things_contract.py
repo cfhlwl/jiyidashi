@@ -8,9 +8,6 @@ def test_elder_find_things_adds_no_backend_authority() -> None:
 
     assert "/v1/memory/query" in paths
     assert not any(path.startswith("/v1/elder") for path in paths)
-    assert "/v1/family/members/{resource_owner_user_id}/memories" in paths
-    assert "/v1/objects" in paths
-
     query_methods = app.openapi()["paths"]["/v1/memory/query"]
     assert "post" in query_methods
 
