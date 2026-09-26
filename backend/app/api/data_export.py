@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.media_models import MediaAsset, MediaEvidenceLink
-from app.person_models import Person, PersonAlias
 from app.models import (
     LocationDerivationState,
     LocationPoint,
@@ -31,6 +30,7 @@ from app.models import (
     User,
     Visit,
 )
+from app.person_models import Person, PersonAlias
 
 router = APIRouter(prefix="/export", tags=["export"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
