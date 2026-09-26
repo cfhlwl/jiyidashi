@@ -22,8 +22,10 @@ import {
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
 import {
+  CaptureActionAuthority,
   deriveElderRememberState,
   elderRememberStateLabel,
+  isCaptureActionStaleError,
 } from '../../services/elderRemember'
 import {
   createClientUploadId,
@@ -86,7 +88,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 function isStaleCaptureSessionError(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith('登录状态已变化；')
+  return isCaptureActionStaleError(error)
+    || (error instanceof Error && error.message.startsWith('登录状态已变化；'))
 }
 
 function filenameFromPath(filePath: string): string | null {
@@ -240,6 +243,7 @@ export default function Page() {
   const [loading, setLoading] = useState(false)
 
   const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null)
+  const selectedPhotoRef = useRef<SelectedPhoto | null>(null)
   const [photoTitle, setPhotoTitle] = useState('')
   const [photoContent, setPhotoContent] = useState('')
   const [photoPhase, setPhotoPhase] = useState<PhotoSubmissionPhase>('selected')
@@ -261,7 +265,9 @@ export default function Page() {
   const voiceSubmitLock = useRef(new VoiceSubmissionLock())
   const voiceRecordingRef = useRef(false)
   const discardNextVoiceStopRef = useRef(false)
+  const captureActionAuthorityRef = useRef(new CaptureActionAuthority())
   const captureOwnerRef = useRef<string | null>(currentAuthenticatedUserId())
+  const captureAuthEpochRef = useRef<number | null>(null)
 
   useEffect(() => {
     // [人工注释][S1-004] 页面只订阅模块级 RecorderLifecycleController；卸载先取消 subscriber，
@@ -306,6 +312,7 @@ export default function Page() {
     })
 
     return () => {
+      captureActionAuthorityRef.current.invalidate()
       unsubscribeRecorder()
       deleteTempFile(voiceClipRef.current?.tempFilePath)
       voiceClipRef.current = null
@@ -313,12 +320,14 @@ export default function Page() {
   }, [])
 
   const resetLocalCaptureForSessionChange = () => {
+    captureActionAuthorityRef.current.invalidate()
     if (voiceRecordingRef.current) {
       discardNextVoiceStopRef.current = true
       recorderController.stop()
     }
     deleteTempFile(voiceClipRef.current?.tempFilePath)
-    deleteTempFile(selectedPhoto?.tempFilePath)
+    deleteTempFile(selectedPhotoRef.current?.tempFilePath)
+    selectedPhotoRef.current = null
     voiceClipRef.current = null
     setVoiceClip(null)
     setVoiceRecording(false)
@@ -336,13 +345,20 @@ export default function Page() {
     setStatus('')
   }
 
-  useEffect(() => subscribeAuthSession((owner) => {
-    if (captureOwnerRef.current === owner) return
+  useEffect(() => subscribeAuthSession((owner, epoch) => {
+    if (captureAuthEpochRef.current === null) {
+      captureAuthEpochRef.current = epoch
+      captureOwnerRef.current = owner
+      return
+    }
+    if (captureAuthEpochRef.current === epoch && captureOwnerRef.current === owner) return
+    captureAuthEpochRef.current = epoch
     captureOwnerRef.current = owner
     resetLocalCaptureForSessionChange()
-  }), [selectedPhoto])
+  }), [])
 
   useDidHide(() => {
+    captureActionAuthorityRef.current.invalidate()
     if (!voiceRecordingRef.current) return
     discardNextVoiceStopRef.current = true
     setVoiceStatus('录音已因离开页面而取消；不会上传或保存。')
@@ -380,28 +396,41 @@ export default function Page() {
   }
 
   const choosePhoto = async () => {
-    if (photoSubmitLock.current.busy) return
+    if (photoSubmitLock.current.busy || !ensureLogin()) return
+    let assertActionCurrent: (() => void) | null = null
     try {
+      const action = captureActionAuthorityRef.current.begin(createCaptureSessionGuard())
+      assertActionCurrent = action.assertCurrent
       // [人工注释][S1-005] 只有用户主动点击才调用微信统一媒体选择器，一次只取一张原图；不会后台扫描相册。
+      // picker 返回前必须保持同一 auth epoch / owner / page action generation；旧会话结果不得挂到新账号。
       const result = await Taro.chooseMedia({
         count: 1,
         mediaType: ['image'],
         sizeType: ['original'],
         sourceType: ['album', 'camera'],
       })
+      action.assertCurrent()
       const selectedFile = result.tempFiles[0]
       const tempFilePath = selectedFile?.tempFilePath
       if (!tempFilePath || typeof selectedFile.size !== 'number') return
-      setSelectedPhoto({
+      const nextPhoto: SelectedPhoto = {
         tempFilePath,
         originalFilename: filenameFromPath(tempFilePath),
         clientUploadId: createClientUploadId(),
         sizeBytes: selectedFile.size,
-      })
+      }
+      selectedPhotoRef.current = nextPhoto
+      setSelectedPhoto(nextPhoto)
       setPhotoPhase('selected')
       setPhotoError('')
       setPhotoMemoryId(null)
     } catch (error) {
+      if (isStaleCaptureSessionError(error)) return
+      try {
+        assertActionCurrent?.()
+      } catch {
+        return
+      }
       if (isUserSelectionCancellation(error)) {
         // [人工注释][S1-005] 用户取消选择时尚未调用 create upload，因此不会产生服务器媒体记录。
         setPhotoError('')
@@ -490,9 +519,11 @@ export default function Page() {
   }
 
   const startVoiceRecording = async () => {
-    if (voiceSubmitLock.current.busy) return
+    if (voiceSubmitLock.current.busy || !ensureLogin()) return
     try {
+      const action = captureActionAuthorityRef.current.begin(createCaptureSessionGuard())
       const granted = await ensureMicrophonePermission(microphonePermissionAdapter)
+      action.assertCurrent()
       if (!granted) {
         setVoicePermission('denied')
         setVoicePhase('failed')
@@ -509,10 +540,12 @@ export default function Page() {
       setVoiceError('')
       setVoiceMemoryId(null)
       setVoicePhase('recorded')
+      // permission Promise 晚到时 action guard 必须先通过；失效 action 永远不能启动全局 RecorderManager。
       if (!recorderController.start()) {
         setVoiceStatus('上一段录音仍在停止并清理，请稍后再试。')
       }
     } catch (error) {
+      if (isStaleCaptureSessionError(error)) return
       const message = getErrorMessage(error, '无法开始录音')
       setVoicePhase('failed')
       setVoiceError(message)
@@ -532,16 +565,27 @@ export default function Page() {
   }
 
   const openMicrophoneSettings = async () => {
-    const granted = await recoverMicrophonePermission(microphonePermissionAdapter)
-    setVoicePermission(granted ? 'granted' : 'denied')
-    if (granted) {
-      setVoiceError('')
-      setVoicePhase('recorded')
-    } else {
+    if (!ensureLogin()) return
+    try {
+      const action = captureActionAuthorityRef.current.begin(createCaptureSessionGuard())
+      const granted = await recoverMicrophonePermission(microphonePermissionAdapter)
+      action.assertCurrent()
+      setVoicePermission(granted ? 'granted' : 'denied')
+      if (granted) {
+        setVoiceError('')
+        setVoicePhase('recorded')
+      } else {
+        setVoicePhase('failed')
+        setVoiceError('麦克风权限仍未开启')
+      }
+      setVoiceStatus(granted ? '麦克风权限已恢复，可以开始录音。' : '麦克风权限仍未开启，不会录音或提交任何语音数据。')
+    } catch (error) {
+      if (isStaleCaptureSessionError(error)) return
+      const message = getErrorMessage(error, '无法恢复麦克风权限')
       setVoicePhase('failed')
-      setVoiceError('麦克风权限仍未开启')
+      setVoiceError(message)
+      setVoiceStatus(message)
     }
-    setVoiceStatus(granted ? '麦克风权限已恢复，可以开始录音。' : '麦克风权限仍未开启，不会录音或提交任何语音数据。')
   }
 
   const submitVoice = async () => {
