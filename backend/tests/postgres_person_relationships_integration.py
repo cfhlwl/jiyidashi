@@ -310,6 +310,32 @@ def _cross_owner_fk_rejected(
             db.rollback()
 
 
+def _reversed_direct_insert_rejected(
+    user_id: UUID,
+    person_a: UUID,
+    person_b: UUID,
+) -> None:
+    low_id, high_id = sorted(
+        (person_a, person_b),
+        key=lambda value: value.bytes,
+    )
+    with SessionLocal() as db:
+        db.add(
+            PersonRelationship(
+                user_id=user_id,
+                person_low_id=high_id,
+                person_high_id=low_id,
+                relationship_kind=PersonRelationshipKind.FRIEND,
+                revision=0,
+            )
+        )
+        try:
+            db.commit()
+            raise AssertionError("reversed PersonRelationship unexpectedly committed")
+        except IntegrityError:
+            db.rollback()
+
+
 def _self_edge_rejected(user_id: UUID, person_id: UUID) -> None:
     with SessionLocal() as db:
         db.add(
@@ -364,6 +390,9 @@ def main() -> None:
     foreign_a, _ = _seed_people(owner_a, "owner-a")
     foreign_b, _ = _seed_people(owner_b, "owner-b")
     _cross_owner_fk_rejected(owner_a, foreign_a, foreign_b)
+
+    canonical_a, canonical_b = _seed_people(owner_a, "canonical-check")
+    _reversed_direct_insert_rejected(owner_a, canonical_a, canonical_b)
 
     self_person, _ = _seed_people(owner_a, "self")
     _self_edge_rejected(owner_a, self_person)
