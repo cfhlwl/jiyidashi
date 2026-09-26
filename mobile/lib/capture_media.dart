@@ -564,12 +564,28 @@ class TrustedMediaCaptureService {
   TrustedMediaCaptureService(this.api);
   final JiYiApiClient api;
 
+  ({int version, String owner}) _captureSession() {
+    final owner = api.authenticatedUserId?.trim();
+    if (owner == null || owner.isEmpty) {
+      throw ApiException(401, '请先登录');
+    }
+    return (version: api.sessionVersion, owner: owner);
+  }
+
+  void _assertSameSession(({int version, String owner}) session) {
+    if (api.sessionVersion != session.version ||
+        api.authenticatedUserId != session.owner) {
+      throw ProtocolException('登录状态已变化；本次记录已停止，请在当前账号重新操作');
+    }
+  }
+
   Future<String> submitPhoto(
     PendingMediaFile file, {
     String? title,
     required String content,
     void Function(MediaSubmissionPhase phase)? onPhase,
   }) async {
+    final session = _captureSession();
     onPhase?.call(MediaSubmissionPhase.uploading);
     final upload = await api.createMediaUpload(
       clientUploadId: file.clientUploadId,
@@ -578,9 +594,12 @@ class TrustedMediaCaptureService {
       sizeBytes: file.sizeBytes,
       originalFilename: file.originalFilename,
     );
+    _assertSameSession(session);
     await _uploadIfNeeded(upload, file);
+    _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.verifying);
     await api.completeMediaUpload(upload.mediaId);
+    _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.saving);
     final response = await api.createPhotoMemory(
       mediaId: upload.mediaId,
@@ -588,6 +607,7 @@ class TrustedMediaCaptureService {
       content: content,
       occurredAt: file.occurredAt,
     );
+    _assertSameSession(session);
     return _memoryId(response);
   }
 
@@ -596,6 +616,7 @@ class TrustedMediaCaptureService {
     String? title,
     void Function(MediaSubmissionPhase phase)? onPhase,
   }) async {
+    final session = _captureSession();
     onPhase?.call(MediaSubmissionPhase.uploading);
     final upload = await api.createMediaUpload(
       clientUploadId: file.clientUploadId,
@@ -604,15 +625,19 @@ class TrustedMediaCaptureService {
       sizeBytes: file.sizeBytes,
       originalFilename: file.originalFilename,
     );
+    _assertSameSession(session);
     await _uploadIfNeeded(upload, file);
+    _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.verifying);
     await api.completeMediaUpload(upload.mediaId);
+    _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.transcribing);
     final response = await api.createVoiceMemory(
       mediaId: upload.mediaId,
       title: title,
       occurredAt: file.occurredAt,
     );
+    _assertSameSession(session);
     return _memoryId(response);
   }
 
