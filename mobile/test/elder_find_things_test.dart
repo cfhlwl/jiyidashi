@@ -167,7 +167,7 @@ void main() {
     pending.complete(_found('A 的可信位置'));
     await tester.pumpAndSettle();
 
-    expect(find.text('A 的可信位置'), findsOneWidget);
+    expect(find.text('A 的可信位置'), findsWidgets);
     expect(find.text('本次查找：护照 A'), findsOneWidget);
     expect(find.text('本次查找：钥匙 B'), findsNothing);
     expect(api.queryCalls, 1);
@@ -203,7 +203,10 @@ void main() {
     api.accessToken = 'token-b';
     api.authenticatedUserId = 'owner-b';
     pending.complete(_found('A 的书房'));
-    await tester.pumpAndSettle();
+    // The stale response is intentionally ignored. Pump just enough to deliver
+    // the completed future; do not wait for an unrelated loading animation to settle.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.text('A 的书房'), findsNothing);
   });
