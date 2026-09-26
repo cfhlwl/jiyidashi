@@ -603,10 +603,8 @@ void main() {
       2,
     );
   });
-}
 
-
-test('trusted voice capture stops before storage after account switch', () async {
+  test('trusted voice capture stops before storage after account switch', () async {
   final api = _SessionSwitchMediaApi();
   final service = TrustedMediaCaptureService(api);
   final file = _memoryFile(
@@ -623,10 +621,9 @@ test('trusted voice capture stops before storage after account switch', () async
   expect(api.calls.where((call) => call.startsWith('put:')), isEmpty);
   expect(api.calls.where((call) => call.startsWith('complete:')), isEmpty);
   expect(api.calls.where((call) => call.startsWith('voice-memory:')), isEmpty);
-})
+  });
 
-
-test('trusted voice capture stops before signed PUT if account switches during local read', () async {
+  test('trusted voice capture stops before signed PUT if account switches during local read', () async {
   final api = _FakeMediaApi();
   final service = TrustedMediaCaptureService(api);
   final file = PendingMediaFile(
@@ -651,4 +648,5 @@ test('trusted voice capture stops before signed PUT if account switches during l
   expect(api.calls.where((call) => call.startsWith('put:')), isEmpty);
   expect(api.calls.where((call) => call.startsWith('complete:')), isEmpty);
   expect(api.calls.where((call) => call.startsWith('voice-memory:')), isEmpty);
-})
+  });
+}
