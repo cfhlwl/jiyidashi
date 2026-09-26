@@ -43,7 +43,7 @@
 > Stage 2「自动记」：✅ complete  
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
-> 当前 `main` 基线：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 合并后）  
+> Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
 > 下一阶段：**V2 Personal Memory Graph**；本文件当前仅记录规划项，尚未标记为进行中或完成。
 
 ## 状态规则
