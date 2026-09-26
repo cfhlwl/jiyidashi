@@ -84,3 +84,11 @@ test('query page binds response to owner auth epoch and exact submitted question
   assert.match(queryPage, /useDidHide\(\(\) =>/)
   assert.match(queryPage, /subscribeAuthSession\(/)
 })
+
+
+test('page hide invalidates pending query and clears loading gate for next query', () => {
+  assert.match(
+    queryPage,
+    /useDidHide\(\(\) => \{[\s\S]*?queryEpoch\.current\.invalidate\(\)[\s\S]*?queryBusyRef\.current = false[\s\S]*?elderQueryGate\.current\.end\(\)[\s\S]*?setLoading\(false\)/,
+  )
+})
