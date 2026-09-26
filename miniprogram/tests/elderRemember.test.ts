@@ -3,6 +3,11 @@ import { resolve } from 'node:path'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import {
+  deriveElderRememberState,
+  elderRememberStateLabel,
+} from '../src/services/elderRemember'
+
 const capture = readFileSync(resolve(process.cwd(), 'src/pages/capture/index.tsx'), 'utf8')
 const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
 const css = readFileSync(resolve(process.cwd(), 'src/pages/capture/index.scss'), 'utf8')
@@ -118,4 +123,39 @@ test('stale account errors never repopulate capture UI', () => {
   assert.match(capture, /if \(!isStaleCaptureSessionError\(error\)\)[\s\S]*?setStatus/)
   assert.match(capture, /if \(!isStaleCaptureSessionError\(error\)\)[\s\S]*?setPhotoError/)
   assert.match(capture, /if \(!isStaleCaptureSessionError\(error\)\)[\s\S]*?setVoiceError/)
+})
+
+
+test('Elder remember state machine maps recorder and trusted submission phases exactly', () => {
+  const base = {
+    recording: false,
+    hasClip: false,
+    memorySaved: false,
+    submitting: false,
+    phase: 'recorded' as const,
+    hasError: false,
+  }
+  assert.equal(deriveElderRememberState(base), 'IDLE')
+  assert.equal(deriveElderRememberState({ ...base, recording: true }), 'RECORDING')
+  assert.equal(deriveElderRememberState({ ...base, hasClip: true }), 'RECORDED')
+  assert.equal(
+    deriveElderRememberState({ ...base, hasClip: true, submitting: true, phase: 'uploading' }),
+    'UPLOADING',
+  )
+  assert.equal(
+    deriveElderRememberState({ ...base, hasClip: true, submitting: true, phase: 'verifying' }),
+    'VERIFYING',
+  )
+  assert.equal(
+    deriveElderRememberState({ ...base, hasClip: true, submitting: true, phase: 'transcribing' }),
+    'TRANSCRIBING',
+  )
+  assert.equal(deriveElderRememberState({ ...base, memorySaved: true }), 'SAVED')
+  assert.equal(deriveElderRememberState({ ...base, hasError: true, phase: 'failed' }), 'FAILED')
+
+  assert.equal(elderRememberStateLabel('IDLE'), '准备好了，点“开始说”')
+  assert.equal(elderRememberStateLabel('RECORDING'), '正在听你说')
+  assert.equal(elderRememberStateLabel('RECORDED'), '已经录好了')
+  assert.equal(elderRememberStateLabel('SAVED'), '已经记住了')
+  assert.equal(elderRememberStateLabel('FAILED'), '这次没有保存成功')
 })
