@@ -8,8 +8,23 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.deps import get_current_user_id
+from app.person_memory_schemas import (
+    PersonInteractionRow,
+    PersonMemoryLinkCreate,
+    PersonMemoryLinkPatch,
+    PersonMemoryLinkRead,
+    PersonMemoryTimelineRow,
+)
 from app.person_models import Person
 from app.person_schemas import PersonCreate, PersonPatch, PersonRead
+from app.services.person_memory_service import (
+    PersonMemoryLinkError,
+    create_person_memory_link,
+    delete_person_memory_link,
+    list_person_memory_timeline,
+    list_recent_person_interactions,
+    patch_person_memory_link,
+)
 from app.services.person_service import (
     PersonServiceError,
     aliases_by_person,
@@ -26,6 +41,10 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def _raise_person_error(exc: PersonServiceError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+
+
+def _raise_person_memory_error(exc: PersonMemoryLinkError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
 
@@ -66,6 +85,105 @@ def list_people_route(
         person_ids=[item.id for item in people],
     )
     return [_read(item, aliases.get(item.id, [])) for item in people]
+
+
+@router.get("/interactions", response_model=list[PersonInteractionRow])
+def list_person_interactions_route(
+    user_id: CurrentUser,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[PersonInteractionRow]:
+    return list_recent_person_interactions(db, user_id=user_id, limit=limit)
+
+
+@router.post(
+    "/{person_id}/memories/{memory_id}",
+    response_model=PersonMemoryLinkRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_person_memory_link_route(
+    person_id: UUID,
+    memory_id: UUID,
+    payload: PersonMemoryLinkCreate,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> PersonMemoryLinkRead:
+    try:
+        return create_person_memory_link(
+            db,
+            user_id=user_id,
+            person_id=person_id,
+            memory_id=memory_id,
+            payload=payload,
+        )
+    except PersonMemoryLinkError as exc:
+        _raise_person_memory_error(exc)
+
+
+@router.patch(
+    "/{person_id}/memories/{memory_id}",
+    response_model=PersonMemoryLinkRead,
+)
+def patch_person_memory_link_route(
+    person_id: UUID,
+    memory_id: UUID,
+    payload: PersonMemoryLinkPatch,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> PersonMemoryLinkRead:
+    try:
+        return patch_person_memory_link(
+            db,
+            user_id=user_id,
+            person_id=person_id,
+            memory_id=memory_id,
+            payload=payload,
+        )
+    except PersonMemoryLinkError as exc:
+        _raise_person_memory_error(exc)
+
+
+@router.delete(
+    "/{person_id}/memories/{memory_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_person_memory_link_route(
+    person_id: UUID,
+    memory_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> Response:
+    try:
+        delete_person_memory_link(
+            db,
+            user_id=user_id,
+            person_id=person_id,
+            memory_id=memory_id,
+        )
+    except PersonMemoryLinkError as exc:
+        _raise_person_memory_error(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{person_id}/memories",
+    response_model=list[PersonMemoryTimelineRow],
+)
+def list_person_memory_timeline_route(
+    person_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[PersonMemoryTimelineRow]:
+    try:
+        return list_person_memory_timeline(
+            db,
+            user_id=user_id,
+            person_id=person_id,
+            limit=limit,
+        )
+    except PersonMemoryLinkError as exc:
+        _raise_person_memory_error(exc)
 
 
 @router.get("/{person_id}", response_model=PersonRead)
