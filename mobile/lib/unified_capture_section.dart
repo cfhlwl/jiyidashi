@@ -14,6 +14,7 @@ class UnifiedMediaCaptureSection extends StatefulWidget {
     this.mediaDevice,
     this.mediaDeviceFactory,
     this.service,
+    this.elderMode = false,
   }) : assert(mediaDevice == null || mediaDeviceFactory == null);
 
   final JiYiApiClient api;
@@ -22,10 +23,22 @@ class UnifiedMediaCaptureSection extends StatefulWidget {
   // 生产默认仍创建 PlatformCaptureMediaDevice。
   final CaptureMediaDevice Function()? mediaDeviceFactory;
   final TrustedMediaCaptureService? service;
+  final bool elderMode;
 
   @override
   State<UnifiedMediaCaptureSection> createState() =>
       _UnifiedMediaCaptureSectionState();
+}
+
+enum ElderVoiceCaptureState {
+  idle,
+  recording,
+  recorded,
+  uploading,
+  verifying,
+  transcribing,
+  saved,
+  failed,
 }
 
 class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
@@ -56,6 +69,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
   String? voiceMessage;
   JiYiStatusKind photoMessageKind = JiYiStatusKind.info;
   JiYiStatusKind voiceMessageKind = JiYiStatusKind.info;
+  ElderVoiceCaptureState elderVoiceState = ElderVoiceCaptureState.idle;
 
   CaptureMediaDevice get _device =>
       _deviceInstance ??=
@@ -299,6 +313,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
     if (_mediaBusy || voice != null) return;
     if (!_lifecycleAllowsRecording) {
       setState(() {
+        elderVoiceState = ElderVoiceCaptureState.failed;
         voiceMessageKind = JiYiStatusKind.warning;
         voiceMessage = '请回到应用前台后再开始录音。';
       });
@@ -332,6 +347,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
       }
       if (!allowed) {
         setState(() {
+          elderVoiceState = ElderVoiceCaptureState.failed;
           voiceMessageKind = JiYiStatusKind.error;
           voiceMessage = '麦克风权限未开启。请到系统设置中允许“迹忆”使用麦克风。';
         });
@@ -339,6 +355,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
       }
       setState(() {
         voiceRecording = true;
+        elderVoiceState = ElderVoiceCaptureState.recording;
         voiceMessageKind = JiYiStatusKind.info;
         voiceMessage = '正在录音…最长 60 秒。';
       });
@@ -359,6 +376,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
             voice = null;
             voiceSavedPendingCleanup = false;
           }
+          elderVoiceState = ElderVoiceCaptureState.failed;
           voiceMessageKind = JiYiStatusKind.error;
           voiceMessage = _errorMessage(error, '无法开始录音');
         });
@@ -426,6 +444,9 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
       setState(() {
         voiceRecording = false;
         voice = clip;
+        elderVoiceState = clip == null
+            ? ElderVoiceCaptureState.failed
+            : ElderVoiceCaptureState.recorded;
         voiceSavedPendingCleanup = false;
         voiceMessageKind =
             clip == null ? JiYiStatusKind.error : JiYiStatusKind.info;
@@ -445,6 +466,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
             voice = null;
             voiceSavedPendingCleanup = false;
           }
+          elderVoiceState = ElderVoiceCaptureState.failed;
           voiceMessageKind = JiYiStatusKind.error;
           voiceMessage = _errorMessage(error, '停止录音失败');
         });
@@ -464,6 +486,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
     }
     setState(() {
       voiceBusy = true;
+      elderVoiceState = ElderVoiceCaptureState.uploading;
       voiceMessageKind = JiYiStatusKind.info;
       voiceMessage = '准备上传原始录音…';
     });
@@ -474,6 +497,12 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
         onPhase: (phase) {
           if (!mounted) return;
           setState(() {
+            elderVoiceState = switch (phase) {
+              MediaSubmissionPhase.uploading => ElderVoiceCaptureState.uploading,
+              MediaSubmissionPhase.verifying => ElderVoiceCaptureState.verifying,
+              MediaSubmissionPhase.transcribing => ElderVoiceCaptureState.transcribing,
+              MediaSubmissionPhase.saving => ElderVoiceCaptureState.transcribing,
+            };
             voiceMessageKind = JiYiStatusKind.info;
             voiceMessage = _voicePhaseText(phase);
           });
@@ -495,11 +524,13 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
           // 不再展示提交入口，避免清理失败诱导重复业务提交。
           voice = clip;
           voiceSavedPendingCleanup = true;
+          elderVoiceState = ElderVoiceCaptureState.saved;
           voiceMessageKind = JiYiStatusKind.warning;
           voiceMessage = '✓ 录音已验证并保存为可信记忆；本地临时录音清理失败，可再次清除。';
         } else {
           voice = null;
           voiceSavedPendingCleanup = false;
+          elderVoiceState = ElderVoiceCaptureState.saved;
           voiceMessageKind = JiYiStatusKind.success;
           voiceMessage = '✓ 录音已验证并保存为可信记忆';
         }
@@ -507,6 +538,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
     } catch (error) {
       if (mounted) {
         setState(() {
+          elderVoiceState = ElderVoiceCaptureState.failed;
           voiceMessageKind = JiYiStatusKind.error;
           voiceMessage = '${_errorMessage(error, '语音记录失败')} 本地录音已保留，可直接重试。';
         });
@@ -536,6 +568,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
     setState(() {
       voice = null;
       voiceSavedPendingCleanup = false;
+      elderVoiceState = ElderVoiceCaptureState.idle;
       voiceMessageKind = JiYiStatusKind.info;
       voiceMessage = wasSaved
           ? '本地临时录音已清除；已经保存的记忆不受影响。'
@@ -543,12 +576,85 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
     });
   }
 
+  String get _elderVoiceStateText => switch (elderVoiceState) {
+        ElderVoiceCaptureState.idle => '准备好了，点“开始说”',
+        ElderVoiceCaptureState.recording => '正在听你说',
+        ElderVoiceCaptureState.recorded => '已经录好了',
+        ElderVoiceCaptureState.uploading => '正在上传',
+        ElderVoiceCaptureState.verifying => '正在验证录音',
+        ElderVoiceCaptureState.transcribing => '正在转成文字并保存',
+        ElderVoiceCaptureState.saved => '已经记住了',
+        ElderVoiceCaptureState.failed => '这次没有保存成功',
+      };
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (widget.elderMode) ...[
+          JiYiSectionCard(
+            leading: Icon(Icons.mic_none_outlined, color: theme.colorScheme.primary),
+            title: '帮我记一下',
+            subtitle: '你主动开始说，迹忆才会录音。说完后还要由你确认保存。',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Semantics(
+                  liveRegion: true,
+                  label: '语音记录状态：$_elderVoiceStateText',
+                  child: Text(
+                    _elderVoiceStateText,
+                    key: const ValueKey('elder-voice-state'),
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.md),
+                if (!voiceRecording && voice == null)
+                  FilledButton.icon(
+                    key: const ValueKey('elder-voice-start'),
+                    onPressed: _mediaBusy ? null : _startVoiceRecording,
+                    icon: const Icon(Icons.mic_none_outlined),
+                    label: const Text('开始说'),
+                  ),
+                if (voiceRecording)
+                  FilledButton.icon(
+                    key: const ValueKey('elder-voice-stop'),
+                    onPressed: voiceBusy ? null : _stopVoiceRecording,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: const Text('说完了'),
+                  ),
+                if (voice != null && !voiceSavedPendingCleanup) ...[
+                  FilledButton.icon(
+                    key: const ValueKey('elder-voice-submit'),
+                    onPressed: voiceBusy ? null : _submitVoice,
+                    icon: const Icon(Icons.cloud_upload_outlined),
+                    label: Text(
+                      elderVoiceState == ElderVoiceCaptureState.failed
+                          ? '重试保存这段话'
+                          : '保存这段话',
+                    ),
+                  ),
+                  const SizedBox(height: JiYiSpacing.xs),
+                  OutlinedButton(
+                    key: const ValueKey('elder-voice-cancel'),
+                    onPressed: voiceBusy ? null : _clearVoice,
+                    child: const Text('不保存，清除录音'),
+                  ),
+                ],
+                if (voiceMessage != null) ...[
+                  const SizedBox(height: JiYiSpacing.sm),
+                  JiYiStatusBanner(
+                    kind: voiceMessageKind,
+                    message: voiceMessage!,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.md),
+        ],
         JiYiSectionCard(
           leading: Icon(Icons.photo_camera_outlined, color: theme.colorScheme.primary),
           title: '图片记一下',
@@ -627,7 +733,8 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        JiYiSectionCard(
+        if (!widget.elderMode)
+          JiYiSectionCard(
           leading: Icon(Icons.mic_none_outlined, color: theme.colorScheme.primary),
           title: '录一句',
           subtitle: '只在你主动操作时录音，最长 60 秒；录音完成并验证后才会保存。',

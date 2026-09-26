@@ -1,22 +1,33 @@
 import { Button, Image, Input, Textarea, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useDidHide } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import {
   completeAudioMediaUpload,
   completeImageMediaUpload,
+  createCaptureSessionGuard,
+  currentAuthenticatedUserId,
   createAudioMediaUpload,
   createImageMediaUpload,
   createPhotoMemory,
   createTextMemory,
   createVoiceMemory,
   currentElderModeEnabled,
+  getPrivacyStatus,
   isAuthenticated,
+  subscribeAuthSession,
   subscribeElderMode,
   markObjectLocationStale,
   putSignedMediaObject,
   rememberObjectLocation,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import {
+  CaptureActionAuthority,
+  assertCaptureActionCurrentOrCleanup,
+  deriveElderRememberState,
+  elderRememberStateLabel,
+  isCaptureActionStaleError,
+} from '../../services/elderRemember'
 import {
   createClientUploadId,
   detectImageContentType,
@@ -75,6 +86,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return String((error as { errMsg?: unknown }).errMsg || fallback)
   }
   return fallback
+}
+
+function isStaleCaptureSessionError(error: unknown): boolean {
+  return isCaptureActionStaleError(error)
+    || (error instanceof Error && error.message.startsWith('登录状态已变化；'))
 }
 
 function filenameFromPath(filePath: string): string | null {
@@ -190,8 +206,35 @@ const recorderController = new RecorderLifecycleController(
 
 export default function Page() {
   const [elderMode, setElderMode] = useState(currentElderModeEnabled)
+  const [privacyPaused, setPrivacyPaused] = useState(false)
 
   useEffect(() => subscribeElderMode(setElderMode), [])
+
+  useEffect(() => {
+    if (!elderMode || !isAuthenticated()) {
+      setPrivacyPaused(false)
+      return
+    }
+    let cancelled = false
+    let guard: (() => void) | null = null
+    try {
+      guard = createCaptureSessionGuard()
+    } catch {
+      setPrivacyPaused(false)
+      return
+    }
+    void getPrivacyStatus()
+      .then((value) => {
+        guard?.()
+        if (!cancelled) setPrivacyPaused(value.recording_paused === true)
+      })
+      .catch(() => {
+        if (!cancelled) setPrivacyPaused(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [elderMode])
 
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
@@ -201,6 +244,7 @@ export default function Page() {
   const [loading, setLoading] = useState(false)
 
   const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null)
+  const selectedPhotoRef = useRef<SelectedPhoto | null>(null)
   const [photoTitle, setPhotoTitle] = useState('')
   const [photoContent, setPhotoContent] = useState('')
   const [photoPhase, setPhotoPhase] = useState<PhotoSubmissionPhase>('selected')
@@ -220,17 +264,29 @@ export default function Page() {
   const [voiceStatus, setVoiceStatus] = useState('录音完成后可上传，由服务端验证原始音频并执行 ASR。')
   const voiceClipRef = useRef<VoiceClip | null>(null)
   const voiceSubmitLock = useRef(new VoiceSubmissionLock())
+  const voiceRecordingRef = useRef(false)
+  const discardNextVoiceStopRef = useRef(false)
+  const captureActionAuthorityRef = useRef(new CaptureActionAuthority())
+  const captureOwnerRef = useRef<string | null>(currentAuthenticatedUserId())
+  const captureAuthEpochRef = useRef<number | null>(null)
 
   useEffect(() => {
     // [人工注释][S1-004] 页面只订阅模块级 RecorderLifecycleController；卸载先取消 subscriber，
     // 若仍在录音则 controller 会 stop，并在全局 onStop 返回后直接删除新生成的 tempFilePath，禁止回调已卸载页面。
     const unsubscribeRecorder = recorderController.subscribe({
       onStart: () => {
+        voiceRecordingRef.current = true
         setVoiceRecording(true)
         setVoiceStatus('正在录音…最长 60 秒。')
       },
       onStop: (result) => {
+        voiceRecordingRef.current = false
         setVoiceRecording(false)
+        if (discardNextVoiceStopRef.current) {
+          discardNextVoiceStopRef.current = false
+          deleteTempFile(result.tempFilePath)
+          return
+        }
         const nextClip: VoiceClip = {
           tempFilePath: result.tempFilePath,
           durationMs: result.duration,
@@ -246,17 +302,69 @@ export default function Page() {
         setVoiceStatus(`录音已完成（${Math.max(1, Math.round(result.duration / 1000))} 秒），可上传并由服务端转写。`)
       },
       onError: (error) => {
+        voiceRecordingRef.current = false
+        discardNextVoiceStopRef.current = false
         setVoiceRecording(false)
-        setVoiceStatus(getErrorMessage(error, '录音失败，请重试'))
+        const message = getErrorMessage(error, '录音失败，请重试')
+        setVoicePhase('failed')
+        setVoiceError(message)
+        setVoiceStatus(message)
       },
     })
 
     return () => {
+      captureActionAuthorityRef.current.invalidate()
       unsubscribeRecorder()
       deleteTempFile(voiceClipRef.current?.tempFilePath)
       voiceClipRef.current = null
     }
   }, [])
+
+  const resetLocalCaptureForSessionChange = () => {
+    captureActionAuthorityRef.current.invalidate()
+    if (voiceRecordingRef.current) {
+      discardNextVoiceStopRef.current = true
+      recorderController.stop()
+    }
+    deleteTempFile(voiceClipRef.current?.tempFilePath)
+    deleteTempFile(selectedPhotoRef.current?.tempFilePath)
+    selectedPhotoRef.current = null
+    voiceClipRef.current = null
+    setVoiceClip(null)
+    setVoiceRecording(false)
+    voiceRecordingRef.current = false
+    setVoicePhase('recorded')
+    setVoiceError('')
+    setVoiceMemoryId(null)
+    setVoiceSubmitting(false)
+    setVoiceStatus('录音完成后可上传，由服务端验证原始音频并执行 ASR。')
+    setSelectedPhoto(null)
+    setPhotoPhase('selected')
+    setPhotoError('')
+    setPhotoMemoryId(null)
+    setPhotoSubmitting(false)
+    setStatus('')
+  }
+
+  useEffect(() => subscribeAuthSession((owner, epoch) => {
+    if (captureAuthEpochRef.current === null) {
+      captureAuthEpochRef.current = epoch
+      captureOwnerRef.current = owner
+      return
+    }
+    if (captureAuthEpochRef.current === epoch && captureOwnerRef.current === owner) return
+    captureAuthEpochRef.current = epoch
+    captureOwnerRef.current = owner
+    resetLocalCaptureForSessionChange()
+  }), [])
+
+  useDidHide(() => {
+    captureActionAuthorityRef.current.invalidate()
+    if (!voiceRecordingRef.current) return
+    discardNextVoiceStopRef.current = true
+    setVoiceStatus('录音已因离开页面而取消；不会上传或保存。')
+    recorderController.stop()
+  })
 
   const ensureLogin = () => {
     if (isAuthenticated()) return true
@@ -273,21 +381,29 @@ export default function Page() {
     setLoading(true)
     setStatus('')
     try {
+      const guard = createCaptureSessionGuard()
       const memory = await createTextMemory(content, title)
+      guard()
       setContent('')
       setTitle('')
       setStatus(`✓ 已经帮你记住 · ${memory.id}`)
     } catch (error) {
-      setStatus(getErrorMessage(error, '保存失败'))
+      if (!isStaleCaptureSessionError(error)) {
+        setStatus(getErrorMessage(error, '保存失败'))
+      }
     } finally {
       setLoading(false)
     }
   }
 
   const choosePhoto = async () => {
-    if (photoSubmitLock.current.busy) return
+    if (photoSubmitLock.current.busy || !ensureLogin()) return
+    let assertActionCurrent: (() => void) | null = null
     try {
+      const action = captureActionAuthorityRef.current.begin(createCaptureSessionGuard())
+      assertActionCurrent = action.assertCurrent
       // [人工注释][S1-005] 只有用户主动点击才调用微信统一媒体选择器，一次只取一张原图；不会后台扫描相册。
+      // picker 返回前必须保持同一 auth epoch / owner / page action generation；旧会话结果不得挂到新账号。
       const result = await Taro.chooseMedia({
         count: 1,
         mediaType: ['image'],
@@ -297,16 +413,28 @@ export default function Page() {
       const selectedFile = result.tempFiles[0]
       const tempFilePath = selectedFile?.tempFilePath
       if (!tempFilePath || typeof selectedFile.size !== 'number') return
-      setSelectedPhoto({
+      assertCaptureActionCurrentOrCleanup(
+        action,
+        () => deleteTempFile(tempFilePath),
+      )
+      const nextPhoto: SelectedPhoto = {
         tempFilePath,
         originalFilename: filenameFromPath(tempFilePath),
         clientUploadId: createClientUploadId(),
         sizeBytes: selectedFile.size,
-      })
+      }
+      selectedPhotoRef.current = nextPhoto
+      setSelectedPhoto(nextPhoto)
       setPhotoPhase('selected')
       setPhotoError('')
       setPhotoMemoryId(null)
     } catch (error) {
+      if (isStaleCaptureSessionError(error)) return
+      try {
+        assertActionCurrent?.()
+      } catch {
+        return
+      }
       if (isUserSelectionCancellation(error)) {
         // [人工注释][S1-005] 用户取消选择时尚未调用 create upload，因此不会产生服务器媒体记录。
         setPhotoError('')
@@ -333,6 +461,7 @@ export default function Page() {
     setPhotoError('')
     setStatus('')
     try {
+      const guard = createCaptureSessionGuard()
       const prefix = await readFilePrefix(selectedPhoto.tempFilePath, 64)
       const contentType = detectImageContentType(prefix)
       if (!contentType) {
@@ -350,18 +479,43 @@ export default function Page() {
           content: photoContent,
         },
         {
-          createUpload: createImageMediaUpload,
-          putUpload: putSignedMediaObject,
-          completeUpload: completeImageMediaUpload,
-          createPhotoMemory,
+          createUpload: async (input) => {
+            guard()
+            const value = await createImageMediaUpload(input)
+            guard()
+            return value
+          },
+          putUpload: async (transfer, body) => {
+            guard()
+            await putSignedMediaObject(transfer, body)
+            guard()
+          },
+          completeUpload: async (mediaId) => {
+            guard()
+            const value = await completeImageMediaUpload(mediaId)
+            guard()
+            return value
+          },
+          createPhotoMemory: async (mediaId, input) => {
+            guard()
+            const value = await createPhotoMemory(mediaId, input)
+            guard()
+            return value
+          },
         },
-        setPhotoPhase,
+        (phase) => {
+          guard()
+          setPhotoPhase(phase)
+        },
       )
+      guard()
       setPhotoMemoryId(result.memoryId)
       setPhotoTitle('')
       setPhotoContent('')
     } catch (error) {
-      setPhotoError(getErrorMessage(error, '图片记录失败'))
+      if (!isStaleCaptureSessionError(error)) {
+        setPhotoError(getErrorMessage(error, '图片记录失败'))
+      }
     } finally {
       photoSubmitLock.current.release()
       setPhotoSubmitting(false)
@@ -369,11 +523,15 @@ export default function Page() {
   }
 
   const startVoiceRecording = async () => {
-    if (voiceSubmitLock.current.busy) return
+    if (voiceSubmitLock.current.busy || !ensureLogin()) return
     try {
+      const action = captureActionAuthorityRef.current.begin(createCaptureSessionGuard())
       const granted = await ensureMicrophonePermission(microphonePermissionAdapter)
+      action.assertCurrent()
       if (!granted) {
         setVoicePermission('denied')
+        setVoicePhase('failed')
+        setVoiceError('麦克风权限未开启')
         setVoiceStatus('麦克风权限未开启。可点击“打开设置”恢复；不会创建任何语音记忆。')
         return
       }
@@ -386,11 +544,16 @@ export default function Page() {
       setVoiceError('')
       setVoiceMemoryId(null)
       setVoicePhase('recorded')
+      // permission Promise 晚到时 action guard 必须先通过；失效 action 永远不能启动全局 RecorderManager。
       if (!recorderController.start()) {
         setVoiceStatus('上一段录音仍在停止并清理，请稍后再试。')
       }
     } catch (error) {
-      setVoiceStatus(getErrorMessage(error, '无法开始录音'))
+      if (isStaleCaptureSessionError(error)) return
+      const message = getErrorMessage(error, '无法开始录音')
+      setVoicePhase('failed')
+      setVoiceError(message)
+      setVoiceStatus(message)
     }
   }
 
@@ -398,14 +561,35 @@ export default function Page() {
     try {
       recorderController.stop()
     } catch (error) {
-      setVoiceStatus(getErrorMessage(error, '停止录音失败'))
+      const message = getErrorMessage(error, '停止录音失败')
+      setVoicePhase('failed')
+      setVoiceError(message)
+      setVoiceStatus(message)
     }
   }
 
   const openMicrophoneSettings = async () => {
-    const granted = await recoverMicrophonePermission(microphonePermissionAdapter)
-    setVoicePermission(granted ? 'granted' : 'denied')
-    setVoiceStatus(granted ? '麦克风权限已恢复，可以开始录音。' : '麦克风权限仍未开启，不会录音或提交任何语音数据。')
+    if (!ensureLogin()) return
+    try {
+      const action = captureActionAuthorityRef.current.begin(createCaptureSessionGuard())
+      const granted = await recoverMicrophonePermission(microphonePermissionAdapter)
+      action.assertCurrent()
+      setVoicePermission(granted ? 'granted' : 'denied')
+      if (granted) {
+        setVoiceError('')
+        setVoicePhase('recorded')
+      } else {
+        setVoicePhase('failed')
+        setVoiceError('麦克风权限仍未开启')
+      }
+      setVoiceStatus(granted ? '麦克风权限已恢复，可以开始录音。' : '麦克风权限仍未开启，不会录音或提交任何语音数据。')
+    } catch (error) {
+      if (isStaleCaptureSessionError(error)) return
+      const message = getErrorMessage(error, '无法恢复麦克风权限')
+      setVoicePhase('failed')
+      setVoiceError(message)
+      setVoiceStatus(message)
+    }
   }
 
   const submitVoice = async () => {
@@ -422,6 +606,7 @@ export default function Page() {
     setVoiceError('')
     setStatus('')
     try {
+      const guard = createCaptureSessionGuard()
       const result = await submitVoiceMemory(
         {
           clientUploadId: clip.clientUploadId,
@@ -431,13 +616,36 @@ export default function Page() {
           loadBody: () => readVoiceFileAsArrayBuffer(clip.tempFilePath),
         },
         {
-          createUpload: createAudioMediaUpload,
-          putUpload: putSignedMediaObject,
-          completeUpload: completeAudioMediaUpload,
-          createVoiceMemory,
+          createUpload: async (input) => {
+            guard()
+            const value = await createAudioMediaUpload(input)
+            guard()
+            return value
+          },
+          putUpload: async (transfer, body) => {
+            guard()
+            await putSignedMediaObject(transfer, body)
+            guard()
+          },
+          completeUpload: async (mediaId) => {
+            guard()
+            const value = await completeAudioMediaUpload(mediaId)
+            guard()
+            return value
+          },
+          createVoiceMemory: async (mediaId, input) => {
+            guard()
+            const value = await createVoiceMemory(mediaId, input)
+            guard()
+            return value
+          },
         },
-        setVoicePhase,
+        (phase) => {
+          guard()
+          setVoicePhase(phase)
+        },
       )
+      guard()
       deleteTempFile(clip.tempFilePath)
       if (voiceClipRef.current === clip) voiceClipRef.current = null
       setVoiceClip(null)
@@ -445,8 +653,10 @@ export default function Page() {
       setVoiceMemoryId(result.memoryId)
       setVoiceStatus(`✓ 原始录音已验证、转写并写入可信 Evidence · ${result.memoryId}`)
     } catch (error) {
-      setVoiceError(getErrorMessage(error, '语音记录失败'))
-      setVoiceStatus('提交失败，本地临时录音已保留，可使用同一录音重试。')
+      if (!isStaleCaptureSessionError(error)) {
+        setVoiceError(getErrorMessage(error, '语音记录失败'))
+        setVoiceStatus('提交失败，本地临时录音已保留，可使用同一录音重试。')
+      }
     } finally {
       voiceSubmitLock.current.release()
       setVoiceSubmitting(false)
@@ -503,15 +713,91 @@ export default function Page() {
     }
   }
 
+  const elderRememberState = deriveElderRememberState({
+    recording: voiceRecording,
+    hasClip: voiceClip !== null,
+    memorySaved: voiceMemoryId !== null,
+    submitting: voiceSubmitting,
+    phase: voicePhase,
+    hasError: Boolean(voiceError),
+  })
+  const elderVoiceState = elderRememberStateLabel(elderRememberState)
+
   const busy = loading || photoSubmitting || voiceSubmitting
 
   return (
     <View className={elderClassName(elderMode)}>
-      <View className='title'>记一下</View>
-      <View className='subtitle'>主动写下、拍下或录下需要记住的内容；图片和语音都必须通过服务端 Evidence 门禁后才算真正记录。</View>
+      <View className='title'>{elderMode ? '帮我记一下' : '记一下'}</View>
+      <View className='subtitle'>
+        {elderMode
+          ? '先用语音说下来；你也可以选择打字或拍照。'
+          : '主动写下、拍下或录下需要记住的内容；图片和语音都必须通过服务端 Evidence 门禁后才算真正记录。'}
+      </View>
+
+      {elderMode && privacyPaused && (
+        <View className='status elder-capture-notice'>
+          自动记录已暂停；你主动记下的内容仍可以保存。
+        </View>
+      )}
+
+      {elderMode && (
+        <View className='card elder-remember-card'>
+          <View className='card-title'>帮我记一下</View>
+          <View className='muted capture-note'>只有你点“开始说”后才会录音；说完后还要由你确认保存。</View>
+          <View className='elder-voice-state' aria-live='polite'>{elderVoiceState}</View>
+          {!voiceRecording && !voiceClip && (
+            <Button
+              className='primary-button elder-remember-primary'
+              disabled={busy}
+              aria-label='开始说'
+              onClick={startVoiceRecording}
+            >
+              开始说
+            </Button>
+          )}
+          {voiceRecording && (
+            <Button
+              className='primary-button recording-button elder-remember-primary'
+              aria-label='说完了'
+              onClick={stopVoiceRecording}
+            >
+              说完了
+            </Button>
+          )}
+          {voicePermission === 'denied' && (
+            <Button className='secondary-button' disabled={busy} onClick={openMicrophoneSettings}>
+              打开设置恢复麦克风权限
+            </Button>
+          )}
+          {voiceClip && (
+            <>
+              <View className={`capture-state capture-state-${voicePhase}`}>
+                {VOICE_PHASE_TEXT[voicePhase]} · {Math.max(1, Math.round(voiceClip.durationMs / 1000))} 秒
+              </View>
+              <Button
+                className='primary-button elder-remember-primary'
+                disabled={busy}
+                aria-label='保存这段话'
+                onClick={submitVoice}
+              >
+                {voiceSubmitting
+                  ? VOICE_PHASE_TEXT[voicePhase]
+                  : voicePhase === 'failed'
+                    ? '重试保存这段话'
+                    : '保存这段话'}
+              </Button>
+              <Button className='secondary-button' disabled={voiceSubmitting} onClick={clearVoiceClip}>
+                不保存，清除录音
+              </Button>
+            </>
+          )}
+          {voiceError && <View className='error'>{voiceError}</View>}
+          <View className={voicePermission === 'denied' ? 'error' : 'status'}>{voiceStatus}</View>
+        </View>
+      )}
 
       <View className='card'>
-        <View className='card-title'>写一句</View>
+        <View className='card-title'>{elderMode ? '我想打字记' : '写一句'}</View>
         <Input className='field' type='text' placeholder='标题（可选）' value={title} onInput={(e) => setTitle(e.detail.value)} />
         <Textarea className='field textarea' placeholder='例如：老张周五下午来公司取合同。' value={content} onInput={(e) => setContent(e.detail.value)} />
         <Button className='primary-button' disabled={busy} onClick={saveMemory}>帮我记住</Button>
@@ -549,6 +835,7 @@ export default function Page() {
         {photoMemoryId && <View className='status'>✓ 图片已通过服务端验证并记录 · {photoMemoryId}</View>}
       </View>
 
+      {!elderMode && (
       <View className='card'>
         <View className='card-title'>录一句</View>
         <View className='muted capture-note'>用户主动录音最长 60 秒。原始 MP3 会先进入私有 Evidence；服务端验证后再执行 ASR。失败、超时、空文本或低置信结果都不会生成 Memory。</View>
@@ -569,6 +856,7 @@ export default function Page() {
         {voiceMemoryId && <View className='status'>✓ 语音已形成可信 Memory / Evidence · {voiceMemoryId}</View>}
         <View className={voicePermission === 'denied' ? 'error' : 'status'}>{voiceStatus}</View>
       </View>
+      )}
 
       <View className='card'>
         <View className='card-title'>东西在哪</View>

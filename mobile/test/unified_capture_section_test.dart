@@ -8,7 +8,10 @@ import 'package:jiyidashi/unified_capture_section.dart';
 import 'package:record/record.dart';
 
 class _WidgetMediaApi extends JiYiApiClient {
-  _WidgetMediaApi() : super(baseUrl: 'https://example.invalid/v1');
+  _WidgetMediaApi() : super(baseUrl: 'https://example.invalid/v1') {
+    accessToken = 'widget-token';
+    authenticatedUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  }
   int mediaCreates = 0;
   int signedPuts = 0;
   int mediaCompletes = 0;
@@ -89,6 +92,17 @@ class _ResponseLossWidgetMediaApi extends _WidgetMediaApi {
       throw ApiException(409, 'MEDIA_MEMORY_IDEMPOTENCY_CONFLICT');
     }
     return {'memory': {'id': 'memory-photo'}};
+  }
+}
+
+class _FailingVoiceMemoryApi extends _WidgetMediaApi {
+  @override
+  Future<Map<String, dynamic>> createVoiceMemory({
+    required String mediaId,
+    String? title,
+    DateTime? occurredAt,
+  }) async {
+    throw ApiException(504, 'ASR_TIMEOUT');
   }
 }
 
@@ -254,15 +268,20 @@ void main() {
   Future<void> pumpSection(
     WidgetTester tester,
     JiYiApiClient api,
-    CaptureMediaDevice device,
-  ) async {
+    CaptureMediaDevice device, {
+    bool elderMode = false,
+  }) async {
     // [人工注释][S1-008] 每个 widget case 从前台开始，避免上一条生命周期测试污染后续 observer 初始态。
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: SingleChildScrollView(
-            child: UnifiedMediaCaptureSection(api: api, mediaDevice: device),
+            child: UnifiedMediaCaptureSection(
+              api: api,
+              mediaDevice: device,
+              elderMode: elderMode,
+            ),
           ),
         ),
       ),
@@ -720,4 +739,101 @@ void main() {
     expect(find.textContaining('麦克风权限未开启'), findsOneWidget);
     expect(find.textContaining('保存为可信记忆'), findsNothing);
   });
+
+  testWidgets(
+    'elder capture is voice-first and never records on page entry',
+    (tester) async {
+      final api = _WidgetMediaApi();
+      final device = _WidgetMediaDevice(voicePermission: true);
+      await pumpSection(tester, api, device, elderMode: true);
+      await tester.pump();
+
+      expect(find.text('帮我记一下'), findsOneWidget);
+      expect(find.byKey(const ValueKey('elder-voice-start')), findsOneWidget);
+      expect(find.byKey(const ValueKey('capture-voice-start')), findsNothing);
+      expect(find.text('准备好了，点“开始说”'), findsOneWidget);
+      expect(device.startCalls, 0);
+      expect(api.mediaCreates, 0);
+      expect(api.voiceMemories, 0);
+    },
+  );
+
+  testWidgets(
+    'elder voice requires explicit start stop and submit before canonical saved',
+    (tester) async {
+      final api = _WidgetMediaApi();
+      final device = _WidgetMediaDevice(voicePermission: true);
+      await pumpSection(tester, api, device, elderMode: true);
+
+      await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
+      await tester.pump();
+      expect(device.startCalls, 1);
+      expect(device.recording, isTrue);
+      expect(find.text('正在听你说'), findsOneWidget);
+      expect(api.mediaCreates, 0);
+
+      await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
+      await tester.pumpAndSettle();
+      expect(device.recording, isFalse);
+      expect(find.text('已经录好了'), findsOneWidget);
+      expect(api.mediaCreates, 0);
+      expect(api.voiceMemories, 0);
+
+      await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
+      await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
+      await tester.pumpAndSettle();
+
+      expect(api.mediaCreates, 1);
+      expect(api.signedPuts, 1);
+      expect(api.mediaCompletes, 1);
+      expect(api.voiceMemories, 1);
+      expect(find.text('已经记住了'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'elder voice failure never renders saved state and keeps retry path',
+    (tester) async {
+      final api = _FailingCompleteMediaApi()
+        ..accessToken = 'widget-token'
+        ..authenticatedUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      final device = _WidgetMediaDevice(voicePermission: true);
+      await pumpSection(tester, api, device, elderMode: true);
+
+      await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
+      await tester.pumpAndSettle();
+
+      expect(api.voiceMemories, 0);
+      expect(find.text('已经记住了'), findsNothing);
+      expect(find.text('这次没有保存成功'), findsOneWidget);
+      expect(find.text('重试保存这段话'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'elder ASR failure stays FAILED and reuses the recorded clip for retry',
+    (tester) async {
+      final api = _FailingVoiceMemoryApi();
+      final device = _WidgetMediaDevice(voicePermission: true);
+      await pumpSection(tester, api, device, elderMode: true);
+
+      await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已经记住了'), findsNothing);
+      expect(find.text('这次没有保存成功'), findsOneWidget);
+      expect(find.text('重试保存这段话'), findsOneWidget);
+      expect(find.textContaining('ASR_TIMEOUT'), findsOneWidget);
+      expect(api.voiceMemories, 0);
+    },
+  );
+
 }

@@ -660,6 +660,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         sync: _sync,
         syncGeneration: syncGeneration,
         onQueueChanged: _queueChanged,
+        elderMode: _elderModeEnabled,
         onAuthoritativeTextMemorySaved:
             onboardingStep == OnboardingStep.capture
                 ? onboarding?.authoritativeTextMemorySaved
@@ -876,6 +877,7 @@ class CapturePage extends StatefulWidget {
     this.syncGeneration = 0,
     this.onQueueChanged,
     this.onAuthoritativeTextMemorySaved,
+    this.elderMode = false,
   });
 
   final JiYiApiClient api;
@@ -883,6 +885,7 @@ class CapturePage extends StatefulWidget {
   final OfflineSyncCoordinator? sync;
   final int syncGeneration;
   final VoidCallback? onQueueChanged;
+  final bool elderMode;
   final void Function(String memoryId, String querySeed)?
       onAuthoritativeTextMemorySaved;
 
@@ -898,6 +901,7 @@ class _CapturePageState extends State<CapturePage> {
   bool loading = false;
   String? result;
   int offlinePendingCount = 0;
+  bool privacyPaused = false;
 
   late final OfflineSyncCoordinator _sync =
       widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
@@ -906,6 +910,7 @@ class _CapturePageState extends State<CapturePage> {
   void initState() {
     super.initState();
     unawaited(_refreshOfflinePendingCount());
+    if (widget.elderMode) unawaited(_refreshPrivacyPause());
   }
 
   @override
@@ -913,6 +918,9 @@ class _CapturePageState extends State<CapturePage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.syncGeneration != widget.syncGeneration) {
       unawaited(_refreshOfflinePendingCount());
+    }
+    if (oldWidget.elderMode != widget.elderMode && widget.elderMode) {
+      unawaited(_refreshPrivacyPause());
     }
   }
 
@@ -935,6 +943,26 @@ class _CapturePageState extends State<CapturePage> {
   }
 
   // [人工注释][S1-016] 待发送数量按当前 user_id 直接来自 SQLite；重启后仍能恢复，同时不暴露同机其他账号记录。
+  Future<void> _refreshPrivacyPause() async {
+    final sessionVersion = widget.api.sessionVersion;
+    final owner = widget.api.authenticatedUserId;
+    try {
+      final status = await widget.api.getPrivacyStatus();
+      if (!mounted ||
+          widget.api.sessionVersion != sessionVersion ||
+          widget.api.authenticatedUserId != owner) {
+        return;
+      }
+      setState(() => privacyPaused = status['recording_paused'] == true);
+    } catch (_) {
+      if (mounted &&
+          widget.api.sessionVersion == sessionVersion &&
+          widget.api.authenticatedUserId == owner) {
+        setState(() => privacyPaused = false);
+      }
+    }
+  }
+
   Future<void> _refreshOfflinePendingCount() async {
     try {
       final count = await widget.offlineQueue.countAwaitingDelivery(
@@ -1098,8 +1126,10 @@ class _CapturePageState extends State<CapturePage> {
         : _visibleCaptureResult(result!);
     final resultKind = result == null ? null : _captureStatusKind(result!);
     return JiYiPageFrame(
-      title: '记一下',
-      subtitle: '把重要的内容或物品位置清楚地记下来。',
+      title: widget.elderMode ? '帮我记一下' : '记一下',
+      subtitle: widget.elderMode
+          ? '先用语音说下来；你也可以选择打字或拍照。'
+          : '把重要的内容或物品位置清楚地记下来。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1118,13 +1148,30 @@ class _CapturePageState extends State<CapturePage> {
             ),
             const SizedBox(height: JiYiSpacing.md),
           ],
+          if (widget.elderMode) ...[
+            if (privacyPaused) ...[
+              const JiYiStatusBanner(
+                kind: JiYiStatusKind.info,
+                title: '自动记录已暂停',
+                message: '自动记录已暂停；你主动记下的内容仍可以保存。',
+              ),
+              const SizedBox(height: JiYiSpacing.md),
+            ],
+            UnifiedMediaCaptureSection(
+              api: widget.api,
+              elderMode: true,
+            ),
+            const SizedBox(height: JiYiSpacing.md),
+          ],
           JiYiSectionCard(
             leading: Icon(
               Icons.edit_note_outlined,
               color: theme.colorScheme.primary,
             ),
-            title: '写一句',
-            subtitle: '适合记录临时安排、承诺、重要提醒或一段想留下的话。',
+            title: widget.elderMode ? '我想打字记' : '写一句',
+            subtitle: widget.elderMode
+                ? '如果不方便说，也可以自己打字。'
+                : '适合记录临时安排、承诺、重要提醒或一段想留下的话。',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1217,7 +1264,8 @@ class _CapturePageState extends State<CapturePage> {
           const SizedBox(height: JiYiSpacing.md),
           // 图片与语音继续复用既有 verified media / ASR Evidence 协议；
           // 文字与物品位置仍由上方 outbox-first 路径负责，避免媒体大文件进入 SQLite。
-          UnifiedMediaCaptureSection(api: widget.api),
+          if (!widget.elderMode)
+            UnifiedMediaCaptureSection(api: widget.api),
         ],
       ),
     );
