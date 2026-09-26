@@ -116,6 +116,85 @@ export type MemoryQueryResult = {
   memory_ids: string[]
 }
 
+function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error('服务端查询响应格式不正确')
+  }
+  const value = raw as Record<string, unknown>
+  const answer = value.answer
+  const canAnswer = value.can_answer
+  const certainty = value.certainty
+  const reason = value.reason
+  const intent = value.intent
+  const evidence = value.evidence
+  const memoryIds = value.memory_ids
+
+  if (
+    !(answer === null || typeof answer === 'string')
+    || typeof canAnswer !== 'boolean'
+    || typeof certainty !== 'string'
+    || !(reason === undefined || reason === null || typeof reason === 'string')
+    || typeof intent !== 'string'
+    || !Array.isArray(evidence)
+    || !Array.isArray(memoryIds)
+  ) {
+    throw new Error('服务端查询响应格式不正确')
+  }
+
+  const parsedEvidence: Evidence[] = evidence.map((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      throw new Error('服务端查询响应格式不正确')
+    }
+    const row = item as Record<string, unknown>
+    if (
+      typeof row.kind !== 'string'
+      || typeof row.id !== 'string'
+      || typeof row.source_type !== 'string'
+      || typeof row.memory_source_id !== 'string'
+      || typeof row.occurred_at !== 'string'
+      || typeof row.excerpt !== 'string'
+      || typeof row.confidence !== 'number'
+      || !Number.isFinite(row.confidence)
+      || !(row.provenance === undefined || row.provenance === 'ORIGINAL_SOURCE' || row.provenance === 'USER_EDIT')
+      || !(row.media_id === undefined || row.media_id === null || typeof row.media_id === 'string')
+    ) {
+      throw new Error('服务端查询响应格式不正确')
+    }
+    return {
+      kind: row.kind,
+      id: row.id,
+      source_type: row.source_type,
+      memory_source_id: row.memory_source_id,
+      occurred_at: row.occurred_at,
+      excerpt: row.excerpt,
+      confidence: row.confidence,
+      ...(row.provenance ? { provenance: row.provenance as 'ORIGINAL_SOURCE' | 'USER_EDIT' } : {}),
+      ...(row.media_id !== undefined ? { media_id: row.media_id as string | null } : {}),
+    }
+  })
+
+  const parsedMemoryIds = memoryIds.map((item) => {
+    if (typeof item !== 'string' || !item.trim()) {
+      throw new Error('服务端查询响应格式不正确')
+    }
+    return item
+  })
+
+  if (canAnswer && (!answer || !answer.trim())) {
+    throw new Error('服务端查询响应格式不正确')
+  }
+
+  return {
+    answer,
+    can_answer: canAnswer,
+    certainty,
+    ...(reason !== undefined ? { reason: reason as string | null } : {}),
+    intent,
+    evidence: parsedEvidence,
+    memory_ids: parsedMemoryIds,
+  }
+}
+
 export type UserProfile = ElderUserProfile
 
 export type PrivacyStatus = {
@@ -716,7 +795,8 @@ export function resumeMemory(): Promise<PrivacyStatus> {
   return request('POST', '/privacy/resume')
 }
 
-export function queryMemory(question: string): Promise<MemoryQueryResult> {
-  // [人工注释][S1-013] 查询只展示服务端 Evidence gate 返回值，客户端不得本地生成个人事实答案。
-  return request('POST', '/memory/query', { question: question.trim() })
+export async function queryMemory(question: string): Promise<MemoryQueryResult> {
+  // [人工注释][S1-013][S4-013] 查询只展示服务端 Evidence gate 返回值；2xx malformed response 必须 fail closed。
+  const raw = await request<unknown>('POST', '/memory/query', { question: question.trim() })
+  return parseMemoryQueryResult(raw)
 }

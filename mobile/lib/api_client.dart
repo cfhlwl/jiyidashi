@@ -178,6 +178,71 @@ class LocationBatchResult {
   }
 }
 
+Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
+  final answer = data['answer'];
+  final canAnswer = data['can_answer'];
+  final certainty = data['certainty'];
+  final reason = data['reason'];
+  final intent = data['intent'];
+  final evidence = data['evidence'];
+  final memoryIds = data['memory_ids'];
+  if ((answer != null && answer is! String) ||
+      canAnswer is! bool ||
+      certainty is! String ||
+      (reason != null && reason is! String) ||
+      intent is! String ||
+      evidence is! List<dynamic> ||
+      memoryIds is! List<dynamic>) {
+    throw ProtocolException('服务端查询响应格式不正确');
+  }
+  if (canAnswer && (answer is! String || answer.trim().isEmpty)) {
+    throw ProtocolException('服务端查询响应格式不正确');
+  }
+
+  final parsedEvidence = <Map<String, dynamic>>[];
+  for (final item in evidence) {
+    if (item is! Map<String, dynamic>) {
+      throw ProtocolException('服务端查询响应格式不正确');
+    }
+    final confidence = item['confidence'];
+    if (item['kind'] is! String ||
+        item['id'] is! String ||
+        item['source_type'] is! String ||
+        item['memory_source_id'] is! String ||
+        item['occurred_at'] is! String ||
+        item['excerpt'] is! String ||
+        confidence is! num ||
+        !confidence.isFinite) {
+      throw ProtocolException('服务端查询响应格式不正确');
+    }
+    final provenance = item['provenance'];
+    if (provenance != null &&
+        provenance != 'ORIGINAL_SOURCE' &&
+        provenance != 'USER_EDIT') {
+      throw ProtocolException('服务端查询响应格式不正确');
+    }
+    parsedEvidence.add(Map<String, dynamic>.unmodifiable(item));
+  }
+
+  final parsedIds = <String>[];
+  for (final id in memoryIds) {
+    if (id is! String || id.trim().isEmpty) {
+      throw ProtocolException('服务端查询响应格式不正确');
+    }
+    parsedIds.add(id);
+  }
+
+  return Map<String, dynamic>.unmodifiable({
+    'answer': answer,
+    'can_answer': canAnswer,
+    'certainty': certainty,
+    if (reason != null) 'reason': reason,
+    'intent': intent,
+    'evidence': List<Map<String, dynamic>>.unmodifiable(parsedEvidence),
+    'memory_ids': List<String>.unmodifiable(parsedIds),
+  });
+}
+
 class JiYiApiClient {
   JiYiApiClient({http.Client? httpClient, String? baseUrl})
       : _http = httpClient ?? http.Client(),
@@ -199,6 +264,14 @@ class JiYiApiClient {
         'Content-Type': 'application/json',
         if (accessToken != null) 'Authorization': 'Bearer $accessToken',
       };
+
+  void _assertAuthenticatedSessionCurrent(_AuthenticatedSessionSnapshot snapshot) {
+    if (_sessionVersion != snapshot.sessionVersion ||
+        accessToken != snapshot.accessToken ||
+        authenticatedUserId != snapshot.userId) {
+      throw ProtocolException('登录状态已变化，请重试');
+    }
+  }
 
   _AuthenticatedSessionSnapshot _captureAuthenticatedSession() {
     final token = accessToken;
@@ -681,13 +754,17 @@ class JiYiApiClient {
     return _jsonRequest('POST', '/privacy/resume');
   }
 
-  Future<Map<String, dynamic>> queryMemory(String question) {
-    // [人工注释][S1-013] “问记忆”始终调用服务端 Evidence gate，不在客户端本地拼答案。
-    return _jsonRequest(
+  Future<Map<String, dynamic>> queryMemory(String question) async {
+    // [人工注释][S1-013][S4-013] 查询绑定发起时的认证会话；malformed 2xx 必须 fail closed。
+    final snapshot = _captureAuthenticatedSession();
+    final raw = await _jsonRequest(
       'POST',
       '/memory/query',
       body: {'question': question.trim()},
+      authSnapshot: snapshot,
     );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return _parseMemoryQueryResult(raw);
   }
 
   void logout() {

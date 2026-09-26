@@ -1,18 +1,26 @@
-import Taro from '@tarojs/taro'
+import Taro, { useDidHide } from '@tarojs/taro'
 import { Button, Input, Text, Textarea, View } from '@tarojs/components'
 import { useEffect, useRef, useState } from 'react'
 import {
   ApiRequestError,
   apiErrorCode,
   getMemory,
+  currentAuthenticatedUserId,
   currentElderModeEnabled,
   isAuthenticated,
+  subscribeAuthSession,
   subscribeElderMode,
   MemoryQueryResult,
   queryMemory,
   submitMemoryFeedback,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import {
+  ElderFindQueryEpoch,
+  ElderFindSingleFlight,
+  elderFindState,
+  elderFindStateLabel,
+} from '../../services/elderFindThings'
 import {
   buildCorrectionFeedback,
   createMemoryFeedbackOperation,
@@ -61,7 +69,12 @@ export default function Page() {
   const [result, setResult] = useState<MemoryQueryResult | null>(null)
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
+  const [submittedQuestion, setSubmittedQuestion] = useState('')
   const queryBusyRef = useRef(false)
+  const elderQueryGate = useRef(new ElderFindSingleFlight())
+  const queryEpoch = useRef(new ElderFindQueryEpoch())
+  const authOwnerRef = useRef<string | null>(currentAuthenticatedUserId())
+  const authEpochRef = useRef<number | null>(null)
   const [reviewLoading, setReviewLoading] = useState(false)
   const [reviewMemory, setReviewMemory] = useState<MemoryRead | null>(null)
   const [feedbackBusy, setFeedbackBusy] = useState(false)
@@ -72,6 +85,36 @@ export default function Page() {
   const [correctionBase, setCorrectionBase] = useState<MemoryRead | null>(null)
   const [correctionTitle, setCorrectionTitle] = useState('')
   const [correctionContent, setCorrectionContent] = useState('')
+
+  useEffect(() => subscribeAuthSession((owner, epoch) => {
+    if (authEpochRef.current === null) {
+      authEpochRef.current = epoch
+      authOwnerRef.current = owner
+      return
+    }
+    if (authEpochRef.current === epoch && authOwnerRef.current === owner) return
+    authEpochRef.current = epoch
+    authOwnerRef.current = owner
+    queryEpoch.current.invalidate()
+    queryBusyRef.current = false
+    elderQueryGate.current.end()
+    setLoading(false)
+    setResult(null)
+    setSubmittedQuestion('')
+    setStatus('')
+  }), [])
+
+  useDidHide(() => {
+    queryEpoch.current.invalidate()
+    queryBusyRef.current = false
+    elderQueryGate.current.end()
+    setLoading(false)
+  })
+
+  useEffect(() => () => {
+    queryEpoch.current.invalidate()
+    elderQueryGate.current.end()
+  }, [])
 
   const clearReviewState = () => {
     reviewEpoch.current.invalidate()
@@ -104,25 +147,49 @@ export default function Page() {
       setStatus('请先到“我的”页面登录正式账号')
       return
     }
-    if (!question.trim()) {
-      setStatus('请输入你想回忆的问题')
+    const submitted = question.trim()
+    if (!submitted) {
+      setStatus(elderMode ? '请告诉我你要找什么' : '请输入你想回忆的问题')
       return
     }
+    if (!elderQueryGate.current.tryBegin()) return
 
-    // Set the ref before the first await so a rapid second tap or a feedback action
-    // cannot enter during React's state-render gap.
+    // S4-013: exact submitted question + owner/session + page generation are frozen before await.
+    const capturedQueryEpoch = queryEpoch.current.capture()
+    const capturedOwner = authOwnerRef.current
+    const capturedAuthEpoch = authEpochRef.current
     queryBusyRef.current = true
     setLoading(true)
+    setSubmittedQuestion(submitted)
     setStatus('')
+    setResult(null)
     clearReviewState()
     try {
-      setResult(await queryMemory(question))
+      const response = await queryMemory(submitted)
+      if (
+        !queryEpoch.current.isCurrent(capturedQueryEpoch)
+        || authOwnerRef.current !== capturedOwner
+        || authEpochRef.current !== capturedAuthEpoch
+      ) return
+      setResult(response)
     } catch {
+      if (
+        !queryEpoch.current.isCurrent(capturedQueryEpoch)
+        || authOwnerRef.current !== capturedOwner
+        || authEpochRef.current !== capturedAuthEpoch
+      ) return
       setResult(null)
       setStatus('查询失败，请稍后重试')
     } finally {
-      queryBusyRef.current = false
-      setLoading(false)
+      if (
+        queryEpoch.current.isCurrent(capturedQueryEpoch)
+        && authOwnerRef.current === capturedOwner
+        && authEpochRef.current === capturedAuthEpoch
+      ) {
+        queryBusyRef.current = false
+        elderQueryGate.current.end()
+        setLoading(false)
+      }
     }
   }
 
@@ -415,28 +482,39 @@ export default function Page() {
   }
 
   const trust = result ? trustPresentation(result) : null
+  const elderState = elderFindState({
+    loading,
+    canAnswer: result ? result.can_answer : null,
+    failed: Boolean(status) && !result,
+  })
+  const elderStateText = elderFindStateLabel(elderState)
   const visibleEvidence = result
     ? result.evidence.filter((evidence) => isDisplayableEvidence(evidence.source_type))
     : []
 
   return (
     <View className={elderClassName(elderMode)}>
-      <View className='title'>问记忆</View>
-      <View className='subtitle'>只从你的真实记忆证据里找答案。</View>
-      <View className='card'>
+      <View className='title'>{elderMode ? '我想找东西' : '问记忆'}</View>
+      <View className='subtitle'>
+        {elderMode
+          ? '只从你自己的可信记录里找；没有可靠记录时，我不会猜。'
+          : '只从你的真实记忆证据里找答案。'}
+      </View>
+      <View className={elderMode ? 'card elder-find-card' : 'card'}>
+        {elderMode && <View className='elder-find-state' aria-live='polite'>{elderStateText}</View>}
         <Input
           className='field'
           type='text'
-          placeholder='例如：我的护照在哪里？'
+          placeholder={elderMode ? '例如：护照、钥匙，或“我的护照在哪里？”' : '例如：我的护照在哪里？'}
           value={question}
           onInput={(event) => setQuestion(event.detail.value)}
         />
         <Button
-          className='primary-button'
+          className={elderMode ? 'primary-button elder-find-primary' : 'primary-button'}
           disabled={loading || reviewLoading || feedbackBusy}
           onClick={submit}
         >
-          {loading ? '查找中…' : '从我的记忆里查找'}
+          {loading ? '查找中…' : (elderMode ? '帮我找' : '从我的记忆里查找')}
         </Button>
       </View>
 
@@ -446,11 +524,15 @@ export default function Page() {
             <View className='card-title answer-title'>
               {result.can_answer
                 ? result.answer || '找到相关证据，但答案暂不可显示。'
-                : '我没有找到足够证据回答这个问题。'}
+                : (elderMode ? '我还不知道它在哪里。' : '我没有找到足够证据回答这个问题。')}
             </View>
             <View className={`trust-badge trust-${trust.tone}`}>{trust.label}</View>
           </View>
           <View className='muted trust-detail'>{trust.detail}</View>
+          {elderMode && !result.can_answer && (
+            <View className='muted'>没有找到足够可靠的记录。你可以先用“帮我记一下”告诉我放在哪里。</View>
+          )}
+          {submittedQuestion && <View className='muted'>本次查找：{submittedQuestion}</View>}
           <View className='muted'>查询类型：{result.intent}</View>
 
           {visibleEvidence.map((evidence) => {

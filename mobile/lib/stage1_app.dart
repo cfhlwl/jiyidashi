@@ -668,6 +668,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       ),
       MemoryQueryPage(
         api: widget.api,
+        elderMode: _elderModeEnabled,
         initialQuestion: onboardingStep == OnboardingStep.retrieve ||
                 onboardingStep == OnboardingStep.trust
             ? onboarding?.querySeed
@@ -1403,12 +1404,14 @@ class MemoryQueryPage extends StatefulWidget {
   const MemoryQueryPage({
     super.key,
     required this.api,
+    this.elderMode = false,
     this.initialQuestion,
     this.requiredEvidenceMemoryId,
     this.onTrustedEvidenceShown,
   });
 
   final JiYiApiClient api;
+  final bool elderMode;
   final String? initialQuestion;
   final String? requiredEvidenceMemoryId;
   final VoidCallback? onTrustedEvidenceShown;
@@ -1422,7 +1425,9 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   Map<String, dynamic>? result;
   String? error;
   String? actionMessage;
+  String? submittedQuestion;
   bool loading = false;
+  int _queryGeneration = 0;
 
   @override
   void initState() {
@@ -1447,22 +1452,37 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
 
   @override
   void dispose() {
+    _queryGeneration += 1;
     controller.dispose();
     super.dispose();
   }
 
   Future<void> query() async {
-    if (controller.text.trim().isEmpty) {
+    if (loading) return;
+    final submitted = controller.text.trim();
+    if (submitted.isEmpty) {
+      setState(() => error = widget.elderMode ? '请告诉我你要找什么' : '请输入你想回忆的问题');
       return;
     }
+
+    final generation = ++_queryGeneration;
+    final sessionVersion = widget.api.sessionVersion;
+    final owner = widget.api.authenticatedUserId;
     setState(() {
       loading = true;
       error = null;
       actionMessage = null;
+      result = null;
+      submittedQuestion = submitted;
     });
+    bool isCurrent() =>
+        mounted &&
+        generation == _queryGeneration &&
+        sessionVersion == widget.api.sessionVersion &&
+        owner == widget.api.authenticatedUserId;
     try {
-      final response = await widget.api.queryMemory(controller.text);
-      if (!mounted) return;
+      final response = await widget.api.queryMemory(submitted);
+      if (!isCurrent()) return;
       setState(() => result = response);
       final evidence = response['evidence'];
       final memoryIds = response['memory_ids'];
@@ -1475,16 +1495,19 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
           evidence is List<dynamic> &&
           evidence.isNotEmpty &&
           containsRequiredMemory) {
-        // Onboarding advances only when the real query points back to the Memory that
-        // this flow just saved. Evidence for an unrelated older Memory is not the Aha.
         widget.onTrustedEvidenceShown?.call();
       }
     } on ApiException catch (exc) {
+      if (!isCurrent()) return;
       setState(() => error = exc.message);
+    } on ProtocolException {
+      if (!isCurrent()) return;
+      setState(() => error = '查询结果无法验证，请稍后重试');
     } catch (_) {
+      if (!isCurrent()) return;
       setState(() => error = '暂时无法连接服务器');
     } finally {
-      if (mounted) {
+      if (isCurrent()) {
         setState(() => loading = false);
       }
     }
@@ -1643,7 +1666,11 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   Widget build(BuildContext context) {
     // G4 仅重排 Query/Evidence/删除入口的展示层；答案、Evidence、memory_ids 都继续直接使用服务端真实返回。
     final theme = Theme.of(context);
-    final evidence = (result?['evidence'] as List<dynamic>? ?? const []);
+    final evidence = (result?['evidence'] as List<dynamic>? ?? const [])
+        .where((item) =>
+            item is Map<String, dynamic> &&
+            item['source_type']?.toString() != 'AI_INFERENCE')
+        .toList(growable: false);
     final memoryIds = (result?['memory_ids'] as List<dynamic>? ?? const []);
     final canAnswer = result?['can_answer'] == true;
     final answer = result?['answer']?.toString() ?? '';
@@ -1654,8 +1681,10 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     final canEditFirstMemory = memoryIds.isNotEmpty && intent != 'FIND_OBJECT';
 
     return JiYiPageFrame(
-      title: '问记忆',
-      subtitle: '从你自己的记录里查找；答案会把依据一起展示出来。',
+      title: widget.elderMode ? '我想找东西' : '问记忆',
+      subtitle: widget.elderMode
+          ? '只从你自己的可信记录里找；没有可靠记录时，我不会猜。'
+          : '从你自己的记录里查找；答案会把依据一起展示出来。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1664,8 +1693,10 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               Icons.psychology_alt_outlined,
               color: theme.colorScheme.primary,
             ),
-            title: '问一个问题',
-            subtitle: '找不到可靠依据时，迹忆会明确告诉你，而不是猜一个答案。',
+            title: widget.elderMode ? '你要找什么？' : '问一个问题',
+            subtitle: widget.elderMode
+                ? '输入物品名称或问题，再点“帮我找”。'
+                : '找不到可靠依据时，迹忆会明确告诉你，而不是猜一个答案。',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1674,10 +1705,12 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   controller: controller,
                   textInputAction: TextInputAction.search,
                   onSubmitted: loading ? null : (_) => query(),
-                  decoration: const InputDecoration(
-                    labelText: '你想回忆什么？',
-                    hintText: '例如：我的护照在哪里？',
-                    prefixIcon: Icon(Icons.search),
+                  decoration: InputDecoration(
+                    labelText: widget.elderMode ? '物品名称或问题' : '你想回忆什么？',
+                    hintText: widget.elderMode
+                        ? '例如：护照、钥匙，或“我的护照在哪里？”'
+                        : '例如：我的护照在哪里？',
+                    prefixIcon: const Icon(Icons.search),
                   ),
                 ),
                 const SizedBox(height: JiYiSpacing.md),
@@ -1690,7 +1723,9 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.manage_search_outlined),
-                  label: Text(loading ? '查找中…' : '从我的记忆里查找'),
+                  label: Text(
+                    loading ? '查找中…' : (widget.elderMode ? '帮我找' : '从我的记忆里查找'),
+                  ),
                 ),
               ],
             ),
@@ -1719,16 +1754,29 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                     ? theme.colorScheme.primary
                     : theme.colorScheme.onSurfaceVariant,
               ),
-              title: canAnswer ? '找到相关记忆' : '没有足够依据',
+              title: canAnswer
+                  ? (widget.elderMode ? '找到了可信记录' : '找到相关记忆')
+                  : (widget.elderMode ? '我还不知道它在哪里' : '没有足够依据'),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     canAnswer && answer.isNotEmpty
                         ? answer
-                        : '我没有找到能够支持答案的相关记录。',
+                        : (widget.elderMode
+                            ? '没有找到足够可靠的记录。你可以先用“帮我记一下”告诉我放在哪里。'
+                            : '我没有找到能够支持答案的相关记录。'),
                     style: theme.textTheme.titleMedium,
                   ),
+                  if (submittedQuestion != null) ...[
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      '本次查找：$submittedQuestion',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: JiYiSpacing.sm),
                   // certainty / intent 不被 UI 重新推断；这里只把服务端原值放入有标签的 Chip，避免弱化可信状态。
                   Wrap(
