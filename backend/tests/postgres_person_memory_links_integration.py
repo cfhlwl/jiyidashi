@@ -134,7 +134,7 @@ def _same_revision_patch_single_winner(
 
     threads = [
         Thread(target=worker, args=(PersonMemoryRelationKind.MET,)),
-        Thread(target=worker, args=(PersonMemoryRelationKind.RELATED,)),
+        Thread(target=worker, args=(PersonMemoryRelationKind.MET,)),
     ]
     for thread in threads:
         thread.start()
@@ -144,9 +144,8 @@ def _same_revision_patch_single_winner(
     if errors:
         raise errors[0]
 
-    # RELATED is the current value, so that writer is an intentional no-op at
-    # revision 0; MET is the only actual mutation and advances revision once.
-    assert any(item.startswith("ok:MET:1") for item in outcomes)
+    assert outcomes.count("ok:MET:1") == 1
+    assert outcomes.count("err:PERSON_MEMORY_LINK_REVISION_CONFLICT") == 1
     with SessionLocal() as db:
         link = db.scalar(
             select(PersonMemoryLink).where(
