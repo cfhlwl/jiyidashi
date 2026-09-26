@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.person_models import Person
-from app.person_schemas import PersonAliasRead, PersonCreate, PersonPatch, PersonRead
+from app.person_schemas import PersonCreate, PersonPatch, PersonRead
 from app.services.person_service import (
     PersonServiceError,
     aliases_by_person,
@@ -35,7 +35,7 @@ def _read(person: Person, aliases) -> PersonRead:
         display_name=person.display_name,
         relationship_label=person.relationship_label,
         note=person.note,
-        aliases=[PersonAliasRead.model_validate(alias) for alias in aliases],
+        aliases=[alias.alias for alias in aliases],
         revision=person.revision,
         created_at=person.created_at,
         updated_at=person.updated_at,
