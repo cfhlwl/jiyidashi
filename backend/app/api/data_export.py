@@ -30,6 +30,7 @@ from app.models import (
     User,
     Visit,
 )
+from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
 
 router = APIRouter(prefix="/export", tags=["export"])
@@ -165,6 +166,27 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
     aliases_by_person: dict[UUID, list[PersonAlias]] = {person.id: [] for person in persons}
     for alias in person_aliases:
         aliases_by_person.setdefault(alias.person_id, []).append(alias)
+
+    person_memory_links = _bounded_scalars(
+        db,
+        select(PersonMemoryLink)
+        .join(
+            Memory,
+            (Memory.id == PersonMemoryLink.memory_id)
+            & (Memory.user_id == PersonMemoryLink.user_id),
+        )
+        .join(
+            Person,
+            (Person.id == PersonMemoryLink.person_id)
+            & (Person.user_id == PersonMemoryLink.user_id),
+        )
+        .where(
+            PersonMemoryLink.user_id == user_id,
+            Memory.is_deleted.is_(False),
+        )
+        .order_by(PersonMemoryLink.created_at, PersonMemoryLink.id),
+        "person_memory_links",
+    )
 
     objects = _bounded_scalars(
         db,
@@ -325,6 +347,18 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 "updated_at": person.updated_at,
             }
             for person in persons
+        ],
+        "person_memory_links": [
+            {
+                "id": link.id,
+                "person_id": link.person_id,
+                "memory_id": link.memory_id,
+                "relation_kind": link.relation_kind.value,
+                "revision": link.revision,
+                "created_at": link.created_at,
+                "updated_at": link.updated_at,
+            }
+            for link in person_memory_links
         ],
         "objects": [
             {
