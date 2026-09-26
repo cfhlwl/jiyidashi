@@ -23,6 +23,7 @@ import {
 import { elderClassName } from '../../services/elderMode'
 import {
   CaptureActionAuthority,
+  assertCaptureActionCurrentOrCleanup,
   deriveElderRememberState,
   elderRememberStateLabel,
   isCaptureActionStaleError,
@@ -409,10 +410,13 @@ export default function Page() {
         sizeType: ['original'],
         sourceType: ['album', 'camera'],
       })
-      action.assertCurrent()
       const selectedFile = result.tempFiles[0]
       const tempFilePath = selectedFile?.tempFilePath
       if (!tempFilePath || typeof selectedFile.size !== 'number') return
+      assertCaptureActionCurrentOrCleanup(
+        action,
+        () => deleteTempFile(tempFilePath),
+      )
       const nextPhoto: SelectedPhoto = {
         tempFilePath,
         originalFilename: filenameFromPath(tempFilePath),
