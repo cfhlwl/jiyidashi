@@ -9,7 +9,6 @@ from sqlalchemy import func, select
 from app.core.db import SessionLocal
 from app.models import Memory, MemorySource
 from app.person_memory_models import PersonMemoryLink
-from app.person_models import Person
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
