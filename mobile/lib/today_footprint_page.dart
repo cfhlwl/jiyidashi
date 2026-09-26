@@ -335,50 +335,73 @@ class _TodayFootprint {
 class _FootprintVisit {
   const _FootprintVisit({
     required this.id,
+    required this.placeId,
     required this.placeName,
+    required this.arrivedAt,
+    required this.leftAt,
     required this.arrivedAtLocal,
     required this.leftAtLocal,
+    required this.confidence,
     required this.visitSource,
     required this.finalized,
   });
 
   final String id;
+  final String placeId;
   final String placeName;
+  final String arrivedAt;
+  final String? leftAt;
   final String arrivedAtLocal;
   final String? leftAtLocal;
+  final double confidence;
   final String visitSource;
   final bool finalized;
 
   factory _FootprintVisit.fromJson(Map<String, dynamic> data) {
     final id = data['id'];
+    final placeId = data['place_id'];
     final placeName = data['place_name'];
+    final arrivedAt = data['arrived_at'];
+    final leftAt = data['left_at'];
     final arrivedAtLocal = data['arrived_at_local'];
     final leftAtLocal = data['left_at_local'];
+    final confidence = data['confidence'];
     final visitSource = data['visit_source'];
     final finalized = data['visit_finalized'];
     if (id is! String ||
         id.trim().isEmpty ||
+        placeId is! String ||
+        placeId.trim().isEmpty ||
         placeName is! String ||
         placeName.trim().isEmpty ||
+        arrivedAt is! String ||
+        arrivedAt.trim().isEmpty ||
+        (leftAt != null && leftAt is! String) ||
         arrivedAtLocal is! String ||
         arrivedAtLocal.trim().isEmpty ||
         (leftAtLocal != null && leftAtLocal is! String) ||
+        confidence is! num ||
+        !confidence.isFinite ||
         visitSource is! String ||
         visitSource.trim().isEmpty ||
         finalized is! bool) {
       throw const FormatException('invalid footprint visit');
     }
-    if (!_isStrictIsoDateTime(arrivedAtLocal)) {
-      throw const FormatException('invalid footprint visit');
-    }
-    if (leftAtLocal is String && !_isStrictIsoDateTime(leftAtLocal)) {
+    if (!_isStrictIsoDateTime(arrivedAt) ||
+        (leftAt is String && !_isStrictIsoDateTime(leftAt)) ||
+        !_isStrictIsoDateTime(arrivedAtLocal) ||
+        (leftAtLocal is String && !_isStrictIsoDateTime(leftAtLocal))) {
       throw const FormatException('invalid footprint visit');
     }
     return _FootprintVisit(
       id: id,
+      placeId: placeId,
       placeName: placeName,
+      arrivedAt: arrivedAt,
+      leftAt: leftAt as String?,
       arrivedAtLocal: arrivedAtLocal,
       leftAtLocal: leftAtLocal as String?,
+      confidence: confidence.toDouble(),
       visitSource: visitSource,
       finalized: finalized,
     );
