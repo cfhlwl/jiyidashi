@@ -11,6 +11,7 @@ from app.person_models import Person
 from app.person_relationship_models import PersonRelationship, PersonRelationshipKind
 from app.person_relationship_schemas import (
     PersonRelationshipCreate,
+    PersonRelationshipRead,
     PersonRelationshipOtherPerson,
     PersonRelationshipPatch,
     PersonRelationshipProjection,
@@ -163,6 +164,20 @@ def create_person_relationship(
     return edge
 
 
+def relationship_read(edge: PersonRelationship) -> PersonRelationshipRead:
+    return PersonRelationshipRead(
+        id=edge.id,
+        person_a_id=edge.person_low_id,
+        person_b_id=edge.person_high_id,
+        relationship_kind=edge.relationship_kind,
+        custom_label=edge.custom_label,
+        note=edge.note,
+        revision=edge.revision,
+        created_at=edge.created_at,
+        updated_at=edge.updated_at,
+    )
+
+
 def get_person_relationship(
     db: Session,
     *,
@@ -225,6 +240,12 @@ def patch_person_relationship(
         )
         next_label = _normalize_payload(next_kind, next_label)
     else:
+        if "custom_label" in fields and payload.custom_label is not None:
+            db.rollback()
+            raise PersonRelationshipError(
+                "PERSON_RELATIONSHIP_CUSTOM_LABEL_ONLY_FOR_OTHER",
+                422,
+            )
         next_label = None
 
     next_note = payload.note if "note" in fields else edge.note
