@@ -716,11 +716,11 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
     counts["media_assets"] = _delete_count(
         db, delete(MediaAsset).where(MediaAsset.user_id == user_id)
     )
-    counts["memories"] = _delete_count(
-        db, delete(Memory).where(Memory.user_id == user_id)
-    )
     counts["person_memory_links"] = _delete_count(
         db, delete(PersonMemoryLink).where(PersonMemoryLink.user_id == user_id)
+    )
+    counts["memories"] = _delete_count(
+        db, delete(Memory).where(Memory.user_id == user_id)
     )
     counts["person_aliases"] = _delete_count(
         db, delete(PersonAlias).where(PersonAlias.user_id == user_id)
