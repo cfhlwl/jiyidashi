@@ -60,7 +60,11 @@ def list_people_route(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> list[PersonRead]:
     people = list_people(db, user_id=user_id, limit=limit)
-    aliases = aliases_by_person(db, user_id=user_id, person_ids=[item.id for item in people])
+    aliases = aliases_by_person(
+        db,
+        user_id=user_id,
+        person_ids=[item.id for item in people],
+    )
     return [_read(item, aliases.get(item.id, [])) for item in people]
 
 
