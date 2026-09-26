@@ -13,6 +13,7 @@ from app.core.db import SessionLocal
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.main import app
 from app.models import Memory, User
+from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
 from app.person_models import Person, PersonAlias
 from app.services import account_deletion_service
 from app.services.object_storage import ObjectStorageError, get_object_storage
@@ -208,10 +209,20 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
             normalized_alias="联系人别名",
         )
         db.add(alias)
+        db.flush()
+        link = PersonMemoryLink(
+            user_id=user_id,
+            person_id=person.id,
+            memory_id=memory.id,
+            relation_kind=PersonMemoryRelationKind.RELATED,
+            revision=0,
+        )
+        db.add(link)
         db.commit()
         memory_id = memory.id
         person_id = person.id
         alias_id = alias.id
+        link_id = link.id
 
     request_id = uuid4()
     deleted = await client.post(
@@ -233,6 +244,7 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
         assert db.get(Memory, memory_id) is None
         assert db.get(Person, person_id) is None
         assert db.get(PersonAlias, alias_id) is None
+        assert db.get(PersonMemoryLink, link_id) is None
         assert db.scalar(
             select(AuthIdentity.id).where(AuthIdentity.user_id == user_id)
         ) is None
