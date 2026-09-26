@@ -11,10 +11,10 @@ from app.person_models import Person
 from app.person_relationship_models import PersonRelationship, PersonRelationshipKind
 from app.person_relationship_schemas import (
     PersonRelationshipCreate,
-    PersonRelationshipRead,
     PersonRelationshipOtherPerson,
     PersonRelationshipPatch,
     PersonRelationshipProjection,
+    PersonRelationshipRead,
 )
 
 
