@@ -90,7 +90,7 @@ const API_BASE_KEY = 'jiyi_api_base_url'
 const AUTH_OWNER_KEY = 'jiyi_authenticated_user_id'
 let authSessionEpoch = 0
 const elderProjection = new ElderProjectionStore()
-type AuthSessionListener = (owner: string | null) => void
+type AuthSessionListener = (owner: string | null, epoch: number) => void
 const authSessionListeners = new Set<AuthSessionListener>()
 
 export type Evidence = {
@@ -158,12 +158,12 @@ export function currentAuthenticatedUserId(): string | null {
 
 function emitAuthSessionChanged(): void {
   const owner = currentAuthOwner()
-  for (const listener of authSessionListeners) listener(owner)
+  for (const listener of authSessionListeners) listener(owner, authSessionEpoch)
 }
 
 export function subscribeAuthSession(listener: AuthSessionListener): () => void {
   authSessionListeners.add(listener)
-  listener(currentAuthOwner())
+  listener(currentAuthOwner(), authSessionEpoch)
   return () => {
     authSessionListeners.delete(listener)
   }
