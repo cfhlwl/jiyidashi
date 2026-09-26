@@ -181,8 +181,6 @@ async def test_prepare_gate_survives_restart_before_local_cleanup(
     with SessionLocal() as db:
         assert db.get(User, user_id) is None
         assert db.get(Memory, memory_id) is None
-        assert db.get(Person, person_id) is None
-        assert db.get(PersonAlias, alias_id) is None
 
 
 @pytest.mark.asyncio
@@ -233,6 +231,8 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
     with SessionLocal() as db:
         assert db.get(User, user_id) is None
         assert db.get(Memory, memory_id) is None
+        assert db.get(Person, person_id) is None
+        assert db.get(PersonAlias, alias_id) is None
         assert db.scalar(
             select(AuthIdentity.id).where(AuthIdentity.user_id == user_id)
         ) is None
