@@ -51,20 +51,12 @@ class PersonPatch(BaseModel):
         return self
 
 
-class PersonAliasRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    alias: str
-    created_at: datetime
-
-
 class PersonRead(BaseModel):
     id: UUID
     display_name: str
     relationship_label: str | None
     note: str | None
-    aliases: list[PersonAliasRead]
+    aliases: list[str]
     revision: int
     created_at: datetime
     updated_at: datetime
