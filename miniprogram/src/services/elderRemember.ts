@@ -51,3 +51,35 @@ export function elderRememberStateLabel(state: ElderRememberState): string {
       return '这次没有保存成功'
   }
 }
+
+
+const STALE_CAPTURE_ACTION_PREFIX = '本次采集操作已失效；'
+
+export type CaptureActionSnapshot = {
+  assertCurrent: () => void
+}
+
+export class CaptureActionAuthority {
+  private generation = 0
+
+  invalidate(): void {
+    this.generation += 1
+  }
+
+  begin(sessionGuard: () => void): CaptureActionSnapshot {
+    const generation = this.generation
+    sessionGuard()
+    return {
+      assertCurrent: () => {
+        sessionGuard()
+        if (generation !== this.generation) {
+          throw new Error(`${STALE_CAPTURE_ACTION_PREFIX}请在当前页面重新操作`)
+        }
+      },
+    }
+  }
+}
+
+export function isCaptureActionStaleError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith(STALE_CAPTURE_ACTION_PREFIX)
+}
