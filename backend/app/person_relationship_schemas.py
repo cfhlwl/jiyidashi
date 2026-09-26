@@ -47,6 +47,12 @@ class PersonRelationshipPatch(BaseModel):
     custom_label: RelationshipLabelText | None = None
     note: RelationshipNoteText | None = None
 
+    @model_validator(mode="after")
+    def reject_explicit_null_kind(self):
+        if "relationship_kind" in self.model_fields_set and self.relationship_kind is None:
+            raise ValueError("relationship_kind cannot be null")
+        return self
+
 
 class PersonRelationshipRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
