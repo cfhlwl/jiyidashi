@@ -3,7 +3,11 @@ import { resolve } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { elderClassName, parseElderUserProfile } from '../src/services/elderMode'
+import {
+  ElderProjectionStore,
+  elderClassName,
+  parseElderUserProfile,
+} from '../src/services/elderMode'
 
 const base = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -47,12 +51,10 @@ test('profile mutation is self-only partial PATCH and session projection clears 
   )
   assert.match(api, /authSessionEpoch \+= 1[\s\S]*?resetElderProjection\(\)/)
   assert.match(api, /epoch !== authSessionEpoch/)
-  assert.match(api, /elderProjectionOwner = null/)
-  assert.match(api, /elderProjectionEnabled = false/)
-  assert.match(
-    api,
-    /currentElderModeEnabled[\s\S]*?elderProjectionOwner === owner[\s\S]*?elderProjectionEnabled === true/,
-  )
+  assert.match(api, /const elderProjection = new ElderProjectionStore\(\)/)
+  assert.match(api, /resetElderProjection\(\)[\s\S]*?elderProjection\.reset\(\)/)
+  assert.match(api, /elderProjection\.publish\(profile\.id, profile\.elder_mode_enabled\)/)
+  assert.match(api, /elderProjection\.current\(currentAuthOwner\(\)\)/)
 })
 
 test('Mini elder mode is profile-driven and Family role never enables it', () => {
@@ -88,7 +90,56 @@ test('elder shared CSS keeps minimum logical touch target and same palette token
 
 test('Mini process bootstrap is normal until authoritative profile publishes elder state', () => {
   const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
-  assert.match(api, /let elderProjectionOwner: string \| null = null/)
-  assert.match(api, /let elderProjectionEnabled = false/)
+  assert.match(api, /const elderProjection = new ElderProjectionStore\(\)/)
   assert.doesNotMatch(api, /getStorageSync<boolean>\([^)]*elder/i)
+})
+
+test('mounted capture/query react normal -> elder when projection toggles ON', () => {
+  const capture = readFileSync(resolve(process.cwd(), 'src/pages/capture/index.tsx'), 'utf8')
+  const query = readFileSync(resolve(process.cwd(), 'src/pages/query/index.tsx'), 'utf8')
+  for (const source of [capture, query]) {
+    assert.match(source, /useState\(currentElderModeEnabled\)/)
+    assert.match(source, /useEffect\(\(\) => subscribeElderMode\(setElderMode\), \[\]\)/)
+    assert.match(source, /elderClassName\(elderMode\)/)
+  }
+
+  const store = new ElderProjectionStore()
+  const seen: boolean[] = []
+  const unsubscribe = store.subscribe(() => 'user-a', (enabled) => seen.push(enabled))
+  assert.deepEqual(seen, [false])
+  store.publish('user-a', true)
+  assert.deepEqual(seen, [false, true])
+  unsubscribe()
+})
+
+test('mounted capture/query react elder -> normal when projection toggles OFF', () => {
+  const store = new ElderProjectionStore()
+  const seen: boolean[] = []
+  const unsubscribe = store.subscribe(() => 'user-a', (enabled) => seen.push(enabled))
+  store.publish('user-a', true)
+  store.publish('user-a', false)
+  assert.deepEqual(seen, [false, true, false])
+  unsubscribe()
+})
+
+test('account switch cannot leave user A elder UI mounted for user B', () => {
+  const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+  assert.match(api, /logout\(\)[\s\S]*?resetElderProjection\(\)/)
+  assert.match(api, /loginAccount[\s\S]*?authSessionEpoch \+= 1[\s\S]*?resetElderProjection\(\)/)
+  assert.match(api, /epoch !== authSessionEpoch/)
+
+  const store = new ElderProjectionStore()
+  let owner: string | null = 'user-a'
+  const seen: boolean[] = []
+  const unsubscribe = store.subscribe(() => owner, (enabled) => seen.push(enabled))
+
+  store.publish('user-a', true)
+  store.reset()
+  owner = 'user-b'
+  store.publish('user-b', false)
+
+  assert.deepEqual(seen, [false, true, false, false])
+  assert.equal(store.current('user-a'), false)
+  assert.equal(store.current('user-b'), false)
+  unsubscribe()
 })
