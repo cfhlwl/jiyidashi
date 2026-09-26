@@ -60,7 +60,6 @@ export default function Page() {
     }
     const generation = footprintEpoch.current.capture()
     const owner = authOwnerRef.current
-    const authEpoch = authEpochRef.current
     setLoading(true)
     setStatus('')
     try {
@@ -68,14 +67,12 @@ export default function Page() {
       if (
         !footprintEpoch.current.isCurrent(generation)
         || authOwnerRef.current !== owner
-        || authEpochRef.current !== authEpoch
       ) return
       setFootprint(next)
     } catch (error) {
       if (
         !footprintEpoch.current.isCurrent(generation)
         || authOwnerRef.current !== owner
-        || authEpochRef.current !== authEpoch
       ) return
       setFootprint(null)
       setStatus(error instanceof Error ? error.message : '读取今日足迹失败')
@@ -83,7 +80,6 @@ export default function Page() {
       if (
         footprintEpoch.current.isCurrent(generation)
         && authOwnerRef.current === owner
-        && authEpochRef.current === authEpoch
       ) {
         setLoading(false)
       }
