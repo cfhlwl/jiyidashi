@@ -1,12 +1,13 @@
 import Taro from '@tarojs/taro'
 import { Button, Input, Text, Textarea, View } from '@tarojs/components'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ApiRequestError,
   apiErrorCode,
   getMemory,
   currentElderModeEnabled,
   isAuthenticated,
+  subscribeElderMode,
   MemoryQueryResult,
   queryMemory,
   submitMemoryFeedback,
@@ -52,6 +53,10 @@ function memoryPreview(memory: MemoryRead): string {
 }
 
 export default function Page() {
+  const [elderMode, setElderMode] = useState(currentElderModeEnabled)
+
+  useEffect(() => subscribeElderMode(setElderMode), [])
+
   const [question, setQuestion] = useState('')
   const [result, setResult] = useState<MemoryQueryResult | null>(null)
   const [status, setStatus] = useState('')
@@ -415,7 +420,7 @@ export default function Page() {
     : []
 
   return (
-    <View className={elderClassName(currentElderModeEnabled())}>
+    <View className={elderClassName(elderMode)}>
       <View className='title'>问记忆</View>
       <View className='subtitle'>只从你的真实记忆证据里找答案。</View>
       <View className='card'>
