@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from sqlalchemy import func, select
@@ -51,12 +51,14 @@ async def test_person_crud_is_owner_scoped_revision_safe_and_aliases_are_structu
     assert person["display_name"] == "老王"
     assert person["relationship_label"] == "同事"
     assert person["note"] == "大学毕业后认识"
-    assert [row["alias"] for row in person["aliases"]] == ["wang lao shi", "王老师"]
+    assert set(person["aliases"]) == {"wang lao shi", "王老师"}
     assert person["revision"] == 0
 
     # Same owner and different owners may both have duplicate display names.
     same_name_a = await client.post(
-        "/v1/people", headers=headers_a, json={"display_name": "老王"}
+        "/v1/people",
+        headers=headers_a,
+        json={"display_name": "老王", "aliases": ["王老师"]},
     )
     same_name_b = await client.post(
         "/v1/people", headers=headers_b, json={"display_name": "老王", "aliases": ["王老师"]}
@@ -68,9 +70,21 @@ async def test_person_crud_is_owner_scoped_revision_safe_and_aliases_are_structu
     cross_owner = await client.get(f"/v1/people/{person_id}", headers=headers_b)
     assert cross_owner.status_code == 404
     assert cross_owner.json()["detail"] == "PERSON_NOT_FOUND"
+    cross_patch = await client.patch(
+        f"/v1/people/{person_id}",
+        headers=headers_b,
+        json={"expected_revision": 0, "note": "foreign write"},
+    )
+    assert cross_patch.status_code == 404
+    assert cross_patch.json()["detail"] == "PERSON_NOT_FOUND"
+    cross_delete = await client.delete(f"/v1/people/{person_id}", headers=headers_b)
+    assert cross_delete.status_code == 404
+    assert cross_delete.json()["detail"] == "PERSON_NOT_FOUND"
 
     listed_a = await client.get("/v1/people?limit=100", headers=headers_a)
     listed_b = await client.get("/v1/people?limit=100", headers=headers_b)
+    too_large = await client.get("/v1/people?limit=101", headers=headers_a)
+    assert too_large.status_code == 422
     assert listed_a.status_code == 200
     assert {row["id"] for row in listed_a.json()} == {person_id, same_name_a.json()["id"]}
     assert {row["id"] for row in listed_b.json()} == {same_name_b.json()["id"]}
@@ -191,9 +205,9 @@ async def test_person_export_is_owner_scoped(client):
     assert len(people) == 1
     assert people[0]["id"] == person_a.json()["id"]
     assert people[0]["display_name"] == "妈妈"
-    assert people[0]["aliases"][0]["alias"] == "母亲"
+    assert people[0]["aliases"] == ["母亲"]
     assert people[0]["revision"] == 0
-    assert "normalized_alias" not in people[0]["aliases"]
+    assert "normalized_alias" not in exported.text
     assert "B secret person" not in exported.text
     assert "B secret note" not in exported.text
 
