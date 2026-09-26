@@ -210,7 +210,15 @@ async def test_person_timeline_and_interactions_use_memory_occurred_at_only(clie
         older["id"],
     ]
     assert rows[0]["relation_kind"] == "RELATED"
-    assert rows[0]["occurred_at"] == newer_related["occurred_at"]
+    timeline_time = datetime.fromisoformat(rows[0]["occurred_at"].replace("Z", "+00:00"))
+    created_time = datetime.fromisoformat(
+        newer_related["occurred_at"].replace("Z", "+00:00")
+    )
+    if timeline_time.tzinfo is None:
+        timeline_time = timeline_time.replace(tzinfo=UTC)
+    if created_time.tzinfo is None:
+        created_time = created_time.replace(tzinfo=UTC)
+    assert timeline_time.astimezone(UTC) == created_time.astimezone(UTC)
     assert rows[0]["memory_content"] == "较新的相关记录"
 
     interactions = await client.get("/v1/people/interactions?limit=10", headers=headers)
