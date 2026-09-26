@@ -102,6 +102,35 @@ void main() {
     expect(find.text('今天还没有形成足迹'), findsOneWidget);
   });
 
+  testWidgets('malformed server-local calendar date fails closed', (tester) async {
+    await _pump(
+      tester,
+      _TodayApi(
+        response: {
+          'timezone': 'Asia/Shanghai',
+          'day': '2026-09-20',
+          'visits': [
+            {
+              'id': 'bad-date',
+              'place_id': 'p',
+              'place_name': '未知地点',
+              'arrived_at': '2026-09-20T00:00:00Z',
+              'left_at': null,
+              'arrived_at_local': '2026-02-30T08:00:00+08:00',
+              'left_at_local': null,
+              'confidence': 1.0,
+              'visit_source': 'LOCATION_CLUSTER',
+              'visit_finalized': false,
+            },
+          ],
+        },
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('today-footprint-protocol-error')), findsOneWidget);
+    expect(find.text('未知地点'), findsNothing);
+  });
+
   testWidgets('today footprint fails visibly and offers retry', (tester) async {
     await _pump(
       tester,
