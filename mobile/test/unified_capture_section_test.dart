@@ -95,6 +95,17 @@ class _ResponseLossWidgetMediaApi extends _WidgetMediaApi {
   }
 }
 
+class _FailingVoiceMemoryApi extends _WidgetMediaApi {
+  @override
+  Future<Map<String, dynamic>> createVoiceMemory({
+    required String mediaId,
+    String? title,
+    DateTime? occurredAt,
+  }) async {
+    throw ApiException(504, 'ASR_TIMEOUT');
+  }
+}
+
 class _FailingCompleteMediaApi extends _WidgetMediaApi {
   @override
   Future<Map<String, dynamic>> completeMediaUpload(String mediaId) async {
@@ -798,4 +809,26 @@ testWidgets('elder voice failure never renders saved state and keeps retry path'
   expect(find.text('已经记住了'), findsNothing);
   expect(find.text('这次没有保存成功'), findsOneWidget);
   expect(find.text('重试保存这段话'), findsOneWidget);
+})
+
+
+testWidgets('elder ASR failure stays FAILED and reuses the recorded clip for retry', (
+  tester,
+) async {
+  final api = _FailingVoiceMemoryApi();
+  final device = _WidgetMediaDevice(voicePermission: true);
+  await pumpSection(tester, api, device, elderMode: true);
+
+  await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
+  await tester.pump();
+  await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
+  await tester.pumpAndSettle();
+
+  expect(find.text('已经记住了'), findsNothing);
+  expect(find.text('这次没有保存成功'), findsOneWidget);
+  expect(find.text('重试保存这段话'), findsOneWidget);
+  expect(find.textContaining('ASR_TIMEOUT'), findsOneWidget);
+  expect(api.voiceMemories, 0);
 })
