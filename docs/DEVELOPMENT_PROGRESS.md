@@ -38,10 +38,13 @@
 <!-- Stage 3S：Annual Summary / Issue #91 / PR #93 已完成 complete-year snapshot、512+1/256+1 bounded inventory、all-raw S3-013 authority、strict Y-slot provider boundary、provider 前后完整重验与 PostgreSQL Annual Gate，并合并 main=dd558913；S3-017 转 ✅，Stage 3 S3-001~S3-019 正式收口。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-09-22  
-> 当前阶段：Stage 1「记得住」、Stage 2「自动记」、Stage 3「懂生活 / AI Memory」均已完成；S3-001~S3-019 已全部正式审查并合并 `main`
-> Stage 1 最终产品代码基线（PR #32 合并后，不含后续 docs-only 提交）：`004ff28f40a4a15f0eb65c8acf9e16b0274eb89c`  
-> 当前开发重点：Stage 4B / Issue #97 / PR #99 已正式审查并合并；进入 Stage 4C / Issue #100，优先让微信小程序家庭端消费既有 Family API、exact-grant 当前位置与 Today Footprint，不新增 Memory / Photos / emergency sharing 后端能力
+> 最后更新：2026-09-26  
+> Stage 1「记得住」：✅ complete  
+> Stage 2「自动记」：✅ complete  
+> Stage 3「懂生活 / AI Memory」：✅ complete  
+> Stage 4「连接家庭 / Elder V1」：✅ complete  
+> Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
+> 下一阶段：**V2 Personal Memory Graph**；本文件当前仅记录规划项，尚未标记为进行中或完成。
 
 ## 状态规则
 
@@ -250,23 +253,25 @@
 
 # 5. Stage 4：连接家庭
 
+> **Stage 4 已完成。** S4-001～S4-015 均已完成正式审查并合并 `main`；下一阶段为 V2 Personal Memory Graph，本收口不启动 V2 实现。
+
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| S4-001 | 家庭邀请 | ✅ | Issue #95 / PR #96 已完成 24h 高熵 hash-only invite、单次接受/撤销、并发串行、cross-family IDOR 与正式两轮审查；合并 `main=c933f2a6` |
-| S4-002 | 家庭成员绑定 | ✅ | Issue #95 / PR #96 已完成 V1 单一 active Family、OWNER/MEMBER server-owned membership、canonical pair locking、成员移除/退出 grant 清理与 Data/Account Delete 生命周期；合并 `main=c933f2a6` |
-| S4-003 | 家庭权限矩阵 | ✅ | Issue #95 / PR #96 已完成固定四类 explicit ALLOW / absence=DENY、resource-owner-only grant、OWNER 无旁路、same-Family composite FK、committed-state resolver 与 reverse/reciprocal PostgreSQL race Gate；合并 `main=c933f2a6` |
-| S4-004 | 查看当前位置授权 | ✅ | Issue #97 / PR #99 已完成 exact `VIEW_CURRENT_LOCATION` family read、canonical Family pair + owner LocationDerivationState privacy serialization、15 分钟 freshness/future-skew、Privacy Pause fail-closed、response whitelist 与真实 PostgreSQL read/revoke/remove/pause races；final reviewed HEAD `216064d6` / Backend #585（run 35708015679）/ 460 passed；合并 `main=f1860ba4` |
-| S4-005 | 查看足迹授权 | ✅ | Issue #97 / PR #99 已完成 exact `VIEW_FOOTPRINT` family read，复用 owner persisted timezone → local today → Visit overlap + owner Place join；无 arbitrary date / Timeline / Place detail / `/location/visits` cross-user seam；final reviewed HEAD `216064d6` / Backend #585 / PostgreSQL Sensitive Read Gate / 460 passed；合并 `main=f1860ba4` |
-| S4-006 | 查看个人记忆授权 | ⬜ | 默认关闭 |
-| S4-007 | 查看照片授权 | ⬜ | 默认关闭 |
-| S4-008 | 紧急位置共享 | ⬜ | 用户明确授权 |
-| S4-009 | 到家提醒 | ⬜ | 家庭安全场景 |
-| S4-010 | 微信小程序家庭端 | 🔵 | Issue #100 / Stage 4C：把现有占位 Family tab 接入已合并 Family API；第一版覆盖创建/加入家庭、成员管理、owner→member 当前位置/今日足迹授权、显式查看家人当前位置与 Today Footprint；不新增 Family Memory/Photos、历史足迹、地图 SDK、邀请二维码、emergency sharing |
-| S4-011 | 长辈模式 | ⬜ | 大字体、大按钮、语音优先 |
-| S4-012 | 长辈模式“帮我记一下” | ⬜ | 一键语音入口 |
-| S4-013 | 长辈模式“我想找东西” | ⬜ | 优先语音问答 |
-| S4-014 | 长辈模式“今天去了哪里” | ⬜ | 简化足迹查看 |
-| S4-015 | 家庭隐私审计 | ⬜ | 谁在什么时候查看过什么 |
+| S4-001 | 家庭邀请 | ✅ | Issue #95 / PR #96；Family Invite foundation 已合并，merge `c933f2a6` |
+| S4-002 | 家庭成员绑定 | ✅ | Issue #95 / PR #96；Family Membership foundation 已合并，merge `c933f2a6` |
+| S4-003 | 家庭权限矩阵 | ✅ | Issue #95 / PR #96；default-deny exact-grant permission matrix 已合并，merge `c933f2a6` |
+| S4-004 | 查看当前位置授权 | ✅ | Issue #97 / PR #99；exact `VIEW_CURRENT_LOCATION` sensitive read 已合并，merge `f1860ba4` |
+| S4-005 | 查看足迹授权 | ✅ | Issue #97 / PR #99；exact `VIEW_FOOTPRINT` Today Footprint read 已合并，merge `f1860ba4` |
+| S4-006 | 查看个人记忆授权 | ✅ | Issue #107 / PR #109；exact `VIEW_MEMORY` Family Memory Read V1 已合并，merge `99d5e8ed` |
+| S4-007 | 查看照片授权 | ✅ | Issue #108 / PR #110；exact `VIEW_PHOTOS` Family Photos Read V1 已合并，merge `4936e396` |
+| S4-008 | 紧急位置共享 | ✅ | Issue #113 / PR #114；time-bounded Emergency Location Sharing V1 已合并，merge `0ec77a68` |
+| S4-009 | 到家提醒 | ✅ | Issue #115 / PR #116；one-shot Arrival-Home Reminder V1 已合并，merge `296bbc03` |
+| S4-010 | 微信小程序家庭端 | ✅ | Issue #100 / PR #102；Mini Program Family V1 已合并，merge `9867c7f0` |
+| S4-011 | 长辈模式 | ✅ | Issue #118 / PR #119；self-controlled Elder Mode Foundation V1 已合并，merge `049eab74` |
+| S4-012 | 长辈模式“帮我记一下” | ✅ | Issue #120 / PR #121；explicit voice-first Elder Remember V1 已合并，merge `82a155b0` |
+| S4-013 | 长辈模式“我想找东西” | ✅ | Issue #122 / PR #123；trusted no-guess Elder Find Things V1 已合并，merge `b8550a20` |
+| S4-014 | 长辈模式“今天去了哪里” | ✅ | Issue #124 / PR #125；trusted self Today Footprint Elder view 已合并，merge `9576c7ad` |
+| S4-015 | 家庭隐私审计 | ✅ | Issue #111 / PR #112；Family Privacy Audit V1 已合并，merge `c0e6c4bd` |
 
 ---
 
