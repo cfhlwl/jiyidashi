@@ -44,13 +44,17 @@ void main() {
     expect(normalSize?.height, 48);
     expect(elderSize?.height, 56);
     expect(elder.textTheme.bodyMedium?.fontSize, 18);
+    final normalTitleMediumSize = normal.textTheme.titleMedium?.fontSize ?? 16;
+    final normalHeadlineSmallSize = normal.textTheme.headlineSmall?.fontSize ?? 24;
+    expect(elder.textTheme.titleMedium?.fontSize, 22);
+    expect(elder.textTheme.headlineSmall?.fontSize, 30);
     expect(
       elder.textTheme.titleMedium!.fontSize!,
-      greaterThan(normal.textTheme.titleMedium!.fontSize!),
+      greaterThan(normalTitleMediumSize),
     );
     expect(
       elder.textTheme.headlineSmall!.fontSize!,
-      greaterThan(normal.textTheme.headlineSmall!.fontSize!),
+      greaterThan(normalHeadlineSmallSize),
     );
     expect(elder.textTheme.titleMedium?.height, 1.5);
     expect(elder.textTheme.headlineSmall?.height, 1.35);
