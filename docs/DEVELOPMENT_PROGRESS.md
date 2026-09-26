@@ -44,7 +44,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Personal Memory Graph**；V2-001 / Issue #128 Person Foundation V1 已启动，V2-002+ 仍未开始。
+> 当前阶段：**V2 Personal Memory Graph**；V2-001 已正式合并，V2-002 / Issue #130 Person Memory Links V1 开发中，V2-003+ 仍未开始。
 
 ## 状态规则
 
@@ -279,8 +279,8 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| V2-001 | Person 人物模型 | 🟠 | Issue #128 / PR #129：owner-scoped explicit people model 已实现；名称、结构化别名、关系标签、私有备注、revision-safe CRUD、Data Export/Delete/Account Delete 与 PostgreSQL concurrency Gate 已通过当前自动测试；待正式审查/合并，不包含 Person↔Memory/图谱边、AI 自动创建或链接 |
-| V2-002 | 人物相关记忆 | ⬜ | 见过谁 / 什么时候见过 |
+| V2-001 | Person 人物模型 | ✅ | Issue #128 / PR #129：owner-scoped explicit people model 已正式审查并合并；merge `5f9f87dfa868eb85255f9e0aa56a22a5a9afe3cf` |
+| V2-002 | 人物相关记忆 | 🟠 | Issue #130 / PR #131：explicit evidence-bound Person↔Memory Links V1 已实现；RELATED / MET、owner-bound FKs、revision-safe mutation、person timeline、recent explicit MET interactions、Data Export/Delete/Account Delete 与 PostgreSQL race Gate 已通过当前自动测试；待正式审查/合并，不做 AI/name auto-link 或 V2-003 graph |
 | V2-003 | 人物关系图谱 | ⬜ | 人与事件、地点、物品建立关系 |
 | V2-004 | Place / Person / Object / Event 统一图谱 | ⬜ | Personal Memory Graph |
 | V2-005 | 人生事件模型 | ⬜ | 旅行、就医、聚会、工作等 |

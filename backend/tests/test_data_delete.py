@@ -44,6 +44,7 @@ from app.models import (
     User,
     Visit,
 )
+from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
 from app.person_models import Person, PersonAlias
 from app.services import data_deletion_service
 from app.services.object_storage import (
@@ -112,6 +113,7 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
         "visit": uuid4(),
         "person": uuid4(),
         "person_alias": uuid4(),
+        "person_memory_link": uuid4(),
         "object": uuid4(),
         "object_location": uuid4(),
         "reminder": uuid4(),
@@ -246,6 +248,16 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
                 person_id=ids["person"],
                 alias="老朋友",
                 normalized_alias="老朋友",
+            )
+        )
+        db.add(
+            PersonMemoryLink(
+                id=ids["person_memory_link"],
+                user_id=owner_id,
+                person_id=ids["person"],
+                memory_id=ids["memory"],
+                relation_kind=PersonMemoryRelationKind.MET,
+                revision=0,
             )
         )
         db.add(
@@ -464,6 +476,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert retry.json()["completed"] is True
     assert retry.json()["deleted_counts"]["memory_edits"] == 1
     assert retry.json()["deleted_counts"]["place_name_corrections"] == 1
+    assert retry.json()["deleted_counts"]["person_memory_links"] == 1
     assert retry.json()["deleted_counts"]["person_aliases"] == 1
     assert retry.json()["deleted_counts"]["persons"] == 1
     assert other_key in delete_storage.objects
@@ -483,6 +496,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
             .select_from(LocationIngestReceipt)
             .where(LocationIngestReceipt.user_id == owner_id)
         ) == 0
+        assert _count_for_user(db, PersonMemoryLink, owner_id) == 0
         assert _count_for_user(db, Person, owner_id) == 0
         assert _count_for_user(db, PersonAlias, owner_id) == 0
         assert _count_for_user(db, ObjectItem, owner_id) == 0
@@ -517,6 +531,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert body["memory_sources"] == []
     assert body["memory_edits"] == []
     assert body["people"] == []
+    assert body["person_memory_links"] == []
     assert body["objects"] == []
     assert body["object_locations"] == []
     assert body["location"]["points"] == []

@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
 from app.person_schemas import PersonCreate, PersonPatch
 
@@ -179,8 +180,14 @@ def patch_person(
 
 def delete_person(db: Session, *, user_id: UUID, person_id: UUID) -> None:
     person = load_person(db, user_id=user_id, person_id=person_id, for_update=True)
-    # Explicit alias cleanup keeps SQLite tests deterministic while the DB-level
-    # owner-bound ON DELETE CASCADE remains the production integrity backstop.
+    # Explicit link cleanup keeps SQLite behavior deterministic; owner-bound DB
+    # cascades remain the production integrity backstop.
+    db.execute(
+        delete(PersonMemoryLink).where(
+            PersonMemoryLink.user_id == user_id,
+            PersonMemoryLink.person_id == person.id,
+        )
+    )
     db.execute(
         delete(PersonAlias).where(
             PersonAlias.user_id == user_id,

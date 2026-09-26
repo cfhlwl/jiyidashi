@@ -120,6 +120,7 @@ def create_schema() -> None:
         media_models,
         memory_feedback_models,
         models,
+        person_memory_models,
         person_models,
     )
 

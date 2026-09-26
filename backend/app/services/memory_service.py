@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -15,6 +15,7 @@ from app.models import (
     ReminderStatus,
     SourceType,
 )
+from app.person_memory_models import PersonMemoryLink
 from app.schemas import MemoryCreate
 from app.services.embedding_service import invalidate_memory_embedding
 
@@ -131,6 +132,15 @@ def get_memory_for_user(
 
 
 def soft_delete_memory(db: Session, memory: Memory) -> None:
+    # The caller already holds the authoritative Memory row lock. Remove explicit
+    # Person links in the same transaction so soft-delete never leaves a visible
+    # Person timeline edge behind.
+    db.execute(
+        delete(PersonMemoryLink).where(
+            PersonMemoryLink.user_id == memory.user_id,
+            PersonMemoryLink.memory_id == memory.id,
+        )
+    )
     memory.is_deleted = True
     # A deleted Memory must not retain a nearest-neighbor candidate. The trusted
     # owner-scoped Memory lock is already held by the caller before invalidation.
