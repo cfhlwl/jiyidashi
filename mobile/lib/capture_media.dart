@@ -587,6 +587,7 @@ class TrustedMediaCaptureService {
   }) async {
     final session = _captureSession();
     onPhase?.call(MediaSubmissionPhase.uploading);
+    _assertSameSession(session);
     final upload = await api.createMediaUpload(
       clientUploadId: file.clientUploadId,
       kind: 'IMAGE',
@@ -595,12 +596,14 @@ class TrustedMediaCaptureService {
       originalFilename: file.originalFilename,
     );
     _assertSameSession(session);
-    await _uploadIfNeeded(upload, file);
+    await _uploadIfNeeded(upload, file, session);
     _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.verifying);
+    _assertSameSession(session);
     await api.completeMediaUpload(upload.mediaId);
     _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.saving);
+    _assertSameSession(session);
     final response = await api.createPhotoMemory(
       mediaId: upload.mediaId,
       title: title,
@@ -618,6 +621,7 @@ class TrustedMediaCaptureService {
   }) async {
     final session = _captureSession();
     onPhase?.call(MediaSubmissionPhase.uploading);
+    _assertSameSession(session);
     final upload = await api.createMediaUpload(
       clientUploadId: file.clientUploadId,
       kind: 'AUDIO',
@@ -626,12 +630,14 @@ class TrustedMediaCaptureService {
       originalFilename: file.originalFilename,
     );
     _assertSameSession(session);
-    await _uploadIfNeeded(upload, file);
+    await _uploadIfNeeded(upload, file, session);
     _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.verifying);
+    _assertSameSession(session);
     await api.completeMediaUpload(upload.mediaId);
     _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.transcribing);
+    _assertSameSession(session);
     final response = await api.createVoiceMemory(
       mediaId: upload.mediaId,
       title: title,
@@ -644,14 +650,18 @@ class TrustedMediaCaptureService {
   Future<void> _uploadIfNeeded(
     MediaUploadSession upload,
     PendingMediaFile file,
+    ({int version, String owner}) session,
   ) async {
     final target = upload.upload;
     if (target == null) return;
     final bytes = await file.readBytes();
+    _assertSameSession(session);
     if (bytes.length != file.sizeBytes) {
       throw CaptureMediaException('媒体文件在提交前发生变化，请重新选择或录制');
     }
+    _assertSameSession(session);
     await api.uploadSignedMedia(target, bytes);
+    _assertSameSession(session);
   }
 
   String _memoryId(Map<String, dynamic> response) {
