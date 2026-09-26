@@ -605,48 +605,54 @@ void main() {
   });
 
   test('trusted voice capture stops before storage after account switch', () async {
-  final api = _SessionSwitchMediaApi();
-  final service = TrustedMediaCaptureService(api);
-  final file = _memoryFile(
-    id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-    contentType: 'audio/mp4',
-    bytes: [0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70],
-  );
+    final api = _SessionSwitchMediaApi();
+    final service = TrustedMediaCaptureService(api);
+    final file = _memoryFile(
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      contentType: 'audio/mp4',
+      bytes: [0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70],
+    );
 
-  await expectLater(
-    service.submitVoice(file),
-    throwsA(isA<ProtocolException>()),
-  );
+    await expectLater(
+      service.submitVoice(file),
+      throwsA(isA<ProtocolException>()),
+    );
 
-  expect(api.calls.where((call) => call.startsWith('put:')), isEmpty);
-  expect(api.calls.where((call) => call.startsWith('complete:')), isEmpty);
-  expect(api.calls.where((call) => call.startsWith('voice-memory:')), isEmpty);
+    expect(api.calls.where((call) => call.startsWith('put:')), isEmpty);
+    expect(api.calls.where((call) => call.startsWith('complete:')), isEmpty);
+    expect(api.calls.where((call) => call.startsWith('voice-memory:')), isEmpty);
   });
 
-  test('trusted voice capture stops before signed PUT if account switches during local read', () async {
-  final api = _FakeMediaApi();
-  final service = TrustedMediaCaptureService(api);
-  final file = PendingMediaFile(
-    clientUploadId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-    contentType: 'audio/mp4',
-    sizeBytes: 8,
-    originalFilename: 'voice.m4a',
-    occurredAt: DateTime.utc(2026, 9, 26),
-    readBytes: () async {
-      api.logout();
-      api.accessToken = 'new-account-token';
-      api.authenticatedUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-      return [0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70];
+  test(
+    'trusted voice capture stops before signed PUT if account switches during local read',
+    () async {
+      final api = _FakeMediaApi();
+      final service = TrustedMediaCaptureService(api);
+      final file = PendingMediaFile(
+        clientUploadId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        contentType: 'audio/mp4',
+        sizeBytes: 8,
+        originalFilename: 'voice.m4a',
+        occurredAt: DateTime.utc(2026, 9, 26),
+        readBytes: () async {
+          api.logout();
+          api.accessToken = 'new-account-token';
+          api.authenticatedUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+          return [0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70];
+        },
+      );
+
+      await expectLater(
+        service.submitVoice(file),
+        throwsA(isA<ProtocolException>()),
+      );
+
+      expect(api.calls.where((call) => call.startsWith('put:')), isEmpty);
+      expect(api.calls.where((call) => call.startsWith('complete:')), isEmpty);
+      expect(
+        api.calls.where((call) => call.startsWith('voice-memory:')),
+        isEmpty,
+      );
     },
   );
-
-  await expectLater(
-    service.submitVoice(file),
-    throwsA(isA<ProtocolException>()),
-  );
-
-  expect(api.calls.where((call) => call.startsWith('put:')), isEmpty);
-  expect(api.calls.where((call) => call.startsWith('complete:')), isEmpty);
-  expect(api.calls.where((call) => call.startsWith('voice-memory:')), isEmpty);
-  });
 }
