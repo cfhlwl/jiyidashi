@@ -81,6 +81,20 @@ async def test_explicit_links_are_owner_scoped_duplicate_safe_and_revision_bound
         occurred_at=now,
     )
 
+    forged_owner = await client.post(
+        f"/v1/people/{person_a['id']}/memories/{memory_a['id']}",
+        headers=headers_a,
+        json={"relation_kind": "MET", "user_id": str(user_a)},
+    )
+    assert forged_owner.status_code == 422
+
+    invalid_relation = await client.post(
+        f"/v1/people/{person_a['id']}/memories/{memory_a['id']}",
+        headers=headers_a,
+        json={"relation_kind": "SAW_IN_PHOTO"},
+    )
+    assert invalid_relation.status_code == 422
+
     created = await client.post(
         f"/v1/people/{person_a['id']}/memories/{memory_a['id']}",
         headers=headers_a,
