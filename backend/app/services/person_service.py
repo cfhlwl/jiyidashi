@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.person_models import Person, PersonAlias
@@ -61,7 +61,7 @@ def list_people(db: Session, *, user_id: UUID, limit: int) -> list[Person]:
         db.scalars(
             select(Person)
             .where(Person.user_id == user_id)
-            .order_by(Person.display_name, Person.created_at, Person.id)
+            .order_by(func.lower(Person.display_name), Person.created_at, Person.id)
             .limit(limit)
         ).all()
     )
@@ -172,5 +172,13 @@ def patch_person(
 
 def delete_person(db: Session, *, user_id: UUID, person_id: UUID) -> None:
     person = load_person(db, user_id=user_id, person_id=person_id, for_update=True)
+    # Explicit alias cleanup keeps SQLite tests deterministic while the DB-level
+    # owner-bound ON DELETE CASCADE remains the production integrity backstop.
+    db.execute(
+        delete(PersonAlias).where(
+            PersonAlias.user_id == user_id,
+            PersonAlias.person_id == person.id,
+        )
+    )
     db.delete(person)
     db.commit()
