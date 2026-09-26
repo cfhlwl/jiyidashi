@@ -351,3 +351,55 @@ async def test_link_mutations_create_no_memory_or_evidence(client):
         )
     assert before_memory == after_memory == 1
     assert before_source == after_source == 1
+
+
+@pytest.mark.asyncio
+async def test_person_memory_link_export_is_owner_scoped_and_excludes_deleted_memory(client):
+    headers_a, _ = await _new_user(client, "link-export-a")
+    headers_b, _ = await _new_user(client, "link-export-b")
+    now = datetime.now(UTC)
+
+    person_a = await _person(client, headers_a, "A person")
+    memory_a = await _memory(
+        client,
+        headers_a,
+        content="A exported memory",
+        occurred_at=now,
+    )
+    linked_a = await client.post(
+        f"/v1/people/{person_a['id']}/memories/{memory_a['id']}",
+        headers=headers_a,
+        json={"relation_kind": "MET"},
+    )
+    assert linked_a.status_code == 201
+
+    person_b = await _person(client, headers_b, "B secret person")
+    memory_b = await _memory(
+        client,
+        headers_b,
+        content="B secret memory",
+        occurred_at=now,
+    )
+    linked_b = await client.post(
+        f"/v1/people/{person_b['id']}/memories/{memory_b['id']}",
+        headers=headers_b,
+        json={"relation_kind": "RELATED"},
+    )
+    assert linked_b.status_code == 201
+
+    exported = await client.get("/v1/export/data", headers=headers_a)
+    assert exported.status_code == 200
+    rows = exported.json()["person_memory_links"]
+    assert len(rows) == 1
+    assert rows[0]["id"] == linked_a.json()["id"]
+    assert rows[0]["person_id"] == person_a["id"]
+    assert rows[0]["memory_id"] == memory_a["id"]
+    assert rows[0]["relation_kind"] == "MET"
+    assert "B secret person" not in exported.text
+    assert "B secret memory" not in exported.text
+
+    deleted = await client.delete(f"/v1/memories/{memory_a['id']}", headers=headers_a)
+    assert deleted.status_code == 204
+    after_delete = await client.get("/v1/export/data", headers=headers_a)
+    assert after_delete.status_code == 200
+    assert after_delete.json()["person_memory_links"] == []
