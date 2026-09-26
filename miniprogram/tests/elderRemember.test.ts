@@ -5,6 +5,7 @@ import test from 'node:test'
 
 import {
   CaptureActionAuthority,
+  assertCaptureActionCurrentOrCleanup,
   deriveElderRememberState,
   elderRememberStateLabel,
   isCaptureActionStaleError,
@@ -247,4 +248,31 @@ test('same-session permission and picker completions remain usable', async () =>
   assert.equal(recorderStartCount, 1)
   assert.equal(selectedPhoto, 'wxfile://tmp/same-session.jpg')
   owner = 'user-a'
+})
+
+
+test('stale picker temp result is cleaned exactly once and never published', async () => {
+  const authority = new CaptureActionAuthority()
+  let selectedPhoto: string | null = null
+  let cleanupCount = 0
+  let resolvePicker!: (path: string) => void
+  const picker = new Promise<string>((resolve) => {
+    resolvePicker = resolve
+  })
+  const action = authority.begin(() => undefined)
+
+  const pendingSelection = (async () => {
+    const tempFilePath = await picker
+    assertCaptureActionCurrentOrCleanup(action, () => {
+      cleanupCount += 1
+    })
+    selectedPhoto = tempFilePath
+  })()
+
+  authority.invalidate()
+  resolvePicker('wxfile://tmp/stale-picker.jpg')
+
+  await assert.rejects(pendingSelection, isCaptureActionStaleError)
+  assert.equal(selectedPhoto, null)
+  assert.equal(cleanupCount, 1)
 })
