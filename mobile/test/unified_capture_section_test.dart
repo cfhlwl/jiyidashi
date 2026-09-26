@@ -739,10 +739,8 @@ void main() {
     expect(find.textContaining('麦克风权限未开启'), findsOneWidget);
     expect(find.textContaining('保存为可信记忆'), findsNothing);
   });
-}
 
-
-testWidgets('elder capture is voice-first and never records on page entry', (tester) async {
+  testWidgets('elder capture is voice-first and never records on page entry', (tester) async {
   final api = _WidgetMediaApi();
   final device = _WidgetMediaDevice(voicePermission: true);
   await pumpSection(tester, api, device, elderMode: true);
@@ -755,9 +753,9 @@ testWidgets('elder capture is voice-first and never records on page entry', (tes
   expect(device.startCalls, 0);
   expect(api.mediaCreates, 0);
   expect(api.voiceMemories, 0);
-})
+  });
 
-testWidgets('elder voice requires explicit start stop and submit before canonical saved', (
+  testWidgets('elder voice requires explicit start stop and submit before canonical saved', (
   tester,
 ) async {
   final api = _WidgetMediaApi();
@@ -787,9 +785,9 @@ testWidgets('elder voice requires explicit start stop and submit before canonica
   expect(api.mediaCompletes, 1);
   expect(api.voiceMemories, 1);
   expect(find.text('已经记住了'), findsOneWidget);
-})
+  });
 
-testWidgets('elder voice failure never renders saved state and keeps retry path', (
+  testWidgets('elder voice failure never renders saved state and keeps retry path', (
   tester,
 ) async {
   final api = _FailingCompleteMediaApi()
@@ -809,10 +807,9 @@ testWidgets('elder voice failure never renders saved state and keeps retry path'
   expect(find.text('已经记住了'), findsNothing);
   expect(find.text('这次没有保存成功'), findsOneWidget);
   expect(find.text('重试保存这段话'), findsOneWidget);
-})
+  });
 
-
-testWidgets('elder ASR failure stays FAILED and reuses the recorded clip for retry', (
+  testWidgets('elder ASR failure stays FAILED and reuses the recorded clip for retry', (
   tester,
 ) async {
   final api = _FailingVoiceMemoryApi();
@@ -831,4 +828,5 @@ testWidgets('elder ASR failure stays FAILED and reuses the recorded clip for ret
   expect(find.text('重试保存这段话'), findsOneWidget);
   expect(find.textContaining('ASR_TIMEOUT'), findsOneWidget);
   expect(api.voiceMemories, 0);
-})
+  });
+}
