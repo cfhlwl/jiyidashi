@@ -313,6 +313,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
     if (_mediaBusy || voice != null) return;
     if (!_lifecycleAllowsRecording) {
       setState(() {
+        elderVoiceState = ElderVoiceCaptureState.failed;
         voiceMessageKind = JiYiStatusKind.warning;
         voiceMessage = '请回到应用前台后再开始录音。';
       });
@@ -346,6 +347,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
       }
       if (!allowed) {
         setState(() {
+          elderVoiceState = ElderVoiceCaptureState.failed;
           voiceMessageKind = JiYiStatusKind.error;
           voiceMessage = '麦克风权限未开启。请到系统设置中允许“迹忆”使用麦克风。';
         });
@@ -374,6 +376,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
             voice = null;
             voiceSavedPendingCleanup = false;
           }
+          elderVoiceState = ElderVoiceCaptureState.failed;
           voiceMessageKind = JiYiStatusKind.error;
           voiceMessage = _errorMessage(error, '无法开始录音');
         });
@@ -463,6 +466,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
             voice = null;
             voiceSavedPendingCleanup = false;
           }
+          elderVoiceState = ElderVoiceCaptureState.failed;
           voiceMessageKind = JiYiStatusKind.error;
           voiceMessage = _errorMessage(error, '停止录音失败');
         });
@@ -534,6 +538,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
     } catch (error) {
       if (mounted) {
         setState(() {
+          elderVoiceState = ElderVoiceCaptureState.failed;
           voiceMessageKind = JiYiStatusKind.error;
           voiceMessage = '${_errorMessage(error, '语音记录失败')} 本地录音已保留，可直接重试。';
         });
