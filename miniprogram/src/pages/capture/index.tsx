@@ -11,6 +11,7 @@ import {
   createVoiceMemory,
   currentElderModeEnabled,
   isAuthenticated,
+  subscribeElderMode,
   markObjectLocationStale,
   putSignedMediaObject,
   rememberObjectLocation,
@@ -188,6 +189,10 @@ const recorderController = new RecorderLifecycleController(
 )
 
 export default function Page() {
+  const [elderMode, setElderMode] = useState(currentElderModeEnabled)
+
+  useEffect(() => subscribeElderMode(setElderMode), [])
+
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [objectName, setObjectName] = useState('')
@@ -501,7 +506,7 @@ export default function Page() {
   const busy = loading || photoSubmitting || voiceSubmitting
 
   return (
-    <View className={elderClassName(currentElderModeEnabled())}>
+    <View className={elderClassName(elderMode)}>
       <View className='title'>记一下</View>
       <View className='subtitle'>主动写下、拍下或录下需要记住的内容；图片和语音都必须通过服务端 Evidence 门禁后才算真正记录。</View>
 
