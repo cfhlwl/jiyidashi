@@ -3,6 +3,7 @@ import { Button, Text, View } from '@tarojs/components'
 import { useEffect, useRef, useState } from 'react'
 import {
   currentAuthenticatedUserId,
+  currentAuthSessionEpoch,
   currentElderModeEnabled,
   getProfile,
   getTodayFootprint,
@@ -14,7 +15,7 @@ import {
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
 import { TodayFootprintRequestEpoch, toTodayFootprintRow } from '../../services/todayFootprint'
-import { placeDetailRoute, placeListPresentation, type PlaceRead } from '../../services/placeDetail'
+import { PlaceListRequestEpoch, placeDetailRoute, placeListPresentation, type PlaceRead } from '../../services/placeDetail'
 import './index.scss'
 
 // Today Footprint 与地点列表是两个独立的服务端权威 read model。
@@ -29,28 +30,30 @@ export default function Page() {
   const [placeError, setPlaceError] = useState('')
   const [elderMode, setElderMode] = useState(currentElderModeEnabled)
   const footprintEpoch = useRef(new TodayFootprintRequestEpoch())
+  const placesEpoch = useRef(new PlaceListRequestEpoch())
   const authOwnerRef = useRef<string | null>(currentAuthenticatedUserId())
-  const authEpochRef = useRef<number | null>(null)
+  const authEpochRef = useRef(currentAuthSessionEpoch())
 
   useEffect(() => subscribeElderMode(setElderMode), [])
 
   useEffect(() => subscribeAuthSession((owner, epoch) => {
-    if (authEpochRef.current === null) {
-      authEpochRef.current = epoch
-      authOwnerRef.current = owner
-      return
-    }
     if (authEpochRef.current === epoch && authOwnerRef.current === owner) return
     authEpochRef.current = epoch
     authOwnerRef.current = owner
     footprintEpoch.current.invalidate()
+    placesEpoch.current.invalidate()
     setLoading(false)
     setFootprint(null)
     setStatus('')
+    setLoadingPlaces(false)
+    setPlaces([])
+    setPlacesLoaded(false)
+    setPlaceError('')
   }), [])
 
   useEffect(() => () => {
     footprintEpoch.current.invalidate()
+    placesEpoch.current.invalidate()
   }, [])
 
   const refresh = async () => {
@@ -89,24 +92,47 @@ export default function Page() {
 
   const refreshPlaces = async () => {
     if (!isAuthenticated()) {
+      placesEpoch.current.invalidate()
+      setLoadingPlaces(false)
       setPlaces([])
       setPlaceError('')
       setPlacesLoaded(true)
       return
     }
+
+    const generation = placesEpoch.current.capture()
+    const owner = authOwnerRef.current
+    const authEpoch = authEpochRef.current
+
     setLoadingPlaces(true)
     setPlacesLoaded(false)
     setPlaceError('')
     try {
       // 200 [] 是成功的空状态，不写入 placeError；只有请求/协议失败才允许出现“重试”。
       const result = await listPlaces(25)
+      if (
+        !placesEpoch.current.isCurrent(generation)
+        || authOwnerRef.current !== owner
+        || authEpochRef.current !== authEpoch
+      ) return
       setPlaces(result)
     } catch (error) {
+      if (
+        !placesEpoch.current.isCurrent(generation)
+        || authOwnerRef.current !== owner
+        || authEpochRef.current !== authEpoch
+      ) return
       setPlaces([])
       setPlaceError(error instanceof Error ? error.message : '地点加载失败')
     } finally {
-      setLoadingPlaces(false)
-      setPlacesLoaded(true)
+      if (
+        placesEpoch.current.isCurrent(generation)
+        && authOwnerRef.current === owner
+        && authEpochRef.current === authEpoch
+      ) {
+        setLoadingPlaces(false)
+        setPlacesLoaded(true)
+      }
     }
   }
 
@@ -121,7 +147,9 @@ export default function Page() {
 
   useDidHide(() => {
     footprintEpoch.current.invalidate()
+    placesEpoch.current.invalidate()
     setLoading(false)
+    setLoadingPlaces(false)
   })
 
   const rows = footprint?.visits.map(toTodayFootprintRow) || []
