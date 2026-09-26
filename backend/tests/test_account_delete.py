@@ -13,6 +13,7 @@ from app.core.db import SessionLocal
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.main import app
 from app.models import Memory, User
+from app.person_models import Person, PersonAlias
 from app.services import account_deletion_service
 from app.services.object_storage import ObjectStorageError, get_object_storage
 
@@ -192,9 +193,25 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
     headers, user_id = await _register(client, email=email, password=password)
     with SessionLocal() as db:
         memory = Memory(user_id=user_id, content="must disappear with account")
-        db.add(memory)
+        person = Person(
+            user_id=user_id,
+            display_name="注销联系人",
+            relationship_label="朋友",
+            note="account-delete private person",
+        )
+        db.add_all([memory, person])
+        db.flush()
+        alias = PersonAlias(
+            user_id=user_id,
+            person_id=person.id,
+            alias="联系人别名",
+            normalized_alias="联系人别名",
+        )
+        db.add(alias)
         db.commit()
         memory_id = memory.id
+        person_id = person.id
+        alias_id = alias.id
 
     request_id = uuid4()
     deleted = await client.post(
@@ -214,6 +231,8 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
     with SessionLocal() as db:
         assert db.get(User, user_id) is None
         assert db.get(Memory, memory_id) is None
+        assert db.get(Person, person_id) is None
+        assert db.get(PersonAlias, alias_id) is None
         assert db.scalar(
             select(AuthIdentity.id).where(AuthIdentity.user_id == user_id)
         ) is None

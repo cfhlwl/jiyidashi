@@ -30,6 +30,7 @@ from app.models import (
     User,
     Visit,
 )
+from app.person_models import Person, PersonAlias
 
 router = APIRouter(prefix="/export", tags=["export"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -147,6 +148,24 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
         .order_by(MemoryEdit.created_at, MemoryEdit.id),
         "memory_edits",
     )
+    persons = _bounded_scalars(
+        db,
+        select(Person)
+        .where(Person.user_id == user_id)
+        .order_by(Person.created_at, Person.id),
+        "persons",
+    )
+    person_aliases = _bounded_scalars(
+        db,
+        select(PersonAlias)
+        .where(PersonAlias.user_id == user_id)
+        .order_by(PersonAlias.person_id, PersonAlias.normalized_alias, PersonAlias.id),
+        "person_aliases",
+    )
+    aliases_by_person: dict[UUID, list[PersonAlias]] = {person.id: [] for person in persons}
+    for alias in person_aliases:
+        aliases_by_person.setdefault(alias.person_id, []).append(alias)
+
     objects = _bounded_scalars(
         db,
         select(ObjectItem)
@@ -291,6 +310,21 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 "created_at": item.created_at,
             }
             for item in memory_edits
+        ],
+        "people": [
+            {
+                "id": person.id,
+                "display_name": person.display_name,
+                "relationship_label": person.relationship_label,
+                "note": person.note,
+                "aliases": [
+                    alias.alias for alias in aliases_by_person.get(person.id, [])
+                ],
+                "revision": person.revision,
+                "created_at": person.created_at,
+                "updated_at": person.updated_at,
+            }
+            for person in persons
         ],
         "objects": [
             {

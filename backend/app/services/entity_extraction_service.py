@@ -222,9 +222,9 @@ def link_entity_candidates(
         elif candidate.kind == EntityKind.PLACE:
             links.append(_resolve_candidate(candidate, inventory=places))
         else:
-            # Person has no trusted persistence model in this stage; TIME/EVENT are
-            # extraction metadata only. Keeping them unresolved prevents accidental
-            # fact/entity creation through a generic linker.
+            # V2-001 introduces explicit user-maintained Person persistence, but it does
+            # not authorize AI candidates to match or create those rows. PERSON/TIME/EVENT
+            # therefore remain unresolved until a later ambiguity/evidence design.
             links.append(
                 EntityLinkResult(
                     candidate=candidate,
