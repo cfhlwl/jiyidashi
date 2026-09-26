@@ -46,7 +46,13 @@ def _aliases_for_person(db: Session, user_id: UUID, person_id: UUID) -> list[Per
     )
 
 
-def load_person(db: Session, *, user_id: UUID, person_id: UUID, for_update: bool = False) -> Person:
+def load_person(
+    db: Session,
+    *,
+    user_id: UUID,
+    person_id: UUID,
+    for_update: bool = False,
+) -> Person:
     statement = select(Person).where(Person.id == person_id, Person.user_id == user_id)
     if for_update:
         statement = statement.with_for_update()
@@ -156,7 +162,8 @@ def patch_person(
             for row in _aliases_for_person(db, user_id, person_id)
         }
         requested = {
-            normalized: alias for alias, normalized in _canonical_aliases(payload.aliases or [])
+            normalized: alias
+            for alias, normalized in _canonical_aliases(payload.aliases or [])
         }
         if current != requested:
             _replace_aliases(db, person=person, aliases=payload.aliases or [])
