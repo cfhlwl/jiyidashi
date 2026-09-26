@@ -114,7 +114,7 @@ test('cached Mini capture clears local state on auth session change and tab hide
   assert.match(capture, /subscribeAuthSession\(/)
   assert.match(capture, /resetLocalCaptureForSessionChange/)
   assert.match(capture, /deleteTempFile\(voiceClipRef\.current\?\.tempFilePath\)/)
-  assert.match(capture, /deleteTempFile\(selectedPhoto\?\.tempFilePath\)/)
+  assert.match(capture, /deleteTempFile\(selectedPhotoRef\.current\?\.tempFilePath\)/)
   assert.match(capture, /useDidHide\(\(\) =>/)
   assert.match(capture, /discardNextVoiceStopRef\.current = true/)
   assert.match(capture, /录音已因离开页面而取消；不会上传或保存。/)
