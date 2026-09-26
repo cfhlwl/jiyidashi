@@ -49,6 +49,7 @@ async def test_empty_account_exports_versioned_json(client, auth_headers):
     assert body["memory_sources"] == []
     assert body["memory_edits"] == []
     assert body["people"] == []
+    assert body["person_memory_links"] == []
     assert body["objects"] == []
     assert body["object_locations"] == []
     assert body["location"]["points"] == []
