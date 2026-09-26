@@ -740,93 +740,100 @@ void main() {
     expect(find.textContaining('保存为可信记忆'), findsNothing);
   });
 
-  testWidgets('elder capture is voice-first and never records on page entry', (tester) async {
-  final api = _WidgetMediaApi();
-  final device = _WidgetMediaDevice(voicePermission: true);
-  await pumpSection(tester, api, device, elderMode: true);
-  await tester.pump();
+  testWidgets(
+    'elder capture is voice-first and never records on page entry',
+    (tester) async {
+      final api = _WidgetMediaApi();
+      final device = _WidgetMediaDevice(voicePermission: true);
+      await pumpSection(tester, api, device, elderMode: true);
+      await tester.pump();
 
-  expect(find.text('帮我记一下'), findsOneWidget);
-  expect(find.byKey(const ValueKey('elder-voice-start')), findsOneWidget);
-  expect(find.byKey(const ValueKey('capture-voice-start')), findsNothing);
-  expect(find.text('准备好了，点“开始说”'), findsOneWidget);
-  expect(device.startCalls, 0);
-  expect(api.mediaCreates, 0);
-  expect(api.voiceMemories, 0);
-  });
+      expect(find.text('帮我记一下'), findsOneWidget);
+      expect(find.byKey(const ValueKey('elder-voice-start')), findsOneWidget);
+      expect(find.byKey(const ValueKey('capture-voice-start')), findsNothing);
+      expect(find.text('准备好了，点“开始说”'), findsOneWidget);
+      expect(device.startCalls, 0);
+      expect(api.mediaCreates, 0);
+      expect(api.voiceMemories, 0);
+    },
+  );
 
-  testWidgets('elder voice requires explicit start stop and submit before canonical saved', (
-  tester,
-) async {
-  final api = _WidgetMediaApi();
-  final device = _WidgetMediaDevice(voicePermission: true);
-  await pumpSection(tester, api, device, elderMode: true);
+  testWidgets(
+    'elder voice requires explicit start stop and submit before canonical saved',
+    (tester) async {
+      final api = _WidgetMediaApi();
+      final device = _WidgetMediaDevice(voicePermission: true);
+      await pumpSection(tester, api, device, elderMode: true);
 
-  await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
-  await tester.pump();
-  expect(device.startCalls, 1);
-  expect(device.recording, isTrue);
-  expect(find.text('正在听你说'), findsOneWidget);
-  expect(api.mediaCreates, 0);
+      await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
+      await tester.pump();
+      expect(device.startCalls, 1);
+      expect(device.recording, isTrue);
+      expect(find.text('正在听你说'), findsOneWidget);
+      expect(api.mediaCreates, 0);
 
-  await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
-  await tester.pumpAndSettle();
-  expect(device.recording, isFalse);
-  expect(find.text('已经录好了'), findsOneWidget);
-  expect(api.mediaCreates, 0);
-  expect(api.voiceMemories, 0);
+      await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
+      await tester.pumpAndSettle();
+      expect(device.recording, isFalse);
+      expect(find.text('已经录好了'), findsOneWidget);
+      expect(api.mediaCreates, 0);
+      expect(api.voiceMemories, 0);
 
-  await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
-  await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
-  await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
+      await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
+      await tester.pumpAndSettle();
 
-  expect(api.mediaCreates, 1);
-  expect(api.signedPuts, 1);
-  expect(api.mediaCompletes, 1);
-  expect(api.voiceMemories, 1);
-  expect(find.text('已经记住了'), findsOneWidget);
-  });
+      expect(api.mediaCreates, 1);
+      expect(api.signedPuts, 1);
+      expect(api.mediaCompletes, 1);
+      expect(api.voiceMemories, 1);
+      expect(find.text('已经记住了'), findsOneWidget);
+    },
+  );
 
-  testWidgets('elder voice failure never renders saved state and keeps retry path', (
-  tester,
-) async {
-  final api = _FailingCompleteMediaApi()
-    ..accessToken = 'widget-token'
-    ..authenticatedUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-  final device = _WidgetMediaDevice(voicePermission: true);
-  await pumpSection(tester, api, device, elderMode: true);
+  testWidgets(
+    'elder voice failure never renders saved state and keeps retry path',
+    (tester) async {
+      final api = _FailingCompleteMediaApi()
+        ..accessToken = 'widget-token'
+        ..authenticatedUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      final device = _WidgetMediaDevice(voicePermission: true);
+      await pumpSection(tester, api, device, elderMode: true);
 
-  await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
-  await tester.pump();
-  await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
-  await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
+      await tester.pumpAndSettle();
 
-  expect(api.voiceMemories, 0);
-  expect(find.text('已经记住了'), findsNothing);
-  expect(find.text('这次没有保存成功'), findsOneWidget);
-  expect(find.text('重试保存这段话'), findsOneWidget);
-  });
+      expect(api.voiceMemories, 0);
+      expect(find.text('已经记住了'), findsNothing);
+      expect(find.text('这次没有保存成功'), findsOneWidget);
+      expect(find.text('重试保存这段话'), findsOneWidget);
+    },
+  );
 
-  testWidgets('elder ASR failure stays FAILED and reuses the recorded clip for retry', (
-  tester,
-) async {
-  final api = _FailingVoiceMemoryApi();
-  final device = _WidgetMediaDevice(voicePermission: true);
-  await pumpSection(tester, api, device, elderMode: true);
+  testWidgets(
+    'elder ASR failure stays FAILED and reuses the recorded clip for retry',
+    (tester) async {
+      final api = _FailingVoiceMemoryApi();
+      final device = _WidgetMediaDevice(voicePermission: true);
+      await pumpSection(tester, api, device, elderMode: true);
 
-  await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
-  await tester.pump();
-  await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
-  await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-start')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-stop')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('elder-voice-submit')));
+      await tester.pumpAndSettle();
 
-  expect(find.text('已经记住了'), findsNothing);
-  expect(find.text('这次没有保存成功'), findsOneWidget);
-  expect(find.text('重试保存这段话'), findsOneWidget);
-  expect(find.textContaining('ASR_TIMEOUT'), findsOneWidget);
-  expect(api.voiceMemories, 0);
-  });
+      expect(find.text('已经记住了'), findsNothing);
+      expect(find.text('这次没有保存成功'), findsOneWidget);
+      expect(find.text('重试保存这段话'), findsOneWidget);
+      expect(find.textContaining('ASR_TIMEOUT'), findsOneWidget);
+      expect(api.voiceMemories, 0);
+    },
+  );
+
 }
