@@ -28,6 +28,10 @@
     "src/services/memorySummaries.ts",
     "tests/memorySummaries.test.ts",
     "src/services/memoryFeedback.ts",
-    "tests/memoryFeedback.test.ts"
+    "tests/memoryFeedback.test.ts",
+    "src/services/elderMode.ts",
+    "tests/elderMode.test.ts",
+    "src/services/elderRemember.ts",
+    "tests/elderRemember.test.ts"
   ]
 }
