@@ -83,3 +83,16 @@ export class CaptureActionAuthority {
 export function isCaptureActionStaleError(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith(STALE_CAPTURE_ACTION_PREFIX)
 }
+
+
+export function assertCaptureActionCurrentOrCleanup(
+  action: CaptureActionSnapshot,
+  cleanup: () => void,
+): void {
+  try {
+    action.assertCurrent()
+  } catch (error) {
+    cleanup()
+    throw error
+  }
+}
