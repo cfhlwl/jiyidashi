@@ -318,12 +318,7 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 "relationship_label": person.relationship_label,
                 "note": person.note,
                 "aliases": [
-                    {
-                        "id": alias.id,
-                        "alias": alias.alias,
-                        "created_at": alias.created_at,
-                    }
-                    for alias in aliases_by_person.get(person.id, [])
+                    alias.alias for alias in aliases_by_person.get(person.id, [])
                 ],
                 "revision": person.revision,
                 "created_at": person.created_at,
