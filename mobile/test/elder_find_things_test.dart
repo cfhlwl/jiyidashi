@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -145,6 +146,33 @@ void main() {
     expect(api.queryCalls, 1);
   });
 
+  testWidgets('submitted A remains bound to A after input is edited to B while pending', (tester) async {
+    final pending = Completer<Map<String, dynamic>>();
+    final api = _FindApi(pending: pending);
+    await tester.pumpWidget(_host(api, elderMode: true));
+
+    final input = find.byKey(const ValueKey('memory-query-input'));
+    await tester.enterText(input, '护照 A');
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pump();
+    expect(api.queryCalls, 1);
+    expect(api.lastQuestion, '护照 A');
+
+    // Editing the field does not change the identity of the already-submitted request.
+    await tester.enterText(input, '钥匙 B');
+    await tester.pump();
+    final field = tester.widget<TextField>(input);
+    expect(field.controller?.text, '钥匙 B');
+
+    pending.complete(_found('A 的可信位置'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('A 的可信位置'), findsOneWidget);
+    expect(find.text('本次查找：护照 A'), findsOneWidget);
+    expect(find.text('本次查找：钥匙 B'), findsNothing);
+    expect(api.queryCalls, 1);
+  });
+
   testWidgets('late query result cannot repopulate UI after page disposal', (tester) async {
     final pending = Completer<Map<String, dynamic>>();
     final api = _FindApi(pending: pending);
@@ -208,7 +236,7 @@ void main() {
 
     final node = tester.getSemantics(submit);
     expect(node.label, contains('帮我找'));
-    expect(node.hasAction(SemanticsAction.tap), isTrue);
+    expect(node.getSemanticsData().hasAction(ui.SemanticsAction.tap), isTrue);
     semantics.dispose();
   });
 }
