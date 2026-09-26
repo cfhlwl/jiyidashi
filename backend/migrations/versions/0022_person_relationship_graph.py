@@ -45,6 +45,10 @@ def upgrade() -> None:
             "person_low_id <> person_high_id",
             name="ck_person_relationships_no_self_edge",
         ),
+        sa.CheckConstraint(
+            "person_low_id < person_high_id",
+            name="ck_person_relationships_canonical_order",
+        ),
         sa.ForeignKeyConstraint(
             ["user_id"],
             ["users.id"],
