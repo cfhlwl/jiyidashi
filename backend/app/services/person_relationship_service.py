@@ -84,6 +84,29 @@ def _load_relationship(
     return edge
 
 
+def _relationship_endpoint_ids(
+    db: Session,
+    *,
+    user_id: UUID,
+    relationship_id: UUID,
+) -> tuple[UUID, UUID]:
+    # Read only scalar endpoint ids before taking Person locks. Loading the ORM edge
+    # here would seed SQLAlchemy's identity map with an unlocked revision; a later
+    # FOR UPDATE query could then expose stale attributes after waiting on Person locks.
+    row = db.execute(
+        select(
+            PersonRelationship.person_low_id,
+            PersonRelationship.person_high_id,
+        ).where(
+            PersonRelationship.id == relationship_id,
+            PersonRelationship.user_id == user_id,
+        )
+    ).one_or_none()
+    if row is None:
+        raise PersonRelationshipError("PERSON_RELATIONSHIP_NOT_FOUND", 404)
+    return row.person_low_id, row.person_high_id
+
+
 def _normalize_payload(
     kind: PersonRelationshipKind,
     custom_label: str | None,
@@ -199,19 +222,19 @@ def patch_person_relationship(
     relationship_id: UUID,
     payload: PersonRelationshipPatch,
 ) -> PersonRelationship:
-    edge = _load_relationship(
+    person_low_id, person_high_id = _relationship_endpoint_ids(
         db,
         user_id=user_id,
         relationship_id=relationship_id,
-        for_update=False,
     )
-    # Lock the endpoint Persons before locking the edge so all graph mutations use
-    # one canonical order even when a caller addresses the relationship by edge id.
+    # Lock the endpoint Persons before first loading the mutable ORM edge. This keeps
+    # all graph mutations on one canonical lock order and avoids stale identity-map
+    # revisions after a concurrent writer releases the Person locks.
     low, high = _lock_canonical_people(
         db,
         user_id=user_id,
-        person_a_id=edge.person_low_id,
-        person_b_id=edge.person_high_id,
+        person_a_id=person_low_id,
+        person_b_id=person_high_id,
     )
     edge = _load_relationship(
         db,
@@ -272,17 +295,16 @@ def delete_person_relationship(
     user_id: UUID,
     relationship_id: UUID,
 ) -> None:
-    edge = _load_relationship(
+    person_low_id, person_high_id = _relationship_endpoint_ids(
         db,
         user_id=user_id,
         relationship_id=relationship_id,
-        for_update=False,
     )
     _lock_canonical_people(
         db,
         user_id=user_id,
-        person_a_id=edge.person_low_id,
-        person_b_id=edge.person_high_id,
+        person_a_id=person_low_id,
+        person_b_id=person_high_id,
     )
     edge = _load_relationship(
         db,
