@@ -108,6 +108,7 @@ export default function Page() {
     queryEpoch.current.invalidate()
     queryBusyRef.current = false
     elderQueryGate.current.end()
+    setLoading(false)
   })
 
   useEffect(() => () => {
