@@ -1710,7 +1710,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                     hintText: widget.elderMode
                         ? '例如：护照、钥匙，或“我的护照在哪里？”'
                         : '例如：我的护照在哪里？',
-                    prefixIcon: Icon(Icons.search),
+                    prefixIcon: const Icon(Icons.search),
                   ),
                 ),
                 const SizedBox(height: JiYiSpacing.md),
