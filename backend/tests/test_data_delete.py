@@ -531,6 +531,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert body["memory_sources"] == []
     assert body["memory_edits"] == []
     assert body["people"] == []
+    assert body["person_memory_links"] == []
     assert body["objects"] == []
     assert body["object_locations"] == []
     assert body["location"]["points"] == []
