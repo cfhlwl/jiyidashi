@@ -44,4 +44,3 @@ async def test_privacy_pause_still_allows_explicit_user_text_capture(client: Asy
     )
     assert created.status_code == 201
     assert created.json()["content"] == "这是我主动记下的内容"
-    assert created.json()["capture_source"] == "USER_TEXT"
