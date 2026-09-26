@@ -12,6 +12,7 @@ from app.api import (
     memories,
     memory_summaries,
     objects,
+    people,
     privacy,
     reminders,
     today_footprint,
@@ -44,6 +45,8 @@ api_router.include_router(today_footprint.router)
 # [人工注释][S1-025] Reminder 保持独立资源边界；只引用既有 Memory，不把提醒状态塞进 Memory API。
 api_router.include_router(reminders.router)
 api_router.include_router(objects.router)
+# V2-001 Person is a private self-owned entity surface, separate from accounts/Family.
+api_router.include_router(people.router)
 api_router.include_router(location.router)
 api_router.include_router(privacy.router)
 # [人工注释][S1-005][S1-006] A 工作线统一挂载媒体协议；Mini/Flutter 后续只消费
