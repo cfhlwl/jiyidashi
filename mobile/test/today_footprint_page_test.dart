@@ -160,7 +160,8 @@ void main() {
     expect(find.text('公司'), findsOneWidget);
     expect(find.text('08:35 起'), findsOneWidget);
     expect(find.textContaining('LOCATION_CLUSTER'), findsNothing);
-    expect(find.textContaining('当前位置'), findsNothing);
+    expect(find.textContaining('你现在就在'), findsNothing);
+    expect(find.textContaining('当前位置是'), findsNothing);
 
     final homeY = tester.getTopLeft(find.text('家')).dy;
     final workY = tester.getTopLeft(find.text('公司')).dy;
