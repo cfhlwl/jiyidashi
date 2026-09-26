@@ -100,3 +100,22 @@ test('elder remember controls meet enlarged target and non-color state requireme
   assert.match(capture, /aria-label='保存这段话'/)
   assert.match(capture, /elderVoiceState/)
 })
+
+
+test('cached Mini capture clears local state on auth session change and tab hide', () => {
+  assert.match(api, /export function subscribeAuthSession/)
+  assert.match(capture, /subscribeAuthSession\(/)
+  assert.match(capture, /resetLocalCaptureForSessionChange/)
+  assert.match(capture, /deleteTempFile\(voiceClipRef\.current\?\.tempFilePath\)/)
+  assert.match(capture, /deleteTempFile\(selectedPhoto\?\.tempFilePath\)/)
+  assert.match(capture, /useDidHide\(\(\) =>/)
+  assert.match(capture, /discardNextVoiceStopRef\.current = true/)
+  assert.match(capture, /录音已因离开页面而取消；不会上传或保存。/)
+})
+
+test('stale account errors never repopulate capture UI', () => {
+  assert.match(capture, /function isStaleCaptureSessionError/)
+  assert.match(capture, /if \(!isStaleCaptureSessionError\(error\)\)[\s\S]*?setStatus/)
+  assert.match(capture, /if \(!isStaleCaptureSessionError\(error\)\)[\s\S]*?setPhotoError/)
+  assert.match(capture, /if \(!isStaleCaptureSessionError\(error\)\)[\s\S]*?setVoiceError/)
+})
