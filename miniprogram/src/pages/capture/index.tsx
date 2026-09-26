@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from 'react'
 import {
   completeAudioMediaUpload,
   completeImageMediaUpload,
+  createCaptureSessionGuard,
   createAudioMediaUpload,
   createImageMediaUpload,
   createPhotoMemory,
   createTextMemory,
   createVoiceMemory,
   currentElderModeEnabled,
+  getPrivacyStatus,
   isAuthenticated,
   subscribeElderMode,
   markObjectLocationStale,
@@ -193,12 +195,39 @@ export default function Page() {
 
   useEffect(() => subscribeElderMode(setElderMode), [])
 
+  useEffect(() => {
+    if (!elderMode || !isAuthenticated()) {
+      setPrivacyPaused(false)
+      return
+    }
+    let cancelled = false
+    let guard: (() => void) | null = null
+    try {
+      guard = createCaptureSessionGuard()
+    } catch {
+      setPrivacyPaused(false)
+      return
+    }
+    void getPrivacyStatus()
+      .then((value) => {
+        guard?.()
+        if (!cancelled) setPrivacyPaused(value.recording_paused === true)
+      })
+      .catch(() => {
+        if (!cancelled) setPrivacyPaused(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [elderMode])
+
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [objectName, setObjectName] = useState('')
   const [locationText, setLocationText] = useState('')
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
+  const [privacyPaused, setPrivacyPaused] = useState(false)
 
   const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null)
   const [photoTitle, setPhotoTitle] = useState('')
@@ -273,7 +302,9 @@ export default function Page() {
     setLoading(true)
     setStatus('')
     try {
+      const guard = createCaptureSessionGuard()
       const memory = await createTextMemory(content, title)
+      guard()
       setContent('')
       setTitle('')
       setStatus(`✓ 已经帮你记住 · ${memory.id}`)
@@ -333,6 +364,7 @@ export default function Page() {
     setPhotoError('')
     setStatus('')
     try {
+      const guard = createCaptureSessionGuard()
       const prefix = await readFilePrefix(selectedPhoto.tempFilePath, 64)
       const contentType = detectImageContentType(prefix)
       if (!contentType) {
@@ -350,13 +382,36 @@ export default function Page() {
           content: photoContent,
         },
         {
-          createUpload: createImageMediaUpload,
-          putUpload: putSignedMediaObject,
-          completeUpload: completeImageMediaUpload,
-          createPhotoMemory,
+          createUpload: async (input) => {
+            guard()
+            const value = await createImageMediaUpload(input)
+            guard()
+            return value
+          },
+          putUpload: async (transfer, body) => {
+            guard()
+            await putSignedMediaObject(transfer, body)
+            guard()
+          },
+          completeUpload: async (mediaId) => {
+            guard()
+            const value = await completeImageMediaUpload(mediaId)
+            guard()
+            return value
+          },
+          createPhotoMemory: async (mediaId, input) => {
+            guard()
+            const value = await createPhotoMemory(mediaId, input)
+            guard()
+            return value
+          },
         },
-        setPhotoPhase,
+        (phase) => {
+          guard()
+          setPhotoPhase(phase)
+        },
       )
+      guard()
       setPhotoMemoryId(result.memoryId)
       setPhotoTitle('')
       setPhotoContent('')
@@ -422,6 +477,7 @@ export default function Page() {
     setVoiceError('')
     setStatus('')
     try {
+      const guard = createCaptureSessionGuard()
       const result = await submitVoiceMemory(
         {
           clientUploadId: clip.clientUploadId,
@@ -431,13 +487,36 @@ export default function Page() {
           loadBody: () => readVoiceFileAsArrayBuffer(clip.tempFilePath),
         },
         {
-          createUpload: createAudioMediaUpload,
-          putUpload: putSignedMediaObject,
-          completeUpload: completeAudioMediaUpload,
-          createVoiceMemory,
+          createUpload: async (input) => {
+            guard()
+            const value = await createAudioMediaUpload(input)
+            guard()
+            return value
+          },
+          putUpload: async (transfer, body) => {
+            guard()
+            await putSignedMediaObject(transfer, body)
+            guard()
+          },
+          completeUpload: async (mediaId) => {
+            guard()
+            const value = await completeAudioMediaUpload(mediaId)
+            guard()
+            return value
+          },
+          createVoiceMemory: async (mediaId, input) => {
+            guard()
+            const value = await createVoiceMemory(mediaId, input)
+            guard()
+            return value
+          },
         },
-        setVoicePhase,
+        (phase) => {
+          guard()
+          setVoicePhase(phase)
+        },
       )
+      guard()
       deleteTempFile(clip.tempFilePath)
       if (voiceClipRef.current === clip) voiceClipRef.current = null
       setVoiceClip(null)
@@ -503,15 +582,93 @@ export default function Page() {
     }
   }
 
+  const elderVoiceState = voiceRecording
+    ? '正在听你说'
+    : voiceMemoryId
+      ? '已经记住了'
+      : voiceSubmitting
+        ? VOICE_PHASE_TEXT[voicePhase]
+        : voiceError
+          ? '这次没有保存成功'
+          : voiceClip
+            ? '已经录好了'
+            : '准备好了，点“开始说”'
+
   const busy = loading || photoSubmitting || voiceSubmitting
 
   return (
     <View className={elderClassName(elderMode)}>
-      <View className='title'>记一下</View>
-      <View className='subtitle'>主动写下、拍下或录下需要记住的内容；图片和语音都必须通过服务端 Evidence 门禁后才算真正记录。</View>
+      <View className='title'>{elderMode ? '帮我记一下' : '记一下'}</View>
+      <View className='subtitle'>
+        {elderMode
+          ? '先用语音说下来；你也可以选择打字或拍照。'
+          : '主动写下、拍下或录下需要记住的内容；图片和语音都必须通过服务端 Evidence 门禁后才算真正记录。'}
+      </View>
+
+      {elderMode && privacyPaused && (
+        <View className='status elder-capture-notice'>
+          自动记录已暂停；你主动记下的内容仍可以保存。
+        </View>
+      )}
+
+      {elderMode && (
+        <View className='card elder-remember-card'>
+          <View className='card-title'>帮我记一下</View>
+          <View className='muted capture-note'>只有你点“开始说”后才会录音；说完后还要由你确认保存。</View>
+          <View className='elder-voice-state' aria-live='polite'>{elderVoiceState}</View>
+          {!voiceRecording && !voiceClip && (
+            <Button
+              className='primary-button elder-remember-primary'
+              disabled={busy}
+              aria-label='开始说'
+              onClick={startVoiceRecording}
+            >
+              开始说
+            </Button>
+          )}
+          {voiceRecording && (
+            <Button
+              className='primary-button recording-button elder-remember-primary'
+              aria-label='说完了'
+              onClick={stopVoiceRecording}
+            >
+              说完了
+            </Button>
+          )}
+          {voicePermission === 'denied' && (
+            <Button className='secondary-button' disabled={busy} onClick={openMicrophoneSettings}>
+              打开设置恢复麦克风权限
+            </Button>
+          )}
+          {voiceClip && (
+            <>
+              <View className={`capture-state capture-state-${voicePhase}`}>
+                {VOICE_PHASE_TEXT[voicePhase]} · {Math.max(1, Math.round(voiceClip.durationMs / 1000))} 秒
+              </View>
+              <Button
+                className='primary-button elder-remember-primary'
+                disabled={busy}
+                aria-label='保存这段话'
+                onClick={submitVoice}
+              >
+                {voiceSubmitting
+                  ? VOICE_PHASE_TEXT[voicePhase]
+                  : voicePhase === 'failed'
+                    ? '重试保存这段话'
+                    : '保存这段话'}
+              </Button>
+              <Button className='secondary-button' disabled={voiceSubmitting} onClick={clearVoiceClip}>
+                不保存，清除录音
+              </Button>
+            </>
+          )}
+          {voiceError && <View className='error'>{voiceError}</View>}
+          <View className={voicePermission === 'denied' ? 'error' : 'status'}>{voiceStatus}</View>
+        </View>
+      )}
 
       <View className='card'>
-        <View className='card-title'>写一句</View>
+        <View className='card-title'>{elderMode ? '我想打字记' : '写一句'}</View>
         <Input className='field' type='text' placeholder='标题（可选）' value={title} onInput={(e) => setTitle(e.detail.value)} />
         <Textarea className='field textarea' placeholder='例如：老张周五下午来公司取合同。' value={content} onInput={(e) => setContent(e.detail.value)} />
         <Button className='primary-button' disabled={busy} onClick={saveMemory}>帮我记住</Button>
@@ -549,6 +706,7 @@ export default function Page() {
         {photoMemoryId && <View className='status'>✓ 图片已通过服务端验证并记录 · {photoMemoryId}</View>}
       </View>
 
+      {!elderMode && (
       <View className='card'>
         <View className='card-title'>录一句</View>
         <View className='muted capture-note'>用户主动录音最长 60 秒。原始 MP3 会先进入私有 Evidence；服务端验证后再执行 ASR。失败、超时、空文本或低置信结果都不会生成 Memory。</View>
@@ -569,6 +727,7 @@ export default function Page() {
         {voiceMemoryId && <View className='status'>✓ 语音已形成可信 Memory / Evidence · {voiceMemoryId}</View>}
         <View className={voicePermission === 'denied' ? 'error' : 'status'}>{voiceStatus}</View>
       </View>
+      )}
 
       <View className='card'>
         <View className='card-title'>东西在哪</View>
