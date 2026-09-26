@@ -143,3 +143,21 @@ export function toTodayFootprintRow(visit: TodayFootprintVisit): TodayFootprintR
     source: visit.visit_source,
   }
 }
+
+
+export class TodayFootprintRequestEpoch {
+  private generation = 0
+
+  capture(): number {
+    this.generation += 1
+    return this.generation
+  }
+
+  invalidate(): void {
+    this.generation += 1
+  }
+
+  isCurrent(captured: number): boolean {
+    return captured === this.generation
+  }
+}
