@@ -1,10 +1,11 @@
 import { Button, Image, Input, Textarea, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useDidHide } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import {
   completeAudioMediaUpload,
   completeImageMediaUpload,
   createCaptureSessionGuard,
+  currentAuthenticatedUserId,
   createAudioMediaUpload,
   createImageMediaUpload,
   createPhotoMemory,
@@ -13,6 +14,7 @@ import {
   currentElderModeEnabled,
   getPrivacyStatus,
   isAuthenticated,
+  subscribeAuthSession,
   subscribeElderMode,
   markObjectLocationStale,
   putSignedMediaObject,
@@ -249,17 +251,27 @@ export default function Page() {
   const [voiceStatus, setVoiceStatus] = useState('录音完成后可上传，由服务端验证原始音频并执行 ASR。')
   const voiceClipRef = useRef<VoiceClip | null>(null)
   const voiceSubmitLock = useRef(new VoiceSubmissionLock())
+  const voiceRecordingRef = useRef(false)
+  const discardNextVoiceStopRef = useRef(false)
+  const captureOwnerRef = useRef<string | null>(currentAuthenticatedUserId())
 
   useEffect(() => {
     // [人工注释][S1-004] 页面只订阅模块级 RecorderLifecycleController；卸载先取消 subscriber，
     // 若仍在录音则 controller 会 stop，并在全局 onStop 返回后直接删除新生成的 tempFilePath，禁止回调已卸载页面。
     const unsubscribeRecorder = recorderController.subscribe({
       onStart: () => {
+        voiceRecordingRef.current = true
         setVoiceRecording(true)
         setVoiceStatus('正在录音…最长 60 秒。')
       },
       onStop: (result) => {
+        voiceRecordingRef.current = false
         setVoiceRecording(false)
+        if (discardNextVoiceStopRef.current) {
+          discardNextVoiceStopRef.current = false
+          deleteTempFile(result.tempFilePath)
+          return
+        }
         const nextClip: VoiceClip = {
           tempFilePath: result.tempFilePath,
           durationMs: result.duration,
@@ -275,6 +287,8 @@ export default function Page() {
         setVoiceStatus(`录音已完成（${Math.max(1, Math.round(result.duration / 1000))} 秒），可上传并由服务端转写。`)
       },
       onError: (error) => {
+        voiceRecordingRef.current = false
+        discardNextVoiceStopRef.current = false
         setVoiceRecording(false)
         setVoiceStatus(getErrorMessage(error, '录音失败，请重试'))
       },
@@ -286,6 +300,42 @@ export default function Page() {
       voiceClipRef.current = null
     }
   }, [])
+
+  const resetLocalCaptureForSessionChange = () => {
+    if (voiceRecordingRef.current) {
+      discardNextVoiceStopRef.current = true
+      recorderController.stop()
+    }
+    deleteTempFile(voiceClipRef.current?.tempFilePath)
+    deleteTempFile(selectedPhoto?.tempFilePath)
+    voiceClipRef.current = null
+    setVoiceClip(null)
+    setVoiceRecording(false)
+    voiceRecordingRef.current = false
+    setVoicePhase('recorded')
+    setVoiceError('')
+    setVoiceMemoryId(null)
+    setVoiceSubmitting(false)
+    setVoiceStatus('录音完成后可上传，由服务端验证原始音频并执行 ASR。')
+    setSelectedPhoto(null)
+    setPhotoPhase('selected')
+    setPhotoError('')
+    setPhotoMemoryId(null)
+    setPhotoSubmitting(false)
+    setStatus('')
+  }
+
+  useEffect(() => subscribeAuthSession((owner) => {
+    if (captureOwnerRef.current === owner) return
+    captureOwnerRef.current = owner
+    resetLocalCaptureForSessionChange()
+  }), [selectedPhoto])
+
+  useDidHide(() => {
+    if (!voiceRecordingRef.current) return
+    discardNextVoiceStopRef.current = true
+    recorderController.stop()
+  })
 
   const ensureLogin = () => {
     if (isAuthenticated()) return true
