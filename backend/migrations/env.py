@@ -15,6 +15,7 @@ from app import (  # noqa: F401
     media_models,
     memory_feedback_models,
     models,
+    person_models,
 )
 from app.core.config import get_settings
 from app.core.db import Base
