@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/stage1_app.dart';
-import 'package:jiyidashi/ui_system.dart';
+import 'package:jiyidashi/ui/jiyi_theme.dart';
 
 void main() {
   testWidgets('Elder find page is explicit and does not query on entry', (tester) async {
