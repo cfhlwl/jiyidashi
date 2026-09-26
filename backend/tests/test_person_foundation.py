@@ -61,7 +61,9 @@ async def test_person_crud_is_owner_scoped_revision_safe_and_aliases_are_structu
         json={"display_name": "老王", "aliases": ["王老师"]},
     )
     same_name_b = await client.post(
-        "/v1/people", headers=headers_b, json={"display_name": "老王", "aliases": ["王老师"]}
+        "/v1/people",
+        headers=headers_b,
+        json={"display_name": "老王", "aliases": ["王老师"]},
     )
     assert same_name_a.status_code == 201
     assert same_name_b.status_code == 201
@@ -86,7 +88,10 @@ async def test_person_crud_is_owner_scoped_revision_safe_and_aliases_are_structu
     too_large = await client.get("/v1/people?limit=101", headers=headers_a)
     assert too_large.status_code == 422
     assert listed_a.status_code == 200
-    assert {row["id"] for row in listed_a.json()} == {person_id, same_name_a.json()["id"]}
+    assert {row["id"] for row in listed_a.json()} == {
+        person_id,
+        same_name_a.json()["id"],
+    }
     assert {row["id"] for row in listed_b.json()} == {same_name_b.json()["id"]}
 
     # Omitted fields remain unchanged; aliases=[] is the only clear operation.
