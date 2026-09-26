@@ -119,7 +119,9 @@ def create_person_memory_link(
     )
     if existing is not None:
         if existing.relation_kind == payload.relation_kind:
+            db.commit()
             return existing
+        db.rollback()
         raise PersonMemoryLinkError("PERSON_MEMORY_LINK_RELATION_CONFLICT", 409)
 
     link = PersonMemoryLink(
