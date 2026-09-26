@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.models import Memory
 from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
-from app.person_models import Person
 from app.person_memory_schemas import (
     PersonInteractionRow,
     PersonMemoryLinkCreate,
     PersonMemoryLinkPatch,
     PersonMemoryTimelineRow,
 )
+from app.person_models import Person
 
 
 class PersonMemoryLinkError(RuntimeError):
