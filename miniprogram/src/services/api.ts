@@ -90,6 +90,8 @@ const API_BASE_KEY = 'jiyi_api_base_url'
 const AUTH_OWNER_KEY = 'jiyi_authenticated_user_id'
 let authSessionEpoch = 0
 const elderProjection = new ElderProjectionStore()
+type AuthSessionListener = (owner: string | null) => void
+const authSessionListeners = new Set<AuthSessionListener>()
 
 export type Evidence = {
   kind: string
@@ -150,11 +152,29 @@ export function isAuthenticated(): boolean {
   return Boolean(Taro.getStorageSync<string>(TOKEN_KEY))
 }
 
+export function currentAuthenticatedUserId(): string | null {
+  return currentAuthOwner()
+}
+
+function emitAuthSessionChanged(): void {
+  const owner = currentAuthOwner()
+  for (const listener of authSessionListeners) listener(owner)
+}
+
+export function subscribeAuthSession(listener: AuthSessionListener): () => void {
+  authSessionListeners.add(listener)
+  listener(currentAuthOwner())
+  return () => {
+    authSessionListeners.delete(listener)
+  }
+}
+
 export function logout(): void {
   authSessionEpoch += 1
   Taro.removeStorageSync(TOKEN_KEY)
   Taro.removeStorageSync(AUTH_OWNER_KEY)
   resetElderProjection()
+  emitAuthSessionChanged()
 }
 
 function resetElderProjection(): void {
@@ -257,6 +277,7 @@ export async function registerAccount(input: {
   resetElderProjection()
   Taro.setStorageSync(TOKEN_KEY, result.access_token)
   Taro.setStorageSync(AUTH_OWNER_KEY, result.user_id)
+  emitAuthSessionChanged()
 }
 
 export async function loginAccount(email: string, password: string): Promise<void> {
@@ -268,6 +289,7 @@ export async function loginAccount(email: string, password: string): Promise<voi
   resetElderProjection()
   Taro.setStorageSync(TOKEN_KEY, result.access_token)
   Taro.setStorageSync(AUTH_OWNER_KEY, result.user_id)
+  emitAuthSessionChanged()
 }
 
 export async function getProfile(): Promise<UserProfile> {
