@@ -8,6 +8,7 @@ from app.core.config import Settings
 from app.core.db import SessionLocal
 from app.entity_models import EntityKind, EntityLinkReason, EntityLinkStatus
 from app.models import Memory, MemorySource, ObjectItem, Place
+from app.person_models import Person
 from app.services.ai_gateway import AIGateway, DeterministicAIProvider
 from app.services.entity_extraction_service import (
     EntityExtractionError,
@@ -239,6 +240,7 @@ async def test_extraction_and_linking_do_not_create_entities_or_memory(client):
         before = {
             "objects": db.scalar(select(func.count()).select_from(ObjectItem)),
             "places": db.scalar(select(func.count()).select_from(Place)),
+            "persons": db.scalar(select(func.count()).select_from(Person)),
             "memories": db.scalar(select(func.count()).select_from(Memory)),
             "sources": db.scalar(select(func.count()).select_from(MemorySource)),
         }
