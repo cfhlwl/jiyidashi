@@ -235,6 +235,10 @@ export function currentAuthenticatedUserId(): string | null {
   return currentAuthOwner()
 }
 
+export function currentAuthSessionEpoch(): number {
+  return authSessionEpoch
+}
+
 function emitAuthSessionChanged(): void {
   const owner = currentAuthOwner()
   for (const listener of authSessionListeners) listener(owner, authSessionEpoch)
@@ -380,10 +384,15 @@ export async function getProfile(): Promise<UserProfile> {
 }
 
 export async function getTodayFootprint(): Promise<TodayFootprintResponse> {
-  // [人工注释][S2-012] 小程序与 Flutter 共用服务端“今天”边界；
-  // 不上传设备日期/时区。200 response 也必须先过 runtime parser，
-  // 禁止 TypeScript 类型断言把 malformed JSON 降级成真实足迹状态。
+  // [人工注释][S2-012][S4-014] “今天”完全由服务端账号时区决定；
+  // 同时冻结当前 auth epoch + owner，旧账号的 late response 不能进入新账号 UI。
+  const epoch = authSessionEpoch
+  const owner = currentAuthOwner()
+  if (!owner) throw new Error('请先登录')
   const raw = await request<unknown>('GET', '/today/footprint')
+  if (epoch !== authSessionEpoch || currentAuthOwner() !== owner) {
+    throw new Error('登录状态已变化，请重试')
+  }
   return parseTodayFootprintResponse(raw)
 }
 

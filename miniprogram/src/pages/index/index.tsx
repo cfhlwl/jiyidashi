@@ -1,16 +1,21 @@
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro, { useDidHide, useDidShow } from '@tarojs/taro'
 import { Button, Text, View } from '@tarojs/components'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  currentAuthenticatedUserId,
+  currentAuthSessionEpoch,
+  currentElderModeEnabled,
   getProfile,
   getTodayFootprint,
   isAuthenticated,
   listPlaces,
+  subscribeAuthSession,
+  subscribeElderMode,
   TodayFootprintResponse,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
-import { toTodayFootprintRow } from '../../services/todayFootprint'
-import { placeDetailRoute, placeListPresentation, type PlaceRead } from '../../services/placeDetail'
+import { TodayFootprintRequestEpoch, toTodayFootprintRow } from '../../services/todayFootprint'
+import { PlaceListRequestEpoch, placeDetailRoute, placeListPresentation, type PlaceRead } from '../../services/placeDetail'
 import './index.scss'
 
 // Today Footprint 与地点列表是两个独立的服务端权威 read model。
@@ -23,7 +28,33 @@ export default function Page() {
   const [loadingPlaces, setLoadingPlaces] = useState(false)
   const [placesLoaded, setPlacesLoaded] = useState(false)
   const [placeError, setPlaceError] = useState('')
-  const [elderMode, setElderMode] = useState(false)
+  const [elderMode, setElderMode] = useState(currentElderModeEnabled)
+  const footprintEpoch = useRef(new TodayFootprintRequestEpoch())
+  const placesEpoch = useRef(new PlaceListRequestEpoch())
+  const authOwnerRef = useRef<string | null>(currentAuthenticatedUserId())
+  const authEpochRef = useRef(currentAuthSessionEpoch())
+
+  useEffect(() => subscribeElderMode(setElderMode), [])
+
+  useEffect(() => subscribeAuthSession((owner, epoch) => {
+    if (authEpochRef.current === epoch && authOwnerRef.current === owner) return
+    authEpochRef.current = epoch
+    authOwnerRef.current = owner
+    footprintEpoch.current.invalidate()
+    placesEpoch.current.invalidate()
+    setLoading(false)
+    setFootprint(null)
+    setStatus('')
+    setLoadingPlaces(false)
+    setPlaces([])
+    setPlacesLoaded(false)
+    setPlaceError('')
+  }), [])
+
+  useEffect(() => () => {
+    footprintEpoch.current.invalidate()
+    placesEpoch.current.invalidate()
+  }, [])
 
   const refresh = async () => {
     if (!isAuthenticated()) {
@@ -31,51 +62,94 @@ export default function Page() {
       setStatus('请先到“我的”页面登录正式账号')
       return
     }
+    const generation = footprintEpoch.current.capture()
+    const owner = authOwnerRef.current
     setLoading(true)
     setStatus('')
     try {
-      setFootprint(await getTodayFootprint())
+      const next = await getTodayFootprint()
+      if (
+        !footprintEpoch.current.isCurrent(generation)
+        || authOwnerRef.current !== owner
+      ) return
+      setFootprint(next)
     } catch (error) {
+      if (
+        !footprintEpoch.current.isCurrent(generation)
+        || authOwnerRef.current !== owner
+      ) return
       setFootprint(null)
       setStatus(error instanceof Error ? error.message : '读取今日足迹失败')
     } finally {
-      setLoading(false)
+      if (
+        footprintEpoch.current.isCurrent(generation)
+        && authOwnerRef.current === owner
+      ) {
+        setLoading(false)
+      }
     }
   }
 
   const refreshPlaces = async () => {
     if (!isAuthenticated()) {
+      placesEpoch.current.invalidate()
+      setLoadingPlaces(false)
       setPlaces([])
       setPlaceError('')
       setPlacesLoaded(true)
       return
     }
+
+    const generation = placesEpoch.current.capture()
+    const owner = authOwnerRef.current
+    const authEpoch = authEpochRef.current
+
     setLoadingPlaces(true)
     setPlacesLoaded(false)
     setPlaceError('')
     try {
       // 200 [] 是成功的空状态，不写入 placeError；只有请求/协议失败才允许出现“重试”。
       const result = await listPlaces(25)
+      if (
+        !placesEpoch.current.isCurrent(generation)
+        || authOwnerRef.current !== owner
+        || authEpochRef.current !== authEpoch
+      ) return
       setPlaces(result)
     } catch (error) {
+      if (
+        !placesEpoch.current.isCurrent(generation)
+        || authOwnerRef.current !== owner
+        || authEpochRef.current !== authEpoch
+      ) return
       setPlaces([])
       setPlaceError(error instanceof Error ? error.message : '地点加载失败')
     } finally {
-      setLoadingPlaces(false)
-      setPlacesLoaded(true)
+      if (
+        placesEpoch.current.isCurrent(generation)
+        && authOwnerRef.current === owner
+        && authEpochRef.current === authEpoch
+      ) {
+        setLoadingPlaces(false)
+        setPlacesLoaded(true)
+      }
     }
   }
 
   useDidShow(() => {
-    if (!isAuthenticated()) {
-      setElderMode(false)
-    } else {
-      void getProfile()
-        .then((profile) => setElderMode(profile.elder_mode_enabled))
-        .catch(() => setElderMode(false))
+    if (isAuthenticated()) {
+      // getProfile publishes the canonical Elder projection; the subscription above owns presentation.
+      void getProfile().catch(() => undefined)
     }
     void refresh()
     void refreshPlaces()
+  })
+
+  useDidHide(() => {
+    footprintEpoch.current.invalidate()
+    placesEpoch.current.invalidate()
+    setLoading(false)
+    setLoadingPlaces(false)
   })
 
   const rows = footprint?.visits.map(toTodayFootprintRow) || []
@@ -102,9 +176,9 @@ export default function Page() {
 
   return (
     <View className={elderClassName(elderMode)}>
-      <View className='title'>{elderMode ? '迹忆' : '今天'}</View>
+      <View className='title'>{elderMode ? '今天去了哪里' : '今天'}</View>
       <View className='subtitle'>
-        {elderMode ? '常用功能放大显示；所有数据和权限规则与普通模式完全一致。' : '按账号时区回看今天真实形成的地点足迹。'}
+        {elderMode ? '这里只显示已经形成的足迹，不会用当前位置猜测。' : '按账号时区回看今天真实形成的地点足迹。'}
       </View>
 
       {elderMode && (
@@ -118,7 +192,7 @@ export default function Page() {
           </Button>
           <View className='elder-primary-action elder-status-action'>
             <View className='elder-action-title'>今天去了哪里</View>
-            <Text className='muted'>本页下方“今日足迹”直接展示现有可信 Visit 数据。</Text>
+            <Text className='muted'>下面直接显示已经形成的足迹。</Text>
           </View>
           <Button className='secondary-button elder-primary-action' onClick={() => Taro.switchTab({ url: '/pages/family/index' })}>
             家庭
@@ -126,9 +200,9 @@ export default function Page() {
         </View>
       )}
 
-      <View className='card'>
-        <View className='card-title'>今日足迹</View>
-        {footprint && (
+      <View className={elderMode ? 'card elder-footprint-card' : 'card'}>
+        <View className='card-title'>{elderMode ? '今天去了哪里' : '今日足迹'}</View>
+        {!elderMode && footprint && (
           <View className='muted footprint-meta'>
             {footprint.day} · {footprint.timezone} · {rows.length} 条地点记录
           </View>
@@ -139,15 +213,15 @@ export default function Page() {
         {!loading && footprint && rows.length === 0 && (
           <View className='footprint-state'>
             <View>今天还没有形成足迹</View>
-            <Text className='muted'>这里只展示服务端已经派生出的 Visit，不用手机当前位置补记录。</Text>
+            <Text className='muted'>{elderMode ? '这里只显示已经形成的足迹，不会用当前位置猜测。' : '这里只展示服务端已经派生出的 Visit，不用手机当前位置补记录。'}</Text>
           </View>
         )}
 
         {!loading && rows.map((row) => (
-          <View className='footprint-row' key={row.id}>
+          <View className={elderMode ? 'footprint-row elder-footprint-row' : 'footprint-row'} key={row.id}>
             <View className='footprint-place'>{row.placeName}</View>
-            <View>{row.timeRange}</View>
-            <View className='muted'>{row.stateLabel} · {row.source}</View>
+            <View className={elderMode ? 'elder-footprint-time' : ''}>{row.timeRange}</View>
+            {!elderMode && <View className='muted'>{row.stateLabel} · {row.source}</View>}
           </View>
         ))}
 

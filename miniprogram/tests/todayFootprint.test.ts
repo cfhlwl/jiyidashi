@@ -1,10 +1,14 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   parseTodayFootprintResponse,
+  TodayFootprintRequestEpoch,
   toTodayFootprintRow,
   type TodayFootprintVisit,
 } from '../src/services/todayFootprint'
+import { PlaceListRequestEpoch } from '../src/services/placeDetail'
 
 function visit(overrides: Partial<TodayFootprintVisit> = {}): TodayFootprintVisit {
   return {
@@ -144,4 +148,173 @@ test('ISO datetime rejects impossible calendar dates and accepts leap day', () =
   assert.equal(parsed.visits[0].arrived_at_local, '2028-02-29T12:00:00+08:00')
 })
 
+})
+
+
+const todayPageSource = readFileSync(resolve(process.cwd(), 'src/pages/index/index.tsx'), 'utf8')
+
+test('Elder Today Footprint uses existing self endpoint and no parallel authority', () => {
+  assert.match(todayPageSource, /getTodayFootprint\(\)/)
+  assert.match(todayPageSource, /subscribeElderMode\(setElderMode\)/)
+  assert.match(todayPageSource, /elderMode \? '今天去了哪里' : '今天'/)
+  assert.doesNotMatch(todayPageSource, /family\/members.*today\/footprint/)
+  assert.doesNotMatch(todayPageSource, /getLocation|chooseMedia|getRecorderManager/)
+})
+
+test('Today Footprint preserves server visit order for Elder presentation', () => {
+  const parsed = parseTodayFootprintResponse(response([
+    visit({ id: 'first', place_name: '先到的地方', arrived_at_local: '2026-09-20T09:10:00+08:00' }),
+    visit({ id: 'second', place_name: '后到的地方', arrived_at_local: '2026-09-20T08:10:00+08:00' }),
+  ]))
+  assert.deepEqual(parsed.visits.map((item) => item.id), ['first', 'second'])
+})
+
+test('empty/open Elder semantics never claim no outing or current location', () => {
+  assert.match(todayPageSource, /今天还没有形成足迹/)
+  assert.doesNotMatch(todayPageSource, /今天没有出门|一直在家|没有去任何地方/)
+  assert.doesNotMatch(todayPageSource, /你现在就在|当前位置是/)
+  const row = toTodayFootprintRow(visit({
+    left_at: null,
+    left_at_local: null,
+    visit_finalized: false,
+  }))
+  assert.equal(row.timeRange, '23:50 起')
+})
+
+test('pending Today Footprint invalidation ignores late result and fresh request can publish', async () => {
+  const epoch = new TodayFootprintRequestEpoch()
+  let published: string | null = null
+  let resolveOld!: (value: string) => void
+  const oldResponse = new Promise<string>((resolve) => { resolveOld = resolve })
+  const oldGeneration = epoch.capture()
+
+  const pending = oldResponse.then((value) => {
+    if (epoch.isCurrent(oldGeneration)) published = value
+  })
+
+  epoch.invalidate()
+  resolveOld('old-A')
+  await pending
+  assert.equal(published, null)
+
+  const freshGeneration = epoch.capture()
+  const fresh = await Promise.resolve('fresh-B')
+  if (epoch.isCurrent(freshGeneration)) published = fresh
+  assert.equal(published, 'fresh-B')
+})
+
+test('production page invalidates on auth change, hide and unmount', () => {
+  assert.match(todayPageSource, /subscribeAuthSession\(/)
+  assert.match(todayPageSource, /useDidHide\(\(\) => \{[\s\S]*?footprintEpoch\.current\.invalidate\(\)[\s\S]*?setLoading\(false\)/)
+  assert.match(todayPageSource, /useEffect\(\(\) => \(\) => \{[\s\S]*?footprintEpoch\.current\.invalidate\(\)/)
+  assert.doesNotMatch(todayPageSource, /listPlaces\([^)]*\)[\s\S]*setFootprint/)
+})
+
+
+test('Places A pending -> switch B -> late A cannot overwrite B or its final state', async () => {
+  const epoch = new PlaceListRequestEpoch()
+  let owner = 'A'
+  let authEpoch = 10
+  let loading = false
+  let loaded = false
+  let error = ''
+  let visible: string[] = []
+
+  let resolveA!: (value: string[]) => void
+  const pendingAResponse = new Promise<string[]>((resolve) => { resolveA = resolve })
+  const generationA = epoch.capture()
+  const ownerA = owner
+  const authEpochA = authEpoch
+  loading = true
+  loaded = false
+  error = ''
+
+  const pendingA = pendingAResponse.then((value) => {
+    if (
+      epoch.isCurrent(generationA)
+      && owner === ownerA
+      && authEpoch === authEpochA
+    ) {
+      visible = value
+    }
+  }).catch((reason) => {
+    if (
+      epoch.isCurrent(generationA)
+      && owner === ownerA
+      && authEpoch === authEpochA
+    ) {
+      visible = []
+      error = String(reason)
+    }
+  }).finally(() => {
+    if (
+      epoch.isCurrent(generationA)
+      && owner === ownerA
+      && authEpoch === authEpochA
+    ) {
+      loading = false
+      loaded = true
+    }
+  })
+
+  // Auth switch invalidates A and clears its visible state.
+  owner = 'B'
+  authEpoch = 11
+  epoch.invalidate()
+  loading = false
+  visible = []
+  loaded = false
+  error = ''
+
+  const generationB = epoch.capture()
+  const ownerB = owner
+  const authEpochB = authEpoch
+  loading = true
+  loaded = false
+
+  const pendingB = Promise.resolve(['B-place']).then((value) => {
+    if (
+      epoch.isCurrent(generationB)
+      && owner === ownerB
+      && authEpoch === authEpochB
+    ) {
+      visible = value
+    }
+  }).finally(() => {
+    if (
+      epoch.isCurrent(generationB)
+      && owner === ownerB
+      && authEpoch === authEpochB
+    ) {
+      loading = false
+      loaded = true
+    }
+  })
+
+  await pendingB
+  assert.deepEqual(visible, ['B-place'])
+  assert.equal(loading, false)
+  assert.equal(loaded, true)
+  assert.equal(error, '')
+
+  // A completes after B. Neither success nor finally may disturb B.
+  resolveA(['A-secret-place'])
+  await pendingA
+
+  assert.deepEqual(visible, ['B-place'])
+  assert.equal(loading, false)
+  assert.equal(loaded, true)
+  assert.equal(error, '')
+})
+
+test('production Places path binds generation + owner + auth epoch and invalidates on auth/hide/unmount', () => {
+  assert.match(todayPageSource, /const placesEpoch = useRef\(new PlaceListRequestEpoch\(\)\)/)
+  assert.match(todayPageSource, /const generation = placesEpoch\.current\.capture\(\)/)
+  assert.match(todayPageSource, /const owner = authOwnerRef\.current/)
+  assert.match(todayPageSource, /const authEpoch = authEpochRef\.current/)
+  assert.match(todayPageSource, /authOwnerRef\.current !== owner/)
+  assert.match(todayPageSource, /authEpochRef\.current !== authEpoch/)
+  assert.match(todayPageSource, /placesEpoch\.current\.invalidate\(\)[\s\S]*?setPlaces\(\[\]\)/)
+  assert.match(todayPageSource, /useDidHide\(\(\) => \{[\s\S]*?placesEpoch\.current\.invalidate\(\)/)
+  assert.match(todayPageSource, /useEffect\(\(\) => \(\) => \{[\s\S]*?placesEpoch\.current\.invalidate\(\)/)
 })

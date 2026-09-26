@@ -652,7 +652,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final onboarding = _onboarding;
     final onboardingStep = onboarding?.step;
     final pages = <Widget>[
-      TodayPage(api: widget.api),
+      TodayPage(api: widget.api, elderMode: _elderModeEnabled),
       TimelinePage(api: widget.api),
       CapturePage(
         api: widget.api,
