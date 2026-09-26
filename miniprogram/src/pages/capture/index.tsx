@@ -22,6 +22,10 @@ import {
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
 import {
+  deriveElderRememberState,
+  elderRememberStateLabel,
+} from '../../services/elderRemember'
+import {
   createClientUploadId,
   detectImageContentType,
   ensureMicrophonePermission,
@@ -294,7 +298,10 @@ export default function Page() {
         voiceRecordingRef.current = false
         discardNextVoiceStopRef.current = false
         setVoiceRecording(false)
-        setVoiceStatus(getErrorMessage(error, '录音失败，请重试'))
+        const message = getErrorMessage(error, '录音失败，请重试')
+        setVoicePhase('failed')
+        setVoiceError(message)
+        setVoiceStatus(message)
       },
     })
 
@@ -488,6 +495,8 @@ export default function Page() {
       const granted = await ensureMicrophonePermission(microphonePermissionAdapter)
       if (!granted) {
         setVoicePermission('denied')
+        setVoicePhase('failed')
+        setVoiceError('麦克风权限未开启')
         setVoiceStatus('麦克风权限未开启。可点击“打开设置”恢复；不会创建任何语音记忆。')
         return
       }
@@ -504,7 +513,10 @@ export default function Page() {
         setVoiceStatus('上一段录音仍在停止并清理，请稍后再试。')
       }
     } catch (error) {
-      setVoiceStatus(getErrorMessage(error, '无法开始录音'))
+      const message = getErrorMessage(error, '无法开始录音')
+      setVoicePhase('failed')
+      setVoiceError(message)
+      setVoiceStatus(message)
     }
   }
 
@@ -512,13 +524,23 @@ export default function Page() {
     try {
       recorderController.stop()
     } catch (error) {
-      setVoiceStatus(getErrorMessage(error, '停止录音失败'))
+      const message = getErrorMessage(error, '停止录音失败')
+      setVoicePhase('failed')
+      setVoiceError(message)
+      setVoiceStatus(message)
     }
   }
 
   const openMicrophoneSettings = async () => {
     const granted = await recoverMicrophonePermission(microphonePermissionAdapter)
     setVoicePermission(granted ? 'granted' : 'denied')
+    if (granted) {
+      setVoiceError('')
+      setVoicePhase('recorded')
+    } else {
+      setVoicePhase('failed')
+      setVoiceError('麦克风权限仍未开启')
+    }
     setVoiceStatus(granted ? '麦克风权限已恢复，可以开始录音。' : '麦克风权限仍未开启，不会录音或提交任何语音数据。')
   }
 
@@ -643,17 +665,15 @@ export default function Page() {
     }
   }
 
-  const elderVoiceState = voiceRecording
-    ? '正在听你说'
-    : voiceMemoryId
-      ? '已经记住了'
-      : voiceSubmitting
-        ? VOICE_PHASE_TEXT[voicePhase]
-        : voiceError
-          ? '这次没有保存成功'
-          : voiceClip
-            ? '已经录好了'
-            : '准备好了，点“开始说”'
+  const elderRememberState = deriveElderRememberState({
+    recording: voiceRecording,
+    hasClip: voiceClip !== null,
+    memorySaved: voiceMemoryId !== null,
+    submitting: voiceSubmitting,
+    phase: voicePhase,
+    hasError: Boolean(voiceError),
+  })
+  const elderVoiceState = elderRememberStateLabel(elderRememberState)
 
   const busy = loading || photoSubmitting || voiceSubmitting
 
