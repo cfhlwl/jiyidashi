@@ -41,3 +41,47 @@ export function parseElderUserProfile(value: unknown): ElderUserProfile {
 export function elderClassName(enabled: boolean, base = 'page'): string {
   return enabled ? `${base} elder-mode` : base
 }
+
+
+export type ElderProjectionListener = (enabled: boolean) => void
+
+export class ElderProjectionStore {
+  private owner: string | null = null
+  private enabled = false
+  private listeners = new Set<ElderProjectionListener>()
+
+  current(currentOwner: string | null): boolean {
+    return Boolean(currentOwner)
+      && this.owner === currentOwner
+      && this.enabled
+  }
+
+  publish(owner: string, enabled: boolean): void {
+    this.owner = owner
+    this.enabled = enabled
+    this.emit()
+  }
+
+  reset(): void {
+    this.owner = null
+    this.enabled = false
+    this.emit()
+  }
+
+  subscribe(
+    currentOwner: () => string | null,
+    listener: ElderProjectionListener,
+  ): () => void {
+    this.listeners.add(listener)
+    listener(this.current(currentOwner()))
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  private emit(): void {
+    for (const listener of this.listeners) {
+      listener(this.enabled)
+    }
+  }
+}
