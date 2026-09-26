@@ -385,10 +385,17 @@ class JiYiApiClient {
     return _canonicalProfile(data, snapshot);
   }
 
-  Future<Map<String, dynamic>> getTodayFootprint() {
-    // [人工注释][S2-012] “今天”完全由服务端按账号 IANA timezone 决定；
-    // 客户端不上传本机日期/时区，避免同一账号在多设备出现两套日界线。
-    return _jsonRequest('GET', '/today/footprint');
+  Future<Map<String, dynamic>> getTodayFootprint() async {
+    // [人工注释][S2-012][S4-014] “今天”完全由服务端按账号 IANA timezone 决定；
+    // read 绑定发起时认证会话，账号切换后 late response 必须 fail closed。
+    final snapshot = _captureAuthenticatedSession();
+    final data = await _jsonRequest(
+      'GET',
+      '/today/footprint',
+      authSnapshot: snapshot,
+    );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return data;
   }
 
   Future<Map<String, dynamic>> deleteAccount({
