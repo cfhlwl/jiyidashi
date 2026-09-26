@@ -12,6 +12,7 @@ from app.idempotency_models import ClientMutation
 from app.models import Memory, MemorySource, MemoryType, ObjectItem, Place, SourceType, User
 from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person
+from app.person_relationship_models import PersonRelationship
 from app.services.ai_gateway import AIGateway, DeterministicAIProvider, DisabledAIProvider
 from app.services.entity_memory_pipeline_adapter import EntityAnnotatedMemoryExtractor
 from app.services.memory_pipeline import (
@@ -235,6 +236,11 @@ async def test_entity_adapter_uses_trusted_owner_and_retains_inference_provenanc
                 PersonMemoryLink.user_id == owner_a
             )
         )
+        before_relationships = db.scalar(
+            select(func.count(PersonRelationship.id)).where(
+                PersonRelationship.user_id == owner_a
+            )
+        )
         result = await _pipeline(db, gateway, delegate).run(capture)
         after_people = db.scalar(
             select(func.count(Person.id)).where(Person.user_id == owner_a)
@@ -244,10 +250,16 @@ async def test_entity_adapter_uses_trusted_owner_and_retains_inference_provenanc
                 PersonMemoryLink.user_id == owner_a
             )
         )
+        after_relationships = db.scalar(
+            select(func.count(PersonRelationship.id)).where(
+                PersonRelationship.user_id == owner_a
+            )
+        )
 
         assert result.status == MemoryPipelineStatus.STORED
         assert before_people == after_people == 0
         assert before_links == after_links == 0
+        assert before_relationships == after_relationships == 0
         assert result.store_decision == StoreDecision.STORE
         assert delegate.contexts == [
             MemoryPipelineExecutionContext(
@@ -350,6 +362,11 @@ async def test_entity_pipeline_replay_does_not_duplicate_memory_or_evidence():
                 PersonMemoryLink.user_id == owner
             )
         )
+        before_relationships = db.scalar(
+            select(func.count(PersonRelationship.id)).where(
+                PersonRelationship.user_id == owner
+            )
+        )
         first = await pipeline.run(capture)
         second = await pipeline.run(capture)
         after_people = db.scalar(
@@ -360,10 +377,16 @@ async def test_entity_pipeline_replay_does_not_duplicate_memory_or_evidence():
                 PersonMemoryLink.user_id == owner
             )
         )
+        after_relationships = db.scalar(
+            select(func.count(PersonRelationship.id)).where(
+                PersonRelationship.user_id == owner
+            )
+        )
 
         assert first.status == MemoryPipelineStatus.STORED
         assert before_people == after_people == 0
         assert before_links == after_links == 0
+        assert before_relationships == after_relationships == 0
         assert second.status == MemoryPipelineStatus.STORED
         assert first.memory_id == second.memory_id
         assert db.scalar(

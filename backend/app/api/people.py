@@ -16,6 +16,12 @@ from app.person_memory_schemas import (
     PersonMemoryTimelineRow,
 )
 from app.person_models import Person
+from app.person_relationship_schemas import (
+    PersonRelationshipCreate,
+    PersonRelationshipPatch,
+    PersonRelationshipProjection,
+    PersonRelationshipRead,
+)
 from app.person_schemas import PersonCreate, PersonPatch, PersonRead
 from app.services.person_memory_service import (
     PersonMemoryLinkError,
@@ -24,6 +30,15 @@ from app.services.person_memory_service import (
     list_person_memory_timeline,
     list_recent_person_interactions,
     patch_person_memory_link,
+)
+from app.services.person_relationship_service import (
+    PersonRelationshipError,
+    create_person_relationship,
+    delete_person_relationship,
+    get_person_relationship,
+    list_person_relationships,
+    patch_person_relationship,
+    relationship_read,
 )
 from app.services.person_service import (
     PersonServiceError,
@@ -45,6 +60,10 @@ def _raise_person_error(exc: PersonServiceError) -> None:
 
 
 def _raise_person_memory_error(exc: PersonMemoryLinkError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+
+
+def _raise_person_relationship_error(exc: PersonRelationshipError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
 
@@ -85,6 +104,85 @@ def list_people_route(
         person_ids=[item.id for item in people],
     )
     return [_read(item, aliases.get(item.id, [])) for item in people]
+
+
+@router.post(
+    "/relationships",
+    response_model=PersonRelationshipRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_person_relationship_route(
+    payload: PersonRelationshipCreate,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> PersonRelationshipRead:
+    try:
+        edge = create_person_relationship(db, user_id=user_id, payload=payload)
+    except PersonRelationshipError as exc:
+        _raise_person_relationship_error(exc)
+    return relationship_read(edge)
+
+
+@router.get(
+    "/relationships/{relationship_id}",
+    response_model=PersonRelationshipRead,
+)
+def get_person_relationship_route(
+    relationship_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> PersonRelationshipRead:
+    try:
+        edge = get_person_relationship(
+            db,
+            user_id=user_id,
+            relationship_id=relationship_id,
+        )
+    except PersonRelationshipError as exc:
+        _raise_person_relationship_error(exc)
+    return relationship_read(edge)
+
+
+@router.patch(
+    "/relationships/{relationship_id}",
+    response_model=PersonRelationshipRead,
+)
+def patch_person_relationship_route(
+    relationship_id: UUID,
+    payload: PersonRelationshipPatch,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> PersonRelationshipRead:
+    try:
+        edge = patch_person_relationship(
+            db,
+            user_id=user_id,
+            relationship_id=relationship_id,
+            payload=payload,
+        )
+    except PersonRelationshipError as exc:
+        _raise_person_relationship_error(exc)
+    return relationship_read(edge)
+
+
+@router.delete(
+    "/relationships/{relationship_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_person_relationship_route(
+    relationship_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> Response:
+    try:
+        delete_person_relationship(
+            db,
+            user_id=user_id,
+            relationship_id=relationship_id,
+        )
+    except PersonRelationshipError as exc:
+        _raise_person_relationship_error(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/interactions", response_model=list[PersonInteractionRow])
@@ -184,6 +282,27 @@ def list_person_memory_timeline_route(
         )
     except PersonMemoryLinkError as exc:
         _raise_person_memory_error(exc)
+
+
+@router.get(
+    "/{person_id}/relationships",
+    response_model=list[PersonRelationshipProjection],
+)
+def list_person_relationships_route(
+    person_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[PersonRelationshipProjection]:
+    try:
+        return list_person_relationships(
+            db,
+            user_id=user_id,
+            person_id=person_id,
+            limit=limit,
+        )
+    except PersonRelationshipError as exc:
+        _raise_person_relationship_error(exc)
 
 
 @router.get("/{person_id}", response_model=PersonRead)

@@ -47,6 +47,7 @@ from app.models import (
 )
 from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
+from app.person_relationship_models import PersonRelationship
 from app.services.embedding_service import delete_owner_memory_embeddings
 from app.services.object_storage import (
     DisabledObjectStorage,
@@ -75,6 +76,7 @@ USER_DATA_INVENTORY = (
     "location_derivation_states",
     "location_ingest_receipts",
     "location_points",
+    "person_relationships",
     "person_memory_links",
     "persons",
     "person_aliases",
@@ -715,6 +717,9 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
     )
     counts["media_assets"] = _delete_count(
         db, delete(MediaAsset).where(MediaAsset.user_id == user_id)
+    )
+    counts["person_relationships"] = _delete_count(
+        db, delete(PersonRelationship).where(PersonRelationship.user_id == user_id)
     )
     counts["person_memory_links"] = _delete_count(
         db, delete(PersonMemoryLink).where(PersonMemoryLink.user_id == user_id)
