@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   currentAuthenticatedUserId,
   currentElderModeEnabled,
+  getProfile,
   getTodayFootprint,
   isAuthenticated,
   listPlaces,
@@ -110,6 +111,10 @@ export default function Page() {
   }
 
   useDidShow(() => {
+    if (isAuthenticated()) {
+      // getProfile publishes the canonical Elder projection; the subscription above owns presentation.
+      void getProfile().catch(() => undefined)
+    }
     void refresh()
     void refreshPlaces()
   })
