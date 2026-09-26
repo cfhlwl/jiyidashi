@@ -1,4 +1,10 @@
 import Taro from '@tarojs/taro'
+import {
+  ElderProjectionStore,
+  parseElderUserProfile,
+  type ElderProjectionListener,
+  type ElderUserProfile,
+} from './elderMode'
 import type {
   ImageContentType,
   MediaRead,
@@ -81,6 +87,9 @@ export type {
 
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
+const AUTH_OWNER_KEY = 'jiyi_authenticated_user_id'
+let authSessionEpoch = 0
+const elderProjection = new ElderProjectionStore()
 
 export type Evidence = {
   kind: string
@@ -105,13 +114,7 @@ export type MemoryQueryResult = {
   memory_ids: string[]
 }
 
-export type UserProfile = {
-  id: string
-  nickname: string
-  email?: string | null
-  timezone: string
-  locale: string
-}
+export type UserProfile = ElderUserProfile
 
 export type PrivacyStatus = {
   recording_paused: boolean
@@ -148,7 +151,33 @@ export function isAuthenticated(): boolean {
 }
 
 export function logout(): void {
+  authSessionEpoch += 1
   Taro.removeStorageSync(TOKEN_KEY)
+  Taro.removeStorageSync(AUTH_OWNER_KEY)
+  resetElderProjection()
+}
+
+function resetElderProjection(): void {
+  elderProjection.reset()
+}
+
+function publishElderProjection(profile: UserProfile, epoch: number): void {
+  if (epoch !== authSessionEpoch) throw new Error('登录状态已变化，请重试')
+  const owner = Taro.getStorageSync<string>(AUTH_OWNER_KEY)
+  if (!owner || profile.id !== owner) throw new Error('个人资料账号不匹配')
+  elderProjection.publish(profile.id, profile.elder_mode_enabled)
+}
+
+function currentAuthOwner(): string | null {
+  return Taro.getStorageSync<string>(AUTH_OWNER_KEY) || null
+}
+
+export function currentElderModeEnabled(): boolean {
+  return elderProjection.current(currentAuthOwner())
+}
+
+export function subscribeElderMode(listener: ElderProjectionListener): () => void {
+  return elderProjection.subscribe(currentAuthOwner, listener)
 }
 
 // [人工注释][S1-019] 统一传输层显式包含 DELETE，单条记忆删除必须真正到达服务端；
@@ -206,26 +235,36 @@ export async function registerAccount(input: {
   nickname: string
 }): Promise<void> {
   // [人工注释][S1-001] 小程序正式注册只提交凭证与公开资料，user_id 永远由服务端生成。
-  const result = await request<{ access_token: string }>('POST', '/auth/register', {
+  const result = await request<{ access_token: string; user_id: string }>('POST', '/auth/register', {
     email: input.email.trim(),
     password: input.password,
     nickname: input.nickname.trim(),
     timezone: 'Asia/Shanghai',
     locale: 'zh-CN',
   })
+  authSessionEpoch += 1
+  resetElderProjection()
   Taro.setStorageSync(TOKEN_KEY, result.access_token)
+  Taro.setStorageSync(AUTH_OWNER_KEY, result.user_id)
 }
 
 export async function loginAccount(email: string, password: string): Promise<void> {
-  const result = await request<{ access_token: string }>('POST', '/auth/login', {
+  const result = await request<{ access_token: string; user_id: string }>('POST', '/auth/login', {
     email: email.trim(),
     password,
   })
+  authSessionEpoch += 1
+  resetElderProjection()
   Taro.setStorageSync(TOKEN_KEY, result.access_token)
+  Taro.setStorageSync(AUTH_OWNER_KEY, result.user_id)
 }
 
-export function getProfile(): Promise<UserProfile> {
-  return request('GET', '/user')
+export async function getProfile(): Promise<UserProfile> {
+  const epoch = authSessionEpoch
+  const raw = await request<unknown>('GET', '/user')
+  const profile = parseElderUserProfile(raw)
+  publishElderProjection(profile, epoch)
+  return profile
 }
 
 export async function getTodayFootprint(): Promise<TodayFootprintResponse> {
@@ -444,17 +483,28 @@ export async function getFamilyPhotoDownload(
   return parseFamilyPhotoDownload(raw, mediaId)
 }
 
-export function updateProfile(input: {
-  nickname: string
-  timezone: string
+export async function updateProfile(input: {
+  nickname?: string
+  timezone?: string
   locale?: string
+  elder_mode_enabled?: boolean
 }): Promise<UserProfile> {
-  // [人工注释][S1-002] 小程序只提交 IANA timezone 名称，服务端再次校验后才更新用户自然日边界。
-  return request('PATCH', '/user', {
-    nickname: input.nickname.trim(),
-    timezone: input.timezone.trim(),
-    locale: (input.locale || 'zh-CN').trim(),
-  })
+  const epoch = authSessionEpoch
+  const payload: Record<string, unknown> = {}
+  if (input.nickname !== undefined) payload.nickname = input.nickname.trim()
+  if (input.timezone !== undefined) payload.timezone = input.timezone.trim()
+  if (input.locale !== undefined) payload.locale = input.locale.trim()
+  if (input.elder_mode_enabled !== undefined) {
+    payload.elder_mode_enabled = input.elder_mode_enabled
+  }
+  const raw = await request<unknown>('PATCH', '/user', payload)
+  const profile = parseElderUserProfile(raw)
+  publishElderProjection(profile, epoch)
+  return profile
+}
+
+export function updateElderMode(enabled: boolean): Promise<UserProfile> {
+  return updateProfile({ elder_mode_enabled: enabled })
 }
 
 export function createTextMemory(content: string, title?: string): Promise<{ id: string }> {

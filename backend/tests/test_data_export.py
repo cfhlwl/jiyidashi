@@ -44,6 +44,7 @@ async def test_empty_account_exports_versioned_json(client, auth_headers):
     assert response.status_code == 200
     body = response.json()
     assert body["format"] == "jiyidashi.user-export.v1"
+    assert body["profile"]["elder_mode_enabled"] is False
     assert body["memories"] == []
     assert body["memory_sources"] == []
     assert body["memory_edits"] == []
@@ -75,6 +76,7 @@ async def test_export_is_owner_scoped_complete_and_storage_safe(client):
         assert user is not None
         user.email = "a@example.com"
         user.timezone = "Asia/Singapore"
+        user.elder_mode_enabled = True
 
         memory_a = Memory(
             user_id=user_a,
@@ -248,6 +250,7 @@ async def test_export_is_owner_scoped_complete_and_storage_safe(client):
 
     assert body["profile"]["id"] == str(user_a)
     assert body["profile"]["timezone"] == "Asia/Singapore"
+    assert body["profile"]["elder_mode_enabled"] is True
     assert [item["content"] for item in body["memories"]] == ["A visible memory"]
     assert [item["raw_text"] for item in body["memory_sources"]] == ["A evidence"]
     assert [item["name"] for item in body["objects"]] == ["护照"]

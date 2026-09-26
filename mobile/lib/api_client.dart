@@ -274,8 +274,42 @@ class JiYiApiClient {
     _sessionVersion += 1;
   }
 
-  Future<Map<String, dynamic>> getProfile() {
-    return _jsonRequest('GET', '/user');
+  Map<String, dynamic> _canonicalProfile(
+    Map<String, dynamic> data,
+    _AuthenticatedSessionSnapshot snapshot,
+  ) {
+    if (_sessionVersion != snapshot.sessionVersion ||
+        accessToken != snapshot.accessToken ||
+        authenticatedUserId != snapshot.userId) {
+      throw ProtocolException('登录状态已变化，请重试');
+    }
+    final id = data['id'];
+    if (id is! String || id != snapshot.userId) {
+      throw ProtocolException('个人资料账号不匹配');
+    }
+    final elder = data['elder_mode_enabled'];
+    return <String, dynamic>{
+      ...data,
+      // Malformed/missing preference fails closed to normal mode.
+      'elder_mode_enabled': elder is bool ? elder : false,
+    };
+  }
+
+  Future<Map<String, dynamic>> getProfile() async {
+    final snapshot = _captureAuthenticatedSession();
+    final data = await _jsonRequest('GET', '/user', authSnapshot: snapshot);
+    return _canonicalProfile(data, snapshot);
+  }
+
+  Future<Map<String, dynamic>> updateElderMode(bool enabled) async {
+    final snapshot = _captureAuthenticatedSession();
+    final data = await _jsonRequest(
+      'PATCH',
+      '/user',
+      body: {'elder_mode_enabled': enabled},
+      authSnapshot: snapshot,
+    );
+    return _canonicalProfile(data, snapshot);
   }
 
   Future<Map<String, dynamic>> getTodayFootprint() {

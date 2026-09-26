@@ -47,3 +47,30 @@
   font-size: 32rpx;
   font-weight: 600;
 }
+
+
+.elder-home-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.elder-primary-action {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 112rpx !important;
+}
+
+.elder-status-action {
+  margin-top: 24rpx;
+  padding: 24rpx;
+  border: 2rpx solid #dce3df;
+  border-radius: 18rpx;
+  background: #ffffff;
+}
+
+.elder-action-title {
+  font-size: 38rpx;
+  font-weight: 700;
+  margin-bottom: 8rpx;
+}

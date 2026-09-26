@@ -23,6 +23,15 @@ async def _register(
     )
 
 
+async def _elder_dev_user(client: AsyncClient, nickname: str):
+    response = await client.post(
+        "/v1/auth/dev-token",
+        json={"nickname": nickname},
+    )
+    assert response.status_code == 200
+    return response
+
+
 async def test_register_login_and_update_profile(client: AsyncClient):
     # [人工注释][S1-001] 正式注册必须直接得到可访问本人资源的 Token。
     register = await _register(client, email="stage1-auth@example.com")
@@ -34,6 +43,7 @@ async def test_register_login_and_update_profile(client: AsyncClient):
     assert me.status_code == 200
     assert me.json()["email"] == "stage1-auth@example.com"
     assert me.json()["timezone"] == "Asia/Shanghai"
+    assert me.json()["elder_mode_enabled"] is False
 
     update = await client.patch(
         "/v1/user",
@@ -199,3 +209,97 @@ async def test_profile_and_registration_reject_whitespace_only_text(client: Asyn
     )
     assert nickname.status_code == 422
     assert locale.status_code == 422
+
+
+
+async def test_elder_mode_is_self_controlled_persisted_and_patch_is_partial(client: AsyncClient):
+    first = await _elder_dev_user(client, "本人")
+    second = await _elder_dev_user(client, "其他人")
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+
+    enabled = await client.patch(
+        "/v1/user",
+        headers=first_headers,
+        json={"elder_mode_enabled": True},
+    )
+    assert enabled.status_code == 200
+    assert enabled.json()["elder_mode_enabled"] is True
+    assert enabled.json()["nickname"] == "本人"
+    assert enabled.json()["timezone"] == "Asia/Shanghai"
+    assert enabled.json()["locale"] == "zh-CN"
+
+    persisted = await client.get("/v1/user", headers=first_headers)
+    assert persisted.status_code == 200
+    assert persisted.json()["elder_mode_enabled"] is True
+
+    other = await client.get("/v1/user", headers=second_headers)
+    assert other.status_code == 200
+    assert other.json()["elder_mode_enabled"] is False
+
+    # There is no target-user profile mutation surface; query/body ownership
+    # hints are ignored/rejected.
+    remote_attempt = await client.patch(
+        f"/v1/user?user_id={first.json()['user_id']}",
+        headers=second_headers,
+        json={"elder_mode_enabled": True, "user_id": first.json()["user_id"]},
+    )
+    assert remote_attempt.status_code == 422
+
+    disabled = await client.patch(
+        "/v1/user",
+        headers=first_headers,
+        json={"elder_mode_enabled": False},
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["elder_mode_enabled"] is False
+
+
+async def test_elder_mode_rejects_malformed_values(client: AsyncClient):
+    register = await _elder_dev_user(client, "Malformed Elder")
+    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+    for invalid in ("true", 1, 0, [], {}):
+        response = await client.patch(
+            "/v1/user",
+            headers=headers,
+            json={"elder_mode_enabled": invalid},
+        )
+        assert response.status_code == 422
+
+    current = await client.get("/v1/user", headers=headers)
+    assert current.status_code == 200
+    assert current.json()["elder_mode_enabled"] is False
+
+
+
+async def test_family_owner_cannot_remotely_change_member_elder_mode(client: AsyncClient):
+    owner = await _elder_dev_user(client, "Owner")
+    member = await _elder_dev_user(client, "Member")
+    owner_headers = {"Authorization": f"Bearer {owner.json()['access_token']}"}
+    member_headers = {"Authorization": f"Bearer {member.json()['access_token']}"}
+
+    assert (await client.post("/v1/family", headers=owner_headers)).status_code == 201
+    invite = await client.post("/v1/family/invites", headers=owner_headers)
+    assert invite.status_code == 201
+    accepted = await client.post(
+        "/v1/family/invites/accept",
+        headers=member_headers,
+        json={"token": invite.json()["token"]},
+    )
+    assert accepted.status_code == 200
+
+    # A target hint in query cannot redirect the self profile endpoint.
+    attempt = await client.patch(
+        f"/v1/user?target_user_id={member.json()['user_id']}",
+        headers=owner_headers,
+        json={"elder_mode_enabled": True},
+    )
+    assert attempt.status_code == 200
+    assert attempt.json()["id"] == owner.json()["user_id"]
+    assert attempt.json()["elder_mode_enabled"] is True
+
+    member_profile = await client.get("/v1/user", headers=member_headers)
+    assert member_profile.status_code == 200
+    assert member_profile.json()["id"] == member.json()["user_id"]
+    assert member_profile.json()["elder_mode_enabled"] is False

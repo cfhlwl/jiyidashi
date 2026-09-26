@@ -7,7 +7,7 @@ abstract final class JiYiTheme {
   static const Color brandSeed = Color(0xFF446A57);
   static const Color appBackground = Color(0xFFF7F8F6);
 
-  static ThemeData light({String? fontFamily}) {
+  static ThemeData light({String? fontFamily, bool elderMode = false}) {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: brandSeed,
       brightness: Brightness.light,
@@ -20,18 +20,29 @@ abstract final class JiYiTheme {
       extensions: const <ThemeExtension<dynamic>>[JiYiSemanticColors.light],
     );
 
-    // 全局控件视觉统一在 Theme 层完成，避免各页面继续散落 OutlineInputBorder、按钮高度和 Card shape magic values。
+    final elderTextTheme = elderMode
+        ? base.textTheme.copyWith(
+            bodySmall: base.textTheme.bodySmall?.copyWith(fontSize: 16, height: 1.6),
+            bodyMedium: base.textTheme.bodyMedium?.copyWith(fontSize: 18, height: 1.65),
+            bodyLarge: base.textTheme.bodyLarge?.copyWith(fontSize: 20, height: 1.65),
+            titleSmall: base.textTheme.titleSmall?.copyWith(fontSize: 19, height: 1.5),
+            titleMedium: base.textTheme.titleMedium?.copyWith(fontSize: 22, height: 1.5),
+            headlineSmall: base.textTheme.headlineSmall?.copyWith(fontSize: 30, height: 1.35),
+          )
+        : base.textTheme;
+
+    // Elder Mode extends the same design system: typography/targets/spacing only.
     return base.copyWith(
-      textTheme: base.textTheme.copyWith(
+      textTheme: elderTextTheme.copyWith(
         displaySmall: base.textTheme.displaySmall?.copyWith(
           fontWeight: FontWeight.w800,
           letterSpacing: -0.6,
         ),
-        headlineSmall: base.textTheme.headlineSmall?.copyWith(
+        headlineSmall: elderTextTheme.headlineSmall?.copyWith(
           fontWeight: FontWeight.w700,
           letterSpacing: -0.2,
         ),
-        titleMedium: base.textTheme.titleMedium?.copyWith(
+        titleMedium: elderTextTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -61,7 +72,7 @@ abstract final class JiYiTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size(0, 48),
+          minimumSize: Size(0, elderMode ? 56 : 48),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(JiYiRadius.control),
           ),
@@ -72,7 +83,7 @@ abstract final class JiYiTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size(0, 48),
+          minimumSize: Size(0, elderMode ? 56 : 48),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(JiYiRadius.control),
           ),
@@ -84,7 +95,7 @@ abstract final class JiYiTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          minimumSize: const Size(0, 44),
+          minimumSize: Size(0, elderMode ? 48 : 44),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(JiYiRadius.control),
           ),
@@ -100,7 +111,7 @@ abstract final class JiYiTheme {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        height: 72,
+        height: elderMode ? 84 : 72,
         elevation: 0,
         backgroundColor: colorScheme.surface,
         indicatorColor: colorScheme.secondaryContainer,

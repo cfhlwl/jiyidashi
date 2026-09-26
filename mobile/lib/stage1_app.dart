@@ -60,6 +60,7 @@ class _JiYiAppState extends State<JiYiApp> {
   bool authenticated = false;
   bool startOnboardingAfterAuth = false;
   bool resumeAccountDeletionAfterAuth = false;
+  bool elderModeEnabled = false;
 
   @override
   void dispose() {
@@ -79,7 +80,7 @@ class _JiYiAppState extends State<JiYiApp> {
       title: '迹忆',
       debugShowCheckedModeBanner: false,
       // 生产 Theme 改为单一事实源；G1 参数与原 Theme 完全一致，预期不产生视觉漂移。
-      theme: JiYiTheme.light(),
+      theme: JiYiTheme.light(elderMode: elderModeEnabled),
       home: authenticated
           ? AppShell(
               api: api,
@@ -90,12 +91,16 @@ class _JiYiAppState extends State<JiYiApp> {
               locationBridge: locationBridge,
               motionSamplingBridge: widget.motionSamplingBridge,
               sync: sync,
+              onElderModeChanged: (enabled) {
+                if (mounted) setState(() => elderModeEnabled = enabled);
+              },
               onLogout: () {
                 api.logout();
                 setState(() {
                   authenticated = false;
                   startOnboardingAfterAuth = false;
                   resumeAccountDeletionAfterAuth = false;
+                  elderModeEnabled = false;
                 });
               },
             )
@@ -362,6 +367,7 @@ class AppShell extends StatefulWidget {
     this.locationBridge,
     this.motionSamplingBridge,
     this.sync,
+    this.onElderModeChanged,
     required this.onLogout,
   });
 
@@ -373,6 +379,7 @@ class AppShell extends StatefulWidget {
   final NativeLocationBridge? locationBridge;
   final NativeMotionSamplingBridge? motionSamplingBridge;
   final OfflineSyncCoordinator? sync;
+  final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
 
   @override
@@ -385,6 +392,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int index = 0;
   int syncGeneration = 0;
   bool _accountDeletionIntentActive = false;
+  bool _elderModeEnabled = false;
   OnboardingController? _onboarding;
   NativeLocationController? _nativeLocation;
   LocationSamplingCoordinator? _locationSampling;
@@ -423,6 +431,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         autoStartForNewRegistration: widget.startOnboarding,
       )..addListener(_onboardingChanged);
     }
+
+    unawaited(_refreshElderMode());
 
     // 登录进入生产 Shell 后立即尝试恢复当前账号的可重试 outbox。
     // coordinator 自身 single-flight，生命周期重复触发不会并发发送同一任务。
@@ -477,6 +487,30 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           }),
         );
       }
+    }
+  }
+
+  Future<void> _refreshElderMode() async {
+    final sessionVersion = widget.api.sessionVersion;
+    final owner = widget.api.authenticatedUserId;
+    try {
+      final profile = await widget.api.getProfile();
+      if (!mounted ||
+          widget.api.sessionVersion != sessionVersion ||
+          widget.api.authenticatedUserId != owner) {
+        return;
+      }
+      final enabled = profile['elder_mode_enabled'] == true;
+      setState(() => _elderModeEnabled = enabled);
+      widget.onElderModeChanged?.call(enabled);
+    } catch (_) {
+      if (!mounted ||
+          widget.api.sessionVersion != sessionVersion ||
+          widget.api.authenticatedUserId != owner) {
+        return;
+      }
+      setState(() => _elderModeEnabled = false);
+      widget.onElderModeChanged?.call(false);
     }
   }
 
@@ -647,6 +681,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       ),
       ProfilePage(
         api: widget.api,
+        onElderModeChanged: (enabled) {
+          setState(() => _elderModeEnabled = enabled);
+          widget.onElderModeChanged?.call(enabled);
+        },
         onLogout: () => unawaited(_stopLocationAndLogout()),
         onAccountDeleteIntentConfirmed: _prepareLocalAccountDeletion,
         onAccountDeleted: () async => _stopLocationAndLogout(),
@@ -678,28 +716,28 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
         // destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
-        destinations: const [
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.today_outlined),
-            selectedIcon: Icon(Icons.today),
-            label: '今天',
+            icon: const Icon(Icons.today_outlined),
+            selectedIcon: const Icon(Icons.today),
+            label: _elderModeEnabled ? '今天去了哪里' : '今天',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.timeline_outlined),
             selectedIcon: Icon(Icons.timeline),
             label: '时间轴',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.add_circle_outline),
             selectedIcon: Icon(Icons.add_circle),
             label: '记一下',
           ),
           NavigationDestination(
-            icon: Icon(Icons.psychology_alt_outlined),
-            selectedIcon: Icon(Icons.psychology_alt),
-            label: '问记忆',
+            icon: const Icon(Icons.psychology_alt_outlined),
+            selectedIcon: const Icon(Icons.psychology_alt),
+            label: _elderModeEnabled ? '找东西' : '问记忆',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: '我的',
@@ -1769,6 +1807,7 @@ class ProfilePage extends StatelessWidget {
   const ProfilePage({
     super.key,
     required this.api,
+    this.onElderModeChanged,
     required this.onLogout,
     required this.onAccountDeleteIntentConfirmed,
     required this.onAccountDeleted,
@@ -1778,6 +1817,7 @@ class ProfilePage extends StatelessWidget {
   });
 
   final JiYiApiClient api;
+  final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
   final Future<void> Function() onAccountDeleteIntentConfirmed;
   final Future<void> Function() onAccountDeleted;
@@ -1896,6 +1936,12 @@ class ProfilePage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: JiYiSpacing.md),
+              _ElderModeControls(
+                api: api,
+                initialEnabled: profile['elder_mode_enabled'] == true,
+                onChanged: onElderModeChanged ?? (_) {},
+              ),
+              const SizedBox(height: JiYiSpacing.md),
               _PrivacyControls(
                 api: api,
                 nativeLocationController: nativeLocationController,
@@ -1937,6 +1983,81 @@ class ProfilePage extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _ElderModeControls extends StatefulWidget {
+  const _ElderModeControls({
+    required this.api,
+    required this.initialEnabled,
+    required this.onChanged,
+  });
+
+  final JiYiApiClient api;
+  final bool initialEnabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  State<_ElderModeControls> createState() => _ElderModeControlsState();
+}
+
+class _ElderModeControlsState extends State<_ElderModeControls> {
+  late bool enabled = widget.initialEnabled;
+  bool loading = false;
+  String? error;
+
+  Future<void> toggle(bool next) async {
+    if (loading) return;
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final profile = await widget.api.updateElderMode(next);
+      if (!mounted) return;
+      final canonical = profile['elder_mode_enabled'] == true;
+      setState(() => enabled = canonical);
+      widget.onChanged(canonical);
+    } on ApiException catch (exc) {
+      if (mounted) setState(() => error = exc.message);
+    } catch (_) {
+      if (mounted) setState(() => error = '长辈模式更新失败');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return JiYiSectionCard(
+      leading: const Icon(Icons.accessibility_new_outlined),
+      title: '长辈模式',
+      subtitle: '只调整你自己的文字、按钮和页面层级，不改变家庭、位置、记忆或隐私权限。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            type: MaterialType.transparency,
+            child: Semantics(
+              label: '长辈模式',
+              toggled: enabled,
+              child: SwitchListTile(
+                key: const ValueKey('elder-mode-toggle'),
+                contentPadding: EdgeInsets.zero,
+                title: Text(enabled ? '已开启' : '未开启'),
+                value: enabled,
+                onChanged: loading ? null : (value) => unawaited(toggle(value)),
+              ),
+            ),
+          ),
+          if (error != null)
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.error,
+              message: error!,
+            ),
+        ],
       ),
     );
   }

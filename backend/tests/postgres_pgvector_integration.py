@@ -40,6 +40,10 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                       -- compare only schema surfaces present on both sides of its 0011
                       -- downgrade boundary;
                       -- later migrations are expected to disappear and be recreated.
+                      AND NOT (
+                          table_name = 'users'
+                          AND column_name = 'elder_mode_enabled'
+                      )
                       AND table_name NOT IN (
                           'alembic_version',
                           'memory_embeddings',

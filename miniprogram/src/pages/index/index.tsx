@@ -2,11 +2,13 @@ import Taro, { useDidShow } from '@tarojs/taro'
 import { Button, Text, View } from '@tarojs/components'
 import { useState } from 'react'
 import {
+  getProfile,
   getTodayFootprint,
   isAuthenticated,
   listPlaces,
   TodayFootprintResponse,
 } from '../../services/api'
+import { elderClassName } from '../../services/elderMode'
 import { toTodayFootprintRow } from '../../services/todayFootprint'
 import { placeDetailRoute, placeListPresentation, type PlaceRead } from '../../services/placeDetail'
 import './index.scss'
@@ -21,6 +23,7 @@ export default function Page() {
   const [loadingPlaces, setLoadingPlaces] = useState(false)
   const [placesLoaded, setPlacesLoaded] = useState(false)
   const [placeError, setPlaceError] = useState('')
+  const [elderMode, setElderMode] = useState(false)
 
   const refresh = async () => {
     if (!isAuthenticated()) {
@@ -64,6 +67,13 @@ export default function Page() {
   }
 
   useDidShow(() => {
+    if (!isAuthenticated()) {
+      setElderMode(false)
+    } else {
+      void getProfile()
+        .then((profile) => setElderMode(profile.elder_mode_enabled))
+        .catch(() => setElderMode(false))
+    }
     void refresh()
     void refreshPlaces()
   })
@@ -91,9 +101,30 @@ export default function Page() {
   })
 
   return (
-    <View className='page'>
-      <View className='title'>今天</View>
-      <View className='subtitle'>按账号时区回看今天真实形成的地点足迹。</View>
+    <View className={elderClassName(elderMode)}>
+      <View className='title'>{elderMode ? '迹忆' : '今天'}</View>
+      <View className='subtitle'>
+        {elderMode ? '常用功能放大显示；所有数据和权限规则与普通模式完全一致。' : '按账号时区回看今天真实形成的地点足迹。'}
+      </View>
+
+      {elderMode && (
+        <View className='card elder-home-actions'>
+          <View className='card-title'>常用功能</View>
+          <Button className='primary-button elder-primary-action' onClick={() => Taro.switchTab({ url: '/pages/capture/index' })}>
+            记一下
+          </Button>
+          <Button className='primary-button elder-primary-action' onClick={() => Taro.switchTab({ url: '/pages/query/index' })}>
+            找东西
+          </Button>
+          <View className='elder-primary-action elder-status-action'>
+            <View className='elder-action-title'>今天去了哪里</View>
+            <Text className='muted'>本页下方“今日足迹”直接展示现有可信 Visit 数据。</Text>
+          </View>
+          <Button className='secondary-button elder-primary-action' onClick={() => Taro.switchTab({ url: '/pages/family/index' })}>
+            家庭
+          </Button>
+        </View>
+      )}
 
       <View className='card'>
         <View className='card-title'>今日足迹</View>
