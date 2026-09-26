@@ -235,6 +235,10 @@ export function currentAuthenticatedUserId(): string | null {
   return currentAuthOwner()
 }
 
+export function currentAuthSessionEpoch(): number {
+  return authSessionEpoch
+}
+
 function emitAuthSessionChanged(): void {
   const owner = currentAuthOwner()
   for (const listener of authSessionListeners) listener(owner, authSessionEpoch)
