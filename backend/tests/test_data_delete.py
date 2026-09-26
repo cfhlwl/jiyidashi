@@ -24,7 +24,6 @@ from app.media_models import (
     MediaKind,
     MediaStatus,
 )
-from app.person_models import Person, PersonAlias
 from app.models import (
     Device,
     FamilyMember,
@@ -45,6 +44,7 @@ from app.models import (
     User,
     Visit,
 )
+from app.person_models import Person, PersonAlias
 from app.services import data_deletion_service
 from app.services.object_storage import (
     ObjectStorageError,
