@@ -4,6 +4,7 @@ from threading import Barrier, Thread
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.db import SessionLocal
 from app.models import User
@@ -127,21 +128,65 @@ def _delete_vs_patch_never_resurrects(user_id, person_id) -> None:
         ) is None
 
 
+def _alias_owner_composite_fk_rejects_cross_owner_binding(
+    owner_id,
+    foreign_id,
+    person_id,
+) -> None:
+    with SessionLocal() as db:
+        db.add(
+            PersonAlias(
+                user_id=foreign_id,
+                person_id=person_id,
+                alias="越权别名",
+                normalized_alias="越权别名",
+            )
+        )
+        try:
+            db.commit()
+            raise AssertionError("cross-owner PersonAlias unexpectedly committed")
+        except IntegrityError:
+            db.rollback()
+
+    with SessionLocal() as db:
+        person = db.get(Person, person_id)
+        assert person is not None
+        assert person.user_id == owner_id
+        assert db.scalar(
+            select(PersonAlias.id).where(
+                PersonAlias.person_id == person_id,
+                PersonAlias.user_id == foreign_id,
+            )
+        ) is None
+
+
 def main() -> None:
     user_id = uuid4()
+    foreign_id = uuid4()
     with SessionLocal() as db:
-        db.add(User(id=user_id, nickname="person-pg-owner"))
+        db.add_all(
+            [
+                User(id=user_id, nickname="person-pg-owner"),
+                User(id=foreign_id, nickname="person-pg-foreign"),
+            ]
+        )
         db.commit()
 
     person_id = _seed_person(user_id)
+    _alias_owner_composite_fk_rejects_cross_owner_binding(
+        user_id,
+        foreign_id,
+        person_id,
+    )
     _same_revision_patch_single_winner(user_id, person_id)
     _delete_vs_patch_never_resurrects(user_id, person_id)
 
     with SessionLocal() as cleanup:
-        user = cleanup.get(User, user_id)
-        if user is not None:
-            cleanup.delete(user)
-            cleanup.commit()
+        for target in (user_id, foreign_id):
+            user = cleanup.get(User, target)
+            if user is not None:
+                cleanup.delete(user)
+        cleanup.commit()
 
 
 if __name__ == "__main__":
