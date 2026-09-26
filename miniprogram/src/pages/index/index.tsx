@@ -12,7 +12,7 @@ import {
   TodayFootprintResponse,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
-import { toTodayFootprintRow } from '../../services/todayFootprint'
+import { TodayFootprintRequestEpoch, toTodayFootprintRow } from '../../services/todayFootprint'
 import { placeDetailRoute, placeListPresentation, type PlaceRead } from '../../services/placeDetail'
 import './index.scss'
 
@@ -27,7 +27,7 @@ export default function Page() {
   const [placesLoaded, setPlacesLoaded] = useState(false)
   const [placeError, setPlaceError] = useState('')
   const [elderMode, setElderMode] = useState(currentElderModeEnabled)
-  const footprintGeneration = useRef(0)
+  const footprintEpoch = useRef(new TodayFootprintRequestEpoch())
   const authOwnerRef = useRef<string | null>(currentAuthenticatedUserId())
   const authEpochRef = useRef<number | null>(null)
 
@@ -42,14 +42,14 @@ export default function Page() {
     if (authEpochRef.current === epoch && authOwnerRef.current === owner) return
     authEpochRef.current = epoch
     authOwnerRef.current = owner
-    footprintGeneration.current += 1
+    footprintEpoch.current.invalidate()
     setLoading(false)
     setFootprint(null)
     setStatus('')
   }), [])
 
   useEffect(() => () => {
-    footprintGeneration.current += 1
+    footprintEpoch.current.invalidate()
   }, [])
 
   const refresh = async () => {
@@ -58,7 +58,7 @@ export default function Page() {
       setStatus('请先到“我的”页面登录正式账号')
       return
     }
-    const generation = ++footprintGeneration.current
+    const generation = footprintEpoch.current.capture()
     const owner = authOwnerRef.current
     const authEpoch = authEpochRef.current
     setLoading(true)
@@ -66,14 +66,14 @@ export default function Page() {
     try {
       const next = await getTodayFootprint()
       if (
-        generation !== footprintGeneration.current
+        !footprintEpoch.current.isCurrent(generation)
         || authOwnerRef.current !== owner
         || authEpochRef.current !== authEpoch
       ) return
       setFootprint(next)
     } catch (error) {
       if (
-        generation !== footprintGeneration.current
+        !footprintEpoch.current.isCurrent(generation)
         || authOwnerRef.current !== owner
         || authEpochRef.current !== authEpoch
       ) return
@@ -81,7 +81,7 @@ export default function Page() {
       setStatus(error instanceof Error ? error.message : '读取今日足迹失败')
     } finally {
       if (
-        generation === footprintGeneration.current
+        footprintEpoch.current.isCurrent(generation)
         && authOwnerRef.current === owner
         && authEpochRef.current === authEpoch
       ) {
@@ -119,7 +119,7 @@ export default function Page() {
   })
 
   useDidHide(() => {
-    footprintGeneration.current += 1
+    footprintEpoch.current.invalidate()
     setLoading(false)
   })
 
