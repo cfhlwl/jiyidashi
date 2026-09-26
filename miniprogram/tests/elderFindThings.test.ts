@@ -86,7 +86,55 @@ test('query page binds response to owner auth epoch and exact submitted question
 })
 
 
-test('page hide invalidates pending query and clears loading gate for next query', () => {
+test('pending query hide invalidation ignores old response and permits a fresh query', async () => {
+  const epoch = new ElderFindQueryEpoch()
+  const gate = new ElderFindSingleFlight()
+  let loading = false
+  let published: string | null = null
+  let resolveOld!: (value: string) => void
+  const oldResponse = new Promise<string>((resolve) => {
+    resolveOld = resolve
+  })
+
+  assert.equal(gate.tryBegin(), true)
+  loading = true
+  const oldGeneration = epoch.capture()
+  const oldPending = oldResponse.then((value) => {
+    if (epoch.isCurrent(oldGeneration)) published = value
+  }).finally(() => {
+    if (epoch.isCurrent(oldGeneration)) {
+      gate.end()
+      loading = false
+    }
+  })
+
+  // Mirrors the production useDidHide transition.
+  epoch.invalidate()
+  gate.end()
+  loading = false
+
+  resolveOld('stale A')
+  await oldPending
+  assert.equal(published, null)
+  assert.equal(loading, false)
+
+  // Returning to the page must permit a brand-new query immediately.
+  assert.equal(gate.tryBegin(), true)
+  loading = true
+  const freshGeneration = epoch.capture()
+  const freshValue = await Promise.resolve('fresh B')
+  if (epoch.isCurrent(freshGeneration)) published = freshValue
+  if (epoch.isCurrent(freshGeneration)) {
+    gate.end()
+    loading = false
+  }
+
+  assert.equal(published, 'fresh B')
+  assert.equal(loading, false)
+  assert.equal(gate.busy, false)
+})
+
+test('production hide path mirrors state-machine recovery transition', () => {
   assert.match(
     queryPage,
     /useDidHide\(\(\) => \{[\s\S]*?queryEpoch\.current\.invalidate\(\)[\s\S]*?queryBusyRef\.current = false[\s\S]*?elderQueryGate\.current\.end\(\)[\s\S]*?setLoading\(false\)/,
