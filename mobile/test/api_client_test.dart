@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -454,6 +455,112 @@ void main() {
     // [人工注释][S2-012] 不允许 Flutter 用设备时钟拼 ?day=；服务端是“今天”的唯一所有者。
     expect(result['day'], '2026-09-20');
     expect(result['timezone'], 'Asia/Shanghai');
+  });
+
+
+  test('memory query malformed 2xx fails closed', () async {
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        expect(request.method, 'POST');
+        expect(request.url.path, '/v1/memory/query');
+        return http.Response(
+          jsonEncode({
+            'answer': '书房',
+            'can_answer': true,
+            'certainty': 'confirmed',
+            'intent': 'FIND_OBJECT',
+            'evidence': [],
+            // memory_ids deliberately missing
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    await expectLater(
+      api.queryMemory('护照在哪里？'),
+      throwsA(isA<ProtocolException>()),
+    );
+  });
+
+  test('late memory query from account A fails closed after switch to B', () async {
+    var calls = 0;
+    final lateQuery = Completer<http.Response>();
+    const ownerA = '11111111-1111-1111-1111-111111111111';
+    const ownerB = '22222222-2222-2222-2222-222222222222';
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) {
+          return http.Response(
+            jsonEncode({
+              'access_token': 'token-a',
+              'token_type': 'bearer',
+              'user_id': ownerA,
+            }),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        if (calls == 2) {
+          expect(request.url.path, '/v1/memory/query');
+          return lateQuery.future;
+        }
+        if (calls == 3) {
+          return http.Response(
+            jsonEncode({
+              'access_token': 'token-b',
+              'token_type': 'bearer',
+              'user_id': ownerB,
+            }),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        throw StateError('unexpected request');
+      }),
+    );
+
+    await api.login(email: 'a@example.test', password: 'password-123');
+    final stale = api.queryMemory('A 的护照在哪里？');
+    await Future<void>.delayed(Duration.zero);
+    api.logout();
+    await api.login(email: 'b@example.test', password: 'password-123');
+    lateQuery.complete(
+      http.Response(
+        jsonEncode({
+          'answer': 'A 的书房',
+          'can_answer': true,
+          'certainty': 'confirmed',
+          'reason': null,
+          'intent': 'FIND_OBJECT',
+          'evidence': [
+            {
+              'kind': 'OBJECT_LOCATION',
+              'id': '33333333-3333-3333-3333-333333333333',
+              'source_type': 'USER_TEXT',
+              'memory_source_id': '44444444-4444-4444-4444-444444444444',
+              'occurred_at': '2026-09-26T00:00:00Z',
+              'excerpt': '书房',
+              'confidence': 1.0,
+            }
+          ],
+          'memory_ids': ['55555555-5555-5555-5555-555555555555'],
+        }),
+        200,
+        headers: jsonHeaders,
+      ),
+    );
+
+    await expectLater(stale, throwsA(isA<ProtocolException>()));
+    expect(api.authenticatedUserId, ownerB);
   });
 
 }
