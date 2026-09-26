@@ -49,6 +49,8 @@ class PersonRelationshipPatch(BaseModel):
 
 
 class PersonRelationshipRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     person_a_id: UUID
     person_b_id: UUID
