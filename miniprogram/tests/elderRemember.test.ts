@@ -4,8 +4,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  CaptureActionAuthority,
   deriveElderRememberState,
   elderRememberStateLabel,
+  isCaptureActionStaleError,
 } from '../src/services/elderRemember'
 
 const capture = readFileSync(resolve(process.cwd(), 'src/pages/capture/index.tsx'), 'utf8')
@@ -158,4 +160,91 @@ test('Elder remember state machine maps recorder and trusted submission phases e
   assert.equal(elderRememberStateLabel('RECORDED'), '已经录好了')
   assert.equal(elderRememberStateLabel('SAVED'), '已经记住了')
   assert.equal(elderRememberStateLabel('FAILED'), '这次没有保存成功')
+})
+
+
+test('pending microphone permission cannot revive recorder after capture action invalidation', async () => {
+  const authority = new CaptureActionAuthority()
+  let sessionValid = true
+  let recorderStartCount = 0
+  let resolvePermission!: (granted: boolean) => void
+  const permission = new Promise<boolean>((resolve) => {
+    resolvePermission = resolve
+  })
+  const sessionGuard = () => {
+    if (!sessionValid) throw new Error('登录状态已变化；旧会话不可继续')
+  }
+  const action = authority.begin(sessionGuard)
+
+  const pendingStart = (async () => {
+    const granted = await permission
+    action.assertCurrent()
+    if (granted) recorderStartCount += 1
+  })()
+
+  sessionValid = false
+  authority.invalidate()
+  resolvePermission(true)
+
+  await assert.rejects(pendingStart, (error: unknown) => {
+    assert.equal(
+      isCaptureActionStaleError(error)
+        || (error instanceof Error && error.message.startsWith('登录状态已变化；')),
+      true,
+    )
+    return true
+  })
+  assert.equal(recorderStartCount, 0)
+})
+
+test('pending photo picker cannot publish A-origin result after account switch to B', async () => {
+  const authority = new CaptureActionAuthority()
+  let owner = 'user-a'
+  let selectedPhoto: string | null = null
+  let resolvePicker!: (path: string) => void
+  const picker = new Promise<string>((resolve) => {
+    resolvePicker = resolve
+  })
+  const snapshotOwner = owner
+  const action = authority.begin(() => {
+    if (owner !== snapshotOwner) throw new Error('登录状态已变化；旧账号素材不可继续')
+  })
+
+  const pendingSelection = (async () => {
+    const path = await picker
+    action.assertCurrent()
+    selectedPhoto = path
+  })()
+
+  owner = 'user-b'
+  authority.invalidate()
+  resolvePicker('wxfile://tmp/a-origin.jpg')
+
+  await assert.rejects(pendingSelection)
+  assert.equal(selectedPhoto, null)
+})
+
+test('same-session permission and picker completions remain usable', async () => {
+  const authority = new CaptureActionAuthority()
+  let owner = 'user-a'
+  let recorderStartCount = 0
+  let selectedPhoto: string | null = null
+  const snapshotOwner = owner
+  const sessionGuard = () => {
+    if (owner !== snapshotOwner) throw new Error('session changed')
+  }
+
+  const voiceAction = authority.begin(sessionGuard)
+  const granted = await Promise.resolve(true)
+  voiceAction.assertCurrent()
+  if (granted) recorderStartCount += 1
+
+  const photoAction = authority.begin(sessionGuard)
+  const path = await Promise.resolve('wxfile://tmp/same-session.jpg')
+  photoAction.assertCurrent()
+  selectedPhoto = path
+
+  assert.equal(recorderStartCount, 1)
+  assert.equal(selectedPhoto, 'wxfile://tmp/same-session.jpg')
+  owner = 'user-a'
 })
