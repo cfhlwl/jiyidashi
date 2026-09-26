@@ -180,6 +180,17 @@ export function subscribeElderMode(listener: ElderProjectionListener): () => voi
   return elderProjection.subscribe(currentAuthOwner, listener)
 }
 
+export function createCaptureSessionGuard(): () => void {
+  const epoch = authSessionEpoch
+  const owner = currentAuthOwner()
+  if (!owner) throw new Error('请先登录')
+  return () => {
+    if (epoch !== authSessionEpoch || currentAuthOwner() !== owner) {
+      throw new Error('登录状态已变化；本次记录已停止，请在当前账号重新操作')
+    }
+  }
+}
+
 // [人工注释][S1-019] 统一传输层显式包含 DELETE，单条记忆删除必须真正到达服务端；
 // 非 2xx 始终抛出服务端错误，客户端不能把失败请求当作本地删除成功。
 export class ApiRequestError extends Error {
