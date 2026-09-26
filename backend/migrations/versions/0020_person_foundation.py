@@ -32,7 +32,11 @@ def upgrade() -> None:
         sa.UniqueConstraint("id", "user_id", name="uq_persons_id_user_id"),
     )
     op.create_index("ix_persons_user_id", "persons", ["user_id"])
-    op.create_index("ix_persons_user_display_name", "persons", ["user_id", "display_name"])
+    op.create_index(
+        "ix_persons_user_display_name",
+        "persons",
+        ["user_id", "display_name"],
+    )
 
     op.create_table(
         "person_aliases",
