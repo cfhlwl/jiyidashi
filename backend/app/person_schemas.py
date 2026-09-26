@@ -46,6 +46,8 @@ class PersonPatch(BaseModel):
     def reject_explicit_null_display_name(self):
         if "display_name" in self.model_fields_set and self.display_name is None:
             raise ValueError("display_name cannot be null")
+        if "aliases" in self.model_fields_set and self.aliases is None:
+            raise ValueError("aliases cannot be null; use [] to clear")
         return self
 
 
