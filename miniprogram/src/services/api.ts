@@ -1,5 +1,10 @@
 import Taro from '@tarojs/taro'
-import { parseElderUserProfile, type ElderUserProfile } from './elderMode'
+import {
+  ElderProjectionStore,
+  parseElderUserProfile,
+  type ElderProjectionListener,
+  type ElderUserProfile,
+} from './elderMode'
 import type {
   ImageContentType,
   MediaRead,
@@ -84,8 +89,7 @@ const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
 const AUTH_OWNER_KEY = 'jiyi_authenticated_user_id'
 let authSessionEpoch = 0
-let elderProjectionOwner: string | null = null
-let elderProjectionEnabled = false
+const elderProjection = new ElderProjectionStore()
 
 export type Evidence = {
   kind: string
@@ -154,23 +158,26 @@ export function logout(): void {
 }
 
 function resetElderProjection(): void {
-  elderProjectionOwner = null
-  elderProjectionEnabled = false
+  elderProjection.reset()
 }
 
 function publishElderProjection(profile: UserProfile, epoch: number): void {
   if (epoch !== authSessionEpoch) throw new Error('登录状态已变化，请重试')
   const owner = Taro.getStorageSync<string>(AUTH_OWNER_KEY)
   if (!owner || profile.id !== owner) throw new Error('个人资料账号不匹配')
-  elderProjectionOwner = profile.id
-  elderProjectionEnabled = profile.elder_mode_enabled
+  elderProjection.publish(profile.id, profile.elder_mode_enabled)
+}
+
+function currentAuthOwner(): string | null {
+  return Taro.getStorageSync<string>(AUTH_OWNER_KEY) || null
 }
 
 export function currentElderModeEnabled(): boolean {
-  const owner = Taro.getStorageSync<string>(AUTH_OWNER_KEY)
-  return Boolean(owner)
-    && elderProjectionOwner === owner
-    && elderProjectionEnabled === true
+  return elderProjection.current(currentAuthOwner())
+}
+
+export function subscribeElderMode(listener: ElderProjectionListener): () => void {
+  return elderProjection.subscribe(currentAuthOwner, listener)
 }
 
 // [人工注释][S1-019] 统一传输层显式包含 DELETE，单条记忆删除必须真正到达服务端；
