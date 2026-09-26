@@ -212,6 +212,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_family_privacy_audit_integration.py
 
+      - name: PostgreSQL Person foundation concurrency
+        # [V2-001] Real PostgreSQL locks optimistic Person edits and DELETE/PATCH
+        # serialization so stale writers cannot silently overwrite or resurrect a Person.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_person_foundation_integration.py
+
       - name: PostgreSQL schema drift check
         # [人工注释][S1-FIX-001] upgrade 成功不代表 ORM metadata 与 migration head 一致；alembic check 是正式漂移门禁。
         env:
