@@ -8,6 +8,7 @@ import {
   toTodayFootprintRow,
   type TodayFootprintVisit,
 } from '../src/services/todayFootprint'
+import { PlaceListRequestEpoch } from '../src/services/placeDetail'
 
 function visit(overrides: Partial<TodayFootprintVisit> = {}): TodayFootprintVisit {
   return {
@@ -207,4 +208,113 @@ test('production page invalidates on auth change, hide and unmount', () => {
   assert.match(todayPageSource, /useDidHide\(\(\) => \{[\s\S]*?footprintEpoch\.current\.invalidate\(\)[\s\S]*?setLoading\(false\)/)
   assert.match(todayPageSource, /useEffect\(\(\) => \(\) => \{[\s\S]*?footprintEpoch\.current\.invalidate\(\)/)
   assert.doesNotMatch(todayPageSource, /listPlaces\([^)]*\)[\s\S]*setFootprint/)
+})
+
+
+test('Places A pending -> switch B -> late A cannot overwrite B or its final state', async () => {
+  const epoch = new PlaceListRequestEpoch()
+  let owner = 'A'
+  let authEpoch = 10
+  let loading = false
+  let loaded = false
+  let error = ''
+  let visible: string[] = []
+
+  let resolveA!: (value: string[]) => void
+  const pendingAResponse = new Promise<string[]>((resolve) => { resolveA = resolve })
+  const generationA = epoch.capture()
+  const ownerA = owner
+  const authEpochA = authEpoch
+  loading = true
+  loaded = false
+  error = ''
+
+  const pendingA = pendingAResponse.then((value) => {
+    if (
+      epoch.isCurrent(generationA)
+      && owner === ownerA
+      && authEpoch === authEpochA
+    ) {
+      visible = value
+    }
+  }).catch((reason) => {
+    if (
+      epoch.isCurrent(generationA)
+      && owner === ownerA
+      && authEpoch === authEpochA
+    ) {
+      visible = []
+      error = String(reason)
+    }
+  }).finally(() => {
+    if (
+      epoch.isCurrent(generationA)
+      && owner === ownerA
+      && authEpoch === authEpochA
+    ) {
+      loading = false
+      loaded = true
+    }
+  })
+
+  // Auth switch invalidates A and clears its visible state.
+  owner = 'B'
+  authEpoch = 11
+  epoch.invalidate()
+  loading = false
+  visible = []
+  loaded = false
+  error = ''
+
+  const generationB = epoch.capture()
+  const ownerB = owner
+  const authEpochB = authEpoch
+  loading = true
+  loaded = false
+
+  const pendingB = Promise.resolve(['B-place']).then((value) => {
+    if (
+      epoch.isCurrent(generationB)
+      && owner === ownerB
+      && authEpoch === authEpochB
+    ) {
+      visible = value
+    }
+  }).finally(() => {
+    if (
+      epoch.isCurrent(generationB)
+      && owner === ownerB
+      && authEpoch === authEpochB
+    ) {
+      loading = false
+      loaded = true
+    }
+  })
+
+  await pendingB
+  assert.deepEqual(visible, ['B-place'])
+  assert.equal(loading, false)
+  assert.equal(loaded, true)
+  assert.equal(error, '')
+
+  // A completes after B. Neither success nor finally may disturb B.
+  resolveA(['A-secret-place'])
+  await pendingA
+
+  assert.deepEqual(visible, ['B-place'])
+  assert.equal(loading, false)
+  assert.equal(loaded, true)
+  assert.equal(error, '')
+})
+
+test('production Places path binds generation + owner + auth epoch and invalidates on auth/hide/unmount', () => {
+  assert.match(todayPageSource, /const placesEpoch = useRef\(new PlaceListRequestEpoch\(\)\)/)
+  assert.match(todayPageSource, /const generation = placesEpoch\.current\.capture\(\)/)
+  assert.match(todayPageSource, /const owner = authOwnerRef\.current/)
+  assert.match(todayPageSource, /const authEpoch = authEpochRef\.current/)
+  assert.match(todayPageSource, /authOwnerRef\.current !== owner/)
+  assert.match(todayPageSource, /authEpochRef\.current !== authEpoch/)
+  assert.match(todayPageSource, /placesEpoch\.current\.invalidate\(\)[\s\S]*?setPlaces\(\[\]\)/)
+  assert.match(todayPageSource, /useDidHide\(\(\) => \{[\s\S]*?placesEpoch\.current\.invalidate\(\)/)
+  assert.match(todayPageSource, /useEffect\(\(\) => \(\) => \{[\s\S]*?placesEpoch\.current\.invalidate\(\)/)
 })
