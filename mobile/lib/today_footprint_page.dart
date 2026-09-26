@@ -177,9 +177,9 @@ class _TodayFootprintBody extends StatelessWidget {
         leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
         title: elderMode ? '今天还没有形成足迹' : '今日足迹',
         subtitle: elderMode ? null : '${footprint.day} · ${footprint.timezone}',
-        child: const JiYiEmptyState(
+        child: JiYiEmptyState(
           icon: Icons.location_off_outlined,
-          title: elderMode ? '今天还没有形成足迹' : '今天还没有形成足迹',
+          title: '今天还没有形成足迹',
           message: elderMode
               ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
               : '这里只有服务端已经派生出的 Visit；不会用手机当前位置或猜测内容补一条记录。',
@@ -238,9 +238,11 @@ class _FootprintVisitRow extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: JiYiSpacing.xxs),
             child: Icon(
-              visit.finalized
-                  ? Icons.location_on_outlined
-                  : Icons.my_location_outlined,
+              elderMode
+                  ? Icons.place_outlined
+                  : (visit.finalized
+                      ? Icons.location_on_outlined
+                      : Icons.my_location_outlined),
               color: visit.finalized
                   ? theme.colorScheme.primary
                   : theme.colorScheme.tertiary,
@@ -311,7 +313,7 @@ class _TodayFootprint {
     if (timezone is! String ||
         timezone.trim().isEmpty ||
         day is! String ||
-        day.trim().isEmpty ||
+        !_isStrictDateOnly(day) ||
         visits is! List<dynamic>) {
       throw const FormatException('invalid today footprint');
     }
@@ -366,8 +368,12 @@ class _FootprintVisit {
         finalized is! bool) {
       throw const FormatException('invalid footprint visit');
     }
-    DateTime.parse(arrivedAtLocal);
-    if (leftAtLocal is String) DateTime.parse(leftAtLocal);
+    if (!_isStrictIsoDateTime(arrivedAtLocal)) {
+      throw const FormatException('invalid footprint visit');
+    }
+    if (leftAtLocal is String && !_isStrictIsoDateTime(leftAtLocal)) {
+      throw const FormatException('invalid footprint visit');
+    }
     return _FootprintVisit(
       id: id,
       placeName: placeName,
@@ -377,4 +383,27 @@ class _FootprintVisit {
       finalized: finalized,
     );
   }
+}
+
+
+bool _isStrictDateOnly(String value) {
+  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
+  if (match == null) return false;
+  final year = int.parse(match.group(1)!);
+  final month = int.parse(match.group(2)!);
+  final day = int.parse(match.group(3)!);
+  final parsed = DateTime.utc(year, month, day);
+  return parsed.year == year && parsed.month == month && parsed.day == day;
+}
+
+bool _isStrictIsoDateTime(String value) {
+  final match = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$',
+  ).firstMatch(value);
+  if (match == null || !_isStrictDateOnly(value.substring(0, 10))) return false;
+  final hour = int.parse(match.group(4)!);
+  final minute = int.parse(match.group(5)!);
+  final second = int.parse(match.group(6)!);
+  if (hour > 23 || minute > 59 || second > 59) return false;
+  return DateTime.tryParse(value) != null;
 }
