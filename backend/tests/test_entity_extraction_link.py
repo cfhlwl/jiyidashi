@@ -253,6 +253,7 @@ async def test_extraction_and_linking_do_not_create_entities_or_memory(client):
         after = {
             "objects": db.scalar(select(func.count()).select_from(ObjectItem)),
             "places": db.scalar(select(func.count()).select_from(Place)),
+            "persons": db.scalar(select(func.count()).select_from(Person)),
             "memories": db.scalar(select(func.count()).select_from(Memory)),
             "sources": db.scalar(select(func.count()).select_from(MemorySource)),
         }
