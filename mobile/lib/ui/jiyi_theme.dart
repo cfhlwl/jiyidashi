@@ -38,11 +38,11 @@ abstract final class JiYiTheme {
           fontWeight: FontWeight.w800,
           letterSpacing: -0.6,
         ),
-        headlineSmall: base.textTheme.headlineSmall?.copyWith(
+        headlineSmall: elderTextTheme.headlineSmall?.copyWith(
           fontWeight: FontWeight.w700,
           letterSpacing: -0.2,
         ),
-        titleMedium: base.textTheme.titleMedium?.copyWith(
+        titleMedium: elderTextTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w700,
         ),
       ),
