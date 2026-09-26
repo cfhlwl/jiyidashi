@@ -81,6 +81,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+function isStaleCaptureSessionError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('登录状态已变化；')
+}
+
 function filenameFromPath(filePath: string): string | null {
   const normalized = filePath.split('?')[0].replace(/\\/g, '/')
   const value = normalized.split('/').pop()?.trim()
@@ -334,6 +338,7 @@ export default function Page() {
   useDidHide(() => {
     if (!voiceRecordingRef.current) return
     discardNextVoiceStopRef.current = true
+    setVoiceStatus('录音已因离开页面而取消；不会上传或保存。')
     recorderController.stop()
   })
 
@@ -359,7 +364,9 @@ export default function Page() {
       setTitle('')
       setStatus(`✓ 已经帮你记住 · ${memory.id}`)
     } catch (error) {
-      setStatus(getErrorMessage(error, '保存失败'))
+      if (!isStaleCaptureSessionError(error)) {
+        setStatus(getErrorMessage(error, '保存失败'))
+      }
     } finally {
       setLoading(false)
     }
@@ -466,7 +473,9 @@ export default function Page() {
       setPhotoTitle('')
       setPhotoContent('')
     } catch (error) {
-      setPhotoError(getErrorMessage(error, '图片记录失败'))
+      if (!isStaleCaptureSessionError(error)) {
+        setPhotoError(getErrorMessage(error, '图片记录失败'))
+      }
     } finally {
       photoSubmitLock.current.release()
       setPhotoSubmitting(false)
@@ -574,8 +583,10 @@ export default function Page() {
       setVoiceMemoryId(result.memoryId)
       setVoiceStatus(`✓ 原始录音已验证、转写并写入可信 Evidence · ${result.memoryId}`)
     } catch (error) {
-      setVoiceError(getErrorMessage(error, '语音记录失败'))
-      setVoiceStatus('提交失败，本地临时录音已保留，可使用同一录音重试。')
+      if (!isStaleCaptureSessionError(error)) {
+        setVoiceError(getErrorMessage(error, '语音记录失败'))
+        setVoiceStatus('提交失败，本地临时录音已保留，可使用同一录音重试。')
+      }
     } finally {
       voiceSubmitLock.current.release()
       setVoiceSubmitting(false)
