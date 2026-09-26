@@ -25,7 +25,6 @@ from app.family_models import (
 from app.idempotency_models import ClientMutation
 from app.media_models import MediaASRClaim, MediaAsset, MediaEvidenceLink
 from app.memory_feedback_models import MemoryFeedback
-from app.person_models import Person, PersonAlias
 from app.models import (
     Device,
     FamilyMember,
@@ -46,6 +45,7 @@ from app.models import (
     User,
     Visit,
 )
+from app.person_models import Person, PersonAlias
 from app.services.embedding_service import delete_owner_memory_embeddings
 from app.services.object_storage import (
     DisabledObjectStorage,
