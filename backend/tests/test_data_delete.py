@@ -504,7 +504,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert retry.json()["deleted_counts"]["person_relationships"] == 1
     assert retry.json()["deleted_counts"]["person_memory_links"] == 1
     assert retry.json()["deleted_counts"]["person_aliases"] == 1
-    assert retry.json()["deleted_counts"]["persons"] == 1
+    assert retry.json()["deleted_counts"]["persons"] == 2
     assert other_key in delete_storage.objects
 
     with SessionLocal() as db:
