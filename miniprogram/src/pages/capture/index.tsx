@@ -192,6 +192,7 @@ const recorderController = new RecorderLifecycleController(
 
 export default function Page() {
   const [elderMode, setElderMode] = useState(currentElderModeEnabled)
+  const [privacyPaused, setPrivacyPaused] = useState(false)
 
   useEffect(() => subscribeElderMode(setElderMode), [])
 
@@ -227,7 +228,6 @@ export default function Page() {
   const [locationText, setLocationText] = useState('')
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
-  const [privacyPaused, setPrivacyPaused] = useState(false)
 
   const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null)
   const [photoTitle, setPhotoTitle] = useState('')
