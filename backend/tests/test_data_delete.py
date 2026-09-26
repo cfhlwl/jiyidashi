@@ -46,6 +46,7 @@ from app.models import (
 )
 from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
 from app.person_models import Person, PersonAlias
+from app.person_relationship_models import PersonRelationship, PersonRelationshipKind
 from app.services import data_deletion_service
 from app.services.object_storage import (
     ObjectStorageError,
@@ -112,8 +113,10 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
         "location_point": uuid4(),
         "visit": uuid4(),
         "person": uuid4(),
+        "person_two": uuid4(),
         "person_alias": uuid4(),
         "person_memory_link": uuid4(),
+        "person_relationship": uuid4(),
         "object": uuid4(),
         "object_location": uuid4(),
         "reminder": uuid4(),
@@ -242,6 +245,13 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
             )
         )
         db.add(
+            Person(
+                id=ids["person_two"],
+                user_id=owner_id,
+                display_name="另一私密联系人",
+            )
+        )
+        db.add(
             PersonAlias(
                 id=ids["person_alias"],
                 user_id=owner_id,
@@ -257,6 +267,21 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
                 person_id=ids["person"],
                 memory_id=ids["memory"],
                 relation_kind=PersonMemoryRelationKind.MET,
+                revision=0,
+            )
+        )
+        low_id, high_id = sorted(
+            (ids["person"], ids["person_two"]),
+            key=lambda value: value.bytes,
+        )
+        db.add(
+            PersonRelationship(
+                id=ids["person_relationship"],
+                user_id=owner_id,
+                person_low_id=low_id,
+                person_high_id=high_id,
+                relationship_kind=PersonRelationshipKind.FRIEND,
+                note="private relationship note",
                 revision=0,
             )
         )
@@ -476,6 +501,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert retry.json()["completed"] is True
     assert retry.json()["deleted_counts"]["memory_edits"] == 1
     assert retry.json()["deleted_counts"]["place_name_corrections"] == 1
+    assert retry.json()["deleted_counts"]["person_relationships"] == 1
     assert retry.json()["deleted_counts"]["person_memory_links"] == 1
     assert retry.json()["deleted_counts"]["person_aliases"] == 1
     assert retry.json()["deleted_counts"]["persons"] == 1
@@ -496,6 +522,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
             .select_from(LocationIngestReceipt)
             .where(LocationIngestReceipt.user_id == owner_id)
         ) == 0
+        assert _count_for_user(db, PersonRelationship, owner_id) == 0
         assert _count_for_user(db, PersonMemoryLink, owner_id) == 0
         assert _count_for_user(db, Person, owner_id) == 0
         assert _count_for_user(db, PersonAlias, owner_id) == 0
@@ -531,6 +558,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert body["memory_sources"] == []
     assert body["memory_edits"] == []
     assert body["people"] == []
+    assert body["person_relationships"] == []
     assert body["person_memory_links"] == []
     assert body["objects"] == []
     assert body["object_locations"] == []
