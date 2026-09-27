@@ -20,6 +20,7 @@ backup_path="$BACKUP_DIR/jiyidashi-$timestamp.dump"
 tmp_path="$backup_path.tmp"
 trap 'rm -f "$tmp_path"' EXIT
 
+export ENV_FILE
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 # Password stays inside the postgres container environment; no secret is expanded
