@@ -92,29 +92,41 @@ def _load_center(
 ):
     if kind == GraphNodeKind.PERSON:
         center = db.scalar(
-            select(Person).where(Person.id == entity_id, Person.user_id == user_id)
+            select(Person)
+            .where(Person.id == entity_id, Person.user_id == user_id)
+            .with_for_update(read=True)
         )
     elif kind == GraphNodeKind.PLACE:
         center = db.scalar(
-            select(Place).where(Place.id == entity_id, Place.user_id == user_id)
+            select(Place)
+            .where(Place.id == entity_id, Place.user_id == user_id)
+            .with_for_update(read=True)
         )
     elif kind == GraphNodeKind.OBJECT:
         center = db.scalar(
-            select(ObjectItem).where(
+            select(ObjectItem)
+            .where(
                 ObjectItem.id == entity_id,
                 ObjectItem.user_id == user_id,
             )
+            .with_for_update(read=True)
         )
     else:
         center = db.scalar(
-            select(Memory).where(
+            select(Memory)
+            .where(
                 Memory.id == entity_id,
                 Memory.user_id == user_id,
                 Memory.memory_type == MemoryType.EVENT,
                 Memory.is_deleted.is_(False),
                 Memory.is_confirmed.is_(True),
             )
+            .with_for_update(read=True)
         )
+    # V2-004 center authority is held with FOR SHARE for the lifetime of the
+    # projection transaction. Writers that delete or invalidate the center use
+    # FOR UPDATE, so edges and the center DTO cannot be assembled from opposite
+    # sides of a committed authority transition under READ COMMITTED.
     if center is None:
         raise GraphProjectionError("GRAPH_NODE_NOT_FOUND")
     return center
