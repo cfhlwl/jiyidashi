@@ -15,7 +15,8 @@ mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 manifest="$STATE_DIR/$EXPECTED_SHA.image-id"
 lock_dir="$STATE_DIR/$EXPECTED_SHA.lock"
-candidate="$IMAGE_REF-candidate-$$"
+candidate="$IMAGE_REF-candidate-$"
+build_root=""
 
 if ! mkdir "$lock_dir" 2>/dev/null; then
   echo "release image preparation already in progress for $EXPECTED_SHA" >&2
@@ -24,16 +25,32 @@ fi
 
 cleanup() {
   docker image rm "$candidate" >/dev/null 2>&1 || true
+  if [[ -n "$build_root" ]]; then
+    rm -rf "$build_root"
+  fi
   rmdir "$lock_dir" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 build_candidate() {
+  build_root="$(mktemp -d "${TMPDIR:-/tmp}/jiyidashi-release-tree.XXXXXX")"
+
+  # Build only from the reviewed Git object tree. Workstation files that are
+  # untracked or ignored by Git never enter the Docker build context.
+  git -C "$ROOT_DIR" archive --format=tar "$EXPECTED_SHA" backend \
+    | tar -xf - -C "$build_root"
+
+  test -f "$build_root/backend/Dockerfile"
+  test -f "$build_root/backend/requirements.production.lock"
+
   docker build \
-    --file "$ROOT_DIR/backend/Dockerfile" \
+    --file "$build_root/backend/Dockerfile" \
     --build-arg "RELEASE_SHA=$EXPECTED_SHA" \
     --tag "$candidate" \
-    "$ROOT_DIR/backend"
+    "$build_root/backend"
+
+  rm -rf "$build_root"
+  build_root=""
 }
 
 if [[ -f "$manifest" ]]; then
