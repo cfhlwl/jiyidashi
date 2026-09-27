@@ -16,6 +16,7 @@ from app.data_deletion_models import (
     DataDeletionStatus,
 )
 from app.idempotency_models import ClientMutation
+from app.life_event_models import LifeEvent, LifeEventKind, LifeEventMemoryLink
 from app.main import app
 from app.media_models import (
     MediaASRClaim,
@@ -109,6 +110,8 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
         "place_name_correction": uuid4(),
         "memory": uuid4(),
         "memory_edit": uuid4(),
+        "life_event": uuid4(),
+        "life_event_memory_link": uuid4(),
         "source": uuid4(),
         "location_point": uuid4(),
         "visit": uuid4(),
@@ -200,6 +203,26 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
                 changed_title=True,
                 changed_content=True,
                 memory_source_id=ids["source"],
+            )
+        )
+        db.add(
+            LifeEvent(
+                id=ids["life_event"],
+                user_id=owner_id,
+                event_kind=LifeEventKind.TRAVEL,
+                title="待删除人生事件",
+                note="private life event",
+                started_at=now,
+                place_id=ids["place"],
+                revision=0,
+            )
+        )
+        db.add(
+            LifeEventMemoryLink(
+                id=ids["life_event_memory_link"],
+                user_id=owner_id,
+                life_event_id=ids["life_event"],
+                memory_id=ids["memory"],
             )
         )
         db.add(
@@ -500,6 +523,8 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert retry.json()["status"] == "COMPLETED"
     assert retry.json()["completed"] is True
     assert retry.json()["deleted_counts"]["memory_edits"] == 1
+    assert retry.json()["deleted_counts"]["life_event_memory_links"] == 1
+    assert retry.json()["deleted_counts"]["life_events"] == 1
     assert retry.json()["deleted_counts"]["place_name_corrections"] == 1
     assert retry.json()["deleted_counts"]["person_relationships"] == 1
     assert retry.json()["deleted_counts"]["person_memory_links"] == 1
@@ -515,6 +540,8 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
         assert _count_for_user(db, PlaceNameCorrection, owner_id) == 0
         assert _count_for_user(db, Visit, owner_id) == 0
         assert _count_for_user(db, Memory, owner_id) == 0
+        assert _count_for_user(db, LifeEventMemoryLink, owner_id) == 0
+        assert _count_for_user(db, LifeEvent, owner_id) == 0
         assert _count_for_user(db, LocationPoint, owner_id) == 0
         assert db.get(LocationDerivationState, owner_id) is None
         assert db.scalar(

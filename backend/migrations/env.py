@@ -12,6 +12,7 @@ from app import (  # noqa: F401
     embedding_models,
     family_models,
     idempotency_models,
+    life_event_models,
     media_models,
     memory_feedback_models,
     models,

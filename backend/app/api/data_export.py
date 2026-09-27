@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.deps import get_current_user_id
+from app.life_event_models import LifeEvent, LifeEventMemoryLink
 from app.media_models import MediaAsset, MediaEvidenceLink
 from app.models import (
     LocationDerivationState,
@@ -195,6 +196,30 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
         )
         .order_by(PersonMemoryLink.created_at, PersonMemoryLink.id),
         "person_memory_links",
+    )
+
+    life_events = _bounded_scalars(
+        db,
+        select(LifeEvent)
+        .where(LifeEvent.user_id == user_id)
+        .order_by(LifeEvent.started_at, LifeEvent.id),
+        "life_events",
+    )
+    life_event_memory_links = _bounded_scalars(
+        db,
+        select(LifeEventMemoryLink)
+        .join(
+            Memory,
+            (Memory.id == LifeEventMemoryLink.memory_id)
+            & (Memory.user_id == LifeEventMemoryLink.user_id),
+        )
+        .where(
+            LifeEventMemoryLink.user_id == user_id,
+            Memory.is_deleted.is_(False),
+            Memory.is_confirmed.is_(True),
+        )
+        .order_by(LifeEventMemoryLink.created_at, LifeEventMemoryLink.id),
+        "life_event_memory_links",
     )
 
     objects = _bounded_scalars(
@@ -382,6 +407,31 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 "updated_at": link.updated_at,
             }
             for link in person_memory_links
+        ],
+        "life_events": [
+            {
+                "id": event.id,
+                "event_kind": event.event_kind.value,
+                "title": event.title,
+                "custom_label": event.custom_label,
+                "note": event.note,
+                "started_at": event.started_at,
+                "ended_at": event.ended_at,
+                "place_id": event.place_id,
+                "revision": event.revision,
+                "created_at": event.created_at,
+                "updated_at": event.updated_at,
+            }
+            for event in life_events
+        ],
+        "life_event_memory_links": [
+            {
+                "id": link.id,
+                "life_event_id": link.life_event_id,
+                "memory_id": link.memory_id,
+                "created_at": link.created_at,
+            }
+            for link in life_event_memory_links
         ],
         "objects": [
             {

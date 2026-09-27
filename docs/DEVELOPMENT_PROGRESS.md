@@ -1,4 +1,4 @@
-<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
+| Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- I：Memory Edit / PR #27 已完成正式复审并合并 main=24901d76；S1-018 转 ✅。J：Data Delete / PR #28 随后基于该新 main 完成 MemoryEdit 删除适配、0008 migration 顺延、单提交 clean replay 与 exact-head CI，并合并 main=3abc1366；S1-021 / SEC-007 转 ✅。 -->
@@ -286,8 +286,8 @@
 | Mini V2-A | 小程序 People Center V1 | ✅ | Issue #138 / PR #139：explicit Person CRUD + aliases 已正式审查并合并；merge `a18799d7bf023503323387b70897cdf304857754` |
 | Mini V2-B | 小程序 Person Memory Timeline V1 | ✅ | Issue #140 / PR #141：explicit RELATED/MET links、关联已有记忆与 backend-authoritative 最近互动已正式审查并合并；merge `284b0ae98e09499d4131dd3e386ef2307f903eb6` |
 | Mini V2-C | 小程序 Person Relationships V1 | ✅ | Issue #142 / PR #143：explicit direct Person↔Person relationship CRUD、OTHER/custom_label contract、field-aware conflict rebase 已正式审查并合并；merge `feb766d7ac78eb87436857d3b69138789ba1bd63` |
-| Mini V2-D | 小程序 Unified Graph Neighborhood V1 | 🟠 | Issue #144：trusted read-only one-hop PERSON/PLACE/OBJECT/EVENT projection 已实现并进入 exact-head 验证；等待正式审查/合并，合并前不标记 ✅ |
-| V2-005 | 人生事件模型 | ⬜ | 旅行、就医、聚会、工作等 |
+| Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop PERSON/PLACE/OBJECT/EVENT projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |
+| V2-005 | Life Event Foundation V1 | 🟠 | Issue #146 / PR #147：独立 LifeEvent authority、显式 CRUD、owner-safe Place、confirmed-Memory evidence、export/delete lifecycle 与 PostgreSQL race/migration gates 已实现；等待正式审查/合并，合并前不标记 ✅ |
 | V2-006 | 人生阶段 | ⬜ | 工作、家庭、旅行等长期阶段 |
 | V2-007 | 长期记忆推理 | ⬜ | 必须有证据链，不允许模型脑补 |
 | V2-008 | “我认识某人多久了” | ⬜ | 基于最早 Evidence 回答 |

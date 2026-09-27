@@ -11,6 +11,7 @@ from app.account_deletion_models import AccountDeletionOperation
 from app.auth_models import AuthIdentity, AuthRateLimitBucket
 from app.core.db import SessionLocal
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
+from app.life_event_models import LifeEvent, LifeEventKind, LifeEventMemoryLink
 from app.main import app
 from app.models import Memory, User
 from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
@@ -223,6 +224,21 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
             revision=0,
         )
         db.add(link)
+        life_event = LifeEvent(
+            user_id=user_id,
+            event_kind=LifeEventKind.FAMILY,
+            title="注销人生事件",
+            started_at=datetime.now(UTC),
+            revision=0,
+        )
+        db.add(life_event)
+        db.flush()
+        life_event_link = LifeEventMemoryLink(
+            user_id=user_id,
+            life_event_id=life_event.id,
+            memory_id=memory.id,
+        )
+        db.add(life_event_link)
         low_id, high_id = sorted(
             (person.id, person_two.id),
             key=lambda value: value.bytes,
@@ -242,6 +258,8 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
         alias_id = alias.id
         link_id = link.id
         relationship_id = relationship.id
+        life_event_id = life_event.id
+        life_event_link_id = life_event_link.id
 
     request_id = uuid4()
     deleted = await client.post(
@@ -266,6 +284,8 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
         assert db.get(PersonAlias, alias_id) is None
         assert db.get(PersonMemoryLink, link_id) is None
         assert db.get(PersonRelationship, relationship_id) is None
+        assert db.get(LifeEventMemoryLink, life_event_link_id) is None
+        assert db.get(LifeEvent, life_event_id) is None
         assert db.scalar(
             select(AuthIdentity.id).where(AuthIdentity.user_id == user_id)
         ) is None
