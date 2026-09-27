@@ -35,3 +35,5 @@ Thumbs.db
 *.p12
 .env.*
 !.env.example
+!.env.production.example
+backups/
