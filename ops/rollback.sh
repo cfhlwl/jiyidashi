@@ -32,11 +32,11 @@ python3 "$ROOT_DIR/ops/validate-production-runtime.py" "$ENV_FILE"
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 # Rollback changes only the application image. It never runs alembic downgrade
-# and never performs an automatic database restore.
-if ! docker image inspect "$BACKEND_IMAGE" >/dev/null 2>&1; then
-  docker pull "$BACKEND_IMAGE"
-fi
-bash "$ROOT_DIR/ops/verify-image-identity.sh" "$BACKEND_IMAGE" "$ROLLBACK_SHA"
+# and never performs an automatic database restore. Rollback is intentionally
+# local-artifact-only: resolving a mutable registry tag could silently replace
+# the reviewed image for the same Git SHA.
+RELEASE_IMAGE_STATE_DIR="${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}" \
+  bash "$ROOT_DIR/ops/verify-recorded-release-image.sh" "$BACKEND_IMAGE" "$ROLLBACK_SHA"
 
 "${compose[@]}" up -d --no-deps api
 
