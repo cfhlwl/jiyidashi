@@ -25,7 +25,10 @@ if [[ ! "$API_BASE_URL" =~ ^https:// ]]; then
   exit 2
 fi
 
+export ENV_FILE
+export RELEASE_SHA="$ROLLBACK_SHA"
 export BACKEND_IMAGE="$IMAGE_REPOSITORY:$ROLLBACK_SHA"
+python3 "$ROOT_DIR/ops/validate-production-runtime.py" "$ENV_FILE"
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 # Rollback changes only the application image. It never runs alembic downgrade
@@ -33,6 +36,7 @@ compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 if ! docker image inspect "$BACKEND_IMAGE" >/dev/null 2>&1; then
   docker pull "$BACKEND_IMAGE"
 fi
+bash "$ROOT_DIR/ops/verify-image-identity.sh" "$BACKEND_IMAGE" "$ROLLBACK_SHA"
 
 "${compose[@]}" up -d --no-deps api
 
