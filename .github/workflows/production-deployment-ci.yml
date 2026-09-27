@@ -182,11 +182,54 @@ jobs:
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             config --quiet
 
-      - name: Build production backend image from frozen dependencies
+      - name: Prepare immutable production backend image
+        shell: bash
         run: |
-          docker build             --file backend/Dockerfile             --build-arg "RELEASE_SHA=$EXPECTED_SHA"             --tag "$BACKEND_IMAGE"             backend
+          export RELEASE_IMAGE_STATE_DIR="$RUNNER_TEMP/release-images"
+          bash ops/prepare-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
           docker inspect "$BACKEND_IMAGE" --format '{{.Config.User}}' | grep -qx 'app'
-          bash ops/verify-image-identity.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
+          bash ops/verify-recorded-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
+          cp "$RELEASE_IMAGE_STATE_DIR/$EXPECTED_SHA.image-id" "$RUNNER_TEMP/reviewed-image-id.txt"
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Reject silent same-SHA image replacement
+        shell: bash
+        run: |
+          export RELEASE_IMAGE_STATE_DIR="$RUNNER_TEMP/release-images"
+          reviewed_id="$(cat "$RUNNER_TEMP/reviewed-image-id.txt")"
+
+          cat > "$RUNNER_TEMP/replacement.Dockerfile" <<'EOF'
+          FROM scratch
+          ARG RELEASE_SHA
+          LABEL org.opencontainers.image.revision="$RELEASE_SHA"
+          COPY replacement.txt /replacement.txt
+          EOF
+          printf 'different artifact for same sha\n' > "$RUNNER_TEMP/replacement.txt"
+          docker build \
+            --file "$RUNNER_TEMP/replacement.Dockerfile" \
+            --build-arg "RELEASE_SHA=$EXPECTED_SHA" \
+            --tag "$BACKEND_IMAGE" \
+            "$RUNNER_TEMP"
+
+          replacement_id="$(docker image inspect "$BACKEND_IMAGE" --format '{{.Id}}')"
+          test "$replacement_id" != "$reviewed_id"
+
+          if bash ops/verify-recorded-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"; then
+            echo "same-SHA replacement unexpectedly passed immutable image record" >&2
+            exit 1
+          fi
+
+          if bash ops/prepare-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"; then
+            echo "prepare-release-image unexpectedly adopted a replaced same-SHA tag" >&2
+            exit 1
+          fi
+
+          docker image rm "$BACKEND_IMAGE" >/dev/null 2>&1 || true
+          bash ops/prepare-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
+          recovered_id="$(docker image inspect "$BACKEND_IMAGE" --format '{{.Id}}')"
+          test "$recovered_id" = "$reviewed_id"
+          bash ops/verify-recorded-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
