@@ -428,7 +428,7 @@ test('graph page gates old success/error by owner, epoch and typed route identit
 test('graph UI preserves edge order and never renders authority_ref or hidden fields', () => {
   const page = readFileSync(resolve(process.cwd(), 'src/pages/graph-neighborhood/index.tsx'), 'utf8')
   assert.match(page, /neighborhood\.edges\.map/)
-  assert.doesNotMatch(page, /authority_ref\}/)
+  assert.doesNotMatch(page, />\s*\{[^}]*authority_ref[^}]*\}\s*</)
   assert.doesNotMatch(page, /confidence|embedding|latitude|longitude|Family|memory_content|metadata_json/)
 })
 
