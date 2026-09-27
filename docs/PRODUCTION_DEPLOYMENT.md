@@ -82,7 +82,7 @@ jiyidashi-backend:<40-char-git-sha>
 
 The production Dockerfile:
 
-- uses Python 3.12;
+- pins the exact Python 3.12 slim-bookworm base-image digest;
 - installs the complete exact-version `backend/requirements.production.lock`;
 - does not resolve `pyproject.toml` version ranges during an image build;
 - validates the installed frozen graph with `pip check`;
@@ -132,10 +132,17 @@ are brought up and backed up before migration.
 A migration failure stops the release before the new API starts.
 
 The Git SHA tag is a human release coordinate, while the Docker `sha256` image ID is the exact
-built artifact identity. Release logs must retain both. Rollback validates that the selected
-image carries the expected OCI git revision and a real `sha256` image ID.
+built artifact identity. On first preparation of a SHA, `ops/prepare-release-image.sh` records
+the exact image ID under `.ops-state/release-images/<sha>.image-id`. A later deployment of the
+same SHA may reuse that exact local image, or rebuild only to recover the exact recorded image ID;
+a different image for the same SHA fails closed instead of being adopted silently.
 
-For registry-backed deployment, push the reviewed immutable image through your normal registry credentials after build and before remote rollout. Do not reuse mutable `latest` as the rollback identity.
+Rollback is intentionally local-artifact-only in OPS-001: it requires that recorded SHA→image-ID
+mapping and will not pull a mutable registry tag during rollback. If release images are moved to a
+registry later, that flow must use a registry digest (for example `repo@sha256:...`) as the
+authoritative artifact identity rather than trusting a mutable SHA tag.
+
+Do not reuse mutable `latest` as a release or rollback identity.
 
 ## HTTPS / reverse proxy
 
@@ -270,7 +277,8 @@ Before production acceptance:
 - custom `ENV_FILE` with no default env file present;
 - exact production dependency lock parity;
 - untracked source rejection;
-- production Docker image build + OCI revision + `sha256` image identity;
+- production Docker image build + pinned base digest + OCI revision + recorded `sha256` image identity;
+- same-SHA/different-image replacement is rejected and cannot be silently adopted;
 - Compose render;
 - Caddy static validation;
 - disposable pgvector PostgreSQL;
