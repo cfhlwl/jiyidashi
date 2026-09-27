@@ -435,6 +435,11 @@ export function candidatePeopleForRelationship(
   currentPersonId: string,
 ): PersonRead[] {
   if (!isUuid(currentPersonId)) throw new Error('人物参数无效')
+  // V2-A owns the shared Person parser. V2-C additionally requires exact UUID
+  // endpoint identity before any row can become selectable relationship authority.
+  if (people.some((person) => !isUuid(person.id))) {
+    return invalidRelationshipResponse()
+  }
   return people.filter((person) => person.id.toLowerCase() !== currentPersonId.toLowerCase())
 }
 
