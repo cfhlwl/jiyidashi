@@ -36,6 +36,8 @@
     "src/services/elderFindThings.ts",
     "tests/elderFindThings.test.ts",
     "src/services/people.ts",
-    "tests/people.test.ts"
+    "tests/people.test.ts",
+    "src/services/personMemories.ts",
+    "tests/personMemories.test.ts"
   ]
 }

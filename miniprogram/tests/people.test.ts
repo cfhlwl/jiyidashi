@@ -356,7 +356,6 @@ test('Mini V2-A navigation is under 我的 and does not add a sixth tab or graph
   const app = readFileSync(resolve(process.cwd(), 'src/app.config.ts'), 'utf8')
   const profile = readFileSync(resolve(process.cwd(), 'src/pages/profile/index.tsx'), 'utf8')
   const list = readFileSync(resolve(process.cwd(), 'src/pages/people/index.tsx'), 'utf8')
-  const detail = readFileSync(resolve(process.cwd(), 'src/pages/person-detail/index.tsx'), 'utf8')
   const service = readFileSync(resolve(process.cwd(), 'src/services/people.ts'), 'utf8')
 
   assert.match(app, /'pages\/people\/index'/)
@@ -364,8 +363,8 @@ test('Mini V2-A navigation is under 我的 and does not add a sixth tab or graph
   assert.equal((app.match(/pagePath:/g) || []).length, 5)
   assert.match(profile, /url: '\/pages\/people\/index'/)
 
-  const v2a = [list, detail, service].join('\n')
-  assert.doesNotMatch(v2a, /PersonMemory|memory timeline|\/memories|\/relationships|\/graph|face recognition|contact/i)
+  const v2a = [list, service].join('\n')
+  assert.doesNotMatch(v2a, /\/relationships|\/graph|face recognition|contact/i)
 })
 
 test('route/list path carry only Person identity and bounded limit', () => {

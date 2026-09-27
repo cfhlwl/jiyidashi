@@ -74,6 +74,22 @@ import {
   type SafeRequestOptions,
 } from './memoryFeedback'
 import {
+  buildMemoryPickerPath,
+  buildPersonInteractionsPath,
+  buildPersonMemoryCreatePayload,
+  buildPersonMemoryLinkPath,
+  buildPersonMemoryTimelinePath,
+  parseMemoryPickerRows,
+  parsePersonInteractions,
+  parsePersonMemoryLink,
+  parsePersonMemoryTimeline,
+  type PersonInteractionRow,
+  type PersonMemoryLinkPatchPayload,
+  type PersonMemoryLinkRead,
+  type PersonMemoryRelationKind,
+  type PersonMemoryTimelineRow,
+} from './personMemories'
+import {
   buildPeoplePath,
   parsePersonList,
   parsePersonRead,
@@ -499,6 +515,73 @@ export async function patchPerson(
 export async function deletePerson(personId: string): Promise<void> {
   return guardedPeopleRequest(async () => {
     await request<void>('DELETE', `/people/${encodeURIComponent(personId)}`)
+  })
+}
+
+
+export async function listPersonMemoryTimeline(
+  personId: string,
+  limit = 50,
+): Promise<PersonMemoryTimelineRow[]> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>('GET', buildPersonMemoryTimelinePath(personId, limit))
+    return parsePersonMemoryTimeline(raw, personId, limit)
+  })
+}
+
+export async function createPersonMemoryLink(
+  personId: string,
+  memoryId: string,
+  relationKind: PersonMemoryRelationKind,
+): Promise<PersonMemoryLinkRead> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>(
+      'POST',
+      buildPersonMemoryLinkPath(personId, memoryId),
+      buildPersonMemoryCreatePayload(relationKind),
+    )
+    return parsePersonMemoryLink(raw, personId, memoryId)
+  })
+}
+
+export async function patchPersonMemoryLink(
+  personId: string,
+  memoryId: string,
+  payload: PersonMemoryLinkPatchPayload,
+): Promise<PersonMemoryLinkRead> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>(
+      'PATCH',
+      buildPersonMemoryLinkPath(personId, memoryId),
+      payload,
+    )
+    return parsePersonMemoryLink(raw, personId, memoryId)
+  })
+}
+
+export async function deletePersonMemoryLink(
+  personId: string,
+  memoryId: string,
+): Promise<void> {
+  return guardedPeopleRequest(async () => {
+    await request<void>('DELETE', buildPersonMemoryLinkPath(personId, memoryId))
+  })
+}
+
+export async function listMemoryPickerRows(
+  currentOwner: string,
+  limit = 50,
+): Promise<MemoryRead[]> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>('GET', buildMemoryPickerPath(limit))
+    return parseMemoryPickerRows(raw, currentOwner, limit)
+  })
+}
+
+export async function listPersonInteractions(limit = 20): Promise<PersonInteractionRow[]> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>('GET', buildPersonInteractionsPath(limit))
+    return parsePersonInteractions(raw, limit)
   })
 }
 

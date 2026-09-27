@@ -14,6 +14,7 @@ import {
   subscribeElderMode,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import PersonMemorySection from '../../components/personMemories/PersonMemorySection'
 import {
   buildPersonPatchPayload,
   hasPersonPatchChanges,
@@ -452,6 +453,8 @@ export default function Page() {
           </View>
         </View>
       )}
+
+      {phase === 'ready' && detail && !editing && <PersonMemorySection personId={personId} />}
 
       {status && phase !== 'error' && <View className='status'>{status}</View>}
     </View>

@@ -13,6 +13,7 @@ import {
   subscribeElderMode,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import RecentPersonInteractions from '../../components/personMemories/RecentPersonInteractions'
 import {
   boundedAliasSummary,
   buildPersonCreatePayload,
@@ -43,6 +44,7 @@ export default function Page() {
   const [aliasInput, setAliasInput] = useState('')
   const [creating, setCreating] = useState(false)
   const [elderMode, setElderMode] = useState(currentElderModeEnabled)
+  const [interactionsRefreshKey, setInteractionsRefreshKey] = useState(0)
   const authority = useRef(new PeopleUiAuthority())
   const authSubscriptionReady = useRef(false)
 
@@ -107,6 +109,7 @@ export default function Page() {
 
   useDidShow(() => {
     void loadPeople()
+    setInteractionsRefreshKey((current) => current + 1)
   })
 
   const addAlias = () => {
@@ -206,6 +209,8 @@ export default function Page() {
 
       {phase === 'ready' && (
         <>
+          <RecentPersonInteractions refreshKey={interactionsRefreshKey} />
+
           <View className='people-actions'>
             <Button
               className='primary-button'

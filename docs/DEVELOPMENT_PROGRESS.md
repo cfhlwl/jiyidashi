@@ -283,7 +283,8 @@
 | V2-002 | 人物相关记忆 | ✅ | Issue #130 / PR #131：explicit evidence-bound Person↔Memory Links V1 已正式审查并合并；merge `6b061b9cee51c00df88bbdb3832c4d35e133c5e5` |
 | V2-003 | 人物关系图谱 | ✅ | Issue #132 / PR #133：explicit owner-maintained Person↔Person direct edges 已正式审查并合并；merge `c7b2fb6e5899c54e2f3e538786ed0185295754d5` |
 | V2-004 | Place / Person / Object / Event 统一图谱 | ✅ | Issue #134 / PR #135：trusted read-only Unified Memory Graph V1 已正式审查并合并；merge `ef98cabae96537958a1306f52e7ea3caad0d4c3a` |
-| Mini V2-A | 小程序 People Center V1 | 🟠 | Issue #138：explicit Person CRUD + aliases 已进入实现/exact-head 验证完成后的正式审查等待态；合并前不标记 ✅ |
+| Mini V2-A | 小程序 People Center V1 | ✅ | Issue #138 / PR #139：explicit Person CRUD + aliases 已正式审查并合并；merge `a18799d7bf023503323387b70897cdf304857754` |
+| Mini V2-B | 小程序 Person Memory Timeline V1 | 🟠 | Issue #140：explicit RELATED/MET links、关联已有记忆与 backend-authoritative 最近互动已实现；等待正式审查/合并，合并前不标记 ✅ |
 | V2-005 | 人生事件模型 | ⬜ | 旅行、就医、聚会、工作等 |
 | V2-006 | 人生阶段 | ⬜ | 工作、家庭、旅行等长期阶段 |
 | V2-007 | 长期记忆推理 | ⬜ | 必须有证据链，不允许模型脑补 |
