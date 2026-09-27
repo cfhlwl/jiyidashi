@@ -1,0 +1,223 @@
+name: production-deployment-ci
+
+on:
+  pull_request:
+    paths:
+      - "backend/Dockerfile"
+      - "backend/.dockerignore"
+      - "backend/.env.example"
+      - "backend/.env.production.example"
+      - "backend/pyproject.toml"
+      - "backend/app/core/config.py"
+      - "backend/migrations/**"
+      - "docker-compose.prod.yml"
+      - "ops/**"
+      - "docs/PRODUCTION_DEPLOYMENT.md"
+      - ".github/workflows/production-deployment-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/Dockerfile"
+      - "backend/.dockerignore"
+      - "backend/.env.example"
+      - "backend/.env.production.example"
+      - "backend/pyproject.toml"
+      - "backend/app/core/config.py"
+      - "backend/migrations/**"
+      - "docker-compose.prod.yml"
+      - "ops/**"
+      - "docs/PRODUCTION_DEPLOYMENT.md"
+      - ".github/workflows/production-deployment-ci.yml"
+
+jobs:
+  deployment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pull requests must validate the exact head, never GitHub's temporary merge ref.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+          echo "BACKEND_IMAGE=jiyidashi-backend:$EXPECTED_SHA" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate committed production contract
+        run: python3 ops/validate-production-config.py
+
+      - name: Create CI-only production environment
+        shell: bash
+        run: |
+          cat > backend/.env.production <<'EOF'
+          APP_ENV=production
+          APP_NAME=JiYiDashi CI
+          DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/jiyi_prod_ci
+          JWT_SECRET=ci-only-jwt-secret-that-is-longer-than-thirty-two-bytes
+          JWT_ALGORITHM=HS256
+          ACCESS_TOKEN_MINUTES=60
+          ENABLE_DEV_AUTH=false
+          AUTO_CREATE_SCHEMA=false
+          CORS_ORIGINS=[]
+
+          POSTGRES_DB=jiyi_prod_ci
+          POSTGRES_USER=jiyi
+          POSTGRES_PASSWORD=ci-postgres-password
+          API_DOMAIN=api.example.test
+          ACME_EMAIL=ops@example.test
+          WEB_CONCURRENCY=1
+
+          AUTH_RATE_LIMIT_ENABLED=true
+          AUTH_REGISTER_IP_LIMIT=20
+          AUTH_REGISTER_WINDOW_SECONDS=600
+          AUTH_LOGIN_IP_LIMIT=30
+          AUTH_LOGIN_ACCOUNT_IP_LIMIT=8
+          AUTH_LOGIN_WINDOW_SECONDS=900
+          AUTH_LOGIN_BACKOFF_AFTER_FAILURES=3
+          AUTH_LOGIN_BACKOFF_MAX_SECONDS=60
+
+          STORAGE_BACKEND=disabled
+          STORAGE_BUCKET=
+          STORAGE_REGION=
+          STORAGE_ENDPOINT_URL=
+          STORAGE_ACCESS_KEY_ID=
+          STORAGE_SECRET_ACCESS_KEY=
+          STORAGE_ADDRESSING_STYLE=virtual
+          STORAGE_OBJECT_PREFIX=media
+          STORAGE_PRESIGN_TTL_SECONDS=600
+          STORAGE_DELETE_SETTLE_SECONDS=30
+          MEDIA_MAX_IMAGE_BYTES=20971520
+          MEDIA_MAX_AUDIO_BYTES=10485760
+
+          ASR_PROVIDER=disabled
+          ASR_BASE_URL=https://api.openai.com/v1
+          ASR_API_KEY=
+          ASR_MODEL=gpt-4o-mini-transcribe
+          ASR_TIMEOUT_SECONDS=30
+          ASR_MIN_CONFIDENCE=0.60
+
+          AI_PROVIDER=disabled
+          AI_BASE_URL=https://api.openai.com/v1
+          AI_API_KEY=
+          AI_MODEL=
+          AI_TIMEOUT_SECONDS=30
+          AI_MAX_INPUT_CHARS=64000
+          AI_MAX_OUTPUT_TOKENS=4096
+
+          EMBEDDING_PROVIDER=disabled
+          EMBEDDING_BASE_URL=https://api.openai.com/v1
+          EMBEDDING_API_KEY=
+          EMBEDDING_MODEL=text-embedding-3-small
+          EMBEDDING_DIMENSIONS=1536
+          EMBEDDING_TIMEOUT_SECONDS=30
+          EMBEDDING_MAX_INPUT_CHARS=12000
+
+          LOCATION_VISIT_RADIUS_M=120
+          LOCATION_VISIT_MAX_GAP_SECONDS=1800
+          LOCATION_VISIT_MIN_DURATION_SECONDS=300
+          LOCATION_VISIT_MIN_POINTS=2
+          LOCATION_LATE_ARRIVAL_GRACE_SECONDS=86400
+          LOCATION_RAW_RETENTION_DAYS=30
+          LOCATION_FUTURE_SKEW_SECONDS=300
+          LOCATION_PLACE_GEOHASH_PRECISION=7
+          EOF
+          chmod 600 backend/.env.production
+
+      - name: Render production Compose
+        run: |
+          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             config --quiet
+
+      - name: Build production backend image
+        run: |
+          docker build             --file backend/Dockerfile             --tag "$BACKEND_IMAGE"             backend
+          docker inspect "$BACKEND_IMAGE" --format '{{.Config.User}}' | grep -qx 'app'
+
+      - name: Validate Caddy configuration
+        run: |
+          docker run --rm             -e API_DOMAIN=api.example.test             -e ACME_EMAIL=ops@example.test             -v "$PWD/ops/Caddyfile:/etc/caddy/Caddyfile:ro"             caddy:2.8.4-alpine             caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Start disposable PostgreSQL
+        run: |
+          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             up -d postgres
+
+          for i in $(seq 1 60); do
+            if docker compose               --env-file backend/.env.production               -f docker-compose.prod.yml               exec -T postgres sh -ceu               'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Run one-shot Alembic migration
+        run: |
+          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             run --rm migrate
+
+      - name: Verify no schema drift
+        run: |
+          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             run --rm --no-deps api alembic check
+
+      - name: Start production API and verify health
+        run: |
+          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             up -d --no-deps api
+
+          for i in $(seq 1 60); do
+            if docker compose               --env-file backend/.env.production               -f docker-compose.prod.yml               exec -T api python -c               "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"               >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Production dev-auth fails closed
+        shell: bash
+        run: |
+          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             exec -T api python - <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+
+          request = urllib.request.Request(
+              "http://127.0.0.1:8000/v1/auth/dev-token",
+              data=json.dumps({"nickname": "ci"}).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          try:
+              urllib.request.urlopen(request, timeout=3)
+          except urllib.error.HTTPError as exc:
+              assert exc.code == 404, exc.code
+          else:
+              raise AssertionError("production dev auth unexpectedly reachable")
+          PY
+
+      - name: PostgreSQL backup and fresh restore smoke
+        shell: bash
+        run: |
+          backup_path="$(
+            ENV_FILE="$PWD/backend/.env.production"             COMPOSE_FILE="$PWD/docker-compose.prod.yml"             BACKUP_DIR="$RUNNER_TEMP/backups"             BACKUP_RETENTION_DAYS=14               bash ops/backup-postgres.sh
+          )"
+          test -s "$backup_path"
+
+          ENV_FILE="$PWD/backend/.env.production"           COMPOSE_FILE="$PWD/docker-compose.prod.yml"           RESTORE_DATABASE=jiyidashi_restore_smoke             bash ops/restore-postgres.sh "$backup_path"
+
+      - name: Show final production service state
+        if: always()
+        run: |
+          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             ps || true
+
+      - name: Tear down disposable production stack
+        if: always()
+        run: |
+          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             down -v --remove-orphans || true
