@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="${ENV_FILE:-$ROOT_DIR/backend/.env.production}"
+COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.prod.yml}"
+IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-jiyidashi-backend}"
+ROLLBACK_SHA="${1:-}"
+API_BASE_URL="${API_BASE_URL:-}"
+
+if [[ ! "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "usage: $0 <full-40-char-git-sha>" >&2
+  exit 2
+fi
+if [[ "${CONFIRM_SCHEMA_COMPATIBLE:-}" != "yes" ]]; then
+  echo "set CONFIRM_SCHEMA_COMPATIBLE=yes after confirming the current DB schema is backward-compatible" >&2
+  exit 3
+fi
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "missing production env: $ENV_FILE" >&2
+  exit 2
+fi
+if [[ ! "$API_BASE_URL" =~ ^https:// ]]; then
+  echo "API_BASE_URL=https://<API_DOMAIN> is required" >&2
+  exit 2
+fi
+
+export BACKEND_IMAGE="$IMAGE_REPOSITORY:$ROLLBACK_SHA"
+compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+
+# Rollback changes only the application image. It never runs alembic downgrade
+# and never performs an automatic database restore.
+if ! docker image inspect "$BACKEND_IMAGE" >/dev/null 2>&1; then
+  docker pull "$BACKEND_IMAGE"
+fi
+
+"${compose[@]}" up -d --no-deps api
+
+for _ in $(seq 1 60); do
+  if "${compose[@]}" exec -T api python -c     "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"     >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+
+API_BASE_URL="$API_BASE_URL" SMOKE_ACCESS_TOKEN="${SMOKE_ACCESS_TOKEN:-}" SMOKE_EMAIL="${SMOKE_EMAIL:-}" SMOKE_PASSWORD="${SMOKE_PASSWORD:-}"   bash "$ROOT_DIR/ops/smoke-production.sh"
+
+echo "application rollback accepted: $BACKEND_IMAGE"
+echo "database schema was NOT downgraded or restored"
