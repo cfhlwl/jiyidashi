@@ -58,7 +58,9 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'persons',
                           'person_aliases',
                           'person_memory_links',
-                          'person_relationships'
+                          'person_relationships',
+                          'life_events',
+                          'life_event_memory_links'
                       )
                     ORDER BY table_name, ordinal_position
                     """
