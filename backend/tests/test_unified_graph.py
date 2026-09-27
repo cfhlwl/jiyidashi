@@ -14,6 +14,7 @@ from app.models import (
     ObjectLocation,
     ObjectLocationStatus,
     Place,
+    SourceType,
 )
 from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
 from app.person_models import Person
@@ -86,6 +87,7 @@ def _seed_graph(user_id: UUID) -> dict[str, UUID]:
                 title="未确认事件",
                 content="AI inferred",
                 occurred_at=now + timedelta(minutes=1),
+                source_type=SourceType.AI_INFERENCE,
                 is_confirmed=False,
                 is_deleted=False,
             ),
@@ -240,7 +242,11 @@ async def test_person_projection_is_one_hop_trusted_and_private(client):
     assert "private-object-description" not in payload
     assert "40.123" not in payload
     assert "116.456" not in payload
-    assert "完整内容不应该从图谱接口泄漏给客户端" not in payload
+    assert "这是一个已经确认的事件，完整内容不应该从图谱接口泄漏给客户端，只允许有限标题预览。" not in payload
+    event_node = next(
+        node for node in body["nodes"] if node["id"] == str(ids["event"])
+    )
+    assert len(event_node["label"]) <= 80
 
 
 @pytest.mark.asyncio
@@ -414,24 +420,48 @@ async def test_limit_and_truncated_are_deterministic(client):
 
 
 @pytest.mark.asyncio
-async def test_full_data_delete_makes_graph_centers_disappear(client):
-    headers, user_id = await _new_user(client, "graph-data-delete")
+async def test_unconfirmed_event_center_is_not_graph_authority(client):
+    headers, user_id = await _new_user(client, "graph-unconfirmed-event")
     ids = _seed_graph(user_id)
 
-    deleted = await client.delete(
-        "/v1/data",
-        headers={**headers, "Idempotency-Key": str(uuid4())},
+    response = await client.get(
+        f"/v1/graph/neighborhood/EVENT/{ids['event_unconfirmed']}",
+        headers=headers,
     )
-    assert deleted.status_code in {200, 202}
+    assert response.status_code == 404
+    assert response.json()["detail"] == "GRAPH_NODE_NOT_FOUND"
 
-    for kind, entity_id in [
-        ("PERSON", ids["person_a"]),
-        ("PLACE", ids["place"]),
-        ("OBJECT", ids["object"]),
-        ("EVENT", ids["event"]),
-    ]:
-        response = await client.get(
-            f"/v1/graph/neighborhood/{kind}/{entity_id}",
-            headers=headers,
-        )
-        assert response.status_code == 404
+
+@pytest.mark.asyncio
+async def test_place_delete_removes_object_and_event_place_projection(client):
+    headers, user_id = await _new_user(client, "graph-place-delete")
+    ids = _seed_graph(user_id)
+
+    with SessionLocal() as db:
+        place = db.get(Place, ids["place"])
+        assert place is not None
+        db.delete(place)
+        db.commit()
+
+    missing = await client.get(
+        f"/v1/graph/neighborhood/PLACE/{ids['place']}",
+        headers=headers,
+    )
+    assert missing.status_code == 404
+
+    object_graph = await client.get(
+        f"/v1/graph/neighborhood/OBJECT/{ids['object']}",
+        headers=headers,
+    )
+    assert object_graph.status_code == 200
+    assert object_graph.json()["edges"] == []
+
+    event_graph = await client.get(
+        f"/v1/graph/neighborhood/EVENT/{ids['event']}",
+        headers=headers,
+    )
+    assert event_graph.status_code == 200
+    assert all(
+        edge["edge_kind"] != "EVENT_PLACE"
+        for edge in event_graph.json()["edges"]
+    )
