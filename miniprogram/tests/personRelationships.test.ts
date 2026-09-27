@@ -541,3 +541,20 @@ test('PATCH and conflict recovery lock edit controls until the current operation
   assert.match(editor, /disabled=\{Boolean\(mutationKey\)\}[\s\S]*?value=\{editDraft\.customLabel\}/)
   assert.match(editor, /disabled=\{Boolean\(mutationKey\)\}[\s\S]*?value=\{editDraft\.note\}/)
 })
+
+test('create POST pending locks the entire create form', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
+  const createFormStart = source.indexOf("<View className='relationship-create-form'>")
+  const createFormEnd = source.indexOf("{status && <View className='status'>", createFormStart)
+  const createForm = source.slice(createFormStart, createFormEnd)
+
+  // Kind buttons are rendered through kindButtons(), which always disables on mutationKey.
+  const kindRendererStart = source.indexOf('const kindButtons =')
+  const kindRendererEnd = source.indexOf('return (', kindRendererStart)
+  const kindRenderer = source.slice(kindRendererStart, kindRendererEnd)
+  assert.match(kindRenderer, /disabled=\{Boolean\(mutationKey\)\}/)
+
+  assert.match(createForm, /disabled=\{Boolean\(mutationKey\)\}[\s\S]*?value=\{createDraft\.customLabel\}/)
+  assert.match(createForm, /disabled=\{Boolean\(mutationKey\)\}[\s\S]*?value=\{createDraft\.note\}/)
+  assert.match(createForm, /disabled=\{createDraft\.relationshipKind === null \|\| Boolean\(mutationKey\)\}/)
+})
