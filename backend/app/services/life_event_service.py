@@ -294,15 +294,31 @@ def delete_life_event(
     db.commit()
 
 
+def _evidence_read(
+    link: LifeEventMemoryLink,
+    memory: Memory,
+) -> LifeEventMemoryEvidenceRead:
+    return LifeEventMemoryEvidenceRead(
+        link_id=link.id,
+        memory_id=memory.id,
+        memory_type=memory.memory_type,
+        title=memory.title,
+        content=memory.content,
+        occurred_at=memory.occurred_at,
+        source_type=memory.source_type,
+        created_at=link.created_at,
+    )
+
+
 def create_life_event_memory_link(
     db: Session,
     *,
     user_id: UUID,
     life_event_id: UUID,
     memory_id: UUID,
-) -> LifeEventMemoryLink:
+) -> LifeEventMemoryEvidenceRead:
     # Canonical mixed-authority lock order: Memory -> LifeEvent -> Link.
-    _load_memory_for_evidence(
+    memory = _load_memory_for_evidence(
         db,
         user_id=user_id,
         memory_id=memory_id,
@@ -326,7 +342,7 @@ def create_life_event_memory_link(
     )
     if existing is not None:
         db.commit()
-        return existing
+        return _evidence_read(existing, memory)
 
     link = LifeEventMemoryLink(
         user_id=user_id,
@@ -346,10 +362,16 @@ def create_life_event_memory_link(
             )
         )
         if current is not None:
-            return current
+            current_memory = _load_memory_for_evidence(
+                db,
+                user_id=user_id,
+                memory_id=memory_id,
+                for_update=False,
+            )
+            return _evidence_read(current, current_memory)
         raise LifeEventError("LIFE_EVENT_MEMORY_LINK_CONFLICT", 409) from exc
     db.refresh(link)
-    return link
+    return _evidence_read(link, memory)
 
 
 def list_life_event_memories(
