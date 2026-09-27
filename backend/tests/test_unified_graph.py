@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
 
 from app.core.db import SessionLocal
 from app.models import (
@@ -46,13 +45,29 @@ def _seed_graph(user_id: UUID) -> dict[str, UUID]:
         "person_note",
         "object_location",
     )}
-    low_ab, high_ab = sorted((ids["person_a"], ids["person_b"]), key=lambda value: value.bytes)
-    low_ac, high_ac = sorted((ids["person_a"], ids["person_c"]), key=lambda value: value.bytes)
+    low_ab, high_ab = sorted(
+        (ids["person_a"], ids["person_b"]),
+        key=lambda value: value.bytes,
+    )
+    low_ac, high_ac = sorted(
+        (ids["person_a"], ids["person_c"]),
+        key=lambda value: value.bytes,
+    )
 
     with SessionLocal() as db:
         db.add_all([
-            Person(id=ids["person_a"], user_id=user_id, display_name="甲", note="private-person-note"),
-            Person(id=ids["person_b"], user_id=user_id, display_name="乙", note="private-person-note-b"),
+            Person(
+                id=ids["person_a"],
+                user_id=user_id,
+                display_name="甲",
+                note="private-person-note",
+            ),
+            Person(
+                id=ids["person_b"],
+                user_id=user_id,
+                display_name="乙",
+                note="private-person-note-b",
+            ),
             Person(id=ids["person_c"], user_id=user_id, display_name="丙"),
             Place(
                 id=ids["place"],
@@ -74,7 +89,8 @@ def _seed_graph(user_id: UUID) -> dict[str, UUID]:
                 user_id=user_id,
                 memory_type=MemoryType.EVENT,
                 title=None,
-                content="这是一个已经确认的事件，完整内容不应该从图谱接口泄漏给客户端，只允许有限标题预览。",
+                content=("这是一个已经确认的事件，完整内容不应该从图谱接口泄漏给客户端，"
+                    "这里只允许有限标题预览，不能把后面的私人正文、证据细节、来源信息一起暴露。"),
                 occurred_at=now,
                 is_confirmed=True,
                 is_deleted=False,
@@ -230,7 +246,8 @@ async def test_person_projection_is_one_hop_trusted_and_private(client):
     assert ("PLACE", str(ids["place"])) not in node_keys
     assert ("OBJECT", str(ids["object"])) not in node_keys
 
-    # A NOTE link is not retyped as an EVENT edge, and the unconfirmed AI EVENT is hidden.
+    # A NOTE link is not retyped as an EVENT edge, and the unconfirmed AI
+    # EVENT is hidden.
     authority_refs = {edge["authority_ref"] for edge in body["edges"]}
     assert str(ids["person_note"]) not in authority_refs
     assert str(ids["person_unconfirmed"]) not in authority_refs
@@ -242,7 +259,10 @@ async def test_person_projection_is_one_hop_trusted_and_private(client):
     assert "private-object-description" not in payload
     assert "40.123" not in payload
     assert "116.456" not in payload
-    assert "这是一个已经确认的事件，完整内容不应该从图谱接口泄漏给客户端，只允许有限标题预览。" not in payload
+    assert (
+        "这里只允许有限标题预览，不能把后面的私人正文、证据细节、来源信息一起暴露"
+        not in payload
+    )
     event_node = next(
         node for node in body["nodes"] if node["id"] == str(ids["event"])
     )
@@ -280,7 +300,10 @@ async def test_event_and_place_projection_use_same_owner_authority(client):
     )
     assert event.status_code == 200
     body = event.json()
-    assert {edge["edge_kind"] for edge in body["edges"]} == {"PERSON_EVENT", "EVENT_PLACE"}
+    assert {edge["edge_kind"] for edge in body["edges"]} == {
+        "PERSON_EVENT",
+        "EVENT_PLACE",
+    }
     assert ("PLACE", str(ids["place"])) in {
         (node["kind"], node["id"]) for node in body["nodes"]
     }
@@ -290,7 +313,10 @@ async def test_event_and_place_projection_use_same_owner_authority(client):
         headers=headers_a,
     )
     assert cross_owner.status_code == 200
-    assert all(edge["edge_kind"] != "EVENT_PLACE" for edge in cross_owner.json()["edges"])
+    assert all(
+        edge["edge_kind"] != "EVENT_PLACE"
+        for edge in cross_owner.json()["edges"]
+    )
 
     place = await client.get(
         f"/v1/graph/neighborhood/PLACE/{ids['place']}",
