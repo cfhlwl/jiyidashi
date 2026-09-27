@@ -311,6 +311,15 @@ test('relationship UI authority binds owner, route, edge, revision and selected 
     revision: 3,
     otherPersonId: PERSON_B,
   }), false)
+  assert.equal(authority.isCurrent(snapshot, {
+    owner: OWNER,
+    sessionEpoch: 5,
+    personId: PERSON_A,
+    action: 'patch',
+    relationshipId: EDGE_A,
+    revision: 3,
+    otherPersonId: PERSON_C,
+  }), false)
   authority.invalidate()
   assert.equal(authority.isCurrent(snapshot, {
     owner: OWNER,
