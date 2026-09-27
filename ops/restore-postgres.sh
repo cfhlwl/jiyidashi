@@ -16,6 +16,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 2
 fi
 
+export ENV_FILE
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 production_db="$("${compose[@]}" exec -T postgres sh -ceu 'printf %s "$POSTGRES_DB"')"
 
