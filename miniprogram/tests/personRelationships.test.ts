@@ -518,12 +518,17 @@ test('PATCH and conflict recovery lock edit controls until the current operation
   const saveStart = source.indexOf('const saveEdit = async')
   const saveEnd = source.indexOf('const confirmDelete')
   const saveFlow = source.slice(saveStart, saveEnd)
-  const revisionBranch = saveFlow.slice(
-    saveFlow.indexOf("if (apiErrorCode(patchError) === 'PERSON_RELATIONSHIP_REVISION_CONFLICT')"),
-    saveFlow.indexOf("setStatus(personRelationshipErrorMessage"),
+  const revisionStart = saveFlow.indexOf(
+    "if (apiErrorCode(patchError) === 'PERSON_RELATIONSHIP_REVISION_CONFLICT')",
   )
-  assert.match(revisionBranch, /await recoverEditConflict\(base, editDraft\)/)
-  assert.doesNotMatch(revisionBranch, /setMutationKey\(''\)/)
+  const recoverAt = saveFlow.indexOf('await recoverEditConflict(base, editDraft)', revisionStart)
+  const returnAt = saveFlow.indexOf('return', recoverAt)
+  const genericClearAt = saveFlow.indexOf("setMutationKey('')", returnAt)
+  assert.ok(revisionStart >= 0)
+  assert.ok(recoverAt > revisionStart)
+  assert.ok(returnAt > recoverAt)
+  assert.ok(genericClearAt > returnAt)
+  assert.doesNotMatch(saveFlow.slice(revisionStart, returnAt), /setMutationKey\(''\)/)
 
   const recoveryStart = source.indexOf('const recoverEditConflict = async')
   const recoveryEnd = source.indexOf('const saveEdit = async')
