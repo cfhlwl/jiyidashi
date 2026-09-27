@@ -40,6 +40,8 @@
     "src/services/personMemories.ts",
     "tests/personMemories.test.ts",
     "src/services/personRelationships.ts",
-    "tests/personRelationships.test.ts"
+    "tests/personRelationships.test.ts",
+    "src/services/unifiedGraph.ts",
+    "tests/unifiedGraph.test.ts"
   ]
 }

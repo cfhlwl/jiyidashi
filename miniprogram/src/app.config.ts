@@ -9,6 +9,7 @@ export default defineAppConfig({
     'pages/profile/index',
     'pages/people/index',
     'pages/person-detail/index',
+    'pages/graph-neighborhood/index',
   ],
   window: {
     navigationBarTitleText: '迹忆',

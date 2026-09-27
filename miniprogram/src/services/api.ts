@@ -100,6 +100,12 @@ import {
   type PersonRelationshipRead,
 } from './personRelationships'
 import {
+  graphNeighborhoodPath,
+  parseGraphNeighborhood,
+  type GraphNeighborhood,
+  type GraphNodeKind,
+} from './unifiedGraph'
+import {
   buildPeoplePath,
   parsePersonList,
   parsePersonRead,
@@ -459,6 +465,19 @@ export async function generateAnnualTrustedSummary(
   return parseAnnualTrustedSummary(raw)
 }
 
+
+
+export async function getGraphNeighborhood(
+  kind: GraphNodeKind,
+  entityId: string,
+  limit = 50,
+): Promise<GraphNeighborhood> {
+  const raw = await request<unknown>(
+    'GET',
+    graphNeighborhoodPath(kind, entityId, limit),
+  )
+  return parseGraphNeighborhood(raw, kind, entityId, limit)
+}
 
 function createPeopleRequestSessionGuard(): () => void {
   const epoch = authSessionEpoch

@@ -1,0 +1,57 @@
+@import '../../app.scss';
+
+.graph-center-type,
+.graph-node-type {
+  color: #446a57;
+  font-weight: 600;
+}
+
+.graph-truncated {
+  margin-bottom: 20rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 16rpx;
+  background: #fff4df;
+  color: #785500;
+}
+
+.graph-neighbor-card {
+  padding: 24rpx 0;
+  border-top: 2rpx solid #eef1ef;
+}
+
+.graph-neighbor-card:first-of-type {
+  border-top: 0;
+}
+
+.graph-neighbor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 10rpx;
+}
+
+.graph-edge-label {
+  color: #66706a;
+  text-align: right;
+}
+
+.graph-neighbor-label {
+  font-size: 34rpx;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.elder-mode .graph-neighbor-label {
+  font-size: 40rpx;
+}
+
+.elder-mode .graph-truncated {
+  font-size: 34rpx;
+  line-height: 1.6;
+}
+
+.elder-mode .graph-neighbor-card .secondary-button {
+  min-height: 96rpx;
+  font-size: 34rpx;
+}

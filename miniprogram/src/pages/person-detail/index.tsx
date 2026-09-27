@@ -14,6 +14,7 @@ import {
   subscribeElderMode,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import { graphNeighborhoodRoute } from '../../services/unifiedGraph'
 import PersonMemorySection from '../../components/personMemories/PersonMemorySection'
 import PersonRelationshipsSection from '../../components/personRelationships/PersonRelationshipsSection'
 import {
@@ -363,6 +364,15 @@ export default function Page() {
           <View className='detail-actions'>
             <Button className='primary-button' disabled={saving || deleting} onClick={beginEdit}>
               编辑
+            </Button>
+            <Button
+              className='secondary-button'
+              disabled={saving || deleting}
+              onClick={() => void Taro.navigateTo({
+                url: graphNeighborhoodRoute('PERSON', detail.id),
+              })}
+            >
+              查看一跳关系
             </Button>
             <Button className='danger-button' disabled={saving || deleting} onClick={() => void confirmDelete()}>
               {deleting ? '正在删除…' : '删除人物'}
