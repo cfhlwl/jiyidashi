@@ -251,6 +251,40 @@ test('list/detail guard auth owner epoch and Elder mode without hidden gesture c
   assert.match(detail, /'删除人物'/)
 })
 
+test('list/create publish success and errors only while owner-session action snapshot is current', () => {
+  const list = readFileSync(resolve(process.cwd(), 'src/pages/people/index.tsx'), 'utf8')
+  const loadStart = list.indexOf('const loadPeople = async')
+  const loadEnd = list.indexOf('useEffect(() => subscribeElderMode')
+  const loadFlow = list.slice(loadStart, loadEnd)
+  assert.match(loadFlow, /const snapshot = authority\.current\.capture\(owner, currentAuthSessionEpoch\(\), identity\)/)
+  assert.match(loadFlow, /const rows = await listPeople\(100\)[\s\S]*?if \(!isCurrent\(snapshot, identity\)\) return[\s\S]*?setPeople\(rows\)/)
+  assert.match(loadFlow, /catch[\s\S]*?if \(!isCurrent\(snapshot, identity\)\) return[\s\S]*?setError\(/)
+
+  const createStart = list.indexOf('const submitCreate = async')
+  const createEnd = list.indexOf('const openDetail = async')
+  const createFlow = list.slice(createStart, createEnd)
+  assert.match(createFlow, /const created = await createPerson\(payload\)[\s\S]*?if \(!isCurrent\(snapshot, identity\)\) return/)
+  assert.match(createFlow, /catch \(createError\)[\s\S]*?if \(!isCurrent\(snapshot, identity\)\) return/)
+})
+
+test('PATCH and DELETE publish success/error only while exact detail owner-session snapshot is current', () => {
+  const detail = readFileSync(resolve(process.cwd(), 'src/pages/person-detail/index.tsx'), 'utf8')
+
+  const saveStart = detail.indexOf('const saveEdit = async')
+  const saveEnd = detail.indexOf('const confirmDelete = async')
+  const saveFlow = detail.slice(saveStart, saveEnd)
+  assert.match(saveFlow, /const snapshot = authority\.current\.capture\(owner, currentAuthSessionEpoch\(\), personId\)/)
+  assert.match(saveFlow, /const updated = await patchPerson\(personId, payload\)[\s\S]*?if \(!isCurrent\(snapshot\)\) return[\s\S]*?setDetail\(updated\)/)
+  assert.match(saveFlow, /catch \(saveError\)[\s\S]*?if \(!isCurrent\(snapshot\)\) return/)
+
+  const deleteStart = detail.indexOf('const confirmDelete = async')
+  const deleteEnd = detail.indexOf("if (phase === 'signed-out')")
+  const deleteFlow = detail.slice(deleteStart, deleteEnd)
+  assert.match(deleteFlow, /if \(!modal\.confirm \|\| !isCurrent\(modalSnapshot\)\) return/)
+  assert.match(deleteFlow, /await deletePerson\(personId\)[\s\S]*?if \(!isCurrent\(snapshot\)\) return[\s\S]*?Taro\.navigateBack\(\)/)
+  assert.match(deleteFlow, /catch \(deleteError\)[\s\S]*?if \(!isCurrent\(snapshot\)\) return/)
+})
+
 test('Mini V2-A navigation is under 我的 and does not add a sixth tab or graph scope', () => {
   const app = readFileSync(resolve(process.cwd(), 'src/app.config.ts'), 'utf8')
   const profile = readFileSync(resolve(process.cwd(), 'src/pages/profile/index.tsx'), 'utf8')
