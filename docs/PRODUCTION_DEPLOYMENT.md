@@ -82,6 +82,7 @@ jiyidashi-backend:<40-char-git-sha>
 
 The production Dockerfile:
 
+- is built from a temporary `git archive <exact-sha> backend` export, so ignored/untracked workstation files cannot enter the Docker context;
 - pins the exact Python 3.12 slim-bookworm base-image digest;
 - installs the complete exact-version `backend/requirements.production.lock`;
 - does not resolve `pyproject.toml` version ranges during an image build;
@@ -119,7 +120,7 @@ The script performs:
 
 1. verify exact full git SHA and reject **tracked or untracked** release-source changes;
 2. validate the actual production env and production Compose;
-3. build/tag the backend image by immutable SHA, embed the SHA as the OCI revision label, and record/verify its `sha256` image ID;
+3. export the exact reviewed `backend/` Git tree with `git archive`, build/tag only from that clean tree, embed the SHA as the OCI revision label, and record/verify its `sha256` image ID;
 4. start PostgreSQL even if its container was stopped;
 5. wait for PostgreSQL health and **always create the pre-migration backup** from the existing volume/data;
 6. execute `alembic upgrade head` once only after that backup succeeds;
@@ -272,11 +273,12 @@ Before production acceptance:
 `production-deployment-ci` validates without a public server or paid providers:
 
 - production env/template static security contract;
-- negative tests for unsafe **actual** production env values;
+- negative tests for unsafe **actual** production env values, including a short/weak `JWT_SECRET`;
 - Compose hard runtime overrides for the four production invariants;
 - custom `ENV_FILE` with no default env file present;
 - exact production dependency lock parity;
 - untracked source rejection;
+- a Git-ignored `.key` probe placed under `backend/app/` is proven absent from the built image;
 - production Docker image build + pinned base digest + OCI revision + recorded `sha256` image identity;
 - same-SHA/different-image replacement is rejected and cannot be silently adopted;
 - Compose render;
