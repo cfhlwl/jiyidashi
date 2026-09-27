@@ -361,3 +361,116 @@ test('component has explicit text kind choices and no local ranking/inference/tr
   assert.match(source, /删除关系/)
   assert.doesNotMatch(source, /sort\(|rank|score|frequency|travers|suggest|infer/i)
 })
+
+test('V2-C API adapter uses only canonical direct-edge endpoints and never deletes Person/Memory', () => {
+  const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+  const start = api.indexOf('export async function listPersonRelationships')
+  const end = api.indexOf('export async function listPersonMemoryTimeline')
+  const block = api.slice(start, end)
+  assert.match(block, /'POST', '\/people\/relationships'/)
+  assert.match(block, /buildPersonRelationshipsPath/)
+  assert.match(block, /buildPersonRelationshipPath/)
+  assert.match(block, /'PATCH'/)
+  assert.match(block, /'DELETE'/)
+  assert.doesNotMatch(block, /DELETE[^\n]*\/people\/\$\{encodeURIComponent\(personId\)\}/)
+  assert.doesNotMatch(block, /\/memories\//)
+  assert.doesNotMatch(block, /user_id/)
+})
+
+test('candidate picker malformed collection fails closed before current-Person filtering', () => {
+  assert.throws(() => parsePersonList([
+    personRow(PERSON_A, '当前'),
+    { ...(personRow(PERSON_B, '坏数据') as Record<string, unknown>), id: 'not-a-uuid' },
+    personRow(PERSON_C, '其他'),
+  ]), /人物数据异常/)
+})
+
+test('relationship list preserves canonical backend order without local ranking', () => {
+  const secondEdge = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+  const rows = parsePersonRelationshipList([
+    projection({ relationship_id: secondEdge, other_person: { id: PERSON_C, display_name: '后创建' } }),
+    projection({ relationship_id: EDGE_A, other_person: { id: PERSON_B, display_name: '先创建' } }),
+  ], PERSON_A)
+  assert.deepEqual(rows.map((row) => row.relationship_id), [secondEdge, EDGE_A])
+})
+
+test('response relationship shape fails closed for invalid OTHER/non-OTHER custom labels', () => {
+  assert.throws(() => parsePersonRelationshipList([
+    projection({ relationship_kind: 'OTHER', custom_label: null }),
+  ], PERSON_A), /人物关系数据异常/)
+  assert.throws(() => parsePersonRelationshipList([
+    projection({ relationship_kind: 'FRIEND', custom_label: '不应存在' }),
+  ], PERSON_A), /人物关系数据异常/)
+})
+
+test('create conflict refreshes canonical list and never falls back to PATCH', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
+  const start = source.indexOf('const submitCreate = async')
+  const end = source.indexOf('const beginEdit')
+  const createFlow = source.slice(start, end)
+  assert.match(createFlow, /PERSON_RELATIONSHIP_CONFLICT/)
+  assert.match(createFlow, /await refreshRelationships\(true\)/)
+  assert.doesNotMatch(createFlow, /patchPersonRelationship\(/)
+})
+
+test('revision conflict rebases latest canonical edge and requires explicit re-save', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
+  const recoverStart = source.indexOf('const recoverEditConflict = async')
+  const recoverEnd = source.indexOf('const saveEdit = async')
+  const recovery = source.slice(recoverStart, recoverEnd)
+  assert.match(recovery, /listPersonRelationships\(personId, 100\)/)
+  assert.match(recovery, /rebasePersonRelationshipDraft\(base, userDraft, latest\)/)
+  assert.match(recovery, /title: '人物关系同时被修改'/)
+  assert.match(recovery, /confirmText: '保留我的修改'/)
+  assert.match(recovery, /cancelText: '使用服务器值'/)
+  assert.match(recovery, /setEditBase\(latest\)/)
+  assert.match(recovery, /setEditDraft\(nextDraft\)/)
+
+  const saveStart = source.indexOf('const saveEdit = async')
+  const saveEnd = source.indexOf('const confirmDelete')
+  const saveFlow = source.slice(saveStart, saveEnd)
+  assert.equal((saveFlow.match(/patchPersonRelationship\(/g) || []).length, 1)
+  assert.match(saveFlow, /PERSON_RELATIONSHIP_REVISION_CONFLICT/)
+  assert.match(saveFlow, /await recoverEditConflict\(base, editDraft\)/)
+})
+
+test('list/create/PATCH/DELETE success and errors are gated by current relationship authority', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
+  assert.match(source, /listPersonRelationships\(personId, 100\)[\s\S]*?authority\.current\.isCurrent\(snapshot/)
+  assert.match(source, /createPersonRelationship\([\s\S]*?authority\.current\.isCurrent\(snapshot/)
+  assert.match(source, /patchPersonRelationship\([\s\S]*?authority\.current\.isCurrent/)
+  assert.match(source, /deletePersonRelationship\(row\.relationship_id\)[\s\S]*?authority\.current\.isCurrent/)
+  assert.match(source, /subscribeAuthSession/)
+})
+
+test('relationship feature never calls graph/traversal or destructive Person/Memory controls', () => {
+  const component = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
+  const service = readFileSync(resolve(process.cwd(), 'src/services/personRelationships.ts'), 'utf8')
+  const source = [component, service].join('\n')
+  assert.doesNotMatch(source, /\/graph|\/relationships\/neighborhood|travers|friends.of.friends/i)
+  assert.doesNotMatch(source, /deletePerson\(|deleteMemory\(|createTextMemory\(/)
+})
+
+test('Mini CI keeps V2-A/V2-B triggers and adds canonical V2-C surfaces', () => {
+  const workflow = readFileSync(resolve(process.cwd(), '../.github/workflows/miniprogram-ci.yml'), 'utf8')
+  for (const path of [
+    'backend/app/api/people.py',
+    'backend/app/person_schemas.py',
+    'backend/app/services/person_service.py',
+    'backend/app/person_memory_schemas.py',
+    'backend/app/services/person_memory_service.py',
+    'backend/app/api/memories.py',
+    'backend/app/person_relationship_schemas.py',
+    'backend/app/services/person_relationship_service.py',
+    'backend/app/person_relationship_models.py',
+  ]) {
+    assert.equal(workflow.includes(path), true)
+  }
+})
+
+test('Person free-text relationship_label remains separate from direct-edge relationship state', () => {
+  const personService = readFileSync(resolve(process.cwd(), 'src/services/people.ts'), 'utf8')
+  const relationshipService = readFileSync(resolve(process.cwd(), 'src/services/personRelationships.ts'), 'utf8')
+  assert.match(personService, /relationship_label/)
+  assert.doesNotMatch(relationshipService, /relationship_label/)
+})

@@ -38,6 +38,8 @@
     "src/services/people.ts",
     "tests/people.test.ts",
     "src/services/personMemories.ts",
-    "tests/personMemories.test.ts"
+    "tests/personMemories.test.ts",
+    "src/services/personRelationships.ts",
+    "tests/personRelationships.test.ts"
   ]
 }

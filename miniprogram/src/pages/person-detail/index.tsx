@@ -15,6 +15,7 @@ import {
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
 import PersonMemorySection from '../../components/personMemories/PersonMemorySection'
+import PersonRelationshipsSection from '../../components/personRelationships/PersonRelationshipsSection'
 import {
   buildPersonPatchPayload,
   hasPersonPatchChanges,
@@ -453,6 +454,8 @@ export default function Page() {
           </View>
         </View>
       )}
+
+      {phase === 'ready' && detail && !editing && <PersonRelationshipsSection personId={personId} />}
 
       {phase === 'ready' && detail && !editing && <PersonMemorySection personId={personId} />}
 
