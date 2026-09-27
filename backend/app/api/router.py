@@ -8,6 +8,7 @@ from app.api import (
     family,
     graph,
     intent,
+    life_events,
     location,
     media,
     memories,
@@ -39,6 +40,8 @@ api_router.include_router(graph.router)
 # trust, Evidence and owner-isolation boundaries.
 api_router.include_router(intent.router)
 api_router.include_router(memories.router)
+# V2-005 is an explicit structured long-term event authority, separate from MemoryType.EVENT.
+api_router.include_router(life_events.router)
 # [人工注释][#103] Trusted summaries use a dedicated POST generation surface;
 # the legacy GET /memory/summarize/day contract remains untouched.
 api_router.include_router(memory_summaries.router)

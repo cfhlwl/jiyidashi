@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from app.life_event_models import LifeEventMemoryLink
 from app.models import (
     Memory,
     MemorySource,
@@ -139,6 +140,14 @@ def soft_delete_memory(db: Session, memory: Memory) -> None:
         delete(PersonMemoryLink).where(
             PersonMemoryLink.user_id == memory.user_id,
             PersonMemoryLink.memory_id == memory.id,
+        )
+    )
+    # V2-005 evidence uses the same authoritative Memory row lock. Remove all
+    # explicit LifeEvent evidence before soft-delete becomes visible.
+    db.execute(
+        delete(LifeEventMemoryLink).where(
+            LifeEventMemoryLink.user_id == memory.user_id,
+            LifeEventMemoryLink.memory_id == memory.id,
         )
     )
     memory.is_deleted = True
