@@ -1,0 +1,363 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import test from 'node:test'
+import {
+  buildPersonRelationshipCreatePayload,
+  buildPersonRelationshipPatchPayload,
+  buildPersonRelationshipPath,
+  buildPersonRelationshipsPath,
+  candidatePeopleForRelationship,
+  parsePersonRelationshipList,
+  parsePersonRelationshipRead,
+  PersonRelationshipUiAuthority,
+  personRelationshipErrorMessage,
+  rebasePersonRelationshipDraft,
+  relationshipKindLabel,
+  type PersonRelationshipProjection,
+} from '../src/services/personRelationships'
+import { parsePersonList } from '../src/services/people'
+
+const OWNER = '11111111-1111-4111-8111-111111111111'
+const PERSON_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const PERSON_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const PERSON_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+const EDGE_A = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+
+function projection(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    relationship_id: EDGE_A,
+    relationship_kind: 'FRIEND',
+    custom_label: null,
+    note: '大学同学',
+    revision: 3,
+    other_person: {
+      id: PERSON_B,
+      display_name: '小王',
+    },
+    created_at: '2026-09-20T01:00:00Z',
+    updated_at: '2026-09-21T01:00:00Z',
+    ...overrides,
+  }
+}
+
+function personRow(id: string, name: string): unknown {
+  return {
+    id,
+    display_name: name,
+    relationship_label: null,
+    note: null,
+    aliases: [],
+    revision: 0,
+    created_at: '2026-09-20T01:00:00Z',
+    updated_at: '2026-09-20T01:00:00Z',
+  }
+}
+
+test('projection parser accepts exact DTO and strips extra server fields', () => {
+  const row = parsePersonRelationshipList([
+    projection({ hidden_score: 9, user_id: OWNER }),
+  ], PERSON_A, 100)[0]
+  assert.deepEqual(Object.keys(row).sort(), [
+    'created_at',
+    'custom_label',
+    'note',
+    'other_person',
+    'relationship_id',
+    'relationship_kind',
+    'revision',
+    'updated_at',
+  ])
+  assert.equal(Object.prototype.hasOwnProperty.call(row, 'hidden_score'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(row, 'user_id'), false)
+})
+
+test('projection collection is strict and collection-level fail-closed', () => {
+  assert.throws(() => parsePersonRelationshipList([
+    projection(),
+    projection({
+      relationship_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      relationship_kind: 'UNKNOWN',
+    }),
+    projection({
+      relationship_id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      other_person: { id: PERSON_C, display_name: '小李' },
+    }),
+  ], PERSON_A, 100), /人物关系数据异常/)
+
+  assert.throws(() => parsePersonRelationshipList([
+    projection({ other_person: { id: PERSON_A, display_name: '自己' } }),
+  ], PERSON_A), /人物关系数据异常/)
+  assert.throws(() => parsePersonRelationshipList([
+    projection({ revision: -1 }),
+  ], PERSON_A), /人物关系数据异常/)
+  assert.throws(() => parsePersonRelationshipList([
+    projection({ created_at: '2026-09-20' }),
+  ], PERSON_A), /人物关系数据异常/)
+})
+
+test('exact five relationship kinds and labels are locked', () => {
+  assert.deepEqual(
+    ['FAMILY', 'FRIEND', 'COLLEAGUE', 'CLASSMATE', 'OTHER'].map((kind) =>
+      relationshipKindLabel(kind as any)),
+    ['家人', '朋友', '同事', '同学', '其他'],
+  )
+  assert.throws(() => parsePersonRelationshipList([
+    projection({ relationship_kind: 'PARTNER' }),
+  ], PERSON_A), /人物关系数据异常/)
+})
+
+test('OTHER requires trimmed custom_label while non-OTHER never submits one', () => {
+  assert.deepEqual(
+    buildPersonRelationshipCreatePayload(PERSON_A, PERSON_B, {
+      relationshipKind: 'OTHER',
+      customLabel: '  羽毛球搭子  ',
+      note: '',
+    }),
+    {
+      person_a_id: PERSON_A,
+      person_b_id: PERSON_B,
+      relationship_kind: 'OTHER',
+      custom_label: '羽毛球搭子',
+    },
+  )
+  assert.throws(() => buildPersonRelationshipCreatePayload(PERSON_A, PERSON_B, {
+    relationshipKind: 'OTHER',
+    customLabel: ' ',
+    note: '',
+  }), /必须填写/)
+  assert.deepEqual(
+    buildPersonRelationshipCreatePayload(PERSON_A, PERSON_B, {
+      relationshipKind: 'FRIEND',
+      customLabel: '旧的 OTHER 标签',
+      note: '',
+    }),
+    {
+      person_a_id: PERSON_A,
+      person_b_id: PERSON_B,
+      relationship_kind: 'FRIEND',
+    },
+  )
+})
+
+test('create payload preserves endpoint direction, rejects self, and never sends user_id', () => {
+  const payload = buildPersonRelationshipCreatePayload(PERSON_B, PERSON_A, {
+    relationshipKind: 'CLASSMATE',
+    customLabel: '',
+    note: '  高中同学  ',
+  })
+  assert.deepEqual(payload, {
+    person_a_id: PERSON_B,
+    person_b_id: PERSON_A,
+    relationship_kind: 'CLASSMATE',
+    note: '高中同学',
+  })
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, 'user_id'), false)
+  assert.throws(() => buildPersonRelationshipCreatePayload(PERSON_A, PERSON_A, {
+    relationshipKind: 'FRIEND',
+    customLabel: '',
+    note: '',
+  }), /不能把人物与自己/)
+})
+
+test('canonical create response accepts reversed unordered endpoints', () => {
+  const read = parsePersonRelationshipRead({
+    id: EDGE_A,
+    person_a_id: PERSON_A,
+    person_b_id: PERSON_B,
+    relationship_kind: 'FRIEND',
+    custom_label: null,
+    note: null,
+    revision: 0,
+    created_at: '2026-09-20T01:00:00Z',
+    updated_at: '2026-09-20T01:00:00Z',
+  }, EDGE_A, PERSON_B, PERSON_A)
+  assert.equal(read.id, EDGE_A)
+})
+
+test('PATCH carries expected_revision, never endpoints, and note null clears', () => {
+  const base = parsePersonRelationshipList([projection()], PERSON_A)[0]
+  assert.deepEqual(buildPersonRelationshipPatchPayload(base, {
+    relationshipKind: 'FRIEND',
+    customLabel: '',
+    note: '',
+  }), {
+    expected_revision: 3,
+    note: null,
+  })
+
+  const patch = buildPersonRelationshipPatchPayload(base, {
+    relationshipKind: 'COLLEAGUE',
+    customLabel: 'stale',
+    note: '大学同学',
+  })
+  assert.deepEqual(patch, {
+    expected_revision: 3,
+    relationship_kind: 'COLLEAGUE',
+  })
+  assert.equal(Object.prototype.hasOwnProperty.call(patch || {}, 'person_a_id'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(patch || {}, 'person_b_id'), false)
+})
+
+test('OTHER -> non-OTHER omits stale label and non-OTHER -> OTHER requires explicit label', () => {
+  const otherBase = parsePersonRelationshipList([projection({
+    relationship_kind: 'OTHER',
+    custom_label: '牌友',
+  })], PERSON_A)[0]
+  assert.deepEqual(buildPersonRelationshipPatchPayload(otherBase, {
+    relationshipKind: 'FRIEND',
+    customLabel: '牌友',
+    note: '大学同学',
+  }), {
+    expected_revision: 3,
+    relationship_kind: 'FRIEND',
+  })
+
+  const friendBase = parsePersonRelationshipList([projection()], PERSON_A)[0]
+  assert.throws(() => buildPersonRelationshipPatchPayload(friendBase, {
+    relationshipKind: 'OTHER',
+    customLabel: '',
+    note: '大学同学',
+  }), /必须填写/)
+})
+
+test('field-aware rebase never writes back server-only note change from stale draft', () => {
+  const base = parsePersonRelationshipList([projection()], PERSON_A)[0]
+  const latest = parsePersonRelationshipList([projection({
+    revision: 4,
+    note: '服务器新备注',
+  })], PERSON_A)[0]
+  const rebased = rebasePersonRelationshipDraft(base, {
+    relationshipKind: 'COLLEAGUE',
+    customLabel: '',
+    note: '大学同学',
+  }, latest)
+
+  assert.deepEqual(rebased.conflicts, [])
+  assert.equal(rebased.keepUserDraft.relationshipKind, 'COLLEAGUE')
+  assert.equal(rebased.keepUserDraft.note, '服务器新备注')
+  assert.deepEqual(buildPersonRelationshipPatchPayload(latest, rebased.keepUserDraft), {
+    expected_revision: 4,
+    relationship_kind: 'COLLEAGUE',
+  })
+})
+
+test('same-field relationship/note conflicts require explicit resolution candidates', () => {
+  const base = parsePersonRelationshipList([projection()], PERSON_A)[0]
+  const latest = parsePersonRelationshipList([projection({
+    relationship_kind: 'FAMILY',
+    note: '服务器备注',
+    revision: 4,
+  })], PERSON_A)[0]
+  const rebased = rebasePersonRelationshipDraft(base, {
+    relationshipKind: 'COLLEAGUE',
+    customLabel: '',
+    note: '我的备注',
+  }, latest)
+
+  assert.deepEqual(rebased.conflicts, ['relationship', 'note'])
+  assert.equal(rebased.keepUserDraft.relationshipKind, 'COLLEAGUE')
+  assert.equal(rebased.keepUserDraft.note, '我的备注')
+  assert.equal(rebased.keepServerDraft.relationshipKind, 'FAMILY')
+  assert.equal(rebased.keepServerDraft.note, '服务器备注')
+})
+
+test('candidate picker excludes current Person only and keeps same display names distinct/order', () => {
+  const people = parsePersonList([
+    personRow(PERSON_A, '小王'),
+    personRow(PERSON_B, '同名'),
+    personRow(PERSON_C, '同名'),
+  ])
+  const candidates = candidatePeopleForRelationship(people, PERSON_A)
+  assert.deepEqual(candidates.map((person) => person.id), [PERSON_B, PERSON_C])
+  assert.deepEqual(candidates.map((person) => person.display_name), ['同名', '同名'])
+})
+
+test('relationship UI authority binds owner, route, edge, revision and selected candidate', () => {
+  const authority = new PersonRelationshipUiAuthority()
+  const snapshot = authority.capture({
+    owner: OWNER,
+    sessionEpoch: 5,
+    personId: PERSON_A,
+    action: 'patch',
+    relationshipId: EDGE_A,
+    revision: 3,
+    otherPersonId: PERSON_B,
+  })
+  assert.equal(authority.isCurrent(snapshot, {
+    owner: OWNER,
+    sessionEpoch: 5,
+    personId: PERSON_A,
+    action: 'patch',
+    relationshipId: EDGE_A,
+    revision: 3,
+    otherPersonId: PERSON_B,
+  }), true)
+  assert.equal(authority.isCurrent(snapshot, {
+    owner: OWNER,
+    sessionEpoch: 5,
+    personId: PERSON_C,
+    action: 'patch',
+    relationshipId: EDGE_A,
+    revision: 3,
+    otherPersonId: PERSON_B,
+  }), false)
+  assert.equal(authority.isCurrent(snapshot, {
+    owner: OWNER,
+    sessionEpoch: 6,
+    personId: PERSON_A,
+    action: 'patch',
+    relationshipId: EDGE_A,
+    revision: 3,
+    otherPersonId: PERSON_B,
+  }), false)
+  authority.invalidate()
+  assert.equal(authority.isCurrent(snapshot, {
+    owner: OWNER,
+    sessionEpoch: 5,
+    personId: PERSON_A,
+    action: 'patch',
+    relationshipId: EDGE_A,
+    revision: 3,
+    otherPersonId: PERSON_B,
+  }), false)
+})
+
+test('bounded errors cover direct-edge conflicts without raw backend detail', () => {
+  assert.match(personRelationshipErrorMessage('PERSON_RELATIONSHIP_CONFLICT') || '', /已经存在/)
+  assert.match(personRelationshipErrorMessage('PERSON_RELATIONSHIP_REVISION_CONFLICT') || '', /已经变化/)
+  assert.match(personRelationshipErrorMessage('PERSON_RELATIONSHIP_CUSTOM_LABEL_REQUIRED') || '', /必须填写/)
+  assert.equal(personRelationshipErrorMessage('RAW_SQL_ERROR secret'), null)
+})
+
+test('paths are exact direct-edge surfaces', () => {
+  assert.equal(
+    buildPersonRelationshipsPath(PERSON_A, 100),
+    '/people/' + PERSON_A + '/relationships?limit=100',
+  )
+  assert.equal(
+    buildPersonRelationshipPath(EDGE_A),
+    '/people/relationships/' + EDGE_A,
+  )
+})
+
+test('component locks explicit create conflict, revision conflict and destructive copy', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
+  assert.match(source, /PERSON_RELATIONSHIP_CONFLICT/)
+  assert.match(source, /await refreshRelationships\(true\)/)
+  assert.match(source, /PERSON_RELATIONSHIP_REVISION_CONFLICT/)
+  assert.match(source, /recoverEditConflict\(base, editDraft\)/)
+  assert.equal((source.match(/patchPersonRelationship\(/g) || []).length, 1)
+  assert.match(source, /title: '删除人物关系？'/)
+  assert.match(source, /不会删除任何人物或记忆/)
+  assert.match(source, /删除关系失败，当前关系仍然保留/)
+})
+
+test('component has explicit text kind choices and no local ranking/inference/traversal', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
+  assert.match(source, /relationshipKindLabel\(kind\)/)
+  assert.match(source, /添加人物关系/)
+  assert.match(source, /编辑关系/)
+  assert.match(source, /删除关系/)
+  assert.doesNotMatch(source, /sort\(|rank|score|frequency|travers|suggest|infer/i)
+})
