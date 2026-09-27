@@ -187,16 +187,13 @@ export function parseMemoryPickerRows(
   }
   if (!Array.isArray(value) || value.length > limit || value.length > 100) return invalid()
 
-  const rows: MemoryRead[] = []
-  for (const item of value) {
-    try {
-      const parsed = parseMemoryRead(item)
-      if (parsed.user_id.toLowerCase() === expectedOwner.toLowerCase()) rows.push(parsed)
-    } catch {
-      // Selection-only picker: malformed or wrong-owner rows never become selectable authority.
-    }
-  }
-  return rows
+  // Parse the collection completely before filtering by owner. A malformed row
+  // invalidates the whole response so the picker never publishes a partially
+  // trusted subset from one server response.
+  const parsedRows = value.map((item) => parseMemoryRead(item))
+  return parsedRows.filter(
+    (row) => row.user_id.toLowerCase() === expectedOwner.toLowerCase(),
+  )
 }
 
 export function buildPersonMemoryTimelinePath(personId: string, limit = 50): string {
