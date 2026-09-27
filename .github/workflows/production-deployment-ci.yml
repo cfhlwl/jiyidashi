@@ -222,7 +222,7 @@ jobs:
             sleep 2
           done
           docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml             exec -T postgres sh -ceu '
-              PGPASSWORD="$POSTGRES_PASSWORD" psql                 --host=127.0.0.1                 --username="$POSTGRES_USER"                 --dbname="$POSTGRES_DB"                 --command="CREATE TABLE ops_backup_marker(value text PRIMARY KEY); INSERT INTO ops_backup_marker VALUES ('stopped-volume-marker');"
+              PGPASSWORD="$POSTGRES_PASSWORD" psql                 --host=127.0.0.1                 --username="$POSTGRES_USER"                 --dbname="$POSTGRES_DB"                 --command="CREATE TABLE ops_backup_marker(value integer PRIMARY KEY); INSERT INTO ops_backup_marker VALUES (424242);"
             '
           docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml stop postgres
           test -n "$(docker volume ls -q --filter name=jiyidashi-production_jiyi_postgres_data)"
@@ -248,7 +248,7 @@ jobs:
 
           docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml             exec -T postgres sh -ceu '
               PGPASSWORD="$POSTGRES_PASSWORD" psql                 --host=127.0.0.1                 --username="$POSTGRES_USER"                 --dbname=jiyidashi_restore_smoke                 --tuples-only --no-align                 --command="SELECT value FROM ops_backup_marker;"
-            ' | grep -qx 'stopped-volume-marker'
+            ' | grep -qx '424242'
 
       - name: Verify no schema drift
         run: |
