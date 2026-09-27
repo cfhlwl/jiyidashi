@@ -281,8 +281,8 @@
 | --- | --- | --- | --- |
 | V2-001 | Person 人物模型 | ✅ | Issue #128 / PR #129：owner-scoped explicit people model 已正式审查并合并；merge `5f9f87dfa868eb85255f9e0aa56a22a5a9afe3cf` |
 | V2-002 | 人物相关记忆 | ✅ | Issue #130 / PR #131：explicit evidence-bound Person↔Memory Links V1 已正式审查并合并；merge `6b061b9cee51c00df88bbdb3832c4d35e133c5e5` |
-| V2-003 | 人物关系图谱 | 🟠 | Issue #132 / PR #133：explicit owner-maintained Person↔Person direct edges 已实现；canonical unordered pair、owner-bound dual FKs、FAMILY/FRIEND/COLLEAGUE/CLASSMATE/OTHER、revision-safe CRUD、direct relationship projection、Data Export/Delete/Account Delete 与 PostgreSQL race Gate 已通过当前自动测试；待正式审查/合并，不做 V2-004 unified graph / traversal / inference |
-| V2-004 | Place / Person / Object / Event 统一图谱 | ⬜ | Personal Memory Graph |
+| V2-003 | 人物关系图谱 | ✅ | Issue #132 / PR #133：explicit owner-maintained Person↔Person direct edges 已正式审查并合并；merge `c7b2fb6e5899c54e2f3e538786ed0185295754d5` |
+| V2-004 | Place / Person / Object / Event 统一图谱 | 🔵 | Issue #134：trusted read-only projection over existing Person / Place / Object / confirmed Event authorities；one-hop only，无 generic graph persistence / migration / AI inference |
 | V2-005 | 人生事件模型 | ⬜ | 旅行、就医、聚会、工作等 |
 | V2-006 | 人生阶段 | ⬜ | 工作、家庭、旅行等长期阶段 |
 | V2-007 | 长期记忆推理 | ⬜ | 必须有证据链，不允许模型脑补 |
