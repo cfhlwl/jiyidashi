@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
-from app.life_event_models import LifeEvent, LifeEventKind, LifeEventMemoryLink
+from app.life_event_models import LifeEvent, LifeEventMemoryLink
 from app.models import Memory, MemoryType, Place, SourceType
 from app.services.data_deletion_service import USER_DATA_INVENTORY
 
