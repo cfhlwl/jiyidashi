@@ -246,3 +246,31 @@ test('relation labels are exact', () => {
   assert.equal(personMemoryRelationLabel('RELATED'), '相关')
   assert.equal(personMemoryRelationLabel('MET'), '见过 / 互动过')
 })
+
+test('V2-B API adapter uses only canonical endpoints and never Memory DELETE', () => {
+  const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+  const start = api.indexOf('export async function listPersonMemoryTimeline')
+  const end = api.indexOf('export async function getFamily')
+  const block = api.slice(start, end)
+  assert.match(block, /buildPersonMemoryTimelinePath/)
+  assert.match(block, /buildPersonMemoryLinkPath/)
+  assert.match(block, /buildPersonInteractionsPath/)
+  assert.match(block, /buildMemoryPickerPath/)
+  assert.doesNotMatch(block, /\/relationships|\/graph/)
+  assert.doesNotMatch(block, /request<void>\('DELETE', `\/memories\//)
+})
+
+test('Mini CI remains bound to V2-A and all V2-B backend contracts', () => {
+  const workflow = readFileSync(resolve(process.cwd(), '../.github/workflows/miniprogram-ci.yml'), 'utf8')
+  for (const path of [
+    'backend/app/api/people.py',
+    'backend/app/person_schemas.py',
+    'backend/app/services/person_service.py',
+    'backend/app/person_memory_schemas.py',
+    'backend/app/services/person_memory_service.py',
+    'backend/app/api/memories.py',
+    'backend/app/schemas.py',
+  ]) {
+    assert.equal(workflow.includes(path), true)
+  }
+})
