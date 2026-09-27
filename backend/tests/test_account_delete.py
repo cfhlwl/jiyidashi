@@ -286,6 +286,13 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
     assert old_token.status_code == 404
     assert old_token.json()["detail"] == "USER_NOT_FOUND"
 
+    old_graph = await client.get(
+        f"/v1/graph/neighborhood/PERSON/{person_id}",
+        headers=headers,
+    )
+    assert old_graph.status_code == 404
+    assert old_graph.json()["detail"] == "USER_NOT_FOUND"
+
     old_login = await client.post(
         "/v1/auth/login",
         json={"email": email, "password": password},
