@@ -19,7 +19,9 @@ import {
   hasPersonPatchChanges,
   isPersonRevisionConflict,
   PeopleUiAuthority,
+  personConflictFieldLabel,
   personErrorMessage,
+  rebasePersonDraft,
   type PersonFormDraft,
   type PersonRead,
 } from '../../services/people'
@@ -44,6 +46,7 @@ export default function Page() {
   const personId = routePersonId()
   const [phase, setPhase] = useState<PagePhase>('loading')
   const [detail, setDetail] = useState<PersonRead | null>(null)
+  const [editBase, setEditBase] = useState<PersonRead | null>(null)
   const [status, setStatus] = useState('')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<PersonFormDraft>({
@@ -70,6 +73,7 @@ export default function Page() {
 
   const clearOwnerState = (nextPhase: PagePhase) => {
     setDetail(null)
+    setEditBase(null)
     setStatus('')
     setEditing(false)
     setAliasInput('')
@@ -102,6 +106,7 @@ export default function Page() {
       const person = await getPerson(personId)
       if (!isCurrent(snapshot)) return
       setDetail(person)
+      setEditBase(null)
       setDraft(draftFromPerson(person))
       setPhase('ready')
     } catch (loadError) {
@@ -112,7 +117,10 @@ export default function Page() {
     }
   }
 
-  const refreshAfterConflict = async () => {
+  const refreshAfterConflict = async (
+    base: PersonRead,
+    userDraft: PersonFormDraft,
+  ) => {
     authority.current.invalidate()
     const owner = currentAuthenticatedUserId()
     if (!owner) {
@@ -123,11 +131,34 @@ export default function Page() {
     try {
       const latest = await getPerson(personId)
       if (!isCurrent(snapshot)) return
-      // Preserve draft/editing: the user must explicitly reapply their edits to this new revision.
+
+      const rebased = rebasePersonDraft(base, userDraft, latest)
+      let nextDraft = rebased.keepUserDraft
+      let resolutionMessage = '服务器已有新版本；未编辑字段已采用服务器最新值，你的修改已保留'
+
+      if (rebased.conflicts.length > 0) {
+        const fields = rebased.conflicts.map(personConflictFieldLabel).join('、')
+        const modal = await Taro.showModal({
+          title: '人物信息同时被修改',
+          content: `${fields}在你编辑期间也被其他客户端修改。是否保留你对这些字段的修改？`,
+          confirmText: '保留我的修改',
+          cancelText: '使用服务器值',
+          confirmColor: '#446a57',
+        })
+        if (!isCurrent(snapshot)) return
+        nextDraft = modal.confirm ? rebased.keepUserDraft : rebased.keepServerDraft
+        resolutionMessage = modal.confirm
+          ? `已保留你对${fields}的修改；请核对后重新保存`
+          : `已采用服务器对${fields}的修改；你的其他编辑仍保留`
+      }
+
+      // From this point the next PATCH is based on latest.revision, never the stale edit base.
       setDetail(latest)
+      setEditBase(latest)
+      setDraft(nextDraft)
       setPhase('ready')
       setEditing(true)
-      setStatus('人物已发生变化，服务器最新版本已刷新；你的编辑内容已保留，请核对后重新提交')
+      setStatus(resolutionMessage)
     } catch (loadError) {
       if (!isCurrent(snapshot)) return
       setStatus(personErrorMessage(apiErrorCode(loadError)) || '人物已发生变化，但最新内容加载失败，请重试')
@@ -153,6 +184,7 @@ export default function Page() {
   const beginEdit = () => {
     if (!detail || saving || deleting) return
     authority.current.invalidate()
+    setEditBase(detail)
     setDraft(draftFromPerson(detail))
     setAliasInput('')
     setStatus('')
@@ -190,8 +222,8 @@ export default function Page() {
   }
 
   const saveEdit = async () => {
-    const base = detail
-    if (!base || saving || deleting) return
+    const base = editBase
+    if (!detail || !base || saving || deleting) return
 
     let payload
     try {
@@ -219,6 +251,7 @@ export default function Page() {
       const updated = await patchPerson(personId, payload)
       if (!isCurrent(snapshot)) return
       setDetail(updated)
+      setEditBase(null)
       setDraft(draftFromPerson(updated))
       setEditing(false)
       setStatus('人物信息已更新')
@@ -226,7 +259,7 @@ export default function Page() {
       if (!isCurrent(snapshot)) return
       if (isPersonRevisionConflict(apiErrorCode(saveError))) {
         setSaving(false)
-        await refreshAfterConflict()
+        await refreshAfterConflict(base, draft)
         return
       }
       setStatus(personErrorMessage(apiErrorCode(saveError)) || '保存失败，请重试')
@@ -405,6 +438,7 @@ export default function Page() {
               disabled={saving}
               onClick={() => {
                 authority.current.invalidate()
+                setEditBase(null)
                 setDraft(draftFromPerson(detail))
                 setEditing(false)
                 setStatus('')
