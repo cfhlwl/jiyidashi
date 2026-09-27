@@ -168,11 +168,21 @@ def main() -> None:
     assert 'ports:\n      - "8000:8000"' not in compose
     assert "service_completed_successfully" in compose
     assert "pgvector/pgvector:0.8.6-pg16-bookworm" in compose
+    assert "${ENV_FILE:-./backend/.env.production}" in compose
+    assert "APP_ENV: production" in compose
+    assert 'ENABLE_DEV_AUTH: "false"' in compose
+    assert 'AUTH_RATE_LIMIT_ENABLED: "true"' in compose
+    assert 'AUTO_CREATE_SCHEMA: "false"' in compose
+    assert "RELEASE_SHA: ${RELEASE_SHA:-unknown}" in compose
 
     dockerfile = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     assert "USER app" in dockerfile
     assert "--reload" not in dockerfile
     assert "alembic upgrade" not in dockerfile
+    assert "requirements.production.lock" in dockerfile
+    assert "pip install --no-deps -r requirements.production.lock" in dockerfile
+    assert "pip install ." not in dockerfile
+    assert 'org.opencontainers.image.revision="$RELEASE_SHA"' in dockerfile
 
     print("production deployment static contract PASS")
 
