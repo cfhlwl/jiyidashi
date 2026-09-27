@@ -581,6 +581,18 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     assert query.json()["can_answer"] is False
     assert query.json()["evidence"] == []
 
+    for kind, entity_id in (
+        ("PERSON", ids["person"]),
+        ("PLACE", ids["place"]),
+        ("OBJECT", ids["object"]),
+    ):
+        graph = await client.get(
+            f"/v1/graph/neighborhood/{kind}/{entity_id}",
+            headers=owner_headers,
+        )
+        assert graph.status_code == 404
+        assert graph.json()["detail"] == "GRAPH_NODE_NOT_FOUND"
+
     # A response-loss retry of an already-completed request is a receipt lookup, not a new wipe.
     with SessionLocal() as db:
         new_memory = Memory(user_id=owner_id, content="created after the completed deletion")
