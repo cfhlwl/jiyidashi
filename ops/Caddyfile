@@ -1,0 +1,29 @@
+{
+    email {$ACME_EMAIL}
+    servers {
+        timeouts {
+            read_body 2m
+            read_header 10s
+            write 2m
+            idle 2m
+        }
+    }
+}
+
+http://{$API_DOMAIN} {
+    redir https://{$API_DOMAIN}{uri} permanent
+}
+
+https://{$API_DOMAIN} {
+    encode zstd gzip
+
+    reverse_proxy api:8000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 60s
+            keepalive 30s
+        }
+    }
+}
