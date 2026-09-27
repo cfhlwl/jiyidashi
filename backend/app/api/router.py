@@ -6,6 +6,7 @@ from app.api import (
     data_delete,
     data_export,
     family,
+    graph,
     intent,
     location,
     media,
@@ -32,6 +33,8 @@ api_router.include_router(data_export.router)
 api_router.include_router(data_delete.router)
 # Stage 4A family relationship/permission foundation; membership alone grants no data access.
 api_router.include_router(family.router)
+# V2-004 is a read-only typed projection over canonical authorities; it owns no data.
+api_router.include_router(graph.router)
 # S3-003 routing is control metadata only; downstream services retain their own
 # trust, Evidence and owner-isolation boundaries.
 api_router.include_router(intent.router)
