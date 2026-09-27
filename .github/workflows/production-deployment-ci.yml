@@ -250,6 +250,18 @@ jobs:
               PGPASSWORD="$POSTGRES_PASSWORD" psql                 --host=127.0.0.1                 --username="$POSTGRES_USER"                 --dbname=jiyidashi_restore_smoke                 --tuples-only --no-align                 --command="SELECT value FROM ops_backup_marker;"
             ' | grep -qx '424242'
 
+          # The marker is CI-only evidence of pre-existing data. Remove it from the
+          # production test DB before Alembic drift validation; the restored backup
+          # has already proven the pre-migration dump contained it.
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+            exec -T postgres sh -ceu '
+              PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                --host=127.0.0.1 \
+                --username="$POSTGRES_USER" \
+                --dbname="$POSTGRES_DB" \
+                --command="DROP TABLE ops_backup_marker;"
+            '
+
       - name: Verify no schema drift
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             run --rm --no-deps api alembic check
