@@ -15,7 +15,7 @@ mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 manifest="$STATE_DIR/$EXPECTED_SHA.image-id"
 lock_dir="$STATE_DIR/$EXPECTED_SHA.lock"
-candidate="$IMAGE_REF-candidate-$"
+candidate="${IMAGE_REF}-candidate-${BASHPID}"
 build_root=""
 
 if ! mkdir "$lock_dir" 2>/dev/null; then
