@@ -285,7 +285,8 @@
 | V2-004 | Place / Person / Object / Event 统一图谱 | ✅ | Issue #134 / PR #135：trusted read-only Unified Memory Graph V1 已正式审查并合并；merge `ef98cabae96537958a1306f52e7ea3caad0d4c3a` |
 | Mini V2-A | 小程序 People Center V1 | ✅ | Issue #138 / PR #139：explicit Person CRUD + aliases 已正式审查并合并；merge `a18799d7bf023503323387b70897cdf304857754` |
 | Mini V2-B | 小程序 Person Memory Timeline V1 | ✅ | Issue #140 / PR #141：explicit RELATED/MET links、关联已有记忆与 backend-authoritative 最近互动已正式审查并合并；merge `284b0ae98e09499d4131dd3e386ef2307f903eb6` |
-| Mini V2-C | 小程序 Person Relationships V1 | 🟠 | Issue #142：explicit direct Person↔Person relationship CRUD、OTHER/custom_label contract、field-aware conflict rebase 已实现；等待正式审查/合并，合并前不标记 ✅ |
+| Mini V2-C | 小程序 Person Relationships V1 | ✅ | Issue #142 / PR #143：explicit direct Person↔Person relationship CRUD、OTHER/custom_label contract、field-aware conflict rebase 已正式审查并合并；merge `feb766d7ac78eb87436857d3b69138789ba1bd63` |
+| Mini V2-D | 小程序 Unified Graph Neighborhood V1 | 🟠 | Issue #144：trusted read-only one-hop PERSON/PLACE/OBJECT/EVENT projection 已实现并进入 exact-head 验证；等待正式审查/合并，合并前不标记 ✅ |
 | V2-005 | 人生事件模型 | ⬜ | 旅行、就医、聚会、工作等 |
 | V2-006 | 人生阶段 | ⬜ | 工作、家庭、旅行等长期阶段 |
 | V2-007 | 长期记忆推理 | ⬜ | 必须有证据链，不允许模型脑补 |

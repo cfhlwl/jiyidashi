@@ -7,6 +7,7 @@ import {
   type PlaceDetailPage,
   type PlaceDetailVisit,
 } from '../../services/placeDetail'
+import { graphNeighborhoodRoute } from '../../services/unifiedGraph'
 import './index.scss'
 
 function formatTimestamp(value: string): string {
@@ -115,6 +116,14 @@ export default function Page() {
             <View className='card-title'>{detail.place.name}</View>
             <View className='muted'>{detail.place.address || detail.place.category || '暂无地点说明'}</View>
             <View className='place-summary'>共 {detail.place.visit_count} 次到访记录</View>
+            <Button
+              className='secondary-button'
+              onClick={() => void Taro.navigateTo({
+                url: graphNeighborhoodRoute('PLACE', detail.place.id),
+              })}
+            >
+              查看一跳关系
+            </Button>
           </View>
 
           <View className='card'>

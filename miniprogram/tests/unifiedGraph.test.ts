@@ -176,7 +176,7 @@ test('every edge touches center exactly once', () => {
   assert.throws(() => parseGraphNeighborhood(neighborhood({
     nodes: [node('PERSON', PERSON_B, '李老师')],
     edges: [{
-      ...personRelationshipEdge() as object,
+      ...(personRelationshipEdge() as object),
       source: node('PERSON', PERSON_B, '李老师'),
       target: node('PERSON', '99999999-9999-4999-8999-999999999999', '其他'),
     }],
@@ -436,4 +436,45 @@ test('truncated warning is visible and no automatic pagination exists', () => {
   const page = readFileSync(resolve(process.cwd(), 'src/pages/graph-neighborhood/index.tsx'), 'utf8')
   assert.match(page, /仅显示部分直接关系/)
   assert.doesNotMatch(page, /loadMore|next_cursor|pagination|limit=100/)
+})
+
+test('Graph API adapter is GET-only and strict parser-bound', () => {
+  const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+  const start = api.indexOf('export async function getGraphNeighborhood')
+  const end = api.indexOf('function createPeopleRequestSessionGuard')
+  const block = api.slice(start, end)
+  assert.match(block, /request<unknown>\([\s\S]*?'GET',[\s\S]*?graphNeighborhoodPath/)
+  assert.match(block, /parseGraphNeighborhood\(raw, kind, entityId, limit\)/)
+  assert.doesNotMatch(block, /'POST'|'PATCH'|'DELETE'/)
+})
+
+test('Person and Place detail expose exact typed one-hop entry routes', () => {
+  const person = readFileSync(resolve(process.cwd(), 'src/pages/person-detail/index.tsx'), 'utf8')
+  const place = readFileSync(resolve(process.cwd(), 'src/pages/place-detail/index.tsx'), 'utf8')
+  assert.match(person, /graphNeighborhoodRoute\('PERSON', detail\.id\)/)
+  assert.match(place, /graphNeighborhoodRoute\('PLACE', detail\.place\.id\)/)
+  assert.match(person, /查看一跳关系/)
+  assert.match(place, /查看一跳关系/)
+})
+
+test('generic graph page is registered without changing the five-tab shell', () => {
+  const app = readFileSync(resolve(process.cwd(), 'src/app.config.ts'), 'utf8')
+  assert.match(app, /'pages\/graph-neighborhood\/index'/)
+  assert.equal((app.match(/pagePath:/g) || []).length, 5)
+})
+
+test('Mini CI retains prior V2 triggers and adds canonical V2-004 graph surfaces', () => {
+  const workflow = readFileSync(resolve(process.cwd(), '../.github/workflows/miniprogram-ci.yml'), 'utf8')
+  for (const path of [
+    'backend/app/api/people.py',
+    'backend/app/person_memory_schemas.py',
+    'backend/app/services/person_memory_service.py',
+    'backend/app/person_relationship_schemas.py',
+    'backend/app/services/person_relationship_service.py',
+    'backend/app/api/graph.py',
+    'backend/app/graph_schemas.py',
+    'backend/app/services/graph_projection_service.py',
+  ]) {
+    assert.equal(workflow.includes(path), true)
+  }
 })
