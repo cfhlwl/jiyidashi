@@ -230,6 +230,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_person_memory_links_integration.py
 
+      - name: PostgreSQL Person relationship concurrency
+        # [V2-003] Canonical Person locking must converge reversed creates and
+        # serialize relationship mutation/delete races without orphan edges.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_person_relationships_integration.py
+
       - name: PostgreSQL schema drift check
         # [人工注释][S1-FIX-001] upgrade 成功不代表 ORM metadata 与 migration head 一致；alembic check 是正式漂移门禁。
         env:

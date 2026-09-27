@@ -32,6 +32,7 @@ from app.models import (
 )
 from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
+from app.person_relationship_models import PersonRelationship
 
 router = APIRouter(prefix="/export", tags=["export"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -166,6 +167,14 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
     aliases_by_person: dict[UUID, list[PersonAlias]] = {person.id: [] for person in persons}
     for alias in person_aliases:
         aliases_by_person.setdefault(alias.person_id, []).append(alias)
+
+    person_relationships = _bounded_scalars(
+        db,
+        select(PersonRelationship)
+        .where(PersonRelationship.user_id == user_id)
+        .order_by(PersonRelationship.created_at, PersonRelationship.id),
+        "person_relationships",
+    )
 
     person_memory_links = _bounded_scalars(
         db,
@@ -347,6 +356,20 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 "updated_at": person.updated_at,
             }
             for person in persons
+        ],
+        "person_relationships": [
+            {
+                "id": edge.id,
+                "person_a_id": edge.person_low_id,
+                "person_b_id": edge.person_high_id,
+                "relationship_kind": edge.relationship_kind.value,
+                "custom_label": edge.custom_label,
+                "note": edge.note,
+                "revision": edge.revision,
+                "created_at": edge.created_at,
+                "updated_at": edge.updated_at,
+            }
+            for edge in person_relationships
         ],
         "person_memory_links": [
             {

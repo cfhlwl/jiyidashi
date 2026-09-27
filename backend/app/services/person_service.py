@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
+from app.person_relationship_models import PersonRelationship
 from app.person_schemas import PersonCreate, PersonPatch
 
 
@@ -180,8 +181,17 @@ def patch_person(
 
 def delete_person(db: Session, *, user_id: UUID, person_id: UUID) -> None:
     person = load_person(db, user_id=user_id, person_id=person_id, for_update=True)
-    # Explicit link cleanup keeps SQLite behavior deterministic; owner-bound DB
-    # cascades remain the production integrity backstop.
+    # Explicit relationship cleanup keeps SQLite behavior deterministic; owner-bound
+    # DB cascades remain the production integrity backstop.
+    db.execute(
+        delete(PersonRelationship).where(
+            PersonRelationship.user_id == user_id,
+            (
+                (PersonRelationship.person_low_id == person.id)
+                | (PersonRelationship.person_high_id == person.id)
+            ),
+        )
+    )
     db.execute(
         delete(PersonMemoryLink).where(
             PersonMemoryLink.user_id == user_id,

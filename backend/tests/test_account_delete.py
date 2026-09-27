@@ -15,6 +15,7 @@ from app.main import app
 from app.models import Memory, User
 from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
 from app.person_models import Person, PersonAlias
+from app.person_relationship_models import PersonRelationship, PersonRelationshipKind
 from app.services import account_deletion_service
 from app.services.object_storage import ObjectStorageError, get_object_storage
 
@@ -200,7 +201,11 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
             relationship_label="朋友",
             note="account-delete private person",
         )
-        db.add_all([memory, person])
+        person_two = Person(
+            user_id=user_id,
+            display_name="另一注销联系人",
+        )
+        db.add_all([memory, person, person_two])
         db.flush()
         alias = PersonAlias(
             user_id=user_id,
@@ -218,11 +223,25 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
             revision=0,
         )
         db.add(link)
+        low_id, high_id = sorted(
+            (person.id, person_two.id),
+            key=lambda value: value.bytes,
+        )
+        relationship = PersonRelationship(
+            user_id=user_id,
+            person_low_id=low_id,
+            person_high_id=high_id,
+            relationship_kind=PersonRelationshipKind.FAMILY,
+            revision=0,
+        )
+        db.add(relationship)
         db.commit()
         memory_id = memory.id
         person_id = person.id
+        person_two_id = person_two.id
         alias_id = alias.id
         link_id = link.id
+        relationship_id = relationship.id
 
     request_id = uuid4()
     deleted = await client.post(
@@ -243,8 +262,10 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
         assert db.get(User, user_id) is None
         assert db.get(Memory, memory_id) is None
         assert db.get(Person, person_id) is None
+        assert db.get(Person, person_two_id) is None
         assert db.get(PersonAlias, alias_id) is None
         assert db.get(PersonMemoryLink, link_id) is None
+        assert db.get(PersonRelationship, relationship_id) is None
         assert db.scalar(
             select(AuthIdentity.id).where(AuthIdentity.user_id == user_id)
         ) is None

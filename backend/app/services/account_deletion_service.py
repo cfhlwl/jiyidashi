@@ -234,11 +234,18 @@ def delete_current_account(
             deleted_counts={},
         )
 
+    # [人工注释][S1-022][V2-003] 并发注销的另一个事务可能在 S1-021 返回
+    # USER_NOT_FOUND 前已经删除 AccountDeletionOperation。先复制纯值，异常/收口路径
+    # 不再解引用可能被并发删除并因 rollback/expire 失效的 ORM 实例。
+    canonical_request_id = operation.request_id
+    data_deletion_request_id = operation.data_deletion_request_id
+    operation_id = operation.id
+
     try:
         data_result = delete_all_user_data(
             db,
             user_id=user_id,
-            request_id=operation.data_deletion_request_id,
+            request_id=data_deletion_request_id,
             storage=storage,
         )
     except DataDeletionError as exc:
@@ -246,7 +253,7 @@ def delete_current_account(
             # [人工注释][S1-022] 两个注销请求可同时 join 同一 gate；若另一请求已完成
             # 最终身份事务，本请求可能在进入下一段 S1-021 时才看到 User 消失。
             # 协议已定义 User absence 为 completed，因此这里与入口保持同一幂等语义。
-            return _already_deleted(operation.request_id)
+            return _already_deleted(canonical_request_id)
         # AccountDeletionOperation intentionally remains present, so normal application
         # writes stay locked while the caller retries the exact S1-021 failure.
         raise
@@ -254,13 +261,12 @@ def delete_current_account(
     if not data_result.completed:
         return _result_from_data(operation, data_result)
 
-    canonical_request_id = operation.request_id
     deleted_counts = data_result.deleted_counts
     _finalize_account_deletion(
         db,
         user_id=user_id,
-        operation_id=operation.id,
-        data_request_id=operation.data_deletion_request_id,
+        operation_id=operation_id,
+        data_request_id=data_deletion_request_id,
     )
     return AccountDeletionResult(
         request_id=canonical_request_id,
