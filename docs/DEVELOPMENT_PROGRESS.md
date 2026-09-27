@@ -298,7 +298,7 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| OPS-001 | Production Deployment V1 | 🔵 | Issue #136：Dockerized backend、HTTPS reverse proxy、one-shot Alembic migration、backup/restore、immutable-image release/rollback 与 deployment acceptance；生产部署工程 only |
+| OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：Dockerized backend、Caddy HTTPS、private pgvector PostgreSQL、one-shot Alembic migration、production env parity、backup→fresh restore smoke、immutable-SHA deploy/rollback 与 production deployment CI 已通过当前自动测试；待正式审查/合并/真实部署验收，未标记 ✅ |
 
 # 7. V3：AI 人生助手与硬件扩展
 
