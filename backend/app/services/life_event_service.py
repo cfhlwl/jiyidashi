@@ -290,6 +290,15 @@ def delete_life_event(
         life_event_id=life_event_id,
         for_update=True,
     )
+    # Explicitly remove evidence in the same locked transaction. Do not rely only
+    # on database ON DELETE CASCADE: application semantics stay identical on
+    # SQLite tests and PostgreSQL production, and Memory rows are never touched.
+    db.execute(
+        delete(LifeEventMemoryLink).where(
+            LifeEventMemoryLink.user_id == user_id,
+            LifeEventMemoryLink.life_event_id == life_event_id,
+        )
+    )
     db.delete(event)
     db.commit()
 
