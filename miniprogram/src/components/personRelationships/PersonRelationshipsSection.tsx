@@ -421,7 +421,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
     }
   }
 
-  const kindButtons = <T extends PersonRelationshipDraft | PersonRelationshipCreateDraft>(
+  const kindButtons = <T extends PersonRelationshipDraft | PersonRelationshipCreateDraft,>(
     draft: T,
     setDraft: (next: T) => void,
   ) => (
