@@ -143,22 +143,12 @@ def create_life_event_memory_link_route(
     db: DbSession,
 ) -> LifeEventMemoryEvidenceRead:
     try:
-        link = create_life_event_memory_link(
+        return create_life_event_memory_link(
             db,
             user_id=user_id,
             life_event_id=life_event_id,
             memory_id=memory_id,
         )
-        rows = list_life_event_memories(
-            db,
-            user_id=user_id,
-            life_event_id=life_event_id,
-            limit=100,
-        )
-        for row in rows:
-            if row.link_id == link.id:
-                return row
-        raise LifeEventError("MEMORY_NOT_FOUND", 404)
     except LifeEventError as exc:
         _raise_life_event_error(exc)
 
