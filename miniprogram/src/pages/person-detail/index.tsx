@@ -456,7 +456,7 @@ export default function Page() {
 
       {phase === 'ready' && detail && !editing && <PersonMemorySection personId={personId} />}
 
-      {status && phase !== 'error' && <View className='status'>{status}</View>
+      {status && phase !== 'error' && <View className='status'>{status}</View>}
     </View>
   )
 }
