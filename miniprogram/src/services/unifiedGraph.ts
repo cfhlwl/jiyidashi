@@ -332,6 +332,7 @@ export function parseGraphNeighborhood(
 
   const edges = raw.edges.map((item) => parseGraphEdgeProjection(item))
   const edgeAuthorities = new Set<string>()
+  const referencedNeighborKeys = new Set<string>()
   for (const edge of edges) {
     const sourceKey = typedNodeKey(edge.source.kind, edge.source.id)
     const targetKey = typedNodeKey(edge.target.kind, edge.target.id)
@@ -344,16 +345,25 @@ export function parseGraphNeighborhood(
     const neighborEndpoint = sourceIsCenter ? edge.target : edge.source
     if (!sameNode(centerEndpoint, center)) return invalidGraphResponse()
 
-    const canonicalNeighbor = nodeMap.get(
-      typedNodeKey(neighborEndpoint.kind, neighborEndpoint.id),
-    )
+    const neighborKey = typedNodeKey(neighborEndpoint.kind, neighborEndpoint.id)
+    const canonicalNeighbor = nodeMap.get(neighborKey)
     if (!canonicalNeighbor || !sameNode(neighborEndpoint, canonicalNeighbor)) {
       return invalidGraphResponse()
     }
+    referencedNeighborKeys.add(neighborKey)
 
     const authorityKey = edge.edge_kind + ':' + edge.authority_ref.toLowerCase()
     if (edgeAuthorities.has(authorityKey)) return invalidGraphResponse()
     edgeAuthorities.add(authorityKey)
+  }
+
+  // Canonical V2-004 nodes are exactly the non-center endpoints selected by
+  // the returned edges. Reject orphan nodes instead of widening backend authority.
+  if (
+    referencedNeighborKeys.size !== nodeMap.size
+    || [...nodeMap.keys()].some((key) => !referencedNeighborKeys.has(key))
+  ) {
+    return invalidGraphResponse()
   }
 
   return {
