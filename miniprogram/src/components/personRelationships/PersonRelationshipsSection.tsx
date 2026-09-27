@@ -22,6 +22,7 @@ import {
   relationshipConflictFieldLabel,
   relationshipDraftFromProjection,
   relationshipKindLabel,
+  type PersonRelationshipCreateDraft,
   type PersonRelationshipDraft,
   type PersonRelationshipKind,
   type PersonRelationshipProjection,
@@ -39,7 +40,13 @@ const KINDS: PersonRelationshipKind[] = [
   'OTHER',
 ]
 
-const EMPTY_DRAFT: PersonRelationshipDraft = {
+const EMPTY_CREATE_DRAFT: PersonRelationshipCreateDraft = {
+  relationshipKind: null,
+  customLabel: '',
+  note: '',
+}
+
+const EMPTY_EDIT_DRAFT: PersonRelationshipDraft = {
   relationshipKind: 'FAMILY',
   customLabel: '',
   note: '',
@@ -56,10 +63,10 @@ export default function PersonRelationshipsSection({ personId }: Props) {
   const [candidateLoading, setCandidateLoading] = useState(false)
   const [candidateError, setCandidateError] = useState('')
   const [selectedOtherId, setSelectedOtherId] = useState<string | null>(null)
-  const [createDraft, setCreateDraft] = useState<PersonRelationshipDraft>({ ...EMPTY_DRAFT })
+  const [createDraft, setCreateDraft] = useState<PersonRelationshipCreateDraft>({ ...EMPTY_CREATE_DRAFT })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editBase, setEditBase] = useState<PersonRelationshipProjection | null>(null)
-  const [editDraft, setEditDraft] = useState<PersonRelationshipDraft>({ ...EMPTY_DRAFT })
+  const [editDraft, setEditDraft] = useState<PersonRelationshipDraft>({ ...EMPTY_EDIT_DRAFT })
   const [mutationKey, setMutationKey] = useState('')
   const authority = useRef(new PersonRelationshipUiAuthority())
   const authSubscriptionReady = useRef(false)
@@ -90,10 +97,10 @@ export default function PersonRelationshipsSection({ personId }: Props) {
     setCandidateLoading(false)
     setCandidateError('')
     setSelectedOtherId(null)
-    setCreateDraft({ ...EMPTY_DRAFT })
+    setCreateDraft({ ...EMPTY_CREATE_DRAFT })
     setEditingId(null)
     setEditBase(null)
-    setEditDraft({ ...EMPTY_DRAFT })
+    setEditDraft({ ...EMPTY_EDIT_DRAFT })
     setMutationKey('')
   }
 
@@ -156,7 +163,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
     setCandidateLoading(true)
     setCandidateError('')
     setSelectedOtherId(null)
-    setCreateDraft({ ...EMPTY_DRAFT })
+    setCreateDraft({ ...EMPTY_CREATE_DRAFT })
     setStatus('')
     setEditingId(null)
     setEditBase(null)
@@ -179,7 +186,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
     setCandidates([])
     setCandidateError('')
     setSelectedOtherId(null)
-    setCreateDraft({ ...EMPTY_DRAFT })
+    setCreateDraft({ ...EMPTY_CREATE_DRAFT })
   }
 
   const submitCreate = async () => {
@@ -207,7 +214,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
       setCreateOpen(false)
       setCandidates([])
       setSelectedOtherId(null)
-      setCreateDraft({ ...EMPTY_DRAFT })
+      setCreateDraft({ ...EMPTY_CREATE_DRAFT })
       setStatus('人物关系已保存')
       await refreshRelationships(true)
     } catch (createError) {
@@ -218,7 +225,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
         setCreateOpen(false)
         setCandidates([])
         setSelectedOtherId(null)
-        setCreateDraft({ ...EMPTY_DRAFT })
+        setCreateDraft({ ...EMPTY_CREATE_DRAFT })
         setStatus(personRelationshipErrorMessage(code) || '人物关系已变化，请刷新后重试')
         await refreshRelationships(true)
         return
@@ -298,6 +305,13 @@ export default function PersonRelationshipsSection({ personId }: Props) {
         identity(action, base.relationship_id, base.revision, base.other_person.id),
       )) return
       setStatus(personRelationshipErrorMessage(apiErrorCode(loadError)) || '最新人物关系加载失败，请重试')
+    } finally {
+      if (authority.current.isCurrent(
+        snapshot,
+        identity(action, base.relationship_id, base.revision, base.other_person.id),
+      )) {
+        setMutationKey('')
+      }
     }
   }
 
@@ -346,11 +360,13 @@ export default function PersonRelationshipsSection({ personId }: Props) {
         snapshot,
         identity(action, base.relationship_id, base.revision, base.other_person.id),
       )) return
-      setMutationKey('')
       if (apiErrorCode(patchError) === 'PERSON_RELATIONSHIP_REVISION_CONFLICT') {
+        // Keep mutationKey set while canonical reload/rebase is in flight. All edit
+        // controls remain disabled so a newer local draft cannot be overwritten.
         await recoverEditConflict(base, editDraft)
         return
       }
+      setMutationKey('')
       setStatus(personRelationshipErrorMessage(apiErrorCode(patchError)) || '人物关系保存失败，请重试')
     }
   }
@@ -405,9 +421,9 @@ export default function PersonRelationshipsSection({ personId }: Props) {
     }
   }
 
-  const kindButtons = (
-    draft: PersonRelationshipDraft,
-    setDraft: (next: PersonRelationshipDraft) => void,
+  const kindButtons = <T extends PersonRelationshipDraft | PersonRelationshipCreateDraft>(
+    draft: T,
+    setDraft: (next: T) => void,
   ) => (
     <View className='relationship-kind-grid'>
       {KINDS.map((kind) => (
@@ -421,7 +437,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
               ...draft,
               relationshipKind: kind,
               customLabel: kind === 'OTHER' ? draft.customLabel : '',
-            })
+            } as T)
           }}
         >
           {relationshipKindLabel(kind)}
@@ -481,6 +497,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
                   className='field'
                   type='text'
                   maxlength={120}
+                  disabled={Boolean(mutationKey)}
                   placeholder='自定义关系（必填）'
                   value={editDraft.customLabel}
                   onInput={(event) => setEditDraft((current) => ({
@@ -492,6 +509,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
               <Textarea
                 className='field textarea'
                 maxlength={5000}
+                disabled={Boolean(mutationKey)}
                 placeholder='关系备注；留空会清除'
                 value={editDraft.note}
                 onInput={(event) => setEditDraft((current) => ({
@@ -595,7 +613,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
               />
               <Button
                 className='primary-button'
-                disabled={Boolean(mutationKey)}
+                disabled={createDraft.relationshipKind === null || Boolean(mutationKey)}
                 onClick={() => void submitCreate()}
               >
                 确认添加关系
