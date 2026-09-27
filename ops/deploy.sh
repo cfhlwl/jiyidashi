@@ -34,9 +34,9 @@ python3 "$ROOT_DIR/ops/validate-production-runtime.py" "$ENV_FILE"
 echo "[2/8] validate production compose"
 "${compose[@]}" config --quiet
 
-echo "[3/8] build immutable backend image: $BACKEND_IMAGE"
-"${compose[@]}" build api
-bash "$ROOT_DIR/ops/verify-image-identity.sh" "$BACKEND_IMAGE" "$TARGET_SHA"
+echo "[3/8] prepare immutable backend image: $BACKEND_IMAGE"
+RELEASE_IMAGE_STATE_DIR="${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}" \
+  bash "$ROOT_DIR/ops/prepare-release-image.sh" "$BACKEND_IMAGE" "$TARGET_SHA"
 
 echo "[4/8] start PostgreSQL, back it up, then migrate"
 ENV_FILE="$ENV_FILE" \
