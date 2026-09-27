@@ -42,6 +42,12 @@ export type PersonRelationshipDraft = {
   note: string
 }
 
+export type PersonRelationshipCreateDraft = {
+  relationshipKind: PersonRelationshipKind | null
+  customLabel: string
+  note: string
+}
+
 export type PersonRelationshipCreatePayload = {
   person_a_id: string
   person_b_id: string
@@ -311,13 +317,18 @@ export function relationshipDraftFromProjection(
 export function buildPersonRelationshipCreatePayload(
   currentPersonId: string,
   otherPersonId: string,
-  draft: PersonRelationshipDraft,
+  draft: PersonRelationshipCreateDraft,
 ): PersonRelationshipCreatePayload {
   if (!isUuid(currentPersonId) || !isUuid(otherPersonId)) throw new Error('人物参数无效')
   if (currentPersonId.toLowerCase() === otherPersonId.toLowerCase()) {
     throw new Error('不能把人物与自己建立关系')
   }
-  const next = semanticDraft(draft)
+  if (draft.relationshipKind === null) throw new Error('请选择人物关系类型')
+  const next = semanticDraft({
+    relationshipKind: draft.relationshipKind,
+    customLabel: draft.customLabel,
+    note: draft.note,
+  })
   const payload: PersonRelationshipCreatePayload = {
     person_a_id: currentPersonId,
     person_b_id: otherPersonId,
