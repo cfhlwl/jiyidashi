@@ -8,12 +8,17 @@ WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+COPY requirements.production.lock ./
 COPY pyproject.toml ./
 COPY app ./app
 RUN pip install --upgrade pip setuptools wheel \
-    && pip install .
+    && pip install --no-deps -r requirements.production.lock \
+    && pip install --no-deps .
 
 FROM python:3.12-slim-bookworm AS runtime
+
+ARG RELEASE_SHA=unknown
+LABEL org.opencontainers.image.revision="$RELEASE_SHA"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
