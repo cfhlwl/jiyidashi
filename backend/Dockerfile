@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
@@ -12,7 +12,7 @@ COPY requirements.production.lock ./
 RUN pip install --no-deps -r requirements.production.lock \
     && pip check
 
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e AS runtime
 
 ARG RELEASE_SHA=unknown
 LABEL org.opencontainers.image.revision="$RELEASE_SHA"
