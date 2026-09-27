@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from threading import Barrier, Thread
+from threading import Event, Thread
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 
 from app.core.db import SessionLocal
 from app.graph_schemas import GraphNodeKind
@@ -20,6 +21,7 @@ from app.models import (
 )
 from app.person_models import Person
 from app.person_relationship_models import PersonRelationship, PersonRelationshipKind
+from app.services import graph_projection_service
 from app.services.graph_projection_service import (
     GraphProjectionError,
     get_graph_neighborhood,
@@ -59,49 +61,65 @@ def _read_vs_person_delete(user_id: UUID) -> None:
         )
         db.commit()
 
-    barrier = Barrier(2)
-    outcomes: list[str] = []
+    center_locked = Event()
+    writer_blocked = Event()
     errors: list[BaseException] = []
+    original_person_edges = graph_projection_service._person_edges
 
-    def reader() -> None:
+    def gated_person_edges(*args, **kwargs):
+        # get_graph_neighborhood has already loaded the center with FOR SHARE.
+        center_locked.set()
+        assert writer_blocked.wait(timeout=10)
+        return original_person_edges(*args, **kwargs)
+
+    graph_projection_service._person_edges = gated_person_edges
+
+    def writer() -> None:
         try:
-            barrier.wait(timeout=15)
+            assert center_locked.wait(timeout=10)
             with SessionLocal() as db:
+                db.execute(text("SET LOCAL lock_timeout = '250ms'"))
                 try:
-                    result = get_graph_neighborhood(
-                        db,
-                        user_id=user_id,
-                        kind=GraphNodeKind.PERSON,
-                        entity_id=person_a,
-                        limit=20,
+                    delete_person(db, user_id=user_id, person_id=person_a)
+                    raise AssertionError(
+                        "Person delete committed while graph center FOR SHARE was held"
                     )
-                    assert result.center.id == person_a
-                    for edge in result.edges:
-                        assert edge.source.id == person_a
-                    outcomes.append("valid")
-                except GraphProjectionError as exc:
-                    assert exc.code == "GRAPH_NODE_NOT_FOUND"
-                    outcomes.append("not-found")
+                except OperationalError as exc:
+                    db.rollback()
+                    assert "lock timeout" in str(exc).lower()
+                    writer_blocked.set()
         except BaseException as exc:  # noqa: BLE001
             errors.append(exc)
+            writer_blocked.set()
 
-    def deleter() -> None:
-        try:
-            barrier.wait(timeout=15)
-            with SessionLocal() as db:
-                delete_person(db, user_id=user_id, person_id=person_a)
-        except BaseException as exc:  # noqa: BLE001
-            errors.append(exc)
+    thread = Thread(target=writer)
+    thread.start()
+    try:
+        with SessionLocal() as db:
+            result = get_graph_neighborhood(
+                db,
+                user_id=user_id,
+                kind=GraphNodeKind.PERSON,
+                entity_id=person_a,
+                limit=20,
+            )
+            assert result.center.id == person_a
+            assert any(
+                edge.authority_ref is not None for edge in result.edges
+            )
+    finally:
+        graph_projection_service._person_edges = original_person_edges
 
-    threads = [Thread(target=reader), Thread(target=deleter)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=20)
-        assert not thread.is_alive()
+    thread.join(timeout=15)
+    assert not thread.is_alive()
     if errors:
         raise errors[0]
-    assert outcomes in (["valid"], ["not-found"])
+    assert writer_blocked.is_set()
+
+    # Once the read transaction releases its share lock, the exact same canonical
+    # writer must be able to commit; every later graph read then fails closed.
+    with SessionLocal() as db:
+        delete_person(db, user_id=user_id, person_id=person_a)
 
     with SessionLocal() as db:
         try:
@@ -128,7 +146,9 @@ def _read_vs_person_delete(user_id: UUID) -> None:
 
 def _event_read_vs_soft_delete(user_id: UUID) -> None:
     event_id = uuid4()
+    place_id = uuid4()
     with SessionLocal() as db:
+        db.add(Place(id=place_id, user_id=user_id, name="event-place"))
         db.add(
             Memory(
                 id=event_id,
@@ -138,55 +158,86 @@ def _event_read_vs_soft_delete(user_id: UUID) -> None:
                 content="event",
                 is_confirmed=True,
                 is_deleted=False,
+                place_id=place_id,
             )
         )
         db.commit()
 
-    barrier = Barrier(2)
+    center_locked = Event()
+    writer_blocked = Event()
     errors: list[BaseException] = []
+    original_event_edges = graph_projection_service._event_edges
 
-    def reader() -> None:
+    def gated_event_edges(*args, **kwargs):
+        # The trusted EVENT center has already been read and share-locked. Force
+        # the invalidating writer to reach its conflicting FOR UPDATE first.
+        center_locked.set()
+        assert writer_blocked.wait(timeout=10)
+        return original_event_edges(*args, **kwargs)
+
+    graph_projection_service._event_edges = gated_event_edges
+
+    def writer() -> None:
         try:
-            barrier.wait(timeout=15)
+            assert center_locked.wait(timeout=10)
             with SessionLocal() as db:
+                db.execute(text("SET LOCAL lock_timeout = '250ms'"))
                 try:
-                    result = get_graph_neighborhood(
+                    memory = get_memory_for_user(
                         db,
-                        user_id=user_id,
-                        kind=GraphNodeKind.EVENT,
-                        entity_id=event_id,
-                        limit=20,
+                        user_id,
+                        event_id,
+                        for_update=True,
                     )
-                    assert result.center.id == event_id
-                except GraphProjectionError as exc:
-                    assert exc.code == "GRAPH_NODE_NOT_FOUND"
+                    assert memory is not None
+                    soft_delete_memory(db, memory)
+                    db.commit()
+                    raise AssertionError(
+                        "EVENT soft-delete committed while graph center FOR SHARE was held"
+                    )
+                except OperationalError as exc:
+                    db.rollback()
+                    assert "lock timeout" in str(exc).lower()
+                    writer_blocked.set()
         except BaseException as exc:  # noqa: BLE001
             errors.append(exc)
+            writer_blocked.set()
 
-    def deleter() -> None:
-        try:
-            barrier.wait(timeout=15)
-            with SessionLocal() as db:
-                memory = get_memory_for_user(
-                    db,
-                    user_id,
-                    event_id,
-                    for_update=True,
-                )
-                assert memory is not None
-                soft_delete_memory(db, memory)
-                db.commit()
-        except BaseException as exc:  # noqa: BLE001
-            errors.append(exc)
+    thread = Thread(target=writer)
+    thread.start()
+    try:
+        with SessionLocal() as db:
+            result = get_graph_neighborhood(
+                db,
+                user_id=user_id,
+                kind=GraphNodeKind.EVENT,
+                entity_id=event_id,
+                limit=20,
+            )
+            assert result.center.id == event_id
+            assert any(
+                edge.edge_kind.value == "EVENT_PLACE"
+                for edge in result.edges
+            )
+    finally:
+        graph_projection_service._event_edges = original_event_edges
 
-    threads = [Thread(target=reader), Thread(target=deleter)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=20)
-        assert not thread.is_alive()
+    thread.join(timeout=15)
+    assert not thread.is_alive()
     if errors:
         raise errors[0]
+    assert writer_blocked.is_set()
+
+    with SessionLocal() as db:
+        memory = get_memory_for_user(
+            db,
+            user_id,
+            event_id,
+            for_update=True,
+        )
+        assert memory is not None
+        soft_delete_memory(db, memory)
+        db.commit()
 
     with SessionLocal() as db:
         try:
