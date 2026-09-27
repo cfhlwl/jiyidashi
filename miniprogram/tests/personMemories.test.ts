@@ -88,7 +88,7 @@ test('Memory picker reuses strict MemoryRead, keeps current owner only, and pres
   const rows = parseMemoryPickerRows([
     memoryRead({ id: MEMORY_A }),
     memoryRead({ id: MEMORY_B, user_id: '22222222-2222-4222-8222-222222222222' }),
-    { ...memoryRead(), id: 'not-a-uuid' },
+    { ...(memoryRead() as Record<string, unknown>), id: 'not-a-uuid' },
     memoryRead({ id: MEMORY_B }),
   ], OWNER, 50)
   assert.deepEqual(rows.map((row) => row.id), [MEMORY_A, MEMORY_B])
