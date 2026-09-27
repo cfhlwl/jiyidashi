@@ -8,6 +8,7 @@ on:
       - "backend/.env.example"
       - "backend/.env.production.example"
       - "backend/pyproject.toml"
+      - "backend/requirements.production.lock"
       - "backend/app/core/config.py"
       - "backend/migrations/**"
       - "docker-compose.prod.yml"
@@ -23,6 +24,7 @@ on:
       - "backend/.env.example"
       - "backend/.env.production.example"
       - "backend/pyproject.toml"
+      - "backend/requirements.production.lock"
       - "backend/app/core/config.py"
       - "backend/migrations/**"
       - "docker-compose.prod.yml"
@@ -56,12 +58,16 @@ jobs:
           python-version: "3.12"
 
       - name: Validate committed production contract
-        run: python3 ops/validate-production-config.py
+        run: |
+          python3 ops/validate-production-config.py
+          python3 ops/validate-production-lock.py
 
-      - name: Create CI-only production environment
+      - name: Create CI-only production environment through custom ENV_FILE
         shell: bash
         run: |
-          cat > backend/.env.production <<'EOF'
+          ENV_FILE="$RUNNER_TEMP/jiyidashi-production.env"
+          echo "ENV_FILE=$ENV_FILE" >> "$GITHUB_ENV"
+          cat > "$ENV_FILE" <<'EOF'
           APP_ENV=production
           APP_NAME=JiYiDashi CI
           DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/jiyi_prod_ci
@@ -133,47 +139,127 @@ jobs:
           LOCATION_FUTURE_SKEW_SECONDS=300
           LOCATION_PLACE_GEOHASH_PRECISION=7
           EOF
-          chmod 600 backend/.env.production
+          chmod 600 "$ENV_FILE"
+          test ! -e backend/.env.production
+          python3 ops/validate-production-runtime.py "$ENV_FILE"
+
+      - name: Reject unsafe actual production environments
+        shell: bash
+        run: |
+          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'; do
+            bad_env="$RUNNER_TEMP/bad-production.env"
+            cp "$ENV_FILE" "$bad_env"
+            key="${mutation%%=*}"
+            sed -i "s|^${key}=.*$|${mutation}|" "$bad_env"
+            if python3 ops/validate-production-runtime.py "$bad_env"; then
+              echo "unsafe production env unexpectedly passed: $mutation" >&2
+              exit 1
+            fi
+          done
+
+      - name: Prove Compose hard-locks production safety invariants
+        shell: bash
+        run: |
+          bad_env="$RUNNER_TEMP/compose-bad-production.env"
+          cp "$ENV_FILE" "$bad_env"
+          sed -i 's/^APP_ENV=.*/APP_ENV=development/' "$bad_env"
+          sed -i 's/^ENABLE_DEV_AUTH=.*/ENABLE_DEV_AUTH=true/' "$bad_env"
+          sed -i 's/^AUTH_RATE_LIMIT_ENABLED=.*/AUTH_RATE_LIMIT_ENABLED=false/' "$bad_env"
+          sed -i 's/^AUTO_CREATE_SCHEMA=.*/AUTO_CREATE_SCHEMA=true/' "$bad_env"
+          ENV_FILE="$bad_env" docker compose             --env-file "$bad_env"             -f docker-compose.prod.yml             config --format json > "$RUNNER_TEMP/compose.json"
+          python3 - "$RUNNER_TEMP/compose.json" <<'PY'
+          import json, sys
+          body=json.load(open(sys.argv[1], encoding="utf-8"))
+          for service in ("api", "migrate"):
+              env=body["services"][service]["environment"]
+              assert env["APP_ENV"] == "production"
+              assert env["ENABLE_DEV_AUTH"] == "false"
+              assert env["AUTH_RATE_LIMIT_ENABLED"] == "true"
+              assert env["AUTO_CREATE_SCHEMA"] == "false"
+          PY
 
       - name: Render production Compose
         run: |
-          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             config --quiet
+          docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             config --quiet
 
-      - name: Build production backend image
+      - name: Build production backend image from frozen dependencies
         run: |
-          docker build             --file backend/Dockerfile             --tag "$BACKEND_IMAGE"             backend
+          docker build             --file backend/Dockerfile             --build-arg "RELEASE_SHA=$EXPECTED_SHA"             --tag "$BACKEND_IMAGE"             backend
           docker inspect "$BACKEND_IMAGE" --format '{{.Config.User}}' | grep -qx 'app'
+          bash ops/verify-image-identity.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Reject untracked release build context
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          TARGET_SHA="$EXPECTED_SHA" bash ops/validate-release-source.sh
+          trap 'rm -f backend/app/__ops_untracked_release_probe__.py' EXIT
+          printf 'UNTRACKED_RELEASE_PROBE = True\n' > backend/app/__ops_untracked_release_probe__.py
+          if TARGET_SHA="$EXPECTED_SHA" bash ops/validate-release-source.sh; then
+            echo "untracked source unexpectedly passed release-source gate" >&2
+            exit 1
+          fi
+          rm backend/app/__ops_untracked_release_probe__.py
+          trap - EXIT
+          TARGET_SHA="$EXPECTED_SHA" bash ops/validate-release-source.sh
 
       - name: Validate Caddy configuration
         run: |
           docker run --rm             -e API_DOMAIN=api.example.test             -e ACME_EMAIL=ops@example.test             -v "$PWD/ops/Caddyfile:/etc/caddy/Caddyfile:ro"             caddy:2.8.4-alpine             caddy validate --config /etc/caddy/Caddyfile
 
-      - name: Start disposable PostgreSQL
+      - name: Seed existing PostgreSQL volume then stop database
+        shell: bash
         run: |
-          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             up -d postgres
-
+          export ENV_FILE
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml up -d postgres
           for i in $(seq 1 60); do
-            if docker compose               --env-file backend/.env.production               -f docker-compose.prod.yml               exec -T postgres sh -ceu               'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
-              exit 0
+            if docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml               exec -T postgres sh -ceu               'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+              break
             fi
             sleep 2
           done
-          exit 1
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml             exec -T postgres sh -ceu '
+              PGPASSWORD="$POSTGRES_PASSWORD" psql                 --host=127.0.0.1                 --username="$POSTGRES_USER"                 --dbname="$POSTGRES_DB"                 --command="CREATE TABLE ops_backup_marker(value text PRIMARY KEY); INSERT INTO ops_backup_marker VALUES ('stopped-volume-marker');"
+            '
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml stop postgres
+          test -n "$(docker volume ls -q --filter name=jiyidashi-production_jiyi_postgres_data)"
 
-      - name: Run one-shot Alembic migration
+      - name: Stopped existing volume is backed up before migration
+        shell: bash
         run: |
-          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             run --rm migrate
+          export ENV_FILE
+          export RELEASE_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          backup_record="$RUNNER_TEMP/backup-record.txt"
+          ENV_FILE="$ENV_FILE"           COMPOSE_FILE="$PWD/docker-compose.prod.yml"           BACKUP_DIR="$RUNNER_TEMP/backups"           BACKUP_RECORD_FILE="$backup_record"             bash ops/prepare-production-database.sh
+
+          backup_path="$(cat "$backup_record")"
+          test -s "$backup_path"
+          printf '%s\n' "$backup_path" > "$RUNNER_TEMP/backup-path.txt"
+
+      - name: Restore pre-migration backup and verify marker survived
+        shell: bash
+        run: |
+          export ENV_FILE
+          backup_path="$(cat "$RUNNER_TEMP/backup-path.txt")"
+          ENV_FILE="$ENV_FILE"           COMPOSE_FILE="$PWD/docker-compose.prod.yml"           RESTORE_DATABASE=jiyidashi_restore_smoke             bash ops/restore-postgres.sh "$backup_path"
+
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml             exec -T postgres sh -ceu '
+              PGPASSWORD="$POSTGRES_PASSWORD" psql                 --host=127.0.0.1                 --username="$POSTGRES_USER"                 --dbname=jiyidashi_restore_smoke                 --tuples-only --no-align                 --command="SELECT value FROM ops_backup_marker;"
+            ' | grep -qx 'stopped-volume-marker'
 
       - name: Verify no schema drift
         run: |
-          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             run --rm --no-deps api alembic check
+          docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             run --rm --no-deps api alembic check
 
       - name: Start production API and verify health
         run: |
-          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             up -d --no-deps api
+          docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             up -d --no-deps api
 
           for i in $(seq 1 60); do
-            if docker compose               --env-file backend/.env.production               -f docker-compose.prod.yml               exec -T api python -c               "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"               >/dev/null 2>&1; then
+            if docker compose               --env-file "$ENV_FILE"               -f docker-compose.prod.yml               exec -T api python -c               "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"               >/dev/null 2>&1; then
               exit 0
             fi
             sleep 2
@@ -183,7 +269,7 @@ jobs:
       - name: Production dev-auth fails closed
         shell: bash
         run: |
-          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             exec -T api python - <<'PY'
+          docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             exec -T api python - <<'PY'
           import json
           import urllib.error
           import urllib.request
@@ -202,22 +288,12 @@ jobs:
               raise AssertionError("production dev auth unexpectedly reachable")
           PY
 
-      - name: PostgreSQL backup and fresh restore smoke
-        shell: bash
-        run: |
-          backup_path="$(
-            ENV_FILE="$PWD/backend/.env.production"             COMPOSE_FILE="$PWD/docker-compose.prod.yml"             BACKUP_DIR="$RUNNER_TEMP/backups"             BACKUP_RETENTION_DAYS=14               bash ops/backup-postgres.sh
-          )"
-          test -s "$backup_path"
-
-          ENV_FILE="$PWD/backend/.env.production"           COMPOSE_FILE="$PWD/docker-compose.prod.yml"           RESTORE_DATABASE=jiyidashi_restore_smoke             bash ops/restore-postgres.sh "$backup_path"
-
       - name: Show final production service state
         if: always()
         run: |
-          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             ps || true
+          docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             ps || true
 
       - name: Tear down disposable production stack
         if: always()
         run: |
-          docker compose             --env-file backend/.env.production             -f docker-compose.prod.yml             down -v --remove-orphans || true
+          docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             down -v --remove-orphans || true
