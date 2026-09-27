@@ -11,8 +11,10 @@ import {
   parsePersonList,
   parsePersonRead,
   PeopleUiAuthority,
+  personConflictFieldLabel,
   personDetailRoute,
   personErrorMessage,
+  rebasePersonDraft,
   type PersonRead,
 } from '../src/services/people'
 
@@ -135,6 +137,64 @@ test('PATCH preserves expected_revision and omitted / null / aliases=[] semantic
   })
 })
 
+test('field-aware conflict rebase preserves server-only changes and user-only edits', () => {
+  const base = person()
+  const latest = parsePersonRead(rawPerson({
+    revision: 4,
+    note: '已搬家',
+  }))
+  const rebased = rebasePersonDraft(base, {
+    displayName: '王阿姨（新）',
+    relationshipLabel: base.relationship_label || '',
+    note: base.note || '',
+    aliases: [...base.aliases],
+  }, latest)
+
+  assert.deepEqual(rebased.conflicts, [])
+  assert.equal(rebased.keepUserDraft.displayName, '王阿姨（新）')
+  assert.equal(rebased.keepUserDraft.note, '已搬家')
+  assert.deepEqual(
+    buildPersonPatchPayload(latest, rebased.keepUserDraft),
+    {
+      expected_revision: 4,
+      display_name: '王阿姨（新）',
+    },
+  )
+})
+
+test('field-aware conflict rebase requires explicit resolution when both sides changed same field', () => {
+  const base = person()
+  const latest = parsePersonRead(rawPerson({
+    revision: 4,
+    note: '服务器修改',
+    aliases: ['服务器别名'],
+  }))
+  const rebased = rebasePersonDraft(base, {
+    displayName: base.display_name,
+    relationshipLabel: base.relationship_label || '',
+    note: '我的修改',
+    aliases: ['我的别名'],
+  }, latest)
+
+  assert.deepEqual(rebased.conflicts, ['note', 'aliases'])
+  assert.equal(personConflictFieldLabel('note'), '备注')
+  assert.equal(personConflictFieldLabel('aliases'), '别名')
+
+  assert.equal(rebased.keepUserDraft.note, '我的修改')
+  assert.deepEqual(rebased.keepUserDraft.aliases, ['我的别名'])
+  assert.equal(rebased.keepServerDraft.note, '服务器修改')
+  assert.deepEqual(rebased.keepServerDraft.aliases, ['服务器别名'])
+
+  assert.deepEqual(buildPersonPatchPayload(latest, rebased.keepServerDraft), {
+    expected_revision: 4,
+  })
+  assert.deepEqual(buildPersonPatchPayload(latest, rebased.keepUserDraft), {
+    expected_revision: 4,
+    note: '我的修改',
+    aliases: ['我的别名'],
+  })
+})
+
 test('alias input remains explicit, bounded, ordered, and blank aliases fail locally', () => {
   const base = person()
   const reordered = buildPersonPatchPayload(base, {
@@ -218,20 +278,27 @@ test('delete is named second-confirmation and failure keeps the Person visible',
   assert.doesNotMatch(deleteFlow, /setDetail\(null\)/)
 })
 
-test('detail conflict reload preserves draft and does not auto-retry PATCH', () => {
+test('detail conflict recovery rebases onto latest revision and prompts for overlapping fields', () => {
   const detail = readFileSync(resolve(process.cwd(), 'src/pages/person-detail/index.tsx'), 'utf8')
   const refreshStart = detail.indexOf('const refreshAfterConflict = async')
   const refreshEnd = detail.indexOf('useEffect(() => subscribeElderMode')
   const conflictReload = detail.slice(refreshStart, refreshEnd)
-  assert.match(conflictReload, /setDetail\(latest\)/)
-  assert.match(conflictReload, /setEditing\(true\)/)
-  assert.doesNotMatch(conflictReload, /setDraft\(/)
+
+  assert.match(conflictReload, /rebasePersonDraft\(base, userDraft, latest\)/)
+  assert.match(conflictReload, /rebased\.conflicts\.length > 0/)
+  assert.match(conflictReload, /title: '人物信息同时被修改'/)
+  assert.match(conflictReload, /confirmText: '保留我的修改'/)
+  assert.match(conflictReload, /cancelText: '使用服务器值'/)
+  assert.match(conflictReload, /nextDraft = modal\.confirm \? rebased\.keepUserDraft : rebased\.keepServerDraft/)
+  assert.match(conflictReload, /setEditBase\(latest\)/)
+  assert.match(conflictReload, /setDraft\(nextDraft\)/)
 
   const saveStart = detail.indexOf('const saveEdit = async')
   const saveEnd = detail.indexOf('const confirmDelete = async')
   const saveFlow = detail.slice(saveStart, saveEnd)
+  assert.match(saveFlow, /const base = editBase/)
   assert.match(saveFlow, /isPersonRevisionConflict\(apiErrorCode\(saveError\)\)/)
-  assert.match(saveFlow, /await refreshAfterConflict\(\)/)
+  assert.match(saveFlow, /await refreshAfterConflict\(base, draft\)/)
   assert.equal((saveFlow.match(/patchPerson\(/g) || []).length, 1)
 })
 
@@ -309,4 +376,11 @@ test('route/list path carry only Person identity and bounded limit', () => {
     `/pages/person-detail/index?personId=${PERSON_A}`,
   )
   assert.equal(personDetailRoute(PERSON_A).includes('user_id='), false)
+})
+
+test('Mini CI is bound to canonical Person backend protocol surfaces', () => {
+  const workflow = readFileSync(resolve(process.cwd(), '../.github/workflows/miniprogram-ci.yml'), 'utf8')
+  assert.match(workflow, /backend\/app\/api\/people\.py/)
+  assert.match(workflow, /backend\/app\/person_schemas\.py/)
+  assert.match(workflow, /backend\/app\/services\/person_service\.py/)
 })
