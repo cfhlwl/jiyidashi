@@ -146,7 +146,7 @@ jobs:
       - name: Reject unsafe actual production environments
         shell: bash
         run: |
-          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'; do
+          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'JWT_SECRET=short'; do
             bad_env="$RUNNER_TEMP/bad-production.env"
             cp "$ENV_FILE" "$bad_env"
             key="${mutation%%=*}"
@@ -182,13 +182,26 @@ jobs:
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             config --quiet
 
-      - name: Prepare immutable production backend image
+      - name: Prepare immutable production backend image from exact Git tree
         shell: bash
         run: |
           export RELEASE_IMAGE_STATE_DIR="$RUNNER_TEMP/release-images"
+
+          ignored_probe="backend/app/__ops_ignored_release_probe__.key"
+          trap 'rm -f "$ignored_probe"' EXIT
+          printf 'must-never-enter-release-image\n' > "$ignored_probe"
+          git check-ignore -q "$ignored_probe"
+          test -z "$(git status --porcelain=v1 --untracked-files=all -- "$ignored_probe")"
+
           bash ops/prepare-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
           docker inspect "$BACKEND_IMAGE" --format '{{.Config.User}}' | grep -qx 'app'
           bash ops/verify-recorded-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
+
+          docker run --rm --entrypoint sh "$BACKEND_IMAGE" -ceu \
+            'test ! -e /app/app/__ops_ignored_release_probe__.key'
+
+          rm -f "$ignored_probe"
+          trap - EXIT
           cp "$RELEASE_IMAGE_STATE_DIR/$EXPECTED_SHA.image-id" "$RUNNER_TEMP/reviewed-image-id.txt"
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
