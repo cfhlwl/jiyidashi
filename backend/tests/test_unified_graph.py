@@ -89,8 +89,12 @@ def _seed_graph(user_id: UUID) -> dict[str, UUID]:
                 user_id=user_id,
                 memory_type=MemoryType.EVENT,
                 title=None,
-                content=("这是一个已经确认的事件，完整内容不应该从图谱接口泄漏给客户端，"
-                    "这里只允许有限标题预览，不能把后面的私人正文、证据细节、来源信息一起暴露。"),
+                content=(
+                    "这是一个已经确认的事件，完整内容不应该从图谱接口泄漏给客户端。"
+                    "这里继续补充大量私人正文用于验证八十字符预览边界，"
+                    "这些内容只属于 Memory authority，不应该完整出现在图谱响应中。"
+                    "GRAPH_PRIVATE_TAIL_MUST_NOT_APPEAR"
+                ),
                 occurred_at=now,
                 is_confirmed=True,
                 is_deleted=False,
@@ -259,10 +263,7 @@ async def test_person_projection_is_one_hop_trusted_and_private(client):
     assert "private-object-description" not in payload
     assert "40.123" not in payload
     assert "116.456" not in payload
-    assert (
-        "这里只允许有限标题预览，不能把后面的私人正文、证据细节、来源信息一起暴露"
-        not in payload
-    )
+    assert "GRAPH_PRIVATE_TAIL_MUST_NOT_APPEAR" not in payload
     event_node = next(
         node for node in body["nodes"] if node["id"] == str(ids["event"])
     )
