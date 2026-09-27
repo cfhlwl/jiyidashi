@@ -59,6 +59,15 @@ STORAGE_ENDPOINT_URL=https://...
 AI/ASR/Embedding custom endpoints -> HTTPS when enabled
 ```
 
+These four application invariants are enforced twice: `ops/validate-production-runtime.py`
+validates the **actual server ENV_FILE**, and production Compose explicitly overrides the same
+four values for `api` and `migrate`. Editing a real env file to development/unsafe values
+therefore fails deployment preflight and cannot weaken the container runtime.
+
+All deployment scripts export the same `ENV_FILE` into Compose. A custom absolute env path is
+therefore the single source for both Compose interpolation and the API/migrate `env_file`;
+there is no hidden fallback to `backend/.env.production`.
+
 `POSTGRES_PASSWORD` is the PostgreSQL container credential. The password embedded in `DATABASE_URL` must represent the same value and must be URL-encoded when it contains reserved URI characters.
 
 Provider keys are server-only. They are never copied into Mini Program or Flutter configuration.
@@ -74,7 +83,10 @@ jiyidashi-backend:<40-char-git-sha>
 The production Dockerfile:
 
 - uses Python 3.12;
-- installs only `[project].dependencies`, not the `dev` extra;
+- installs the complete exact-version `backend/requirements.production.lock`;
+- does not resolve `pyproject.toml` version ranges during an image build;
+- validates the installed frozen graph with `pip check`;
+- excludes pytest/pytest-asyncio/ruff from the production lock;
 - runs as non-root UID/GID 10001;
 - does not copy tests, `.env`, Git metadata or local DB files;
 - does not run migrations during image build/startup;
@@ -105,16 +117,23 @@ bash ops/deploy.sh
 
 The script performs:
 
-1. verify exact full git SHA and clean tracked worktree;
-2. validate production Compose;
-3. build/tag the backend image by immutable SHA;
-4. if an existing PostgreSQL service is running, create a custom-format backup first;
-5. start/verify PostgreSQL health;
-6. execute `alembic upgrade head` once in the one-shot `migrate` service;
+1. verify exact full git SHA and reject **tracked or untracked** release-source changes;
+2. validate the actual production env and production Compose;
+3. build/tag the backend image by immutable SHA, embed the SHA as the OCI revision label, and record/verify its `sha256` image ID;
+4. start PostgreSQL even if its container was stopped;
+5. wait for PostgreSQL health and **always create the pre-migration backup** from the existing volume/data;
+6. execute `alembic upgrade head` once only after that backup succeeds;
 7. start API without re-running migration dependency and wait for internal `/health`;
 8. start Caddy and run the external HTTPS/auth acceptance smoke.
 
+A stopped PostgreSQL container is never treated as proof of a first deployment. Existing volumes
+are brought up and backed up before migration.
+
 A migration failure stops the release before the new API starts.
+
+The Git SHA tag is a human release coordinate, while the Docker `sha256` image ID is the exact
+built artifact identity. Release logs must retain both. Rollback validates that the selected
+image carries the expected OCI git revision and a real `sha256` image ID.
 
 For registry-backed deployment, push the reviewed immutable image through your normal registry credentials after build and before remote rollout. Do not reuse mutable `latest` as the rollback identity.
 
@@ -246,11 +265,17 @@ Before production acceptance:
 `production-deployment-ci` validates without a public server or paid providers:
 
 - production env/template static security contract;
-- production Docker image build;
+- negative tests for unsafe **actual** production env values;
+- Compose hard runtime overrides for the four production invariants;
+- custom `ENV_FILE` with no default env file present;
+- exact production dependency lock parity;
+- untracked source rejection;
+- production Docker image build + OCI revision + `sha256` image identity;
 - Compose render;
 - Caddy static validation;
 - disposable pgvector PostgreSQL;
-- one-shot Alembic migration;
+- stopped existing PostgreSQL volume → start → backup → one-shot Alembic migration;
+- restore of that pre-migration backup with marker-data verification;
 - `alembic check` schema-drift check;
 - API startup and internal `/health`;
 - production `/v1/auth/dev-token=404`;
