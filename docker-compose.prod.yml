@@ -5,6 +5,8 @@ x-backend-image: &backend-image
   build:
     context: ./backend
     dockerfile: Dockerfile
+    args:
+      RELEASE_SHA: ${RELEASE_SHA:-unknown}
 
 x-backend-env: &backend-env
   env_file:
