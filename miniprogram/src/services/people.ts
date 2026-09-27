@@ -31,6 +31,18 @@ export type PersonFormDraft = {
   aliases: string[]
 }
 
+export type PersonConflictField =
+  | 'display_name'
+  | 'relationship_label'
+  | 'note'
+  | 'aliases'
+
+export type PersonConflictRebase = {
+  keepUserDraft: PersonFormDraft
+  keepServerDraft: PersonFormDraft
+  conflicts: PersonConflictField[]
+}
+
 export type PeopleAuthoritySnapshot = Readonly<{
   generation: number
   owner: string
@@ -186,6 +198,115 @@ export function buildPersonPatchPayload(
 
 export function hasPersonPatchChanges(payload: PersonPatchPayload): boolean {
   return Object.keys(payload).some((key) => key !== 'expected_revision')
+}
+
+
+function sameAliases(left: readonly string[], right: readonly string[]): boolean {
+  return (
+    left.length === right.length
+    && left.every((alias, index) => alias === right[index])
+  )
+}
+
+export function personConflictFieldLabel(field: PersonConflictField): string {
+  switch (field) {
+    case 'display_name':
+      return '姓名'
+    case 'relationship_label':
+      return '关系备注'
+    case 'note':
+      return '备注'
+    case 'aliases':
+      return '别名'
+  }
+}
+
+export function rebasePersonDraft(
+  editBase: PersonRead,
+  userDraft: PersonFormDraft,
+  latest: PersonRead,
+): PersonConflictRebase {
+  if (editBase.id.toLowerCase() !== latest.id.toLowerCase()) {
+    throw new Error('人物数据异常，请稍后重试')
+  }
+
+  const userDisplayName = normalizeRequired(
+    userDraft.displayName,
+    DISPLAY_NAME_MAX,
+    '姓名',
+  )
+  const userRelationship = normalizeNullableInput(
+    userDraft.relationshipLabel,
+    RELATIONSHIP_MAX,
+    '关系备注',
+  )
+  const userNote = normalizeNullableInput(userDraft.note, NOTE_MAX, '备注')
+  const userAliases = normalizePersonAliases(userDraft.aliases)
+
+  const conflicts: PersonConflictField[] = []
+
+  const mergeScalar = <T>(
+    field: PersonConflictField,
+    baseValue: T,
+    userValue: T,
+    latestValue: T,
+  ): { keepUser: T; keepServer: T } => {
+    const userChanged = userValue !== baseValue
+    const serverChanged = latestValue !== baseValue
+    const conflict = userChanged && serverChanged && userValue !== latestValue
+    if (conflict) conflicts.push(field)
+    const keepUser = userChanged ? userValue : latestValue
+    return {
+      keepUser,
+      keepServer: conflict ? latestValue : keepUser,
+    }
+  }
+
+  const displayName = mergeScalar(
+    'display_name',
+    editBase.display_name,
+    userDisplayName,
+    latest.display_name,
+  )
+  const relationship = mergeScalar(
+    'relationship_label',
+    editBase.relationship_label,
+    userRelationship,
+    latest.relationship_label,
+  )
+  const note = mergeScalar(
+    'note',
+    editBase.note,
+    userNote,
+    latest.note,
+  )
+
+  const userAliasesChanged = !sameAliases(userAliases, editBase.aliases)
+  const serverAliasesChanged = !sameAliases(latest.aliases, editBase.aliases)
+  const aliasConflict = (
+    userAliasesChanged
+    && serverAliasesChanged
+    && !sameAliases(userAliases, latest.aliases)
+  )
+  if (aliasConflict) conflicts.push('aliases')
+  const keepUserAliases = userAliasesChanged ? userAliases : [...latest.aliases]
+  const keepServerAliases = aliasConflict ? [...latest.aliases] : [...keepUserAliases]
+
+  return {
+    keepUserDraft: {
+      displayName: displayName.keepUser,
+      relationshipLabel: relationship.keepUser || '',
+      note: note.keepUser || '',
+      aliases: [...keepUserAliases],
+    },
+    keepServerDraft: {
+      displayName: displayName.keepServer,
+      relationshipLabel: relationship.keepServer || '',
+      note: note.keepServer || '',
+      aliases: keepServerAliases,
+    },
+    conflicts,
+  }
 }
 
 export function boundedAliasSummary(person: PersonRead, limit = 3): string {
