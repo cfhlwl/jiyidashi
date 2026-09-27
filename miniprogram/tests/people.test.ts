@@ -246,9 +246,9 @@ test('list/detail guard auth owner epoch and Elder mode without hidden gesture c
     assert.match(source, /subscribeElderMode\(setElderMode\)/)
     assert.match(source, /elderClassName\(elderMode\)/)
   }
-  assert.match(list, />新增人物</)
-  assert.match(detail, />编辑</)
-  assert.match(detail, /删除人物/)
+  assert.match(list, /createOpen \? '收起新增' : '新增人物'/)
+  assert.match(detail, /onClick=\{beginEdit\}/)
+  assert.match(detail, /'删除人物'/)
 })
 
 test('Mini V2-A navigation is under 我的 and does not add a sixth tab or graph scope', () => {
