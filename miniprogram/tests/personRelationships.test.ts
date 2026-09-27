@@ -493,3 +493,46 @@ test('Person free-text relationship_label remains separate from direct-edge rela
   assert.match(personService, /relationship_label/)
   assert.doesNotMatch(relationshipService, /relationship_label/)
 })
+
+test('create relationship requires an explicit kind selection before POST', () => {
+  assert.throws(() => buildPersonRelationshipCreatePayload(PERSON_A, PERSON_B, {
+    relationshipKind: null,
+    customLabel: '',
+    note: '',
+  }), /请选择人物关系类型/)
+
+  const source = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
+  assert.match(source, /const EMPTY_CREATE_DRAFT: PersonRelationshipCreateDraft = \{[\s\S]*?relationshipKind: null/)
+  assert.match(source, /disabled=\{createDraft\.relationshipKind === null \|\| Boolean\(mutationKey\)\}/)
+
+  const createStart = source.indexOf('const submitCreate = async')
+  const createEnd = source.indexOf('const beginEdit')
+  const createFlow = source.slice(createStart, createEnd)
+  assert.match(createFlow, /buildPersonRelationshipCreatePayload\(personId, selectedOtherId, createDraft\)/)
+  assert.doesNotMatch(createFlow, /relationshipKind:\s*'FAMILY'/)
+})
+
+test('PATCH and conflict recovery lock edit controls until the current operation finishes', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
+
+  const saveStart = source.indexOf('const saveEdit = async')
+  const saveEnd = source.indexOf('const confirmDelete')
+  const saveFlow = source.slice(saveStart, saveEnd)
+  const revisionBranch = saveFlow.slice(
+    saveFlow.indexOf("if (apiErrorCode(patchError) === 'PERSON_RELATIONSHIP_REVISION_CONFLICT')"),
+    saveFlow.indexOf("setStatus(personRelationshipErrorMessage"),
+  )
+  assert.match(revisionBranch, /await recoverEditConflict\(base, editDraft\)/)
+  assert.doesNotMatch(revisionBranch, /setMutationKey\(''\)/)
+
+  const recoveryStart = source.indexOf('const recoverEditConflict = async')
+  const recoveryEnd = source.indexOf('const saveEdit = async')
+  const recovery = source.slice(recoveryStart, recoveryEnd)
+  assert.match(recovery, /finally \{[\s\S]*?setMutationKey\(''\)/)
+
+  const editorStart = source.indexOf("<View className='relationship-editor'>")
+  const editorEnd = source.indexOf("</View>\n          ) : (", editorStart)
+  const editor = source.slice(editorStart, editorEnd > editorStart ? editorEnd : editorStart + 6500)
+  assert.match(editor, /disabled=\{Boolean\(mutationKey\)\}[\s\S]*?value=\{editDraft\.customLabel\}/)
+  assert.match(editor, /disabled=\{Boolean\(mutationKey\)\}[\s\S]*?value=\{editDraft\.note\}/)
+})
