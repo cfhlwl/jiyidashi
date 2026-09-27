@@ -389,9 +389,19 @@ test('V2-C API adapter uses only canonical direct-edge endpoints and never delet
 test('candidate picker malformed collection fails closed before current-Person filtering', () => {
   assert.throws(() => parsePersonList([
     personRow(PERSON_A, '当前'),
-    { ...(personRow(PERSON_B, '坏数据') as Record<string, unknown>), id: 'not-a-uuid' },
+    { ...(personRow(PERSON_B, '坏数据') as Record<string, unknown>), aliases: 'not-an-array' },
     personRow(PERSON_C, '其他'),
   ]), /人物数据异常/)
+
+  const parsedWithInvalidEndpointId = parsePersonList([
+    personRow(PERSON_A, '当前'),
+    personRow('not-a-uuid', '坏端点'),
+    personRow(PERSON_C, '其他'),
+  ])
+  assert.throws(
+    () => candidatePeopleForRelationship(parsedWithInvalidEndpointId, PERSON_A),
+    /人物关系数据异常/,
+  )
 })
 
 test('relationship list preserves canonical backend order without local ranking', () => {
