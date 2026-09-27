@@ -1,0 +1,75 @@
+@import '../../app.scss';
+
+.person-relationships-section {
+  overflow: hidden;
+}
+
+.relationship-status {
+  margin: 20rpx 0;
+  color: #78817c;
+}
+
+.relationship-row,
+.relationship-candidate {
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid #eef1ef;
+}
+
+.relationship-name {
+  font-weight: 650;
+}
+
+.relationship-kind {
+  margin-top: 10rpx;
+  font-weight: 600;
+  color: #446a57;
+}
+
+.relationship-note {
+  margin-top: 12rpx;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.relationship-actions,
+.relationship-kind-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 16rpx;
+}
+
+.relationship-kind-grid .compact-button,
+.relationship-actions .compact-button,
+.relationship-candidate .compact-button {
+  flex: 1;
+  min-width: 160rpx;
+  margin-top: 0;
+}
+
+.relationship-create,
+.relationship-create-form,
+.relationship-editor {
+  margin-top: 22rpx;
+  padding-top: 22rpx;
+  border-top: 2rpx solid #e2e7e3;
+}
+
+.relationship-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.elder-mode .relationship-row,
+.elder-mode .relationship-candidate {
+  min-height: 108rpx;
+}
+
+.elder-mode .relationship-kind-grid .compact-button,
+.elder-mode .relationship-actions .compact-button {
+  min-height: 96rpx;
+  font-size: 32rpx;
+}

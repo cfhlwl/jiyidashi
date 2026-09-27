@@ -90,6 +90,16 @@ import {
   type PersonMemoryTimelineRow,
 } from './personMemories'
 import {
+  buildPersonRelationshipPath,
+  buildPersonRelationshipsPath,
+  parsePersonRelationshipList,
+  parsePersonRelationshipRead,
+  type PersonRelationshipCreatePayload,
+  type PersonRelationshipPatchPayload,
+  type PersonRelationshipProjection,
+  type PersonRelationshipRead,
+} from './personRelationships'
+import {
   buildPeoplePath,
   parsePersonList,
   parsePersonRead,
@@ -518,6 +528,64 @@ export async function deletePerson(personId: string): Promise<void> {
   })
 }
 
+
+
+export async function listPersonRelationships(
+  personId: string,
+  limit = 100,
+): Promise<PersonRelationshipProjection[]> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>('GET', buildPersonRelationshipsPath(personId, limit))
+    return parsePersonRelationshipList(raw, personId, limit)
+  })
+}
+
+export async function createPersonRelationship(
+  payload: PersonRelationshipCreatePayload,
+  currentPersonId: string,
+  otherPersonId: string,
+): Promise<PersonRelationshipRead> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>('POST', '/people/relationships', payload)
+    return parsePersonRelationshipRead(raw, undefined, currentPersonId, otherPersonId)
+  })
+}
+
+export async function getPersonRelationship(
+  relationshipId: string,
+): Promise<PersonRelationshipRead> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>('GET', buildPersonRelationshipPath(relationshipId))
+    return parsePersonRelationshipRead(raw, relationshipId)
+  })
+}
+
+export async function patchPersonRelationship(
+  relationshipId: string,
+  payload: PersonRelationshipPatchPayload,
+  currentPersonId: string,
+  otherPersonId: string,
+): Promise<PersonRelationshipRead> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>(
+      'PATCH',
+      buildPersonRelationshipPath(relationshipId),
+      payload,
+    )
+    return parsePersonRelationshipRead(
+      raw,
+      relationshipId,
+      currentPersonId,
+      otherPersonId,
+    )
+  })
+}
+
+export async function deletePersonRelationship(relationshipId: string): Promise<void> {
+  return guardedPeopleRequest(async () => {
+    await request<void>('DELETE', buildPersonRelationshipPath(relationshipId))
+  })
+}
 
 export async function listPersonMemoryTimeline(
   personId: string,

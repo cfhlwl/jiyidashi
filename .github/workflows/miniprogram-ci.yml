@@ -21,6 +21,10 @@ on:
       - "backend/app/person_memory_schemas.py"
       - "backend/app/services/person_memory_service.py"
       - "backend/app/api/memories.py"
+      # Mini V2-C consumes the canonical V2-003 direct Person↔Person edge contract.
+      - "backend/app/person_relationship_schemas.py"
+      - "backend/app/services/person_relationship_service.py"
+      - "backend/app/person_relationship_models.py"
   workflow_dispatch:
 
 # [人工注释][CI-004] package-lock 已纳入仓库；长期 CI 只读并统一使用 npm ci 保证可复现。

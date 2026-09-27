@@ -252,7 +252,7 @@ test('revision conflict is explicit and never mapped as a successful overwrite',
 test('People API wrappers use only canonical CRUD endpoints and never send user_id', () => {
   const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
   const start = api.indexOf('export async function listPeople')
-  const end = api.indexOf('export async function getFamily')
+  const end = api.indexOf('export async function listPersonRelationships')
   const peopleApi = api.slice(start, end)
 
   assert.match(peopleApi, /buildPeoplePath\(limit\)/)
