@@ -165,6 +165,32 @@ test('whole neighborhood fails closed on malformed collections and duplicate typ
   }), 'PERSON', PERSON), /数据异常/)
 })
 
+test('nodes set must exactly equal referenced edge-neighbor set', () => {
+  const orphanPlace = node('PLACE', PLACE, '孤立地点')
+  assert.throws(() => parseGraphNeighborhood(neighborhood({
+    nodes: [
+      node('PERSON', PERSON_B, '李老师'),
+      node('EVENT', EVENT, '一起喝茶', '2026-09-25T10:00:00+08:00'),
+      orphanPlace,
+    ],
+  }), 'PERSON', PERSON), /数据异常/)
+
+  assert.throws(() => parseGraphNeighborhood(neighborhood({
+    nodes: [node('PERSON', PERSON_B, '李老师')],
+    edges: [],
+  }), 'PERSON', PERSON), /数据异常/)
+
+  const canonical = parseGraphNeighborhood(neighborhood(), 'PERSON', PERSON)
+  assert.deepEqual(canonical.edges.map((edge) => edge.edge_kind), [
+    'PERSON_RELATIONSHIP',
+    'PERSON_EVENT',
+  ])
+  assert.deepEqual(canonical.nodes.map((item) => typedNodeKey(item.kind, item.id)), [
+    typedNodeKey('PERSON', PERSON_B),
+    typedNodeKey('EVENT', EVENT),
+  ])
+})
+
 test('center typed identity cannot be duplicated in nodes', () => {
   assert.throws(() => parseGraphNeighborhood(neighborhood({
     nodes: [node('PERSON', PERSON, '王阿姨')],
