@@ -9,11 +9,8 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.production.lock ./
-COPY pyproject.toml ./
-COPY app ./app
-RUN pip install --upgrade pip setuptools wheel \
-    && pip install --no-deps -r requirements.production.lock \
-    && pip install --no-deps .
+RUN pip install --no-deps -r requirements.production.lock \
+    && pip check
 
 FROM python:3.12-slim-bookworm AS runtime
 
