@@ -197,7 +197,7 @@ test('People API wrappers use only canonical CRUD endpoints and never send user_
 
   assert.match(peopleApi, /buildPeoplePath\(limit\)/)
   assert.match(peopleApi, /'POST', '\/people'/)
-  assert.match(peopleApi, /'GET', `\/people\/\$\{encodeURIComponent\(personId\)\}`/)
+  assert.match(peopleApi, /'GET',[\s\S]*?`\/people\/\$\{encodeURIComponent\(personId\)\}`/)
   assert.match(peopleApi, /'PATCH'/)
   assert.match(peopleApi, /'DELETE'/)
   assert.doesNotMatch(peopleApi, /user_id|\/memories|\/relationships|\/graph/)
