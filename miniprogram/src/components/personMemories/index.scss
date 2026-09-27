@@ -1,0 +1,86 @@
+@import '../../app.scss';
+
+.person-memory-section,
+.recent-interactions {
+  overflow: hidden;
+}
+
+.person-memory-status {
+  margin: 20rpx 0;
+  color: #78817c;
+}
+
+.person-memory-row,
+.memory-picker-row,
+.interaction-row {
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid #eef1ef;
+}
+
+.person-memory-row-head,
+.interaction-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.person-memory-time,
+.person-memory-relation {
+  color: #66706a;
+  font-size: 26rpx;
+}
+
+.person-memory-relation,
+.person-memory-title,
+.interaction-name {
+  font-weight: 600;
+}
+
+.person-memory-title {
+  margin-top: 10rpx;
+}
+
+.person-memory-preview {
+  margin: 12rpx 0;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.person-memory-actions,
+.relation-picker-actions {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 16rpx;
+}
+
+.person-memory-actions .compact-button,
+.relation-picker-actions .compact-button,
+.interaction-row .compact-button,
+.memory-picker-row .compact-button {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.person-memory-picker,
+.relation-picker {
+  margin-top: 22rpx;
+  padding-top: 22rpx;
+  border-top: 2rpx solid #e2e7e3;
+}
+
+.memory-picker-row.selected {
+  background: #f0f5f1;
+}
+
+.elder-mode .person-memory-row,
+.elder-mode .memory-picker-row,
+.elder-mode .interaction-row {
+  min-height: 108rpx;
+}
+
+.elder-mode .person-memory-time,
+.elder-mode .person-memory-relation {
+  font-size: 30rpx;
+}
