@@ -1,7 +1,7 @@
 name: jiyidashi-production
 
 x-backend-image: &backend-image
-  image: ${BACKEND_IMAGE:-jiyidashi-backend:${RELEASE_SHA:-local}}
+  image: ${BACKEND_IMAGE:-jiyidashi-backend:local}
   build:
     context: ./backend
     dockerfile: Dockerfile
@@ -99,7 +99,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
-      - /config:size=32m
     security_opt:
       - no-new-privileges:true
 
