@@ -1,0 +1,32 @@
+@import '../../app.scss';
+
+.people-actions {
+  margin-bottom: 20rpx;
+}
+
+.person-card {
+  overflow: hidden;
+}
+
+.alias-editor {
+  margin-top: 24rpx;
+}
+
+.alias-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 14rpx 0;
+  border-bottom: 2rpx solid #eef1ef;
+}
+
+.compact-button {
+  flex: none;
+  min-width: 150rpx;
+  margin-top: 0;
+}
+
+.elder-mode .alias-row {
+  min-height: 96rpx;
+}

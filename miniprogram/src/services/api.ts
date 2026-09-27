@@ -73,6 +73,14 @@ import {
   type MemoryRead,
   type SafeRequestOptions,
 } from './memoryFeedback'
+import {
+  buildPeoplePath,
+  parsePersonList,
+  parsePersonRead,
+  type PersonCreatePayload,
+  type PersonPatchPayload,
+  type PersonRead,
+} from './people'
 export type {
   TodayFootprintResponse,
   TodayFootprintVisit,
@@ -423,6 +431,75 @@ export async function generateAnnualTrustedSummary(
     targetYear ? { target_year: targetYear } : {},
   )
   return parseAnnualTrustedSummary(raw)
+}
+
+
+function createPeopleRequestSessionGuard(): () => void {
+  const epoch = authSessionEpoch
+  const owner = currentAuthOwner()
+  if (!owner) throw new Error('请先登录')
+  return () => {
+    if (epoch !== authSessionEpoch || currentAuthOwner() !== owner) {
+      throw new Error('登录状态已变化，请重试')
+    }
+  }
+}
+
+async function guardedPeopleRequest<T>(operation: () => Promise<T>): Promise<T> {
+  const assertCurrentSession = createPeopleRequestSessionGuard()
+  try {
+    const result = await operation()
+    assertCurrentSession()
+    return result
+  } catch (error) {
+    // Stale old-owner success and stale old-owner error are both discarded.
+    assertCurrentSession()
+    throw error
+  }
+}
+
+export async function listPeople(limit = 100): Promise<PersonRead[]> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>('GET', buildPeoplePath(limit))
+    return parsePersonList(raw)
+  })
+}
+
+export async function createPerson(payload: PersonCreatePayload): Promise<PersonRead> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>('POST', '/people', payload)
+    return parsePersonRead(raw)
+  })
+}
+
+export async function getPerson(personId: string): Promise<PersonRead> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>(
+      'GET',
+      `/people/${encodeURIComponent(personId)}`,
+    )
+    return parsePersonRead(raw, personId)
+  })
+}
+
+export async function patchPerson(
+  personId: string,
+  payload: PersonPatchPayload,
+): Promise<PersonRead> {
+  return guardedPeopleRequest(async () => {
+    const raw = await request<unknown>(
+      'PATCH',
+      `/people/${encodeURIComponent(personId)}`,
+      payload,
+    )
+    return parsePersonRead(raw, personId)
+  })
+}
+
+export async function deletePerson(personId: string): Promise<void> {
+  return guardedPeopleRequest(async () => {
+    await request<void>('DELETE', `/people/${encodeURIComponent(personId)}`)
+  })
 }
 
 export async function getFamily(): Promise<FamilyResponse> {

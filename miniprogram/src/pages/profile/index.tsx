@@ -1,3 +1,4 @@
+import Taro from '@tarojs/taro'
 import { Button, Input, Switch, Text, View } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 import {
@@ -150,6 +151,18 @@ export default function Page() {
           <Input className='field' type='text' placeholder='IANA 时区，例如 Asia/Shanghai' value={timezone} onInput={(e) => setTimezone(e.detail.value)} />
           <View className='muted'>语言：{profile.locale}</View>
           <Button className='primary-button' disabled={loading} onClick={saveProfile}>保存资料</Button>
+        </View>
+
+        <View className='card'>
+          <View className='card-title'>人物</View>
+          <View className='muted'>管理你明确创建的人物、关系备注、别名和备注。</View>
+          <Button
+            className='secondary-button'
+            disabled={loading}
+            onClick={() => void Taro.navigateTo({ url: '/pages/people/index' })}
+          >
+            管理人物
+          </Button>
         </View>
 
         <View className='card elder-setting-card'>
