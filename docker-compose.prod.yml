@@ -8,7 +8,14 @@ x-backend-image: &backend-image
 
 x-backend-env: &backend-env
   env_file:
-    - ./backend/.env.production
+    - ${ENV_FILE:-./backend/.env.production}
+  environment:
+    # These are deployment invariants, not operator-tunable production values.
+    # env_file cannot weaken them.
+    APP_ENV: production
+    ENABLE_DEV_AUTH: "false"
+    AUTH_RATE_LIMIT_ENABLED: "true"
+    AUTO_CREATE_SCHEMA: "false"
 
 services:
   postgres:
