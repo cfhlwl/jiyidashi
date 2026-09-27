@@ -149,6 +149,7 @@ def _event_read_vs_soft_delete(user_id: UUID) -> None:
     place_id = uuid4()
     with SessionLocal() as db:
         db.add(Place(id=place_id, user_id=user_id, name="event-place"))
+        db.flush()
         db.add(
             Memory(
                 id=event_id,
