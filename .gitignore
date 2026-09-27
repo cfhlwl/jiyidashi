@@ -37,3 +37,4 @@ Thumbs.db
 !.env.example
 !.env.production.example
 backups/
+.ops-state/
