@@ -1,4 +1,5 @@
-import { isUuid, type PersonRead } from './people'
+import { isUuid } from './memoryFeedback'
+import type { PersonRead } from './people'
 
 export type PersonRelationshipKind =
   | 'FAMILY'
