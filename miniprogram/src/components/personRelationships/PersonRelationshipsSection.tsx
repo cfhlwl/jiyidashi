@@ -593,6 +593,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
                   className='field'
                   type='text'
                   maxlength={120}
+                  disabled={Boolean(mutationKey)}
                   placeholder='自定义关系（必填）'
                   value={createDraft.customLabel}
                   onInput={(event) => setCreateDraft((current) => ({
@@ -604,6 +605,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
               <Textarea
                 className='field textarea'
                 maxlength={5000}
+                disabled={Boolean(mutationKey)}
                 placeholder='关系备注（可选）'
                 value={createDraft.note}
                 onInput={(event) => setCreateDraft((current) => ({
