@@ -88,11 +88,25 @@ test('Memory picker reuses strict MemoryRead, keeps current owner only, and pres
   const rows = parseMemoryPickerRows([
     memoryRead({ id: MEMORY_A }),
     memoryRead({ id: MEMORY_B, user_id: '22222222-2222-4222-8222-222222222222' }),
-    { ...(memoryRead() as Record<string, unknown>), id: 'not-a-uuid' },
     memoryRead({ id: MEMORY_B }),
   ], OWNER, 50)
   assert.deepEqual(rows.map((row) => row.id), [MEMORY_A, MEMORY_B])
   assert.ok(rows.every((row) => row.user_id === OWNER))
+})
+
+test('Memory picker collection fails closed when any row is malformed', () => {
+  assert.throws(() => parseMemoryPickerRows([
+    memoryRead({ id: MEMORY_A }),
+    { ...(memoryRead() as Record<string, unknown>), id: 'not-a-uuid' },
+    memoryRead({ id: MEMORY_B }),
+  ], OWNER, 50), /记忆数据异常/)
+
+  const page = readFileSync(resolve(process.cwd(), 'src/components/personMemories/PersonMemorySection.tsx'), 'utf8')
+  const start = page.indexOf('const openPicker = async')
+  const end = page.indexOf('const closePicker')
+  const pickerFlow = page.slice(start, end)
+  assert.match(pickerFlow, /const rows = await listMemoryPickerRows\(owner, 50\)/)
+  assert.match(pickerFlow, /catch \{[\s\S]*?setPickerRows\(\[\]\)[\s\S]*?setPickerError\('可关联记忆加载失败，请重试'\)/)
 })
 
 test('RELATED/MET create is explicit; PATCH uses latest revision and same relation is no-op', () => {
