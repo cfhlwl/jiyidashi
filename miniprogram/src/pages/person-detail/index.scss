@@ -1,0 +1,60 @@
+@import '../../app.scss';
+
+.detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid #eef1ef;
+}
+
+.detail-row:last-child {
+  border-bottom: 0;
+}
+
+.detail-label {
+  color: #78817c;
+  font-size: 26rpx;
+}
+
+.detail-note {
+  white-space: pre-wrap;
+}
+
+.detail-actions,
+.edit-actions {
+  margin-bottom: 20rpx;
+}
+
+.danger-button {
+  margin-top: 18rpx;
+  min-height: 82rpx;
+  border-radius: 18rpx;
+  background: #fff1f0;
+  color: #b3261e;
+}
+
+.alias-editor {
+  margin-top: 24rpx;
+}
+
+.alias-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 14rpx 0;
+  border-bottom: 2rpx solid #eef1ef;
+}
+
+.compact-button {
+  flex: none;
+  min-width: 150rpx;
+  margin-top: 0;
+}
+
+.elder-mode .danger-button,
+.elder-mode .alias-row {
+  min-height: 96rpx;
+  font-size: 34rpx;
+}

@@ -7,6 +7,8 @@ export default defineAppConfig({
     'pages/query/index',
     'pages/family/index',
     'pages/profile/index',
+    'pages/people/index',
+    'pages/person-detail/index',
   ],
   window: {
     navigationBarTitleText: '迹忆',
