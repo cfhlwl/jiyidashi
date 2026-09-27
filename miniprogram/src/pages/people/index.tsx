@@ -2,6 +2,7 @@ import Taro, { useDidShow } from '@tarojs/taro'
 import { Button, Input, Text, Textarea, View } from '@tarojs/components'
 import { useEffect, useRef, useState } from 'react'
 import {
+  apiErrorCode,
   createPerson,
   currentAuthenticatedUserId,
   currentAuthSessionEpoch,
@@ -168,7 +169,7 @@ export default function Page() {
       await Taro.navigateTo({ url: personDetailRoute(created.id) })
     } catch (createError) {
       if (!isCurrent(snapshot, identity)) return
-      setStatus(personErrorMessage(createError instanceof Error ? null : null) || '创建人物失败，请重试')
+      setStatus(personErrorMessage(apiErrorCode(createError)) || '创建人物失败，请重试')
     } finally {
       if (isCurrent(snapshot, identity)) setCreating(false)
     }
