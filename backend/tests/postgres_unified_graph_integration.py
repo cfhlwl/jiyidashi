@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from threading import Event, Thread
+from threading import Barrier, Event, Thread
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
@@ -193,7 +193,8 @@ def _event_read_vs_soft_delete(user_id: UUID) -> None:
                     soft_delete_memory(db, memory)
                     db.commit()
                     raise AssertionError(
-                        "EVENT soft-delete committed while graph center FOR SHARE was held"
+                        "EVENT soft-delete committed while graph center "
+                        "FOR SHARE was held"
                     )
                 except OperationalError as exc:
                     db.rollback()
