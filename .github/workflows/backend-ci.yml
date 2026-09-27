@@ -248,6 +248,24 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_unified_graph_integration.py
 
+      - name: PostgreSQL LifeEvent migration determinism
+        # [V2-005] 0023 must downgrade cleanly to 0022 and re-upgrade with both
+        # owner-safe tables/constraints intact.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_life_event_migration_integration.py
+
+      - name: PostgreSQL LifeEvent concurrency
+        # [V2-005] LifeEvent optimistic writes and explicit Memory evidence share
+        # deterministic row-lock boundaries with delete/soft-delete.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_life_event_integration.py
+
       - name: PostgreSQL schema drift check
         # [人工注释][S1-FIX-001] upgrade 成功不代表 ORM metadata 与 migration head 一致；alembic check 是正式漂移门禁。
         env:

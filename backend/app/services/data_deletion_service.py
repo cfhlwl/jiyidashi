@@ -23,6 +23,7 @@ from app.family_models import (
     FamilyRole,
 )
 from app.idempotency_models import ClientMutation
+from app.life_event_models import LifeEvent, LifeEventMemoryLink
 from app.media_models import MediaASRClaim, MediaAsset, MediaEvidenceLink
 from app.memory_feedback_models import MemoryFeedback
 from app.models import (
@@ -76,6 +77,8 @@ USER_DATA_INVENTORY = (
     "location_derivation_states",
     "location_ingest_receipts",
     "location_points",
+    "life_event_memory_links",
+    "life_events",
     "person_relationships",
     "person_memory_links",
     "persons",
@@ -603,6 +606,13 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
     )
     # [人工注释][S1-021][S1-018] MemoryEdit 保存 before/after 用户正文，属于完整用户数据。
     # 必须在 MemorySource/Memory 之前显式删除并计数，不能只依赖 FK cascade 隐式收敛。
+    counts["life_event_memory_links"] = _delete_count(
+        db,
+        delete(LifeEventMemoryLink).where(LifeEventMemoryLink.user_id == user_id),
+    )
+    counts["life_events"] = _delete_count(
+        db, delete(LifeEvent).where(LifeEvent.user_id == user_id)
+    )
     counts["memory_feedbacks"] = _delete_count(
         db, delete(MemoryFeedback).where(MemoryFeedback.user_id == user_id)
     )
