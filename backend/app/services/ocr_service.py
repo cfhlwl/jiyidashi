@@ -137,6 +137,13 @@ async def _read_image(
 
 
 def _provider_error(exc: AIGatewayError) -> OCRError:
+    if exc.code == "ENTITLEMENT_STATE_UNAVAILABLE":
+        return OCRError(exc.code, 503)
+    if exc.code == "ENTITLEMENT_CAPABILITY_REQUIRED":
+        return OCRError(exc.code, 403)
+    if exc.code == "ENTITLEMENT_QUOTA_EXCEEDED":
+        return OCRError(exc.code, 429)
+
     mapping = {
         "AI_PROVIDER_UNAVAILABLE": ("OCR_PROVIDER_UNAVAILABLE", 503),
         "AI_GATEWAY_TIMEOUT": ("OCR_TIMEOUT", 504),
