@@ -49,9 +49,22 @@ app.include_router(api_router)
 def _route_template(request: Request) -> str:
     route = request.scope.get("route")
     path = getattr(route, "path", None)
-    if isinstance(path, str) and path:
-        return path
-    return "__unmatched__"
+    if not isinstance(path, str) or not path:
+        return "__unmatched__"
+
+    # Included FastAPI routers can expose their local template through scope["route"].
+    # Re-attach only the repository-owned static API prefix; raw request paths are never
+    # serialized into telemetry and are used here only for a boolean prefix check.
+    api_prefix = api_router.prefix
+    raw_path = request.scope.get("path")
+    if (
+        api_prefix
+        and not path.startswith(api_prefix)
+        and isinstance(raw_path, str)
+        and (raw_path == api_prefix or raw_path.startswith(f"{api_prefix}/"))
+    ):
+        return f"{api_prefix}{path}"
+    return path
 
 
 @app.middleware("http")
