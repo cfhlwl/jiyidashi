@@ -18,7 +18,7 @@ This backlog records only productization/operations gaps discovered by the V2 cl
   - backup/restore and rollback are exercised in the real environment.
 - **Dependency:** canonical `OPS-001`, `SEC-001`, `SEC-002`, `SEC-003`, `SEC-009`.
 - **Recommended phase:** Public Launch Gate.
-- **GitHub follow-up:** do not create a duplicate; OPS-001/Issue #136 is the canonical work item.
+- **GitHub follow-up:** #136 — OPS-001 reopened for the remaining real-environment acceptance only.
 
 ### V2-CLOSE-P0-002 — Production Observability Foundation V1
 - **Why it matters:** a public service cannot be safely operated with only health checks and feature-local audit rows.
@@ -45,7 +45,7 @@ This backlog records only productization/operations gaps discovered by the V2 cl
   - delivery/retry/runbook is documented and tested.
 - **Dependency:** canonical `SEC-015`; production observability foundation.
 - **Recommended phase:** Public Launch Gate.
-- **GitHub follow-up:** no duplicate Issue; track under SEC-015 plus V2-CLOSE-P0-002 infrastructure.
+- **GitHub follow-up:** #165 — SEC-015 Security Event Alerting & Anomaly Response V1.
 
 ## P1 — required before broad beta / paid rollout
 
@@ -85,7 +85,7 @@ This backlog records only productization/operations gaps discovered by the V2 cl
 - **Acceptance criteria:** define and render consistent explicit/inferred/uncertain states anywhere inference is shown; never label authoritative user records as AI-derived.
 - **Dependency:** canonical `SEC-013`.
 - **Recommended phase:** Broad Beta.
-- **GitHub follow-up:** no duplicate; SEC-013 remains canonical.
+- **GitHub follow-up:** #166 — SEC-013 AI Inference Labeling V1.
 
 ### V2-CLOSE-P1-004 — Sensitive-operation second-confirm standard
 - **Why it matters:** destructive/privacy-sensitive actions should have a consistent confirmation contract.
@@ -93,7 +93,7 @@ This backlog records only productization/operations gaps discovered by the V2 cl
 - **Acceptance criteria:** inventory sensitive actions, define confirmation strength, add cancellation/retry semantics and client tests.
 - **Dependency:** canonical `SEC-014`.
 - **Recommended phase:** Broad Beta.
-- **GitHub follow-up:** no duplicate; SEC-014 remains canonical.
+- **GitHub follow-up:** #167 — SEC-014 Sensitive Operation Confirmation Standard V1.
 
 ### V2-CLOSE-P1-005 — Entitlement and quota foundation
 - **Why it matters:** paid plans cannot be enforced from UI copy alone.
@@ -106,7 +106,7 @@ This backlog records only productization/operations gaps discovered by the V2 cl
   - no client-authoritative plan state.
 - **Dependency:** canonical `BIZ-001`..`BIZ-004`.
 - **Recommended phase:** Paid Rollout.
-- **GitHub follow-up:** no duplicate; BIZ IDs remain canonical.
+- **GitHub follow-up:** #168 — BIZ Entitlement & Quota Foundation V1.
 
 ### V2-CLOSE-P1-006 — Product analytics for retrieval and retention
 - **Why it matters:** north-star retrieval success and retention cannot be measured from backend correctness tests.
@@ -119,7 +119,7 @@ This backlog records only productization/operations gaps discovered by the V2 cl
   - dashboards exclude Memory content and sensitive coordinates.
 - **Dependency:** canonical `BIZ-007`, `BIZ-008`, `BIZ-009`; observability/analytics plumbing.
 - **Recommended phase:** Broad Beta / Paid Rollout.
-- **GitHub follow-up:** no duplicate; BIZ IDs remain canonical.
+- **GitHub follow-up:** #169 — BIZ Retrieval & Retention Analytics Foundation V1.
 
 ## P2 — important product completeness / UX / operations
 
