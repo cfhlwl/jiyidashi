@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "backend/**"
+      - "docs/V2_FINAL_CLOSEOUT.md"
+      - "docs/V2_PRODUCTIZATION_BACKLOG.md"
+      - "docs/DEVELOPMENT_PROGRESS.md"
       - ".github/workflows/backend-ci.yml"
   push:
     branches:
