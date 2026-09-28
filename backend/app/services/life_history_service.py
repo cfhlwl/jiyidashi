@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -86,7 +87,14 @@ def _decode_cursor(value: str | None) -> _LifeHistoryCursor | None:
             kind=LifeHistoryItemKind(payload["k"]),
             resource_id=UUID(payload["id"]),
         )
-    except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (
+        binascii.Error,
+        KeyError,
+        TypeError,
+        ValueError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exc:
         raise LifeHistoryError("LIFE_HISTORY_CURSOR_INVALID") from exc
 
 
@@ -164,6 +172,8 @@ def _validate_years(
     end_year: int,
     current_local_year: int,
 ) -> None:
+    if not 1 <= start_year <= 9998 or not 1 <= end_year <= 9998:
+        raise LifeHistoryError("LIFE_HISTORY_YEAR_RANGE_INVALID")
     if start_year > end_year:
         raise LifeHistoryError("LIFE_HISTORY_YEAR_RANGE_INVALID")
     if end_year - start_year + 1 > 10:
