@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.config import get_settings
-from app.core.db import UserDataRequestStale, create_schema, engine
+from app.core.db import UserDataRequestStale, create_schema, engine, readiness_engine
 from app.core.observability import (
     configure_observability_log_level,
     emit_operational_event,
@@ -126,7 +126,7 @@ async def health() -> dict[str, str]:
 @app.get("/health/ready", response_model=None)
 def readiness() -> JSONResponse:
     try:
-        with engine.connect() as connection:
+        with readiness_engine.connect() as connection:
             connection.execute(text("SELECT 1"))
     except Exception:
         emit_operational_event(
