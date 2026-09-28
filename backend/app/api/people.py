@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.deps import get_current_user_id
+from app.person_duration_models import PersonKnownDurationRead
 from app.person_memory_schemas import (
     PersonInteractionRow,
     PersonMemoryLinkCreate,
@@ -23,6 +24,10 @@ from app.person_relationship_schemas import (
     PersonRelationshipRead,
 )
 from app.person_schemas import PersonCreate, PersonPatch, PersonRead
+from app.services.person_duration_service import (
+    PersonDurationError,
+    get_person_known_duration,
+)
 from app.services.person_memory_service import (
     PersonMemoryLinkError,
     create_person_memory_link,
@@ -60,6 +65,10 @@ def _raise_person_error(exc: PersonServiceError) -> None:
 
 
 def _raise_person_memory_error(exc: PersonMemoryLinkError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+
+
+def _raise_person_duration_error(exc: PersonDurationError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
 
@@ -282,6 +291,25 @@ def list_person_memory_timeline_route(
         )
     except PersonMemoryLinkError as exc:
         _raise_person_memory_error(exc)
+
+
+@router.get(
+    "/{person_id}/known-duration",
+    response_model=PersonKnownDurationRead,
+)
+def get_person_known_duration_route(
+    person_id: UUID,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> PersonKnownDurationRead:
+    try:
+        return get_person_known_duration(
+            db,
+            user_id=user_id,
+            person_id=person_id,
+        )
+    except PersonDurationError as exc:
+        _raise_person_duration_error(exc)
 
 
 @router.get(
