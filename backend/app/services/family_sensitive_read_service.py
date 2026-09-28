@@ -67,12 +67,25 @@ def _record_family_denied_security(
         correlation_value=correlation,
         scope=scope,
     )
+    _record_family_access_burst_security(
+        db,
+        family_id=family_id,
+        actor_user_id=actor_user_id,
+    )
+
+
+def _record_family_access_burst_security(
+    db: Session,
+    *,
+    family_id: UUID,
+    actor_user_id: UUID,
+) -> None:
     record_security_signal(
         db.get_bind(),
         signal_code=SecuritySignalCode.FAMILY_SENSITIVE_ACCESS_BURST,
         correlation_kind="family_actor",
-        correlation_value=correlation,
-        scope=scope,
+        correlation_value=_family_security_correlation(family_id, actor_user_id),
+        scope=SecurityScope.FAMILY_SENSITIVE_ACCESS,
     )
 
 
@@ -286,6 +299,11 @@ def get_family_photos(
                 result=FamilyAuditResult.ALLOWED,
             )
             authority.commit()
+            _record_family_access_burst_security(
+                authority,
+                family_id=family_id,
+                actor_user_id=grantee_user_id,
+            )
             return result
         except FamilySensitiveReadError:
             if authority.in_transaction():
@@ -390,6 +408,11 @@ def sign_family_photo_download(
                 result=FamilyAuditResult.ALLOWED,
             )
             authority.commit()
+            _record_family_access_burst_security(
+                authority,
+                family_id=family_id,
+                actor_user_id=grantee_user_id,
+            )
             return transfer
         except FamilySensitiveReadError:
             if authority.in_transaction():
@@ -520,6 +543,11 @@ def get_family_current_location(
                 result=FamilyAuditResult.ALLOWED,
             )
             authority.commit()
+            _record_family_access_burst_security(
+                authority,
+                family_id=family_id,
+                actor_user_id=grantee_user_id,
+            )
             return result
         except FamilySensitiveReadError:
             if authority.in_transaction():
@@ -596,6 +624,11 @@ def get_family_memories(
                 result=FamilyAuditResult.ALLOWED,
             )
             authority.commit()
+            _record_family_access_burst_security(
+                authority,
+                family_id=family_id,
+                actor_user_id=grantee_user_id,
+            )
             return result
         except FamilySensitiveReadError:
             if authority.in_transaction():
@@ -638,6 +671,11 @@ def get_family_today_footprint(
                 result=FamilyAuditResult.ALLOWED,
             )
             authority.commit()
+            _record_family_access_burst_security(
+                authority,
+                family_id=family_id,
+                actor_user_id=grantee_user_id,
+            )
             return result
         except FamilySensitiveReadError:
             if authority.in_transaction():
