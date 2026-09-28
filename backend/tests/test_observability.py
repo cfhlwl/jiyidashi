@@ -195,6 +195,34 @@ def test_observability_logger_has_one_explicit_raw_non_propagating_sink():
     assert sinks[0].level == logging.INFO
 
 
+
+
+
+def test_observability_logger_installs_one_raw_nonpropagating_sink(monkeypatch):
+    logger = logging.getLogger(LOGGER)
+    original_handlers = list(logger.handlers)
+    original_propagate = logger.propagate
+    original_level = logger.level
+    try:
+        logger.handlers.clear()
+        logger.propagate = True
+        configure_observability_log_level("INFO")
+        configure_observability_log_level("INFO")
+
+        marked = [
+            handler
+            for handler in logger.handlers
+            if getattr(handler, "_jiyidashi_observability_sink", False)
+        ]
+        assert len(marked) == 1
+        assert logger.propagate is False
+        assert marked[0].formatter is not None
+        assert marked[0].formatter._fmt == "%(message)s"
+    finally:
+        logger.handlers[:] = original_handlers
+        logger.propagate = original_propagate
+        logger.setLevel(original_level)
+
 def test_observability_event_surface_is_explicit_and_fail_safe(monkeypatch, caplog):
     signature = inspect.signature(emit_operational_event)
     assert all(
