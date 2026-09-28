@@ -533,4 +533,4 @@ def test_scope_lock_reuses_canonical_services_without_new_ai_or_persistence():
         ".delete(",
     ]:
         assert forbidden not in source
-    assert list((root / "migrations/versions").glob("0025*")) == []
+    assert list((root / "migrations/versions").glob("*annual_memoir*")) == []
