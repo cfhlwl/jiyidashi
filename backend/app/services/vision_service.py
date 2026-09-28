@@ -324,7 +324,9 @@ async def observe_vision(
                 content_type=snapshot.content_type,
                 detail="high",
                 max_output_tokens=512,
-            )
+            ),
+            db=db,
+            actor_user_id=user_id,
         )
     except AIGatewayError as exc:
         raise _provider_error(exc) from exc
