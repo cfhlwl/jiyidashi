@@ -8,13 +8,13 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+import app.services.person_duration_service as duration_service
 from app.core.db import SessionLocal
 from app.models import Memory, MemorySource, SourceType, User
 from app.person_duration_models import PersonKnownDurationStatus
 from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
 from app.person_memory_schemas import PersonMemoryLinkCreate, PersonMemoryLinkPatch
 from app.person_models import Person
-from app.services import person_duration_service as duration_service
 from app.services.memory_service import get_memory_for_user, soft_delete_memory
 from app.services.person_memory_service import (
     create_person_memory_link,
