@@ -160,8 +160,8 @@ def security_correlation_digest(kind: str, value: str) -> str:
     """Return a server-keyed one-way correlation digest; raw input is never persisted."""
 
     settings = get_settings()
-    message = f"security-v1:{kind}:{value}".encode("utf-8")
-    return hmac.new(settings.jwt_secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+    message = f"security-v1:{kind}:{value}".encode()
+    return hmac.new(settings.jwt_secret.encode(), message, hashlib.sha256).hexdigest()
 
 
 def _dedupe_key(
@@ -181,7 +181,7 @@ def _dedupe_key(
             cooldown_started_at.isoformat(),
         )
     )
-    return hashlib.sha256(controlled.encode("utf-8")).hexdigest()
+    return hashlib.sha256(controlled.encode()).hexdigest()
 
 
 def _get_or_create_window(
