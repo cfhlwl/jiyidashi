@@ -59,7 +59,11 @@ def _select_relation(
     as_of: datetime,
 ) -> _RelationSelection:
     rows = db.execute(
-        select(PersonMemoryLink, Memory)
+        select(
+            PersonMemoryLink.id,
+            PersonMemoryLink.memory_id,
+            Memory.occurred_at,
+        )
         .join(
             Memory,
             (Memory.id == PersonMemoryLink.memory_id)
@@ -81,26 +85,26 @@ def _select_relation(
         .limit(MAX_DURATION_EVIDENCE_SCAN + 1)
     ).all()
 
-    for link, memory in rows[:MAX_DURATION_EVIDENCE_SCAN]:
+    for link_id, memory_id, occurred_at in rows[:MAX_DURATION_EVIDENCE_SCAN]:
         trust = resolve_memory_answer_trust(
             db,
             user_id=user_id,
-            memory_id=memory.id,
+            memory_id=memory_id,
         )
         if (
             trust.can_answer
-            and trust.memory_id == memory.id
+            and trust.memory_id == memory_id
             and trust.evidence_source_id is not None
         ):
             return _RelationSelection(
                 incomplete=False,
                 evidence=PersonKnownDurationEvidence(
-                    person_memory_link_id=link.id,
-                    memory_id=memory.id,
+                    person_memory_link_id=link_id,
+                    memory_id=memory_id,
                     memory_source_id=trust.evidence_source_id,
                     relation_kind=relation_kind,
                     trust_state=trust.state,
-                    occurred_at=_utc(memory.occurred_at),
+                    occurred_at=_utc(occurred_at),
                 ),
             )
 
