@@ -574,26 +574,26 @@ def test_inventory_and_no_ai_summary_graph_promotion_scope_locks():
 
     root = Path(__file__).resolve().parents[1]
     forbidden_creators = [
-        "services/daily_summary_service.py",
-        "services/monthly_summary_service.py",
-        "services/annual_summary_service.py",
-        "services/memory_rag_service.py",
-        "services/entity_memory_pipeline_adapter.py",
-        "services/entity_extraction_service.py",
-        "services/memory_pipeline.py",
-        "services/life_event_service.py",
+        "app/services/daily_summary_service.py",
+        "app/services/monthly_summary_service.py",
+        "app/services/annual_summary_service.py",
+        "app/services/memory_rag_service.py",
+        "app/services/entity_memory_pipeline_adapter.py",
+        "app/services/entity_extraction_service.py",
+        "app/services/memory_pipeline.py",
+        "app/services/life_event_service.py",
     ]
     for relative in forbidden_creators:
         source = (root / relative).read_text()
         assert "create_life_stage" not in source
         assert "LifeStage(" not in source
 
-    graph_service = (root / "services/graph_projection_service.py").read_text()
-    graph_schema = (root / "graph_schemas.py").read_text()
+    graph_service = (root / "app/services/graph_projection_service.py").read_text()
+    graph_schema = (root / "app/graph_schemas.py").read_text()
     assert "LifeStage" not in graph_service
     assert "LIFE_STAGE" not in graph_schema
 
-    stage_service = (root / "services/life_stage_service.py").read_text()
+    stage_service = (root / "app/services/life_stage_service.py").read_text()
     assert "create_life_event(" not in stage_service
     assert "LifeEvent(" not in stage_service
     assert "Memory" not in stage_service
