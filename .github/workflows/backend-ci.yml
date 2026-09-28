@@ -293,6 +293,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_life_stage_integration.py
 
+      - name: PostgreSQL Cross-year Life History projection
+        # [V2-009] Three-source explicit LifeEvent/LifeStage boundary projection
+        # must preserve keyset order and current committed PATCH/DELETE state.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_life_history_integration.py
+
       - name: PostgreSQL Long-term Reasoning provider-gap invariants
         # [V2-007] Provider I/O runs with no DB transaction while independent
         # Stage/Event/Memory/link mutations must invalidate the complete prompt inventory.

@@ -9,6 +9,7 @@ from app.api import (
     graph,
     intent,
     life_events,
+    life_history,
     life_stages,
     location,
     long_term_reasoning,
@@ -44,6 +45,8 @@ api_router.include_router(intent.router)
 api_router.include_router(memories.router)
 # V2-005 is an explicit structured long-term event authority, separate from MemoryType.EVENT.
 api_router.include_router(life_events.router)
+# V2-009 is a read-only projection over explicit LifeEvent/LifeStage boundaries.
+api_router.include_router(life_history.router)
 api_router.include_router(life_stages.router)
 api_router.include_router(long_term_reasoning.router)
 # [人工注释][#103] Trusted summaries use a dedicated POST generation surface;
