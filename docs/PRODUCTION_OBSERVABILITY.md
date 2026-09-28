@@ -49,6 +49,11 @@ ready
 
 Telemetry failures are swallowed by the observability helper and never change successful business behavior.
 
+The `jiyidashi.observability` logger owns one explicit `StreamHandler` with raw
+`%(message)s` formatting and `propagate=false`. Configuration is idempotent, so
+Uvicorn/container startup cannot duplicate observability events. Production CI proves
+a real non-health request produces exactly one parseable JSON event in container logs.
+
 ## Request correlation
 
 Header:
@@ -192,7 +197,11 @@ GET /health/ready
 
 Required V1 dependency: PostgreSQL/database.
 
-Readiness performs a bounded simple database `SELECT 1`.
+Readiness performs a bounded simple database `SELECT 1` through a dedicated no-pool
+engine. PostgreSQL connection establishment is bounded by the driver's
+`connect_timeout`, and query execution is bounded by PostgreSQL
+`statement_timeout`. No outer async/thread timeout is used, so the HTTP response is
+not returned until the underlying database operation has actually terminated.
 
 Ready:
 
@@ -216,6 +225,8 @@ Production Compose uses `/health/ready` for API container health. External smoke
 
 ```text
 OBSERVABILITY_LOG_LEVEL=INFO
+DATABASE_READINESS_CONNECT_TIMEOUT_SECONDS=2
+DATABASE_READINESS_STATEMENT_TIMEOUT_MS=1500
 ```
 
 Allowed values:
