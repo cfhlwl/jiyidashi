@@ -10,7 +10,6 @@ from threading import Barrier, Lock, Thread
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select, text
-from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.db import SessionLocal, engine
