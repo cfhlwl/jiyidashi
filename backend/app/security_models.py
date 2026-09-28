@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -71,6 +71,11 @@ class SecurityAlert(Base):
         UniqueConstraint("dedupe_key", name="uq_security_alerts_dedupe_key"),
         CheckConstraint("signal_count > 0", name="ck_security_alerts_signal_count"),
         CheckConstraint("delivery_attempts >= 0", name="ck_security_alerts_delivery_attempts"),
+        Index(
+            "ix_security_alerts_retry_due",
+            "delivery_status",
+            "next_retry_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
