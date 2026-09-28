@@ -215,6 +215,13 @@ async def _read_image(
 
 
 def _provider_error(exc: AIGatewayError) -> VisionError:
+    if exc.code == "ENTITLEMENT_STATE_UNAVAILABLE":
+        return VisionError(exc.code, 503)
+    if exc.code == "ENTITLEMENT_CAPABILITY_REQUIRED":
+        return VisionError(exc.code, 403)
+    if exc.code == "ENTITLEMENT_QUOTA_EXCEEDED":
+        return VisionError(exc.code, 429)
+
     mapping = {
         "AI_PROVIDER_UNAVAILABLE": ("VISION_PROVIDER_UNAVAILABLE", 503),
         "AI_GATEWAY_TIMEOUT": ("VISION_TIMEOUT", 504),
