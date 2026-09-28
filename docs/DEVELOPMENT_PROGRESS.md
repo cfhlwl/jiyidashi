@@ -293,7 +293,7 @@
 | V2-008 | Person Known Duration V1 — “我认识某人多久了” | ✅ | Issue #152 / PR #153：最早 trusted explicit MET + S3-013 + Memory.occurred_at deterministic no-guess duration 已正式审查并合并；merge `7bf91baef1638f71438f0cd1d5aa71faa80c1db3` |
 | V2-009 | Cross-year Evidence Timeline V1 — “过去几年发生了什么” | ✅ | Issue #154 / PR #155：显式 LifeEvent / LifeStage START/END boundary、user-local year bounds、server-owned as_of、opaque keyset cursor 与 bounded three-source merge 已正式审查并合并；merge `e7c7f4740c358c9d7d057da883b503b681c9c72c` |
 | V2-010 | Annual Electronic Memoir V1 — 年度电子回忆录 | ✅ | Issue #156 / PR #157：复用 S3-017 Annual Summary + V2-009 timeline + verified PHOTO media gallery 已正式审查并合并；merge `0495112b17d91fb4540048eaa7288047db40fe85` |
-| V2-011 | Life Memoir Foundation V1 — 人生回忆录 | 🔵 | Issue #158：explicit LifeStage chapter index + on-demand cited stage memoir via canonical V2-007；实现中 |
+| V2-011 | Life Memoir Foundation V1 — 人生回忆录 | 🟠 | Issue #158 / PR #159：explicit LifeStage chapter index + on-demand cited stage memoir via canonical V2-007 已实现；PostgreSQL composition gate + full pytest 已通过，等待正式审查/合并，合并前不标记 ✅ |
 
 ---
 
