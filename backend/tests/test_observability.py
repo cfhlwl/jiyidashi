@@ -13,7 +13,10 @@ import app.api.account_delete as account_delete_api
 import app.api.data_delete as data_delete_api
 import app.main as main_module
 from app.core.config import Settings
-from app.core.observability import emit_operational_event
+from app.core.observability import (
+    configure_observability_log_level,
+    emit_operational_event,
+)
 from app.data_deletion_models import DataDeletionStatus
 from app.deps import get_authenticated_user_id
 from app.main import app
@@ -41,6 +44,16 @@ from app.services.object_storage import (
 )
 
 LOGGER = "jiyidashi.observability"
+
+
+@pytest.fixture(autouse=True)
+def _capture_non_propagating_observability_logger(caplog):
+    logger = logging.getLogger(LOGGER)
+    logger.addHandler(caplog.handler)
+    try:
+        yield
+    finally:
+        logger.removeHandler(caplog.handler)
 
 
 def _events(caplog) -> list[dict]:
@@ -153,13 +166,33 @@ async def test_health_liveness_unchanged_and_readiness_fails_closed(client, monk
                 "postgresql://user:DB_SECRET_SENTINEL@db.internal:5432/private"
             )
 
-    monkeypatch.setattr(main_module, "engine", BrokenEngine())
+    monkeypatch.setattr(main_module, "readiness_engine", BrokenEngine())
     failed = await client.get("/health/ready")
     assert failed.status_code == 503
     assert failed.json() == {"status": "not_ready", "database": "unavailable"}
     body = failed.text
     assert "DB_SECRET_SENTINEL" not in body
     assert "db.internal" not in body
+
+
+def test_observability_logger_has_one_explicit_raw_non_propagating_sink():
+    logger = logging.getLogger(LOGGER)
+
+    configure_observability_log_level("INFO")
+    configure_observability_log_level("INFO")
+
+    sinks = [
+        handler
+        for handler in logger.handlers
+        if getattr(handler, "_jiyidashi_observability_sink", False)
+    ]
+    assert len(sinks) == 1
+    assert isinstance(sinks[0], logging.StreamHandler)
+    assert sinks[0].formatter is not None
+    assert sinks[0].formatter._fmt == "%(message)s"
+    assert logger.propagate is False
+    assert logger.level == logging.INFO
+    assert sinks[0].level == logging.INFO
 
 
 def test_observability_event_surface_is_explicit_and_fail_safe(monkeypatch, caplog):
