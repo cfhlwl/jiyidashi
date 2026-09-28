@@ -5,8 +5,10 @@ import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from uuid import UUID
 
-from sqlalchemy import Engine, or_, select
+from sqlalchemy import or_, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -363,7 +365,7 @@ def deliver_security_alert(
         with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
             alert = db.scalar(
                 select(SecurityAlert)
-                .where(SecurityAlert.id == alert_id)
+                .where(SecurityAlert.id == UUID(alert_id))
                 .with_for_update()
             )
             if alert is None:
