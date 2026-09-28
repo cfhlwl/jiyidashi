@@ -183,6 +183,19 @@ def _user_zone(timezone_name: str) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def _local_year_boundary_utc(year: int, zone: ZoneInfo) -> datetime:
+    boundary = datetime.combine(date(year, 1, 1), time.min, tzinfo=zone)
+    try:
+        return boundary.astimezone(UTC)
+    except OverflowError:
+        # Year 1 in an east-of-UTC zone can map before datetime.min.
+        # No representable stored datetime can precede datetime.min, so clamping
+        # preserves the supported calendar contract without narrowing it.
+        if year == 1:
+            return datetime.min.replace(tzinfo=UTC)
+        raise
+
+
 def _parse_target_year(value: str) -> int:
     if not isinstance(value, str):
         raise AnnualSummaryError("INVALID_TARGET_YEAR")
@@ -219,14 +232,12 @@ def _load_year_context(
     if year >= 9999:
         raise AnnualSummaryError("INVALID_TARGET_YEAR")
 
-    start_local = datetime.combine(date(year, 1, 1), time.min, tzinfo=zone)
-    end_local = datetime.combine(date(year + 1, 1, 1), time.min, tzinfo=zone)
     return _YearContext(
         persisted_timezone=timezone_name,
         timezone=effective_timezone,
         target_year=f"{year:04d}",
-        start_utc=start_local.astimezone(UTC),
-        end_utc=end_local.astimezone(UTC),
+        start_utc=_local_year_boundary_utc(year, zone),
+        end_utc=_local_year_boundary_utc(year + 1, zone),
     )
 
 
