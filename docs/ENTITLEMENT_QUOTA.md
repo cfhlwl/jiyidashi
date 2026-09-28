@@ -70,7 +70,7 @@ scatter plan-code comparisons.
 
 V1 bundles:
 
-- FREE: core memory/search, image, voice and AI inference.
+- FREE: core memory and basic search only.
 - PERSONAL: FREE plus extended history and annual memoir representation.
 - FAMILY: PERSONAL plus family, elder and arrival-reminder representation.
 - PREMIUM: all defined capabilities.
