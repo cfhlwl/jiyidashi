@@ -110,8 +110,8 @@ async def health() -> dict[str, str]:
     }
 
 
-@app.get("/health/ready")
-def readiness() -> JSONResponse | dict[str, str]:
+@app.get("/health/ready", response_model=None)
+def readiness() -> JSONResponse:
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
@@ -134,4 +134,7 @@ def readiness() -> JSONResponse | dict[str, str]:
         dependency="database",
         ready=True,
     )
-    return {"status": "ready", "database": "ready"}
+    return JSONResponse(
+        status_code=200,
+        content={"status": "ready", "database": "ready"},
+    )
