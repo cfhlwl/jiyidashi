@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.core.db import Base
+from app.core.observability import configure_observability_log_level
 from app.security_models import (
     SecurityAlert,
     SecurityAlertDeliveryStatus,
@@ -127,11 +129,50 @@ def test_new_cooldown_allows_new_alert() -> None:
         assert len(list(db.scalars(select(SecurityAlert)))) == 2
 
 
+def test_cooldown_crosses_wall_clock_bucket_without_second_alert() -> None:
+    engine = _engine()
+    first = datetime(2026, 9, 28, 12, 9, 59, tzinfo=UTC)
+    raw = f"cooldown-boundary-{uuid4()}"
+
+    first_id = record_security_signal(
+        engine,
+        signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+        correlation_kind="register_ip",
+        correlation_value=raw,
+        scope=SecurityScope.AUTH_REGISTER_IP,
+        now=first,
+    )
+    second_id = record_security_signal(
+        engine,
+        signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+        correlation_kind="register_ip",
+        correlation_value=raw,
+        scope=SecurityScope.AUTH_REGISTER_IP,
+        now=first + timedelta(seconds=1),
+    )
+    assert first_id == second_id
+
+    with Session(engine) as db:
+        assert len(list(db.scalars(select(SecurityAlert)))) == 1
+
+    third_id = record_security_signal(
+        engine,
+        signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+        correlation_kind="register_ip",
+        correlation_value=raw,
+        scope=SecurityScope.AUTH_REGISTER_IP,
+        now=first + timedelta(seconds=600),
+    )
+    assert third_id != first_id
+    with Session(engine) as db:
+        assert len(list(db.scalars(select(SecurityAlert)))) == 2
+
+
 def test_delivery_failure_is_bounded_and_business_signal_still_persists(monkeypatch) -> None:
     engine = _engine()
     monkeypatch.setattr(
         security_alerting,
-        "emit_operational_event",
+        "emit_operational_event_checked",
         lambda **_: False,
     )
     alert_id = record_security_signal(
@@ -159,7 +200,7 @@ def test_security_alert_event_contains_only_safe_correlation(monkeypatch) -> Non
         captured.append(kwargs)
         return True
 
-    monkeypatch.setattr(security_alerting, "emit_operational_event", capture)
+    monkeypatch.setattr(security_alerting, "emit_operational_event_checked", capture)
     sentinel = "raw-ip=192.0.2.55;email=sentinel@example.test;Authorization=Bearer-secret"
     record_security_signal(
         engine,
@@ -285,7 +326,7 @@ def test_family_sensitive_access_burst_uses_shared_cross_resource_scope() -> Non
 
 def test_delivery_retry_reaches_terminal_after_five_attempts(monkeypatch) -> None:
     engine = _engine()
-    monkeypatch.setattr(security_alerting, "emit_operational_event", lambda **_: False)
+    monkeypatch.setattr(security_alerting, "emit_operational_event_checked", lambda **_: False)
     base = datetime(2026, 9, 28, 19, 0, tzinfo=UTC)
     alert_id = record_security_signal(
         engine,
@@ -313,3 +354,122 @@ def test_delivery_retry_reaches_terminal_after_five_attempts(monkeypatch) -> Non
             == SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
         )
         assert alert.next_retry_at is None
+
+
+class _FailingObservabilityStream:
+    def write(self, _: str) -> int:
+        raise OSError("simulated observability sink failure")
+
+    def flush(self) -> None:
+        raise OSError("simulated observability sink flush failure")
+
+
+def test_real_checked_sink_failure_keeps_alert_retryable() -> None:
+    engine = _engine()
+    logger = logging.getLogger("jiyidashi.observability")
+    configure_observability_log_level("INFO")
+    handler = next(
+        item
+        for item in logger.handlers
+        if getattr(item, "_jiyidashi_observability_sink", False)
+    )
+    original_stream = handler.stream
+    handler.stream = _FailingObservabilityStream()
+    try:
+        alert_id = record_security_signal(
+            engine,
+            signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+            correlation_kind="register_ip",
+            correlation_value=f"real-sink-failure-{uuid4()}",
+            scope=SecurityScope.AUTH_REGISTER_IP,
+            now=datetime(2026, 9, 28, 20, 0, tzinfo=UTC),
+        )
+    finally:
+        handler.stream = original_stream
+
+    assert alert_id is not None
+    with Session(engine) as db:
+        alert = db.scalar(
+            select(SecurityAlert).where(SecurityAlert.id == UUID(alert_id))
+        )
+        assert alert is not None
+        assert alert.delivery_status == SecurityAlertDeliveryStatus.RETRYABLE_FAILURE.value
+        assert alert.delivery_attempts == 1
+        assert alert.next_retry_at is not None
+
+
+def test_pending_alert_is_recovered_by_bounded_retry_scanner(monkeypatch) -> None:
+    engine = _engine()
+    now = datetime(2026, 9, 28, 21, 0, tzinfo=UTC)
+    alert = SecurityAlert(
+        dedupe_key=f"{uuid4().hex}{uuid4().hex}",
+        rule_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED.value,
+        severity=SecuritySeverity.MEDIUM.value,
+        correlation_digest="a" * 64,
+        scope=SecurityScope.AUTH_REGISTER_IP.value,
+        window_started_at=now,
+        window_seconds=600,
+        signal_count=1,
+        delivery_status=SecurityAlertDeliveryStatus.PENDING.value,
+        delivery_attempts=0,
+        created_at=now,
+        updated_at=now,
+    )
+    with Session(engine) as db:
+        db.add(alert)
+        db.commit()
+        alert_id = alert.id
+
+    monkeypatch.setattr(
+        security_alerting,
+        "emit_operational_event_checked",
+        lambda **_: True,
+    )
+    delivered = security_alerting.retry_due_security_alerts(engine, now=now, limit=25)
+    assert delivered == 1
+
+    with Session(engine) as db:
+        recovered = db.get(SecurityAlert, alert_id)
+        assert recovered is not None
+        assert recovered.delivery_status == SecurityAlertDeliveryStatus.DELIVERED.value
+        assert recovered.delivery_attempts == 1
+
+
+def test_retry_before_next_retry_at_does_not_consume_attempt(monkeypatch) -> None:
+    engine = _engine()
+    base = datetime(2026, 9, 28, 22, 0, tzinfo=UTC)
+    monkeypatch.setattr(
+        security_alerting,
+        "emit_operational_event_checked",
+        lambda **_: False,
+    )
+    alert_id = record_security_signal(
+        engine,
+        signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+        correlation_kind="register_ip",
+        correlation_value=f"retry-slot-{uuid4()}",
+        scope=SecurityScope.AUTH_REGISTER_IP,
+        now=base,
+    )
+    assert alert_id is not None
+
+    security_alerting.deliver_security_alert(
+        engine,
+        alert_id=alert_id,
+        now=base + timedelta(seconds=1),
+    )
+    with Session(engine) as db:
+        alert = db.get(SecurityAlert, UUID(alert_id))
+        assert alert is not None
+        assert alert.delivery_attempts == 1
+
+    security_alerting.deliver_security_alert(
+        engine,
+        alert_id=alert_id,
+        now=base + timedelta(seconds=31),
+    )
+    with Session(engine) as db:
+        alert = db.get(SecurityAlert, UUID(alert_id))
+        assert alert is not None
+        assert alert.delivery_attempts == 2
+        assert alert.next_retry_at == base + timedelta(seconds=91)
