@@ -52,6 +52,11 @@ Database row locking plus uniqueness constraints make the same logical anomaly c
 across concurrent Uvicorn workers and independent Sessions. Process/container restart
 does not reset the window.
 
+Cooldown is elapsed-time based, not a wall-clock bucket. Before creating a new logical
+alert, the service locks the latest matching alert for the same rule/correlation/scope
+and requires `now >= latest_alert.created_at + cooldown`. Crossing an aligned minute or
+10-minute boundary does not create a second alert early.
+
 ## Correlation privacy
 
 Raw IP addresses, email addresses and user/family identifiers are accepted only as
@@ -140,8 +145,10 @@ RETRYABLE_FAILURE
 TERMINAL_FAILURE
 ```
 
-The built-in JSON log sink is the only active adapter. A failed delivery attempt never
-changes the business request result.
+The built-in JSON log sink is the only active adapter. Security alert delivery uses the
+same observability stream through an acknowledged write path: the alert is marked
+`DELIVERED` only after both stream write and flush succeed. A failed delivery attempt
+never changes the business request result.
 
 Retry policy:
 
@@ -151,8 +158,17 @@ Retry policy:
 - retry scans are bounded to at most 100 alerts per call
 - the same durable `alert_id` is reused on retries
 
-V1 does not claim scheduled paging/email/IM delivery. `retry_due_security_alerts()` is
-the repository-owned bounded retry primitive for a future operator job/adapter.
+V1 does not claim paging/email/IM delivery. The production image exposes a bounded
+operator retry command:
+
+```text
+python -m app.security_alert_retry --limit 25
+```
+
+This command scans durable `PENDING` / due `RETRYABLE_FAILURE` rows and can be invoked
+by cron/systemd/Kubernetes CronJob or another deployment scheduler. Each delivery attempt
+re-checks status, attempt count, and `next_retry_at` after taking the row `FOR UPDATE`
+lock, so concurrent retry workers cannot consume the same backoff slot.
 
 ## Investigation workflow
 
@@ -179,7 +195,9 @@ Operators should define a reviewed retention period before long-term production 
 
 SEC-015 requires:
 
-- focused unit tests for threshold, cooldown, redaction and bounded retry
+- focused unit tests for threshold, elapsed cooldown boundary, redaction and bounded retry
+- real checked-sink failure and durable PENDING recovery
+- concurrent retry workers honoring one backoff slot
 - real PostgreSQL concurrent same-window dedupe
 - persistence visible from a new Session
 - canonical Auth 429 + Retry-After unchanged
