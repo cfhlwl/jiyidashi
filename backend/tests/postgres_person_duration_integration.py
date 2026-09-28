@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from threading import Event, Thread
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
+
 from app.core.db import SessionLocal
 from app.models import Memory, MemorySource, SourceType, User
 from app.person_duration_models import PersonKnownDurationStatus
@@ -149,7 +151,7 @@ def _selected_met_to_related_does_not_publish_stale_met_duration() -> None:
     def mutate() -> None:
         with SessionLocal() as db:
             current = db.scalar(
-                __import__("sqlalchemy").select(PersonMemoryLink).where(
+                select(PersonMemoryLink).where(
                     PersonMemoryLink.user_id == user_id,
                     PersonMemoryLink.person_id == person_id,
                     PersonMemoryLink.memory_id == memory_id,
