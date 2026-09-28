@@ -36,6 +36,7 @@ class SecurityScope(StrEnum):
     FAMILY_MEMORY = "FAMILY_MEMORY"
     FAMILY_PHOTO_LIST = "FAMILY_PHOTO_LIST"
     FAMILY_PHOTO_DOWNLOAD = "FAMILY_PHOTO_DOWNLOAD"
+    FAMILY_SENSITIVE_ACCESS = "FAMILY_SENSITIVE_ACCESS"
     DATA_DELETE = "DATA_DELETE"
     ACCOUNT_DELETE = "ACCOUNT_DELETE"
     MEDIA_UPLOAD = "MEDIA_UPLOAD"
@@ -100,15 +101,7 @@ RULES: dict[SecuritySignalCode, SecurityRulePolicy] = {
         threshold=10,
         cooldown_seconds=600,
         severity=SecuritySeverity.HIGH,
-        allowed_scopes=frozenset(
-            {
-                SecurityScope.FAMILY_CURRENT_LOCATION,
-                SecurityScope.FAMILY_TODAY_FOOTPRINT,
-                SecurityScope.FAMILY_MEMORY,
-                SecurityScope.FAMILY_PHOTO_LIST,
-                SecurityScope.FAMILY_PHOTO_DOWNLOAD,
-            }
-        ),
+        allowed_scopes=frozenset({SecurityScope.FAMILY_SENSITIVE_ACCESS}),
     ),
     SecuritySignalCode.DESTRUCTIVE_OPERATION_FAILURE: SecurityRulePolicy(
         window_seconds=900,
