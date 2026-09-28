@@ -472,4 +472,8 @@ def test_retry_before_next_retry_at_does_not_consume_attempt(monkeypatch) -> Non
         alert = db.get(SecurityAlert, UUID(alert_id))
         assert alert is not None
         assert alert.delivery_attempts == 2
-        assert alert.next_retry_at == base + timedelta(seconds=91)
+        assert alert.next_retry_at is not None
+        next_retry_at = alert.next_retry_at
+        if next_retry_at.tzinfo is None:
+            next_retry_at = next_retry_at.replace(tzinfo=UTC)
+        assert next_retry_at == base + timedelta(seconds=91)
