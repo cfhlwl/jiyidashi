@@ -37,7 +37,7 @@ def upgrade() -> None:
             name="uq_security_signal_window_identity",
         ),
         sa.CheckConstraint(
-            "signal_count > 0",
+            "signal_count >= 0",
             name="ck_security_signal_window_count",
         ),
     )
