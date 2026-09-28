@@ -22,6 +22,7 @@ from app.life_stage_schemas import LifeStagePatch
 from app.long_term_reasoning_models import LongTermReasoningStatus
 from app.models import Memory, MemorySource, SourceType, User
 from app.schemas import MemoryUpdate
+from app.services import long_term_reasoning_service as reasoning_service
 from app.services.account_deletion_service import delete_current_account
 from app.services.ai_gateway import AIGateway, AIInferenceRequest, AIProviderResult
 from app.services.life_event_service import (
@@ -36,7 +37,6 @@ from app.services.life_stage_service import (
     delete_life_stage_event_link,
     patch_life_stage,
 )
-from app.services import long_term_reasoning_service as reasoning_service
 from app.services.long_term_reasoning_service import reason_about_life_stage
 from app.services.memory_edit_service import edit_memory
 from app.services.memory_service import get_memory_for_user, soft_delete_memory

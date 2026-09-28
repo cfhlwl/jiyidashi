@@ -1,7 +1,7 @@
+import hashlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-import hashlib
 from uuid import UUID
 
 from sqlalchemy import create_engine, func, select, text
