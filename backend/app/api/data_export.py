@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.life_event_models import LifeEvent, LifeEventMemoryLink
+from app.life_stage_models import LifeStage, LifeStageEventLink
 from app.media_models import MediaAsset, MediaEvidenceLink
 from app.models import (
     LocationDerivationState,
@@ -220,6 +221,26 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
         )
         .order_by(LifeEventMemoryLink.created_at, LifeEventMemoryLink.id),
         "life_event_memory_links",
+    )
+
+    life_stages = _bounded_scalars(
+        db,
+        select(LifeStage)
+        .where(LifeStage.user_id == user_id)
+        .order_by(LifeStage.started_at, LifeStage.id),
+        "life_stages",
+    )
+    life_stage_event_links = _bounded_scalars(
+        db,
+        select(LifeStageEventLink)
+        .join(
+            LifeEvent,
+            (LifeEvent.id == LifeStageEventLink.life_event_id)
+            & (LifeEvent.user_id == LifeStageEventLink.user_id),
+        )
+        .where(LifeStageEventLink.user_id == user_id)
+        .order_by(LifeStageEventLink.created_at, LifeStageEventLink.id),
+        "life_stage_event_links",
     )
 
     objects = _bounded_scalars(
@@ -432,6 +453,30 @@ def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONRespons
                 "created_at": link.created_at,
             }
             for link in life_event_memory_links
+        ],
+        "life_stages": [
+            {
+                "id": stage.id,
+                "stage_kind": stage.stage_kind.value,
+                "title": stage.title,
+                "custom_label": stage.custom_label,
+                "note": stage.note,
+                "started_at": stage.started_at,
+                "ended_at": stage.ended_at,
+                "revision": stage.revision,
+                "created_at": stage.created_at,
+                "updated_at": stage.updated_at,
+            }
+            for stage in life_stages
+        ],
+        "life_stage_event_links": [
+            {
+                "id": link.id,
+                "life_stage_id": link.life_stage_id,
+                "life_event_id": link.life_event_id,
+                "created_at": link.created_at,
+            }
+            for link in life_stage_event_links
         ],
         "objects": [
             {

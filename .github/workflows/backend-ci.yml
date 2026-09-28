@@ -266,6 +266,24 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_life_event_integration.py
 
+      - name: PostgreSQL LifeStage migration determinism
+        # [V2-006] 0024 must downgrade cleanly to 0023 and restore both
+        # owner-safe stage tables/constraints on re-upgrade.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_life_stage_migration_integration.py
+
+      - name: PostgreSQL LifeStage concurrency
+        # [V2-006] Stage optimistic writes and explicit LifeEvent evidence must
+        # serialize safely against stage/event deletion.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_life_stage_integration.py
+
       - name: PostgreSQL schema drift check
         # [人工注释][S1-FIX-001] upgrade 成功不代表 ORM metadata 与 migration head 一致；alembic check 是正式漂移门禁。
         env:

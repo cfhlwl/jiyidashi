@@ -12,6 +12,7 @@ from app.auth_models import AuthIdentity, AuthRateLimitBucket
 from app.core.db import SessionLocal
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.life_event_models import LifeEvent, LifeEventKind, LifeEventMemoryLink
+from app.life_stage_models import LifeStage, LifeStageEventLink, LifeStageKind
 from app.main import app
 from app.models import Memory, User
 from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
@@ -239,6 +240,21 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
             memory_id=memory.id,
         )
         db.add(life_event_link)
+        life_stage = LifeStage(
+            user_id=user_id,
+            stage_kind=LifeStageKind.FAMILY,
+            title="注销人生阶段",
+            started_at=datetime.now(UTC),
+            revision=0,
+        )
+        db.add(life_stage)
+        db.flush()
+        life_stage_link = LifeStageEventLink(
+            user_id=user_id,
+            life_stage_id=life_stage.id,
+            life_event_id=life_event.id,
+        )
+        db.add(life_stage_link)
         low_id, high_id = sorted(
             (person.id, person_two.id),
             key=lambda value: value.bytes,
@@ -260,6 +276,8 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
         relationship_id = relationship.id
         life_event_id = life_event.id
         life_event_link_id = life_event_link.id
+        life_stage_id = life_stage.id
+        life_stage_link_id = life_stage_link.id
 
     request_id = uuid4()
     deleted = await client.post(
@@ -284,6 +302,8 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
         assert db.get(PersonAlias, alias_id) is None
         assert db.get(PersonMemoryLink, link_id) is None
         assert db.get(PersonRelationship, relationship_id) is None
+        assert db.get(LifeStageEventLink, life_stage_link_id) is None
+        assert db.get(LifeStage, life_stage_id) is None
         assert db.get(LifeEventMemoryLink, life_event_link_id) is None
         assert db.get(LifeEvent, life_event_id) is None
         assert db.scalar(
