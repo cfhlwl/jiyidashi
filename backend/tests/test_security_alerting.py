@@ -215,7 +215,7 @@ def test_security_alert_event_contains_only_safe_correlation(monkeypatch) -> Non
     assert "192.0.2.55" not in rendered
     assert "sentinel@example.test" not in rendered
     assert "Bearer-secret" not in rendered
-    assert captured[0]["event"] == "security.alert.triggered"
+    assert captured[0]["rule_code"] == SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED.value
     assert len(str(captured[0]["correlation_id"])) == 64
 
 
