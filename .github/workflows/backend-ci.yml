@@ -293,6 +293,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_life_stage_integration.py
 
+      - name: PostgreSQL Annual Memoir composition
+        # [V2-010] Composed annual narrative/timeline/photo read must preserve
+        # owner isolation, current-state media eligibility and keyset pagination.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_annual_memoir_integration.py
+
       - name: PostgreSQL Cross-year Life History projection
         # [V2-009] Three-source explicit LifeEvent/LifeStage boundary projection
         # must preserve keyset order and current committed PATCH/DELETE state.
