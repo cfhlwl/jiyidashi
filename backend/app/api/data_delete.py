@@ -17,8 +17,8 @@ from app.services.account_deletion_service import (
     lock_external_data_delete_entry,
 )
 from app.services.data_deletion_service import DataDeletionError, delete_all_user_data
-from app.services.security_alerting import SecurityScope, record_security_signal
 from app.services.object_storage import ObjectStorage, get_object_storage
+from app.services.security_alerting import SecurityScope, record_security_signal
 
 router = APIRouter(prefix="/data", tags=["data"])
 AuthenticatedUser = Annotated[UUID, Depends(get_authenticated_user_id)]
