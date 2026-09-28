@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.config import get_settings
-from app.core.db import UserDataRequestStale, create_schema, engine, readiness_engine
+from app.core.db import UserDataRequestStale, create_schema, readiness_engine
 from app.core.observability import (
     configure_observability_log_level,
     emit_operational_event,
