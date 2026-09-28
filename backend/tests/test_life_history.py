@@ -471,4 +471,4 @@ def test_scope_lock_no_memory_visit_summary_ai_graph_or_persistence():
     assert "LifeEvent.started_at" in source
     assert "LifeStage.started_at" in source
     assert "LifeStage.ended_at" in source
-    assert list((root / "migrations/versions").glob("0025*")) == []
+    assert list((root / "migrations/versions").glob("*life_history*")) == []
