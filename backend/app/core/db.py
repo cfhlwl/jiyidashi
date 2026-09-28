@@ -232,6 +232,7 @@ def create_schema() -> None:
         person_memory_models,
         person_models,
         person_relationship_models,
+        security_models,
     )
 
     Base.metadata.create_all(bind=engine)

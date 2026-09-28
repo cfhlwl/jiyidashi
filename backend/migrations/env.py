@@ -20,6 +20,7 @@ from app import (  # noqa: F401
     person_memory_models,
     person_models,
     person_relationship_models,
+    security_models,
 )
 from app.core.config import get_settings
 from app.core.db import Base

@@ -345,6 +345,13 @@ jobs:
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             run --rm --no-deps api alembic check
 
+      - name: Prove bounded security alert retry operator path
+        run: |
+          docker compose \
+            --env-file "$ENV_FILE" \
+            -f docker-compose.prod.yml \
+            run --rm --no-deps api python -m app.security_alert_retry --limit 25
+
       - name: Start production API and verify liveness + readiness
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             up -d --no-deps api

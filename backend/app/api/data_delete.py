@@ -11,12 +11,14 @@ from app.core.db import get_db
 from app.core.observability import emit_operational_event
 from app.data_deletion_models import DataDeletionStatus
 from app.deps import get_authenticated_user_id
+from app.security_models import SecuritySignalCode
 from app.services.account_deletion_service import (
     AccountDeletionError,
     lock_external_data_delete_entry,
 )
 from app.services.data_deletion_service import DataDeletionError, delete_all_user_data
 from app.services.object_storage import ObjectStorage, get_object_storage
+from app.services.security_alerting import SecurityScope, record_security_signal
 
 router = APIRouter(prefix="/data", tags=["data"])
 AuthenticatedUser = Annotated[UUID, Depends(get_authenticated_user_id)]
@@ -63,14 +65,30 @@ def delete_current_user_data(
             storage=storage,
         )
     except (AccountDeletionError, DataDeletionError) as exc:
+        retryable = exc.status_code >= 500 or exc.status_code in {409, 423, 429}
         emit_operational_event(
             event="data_deletion.failed",
             level="WARNING",
             operation_request_id=str(payload.request_id),
             error_code=exc.code,
             status_code=exc.status_code,
-            retryable=exc.status_code >= 500 or exc.status_code in {409, 423, 429},
+            retryable=retryable,
         )
+        record_security_signal(
+            db.get_bind(),
+            signal_code=SecuritySignalCode.DESTRUCTIVE_OPERATION_FAILURE,
+            correlation_kind="deletion_request",
+            correlation_value=str(payload.request_id),
+            scope=SecurityScope.DATA_DELETE,
+        )
+        if retryable:
+            record_security_signal(
+                db.get_bind(),
+                signal_code=SecuritySignalCode.DESTRUCTIVE_OPERATION_RETRY_BURST,
+                correlation_kind="deletion_request",
+                correlation_value=str(payload.request_id),
+                scope=SecurityScope.DATA_DELETE,
+            )
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
     if not result.completed:

@@ -11,8 +11,35 @@ from sqlalchemy.orm import Session
 
 from app.auth_models import AuthRateLimitBucket
 from app.core.config import get_settings
+from app.security_models import SecuritySignalCode
+from app.services.security_alerting import SecurityScope, record_security_signal
 
 settings = get_settings()
+
+_SECURITY_SCOPE_BY_RATE_SCOPE = {
+    "register_ip": SecurityScope.AUTH_REGISTER_IP,
+    "login_ip": SecurityScope.AUTH_LOGIN_IP,
+    "login_account_ip": SecurityScope.AUTH_LOGIN_ACCOUNT_IP,
+}
+
+
+def _record_auth_security_signal(
+    db: Session,
+    *,
+    signal_code: SecuritySignalCode,
+    scope: str,
+    value: str,
+) -> None:
+    security_scope = _SECURITY_SCOPE_BY_RATE_SCOPE.get(scope)
+    if security_scope is None:
+        return
+    record_security_signal(
+        db.get_bind(),
+        signal_code=signal_code,
+        correlation_kind=scope,
+        correlation_value=value,
+        scope=security_scope,
+    )
 
 
 @dataclass(frozen=True)
@@ -113,6 +140,12 @@ def _consume(
         if blocked_until > now:
             retry_after = math.ceil((blocked_until - now).total_seconds())
             db.commit()
+            _record_auth_security_signal(
+                db,
+                signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+                scope=scope,
+                value=value,
+            )
             raise _rate_limited(retry_after)
         bucket.blocked_until = None
 
@@ -124,6 +157,12 @@ def _consume(
         bucket.updated_at = now
         retry_after = math.ceil((bucket.blocked_until - now).total_seconds())
         db.commit()
+        _record_auth_security_signal(
+            db,
+            signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+            scope=scope,
+            value=value,
+        )
         raise _rate_limited(retry_after)
 
     bucket.attempts += 1
@@ -199,6 +238,12 @@ def record_login_failure(db: Session, client_ip: str, subject: str) -> None:
 
     bucket.updated_at = now
     db.commit()
+    _record_auth_security_signal(
+        db,
+        signal_code=SecuritySignalCode.AUTH_LOGIN_FAILURE_BURST,
+        scope="login_account_ip",
+        value=f"{client_ip}\n{subject}",
+    )
 
 
 def clear_login_account_penalty(db: Session, client_ip: str, subject: str) -> None:

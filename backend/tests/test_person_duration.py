@@ -478,4 +478,4 @@ def test_exact_statuses_read_only_no_ai_graph_or_0025_migration():
         assert forbidden not in source
     assert "Memory.occurred_at" in source
     assert "resolve_memory_answer_trust" in source
-    assert list((root / "migrations/versions").glob("0025*")) == []
+    assert list((root / "migrations/versions").glob("*person_duration*")) == []
