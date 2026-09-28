@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth_models import AuthIdentity, AuthProvider
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.models import User
 from app.schemas import LoginRequest, RegisterRequest
 from app.services.auth_rate_limit import (
@@ -70,6 +71,7 @@ def register_email_password(
             secret_hash=_password_hasher.hash(payload.password),
         )
         db.add(identity)
+        create_legacy_full_entitlement(db, user_id=user.id)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
