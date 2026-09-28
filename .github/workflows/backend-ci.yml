@@ -296,6 +296,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_life_stage_integration.py
 
+      - name: PostgreSQL Observability readiness/correlation
+        # [P0][#161] Real PostgreSQL proves dependency-aware readiness and
+        # request-ID propagation through an authenticated API path.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_observability_integration.py
+
       - name: PostgreSQL Life Memoir composition
         # [V2-011] Explicit stage index must remain owner-safe/current-state,
         # and chapter wrapper must inherit V2-007 provider-gap stale-evidence behavior.
