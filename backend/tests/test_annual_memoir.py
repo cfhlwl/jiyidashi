@@ -266,6 +266,28 @@ async def test_empty_year_is_typed_empty(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_year_one_east_timezone_returns_typed_empty_not_500():
+    owner = _owner("memoir-year-one-east", timezone="Asia/Shanghai")
+
+    with SessionLocal() as db:
+        memoir = await build_annual_memoir(
+            db,
+            user_id=owner,
+            target_year="0001",
+            ai_gateway=object(),
+            reference_utc=REFERENCE,
+        )
+
+    assert memoir.status == AnnualMemoirStatus.MEMOIR_EMPTY
+    assert memoir.target_year == "0001"
+    assert memoir.timezone == "Asia/Shanghai"
+    assert memoir.narrative_status == AnnualSummaryStatus.NO_SUMMARIZABLE_EVIDENCE
+    assert memoir.narrative is None
+    assert memoir.timeline_items == []
+    assert memoir.photo_items == []
+
+
+@pytest.mark.asyncio
 async def test_closed_year_boundary_rejects_current_and_future(monkeypatch):
     owner = _owner("memoir-closed-year")
     _patch_summary(
