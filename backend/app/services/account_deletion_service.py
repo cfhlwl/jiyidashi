@@ -11,6 +11,7 @@ from app.account_deletion_models import AccountDeletionOperation
 from app.auth_models import AuthIdentity
 from app.core.db import lock_user_data_destructive_handoff
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
+from app.entitlement_models import AIQuotaPeriod, AIUsageEvent, UserEntitlement
 from app.models import User
 from app.services.data_deletion_service import (
     DataDeletionError,
@@ -188,6 +189,9 @@ def _finalize_account_deletion(
         # 一个事务中消失。任意失败整体 rollback，绝不能出现“User 已删但 AuthIdentity 仍可登录”
         # 或“identity 已删但 User/数据还处于半注销”的状态。
         _delete_auth_identities(db, user_id)
+        db.execute(delete(AIUsageEvent).where(AIUsageEvent.user_id == user_id))
+        db.execute(delete(AIQuotaPeriod).where(AIQuotaPeriod.user_id == user_id))
+        db.execute(delete(UserEntitlement).where(UserEntitlement.user_id == user_id))
         db.execute(
             delete(DataDeletionOperation).where(
                 DataDeletionOperation.user_id == user_id
