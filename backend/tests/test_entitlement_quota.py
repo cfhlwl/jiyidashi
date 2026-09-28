@@ -19,7 +19,15 @@ from app.entitlement_models import (
     UserEntitlement,
 )
 from app.media_models import MediaAsset, MediaKind, MediaStatus
+from app.schemas import MediaUploadCreate
 from app.models import User
+from app.services.ai_gateway import (
+    AIGateway,
+    AIEntitlementError,
+    AIInferenceRequest,
+    AIPolicyError,
+    DeterministicAIProvider,
+)
 from app.services.entitlement_service import (
     EntitlementError,
     entitlement_snapshot,
@@ -29,6 +37,8 @@ from app.services.entitlement_service import (
     resolve_entitlement,
     storage_usage_bytes,
 )
+from app.services.media_service import start_media_upload
+from app.services.object_storage import PresignedTransfer
 
 
 def _engine():
@@ -184,6 +194,96 @@ def test_free_plan_denies_media_and_ai_capabilities() -> None:
                     settings=_settings(),
                 )
             db.rollback()
+
+
+class _CountingSigner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def sign_upload(self, object_key: str, content_type: str) -> PresignedTransfer:
+        del object_key, content_type
+        self.calls += 1
+        return PresignedTransfer(
+            url="https://storage.invalid/upload",
+            method="PUT",
+            headers={},
+            expires_at=datetime(2026, 9, 29, 1, 0, tzinfo=UTC),
+        )
+
+
+def test_media_capability_denial_happens_before_signing() -> None:
+    engine = _engine()
+    signer = _CountingSigner()
+    with Session(engine) as db:
+        user = _seed_entitlement(db, plan_code=PlanCode.FREE)
+        with pytest.raises(
+            EntitlementError,
+            match="ENTITLEMENT_CAPABILITY_REQUIRED",
+        ):
+            start_media_upload(
+                db,
+                user.id,
+                MediaUploadCreate(
+                    client_upload_id=uuid4(),
+                    kind=MediaKind.IMAGE,
+                    content_type="image/jpeg",
+                    size_bytes=10,
+                    original_filename="denied.jpg",
+                ),
+                signer,
+            )
+        assert signer.calls == 0
+        assert db.scalar(
+            select(func.count(MediaAsset.id)).where(MediaAsset.user_id == user.id)
+        ) == 0
+
+
+@pytest.mark.asyncio
+async def test_ai_local_validation_and_capability_denial_do_not_invoke_provider() -> None:
+    engine = _engine()
+    provider = DeterministicAIProvider()
+    settings = _settings()
+    gateway = AIGateway(settings, provider)
+    request = AIInferenceRequest(
+        purpose="biz.test",
+        system_instruction="system",
+        input_text="input",
+        max_output_tokens=16,
+    )
+
+    with Session(engine) as db:
+        personal = _seed_entitlement(db, plan_code=PlanCode.PERSONAL)
+        with pytest.raises(AIPolicyError, match="AI_REQUEST_EMPTY"):
+            await gateway.infer(
+                AIInferenceRequest(
+                    purpose="biz.test",
+                    system_instruction=" ",
+                    input_text="input",
+                    max_output_tokens=16,
+                ),
+                db=db,
+                actor_user_id=personal.id,
+            )
+        assert db.scalar(
+            select(func.count(AIUsageEvent.id)).where(
+                AIUsageEvent.user_id == personal.id
+            )
+        ) == 0
+
+        free = _seed_entitlement(db, plan_code=PlanCode.FREE)
+        with pytest.raises(
+            AIEntitlementError,
+            match="ENTITLEMENT_CAPABILITY_REQUIRED",
+        ):
+            await gateway.infer(
+                request,
+                db=db,
+                actor_user_id=free.id,
+            )
+        assert provider.requests == []
+        assert db.scalar(
+            select(func.count(AIUsageEvent.id)).where(AIUsageEvent.user_id == free.id)
+        ) == 0
 
 
 def test_storage_usage_counts_pending_and_ready_only() -> None:
