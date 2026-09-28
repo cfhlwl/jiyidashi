@@ -18,7 +18,6 @@ from app.services.life_history_service import (
     list_life_history_timeline,
 )
 
-
 REFERENCE = datetime(2026, 9, 28, 12, tzinfo=UTC)
 
 
