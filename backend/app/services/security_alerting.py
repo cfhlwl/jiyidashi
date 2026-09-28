@@ -420,7 +420,6 @@ def deliver_security_alert(
 
             alert.delivery_attempts += 1
             delivered = emit_security_alert_event_checked(
-                event="security.alert.triggered",
                 level="ERROR"
                 if alert.severity in {SecuritySeverity.HIGH.value, SecuritySeverity.CRITICAL.value}
                 else "WARNING",
