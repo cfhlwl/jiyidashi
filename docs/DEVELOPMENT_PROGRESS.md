@@ -44,7 +44,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Personal Memory Graph**；V2-001 / V2-002 已正式合并，V2-003 / Issue #132 Person Relationship Graph V1 开发中，V2-004+ 仍未开始。
+> 当前阶段：**V2 Personal Memory Graph V1 已完成实现，正在进行 V2 Final Closeout / Productization Review**；V2-001..V2-011 与 Mini V2-A..D 均已正式合并，OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
 
 ## 状态规则
 
@@ -293,7 +293,8 @@
 | V2-008 | Person Known Duration V1 — “我认识某人多久了” | ✅ | Issue #152 / PR #153：最早 trusted explicit MET + S3-013 + Memory.occurred_at deterministic no-guess duration 已正式审查并合并；merge `7bf91baef1638f71438f0cd1d5aa71faa80c1db3` |
 | V2-009 | Cross-year Evidence Timeline V1 — “过去几年发生了什么” | ✅ | Issue #154 / PR #155：显式 LifeEvent / LifeStage START/END boundary、user-local year bounds、server-owned as_of、opaque keyset cursor 与 bounded three-source merge 已正式审查并合并；merge `e7c7f4740c358c9d7d057da883b503b681c9c72c` |
 | V2-010 | Annual Electronic Memoir V1 — 年度电子回忆录 | ✅ | Issue #156 / PR #157：复用 S3-017 Annual Summary + V2-009 timeline + verified PHOTO media gallery 已正式审查并合并；merge `0495112b17d91fb4540048eaa7288047db40fe85` |
-| V2-011 | Life Memoir Foundation V1 — 人生回忆录 | 🟠 | Issue #158 / PR #159：explicit LifeStage chapter index + on-demand cited stage memoir via canonical V2-007 已实现；PostgreSQL composition gate + full pytest 已通过，等待正式审查/合并，合并前不标记 ✅ |
+| V2-011 | Life Memoir Foundation V1 — 人生回忆录 | ✅ | Issue #158 / PR #159：explicit LifeStage chapter index + on-demand cited stage memoir via canonical V2-007 已正式审查并合并；merge `6df3a6654f14e715db8e3887582b1f83de78cd7c` |
+| V2-CLOSE | V2 Final Closeout / Productization Review | 🟠 | Issue #160：capability inventory、Mini/Flutter coverage、SEC/OPS/BIZ truth、production backlog 与 repository hygiene 正在正式收口；合并本 PR 后 V2 Personal Memory Graph V1 才标记正式 closed |
 
 ---
 
@@ -302,7 +303,7 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：代码、正式审查、exact-head CI 与合并 main ✅；真实 public-server 部署验收 ⏸，待提供服务器后执行，因此当前仍不标记 ✅ |
+| OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：Docker/Compose/Caddy、production env fail-closed、migration、immutable image、backup/restore/rollback 与 CI 已合并；真实 public-server DNS/TLS/object-storage/client-domain 验收仍明确延期，因此不标记 ✅ |
 
 # 7. V3：AI 人生助手与硬件扩展
 
@@ -321,20 +322,20 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| SEC-001 | HTTPS / TLS | ⬜ | 上线前强制；对象存储 production 自定义 endpoint 已单独强制 HTTPS |
+| SEC-001 | HTTPS / TLS | 🟠 | Caddy/production 部署代码与 provider endpoint HTTPS fail-closed 已实现并有 CI；真实 DNS/证书/public endpoint 尚未验收 |
 | SEC-002 | 对象存储私有桶 | 🟠 | 代码已按私有桶 + 服务端 key + fail-closed 设计实现；仍需真实 provider 部署验收 |
 | SEC-003 | 临时签名下载 URL | 🟠 | 短时 PUT/GET 已实现；微信 API + signed PUT 合法域名及真实 COS/OSS 真机闭环仍需部署验收 |
-| SEC-004 | 敏感数据权限隔离 | ⬜ | 位置 / 健康 / 家庭 / 生物识别分级 |
-| SEC-005 | 服务端访问审计 | ⬜ | 敏感数据查询留痕 |
+| SEC-004 | 敏感数据权限隔离 | 🟠 | owner isolation、Family exact-grant、Privacy Pause 与多类敏感读取边界已实现；尚无覆盖所有未来敏感域的统一策略层 |
+| SEC-005 | 服务端访问审计 | 🟠 | Family 敏感读取已有 FamilyAccessAuditEvent / audit API；尚未形成所有敏感读取统一审计与 production observability |
 | SEC-006 | 数据导出 | ✅ | PR #12 已合并；当前认证用户可导出版本化 JSON，严格 owner 隔离且不泄露内部 Storage 字段 |
 | SEC-007 | 数据彻底删除 | ✅ | PR #28 已实现 durable DB / Storage 全删除、partial-failure retry、MemoryEdit 审计清理并通过 exact-head CI 后合并 |
 | SEC-008 | 账户注销 | ✅ | M / S1-022 / Issue #31 / PR #32 已完成两轮正式审查并合并；S1-021 数据清理先行、身份最终同事务删除、恢复 token、竞争删除 fail closed、旧 token 失效及本地 producer/sync/onboarding quiesce + owner purge 均有回归 |
-| SEC-009 | 位置权限单独同意 | ⬜ | 按平台规则实施 |
+| SEC-009 | 位置权限单独同意 | 🟠 | Flutter 原生定位 progressive permission / privacy lifecycle 已实现并有 Mobile CI；真实生产签名包与平台权限验收仍待 OPS-001 real-env acceptance |
 | SEC-010 | 家庭查看逐项授权 | ✅ | Issue #95 / PR #96 已完成 default-deny per-scope foundation、canonical membership locks、committed persisted-state resolver、PostgreSQL Family Gate 与 exact-head #575（454 passed）；已合并 `main=c933f2a6`，真实敏感读取按 S4-004+ 分阶段接入 |
 | SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁与时区边界均已合并 |
-| SEC-012 | AI 不知道就说不知道 | 🟠 | Evidence gate 已实现；完整 AI 层尚未进入 |
+| SEC-012 | AI 不知道就说不知道 | ✅ | RAG、Daily/Monthly/Annual Summary、V2-007/010/011 已形成 evidence-only、bounded inventory、opaque slots、strict citation、post-provider revalidation 与 fail-closed typed status；无证据/证据不完整不生成可信答案 |
 | SEC-013 | AI 推断显式标记 | ⬜ | UI 层尚未实现 |
-| SEC-014 | 敏感操作二次确认 | ⬜ | 导出 / 删除 / 家庭授权等 |
+| SEC-014 | 敏感操作二次确认 | 🟠 | 账户注销等部分高风险流程已有显式 intent/确认语义；导出、数据删除、家庭授权等尚未统一成跨客户端 reviewed second-confirm 标准 |
 | SEC-015 | 安全事件与异常访问告警 | ⬜ | 上线前设计 |
 
 ---
@@ -347,7 +348,7 @@
 | BIZ-002 | 个人会员 | ⬜ | 长期记忆 / AI 搜索 / 图片语音等 |
 | BIZ-003 | 家庭会员 | ⬜ | 家庭共享 / 长辈模式 / 到家提醒 |
 | BIZ-004 | 高级会员 | ⬜ | 长期档案 / 人生报告 / 大容量存储 |
-| BIZ-005 | 年度回忆报告 | ⬜ | 可作为会员核心价值 |
+| BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend 已合并；Mini/Flutter 展示、premium packaging 与 entitlement enforcement 尚未实现 |
 | BIZ-006 | 实体年度回忆录 | ⏸ | 后续增值服务 |
 | BIZ-007 | 北极星指标：成功找回记忆数 | ⬜ | 需要埋点系统 |
 | BIZ-008 | D1 / D7 / D30 留存 | ⬜ | 上线后持续监控 |
