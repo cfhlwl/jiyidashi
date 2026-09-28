@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.observability import emit_operational_event
+from app.core.observability import emit_operational_event_checked
 from app.security_models import (
     SecurityAlert,
     SecurityAlertDeliveryStatus,
@@ -163,7 +163,7 @@ def _dedupe_key(
     severity: SecuritySeverity,
     correlation_digest: str,
     scope: SecurityScope,
-    cooldown_started_at: datetime,
+    identity_started_at: datetime,
 ) -> str:
     controlled = "|".join(
         (
@@ -171,7 +171,7 @@ def _dedupe_key(
             severity.value,
             correlation_digest,
             scope.value,
-            cooldown_started_at.isoformat(),
+            identity_started_at.isoformat(),
         )
     )
     return hashlib.sha256(controlled.encode()).hexdigest()
@@ -221,6 +221,26 @@ def _get_or_create_window(
         if row is None:
             raise
         return row
+
+
+def _latest_matching_alert_for_update(
+    db: Session,
+    *,
+    rule_code: SecuritySignalCode,
+    correlation_digest: str,
+    scope: SecurityScope,
+) -> SecurityAlert | None:
+    return db.scalar(
+        select(SecurityAlert)
+        .where(
+            SecurityAlert.rule_code == rule_code.value,
+            SecurityAlert.correlation_digest == correlation_digest,
+            SecurityAlert.scope == scope.value,
+        )
+        .order_by(SecurityAlert.created_at.desc(), SecurityAlert.id.desc())
+        .limit(1)
+        .with_for_update()
+    )
 
 
 def _get_or_create_alert(
@@ -291,8 +311,6 @@ def record_security_signal(
             correlation_value,
         )
         window_started_at = _bucket_start(observed_at, policy.window_seconds)
-        cooldown_started_at = _bucket_start(observed_at, policy.cooldown_seconds)
-
         with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
             window = _get_or_create_window(
                 db,
@@ -311,24 +329,44 @@ def record_security_signal(
                 db.commit()
                 return None
 
-            dedupe_key = _dedupe_key(
-                rule_code=signal_code,
-                severity=policy.severity,
-                correlation_digest=correlation_digest,
-                scope=scope,
-                cooldown_started_at=cooldown_started_at,
-            )
-            alert, created = _get_or_create_alert(
+            latest_alert = _latest_matching_alert_for_update(
                 db,
-                dedupe_key=dedupe_key,
                 rule_code=signal_code,
-                policy=policy,
                 correlation_digest=correlation_digest,
                 scope=scope,
-                window_started_at=window_started_at,
-                signal_count=window.signal_count,
-                now=observed_at,
             )
+            if latest_alert is not None:
+                elapsed = observed_at - _as_utc(latest_alert.created_at)
+                if elapsed < timedelta(seconds=policy.cooldown_seconds):
+                    latest_alert.signal_count = max(
+                        latest_alert.signal_count,
+                        window.signal_count,
+                    )
+                    latest_alert.updated_at = observed_at
+                    alert = latest_alert
+                    created = False
+                else:
+                    latest_alert = None
+
+            if latest_alert is None:
+                dedupe_key = _dedupe_key(
+                    rule_code=signal_code,
+                    severity=policy.severity,
+                    correlation_digest=correlation_digest,
+                    scope=scope,
+                    identity_started_at=window_started_at,
+                )
+                alert, created = _get_or_create_alert(
+                    db,
+                    dedupe_key=dedupe_key,
+                    rule_code=signal_code,
+                    policy=policy,
+                    correlation_digest=correlation_digest,
+                    scope=scope,
+                    window_started_at=window_started_at,
+                    signal_count=window.signal_count,
+                    now=observed_at,
+                )
             alert_id = str(alert.id)
             db.commit()
 
@@ -368,9 +406,20 @@ def deliver_security_alert(
                 SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value,
             }:
                 return alert.delivery_status == SecurityAlertDeliveryStatus.DELIVERED.value
+            if alert.delivery_attempts >= MAX_DELIVERY_ATTEMPTS:
+                alert.delivery_status = SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
+                alert.next_retry_at = None
+                alert.updated_at = observed_at
+                db.commit()
+                return False
+            if (
+                alert.next_retry_at is not None
+                and _as_utc(alert.next_retry_at) > observed_at
+            ):
+                return False
 
             alert.delivery_attempts += 1
-            delivered = emit_operational_event(
+            delivered = emit_operational_event_checked(
                 event="security.alert.triggered",
                 level="ERROR"
                 if alert.severity in {SecuritySeverity.HIGH.value, SecuritySeverity.CRITICAL.value}
