@@ -111,6 +111,9 @@ PRESERVED_ACCOUNT_SURFACES = (
     "auth_identities",
     "auth_rate_limit_buckets",
     "data_deletion_operations",
+    "user_entitlements",
+    "ai_quota_periods",
+    "ai_usage_events",
 )
 
 
