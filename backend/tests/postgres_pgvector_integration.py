@@ -62,7 +62,9 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'life_events',
                           'life_event_memory_links',
                           'life_stages',
-                          'life_stage_event_links'
+                          'life_stage_event_links',
+                          'security_signal_windows',
+                          'security_alerts'
                       )
                     ORDER BY table_name, ordinal_position
                     """
