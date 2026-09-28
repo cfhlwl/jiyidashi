@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     enable_dev_auth: bool = False
     auto_create_schema: bool = False
     cors_origins: list[str] = Field(default_factory=list)
+    observability_log_level: str = "INFO"
 
     # [人工注释][S1-006] 媒体存储默认关闭且无公开 URL 回退；启用 s3 时可接
     # COS/OSS 的 S3 SigV4 兼容私有桶。
@@ -117,6 +118,16 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def validate_observability(self):
+        level = self.observability_log_level.strip().upper()
+        if level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
+            raise ValueError(
+                "OBSERVABILITY_LOG_LEVEL must be DEBUG, INFO, WARNING or ERROR"
+            )
+        self.observability_log_level = level
+        return self
 
     @property
     def is_production(self) -> bool:
