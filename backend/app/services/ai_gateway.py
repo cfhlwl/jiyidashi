@@ -334,10 +334,11 @@ class AIGateway:
         self._provider = provider
 
     async def infer(self, request: AIInferenceRequest) -> AIInferenceResult:
-        validated = self._validate_request(request)
         gateway_request_id = str(uuid4())
         started = perf_counter()
+        validated: AIInferenceRequest | None = None
         try:
+            validated = self._validate_request(request)
             # Cancellation intentionally propagates; it must never become a synthetic AI result.
             provider_result = await self._provider.infer(validated)
             checked = _validate_provider_result(provider_result)
@@ -346,7 +347,7 @@ class AIGateway:
                 event="ai.inference.failed",
                 level="WARNING",
                 gateway_request_id=gateway_request_id,
-                purpose=validated.purpose,
+                purpose=None if validated is None else validated.purpose,
                 provider=self._settings.ai_provider,
                 model=self._settings.ai_model or None,
                 latency_ms=(perf_counter() - started) * 1000,
@@ -385,10 +386,11 @@ class AIGateway:
         self,
         request: AIImageInferenceRequest,
     ) -> AIInferenceResult:
-        validated = self._validate_image_request(request)
         gateway_request_id = str(uuid4())
         started = perf_counter()
+        validated: AIImageInferenceRequest | None = None
         try:
+            validated = self._validate_image_request(request)
             # The Gateway owns the wall-clock bound even for future image adapters that
             # do not implement their own HTTP timeout.
             try:
@@ -402,7 +404,7 @@ class AIGateway:
                 event="ai.inference.failed",
                 level="WARNING",
                 gateway_request_id=gateway_request_id,
-                purpose=validated.purpose,
+                purpose=None if validated is None else validated.purpose,
                 provider=self._settings.ai_provider,
                 model=self._settings.ai_model or None,
                 latency_ms=(perf_counter() - started) * 1000,
