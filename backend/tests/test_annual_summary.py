@@ -183,6 +183,30 @@ class _FailingProvider:
 
 
 @pytest.mark.asyncio
+async def test_year_one_east_timezone_boundary_is_representable_safe():
+    with SessionLocal() as db:
+        owner = _owner(db, "year-one-east", timezone="Asia/Shanghai")
+        gateway, provider = _gateway(
+            '{"summary":"unused","citations":[]}'
+        )
+
+        result = await summarize_year(
+            db,
+            user_id=owner,
+            target_year="0001",
+            ai_gateway=gateway,
+            reference_utc=datetime(2026, 9, 28, tzinfo=UTC),
+        )
+
+        assert result.status == AnnualSummaryStatus.NO_SUMMARIZABLE_EVIDENCE
+        assert result.target_year == "0001"
+        assert result.timezone == "Asia/Shanghai"
+        assert result.summary is None
+        assert result.citations == ()
+        assert provider.requests == []
+
+
+@pytest.mark.asyncio
 async def test_persisted_timezone_computes_exact_local_year_boundary():
     with SessionLocal() as db:
         owner = _owner(db, "timezone", timezone="Asia/Shanghai")
