@@ -22,7 +22,6 @@ from app.models import Memory, MemorySource, MemoryType, SourceType
 from app.schemas import MediaUploadCreate, PhotoMemoryCreate, VoiceMemoryCreate
 from app.security_models import SecuritySignalCode
 from app.services.asr import ASRProvider, ASRProviderError
-from app.services.security_alerting import SecurityScope, record_security_signal
 from app.services.memory_service import (
     TrustedMemoryWrite,
     create_trusted_memory,
@@ -35,6 +34,7 @@ from app.services.object_storage import (
     PresignedTransfer,
     StoredObject,
 )
+from app.services.security_alerting import SecurityScope, record_security_signal
 
 ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/jpeg",
@@ -51,6 +51,7 @@ ASR_CLAIM_LEASE = timedelta(minutes=10)
 HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs"}
 HEIF_BRANDS = HEIC_BRANDS | {b"mif1", b"msf1"}
 MEDIA_MEMORY_REQUEST_HASH_KEY = "media_memory_request_sha256"
+
 
 def _record_media_storage_security(
     db: Session,
