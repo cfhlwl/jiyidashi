@@ -230,7 +230,9 @@ async def extract_ocr(
                 content_type=snapshot.content_type,
                 detail="high",
                 max_output_tokens=None,
-            )
+            ),
+            db=db,
+            actor_user_id=user_id,
         )
     except AIGatewayError as exc:
         raise _provider_error(exc) from exc
