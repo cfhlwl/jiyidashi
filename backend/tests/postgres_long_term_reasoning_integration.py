@@ -400,63 +400,6 @@ def _new_memory_evidence_race() -> UUID:
     return owner
 
 
-def _account_delete_prepare_race() -> UUID:
-    owner = _seed_owner("account-delete-prepare")
-    stage_id = _seed_stage(owner, "account-delete-prepare")
-
-    def mutate() -> None:
-        with SessionLocal() as db:
-            result = delete_current_account(
-                db,
-                user_id=owner,
-                request_id=uuid4(),
-                storage=DisabledObjectStorage(),
-                local_cleanup_ready=False,
-            )
-            assert result.completed is False
-            assert result.data_deletion_status is None
-            assert db.scalar(
-                select(AccountDeletionOperation.id).where(
-                    AccountDeletionOperation.user_id == owner
-                )
-            ) is not None
-
-    _run_gap_race(user_id=owner, stage_id=stage_id, mutate=mutate)
-    return owner
-
-
-def _data_delete_waiting_race(status: DataDeletionStatus, suffix: str) -> UUID:
-    owner = _seed_owner(f"data-delete-{suffix}")
-    stage_id = _seed_stage(owner, f"data-delete-{suffix}")
-
-    def mutate() -> None:
-        with SessionLocal() as db:
-            lock_user_data_destructive_handoff(db, user_id=owner)
-            user = db.scalar(
-                select(User).where(User.id == owner).with_for_update()
-            )
-            assert user is not None
-            db.add(
-                DataDeletionOperation(
-                    id=uuid4(),
-                    user_id=owner,
-                    request_id=uuid4(),
-                    status=status,
-                )
-            )
-            db.commit()
-            active = db.scalar(
-                select(DataDeletionOperation.status).where(
-                    DataDeletionOperation.user_id == owner,
-                    DataDeletionOperation.status != DataDeletionStatus.COMPLETED,
-                )
-            )
-            assert active == status
-
-    _run_gap_race(user_id=owner, stage_id=stage_id, mutate=mutate)
-    return owner
-
-
 class _NeverProvider:
     def __init__(self):
         self.requests: list[AIInferenceRequest] = []
@@ -470,9 +413,12 @@ class _NeverProvider:
         raise AssertionError("V2-007 must not call image inference")
 
 
-def _gate_before_provider_disclosure_race() -> UUID:
-    owner = _seed_owner("gate-before-disclosure")
-    stage_id = _seed_stage(owner, "gate-before-disclosure")
+def _run_gate_before_provider_disclosure(
+    *,
+    owner: UUID,
+    stage_id: UUID,
+    mutate: Callable[[], None],
+) -> None:
     handoff_reached = Event()
     gate_committed = Event()
     mutation_errors: list[BaseException] = []
@@ -489,21 +435,7 @@ def _gate_before_provider_disclosure_race() -> UUID:
     def mutation_worker() -> None:
         try:
             assert handoff_reached.wait(timeout=20)
-            with SessionLocal() as db:
-                result = delete_current_account(
-                    db,
-                    user_id=owner,
-                    request_id=uuid4(),
-                    storage=DisabledObjectStorage(),
-                    local_cleanup_ready=False,
-                )
-                assert result.completed is False
-                assert result.data_deletion_status is None
-                assert db.scalar(
-                    select(AccountDeletionOperation.id).where(
-                        AccountDeletionOperation.user_id == owner
-                    )
-                ) is not None
+            mutate()
             gate_committed.set()
         except BaseException as exc:  # noqa: BLE001
             mutation_errors.append(exc)
@@ -536,6 +468,73 @@ def _gate_before_provider_disclosure_race() -> UUID:
     assert result.status == LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION
     assert result.answer is None
     assert result.citations == ()
+
+
+def _account_gate_before_provider_disclosure_race() -> UUID:
+    owner = _seed_owner("account-gate-before-disclosure")
+    stage_id = _seed_stage(owner, "account-gate-before-disclosure")
+
+    def mutate() -> None:
+        with SessionLocal() as db:
+            result = delete_current_account(
+                db,
+                user_id=owner,
+                request_id=uuid4(),
+                storage=DisabledObjectStorage(),
+                local_cleanup_ready=False,
+            )
+            assert result.completed is False
+            assert result.data_deletion_status is None
+            assert db.scalar(
+                select(AccountDeletionOperation.id).where(
+                    AccountDeletionOperation.user_id == owner
+                )
+            ) is not None
+
+    _run_gate_before_provider_disclosure(
+        owner=owner,
+        stage_id=stage_id,
+        mutate=mutate,
+    )
+    return owner
+
+
+def _data_gate_before_provider_disclosure_race(
+    status: DataDeletionStatus,
+    suffix: str,
+) -> UUID:
+    owner = _seed_owner(f"data-gate-before-{suffix}")
+    stage_id = _seed_stage(owner, f"data-gate-before-{suffix}")
+
+    def mutate() -> None:
+        with SessionLocal() as db:
+            lock_user_data_destructive_handoff(db, user_id=owner)
+            user = db.scalar(
+                select(User).where(User.id == owner).with_for_update()
+            )
+            assert user is not None
+            db.add(
+                DataDeletionOperation(
+                    id=uuid4(),
+                    user_id=owner,
+                    request_id=uuid4(),
+                    status=status,
+                )
+            )
+            db.commit()
+            active = db.scalar(
+                select(DataDeletionOperation.status).where(
+                    DataDeletionOperation.user_id == owner,
+                    DataDeletionOperation.status != DataDeletionStatus.COMPLETED,
+                )
+            )
+            assert active == status
+
+    _run_gate_before_provider_disclosure(
+        owner=owner,
+        stage_id=stage_id,
+        mutate=mutate,
+    )
     return owner
 
 
@@ -638,7 +637,15 @@ def main() -> None:
         _event_memory_unlink_race(),
         _new_event_evidence_race(),
         _new_memory_evidence_race(),
-        _gate_before_provider_disclosure_race(),
+        _account_gate_before_provider_disclosure_race(),
+        _data_gate_before_provider_disclosure_race(
+            DataDeletionStatus.WAITING_STORAGE_EXPIRY,
+            "expiry",
+        ),
+        _data_gate_before_provider_disclosure_race(
+            DataDeletionStatus.WAITING_STORAGE_QUIET,
+            "quiet",
+        ),
         _provider_disclosure_before_gate_serializes_delete(),
     ]
 
@@ -651,7 +658,7 @@ def main() -> None:
 
     # The script deliberately has no persistence assertion for generated answers because
     # V2-007 has no answer table/cache authority to inspect.
-    assert len(owners) == 12
+    assert len(owners) == 14
     print("PostgreSQL Long-term Reasoning V2-007 provider-gap invariants PASS")
 
 
