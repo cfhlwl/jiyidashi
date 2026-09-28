@@ -295,6 +295,29 @@ async def test_ai_gateway_success_metrics_exclude_prompt_output_and_image_bytes(
 
 
 @pytest.mark.asyncio
+async def test_ai_gateway_validation_failure_is_logged_without_untrusted_purpose(caplog):
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    gateway = AIGateway(_ai_settings(), _TelemetryProvider())
+    secret_purpose = "INVALID PURPOSE SECRET SENTINEL"
+
+    with pytest.raises(AIGatewayError):
+        await gateway.infer(
+            AIInferenceRequest(
+                purpose=secret_purpose,
+                system_instruction="system",
+                input_text="input",
+            )
+        )
+
+    event = _event(caplog, "ai.inference.failed")
+    assert event["error_code"] == "AI_REQUEST_PURPOSE_INVALID"
+    assert "purpose" not in event
+    assert UUID(event["gateway_request_id"])
+    rendered = "\n".join(record.getMessage() for record in caplog.records)
+    assert secret_purpose not in rendered
+
+
+@pytest.mark.asyncio
 async def test_ai_gateway_failure_metrics_and_cancellation_semantics(caplog):
     caplog.set_level(logging.INFO, logger=LOGGER)
     failing = AIGateway(_ai_settings(), _FailingProvider())
