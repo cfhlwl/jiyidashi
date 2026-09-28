@@ -99,6 +99,8 @@ No merged Mini route/service was found for:
 
 The backend has enough canonical authority to build these without inventing new protocols. The product gap is now client orchestration, trustworthy status rendering, citations/evidence UX, conflict handling, and pagination.
 
+Closeout follow-up: **#162** tracks the coherent Mini V2-005..011 productization deliverable.
+
 ## 4. Flutter product coverage
 
 Flutter currently contains Stage1/Stage2-era capture, offline sync, location, reminder, Today Footprint, Place Detail, privacy, elder-mode and account-delete flows. Code search on `mobile/lib` found no V2 `/people`, `/graph`, LifeEvent/LifeStage, known-duration, life-history or memoir endpoints.
@@ -108,6 +110,8 @@ Therefore:
 - V2-001..011: **NONE** in Flutter.
 - This is not a backend blocker, but it is a broad-beta/product-parity gap.
 - Flutter should not copy Mini implementation blindly; it must preserve its existing offline/native location lifecycle and owner/session authority patterns.
+
+Closeout follow-up: **#163** tracks Flutter V2-001..011 parity.
 
 ## 5. Trust / privacy / destructive-data authority
 
@@ -194,6 +198,8 @@ Rate limiting is strong on auth; feature-specific AI quota/rate enforcement is n
 
 This is the main code-complete-but-not-production-operated gap.
 
+Closeout follow-up: **#161** tracks the minimum production observability foundation.
+
 ## 9. Productization gaps
 
 | Gap | User value | Missing client | Missing flow | Dependency | Priority |
@@ -244,6 +250,23 @@ No pricing is selected by this closeout.
 - PDF/EPUB/export/share/background memoir generation is not part of V2 closeout.
 - New AI prompts/provider purposes, trust algorithms, Family permission changes, schema/migrations and payment logic are prohibited in this PR.
 - P2 UX refinements may remain documented until productization sequencing is chosen.
+
+### Backlog and repository-hygiene result
+
+`docs/V2_PRODUCTIZATION_BACKLOG.md` contains:
+
+- P0: **3** items.
+- P1: **6** items.
+- P2: **3** items.
+- Deferred: **3** items.
+
+Created follow-up Issues only where no canonical OPS/SEC/BIZ Issue already existed:
+
+- **#161** Production Observability Foundation V1 — P0.
+- **#162** Mini Program advanced V2 surfaces — P1.
+- **#163** Flutter Personal Memory Graph parity — P1.
+
+Repository hygiene on Issue #160 closed stale completed tracking Issues **#8, #21, #23, #25, #35** with merged-PR/progress references. No branch deletion was performed. No unrelated repository work was touched.
 
 ## 12. Recommended next sequence
 
