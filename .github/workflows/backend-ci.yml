@@ -314,6 +314,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_security_alerting_integration.py
 
+      - name: PostgreSQL Entitlement & Quota concurrency
+        # [P1][#168] Real PostgreSQL proves LEGACY_FULL backfill, storage reservation
+        # serialization, AI last-slot exactly-once, and deletion lifecycle semantics.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_entitlement_quota_integration.py
+
       - name: PostgreSQL Life Memoir composition
         # [V2-011] Explicit stage index must remain owner-safe/current-state,
         # and chapter wrapper must inherit V2-007 provider-gap stale-evidence behavior.
