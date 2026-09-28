@@ -5,12 +5,14 @@ import base64
 import re
 from dataclasses import dataclass, replace
 from functools import lru_cache
+from time import perf_counter
 from typing import Literal, Protocol
 from uuid import uuid4
 
 import httpx
 
 from app.core.config import Settings, get_settings
+from app.core.observability import emit_operational_event
 
 _PURPOSE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 
@@ -332,14 +334,43 @@ class AIGateway:
         self._provider = provider
 
     async def infer(self, request: AIInferenceRequest) -> AIInferenceResult:
-        validated = self._validate_request(request)
-        # Cancellation intentionally propagates; it must never become a synthetic AI result.
-        provider_result = await self._provider.infer(validated)
-        checked = _validate_provider_result(provider_result)
+        gateway_request_id = str(uuid4())
+        started = perf_counter()
+        validated: AIInferenceRequest | None = None
+        try:
+            validated = self._validate_request(request)
+            # Cancellation intentionally propagates; it must never become a synthetic AI result.
+            provider_result = await self._provider.infer(validated)
+            checked = _validate_provider_result(provider_result)
+        except AIGatewayError as exc:
+            emit_operational_event(
+                event="ai.inference.failed",
+                level="WARNING",
+                gateway_request_id=gateway_request_id,
+                purpose=None if validated is None else validated.purpose,
+                provider=self._settings.ai_provider,
+                model=self._settings.ai_model or None,
+                latency_ms=(perf_counter() - started) * 1000,
+                error_code=exc.code,
+                retryable=exc.retryable,
+            )
+            raise
+
+        emit_operational_event(
+            event="ai.inference.completed",
+            gateway_request_id=gateway_request_id,
+            purpose=validated.purpose,
+            provider=checked.provider,
+            model=checked.model,
+            provider_request_id=checked.provider_request_id,
+            latency_ms=(perf_counter() - started) * 1000,
+            input_tokens=checked.input_tokens,
+            output_tokens=checked.output_tokens,
+        )
         return AIInferenceResult(
             output_text=checked.output_text,
             provenance=AIProvenance(
-                gateway_request_id=str(uuid4()),
+                gateway_request_id=gateway_request_id,
                 purpose=validated.purpose,
                 provider_request_id=checked.provider_request_id,
                 provider=checked.provider,
@@ -355,20 +386,48 @@ class AIGateway:
         self,
         request: AIImageInferenceRequest,
     ) -> AIInferenceResult:
-        validated = self._validate_image_request(request)
-        # The Gateway owns the wall-clock bound even for future image adapters that
-        # do not implement their own HTTP timeout.
+        gateway_request_id = str(uuid4())
+        started = perf_counter()
+        validated: AIImageInferenceRequest | None = None
         try:
-            async with asyncio.timeout(self._settings.ai_timeout_seconds):
-                provider_result = await self._provider.infer_image(validated)
-        except TimeoutError as exc:
-            raise AITransportError("AI_GATEWAY_TIMEOUT", retryable=True) from exc
+            validated = self._validate_image_request(request)
+            # The Gateway owns the wall-clock bound even for future image adapters that
+            # do not implement their own HTTP timeout.
+            try:
+                async with asyncio.timeout(self._settings.ai_timeout_seconds):
+                    provider_result = await self._provider.infer_image(validated)
+            except TimeoutError as exc:
+                raise AITransportError("AI_GATEWAY_TIMEOUT", retryable=True) from exc
+            checked = _validate_provider_result(provider_result)
+        except AIGatewayError as exc:
+            emit_operational_event(
+                event="ai.inference.failed",
+                level="WARNING",
+                gateway_request_id=gateway_request_id,
+                purpose=None if validated is None else validated.purpose,
+                provider=self._settings.ai_provider,
+                model=self._settings.ai_model or None,
+                latency_ms=(perf_counter() - started) * 1000,
+                error_code=exc.code,
+                retryable=exc.retryable,
+            )
+            raise
 
-        checked = _validate_provider_result(provider_result)
+        emit_operational_event(
+            event="ai.inference.completed",
+            gateway_request_id=gateway_request_id,
+            purpose=validated.purpose,
+            provider=checked.provider,
+            model=checked.model,
+            provider_request_id=checked.provider_request_id,
+            latency_ms=(perf_counter() - started) * 1000,
+            input_tokens=checked.input_tokens,
+            output_tokens=checked.output_tokens,
+        )
         return AIInferenceResult(
             output_text=checked.output_text,
             provenance=AIProvenance(
-                gateway_request_id=str(uuid4()),
+                gateway_request_id=gateway_request_id,
                 purpose=validated.purpose,
                 provider_request_id=checked.provider_request_id,
                 provider=checked.provider,

@@ -7,20 +7,55 @@ from uuid import UUID
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-connect_args = {}
-if settings.database_url.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
+def _standard_connect_args(database_url: str) -> dict[str, object]:
+    connect_args: dict[str, object] = {}
+    if database_url.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+    return connect_args
+
+
+def create_readiness_engine(
+    database_url: str,
+    *,
+    connect_timeout_seconds: int,
+    statement_timeout_ms: int,
+) -> Engine:
+    """Create a no-pool engine whose PostgreSQL I/O is bounded by the driver/server."""
+
+    connect_args = _standard_connect_args(database_url)
+    if database_url.startswith("postgresql"):
+        connect_args.update(
+            {
+                "connect_timeout": connect_timeout_seconds,
+                "options": f"-c statement_timeout={statement_timeout_ms}",
+            }
+        )
+
+    return create_engine(
+        database_url,
+        echo=False,
+        poolclass=NullPool,
+        connect_args=connect_args,
+    )
+
 
 engine = create_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,
-    connect_args=connect_args,
+    connect_args=_standard_connect_args(settings.database_url),
+)
+
+readiness_engine = create_readiness_engine(
+    settings.database_url,
+    connect_timeout_seconds=settings.database_readiness_connect_timeout_seconds,
+    statement_timeout_ms=settings.database_readiness_statement_timeout_ms,
 )
 
 

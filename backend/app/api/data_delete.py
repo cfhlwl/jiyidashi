@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.observability import emit_operational_event
 from app.data_deletion_models import DataDeletionStatus
 from app.deps import get_authenticated_user_id
 from app.services.account_deletion_service import (
@@ -62,10 +63,25 @@ def delete_current_user_data(
             storage=storage,
         )
     except (AccountDeletionError, DataDeletionError) as exc:
+        emit_operational_event(
+            event="data_deletion.failed",
+            level="WARNING",
+            operation_request_id=str(payload.request_id),
+            error_code=exc.code,
+            status_code=exc.status_code,
+            retryable=exc.status_code >= 500 or exc.status_code in {409, 423, 429},
+        )
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
     if not result.completed:
         response.status_code = status.HTTP_202_ACCEPTED
+    emit_operational_event(
+        event="data_deletion.progress",
+        operation_request_id=str(result.request_id),
+        operation_status=result.status.value,
+        completed=result.completed,
+        status_code=response.status_code,
+    )
     return DataDeleteResponse(
         request_id=result.request_id,
         status=result.status,

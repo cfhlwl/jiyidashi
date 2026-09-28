@@ -124,7 +124,7 @@ The script performs:
 4. start PostgreSQL even if its container was stopped;
 5. wait for PostgreSQL health and **always create the pre-migration backup** from the existing volume/data;
 6. execute `alembic upgrade head` once only after that backup succeeds;
-7. start API without re-running migration dependency and wait for internal `/health`;
+7. start API without re-running migration dependency and wait for internal `/health/ready` database readiness;
 8. start Caddy and run the external HTTPS/auth acceptance smoke.
 
 A stopped PostgreSQL container is never treated as proof of a first deployment. Existing volumes
@@ -151,7 +151,11 @@ Do not reuse mutable `latest` as a release or rollback identity.
 
 Caddy preserves standard forwarded headers. Uvicorn accepts those headers because direct public access to API port 8000 is absent. Do not publish port 8000 later without revisiting this trust boundary.
 
-`GET /health` must be reachable through the final HTTPS domain. Health does **not** call AI, ASR, embeddings or object storage.
+`GET /health` remains process liveness and must be reachable through the final HTTPS domain.
+
+The API container healthcheck uses `GET /health/ready`, which performs only a database `SELECT 1`. It returns HTTP 503 with a generic body when the required database dependency is unavailable. Readiness deliberately does **not** call AI, ASR, embeddings or object storage.
+
+Operational request/provider/storage/deletion telemetry is documented in `docs/PRODUCTION_OBSERVABILITY.md`. Production emits structured JSON events to stdout/stderr; no external telemetry SaaS is required by V1.
 
 ## Deployment acceptance
 
@@ -159,6 +163,7 @@ Caddy preserves standard forwarded headers. Uvicorn accepts those headers becaus
 
 ```text
 HTTPS /health = 200
+internal /health/ready = 200 with database=ready
 POST /v1/auth/dev-token = 404
 register route reachable
 login route reachable

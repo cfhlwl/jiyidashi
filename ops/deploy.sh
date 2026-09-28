@@ -49,14 +49,14 @@ echo "[5/8] start API without re-running migration dependency"
 "${compose[@]}" up -d --no-deps api
 for _ in $(seq 1 60); do
   if "${compose[@]}" exec -T api python -c \
-    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()" \
+    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).read()" \
     >/dev/null 2>&1; then
     break
   fi
   sleep 2
 done
 "${compose[@]}" exec -T api python -c \
-  "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()" \
+  "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).read()" \
   >/dev/null
 
 echo "[6/8] start HTTPS reverse proxy"

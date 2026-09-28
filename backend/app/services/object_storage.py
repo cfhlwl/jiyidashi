@@ -11,6 +11,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from app.core.config import Settings, get_settings
+from app.core.observability import emit_operational_event
 
 
 # [人工注释][S1-006] 公共 API 永远只拿短时签名请求，不暴露永久公开 URL。
@@ -109,6 +110,15 @@ class S3ObjectStorage:
             ),
         )
 
+    @staticmethod
+    def _emit_failure(operation: str, error_code: str) -> None:
+        emit_operational_event(
+            event="storage.operation.failed",
+            level="ERROR",
+            operation=operation,
+            error_code=error_code,
+        )
+
     def _expiry(self) -> datetime:
         return datetime.now(UTC) + timedelta(
             seconds=self._settings.storage_presign_ttl_seconds
@@ -134,6 +144,7 @@ class S3ObjectStorage:
                 HttpMethod="PUT",
             )
         except Exception as exc:
+            self._emit_failure("sign_upload", "STORAGE_SIGN_UPLOAD_FAILED")
             raise ObjectStorageError("failed to sign upload") from exc
         return PresignedTransfer(
             url=url,
@@ -154,6 +165,7 @@ class S3ObjectStorage:
                 HttpMethod="GET",
             )
         except Exception as exc:
+            self._emit_failure("sign_download", "STORAGE_SIGN_DOWNLOAD_FAILED")
             raise ObjectStorageError("failed to sign download") from exc
         return PresignedTransfer(
             url=url,
@@ -171,8 +183,10 @@ class S3ObjectStorage:
         except ClientError as exc:
             if self._is_not_found(exc):
                 raise ObjectNotFound("object not found") from exc
+            self._emit_failure("stat", "STORAGE_STAT_FAILED")
             raise ObjectStorageError("failed to inspect object") from exc
         except Exception as exc:
+            self._emit_failure("stat", "STORAGE_STAT_FAILED")
             raise ObjectStorageError("failed to inspect object") from exc
 
         etag = response.get("ETag")
@@ -207,8 +221,10 @@ class S3ObjectStorage:
         except ClientError as exc:
             if self._is_not_found(exc):
                 raise ObjectNotFound("object not found") from exc
+            self._emit_failure("read_prefix", "STORAGE_READ_PREFIX_FAILED")
             raise ObjectStorageError("failed to read object prefix") from exc
         except Exception as exc:
+            self._emit_failure("read_prefix", "STORAGE_READ_PREFIX_FAILED")
             raise ObjectStorageError("failed to read object prefix") from exc
 
     def read_object(self, object_key: str, max_bytes: int) -> bytes:
@@ -231,10 +247,13 @@ class S3ObjectStorage:
         except ClientError as exc:
             if self._is_not_found(exc):
                 raise ObjectNotFound("object not found") from exc
+            self._emit_failure("read_object", "STORAGE_READ_OBJECT_FAILED")
             raise ObjectStorageError("failed to read object") from exc
         except Exception as exc:
+            self._emit_failure("read_object", "STORAGE_READ_OBJECT_FAILED")
             raise ObjectStorageError("failed to read object") from exc
         if len(data) > max_bytes:
+            self._emit_failure("read_object", "STORAGE_BOUNDED_READ_EXCEEDED")
             raise ObjectStorageError("object exceeds bounded read")
         return data
 
@@ -253,8 +272,10 @@ class S3ObjectStorage:
         except ClientError as exc:
             if self._is_not_found(exc):
                 raise ObjectNotFound("source object not found") from exc
+            self._emit_failure("promote", "STORAGE_PROMOTE_FAILED")
             raise ObjectStorageError("failed to promote object") from exc
         except Exception as exc:
+            self._emit_failure("promote", "STORAGE_PROMOTE_FAILED")
             raise ObjectStorageError("failed to promote object") from exc
 
     def delete_object(self, object_key: str) -> None:
@@ -264,8 +285,8 @@ class S3ObjectStorage:
                 Key=object_key,
             )
         except Exception as exc:
+            self._emit_failure("delete", "STORAGE_DELETE_FAILED")
             raise ObjectStorageError("failed to delete object") from exc
-
 
     def iter_object_keys(self, prefix: str) -> Iterator[str]:
         # [人工注释][S1-021] Data Delete 必须扫 user-scoped final/staging 前缀，
@@ -281,6 +302,7 @@ class S3ObjectStorage:
                     if isinstance(key, str) and key:
                         yield key
         except Exception as exc:
+            self._emit_failure("list", "STORAGE_LIST_FAILED")
             raise ObjectStorageError("failed to list objects") from exc
 
 
