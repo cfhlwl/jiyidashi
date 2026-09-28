@@ -8,6 +8,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 _OBSERVABILITY_LOGGER_NAME = "jiyidashi.observability"
+_OBSERVABILITY_HANDLER_MARKER = "_jiyidashi_observability_sink"
 _request_id_var: ContextVar[str | None] = ContextVar(
     "jiyidashi_request_id",
     default=None,
@@ -15,8 +16,27 @@ _request_id_var: ContextVar[str | None] = ContextVar(
 
 
 def configure_observability_log_level(level: str) -> None:
+    """Install one explicit raw-message production sink and set its level."""
+
     logger = logging.getLogger(_OBSERVABILITY_LOGGER_NAME)
-    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    logger.setLevel(numeric_level)
+    logger.propagate = False
+
+    handler = next(
+        (
+            item
+            for item in logger.handlers
+            if getattr(item, _OBSERVABILITY_HANDLER_MARKER, False)
+        ),
+        None,
+    )
+    if handler is None:
+        handler = logging.StreamHandler()
+        setattr(handler, _OBSERVABILITY_HANDLER_MARKER, True)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
+    handler.setLevel(numeric_level)
 
 
 def normalize_request_id(value: str | None) -> str:
