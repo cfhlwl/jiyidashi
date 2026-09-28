@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
-from app.life_event_models import LifeEvent
-from app.life_stage_models import LifeStage, LifeStageEventLink
+from app.life_stage_models import LifeStageEventLink
 from app.services.data_deletion_service import USER_DATA_INVENTORY
 
 
@@ -558,7 +557,11 @@ async def test_export_contains_stage_sections_owner_scoped_and_no_memory_duplica
     assert "B secret stage" not in exported.text
     assert "B secret event" not in exported.text
 
-    assert (await client.delete(f"/v1/life-events/{event_a['id']}", headers=headers_a)).status_code == 204
+    deleted_event = await client.delete(
+        f"/v1/life-events/{event_a['id']}",
+        headers=headers_a,
+    )
+    assert deleted_event.status_code == 204
     after = await client.get("/v1/export/data", headers=headers_a)
     assert after.status_code == 200
     assert len(after.json()["life_stages"]) == 1
