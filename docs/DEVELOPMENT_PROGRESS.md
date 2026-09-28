@@ -291,8 +291,8 @@
 | V2-006 | Life Stage Foundation V1 | ✅ | Issue #148 / PR #149：explicit overlapping/open-ended LifeStage authority、explicit LifeEvent evidence、export/delete lifecycle 与 PostgreSQL race/migration gates 已正式审查并合并；merge `86127a101028ef9dadf397ef454edc8126082a91` |
 | V2-007 | Evidence-backed Long-term Reasoning Foundation V1 | ✅ | Issue #150 / PR #151：Stage-scoped explicit Stage/Event/AnswerTrust-qualified Memory inventory、opaque citations、strict provider contract 与 post-provider full-inventory revalidation 已正式审查并合并；merge `1c1f74535eb1e4bae3e98eefe24c730d42efd401` |
 | V2-008 | Person Known Duration V1 — “我认识某人多久了” | ✅ | Issue #152 / PR #153：最早 trusted explicit MET + S3-013 + Memory.occurred_at deterministic no-guess duration 已正式审查并合并；merge `7bf91baef1638f71438f0cd1d5aa71faa80c1db3` |
-| V2-009 | Cross-year Evidence Timeline V1 — “过去几年发生了什么” | 🟠 | Issue #154 / PR #155：显式 LifeEvent / LifeStage START/END boundary、user-local year bounds、server-owned as_of、opaque keyset cursor 与 bounded three-source merge 已实现；PostgreSQL projection gate + full pytest 已通过，等待正式审查/合并，合并前不标记 ✅ |
-| V2-010 | 年度电子回忆录 | ⬜ | 图文年度总结 |
+| V2-009 | Cross-year Evidence Timeline V1 — “过去几年发生了什么” | ✅ | Issue #154 / PR #155：显式 LifeEvent / LifeStage START/END boundary、user-local year bounds、server-owned as_of、opaque keyset cursor 与 bounded three-source merge 已正式审查并合并；merge `e7c7f4740c358c9d7d057da883b503b681c9c72c` |
+| V2-010 | Annual Electronic Memoir V1 — 年度电子回忆录 | 🔵 | Issue #156：复用 S3-017 Annual Summary + V2-009 timeline + verified PHOTO media gallery；实现中 |
 | V2-011 | 人生回忆录 | ⬜ | 长期高级能力 |
 
 ---
