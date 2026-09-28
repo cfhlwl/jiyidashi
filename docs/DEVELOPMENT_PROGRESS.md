@@ -1,5 +1,5 @@
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- PR #170 / #161 Production Observability Foundation V1 已完成正式极窄复审并合并 main=91e2c8b0；SEC-015 / #165 已完成实现与 exact-head Backend / Production Deployment CI，Draft PR #171 进入正式审查前 🟠 阶段；OPS-001 真实 public-server acceptance 继续独立保持 🟠。 -->
+<!-- PR #171 / #165 SEC-015 Security Event Alerting & Anomaly Response V1 已完成两轮正式极窄复审并合并 main=75ec2f73；SEC-015 正式收口。下一开发主线切到 #168 Entitlement & Quota Foundation V1；OPS-001 真实 public-server acceptance 继续独立保持 🟠。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- I：Memory Edit / PR #27 已完成正式复审并合并 main=24901d76；S1-018 转 ✅。J：Data Delete / PR #28 随后基于该新 main 完成 MemoryEdit 删除适配、0008 migration 顺延、单提交 clean replay 与 exact-head CI，并合并 main=3abc1366；S1-021 / SEC-007 转 ✅。 -->
@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Productization P0 / SEC-015 Security Event Alerting & Anomaly Response V1**；V2 Final Closeout 与 #161 Production Observability 已正式合并收口；#165 已完成实现与 exact-head CI，Draft PR #171 等待正式审查；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
+> 当前阶段：**V2 Productization P1 / Entitlement & Quota Foundation V1**；#161 Production Observability 与 #165 SEC-015 已正式合并收口；#168 进入任务发布/开发阶段；OPS-001 真实 public-server 验收仍保持 🟠，#169 Analytics 在后，V3-001+ 未开始。
 
 ## 状态规则
 
@@ -338,7 +338,7 @@
 | SEC-012 | AI 不知道就说不知道 | ✅ | RAG、Daily/Monthly/Annual Summary、V2-007/010/011 已形成 evidence-only、bounded inventory、opaque slots、strict citation、post-provider revalidation 与 fail-closed typed status；无证据/证据不完整不生成可信答案 |
 | SEC-013 | AI 推断显式标记 | ⬜ | UI 层尚未实现 |
 | SEC-014 | 敏感操作二次确认 | 🟠 | 账户注销等部分高风险流程已有显式 intent/确认语义；导出、数据删除、家庭授权等尚未统一成跨客户端 reviewed second-confirm 标准 |
-| SEC-015 | 安全事件与异常访问告警 | 🟠 | Draft PR #171；durable PostgreSQL anomaly windows / dedupe / HMAC correlation / Auth+Family+Delete+Storage signals / bounded alert retry 已完成；exact-head Backend CI + Production Deployment CI PASS，等待正式审查 |
+| SEC-015 | 安全事件与异常访问告警 | ✅ | Issue #165 / PR #171 已完成两轮正式极窄复审并合并；merge `75ec2f73084cd4b7d9f4035ae1beeca3f209cae7`；durable anomaly windows、elapsed cooldown、HMAC correlation、Auth/Family/Delete/Storage signals 与 bounded retry 已收口 |
 
 ---
 
@@ -346,10 +346,10 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| BIZ-001 | 免费版权益 | ⬜ | 基础记录 / 基础搜索 / 有限历史 |
-| BIZ-002 | 个人会员 | ⬜ | 长期记忆 / AI 搜索 / 图片语音等 |
-| BIZ-003 | 家庭会员 | ⬜ | 家庭共享 / 长辈模式 / 到家提醒 |
-| BIZ-004 | 高级会员 | ⬜ | 长期档案 / 人生报告 / 大容量存储 |
+| BIZ-001 | 免费版权益 | 🔵 | Issue #168：进入 server-owned Plan / Capability / Quota foundation 开发；本轮不接支付、不硬编码价格 |
+| BIZ-002 | 个人会员 | 🔵 | Issue #168：PERSONAL capability bundle + storage/AI quota authority 进入开发 |
+| BIZ-003 | 家庭会员 | 🔵 | Issue #168：FAMILY plan/capability 可表达；Family 业务 authority 不得被 entitlement 层替代 |
+| BIZ-004 | 高级会员 | 🔵 | Issue #168：高阶 capability / larger quota 可表达；现有账号 rollout compatibility 必须保持 |
 | BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend 已合并；Mini/Flutter 展示、premium packaging 与 entitlement enforcement 尚未实现 |
 | BIZ-006 | 实体年度回忆录 | ⏸ | 后续增值服务 |
 | BIZ-007 | 北极星指标：成功找回记忆数 | ⬜ | 需要埋点系统 |
