@@ -241,21 +241,33 @@ def emit_operational_event(
         return False
 
 
-def emit_operational_event_checked(
+def emit_security_alert_event_checked(
     *,
-    event: str,
-    level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO",
-    request_id: str | None = None,
-    **fields: object,
+    level: Literal["WARNING", "ERROR"],
+    alert_id: str,
+    rule_code: str,
+    severity: str,
+    signal_count: int,
+    window_seconds: int,
+    correlation_id: str,
+    delivery_status: str,
 ) -> bool:
-    """Write through the production sink and return true only after write+flush succeed."""
+    """Write one security alert only when the production stream write+flush succeeds."""
 
     try:
         payload = _build_operational_payload(
-            event=event,
+            event="security.alert.triggered",
             level=level,
-            request_id=request_id,
-            optional_fields=_operational_optional_fields(**fields),
+            request_id=None,
+            optional_fields=_operational_optional_fields(
+                alert_id=alert_id,
+                rule_code=rule_code,
+                severity=severity,
+                signal_count=signal_count,
+                window_seconds=window_seconds,
+                correlation_id=correlation_id,
+                delivery_status=delivery_status,
+            ),
         )
         logger = logging.getLogger(_OBSERVABILITY_LOGGER_NAME)
         handler = next(
