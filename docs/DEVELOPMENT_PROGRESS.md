@@ -1,4 +1,5 @@
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
+<!-- PR #170 / #161 Production Observability Foundation V1 已完成正式极窄复审并合并 main=91e2c8b0；#161 随后关闭 completed。下一 P0 固定为 SEC-015 / #165，OPS-001 真实 public-server acceptance 继续独立保持 🟠。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- I：Memory Edit / PR #27 已完成正式复审并合并 main=24901d76；S1-018 转 ✅。J：Data Delete / PR #28 随后基于该新 main 完成 MemoryEdit 删除适配、0008 migration 顺延、单提交 clean replay 与 exact-head CI，并合并 main=3abc1366；S1-021 / SEC-007 转 ✅。 -->
@@ -44,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Productization P0 / Production Observability Foundation V1**；V2 Final Closeout 已正式合并，#161 实现与 required CI 已完成、等待正式审查；OPS-001 真实 public-server 验收仍保持 🟠，SEC-015 / #165 独立开放，V3-001+ 未开始。
+> 当前阶段：**V2 Productization P0 / SEC-015 Security Event Alerting & Anomaly Response V1**；V2 Final Closeout 与 #161 Production Observability 已正式合并收口；#165 进入任务发布/开发阶段；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
 
 ## 状态规则
 
@@ -295,7 +296,7 @@
 | V2-010 | Annual Electronic Memoir V1 — 年度电子回忆录 | ✅ | Issue #156 / PR #157：复用 S3-017 Annual Summary + V2-009 timeline + verified PHOTO media gallery 已正式审查并合并；merge `0495112b17d91fb4540048eaa7288047db40fe85` |
 | V2-011 | Life Memoir Foundation V1 — 人生回忆录 | ✅ | Issue #158 / PR #159：explicit LifeStage chapter index + on-demand cited stage memoir via canonical V2-007 已正式审查并合并；merge `6df3a6654f14e715db8e3887582b1f83de78cd7c` |
 | V2-CLOSE | V2 Final Closeout / Productization Review | ✅ | Issue #160 / PR #164 已正式合并；merge `8e463566068e8fc328b86b816576ec907f8d3911`；V2 Personal Memory Graph V1 formally closed |
-| V2-P0-OBS | Production Observability Foundation V1 | 🟠 | Issue #161 / PR #170：request correlation、structured JSON telemetry、AI/storage/delete operational events、DB readiness 与 production healthcheck 已实现；Backend + Production Deployment exact-head CI 已通过，等待正式审查/合并后再标记 ✅ |
+| V2-P0-OBS | Production Observability Foundation V1 | ✅ | Issue #161 / PR #170 已正式审查并合并；merge `91e2c8b044912bb61ecada7d679c9054db64df7c`；request correlation、structured JSON telemetry、AI/storage/delete operational events、bounded DB readiness 与 production healthcheck 已收口 |
 
 ---
 
@@ -337,7 +338,7 @@
 | SEC-012 | AI 不知道就说不知道 | ✅ | RAG、Daily/Monthly/Annual Summary、V2-007/010/011 已形成 evidence-only、bounded inventory、opaque slots、strict citation、post-provider revalidation 与 fail-closed typed status；无证据/证据不完整不生成可信答案 |
 | SEC-013 | AI 推断显式标记 | ⬜ | UI 层尚未实现 |
 | SEC-014 | 敏感操作二次确认 | 🟠 | 账户注销等部分高风险流程已有显式 intent/确认语义；导出、数据删除、家庭授权等尚未统一成跨客户端 reviewed second-confirm 标准 |
-| SEC-015 | 安全事件与异常访问告警 | ⬜ | Issue #165 OPEN；#161 只提供 observability plumbing，不实现 anomaly detection / alert delivery |
+| SEC-015 | 安全事件与异常访问告警 | 🔵 | Issue #165 已发布为下一 P0；依赖 #161 已满足，进入 Security Event Alerting & Anomaly Response V1 开发阶段 |
 
 ---
 
