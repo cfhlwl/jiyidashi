@@ -7,12 +7,18 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 from time import perf_counter
 from typing import Literal, Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
+from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.observability import emit_operational_event
+from app.services.entitlement_service import (
+    EntitlementError,
+    finalize_ai_usage,
+    reserve_ai_provider_request,
+)
 
 _PURPOSE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 
@@ -46,6 +52,12 @@ class AIMalformedResponseError(AIGatewayError):
 
 class AIPolicyError(AIGatewayError):
     pass
+
+
+class AIEntitlementError(AIGatewayError):
+    def __init__(self, code: str, *, status_code: int):
+        super().__init__(code, retryable=status_code >= 500)
+        self.status_code = status_code
 
 
 # Stage 3 模型调用只能穿过本模块。这里刻意没有数据库依赖：
@@ -333,15 +345,51 @@ class AIGateway:
         self._settings = settings
         self._provider = provider
 
-    async def infer(self, request: AIInferenceRequest) -> AIInferenceResult:
-        gateway_request_id = str(uuid4())
+    async def infer(
+        self,
+        request: AIInferenceRequest,
+        *,
+        db: Session,
+        actor_user_id: UUID,
+    ) -> AIInferenceResult:
+        gateway_request_uuid = uuid4()
+        gateway_request_id = str(gateway_request_uuid)
         started = perf_counter()
         validated: AIInferenceRequest | None = None
         try:
             validated = self._validate_request(request)
-            # Cancellation intentionally propagates; it must never become a synthetic AI result.
+            try:
+                reserve_ai_provider_request(
+                    db,
+                    user_id=actor_user_id,
+                    gateway_request_id=gateway_request_uuid,
+                    purpose=validated.purpose,
+                    settings=self._settings,
+                )
+            except EntitlementError as exc:
+                raise AIEntitlementError(
+                    exc.code,
+                    status_code=exc.status_code,
+                ) from exc
+
+            # Reservation is committed before provider I/O. Once this point is reached,
+            # the provider-request unit remains consumed even on transport/provider failure.
             provider_result = await self._provider.infer(validated)
             checked = _validate_provider_result(provider_result)
+            try:
+                finalize_ai_usage(
+                    db,
+                    user_id=actor_user_id,
+                    gateway_request_id=gateway_request_uuid,
+                    provider_request_id=checked.provider_request_id,
+                    input_tokens=checked.input_tokens,
+                    output_tokens=checked.output_tokens,
+                )
+            except EntitlementError as exc:
+                raise AIEntitlementError(
+                    exc.code,
+                    status_code=exc.status_code,
+                ) from exc
         except AIGatewayError as exc:
             emit_operational_event(
                 event="ai.inference.failed",
@@ -385,20 +433,52 @@ class AIGateway:
     async def infer_image(
         self,
         request: AIImageInferenceRequest,
+        *,
+        db: Session,
+        actor_user_id: UUID,
     ) -> AIInferenceResult:
-        gateway_request_id = str(uuid4())
+        gateway_request_uuid = uuid4()
+        gateway_request_id = str(gateway_request_uuid)
         started = perf_counter()
         validated: AIImageInferenceRequest | None = None
         try:
             validated = self._validate_image_request(request)
+            try:
+                reserve_ai_provider_request(
+                    db,
+                    user_id=actor_user_id,
+                    gateway_request_id=gateway_request_uuid,
+                    purpose=validated.purpose,
+                    settings=self._settings,
+                )
+            except EntitlementError as exc:
+                raise AIEntitlementError(
+                    exc.code,
+                    status_code=exc.status_code,
+                ) from exc
+
             # The Gateway owns the wall-clock bound even for future image adapters that
-            # do not implement their own HTTP timeout.
+            # do not implement their own HTTP timeout. Reservation is already durable.
             try:
                 async with asyncio.timeout(self._settings.ai_timeout_seconds):
                     provider_result = await self._provider.infer_image(validated)
             except TimeoutError as exc:
                 raise AITransportError("AI_GATEWAY_TIMEOUT", retryable=True) from exc
             checked = _validate_provider_result(provider_result)
+            try:
+                finalize_ai_usage(
+                    db,
+                    user_id=actor_user_id,
+                    gateway_request_id=gateway_request_uuid,
+                    provider_request_id=checked.provider_request_id,
+                    input_tokens=checked.input_tokens,
+                    output_tokens=checked.output_tokens,
+                )
+            except EntitlementError as exc:
+                raise AIEntitlementError(
+                    exc.code,
+                    status_code=exc.status_code,
+                ) from exc
         except AIGatewayError as exc:
             emit_operational_event(
                 event="ai.inference.failed",
