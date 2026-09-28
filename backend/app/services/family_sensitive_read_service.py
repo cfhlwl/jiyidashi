@@ -21,12 +21,74 @@ from app.family_models import (
 from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import LocationPoint, Memory, PrivacyState
 from app.schemas import TodayFootprintResponse
+from app.security_models import SecuritySignalCode
 from app.services.object_storage import ObjectStorage, ObjectStorageError, PresignedTransfer
 from app.services.privacy_service import ensure_utc, lock_location_derivation_state
+from app.services.security_alerting import SecurityScope, record_security_signal
 from app.services.today_footprint_service import get_today_footprint
 
 CURRENT_LOCATION_MAX_AGE = timedelta(minutes=15)
 FAMILY_PHOTO_LIST_LIMIT = 50
+
+_FAMILY_SECURITY_SCOPE = {
+    FamilyAuditResourceType.CURRENT_LOCATION: SecurityScope.FAMILY_CURRENT_LOCATION,
+    FamilyAuditResourceType.TODAY_FOOTPRINT: SecurityScope.FAMILY_TODAY_FOOTPRINT,
+    FamilyAuditResourceType.MEMORY: SecurityScope.FAMILY_MEMORY,
+    FamilyAuditResourceType.PHOTO: SecurityScope.FAMILY_PHOTO_LIST,
+}
+
+
+def _family_security_correlation(family_id: UUID, actor_user_id: UUID) -> str:
+    return f"{family_id}:{actor_user_id}"
+
+
+def _record_family_denied_security(
+    db: Session,
+    *,
+    family_id: UUID,
+    actor_user_id: UUID,
+    resource_type: FamilyAuditResourceType,
+    action: FamilyAuditAction,
+) -> None:
+    scope = (
+        SecurityScope.FAMILY_PHOTO_DOWNLOAD
+        if action == FamilyAuditAction.DOWNLOAD_PHOTO
+        else _FAMILY_SECURITY_SCOPE[resource_type]
+    )
+    correlation = _family_security_correlation(family_id, actor_user_id)
+    record_security_signal(
+        db.get_bind(),
+        signal_code=(
+            SecuritySignalCode.FAMILY_SENSITIVE_DOWNLOAD_DENIED
+            if action == FamilyAuditAction.DOWNLOAD_PHOTO
+            else SecuritySignalCode.FAMILY_SENSITIVE_READ_DENIED
+        ),
+        correlation_kind="family_actor",
+        correlation_value=correlation,
+        scope=scope,
+    )
+    record_security_signal(
+        db.get_bind(),
+        signal_code=SecuritySignalCode.FAMILY_SENSITIVE_ACCESS_BURST,
+        correlation_kind="family_actor",
+        correlation_value=correlation,
+        scope=scope,
+    )
+
+
+def _record_family_storage_security(
+    db: Session,
+    *,
+    family_id: UUID,
+    actor_user_id: UUID,
+) -> None:
+    record_security_signal(
+        db.get_bind(),
+        signal_code=SecuritySignalCode.STORAGE_CAPABILITY_FAILURE_BURST,
+        correlation_kind="family_actor",
+        correlation_value=_family_security_correlation(family_id, actor_user_id),
+        scope=SecurityScope.FAMILY_PHOTO_STORAGE,
+    )
 
 
 class FamilySensitiveReadError(RuntimeError):
@@ -159,6 +221,13 @@ def _require_exact_family_grant(
         # DENIED must survive the exception. The membership pair is still locked here,
         # so the result corresponds to the same serialized authority state.
         db.commit()
+        _record_family_denied_security(
+            db,
+            family_id=owner_family_id,
+            actor_user_id=grantee_user_id,
+            resource_type=resource_type,
+            action=action,
+        )
         raise FamilySensitiveReadError("FAMILY_READ_NOT_AUTHORIZED", 403)
 
     return owner_family_id
@@ -281,6 +350,11 @@ def sign_family_photo_download(
                     result=FamilyAuditResult.UNAVAILABLE,
                 )
                 authority.commit()
+                _record_family_storage_security(
+                    authority,
+                    family_id=family_id,
+                    actor_user_id=grantee_user_id,
+                )
                 raise FamilySensitiveReadError("FAMILY_PHOTO_STORAGE_UNAVAILABLE", 503) from exc
 
             if (
@@ -298,6 +372,11 @@ def sign_family_photo_download(
                     result=FamilyAuditResult.UNAVAILABLE,
                 )
                 authority.commit()
+                _record_family_storage_security(
+                    authority,
+                    family_id=family_id,
+                    actor_user_id=grantee_user_id,
+                )
                 raise FamilySensitiveReadError("FAMILY_PHOTO_STORAGE_UNAVAILABLE", 503)
 
             _record_family_access(
