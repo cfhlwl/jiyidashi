@@ -338,11 +338,11 @@ def test_delivery_retry_reaches_terminal_after_five_attempts(monkeypatch) -> Non
     )
     assert alert_id is not None
 
-    for attempt in range(2, security_alerting.MAX_DELIVERY_ATTEMPTS + 1):
+    for due_seconds in (30, 90, 210, 450):
         security_alerting.deliver_security_alert(
             engine,
             alert_id=alert_id,
-            now=base + timedelta(minutes=attempt),
+            now=base + timedelta(seconds=due_seconds),
         )
 
     with Session(engine) as db:
