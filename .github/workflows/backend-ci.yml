@@ -305,6 +305,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_observability_integration.py
 
+      - name: PostgreSQL Security Alerting concurrency
+        # [P0][SEC-015] Durable windows/dedupe must survive independent Sessions
+        # and concurrent workers while canonical auth 429 + Retry-After remain unchanged.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_security_alerting_integration.py
+
       - name: PostgreSQL Life Memoir composition
         # [V2-011] Explicit stage index must remain owner-safe/current-state,
         # and chapter wrapper must inherit V2-007 provider-gap stale-evidence behavior.
