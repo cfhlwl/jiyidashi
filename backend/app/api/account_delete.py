@@ -17,8 +17,8 @@ from app.services.account_deletion_service import (
     delete_current_account,
 )
 from app.services.data_deletion_service import DataDeletionError
-from app.services.security_alerting import SecurityScope, record_security_signal
 from app.services.object_storage import ObjectStorage, get_object_storage
+from app.services.security_alerting import SecurityScope, record_security_signal
 
 router = APIRouter(prefix="/account", tags=["account"])
 AuthenticatedUser = Annotated[UUID, Depends(get_authenticated_user_id)]
