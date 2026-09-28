@@ -14,10 +14,13 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
+from app.account_deletion_models import AccountDeletionOperation
+from app.core.db import USER_DATA_ADMISSION_INFO_KEY, UserDataAdmission
+from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.life_event_models import LifeEvent, LifeEventMemoryLink
 from app.life_stage_models import LifeStage, LifeStageEventLink
 from app.long_term_reasoning_models import (
@@ -26,7 +29,7 @@ from app.long_term_reasoning_models import (
     LongTermReasoningResult,
     LongTermReasoningStatus,
 )
-from app.models import Memory, MemorySource
+from app.models import Memory, MemorySource, User
 from app.services.ai_gateway import (
     AIGateway,
     AIGatewayError,
@@ -66,6 +69,10 @@ class LongTermReasoningError(RuntimeError):
         super().__init__(code)
         self.code = code
         self.status_code = status_code
+
+
+class _DestructiveAdmissionStale(RuntimeError):
+    """The request's user-data admission no longer authorizes a sensitive read."""
 
 
 @dataclass(frozen=True)
@@ -142,6 +149,102 @@ def _engine_bind(db: Session):
 
 def _read_session(bind) -> Session:
     return Session(bind=bind, autoflush=False, expire_on_commit=False)
+
+
+def _capture_reasoning_admission(
+    caller_db: Session,
+    *,
+    user_id: UUID,
+    bind,
+) -> UserDataAdmission:
+    existing = caller_db.info.get(USER_DATA_ADMISSION_INFO_KEY)
+    if isinstance(existing, UserDataAdmission) and existing.user_id == user_id:
+        return existing
+
+    # Direct service callers (tests/internal tooling) may not pass through the FastAPI
+    # admission dependency. Establish the same short-lived authority here rather than
+    # weakening the destructive-data gate for non-HTTP callers.
+    with _read_session(bind) as db:
+        user_exists = db.scalar(
+            select(User.id)
+            .where(User.id == user_id)
+            .with_for_update(read=True, key_share=True)
+        )
+        if user_exists is None:
+            raise LongTermReasoningError("LIFE_STAGE_NOT_FOUND", 404)
+        account_delete = db.scalar(
+            select(AccountDeletionOperation.id)
+            .where(AccountDeletionOperation.user_id == user_id)
+            .limit(1)
+        )
+        active_data_delete = db.scalar(
+            select(DataDeletionOperation.id)
+            .where(
+                DataDeletionOperation.user_id == user_id,
+                DataDeletionOperation.status != DataDeletionStatus.COMPLETED,
+            )
+            .limit(1)
+        )
+        deletion_generation = int(
+            db.scalar(
+                select(func.count(DataDeletionOperation.id)).where(
+                    DataDeletionOperation.user_id == user_id
+                )
+            )
+            or 0
+        )
+        if account_delete is not None or active_data_delete is not None:
+            raise _DestructiveAdmissionStale
+        return UserDataAdmission(
+            user_id=user_id,
+            deletion_generation=deletion_generation,
+        )
+
+
+def _validate_reasoning_admission(
+    db: Session,
+    *,
+    admission: UserDataAdmission,
+) -> None:
+    # Use the same User lock ordering as the canonical deletion system. The KEY SHARE
+    # lives only for this short inventory transaction, so Account/Data Delete PREPARE
+    # cannot become authoritative midway through a snapshot, while provider I/O remains
+    # lock- and transaction-free.
+    user_exists = db.scalar(
+        select(User.id)
+        .where(User.id == admission.user_id)
+        .with_for_update(read=True, key_share=True)
+    )
+    if user_exists is None:
+        raise _DestructiveAdmissionStale
+
+    account_delete = db.scalar(
+        select(AccountDeletionOperation.id)
+        .where(AccountDeletionOperation.user_id == admission.user_id)
+        .limit(1)
+    )
+    active_data_delete = db.scalar(
+        select(DataDeletionOperation.id)
+        .where(
+            DataDeletionOperation.user_id == admission.user_id,
+            DataDeletionOperation.status != DataDeletionStatus.COMPLETED,
+        )
+        .limit(1)
+    )
+    deletion_generation = int(
+        db.scalar(
+            select(func.count(DataDeletionOperation.id)).where(
+                DataDeletionOperation.user_id == admission.user_id
+            )
+        )
+        or 0
+    )
+    if (
+        account_delete is not None
+        or active_data_delete is not None
+        or deletion_generation != admission.deletion_generation
+    ):
+        raise _DestructiveAdmissionStale
 
 
 def _iso_utc(value: datetime | None) -> str | None:
@@ -301,10 +404,12 @@ def _load_answerable_memory(
 def _collect_inventory(
     bind,
     *,
+    admission: UserDataAdmission,
     user_id: UUID,
     life_stage_id: UUID,
 ) -> _CollectionResult:
     with _read_session(bind) as db:
+        _validate_reasoning_admission(db, admission=admission)
         stage = db.scalar(
             select(LifeStage).where(
                 LifeStage.id == life_stage_id,
@@ -607,26 +712,45 @@ async def reason_about_life_stage(
         raise LongTermReasoningError("LONG_TERM_REASONING_QUESTION_TOO_LARGE")
 
     bind = _engine_bind(caller_db)
-    # Authentication admission opened the request Session transaction. V2-007 is read-only,
-    # so close it before authoritative snapshot reads and, critically, before provider I/O.
+    admission = _capture_reasoning_admission(
+        caller_db,
+        user_id=user_id,
+        bind=bind,
+    )
+    # Authentication admission opened the request Session transaction. Preserve its
+    # generation token, then close the transaction before authoritative snapshot reads and,
+    # critically, before provider I/O. Fresh short reads revalidate the token under User
+    # KEY SHARE, so destructive lifecycle authority is not lost by this rollback.
     if caller_db.in_transaction():
         caller_db.rollback()
 
-    collected = _collect_inventory(
-        bind,
-        user_id=user_id,
-        life_stage_id=life_stage_id,
-    )
+    try:
+        collected = _collect_inventory(
+            bind,
+            admission=admission,
+            user_id=user_id,
+            life_stage_id=life_stage_id,
+        )
+    except _DestructiveAdmissionStale:
+        return _empty_result(
+            LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION
+        )
     if collected.incomplete or collected.inventory is None:
         return _empty_result(LongTermReasoningStatus.EVIDENCE_INCOMPLETE)
 
     # A second immediately-complete read prevents a mixed pre-provider inventory from
     # becoming prompt authority if concurrent writes occurred during snapshot assembly.
-    confirmed = _collect_inventory(
-        bind,
-        user_id=user_id,
-        life_stage_id=life_stage_id,
-    )
+    try:
+        confirmed = _collect_inventory(
+            bind,
+            admission=admission,
+            user_id=user_id,
+            life_stage_id=life_stage_id,
+        )
+    except _DestructiveAdmissionStale:
+        return _empty_result(
+            LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION
+        )
     if (
         confirmed.incomplete
         or confirmed.inventory is None
@@ -664,8 +788,17 @@ async def reason_about_life_stage(
     try:
         revalidated = _collect_inventory(
             bind,
+            admission=admission,
             user_id=user_id,
             life_stage_id=life_stage_id,
+        )
+    except _DestructiveAdmissionStale:
+        return LongTermReasoningResult(
+            status=LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION,
+            answer=None,
+            citations=(),
+            provider_error_code=None,
+            ai_provenance=inference.provenance,
         )
     except LongTermReasoningError as exc:
         if exc.code != "LIFE_STAGE_NOT_FOUND":
