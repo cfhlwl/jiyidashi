@@ -570,8 +570,14 @@ async def test_oversize_structured_slot_is_incomplete_without_silent_truncation(
             '{"answer":"","citations":["E1"]}',
             LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT,
         ),
-        ('{"answer":"x","citations":[]}', LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT),
-        ('{"answer":"x","citations":["E1","E1"]}', LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT),
+        (
+            '{"answer":"x","citations":[]}',
+            LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT,
+        ),
+        (
+            '{"answer":"x","citations":["E1","E1"]}',
+            LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT,
+        ),
         ('{"answer":"x","citations":["E999"]}', LongTermReasoningStatus.INVALID_CITATION),
         (
             '{"answer":"x","citations":["E1"],"extra":true}',
