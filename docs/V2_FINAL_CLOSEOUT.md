@@ -303,7 +303,9 @@ This table is intentionally populated after the closeout PR is opened and all fo
 
 | Workflow | Run | HEAD | Conclusion | Test evidence |
 | --- | --- | --- | --- | --- |
-| backend-ci | PENDING | PENDING | PENDING | PENDING |
-| miniprogram-ci | PENDING | PENDING | PENDING | PENDING |
-| mobile-ci | PENDING | PENDING | PENDING | PENDING |
-| mobile-visual-preview | PENDING | PENDING | PENDING | PENDING |
+| backend-ci | 36391443426 (#832) | `47a01ff6ae175e92ea6ec46337723c0ec2327a6b` | SUCCESS | Ruff/all PG gates + full pytest 656/656 |
+| miniprogram-ci | 36391443351 (#484) | `47a01ff6ae175e92ea6ec46337723c0ec2327a6b` | SUCCESS | Typecheck + 238/238 unit tests + WeChat build |
+| mobile-ci | 36391443352 (#516) | `47a01ff6ae175e92ea6ec46337723c0ec2327a6b` | SUCCESS | onboarding 14 + full Flutter 194 tests; Android debug/release + iOS build |
+| mobile-visual-preview | 36391443377 (#371) | `47a01ff6ae175e92ea6ec46337723c0ec2327a6b` | SUCCESS | committed goldens 10/10 + mismatch-artifact proof + Android/iOS preview builds |
+
+The four runs above validate the complete closeout content before this evidence-only documentation commit. The PR development handoff records the final post-evidence-commit exact-head reruns; no product or workflow job logic changes occur after this table is written.
