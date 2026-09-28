@@ -193,7 +193,7 @@ Rate limiting is strong on auth; feature-specific AI quota/rate enforcement is n
 | Metrics endpoint/export | missing | No Prometheus/OTel metrics surface was found. |
 | AI latency metrics | missing | Provider timeout exists, but no durable/exported latency metric. |
 | Storage error metrics | missing | Errors fail closed but are not surfaced through a metrics/alerting subsystem. |
-| Security anomaly alerting | missing | SEC-015 remains open. |
+| Security anomaly alerting | missing | Open tracker #165 implements SEC-015 and depends on #161 observability. |
 | General sensitive-data access audit | partial | Family is audited; a universal sensitive-read audit is not present. |
 
 This is the main code-complete-but-not-production-operated gap.
@@ -260,11 +260,21 @@ No pricing is selected by this closeout.
 - P2: **3** items.
 - Deferred: **3** items.
 
-Created follow-up Issues only where no canonical OPS/SEC/BIZ Issue already existed:
+Every P0/P1 closeout backlog item now resolves to a real **open GitHub Issue**:
 
-- **#161** Production Observability Foundation V1 — P0.
-- **#162** Mini Program advanced V2 surfaces — P1.
-- **#163** Flutter Personal Memory Graph parity — P1.
+| Backlog item | Priority | Open tracker |
+| --- | --- | --- |
+| Real production acceptance | P0 | **#136** OPS-001, reopened only for real-environment acceptance |
+| Production observability | P0 | **#161** Production Observability Foundation V1 |
+| Security alerting / anomaly response | P0 | **#165** SEC-015 Security Event Alerting & Anomaly Response V1 |
+| Mini advanced V2 | P1 | **#162** Mini Program advanced V2 surfaces |
+| Flutter V2 parity | P1 | **#163** Flutter Personal Memory Graph parity |
+| AI inference labeling | P1 | **#166** SEC-013 AI Inference Labeling V1 |
+| Sensitive-operation second confirm | P1 | **#167** SEC-014 Sensitive Operation Confirmation Standard V1 |
+| Entitlement / quota foundation | P1 | **#168** BIZ Entitlement & Quota Foundation V1 |
+| Retrieval / retention analytics | P1 | **#169** BIZ Retrieval & Retention Analytics Foundation V1 |
+
+No P0/P1 item relies only on a progress-table ID. P2/Deferred items remain documented backlog unless separately scheduled.
 
 Repository hygiene on Issue #160 closed stale completed tracking Issues **#8, #21, #23, #25, #35** with merged-PR/progress references. No branch deletion was performed. No unrelated repository work was touched.
 
@@ -272,8 +282,8 @@ Repository hygiene on Issue #160 closed stale completed tracking Issues **#8, #2
 
 1. **Public-launch P0:** complete OPS-001 real-environment acceptance plus SEC-001/002/003/009 checks; implement minimum production observability and security alert plumbing.
 2. **Broad-beta P1:** productize V2 advanced surfaces in Mini and establish Flutter V2 parity.
-3. **Trust UX P1:** implement SEC-013 inference labeling and SEC-014 consistent sensitive-operation confirmation.
-4. **Paid-rollout P1:** define BIZ-001..004 entitlement/quota enforcement and BIZ-007..009 analytics instrumentation.
+3. **Trust UX P1:** execute #166 (SEC-013 inference labeling) and #167 (SEC-014 sensitive-operation confirmation).
+4. **Paid-rollout P1:** execute #168 for BIZ-001..004 entitlement/quota enforcement and #169 for BIZ-007..009 analytics instrumentation.
 5. **P2:** refine advanced pagination/search, memoir presentation and operational dashboards.
 6. After P0/P1 decision, explicitly choose either productization work or V3-001. This closeout does not start V3.
 
