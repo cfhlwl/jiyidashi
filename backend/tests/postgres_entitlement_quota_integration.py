@@ -25,8 +25,8 @@ from app.models import User
 from app.schemas import MediaUploadCreate
 from app.services.account_deletion_service import delete_current_account
 from app.services.ai_gateway import (
-    AIGateway,
     AIEntitlementError,
+    AIGateway,
     AIInferenceRequest,
     AIProviderError,
     DeterministicAIProvider,
