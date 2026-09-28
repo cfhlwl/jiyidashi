@@ -176,3 +176,140 @@ def test_security_alert_event_contains_only_safe_correlation(monkeypatch) -> Non
     assert "Bearer-secret" not in rendered
     assert captured[0]["event"] == "security.alert.triggered"
     assert len(str(captured[0]["correlation_id"])) == 64
+
+
+def _drive_rule_to_threshold(
+    engine,
+    *,
+    code: SecuritySignalCode,
+    scope: SecurityScope,
+    correlation_kind: str,
+    correlation_value: str,
+    base: datetime,
+) -> None:
+    policy = RULES[code]
+    for index in range(policy.threshold):
+        record_security_signal(
+            engine,
+            signal_code=code,
+            correlation_kind=correlation_kind,
+            correlation_value=correlation_value,
+            scope=scope,
+            now=base + timedelta(seconds=index),
+        )
+
+
+def test_required_v1_rule_families_reach_exact_threshold_once() -> None:
+    engine = _engine()
+    base = datetime(2026, 9, 28, 13, 0, tzinfo=UTC)
+    cases = (
+        (
+            SecuritySignalCode.FAMILY_SENSITIVE_READ_DENIED,
+            SecurityScope.FAMILY_MEMORY,
+            "family_actor",
+        ),
+        (
+            SecuritySignalCode.FAMILY_SENSITIVE_DOWNLOAD_DENIED,
+            SecurityScope.FAMILY_PHOTO_DOWNLOAD,
+            "family_actor",
+        ),
+        (
+            SecuritySignalCode.DESTRUCTIVE_OPERATION_FAILURE,
+            SecurityScope.DATA_DELETE,
+            "deletion_request",
+        ),
+        (
+            SecuritySignalCode.DESTRUCTIVE_OPERATION_RETRY_BURST,
+            SecurityScope.ACCOUNT_DELETE,
+            "deletion_request",
+        ),
+        (
+            SecuritySignalCode.STORAGE_CAPABILITY_FAILURE_BURST,
+            SecurityScope.MEDIA_DOWNLOAD,
+            "media_owner",
+        ),
+    )
+    for offset, (code, scope, kind) in enumerate(cases):
+        raw = f"required-rule-{offset}-{uuid4()}"
+        _drive_rule_to_threshold(
+            engine,
+            code=code,
+            scope=scope,
+            correlation_kind=kind,
+            correlation_value=raw,
+            base=base + timedelta(hours=offset),
+        )
+        digest = security_correlation_digest(kind, raw)
+        with Session(engine) as db:
+            alerts = list(
+                db.scalars(
+                    select(SecurityAlert).where(
+                        SecurityAlert.correlation_digest == digest,
+                        SecurityAlert.rule_code == code.value,
+                    )
+                )
+            )
+        assert len(alerts) == 1, (code, alerts)
+        assert alerts[0].signal_count == RULES[code].threshold
+
+
+def test_family_sensitive_access_burst_uses_shared_cross_resource_scope() -> None:
+    engine = _engine()
+    base = datetime(2026, 9, 28, 18, 0, tzinfo=UTC)
+    raw = f"family-cross-resource-{uuid4()}"
+    policy = RULES[SecuritySignalCode.FAMILY_SENSITIVE_ACCESS_BURST]
+    for index in range(policy.threshold):
+        record_security_signal(
+            engine,
+            signal_code=SecuritySignalCode.FAMILY_SENSITIVE_ACCESS_BURST,
+            correlation_kind="family_actor",
+            correlation_value=raw,
+            scope=SecurityScope.FAMILY_SENSITIVE_ACCESS,
+            now=base + timedelta(seconds=index),
+        )
+
+    digest = security_correlation_digest("family_actor", raw)
+    with Session(engine) as db:
+        alerts = list(
+            db.scalars(
+                select(SecurityAlert).where(
+                    SecurityAlert.correlation_digest == digest,
+                    SecurityAlert.rule_code
+                    == SecuritySignalCode.FAMILY_SENSITIVE_ACCESS_BURST.value,
+                )
+            )
+        )
+    assert len(alerts) == 1
+    assert alerts[0].scope == SecurityScope.FAMILY_SENSITIVE_ACCESS.value
+
+
+def test_delivery_retry_reaches_terminal_after_five_attempts(monkeypatch) -> None:
+    engine = _engine()
+    monkeypatch.setattr(security_alerting, "emit_operational_event", lambda **_: False)
+    base = datetime(2026, 9, 28, 19, 0, tzinfo=UTC)
+    alert_id = record_security_signal(
+        engine,
+        signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+        correlation_kind="register_ip",
+        correlation_value=f"retry-terminal-{uuid4()}",
+        scope=SecurityScope.AUTH_REGISTER_IP,
+        now=base,
+    )
+    assert alert_id is not None
+
+    for attempt in range(2, security_alerting.MAX_DELIVERY_ATTEMPTS + 1):
+        security_alerting.deliver_security_alert(
+            engine,
+            alert_id=alert_id,
+            now=base + timedelta(minutes=attempt),
+        )
+
+    with Session(engine) as db:
+        alert = db.scalar(select(SecurityAlert).where(SecurityAlert.id == alert_id))
+        assert alert is not None
+        assert alert.delivery_attempts == security_alerting.MAX_DELIVERY_ATTEMPTS
+        assert (
+            alert.delivery_status
+            == SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
+        )
+        assert alert.next_retry_at is None
