@@ -7,7 +7,6 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.core.db import SessionLocal
@@ -567,11 +566,17 @@ async def test_oversize_structured_slot_is_incomplete_without_silent_truncation(
     ("output", "expected"),
     [
         ("not-json", LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT),
-        ('{"answer":"","citations":["E1"]}', LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT),
+        (
+            '{"answer":"","citations":["E1"]}',
+            LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT,
+        ),
         ('{"answer":"x","citations":[]}', LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT),
         ('{"answer":"x","citations":["E1","E1"]}', LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT),
         ('{"answer":"x","citations":["E999"]}', LongTermReasoningStatus.INVALID_CITATION),
-        ('{"answer":"x","citations":["E1"],"extra":true}', LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT),
+        (
+            '{"answer":"x","citations":["E1"],"extra":true}',
+            LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT,
+        ),
         (
             '{"answer":"' + ("x" * 3001) + '","citations":["E1"]}',
             LongTermReasoningStatus.MALFORMED_PROVIDER_OUTPUT,

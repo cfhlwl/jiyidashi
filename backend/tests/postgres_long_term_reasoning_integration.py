@@ -8,8 +8,6 @@ from datetime import UTC, datetime
 from threading import Event, Thread
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
-
 from app.core.config import Settings
 from app.core.db import SessionLocal
 from app.life_event_models import LifeEvent, LifeEventKind, LifeEventMemoryLink
