@@ -172,7 +172,7 @@ def test_delivery_failure_is_bounded_and_business_signal_still_persists(monkeypa
     engine = _engine()
     monkeypatch.setattr(
         security_alerting,
-        "emit_operational_event_checked",
+        "emit_security_alert_event_checked",
         lambda **_: False,
     )
     alert_id = record_security_signal(
@@ -200,7 +200,7 @@ def test_security_alert_event_contains_only_safe_correlation(monkeypatch) -> Non
         captured.append(kwargs)
         return True
 
-    monkeypatch.setattr(security_alerting, "emit_operational_event_checked", capture)
+    monkeypatch.setattr(security_alerting, "emit_security_alert_event_checked", capture)
     sentinel = "raw-ip=192.0.2.55;email=sentinel@example.test;Authorization=Bearer-secret"
     record_security_signal(
         engine,
@@ -326,7 +326,7 @@ def test_family_sensitive_access_burst_uses_shared_cross_resource_scope() -> Non
 
 def test_delivery_retry_reaches_terminal_after_five_attempts(monkeypatch) -> None:
     engine = _engine()
-    monkeypatch.setattr(security_alerting, "emit_operational_event_checked", lambda **_: False)
+    monkeypatch.setattr(security_alerting, "emit_security_alert_event_checked", lambda **_: False)
     base = datetime(2026, 9, 28, 19, 0, tzinfo=UTC)
     alert_id = record_security_signal(
         engine,
@@ -422,7 +422,7 @@ def test_pending_alert_is_recovered_by_bounded_retry_scanner(monkeypatch) -> Non
 
     monkeypatch.setattr(
         security_alerting,
-        "emit_operational_event_checked",
+        "emit_security_alert_event_checked",
         lambda **_: True,
     )
     delivered = security_alerting.retry_due_security_alerts(engine, now=now, limit=25)
@@ -440,7 +440,7 @@ def test_retry_before_next_retry_at_does_not_consume_attempt(monkeypatch) -> Non
     base = datetime(2026, 9, 28, 22, 0, tzinfo=UTC)
     monkeypatch.setattr(
         security_alerting,
-        "emit_operational_event_checked",
+        "emit_security_alert_event_checked",
         lambda **_: False,
     )
     alert_id = record_security_signal(
