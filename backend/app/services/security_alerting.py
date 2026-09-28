@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.observability import emit_operational_event_checked
+from app.core.observability import emit_security_alert_event_checked
 from app.security_models import (
     SecurityAlert,
     SecurityAlertDeliveryStatus,
@@ -419,7 +419,7 @@ def deliver_security_alert(
                 return False
 
             alert.delivery_attempts += 1
-            delivered = emit_operational_event_checked(
+            delivered = emit_security_alert_event_checked(
                 event="security.alert.triggered",
                 level="ERROR"
                 if alert.severity in {SecuritySeverity.HIGH.value, SecuritySeverity.CRITICAL.value}
