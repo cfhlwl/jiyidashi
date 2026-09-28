@@ -17,6 +17,7 @@ from app.life_event_models import (
 from app.life_memoir_models import LifeMemoirChapterStatus
 from app.life_stage_models import LifeStage, LifeStageEventLink, LifeStageKind
 from app.life_stage_schemas import LifeStagePatch
+from app.long_term_reasoning_models import LongTermReasoningStatus
 from app.models import Memory, MemorySource, SourceType, User
 from app.services.ai_gateway import (
     AIGateway,
@@ -28,7 +29,6 @@ from app.services.life_memoir_service import (
     list_life_memoir_stages,
 )
 from app.services.life_stage_service import delete_life_stage, patch_life_stage
-from app.long_term_reasoning_models import LongTermReasoningStatus
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
