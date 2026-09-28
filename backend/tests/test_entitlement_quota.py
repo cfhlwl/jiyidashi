@@ -24,6 +24,7 @@ from app.services.entitlement_service import (
     EntitlementError,
     entitlement_snapshot,
     finalize_ai_usage,
+    require_capability,
     reserve_ai_provider_request,
     resolve_entitlement,
     storage_usage_bytes,
@@ -161,6 +162,28 @@ def test_missing_or_unconfigured_entitlement_fails_closed() -> None:
                 user_id=user_id,
                 settings=Settings(app_env="test", entitlement_quota_catalog={}),
             )
+
+
+def test_free_plan_denies_media_and_ai_capabilities() -> None:
+    engine = _engine()
+    with Session(engine) as db:
+        user = _seed_entitlement(db, plan_code=PlanCode.FREE)
+        for capability in (
+            CapabilityCode.IMAGE_MEDIA,
+            CapabilityCode.VOICE_MEDIA,
+            CapabilityCode.AI_INFERENCE,
+        ):
+            with pytest.raises(
+                EntitlementError,
+                match="ENTITLEMENT_CAPABILITY_REQUIRED",
+            ):
+                require_capability(
+                    db,
+                    user_id=user.id,
+                    capability=capability,
+                    settings=_settings(),
+                )
+            db.rollback()
 
 
 def test_storage_usage_counts_pending_and_ready_only() -> None:
