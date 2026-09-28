@@ -288,7 +288,7 @@
 | Mini V2-C | 小程序 Person Relationships V1 | ✅ | Issue #142 / PR #143：explicit direct Person↔Person relationship CRUD、OTHER/custom_label contract、field-aware conflict rebase 已正式审查并合并；merge `feb766d7ac78eb87436857d3b69138789ba1bd63` |
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop PERSON/PLACE/OBJECT/EVENT projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |
 | V2-005 | Life Event Foundation V1 | ✅ | Issue #146 / PR #147：独立 LifeEvent authority、显式 CRUD、owner-safe Place、confirmed-Memory evidence、export/delete lifecycle 与 PostgreSQL race/migration gates 已正式审查并合并；merge `6df2514c43d4709e01f0c52049ce12ba23c3e170` |
-| V2-006 | Life Stage Foundation V1 | 🟠 | Issue #148 / PR #149：explicit overlapping/open-ended LifeStage authority、explicit LifeEvent evidence、export/delete lifecycle 与 PostgreSQL race/migration gates 已实现；等待正式审查/合并，合并前不标记 ✅ |
+| V2-006 | Life Stage Foundation V1 | ✅ | Issue #148 / PR #149：explicit overlapping/open-ended LifeStage authority、explicit LifeEvent evidence、export/delete lifecycle 与 PostgreSQL race/migration gates 已正式审查并合并；merge `86127a101028ef9dadf397ef454edc8126082a91` |
 | V2-007 | 长期记忆推理 | ⬜ | 必须有证据链，不允许模型脑补 |
 | V2-008 | “我认识某人多久了” | ⬜ | 基于最早 Evidence 回答 |
 | V2-009 | “过去几年发生了什么” | ⬜ | 跨年长期检索 |
