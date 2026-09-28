@@ -847,7 +847,7 @@ def test_exact_enums_read_only_scope_and_no_0025_migration():
         "soft_delete_memory(",
     ]:
         assert forbidden not in source
-    assert "from sqlalchemy import select" in source
+    assert "from sqlalchemy import func, select" in source
     assert "from sqlalchemy import delete" not in source
     assert ".add(" not in source
     assert ".commit(" not in source
