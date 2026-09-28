@@ -170,6 +170,80 @@ def main() -> None:
         db.commit()
     _clean(family_digest)
 
+
+    # Family exact-grant denial remains authoritative while the same committed
+    # DENIED audit metadata feeds a durable security threshold.
+    owner_id = uuid4()
+    member_id = uuid4()
+    with SessionLocal() as db:
+        db.add_all(
+            (
+                User(id=owner_id, nickname="sec015-owner", timezone="UTC"),
+                User(id=member_id, nickname="sec015-member", timezone="UTC"),
+            )
+        )
+        db.commit()
+        family = create_family(db, user_id=owner_id)
+        db.add(
+            FamilyMembership(
+                family_id=family.family_id,
+                user_id=member_id,
+                role=FamilyRole.MEMBER.value,
+            )
+        )
+        db.commit()
+        family_id = family.family_id
+
+    family_raw = f"{family_id}:{member_id}"
+    family_digest = security_correlation_digest("family_actor", family_raw)
+    _clean(family_digest)
+    for _ in range(5):
+        with SessionLocal() as db:
+            try:
+                get_family_current_location(
+                    db,
+                    resource_owner_user_id=owner_id,
+                    grantee_user_id=member_id,
+                )
+            except FamilySensitiveReadError as exc:
+                assert exc.code == "FAMILY_READ_NOT_AUTHORIZED"
+                assert exc.status_code == 403
+            else:
+                raise AssertionError("Family exact-grant denial unexpectedly authorized")
+
+    with SessionLocal() as db:
+        denied_rows = list(
+            db.scalars(
+                select(FamilyAccessAuditEvent).where(
+                    FamilyAccessAuditEvent.family_id == family_id,
+                    FamilyAccessAuditEvent.actor_user_id == member_id,
+                    FamilyAccessAuditEvent.result == FamilyAuditResult.DENIED.value,
+                )
+            )
+        )
+        family_alerts = list(
+            db.scalars(
+                select(SecurityAlert).where(
+                    SecurityAlert.correlation_digest == family_digest,
+                    SecurityAlert.rule_code
+                    == SecuritySignalCode.FAMILY_SENSITIVE_READ_DENIED.value,
+                )
+            )
+        )
+    assert len(denied_rows) == 5, len(denied_rows)
+    assert len(family_alerts) == 1, family_alerts
+    assert family_alerts[0].signal_count == 5
+
+    with SessionLocal() as db:
+        owner = db.get(User, owner_id)
+        if owner is not None:
+            db.delete(owner)
+        member = db.get(User, member_id)
+        if member is not None:
+            db.delete(member)
+        db.commit()
+    _clean(family_digest)
+
     # Canonical auth behavior remains authoritative: alerting is side-band only.
     old_limit = auth_rate_limit.settings.auth_register_ip_limit
     old_window = auth_rate_limit.settings.auth_register_window_seconds
