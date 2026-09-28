@@ -138,7 +138,7 @@ def _prove_migration_backfill() -> None:
 
 
 def _prove_storage_race(settings) -> None:
-    user_id = _seed_user()
+    user_id = _seed_user(PlanCode.PERSONAL)
     start = Barrier(2)
     lock = Lock()
     successes: list[UUID] = []
@@ -224,7 +224,7 @@ def _ai_request() -> AIInferenceRequest:
 
 
 def _prove_ai_last_slot_race(settings: Settings) -> None:
-    user_id = _seed_user()
+    user_id = _seed_user(PlanCode.PERSONAL)
     provider = DeterministicAIProvider()
     start = Barrier(2)
     lock = Lock()
@@ -281,7 +281,7 @@ def _prove_ai_last_slot_race(settings: Settings) -> None:
 
 
 def _prove_provider_failure_remains_charged(settings: Settings) -> None:
-    user_id = _seed_user()
+    user_id = _seed_user(PlanCode.PERSONAL)
     with SessionLocal() as db:
         gateway = AIGateway(settings, FailingProvider())
         try:
