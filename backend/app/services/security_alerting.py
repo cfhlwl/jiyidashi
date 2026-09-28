@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -223,6 +223,25 @@ def _get_or_create_window(
         return row
 
 
+def _lock_security_identity(
+    db: Session,
+    *,
+    rule_code: SecuritySignalCode,
+    correlation_digest: str,
+    scope: SecurityScope,
+) -> None:
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    material = f"{rule_code.value}|{correlation_digest}|{scope.value}".encode()
+    lock_key = int.from_bytes(
+        hashlib.sha256(material).digest()[:8],
+        byteorder="big",
+        signed=True,
+    )
+    db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+
+
 def _latest_matching_alert_for_update(
     db: Session,
     *,
@@ -312,6 +331,12 @@ def record_security_signal(
         )
         window_started_at = _bucket_start(observed_at, policy.window_seconds)
         with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
+            _lock_security_identity(
+                db,
+                rule_code=signal_code,
+                correlation_digest=correlation_digest,
+                scope=scope,
+            )
             window = _get_or_create_window(
                 db,
                 rule_code=signal_code,
