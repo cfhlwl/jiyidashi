@@ -213,28 +213,6 @@ def storage_usage_bytes(db: Session, *, user_id: UUID) -> int:
     return int(value or 0)
 
 
-def authorize_storage_reservation(
-    db: Session,
-    *,
-    user_id: UUID,
-    capability: CapabilityCode,
-    requested_bytes: int,
-    settings: Settings | None = None,
-) -> tuple[ResolvedEntitlement, int]:
-    lock_entitlement_subject(db, user_id=user_id)
-    entitlement = require_capability(
-        db,
-        user_id=user_id,
-        capability=capability,
-        settings=settings,
-    )
-    used = storage_usage_bytes(db, user_id=user_id)
-    limit = entitlement.quota_limits[QuotaDimension.STORAGE_BYTES]
-    if limit is not None and used + requested_bytes > limit:
-        raise EntitlementError("ENTITLEMENT_QUOTA_EXCEEDED", 429)
-    return entitlement, used
-
-
 def _utc_month_bounds(now: datetime) -> tuple[datetime, datetime]:
     observed = _as_utc(now)
     start = datetime(observed.year, observed.month, 1, tzinfo=UTC)
