@@ -33,7 +33,7 @@ This backlog records only productization/operations gaps discovered by the V2 cl
   - exact-head CI covers redaction and correlation behavior.
 - **Dependency:** OPS-001; complements SEC-005 and SEC-015 but does not replace them.
 - **Recommended phase:** Public Launch Gate.
-- **GitHub follow-up:** create a focused Issue because no canonical observability Issue exists.
+- **GitHub follow-up:** #161 — Production Observability Foundation V1.
 
 ### V2-CLOSE-P0-003 — Security event alerting and anomaly response
 - **Why it matters:** high-value family/location/destructive operations need actionable abnormal-access signals before public launch.
@@ -64,7 +64,7 @@ This backlog records only productization/operations gaps discovered by the V2 cl
   - Mini CI exact-head green.
 - **Dependency:** V2-005..011 merged APIs; SEC-013 for inference labeling.
 - **Recommended phase:** Broad Beta.
-- **GitHub follow-up:** create one coherent client deliverable Issue.
+- **GitHub follow-up:** #162 — Mini Program advanced V2 surfaces.
 
 ### V2-CLOSE-P1-002 — Flutter V2 Personal Memory Graph productization
 - **Why it matters:** Flutter currently exposes no V2-001..011 user flow, causing major cross-platform capability divergence.
@@ -77,7 +77,7 @@ This backlog records only productization/operations gaps discovered by the V2 cl
   - mobile-ci + mobile-visual-preview exact-head green.
 - **Dependency:** V2-001..011; SEC-013/014 UX standards.
 - **Recommended phase:** Broad Beta.
-- **GitHub follow-up:** create one coherent Flutter productization Issue.
+- **GitHub follow-up:** #163 — Flutter Personal Memory Graph parity.
 
 ### V2-CLOSE-P1-003 — Consistent AI inference labeling
 - **Why it matters:** trusted evidence, explicit records and model inference must be distinguishable to users.
