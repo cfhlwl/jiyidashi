@@ -318,6 +318,46 @@ def test_storage_usage_counts_pending_and_ready_only() -> None:
         assert snapshot.storage_limit_bytes == 100
 
 
+@pytest.mark.asyncio
+async def test_ai_usage_ledger_never_persists_prompt_or_output_content() -> None:
+    engine = _engine()
+    sentinel_input = "PRIVATE_PROMPT_SENTINEL_9a71"
+    sentinel_output = "PRIVATE_OUTPUT_SENTINEL_b82c"
+    provider = DeterministicAIProvider(output_text=sentinel_output)
+    gateway = AIGateway(_settings(), provider)
+
+    with Session(engine) as db:
+        user = _seed_entitlement(db, plan_code=PlanCode.PERSONAL)
+        result = await gateway.infer(
+            AIInferenceRequest(
+                purpose="biz.privacy",
+                system_instruction="SYSTEM_SECRET_SENTINEL_c93d",
+                input_text=sentinel_input,
+                max_output_tokens=16,
+            ),
+            db=db,
+            actor_user_id=user.id,
+        )
+        assert result.output_text == sentinel_output
+
+        event = db.scalar(
+            select(AIUsageEvent).where(AIUsageEvent.user_id == user.id)
+        )
+        assert event is not None
+        rendered = repr(
+            {
+                "gateway_request_id": event.gateway_request_id,
+                "purpose": event.purpose,
+                "provider_request_id": event.provider_request_id,
+                "input_tokens": event.input_tokens,
+                "output_tokens": event.output_tokens,
+            }
+        )
+        assert sentinel_input not in rendered
+        assert sentinel_output not in rendered
+        assert "SYSTEM_SECRET_SENTINEL_c93d" not in rendered
+
+
 def test_ai_reservation_is_idempotent_and_exact_limit() -> None:
     engine = _engine()
     settings = _settings()
