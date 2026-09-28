@@ -11,6 +11,7 @@ from app.api import (
     intent,
     life_events,
     life_history,
+    life_memoir,
     life_stages,
     location,
     long_term_reasoning,
@@ -49,6 +50,7 @@ api_router.include_router(memories.router)
 api_router.include_router(life_events.router)
 # V2-009 is a read-only projection over explicit LifeEvent/LifeStage boundaries.
 api_router.include_router(life_history.router)
+api_router.include_router(life_memoir.router)
 api_router.include_router(life_stages.router)
 api_router.include_router(long_term_reasoning.router)
 # [人工注释][#103] Trusted summaries use a dedicated POST generation surface;
