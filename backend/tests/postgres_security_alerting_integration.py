@@ -138,6 +138,45 @@ def main() -> None:
     assert third_id != first_id
     _clean(boundary_digest)
 
+    concurrent_boundary_raw = f"concurrent-cooldown-boundary-{uuid4()}"
+    concurrent_boundary_digest = security_correlation_digest(
+        "register_ip",
+        concurrent_boundary_raw,
+    )
+    _clean(concurrent_boundary_digest)
+
+    def boundary_worker(observed_at: datetime) -> str | None:
+        return record_security_signal(
+            engine,
+            signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+            correlation_kind="register_ip",
+            correlation_value=concurrent_boundary_raw,
+            scope=SecurityScope.AUTH_REGISTER_IP,
+            now=observed_at,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        boundary_ids = list(
+            pool.map(
+                boundary_worker,
+                (
+                    boundary_first,
+                    boundary_first + timedelta(seconds=1),
+                ),
+            )
+        )
+    assert boundary_ids[0] == boundary_ids[1]
+    with Session(engine) as db:
+        concurrent_boundary_alerts = list(
+            db.scalars(
+                select(SecurityAlert).where(
+                    SecurityAlert.correlation_digest == concurrent_boundary_digest
+                )
+            )
+        )
+    assert len(concurrent_boundary_alerts) == 1, concurrent_boundary_alerts
+    _clean(concurrent_boundary_digest)
+
     # Cooldown/window rollover is intentionally eligible for a new logical alert.
     record_security_signal(
         engine,
