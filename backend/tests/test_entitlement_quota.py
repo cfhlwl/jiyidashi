@@ -95,9 +95,6 @@ def test_plan_catalog_and_legacy_full_are_deterministic() -> None:
         PlanCode.FREE: {
             CapabilityCode.CORE_MEMORY,
             CapabilityCode.BASIC_SEARCH,
-            CapabilityCode.IMAGE_MEDIA,
-            CapabilityCode.VOICE_MEDIA,
-            CapabilityCode.AI_INFERENCE,
         },
         PlanCode.PERSONAL: {
             CapabilityCode.CORE_MEMORY,
