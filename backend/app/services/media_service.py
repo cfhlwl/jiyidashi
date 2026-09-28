@@ -20,7 +20,9 @@ from app.media_models import (
 )
 from app.models import Memory, MemorySource, MemoryType, SourceType
 from app.schemas import MediaUploadCreate, PhotoMemoryCreate, VoiceMemoryCreate
+from app.security_models import SecuritySignalCode
 from app.services.asr import ASRProvider, ASRProviderError
+from app.services.security_alerting import SecurityScope, record_security_signal
 from app.services.memory_service import (
     TrustedMemoryWrite,
     create_trusted_memory,
@@ -49,6 +51,21 @@ ASR_CLAIM_LEASE = timedelta(minutes=10)
 HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs"}
 HEIF_BRANDS = HEIC_BRANDS | {b"mif1", b"msf1"}
 MEDIA_MEMORY_REQUEST_HASH_KEY = "media_memory_request_sha256"
+
+def _record_media_storage_security(
+    db: Session,
+    *,
+    user_id: UUID,
+    scope: SecurityScope,
+) -> None:
+    record_security_signal(
+        db.get_bind(),
+        signal_code=SecuritySignalCode.STORAGE_CAPABILITY_FAILURE_BURST,
+        correlation_kind="media_owner",
+        correlation_value=str(user_id),
+        scope=scope,
+    )
+
 
 ASR_ERROR_STATUS = {
     "ASR_PROVIDER_UNAVAILABLE": 503,
@@ -310,6 +327,11 @@ def complete_media_upload(
     except ObjectNotFound as exc:
         raise MediaError("MEDIA_OBJECT_NOT_FOUND", 409) from exc
     except ObjectStorageError as exc:
+        _record_media_storage_security(
+            db,
+            user_id=user_id,
+            scope=SecurityScope.MEDIA_COMPLETE,
+        )
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
     _validate_stored_object(asset, staged)
     _validate_media_object(storage, asset, asset.upload_object_key)
@@ -320,6 +342,11 @@ def complete_media_upload(
     except ObjectNotFound as exc:
         raise MediaError("MEDIA_PROMOTION_FAILED", 503) from exc
     except ObjectStorageError as exc:
+        _record_media_storage_security(
+            db,
+            user_id=user_id,
+            scope=SecurityScope.MEDIA_COMPLETE,
+        )
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
     _validate_stored_object(asset, final)
     # [人工注释][S1-004][S1-005] final 再验一次文件头，封住 staging 校验后、
@@ -358,6 +385,11 @@ def sign_media_download(
     try:
         transfer = storage.sign_download(asset.object_key)
     except ObjectStorageError as exc:
+        _record_media_storage_security(
+            db,
+            user_id=user_id,
+            scope=SecurityScope.MEDIA_DOWNLOAD,
+        )
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
     return asset, transfer
 
