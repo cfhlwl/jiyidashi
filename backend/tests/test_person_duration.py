@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.db import SessionLocal
-from app.models import Memory, MemorySource, SourceType, User
+from app.models import Memory, MemoryEdit, MemorySource, SourceType, User
 from app.person_duration_models import PersonKnownDurationStatus
 from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
 from app.person_models import Person
@@ -274,6 +274,63 @@ def test_met_cap_plus_one_is_incomplete_and_does_not_fall_back_to_related():
         assert result.status == PersonKnownDurationStatus.EVIDENCE_INCOMPLETE
         assert result.evidence is None
         assert result.earliest_related_at is None
+
+
+def test_related_cap_plus_one_is_incomplete_when_met_is_completely_absent():
+    as_of = datetime(2026, 9, 28, tzinfo=UTC)
+    with SessionLocal() as db:
+        user, person = _seed_person(db, "RelatedCap")
+        for index in range(MAX_DURATION_EVIDENCE_SCAN + 1):
+            _memory(
+                db,
+                user_id=user.id,
+                person_id=person.id,
+                occurred_at=as_of
+                - timedelta(days=MAX_DURATION_EVIDENCE_SCAN + 10 - index),
+                relation_kind=PersonMemoryRelationKind.RELATED,
+                trusted=False,
+            )
+        result = get_person_known_duration(
+            db, user_id=user.id, person_id=person.id, now=as_of
+        )
+        assert result.status == PersonKnownDurationStatus.EVIDENCE_INCOMPLETE
+        assert result.evidence is None
+        assert result.at_least_since_at is None
+        assert result.earliest_related_at is None
+
+
+def test_latest_content_edit_without_valid_source_is_not_trusted():
+    as_of = datetime(2026, 9, 28, tzinfo=UTC)
+    with SessionLocal() as db:
+        user, person = _seed_person(db, "EditedNoSource")
+        memory, _ = _memory(
+            db,
+            user_id=user.id,
+            person_id=person.id,
+            occurred_at=as_of - timedelta(days=30),
+            relation_kind=PersonMemoryRelationKind.MET,
+        )
+        memory.edit_revision = 1
+        db.add(
+            MemoryEdit(
+                memory_id=memory.id,
+                user_id=user.id,
+                revision=1,
+                previous_content=memory.content,
+                new_content="edited current text without evidence source",
+                changed_title=False,
+                changed_content=True,
+                memory_source_id=None,
+            )
+        )
+        db.commit()
+
+        result = get_person_known_duration(
+            db, user_id=user.id, person_id=person.id, now=as_of
+        )
+        assert result.status == PersonKnownDurationStatus.NO_TRUSTED_EVIDENCE
+        assert result.evidence is None
+        assert result.elapsed_days is None
 
 
 def test_trusted_met_before_cap_is_complete_even_with_later_tail():
