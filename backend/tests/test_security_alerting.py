@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -305,7 +305,7 @@ def test_delivery_retry_reaches_terminal_after_five_attempts(monkeypatch) -> Non
         )
 
     with Session(engine) as db:
-        alert = db.scalar(select(SecurityAlert).where(SecurityAlert.id == alert_id))
+        alert = db.scalar(select(SecurityAlert).where(SecurityAlert.id == UUID(alert_id)))
         assert alert is not None
         assert alert.delivery_attempts == security_alerting.MAX_DELIVERY_ATTEMPTS
         assert (
