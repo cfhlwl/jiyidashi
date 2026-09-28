@@ -294,6 +294,39 @@ def test_trusted_met_before_cap_is_complete_even_with_later_tail():
         assert result.evidence.memory_id == trusted.id
 
 
+@pytest.mark.asyncio
+async def test_api_uses_current_user_and_cross_owner_is_person_not_found(client):
+    token_a = await client.post("/v1/auth/dev-token", json={"nickname": "duration-api-a"})
+    token_b = await client.post("/v1/auth/dev-token", json={"nickname": "duration-api-b"})
+    assert token_a.status_code == 200
+    assert token_b.status_code == 200
+    headers_a = {"Authorization": f"Bearer {token_a.json()['access_token']}"}
+    headers_b = {"Authorization": f"Bearer {token_b.json()['access_token']}"}
+
+    created = await client.post(
+        "/v1/people",
+        headers=headers_a,
+        json={"display_name": "API Person", "aliases": []},
+    )
+    assert created.status_code == 201
+    person_id = created.json()["id"]
+
+    own = await client.get(
+        f"/v1/people/{person_id}/known-duration",
+        headers=headers_a,
+    )
+    assert own.status_code == 200
+    assert own.json()["status"] == "NO_TRUSTED_EVIDENCE"
+    assert own.json()["person_id"] == person_id
+
+    denied = await client.get(
+        f"/v1/people/{person_id}/known-duration",
+        headers=headers_b,
+    )
+    assert denied.status_code == 404
+    assert denied.json()["detail"] == "PERSON_NOT_FOUND"
+
+
 def test_owner_isolation_is_person_not_found():
     with SessionLocal() as db:
         owner, person = _seed_person(db, "Owner")
