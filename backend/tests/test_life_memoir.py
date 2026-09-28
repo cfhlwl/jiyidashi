@@ -390,4 +390,4 @@ def test_api_has_no_client_question_parameter_and_scope_lock():
         ".delete(",
     ):
         assert forbidden not in source
-    assert list((root / "migrations/versions").glob("0025*")) == []
+    assert list((root / "migrations/versions").glob("*life_memoir*")) == []
