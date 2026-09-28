@@ -8,8 +8,12 @@ from datetime import UTC, datetime
 from threading import Event, Thread
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
+
+from app.account_deletion_models import AccountDeletionOperation
 from app.core.config import Settings
 from app.core.db import SessionLocal
+from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.life_event_models import LifeEvent, LifeEventKind, LifeEventMemoryLink
 from app.life_event_schemas import LifeEventPatch
 from app.life_stage_models import LifeStage, LifeStageEventLink, LifeStageKind
@@ -17,6 +21,7 @@ from app.life_stage_schemas import LifeStagePatch
 from app.long_term_reasoning_models import LongTermReasoningStatus
 from app.models import Memory, MemorySource, SourceType, User
 from app.schemas import MemoryUpdate
+from app.services.account_deletion_service import delete_current_account
 from app.services.ai_gateway import AIGateway, AIInferenceRequest, AIProviderResult
 from app.services.life_event_service import (
     create_life_event_memory_link,
@@ -33,6 +38,7 @@ from app.services.life_stage_service import (
 from app.services.long_term_reasoning_service import reason_about_life_stage
 from app.services.memory_edit_service import edit_memory
 from app.services.memory_service import get_memory_for_user, soft_delete_memory
+from app.services.object_storage import DisabledObjectStorage
 
 
 def _settings() -> Settings:
@@ -392,6 +398,62 @@ def _new_memory_evidence_race() -> UUID:
     return owner
 
 
+def _account_delete_prepare_race() -> UUID:
+    owner = _seed_owner("account-delete-prepare")
+    stage_id = _seed_stage(owner, "account-delete-prepare")
+
+    def mutate() -> None:
+        with SessionLocal() as db:
+            result = delete_current_account(
+                db,
+                user_id=owner,
+                request_id=uuid4(),
+                storage=DisabledObjectStorage(),
+                local_cleanup_ready=False,
+            )
+            assert result.completed is False
+            assert result.data_deletion_status is None
+            assert db.scalar(
+                select(AccountDeletionOperation.id).where(
+                    AccountDeletionOperation.user_id == owner
+                )
+            ) is not None
+
+    _run_gap_race(user_id=owner, stage_id=stage_id, mutate=mutate)
+    return owner
+
+
+def _data_delete_waiting_race(status: DataDeletionStatus, suffix: str) -> UUID:
+    owner = _seed_owner(f"data-delete-{suffix}")
+    stage_id = _seed_stage(owner, f"data-delete-{suffix}")
+
+    def mutate() -> None:
+        with SessionLocal() as db:
+            user = db.scalar(
+                select(User).where(User.id == owner).with_for_update()
+            )
+            assert user is not None
+            db.add(
+                DataDeletionOperation(
+                    id=uuid4(),
+                    user_id=owner,
+                    request_id=uuid4(),
+                    status=status,
+                )
+            )
+            db.commit()
+            active = db.scalar(
+                select(DataDeletionOperation.status).where(
+                    DataDeletionOperation.user_id == owner,
+                    DataDeletionOperation.status != DataDeletionStatus.COMPLETED,
+                )
+            )
+            assert active == status
+
+    _run_gap_race(user_id=owner, stage_id=stage_id, mutate=mutate)
+    return owner
+
+
 def main() -> None:
     owners = [
         _stage_patch_race(),
@@ -404,6 +466,15 @@ def main() -> None:
         _event_memory_unlink_race(),
         _new_event_evidence_race(),
         _new_memory_evidence_race(),
+        _account_delete_prepare_race(),
+        _data_delete_waiting_race(
+            DataDeletionStatus.WAITING_STORAGE_EXPIRY,
+            "expiry",
+        ),
+        _data_delete_waiting_race(
+            DataDeletionStatus.WAITING_STORAGE_QUIET,
+            "quiet",
+        ),
     ]
 
     with SessionLocal() as cleanup:
@@ -415,7 +486,7 @@ def main() -> None:
 
     # The script deliberately has no persistence assertion for generated answers because
     # V2-007 has no answer table/cache authority to inspect.
-    assert len(owners) == 10
+    assert len(owners) == 13
     print("PostgreSQL Long-term Reasoning V2-007 provider-gap invariants PASS")
 
 
