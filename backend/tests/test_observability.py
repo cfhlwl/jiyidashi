@@ -4,8 +4,6 @@ import asyncio
 import inspect
 import json
 import logging
-from contextlib import contextmanager
-from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -37,6 +35,7 @@ from app.services.data_deletion_service import (
 )
 from app.services.object_storage import (
     ObjectNotFound,
+    ObjectStorageError,
     S3ObjectStorage,
     get_object_storage,
 )
@@ -363,7 +362,7 @@ def test_storage_failure_event_is_safe_and_not_found_is_not_noisy(caplog):
     caplog.set_level(logging.INFO, logger=LOGGER)
     storage = _storage_with(_FailingStorageClient())
 
-    with pytest.raises(Exception):
+    with pytest.raises(ObjectStorageError):
         storage.sign_upload(
             "OBJECT_KEY_SECRET_SENTINEL",
             "image/jpeg",
