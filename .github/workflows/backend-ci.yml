@@ -61,7 +61,10 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check .
+        run: |
+          ruff check tests/postgres_person_duration_integration.py --fix || true
+          git diff -- tests/postgres_person_duration_integration.py
+          exit 1
 
       - name: SQLite migration baseline
         env:
