@@ -49,7 +49,7 @@ class SecuritySignalWindow(Base):
             "window_started_at",
             name="uq_security_signal_window_identity",
         ),
-        CheckConstraint("signal_count > 0", name="ck_security_signal_window_count"),
+        CheckConstraint("signal_count >= 0", name="ck_security_signal_window_count"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
