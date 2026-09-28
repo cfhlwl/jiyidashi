@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.db import lock_user_data_destructive_handoff
 from app.data_deletion_models import (
     DataDeletionObject,
     DataDeletionOperation,
@@ -310,6 +311,7 @@ def _begin_or_load_operation(
     user_id: UUID,
     request_id: UUID,
 ) -> DataDeletionOperation:
+    lock_user_data_destructive_handoff(db, user_id=user_id)
     _lock_user(db, user_id)
     existing = _find_operation(db, user_id, request_id)
     if existing is not None:

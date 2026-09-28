@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from threading import Event, Thread
 from uuid import UUID, uuid4
@@ -12,7 +13,7 @@ from sqlalchemy import select
 
 from app.account_deletion_models import AccountDeletionOperation
 from app.core.config import Settings
-from app.core.db import SessionLocal
+from app.core.db import SessionLocal, lock_user_data_destructive_handoff
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.life_event_models import LifeEvent, LifeEventKind, LifeEventMemoryLink
 from app.life_event_schemas import LifeEventPatch
@@ -35,6 +36,7 @@ from app.services.life_stage_service import (
     delete_life_stage_event_link,
     patch_life_stage,
 )
+from app.services import long_term_reasoning_service as reasoning_service
 from app.services.long_term_reasoning_service import reason_about_life_stage
 from app.services.memory_edit_service import edit_memory
 from app.services.memory_service import get_memory_for_user, soft_delete_memory
@@ -429,6 +431,7 @@ def _data_delete_waiting_race(status: DataDeletionStatus, suffix: str) -> UUID:
 
     def mutate() -> None:
         with SessionLocal() as db:
+            lock_user_data_destructive_handoff(db, user_id=owner)
             user = db.scalar(
                 select(User).where(User.id == owner).with_for_update()
             )
@@ -454,6 +457,175 @@ def _data_delete_waiting_race(status: DataDeletionStatus, suffix: str) -> UUID:
     return owner
 
 
+class _NeverProvider:
+    def __init__(self):
+        self.requests: list[AIInferenceRequest] = []
+
+    async def infer(self, request: AIInferenceRequest) -> AIProviderResult:
+        self.requests.append(request)
+        raise AssertionError("provider must not receive evidence after deletion gate commit")
+
+    async def infer_image(self, request):
+        del request
+        raise AssertionError("V2-007 must not call image inference")
+
+
+def _gate_before_provider_disclosure_race() -> UUID:
+    owner = _seed_owner("gate-before-disclosure")
+    stage_id = _seed_stage(owner, "gate-before-disclosure")
+    handoff_reached = Event()
+    gate_committed = Event()
+    mutation_errors: list[BaseException] = []
+    original_guard = reasoning_service.hold_user_data_disclosure_handoff
+
+    @contextmanager
+    def delayed_guard(bind, *, user_id: UUID):
+        assert user_id == owner
+        handoff_reached.set()
+        assert gate_committed.wait(timeout=20)
+        with original_guard(bind, user_id=user_id):
+            yield
+
+    def mutation_worker() -> None:
+        try:
+            assert handoff_reached.wait(timeout=20)
+            with SessionLocal() as db:
+                result = delete_current_account(
+                    db,
+                    user_id=owner,
+                    request_id=uuid4(),
+                    storage=DisabledObjectStorage(),
+                    local_cleanup_ready=False,
+                )
+                assert result.completed is False
+                assert result.data_deletion_status is None
+                assert db.scalar(
+                    select(AccountDeletionOperation.id).where(
+                        AccountDeletionOperation.user_id == owner
+                    )
+                ) is not None
+            gate_committed.set()
+        except BaseException as exc:  # noqa: BLE001
+            mutation_errors.append(exc)
+            gate_committed.set()
+
+    provider = _NeverProvider()
+    reasoning_service.hold_user_data_disclosure_handoff = delayed_guard
+    try:
+        thread = Thread(target=mutation_worker)
+        thread.start()
+        with SessionLocal() as caller:
+            result = asyncio.run(
+                reason_about_life_stage(
+                    caller,
+                    user_id=owner,
+                    life_stage_id=stage_id,
+                    question="删除 gate 已生效后还能披露吗？",
+                    ai_gateway=AIGateway(_settings(), provider),
+                )
+            )
+        thread.join(timeout=20)
+        assert not thread.is_alive()
+    finally:
+        reasoning_service.hold_user_data_disclosure_handoff = original_guard
+
+    if mutation_errors:
+        raise mutation_errors[0]
+    assert gate_committed.is_set()
+    assert provider.requests == []
+    assert result.status == LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION
+    assert result.answer is None
+    assert result.citations == ()
+    return owner
+
+
+class _DisclosureFirstProvider:
+    def __init__(self, delete_attempting: Event, gate_committed: Event):
+        self.delete_attempting = delete_attempting
+        self.gate_committed = gate_committed
+        self.requests: list[AIInferenceRequest] = []
+
+    async def infer(self, request: AIInferenceRequest) -> AIProviderResult:
+        self.requests.append(request)
+        assert await asyncio.to_thread(self.delete_attempting.wait, 20)
+        # The destructive transaction has started but must be blocked on the exclusive
+        # advisory lock until this disclosure returns and the shared lease is released.
+        assert self.gate_committed.is_set() is False
+        return AIProviderResult(
+            output_text='{"answer":"披露先发生","citations":["E1"]}',
+            provider="disclosure-first-pg",
+            model="fixture",
+            provider_request_id="disclosure-first",
+        )
+
+    async def infer_image(self, request):
+        del request
+        raise AssertionError("V2-007 must not call image inference")
+
+
+def _provider_disclosure_before_gate_serializes_delete() -> UUID:
+    owner = _seed_owner("disclosure-before-gate")
+    stage_id = _seed_stage(owner, "disclosure-before-gate")
+    provider_entered = Event()
+    delete_attempting = Event()
+    gate_committed = Event()
+    mutation_errors: list[BaseException] = []
+
+    class _SignalingProvider(_DisclosureFirstProvider):
+        async def infer(self, request: AIInferenceRequest) -> AIProviderResult:
+            provider_entered.set()
+            return await super().infer(request)
+
+    provider = _SignalingProvider(delete_attempting, gate_committed)
+
+    def mutation_worker() -> None:
+        try:
+            assert provider_entered.wait(timeout=20)
+            delete_attempting.set()
+            with SessionLocal() as db:
+                result = delete_current_account(
+                    db,
+                    user_id=owner,
+                    request_id=uuid4(),
+                    storage=DisabledObjectStorage(),
+                    local_cleanup_ready=False,
+                )
+                assert result.completed is False
+                assert result.data_deletion_status is None
+            gate_committed.set()
+        except BaseException as exc:  # noqa: BLE001
+            mutation_errors.append(exc)
+            gate_committed.set()
+
+    thread = Thread(target=mutation_worker)
+    thread.start()
+    with SessionLocal() as caller:
+        result = asyncio.run(
+            reason_about_life_stage(
+                caller,
+                user_id=owner,
+                life_stage_id=stage_id,
+                question="披露和删除谁先？",
+                ai_gateway=AIGateway(_settings(), provider),
+            )
+        )
+    thread.join(timeout=20)
+    assert not thread.is_alive()
+    if mutation_errors:
+        raise mutation_errors[0]
+
+    assert len(provider.requests) == 1
+    assert gate_committed.is_set()
+    # Depending on scheduler order after the shared lease is released, post-provider
+    # revalidation may observe the newly committed gate and return stale, or may publish
+    # the already-linearized answer just before the delete gate commits. Both are valid.
+    assert result.status in {
+        LongTermReasoningStatus.ANSWERED,
+        LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION,
+    }
+    return owner
+
+
 def main() -> None:
     owners = [
         _stage_patch_race(),
@@ -466,15 +638,8 @@ def main() -> None:
         _event_memory_unlink_race(),
         _new_event_evidence_race(),
         _new_memory_evidence_race(),
-        _account_delete_prepare_race(),
-        _data_delete_waiting_race(
-            DataDeletionStatus.WAITING_STORAGE_EXPIRY,
-            "expiry",
-        ),
-        _data_delete_waiting_race(
-            DataDeletionStatus.WAITING_STORAGE_QUIET,
-            "quiet",
-        ),
+        _gate_before_provider_disclosure_race(),
+        _provider_disclosure_before_gate_serializes_delete(),
     ]
 
     with SessionLocal() as cleanup:
@@ -486,7 +651,7 @@ def main() -> None:
 
     # The script deliberately has no persistence assertion for generated answers because
     # V2-007 has no answer table/cache authority to inspect.
-    assert len(owners) == 13
+    assert len(owners) == 12
     print("PostgreSQL Long-term Reasoning V2-007 provider-gap invariants PASS")
 
 

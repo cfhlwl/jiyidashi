@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
 from app.auth_models import AuthIdentity
+from app.core.db import lock_user_data_destructive_handoff
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.models import User
 from app.services.data_deletion_service import (
@@ -67,6 +68,7 @@ def _begin_or_load_account_deletion(
     user_id: UUID,
     request_id: UUID,
 ) -> AccountDeletionOperation | None:
+    lock_user_data_destructive_handoff(db, user_id=user_id)
     user = db.scalar(select(User).where(User.id == user_id).with_for_update())
     if user is None:
         db.rollback()
@@ -127,6 +129,7 @@ def lock_external_data_delete_entry(
     # [人工注释][S1-022] 外部 /data/delete 与首次 Account Delete gate 必须锁同一 User row。
     # 这个 helper 故意不 commit：调用方随后进入 S1-021 _begin_or_load_operation，
     # 让“检查 account gate -> 建立/加载 data deletion op”保持在同一 User FOR UPDATE 顺序中。
+    lock_user_data_destructive_handoff(db, user_id=user_id)
     user = db.scalar(select(User.id).where(User.id == user_id).with_for_update())
     if user is None:
         raise AccountDeletionError("USER_NOT_FOUND", 404)

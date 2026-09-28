@@ -19,7 +19,11 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
-from app.core.db import USER_DATA_ADMISSION_INFO_KEY, UserDataAdmission
+from app.core.db import (
+    USER_DATA_ADMISSION_INFO_KEY,
+    UserDataAdmission,
+    hold_user_data_disclosure_handoff,
+)
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.life_event_models import LifeEvent, LifeEventMemoryLink
 from app.life_stage_models import LifeStage, LifeStageEventLink
@@ -768,16 +772,31 @@ async def reason_about_life_stage(
         return _empty_result(LongTermReasoningStatus.NO_ANSWERABLE_EVIDENCE)
 
     input_text = _serialize_prompt(clean_question, slots)
-    # All sessions opened by inventory collection are closed and caller_db has no active
-    # transaction before this external I/O. The provider receives only opaque E-slot IDs.
+    request = AIInferenceRequest(
+        purpose=_REASONING_PURPOSE,
+        system_instruction=_SYSTEM_INSTRUCTION,
+        input_text=input_text,
+        max_output_tokens=_MAX_OUTPUT_TOKENS,
+    )
+
+    # Linearize destructive lifecycle authority against provider disclosure without
+    # holding a PostgreSQL transaction or User row lock across external I/O.
+    #
+    # If Account/Data Delete acquires the matching exclusive advisory lock first, this
+    # shared lease waits until its gate commits and the final admission check rejects the
+    # disclosure. If this shared lease wins first, the destructive gate cannot commit
+    # until provider disclosure completes and the lease is released.
     try:
-        inference = await ai_gateway.infer(
-            AIInferenceRequest(
-                purpose=_REASONING_PURPOSE,
-                system_instruction=_SYSTEM_INSTRUCTION,
-                input_text=input_text,
-                max_output_tokens=_MAX_OUTPUT_TOKENS,
-            )
+        with hold_user_data_disclosure_handoff(bind, user_id=user_id):
+            with _read_session(bind) as disclosure_db:
+                _validate_reasoning_admission(
+                    disclosure_db,
+                    admission=admission,
+                )
+            inference = await ai_gateway.infer(request)
+    except _DestructiveAdmissionStale:
+        return _empty_result(
+            LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION
         )
     except AIGatewayError as exc:
         return _empty_result(
