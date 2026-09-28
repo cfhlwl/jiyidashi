@@ -9,12 +9,12 @@ from app.core.db import get_db
 from app.core.security import create_access_token
 from app.models import User
 from app.schemas import DevTokenRequest, LoginRequest, RegisterRequest, TokenResponse
-from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.auth_service import (
     authenticate_email_password,
     lock_login_for_token_issue,
     register_email_password,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
