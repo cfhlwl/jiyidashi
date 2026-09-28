@@ -22,7 +22,6 @@ from app.services.person_memory_service import (
     patch_person_memory_link,
 )
 
-
 AS_OF = datetime(2026, 9, 28, 12, tzinfo=UTC)
 
 
