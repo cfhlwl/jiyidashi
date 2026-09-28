@@ -84,7 +84,14 @@ def emit_operational_event(
     completed: bool | None = None,
     dependency: str | None = None,
     ready: bool | None = None,
-) -> None:
+    alert_id: str | None = None,
+    rule_code: str | None = None,
+    severity: str | None = None,
+    signal_count: int | None = None,
+    window_seconds: int | None = None,
+    correlation_id: str | None = None,
+    delivery_status: str | None = None,
+) -> bool:
     """Emit one fail-safe JSON event using only explicitly whitelisted fields."""
 
     try:
@@ -114,6 +121,13 @@ def emit_operational_event(
             "completed": completed,
             "dependency": dependency,
             "ready": ready,
+            "alert_id": alert_id,
+            "rule_code": rule_code,
+            "severity": severity,
+            "signal_count": signal_count,
+            "window_seconds": window_seconds,
+            "correlation_id": correlation_id,
+            "delivery_status": delivery_status,
         }
         for key, value in optional_fields.items():
             if value is not None:
@@ -127,6 +141,7 @@ def emit_operational_event(
             "ERROR": logger.error,
         }[level]
         log_method(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        return True
     except Exception:
         # Telemetry must never alter business success/failure semantics.
-        return
+        return False
