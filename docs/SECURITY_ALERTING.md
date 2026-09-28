@@ -45,12 +45,13 @@ rule_code
 + severity
 + correlation_digest
 + bounded scope
-+ cooldown bucket
++ signal window start (unique creation identity only)
 ```
 
-Database row locking plus uniqueness constraints make the same logical anomaly converge
-across concurrent Uvicorn workers and independent Sessions. Process/container restart
-does not reset the window.
+A PostgreSQL transaction advisory lock derived from rule/correlation/scope serializes
+the same security identity across workers, including cross-window boundaries. Row
+locking plus uniqueness constraints then make the same logical anomaly converge across
+independent Sessions. Process/container restart does not reset the window.
 
 Cooldown is elapsed-time based, not a wall-clock bucket. Before creating a new logical
 alert, the service locks the latest matching alert for the same rule/correlation/scope
