@@ -21,8 +21,8 @@ from app.schemas import (
     VoiceMemoryResponse,
 )
 from app.services.ai_gateway import AIGateway, get_ai_gateway
-from app.services.entitlement_service import EntitlementError
 from app.services.asr import ASRProvider, get_asr_provider
+from app.services.entitlement_service import EntitlementError
 from app.services.media_service import (
     MediaError,
     cleanup_media_staging,
