@@ -26,7 +26,7 @@ async def main() -> None:
             assert UUID(ready.headers["X-Request-ID"])
 
             request_id = uuid4()
-            email = f"observability-{uuid4()}@example.test"
+            email = f"observability-{uuid4()}@example.com"
             registered = await client.post(
                 "/v1/auth/register",
                 headers={"X-Request-ID": str(request_id)},
