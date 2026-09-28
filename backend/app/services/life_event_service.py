@@ -8,13 +8,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.life_event_models import LifeEvent, LifeEventKind, LifeEventMemoryLink
-from app.life_stage_models import LifeStageEventLink
 from app.life_event_schemas import (
     LifeEventCreate,
     LifeEventMemoryEvidenceRead,
     LifeEventPatch,
     LifeEventRead,
 )
+from app.life_stage_models import LifeStageEventLink
 from app.models import Memory, Place
 
 
