@@ -3,6 +3,14 @@ name: production-deployment-ci
 on:
   pull_request:
     paths:
+      - "backend/app/main.py"
+      - "backend/app/core/observability.py"
+      - "backend/app/services/ai_gateway.py"
+      - "backend/app/services/object_storage.py"
+      - "backend/app/api/data_delete.py"
+      - "backend/app/api/account_delete.py"
+      - "backend/tests/postgres_observability_integration.py"
+      - "docs/PRODUCTION_OBSERVABILITY.md"
       - "backend/Dockerfile"
       - "backend/.dockerignore"
       - "backend/.env.example"
@@ -19,6 +27,14 @@ on:
     branches:
       - main
     paths:
+      - "backend/app/main.py"
+      - "backend/app/core/observability.py"
+      - "backend/app/services/ai_gateway.py"
+      - "backend/app/services/object_storage.py"
+      - "backend/app/api/data_delete.py"
+      - "backend/app/api/account_delete.py"
+      - "backend/tests/postgres_observability_integration.py"
+      - "docs/PRODUCTION_OBSERVABILITY.md"
       - "backend/Dockerfile"
       - "backend/.dockerignore"
       - "backend/.env.example"
@@ -77,6 +93,7 @@ jobs:
           ENABLE_DEV_AUTH=false
           AUTO_CREATE_SCHEMA=false
           CORS_ORIGINS=[]
+          OBSERVABILITY_LOG_LEVEL=INFO
 
           POSTGRES_DB=jiyi_prod_ci
           POSTGRES_USER=jiyi
@@ -322,17 +339,18 @@ jobs:
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             run --rm --no-deps api alembic check
 
-      - name: Start production API and verify health
+      - name: Start production API and verify liveness + readiness
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             up -d --no-deps api
 
           for i in $(seq 1 60); do
-            if docker compose               --env-file "$ENV_FILE"               -f docker-compose.prod.yml               exec -T api python -c               "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"               >/dev/null 2>&1; then
-              exit 0
+            if docker compose               --env-file "$ENV_FILE"               -f docker-compose.prod.yml               exec -T api python -c               "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)) == {'status':'ready','database':'ready'}"               >/dev/null 2>&1; then
+              break
             fi
             sleep 2
           done
-          exit 1
+
+          docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             exec -T api python -c             "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3))['status'] == 'ok'"
 
       - name: Production dev-auth fails closed
         shell: bash
