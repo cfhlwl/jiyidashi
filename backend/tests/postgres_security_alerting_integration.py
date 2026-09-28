@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -11,6 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal, engine
+from app.core.observability import configure_observability_log_level
 from app.family_models import (
     FamilyAccessAuditEvent,
     FamilyAuditResult,
@@ -28,6 +30,7 @@ from app.services.family_sensitive_read_service import (
 from app.services.family_service import create_family
 from app.services.security_alerting import (
     SecurityScope,
+    deliver_security_alert,
     record_security_signal,
     security_correlation_digest,
 )
@@ -91,6 +94,49 @@ def main() -> None:
     assert windows[0].signal_count == 8, windows[0].signal_count
     assert len(alerts) == 1, alerts
     assert alerts[0].signal_count == 8, alerts[0].signal_count
+
+    # A wall-clock bucket boundary must not bypass the real elapsed cooldown.
+    boundary_raw = f"cooldown-boundary-{uuid4()}"
+    boundary_digest = security_correlation_digest("register_ip", boundary_raw)
+    _clean(boundary_digest)
+    boundary_first = datetime(2026, 9, 28, 12, 9, 59, tzinfo=UTC)
+    first_id = record_security_signal(
+        engine,
+        signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+        correlation_kind="register_ip",
+        correlation_value=boundary_raw,
+        scope=SecurityScope.AUTH_REGISTER_IP,
+        now=boundary_first,
+    )
+    second_id = record_security_signal(
+        engine,
+        signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+        correlation_kind="register_ip",
+        correlation_value=boundary_raw,
+        scope=SecurityScope.AUTH_REGISTER_IP,
+        now=boundary_first + timedelta(seconds=1),
+    )
+    assert first_id == second_id
+    with Session(engine) as db:
+        boundary_alerts = list(
+            db.scalars(
+                select(SecurityAlert).where(
+                    SecurityAlert.correlation_digest == boundary_digest
+                )
+            )
+        )
+    assert len(boundary_alerts) == 1, boundary_alerts
+
+    third_id = record_security_signal(
+        engine,
+        signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+        correlation_kind="register_ip",
+        correlation_value=boundary_raw,
+        scope=SecurityScope.AUTH_REGISTER_IP,
+        now=boundary_first + timedelta(seconds=600),
+    )
+    assert third_id != first_id
+    _clean(boundary_digest)
 
     # Cooldown/window rollover is intentionally eligible for a new logical alert.
     record_security_signal(
@@ -185,6 +231,64 @@ def main() -> None:
             db.delete(member)
         db.commit()
     _clean(family_digest)
+
+    # Two retry workers may discover the same due row, but only one may consume
+    # the current backoff slot after FOR UPDATE revalidation.
+    class FailingStream:
+        def write(self, _: str) -> int:
+            raise OSError("SEC-015 retry sink failure")
+
+        def flush(self) -> None:
+            raise OSError("SEC-015 retry sink flush failure")
+
+    configure_observability_log_level("INFO")
+    logger = logging.getLogger("jiyidashi.observability")
+    handler = next(
+        item
+        for item in logger.handlers
+        if getattr(item, "_jiyidashi_observability_sink", False)
+    )
+    original_stream = handler.stream
+    handler.stream = FailingStream()
+    retry_raw = f"concurrent-retry-{uuid4()}"
+    retry_digest = security_correlation_digest("register_ip", retry_raw)
+    _clean(retry_digest)
+    retry_base = datetime(2026, 9, 28, 15, 0, tzinfo=UTC)
+    try:
+        retry_alert_id = record_security_signal(
+            engine,
+            signal_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED,
+            correlation_kind="register_ip",
+            correlation_value=retry_raw,
+            scope=SecurityScope.AUTH_REGISTER_IP,
+            now=retry_base,
+        )
+        assert retry_alert_id is not None
+
+        def retry_worker(_: int) -> bool:
+            return deliver_security_alert(
+                engine,
+                alert_id=retry_alert_id,
+                now=retry_base + timedelta(seconds=31),
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(retry_worker, range(2)))
+        assert results == [False, False]
+
+        with Session(engine) as db:
+            retry_alert = db.scalar(
+                select(SecurityAlert).where(
+                    SecurityAlert.correlation_digest == retry_digest
+                )
+            )
+            assert retry_alert is not None
+            assert retry_alert.delivery_attempts == 2
+            assert retry_alert.next_retry_at == retry_base + timedelta(seconds=91)
+    finally:
+        handler.stream = original_stream
+        _clean(retry_digest)
+
     # Canonical auth behavior remains authoritative: alerting is side-band only.
     old_limit = auth_rate_limit.settings.auth_register_ip_limit
     old_window = auth_rate_limit.settings.auth_register_window_seconds
