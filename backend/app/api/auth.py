@@ -9,6 +9,7 @@ from app.core.db import get_db
 from app.core.security import create_access_token
 from app.models import User
 from app.schemas import DevTokenRequest, LoginRequest, RegisterRequest, TokenResponse
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.auth_service import (
     authenticate_email_password,
     lock_login_for_token_issue,
@@ -69,6 +70,8 @@ def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
     if user is None:
         user = User(id=user_id, nickname=payload.nickname)
         db.add(user)
+        db.flush()
+        create_legacy_full_entitlement(db, user_id=user.id)
         db.commit()
 
     return TokenResponse(
