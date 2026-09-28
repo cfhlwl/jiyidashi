@@ -661,11 +661,22 @@ async def reason_about_life_stage(
             provider_error_code=exc.code,
         )
 
-    revalidated = _collect_inventory(
-        bind,
-        user_id=user_id,
-        life_stage_id=life_stage_id,
-    )
+    try:
+        revalidated = _collect_inventory(
+            bind,
+            user_id=user_id,
+            life_stage_id=life_stage_id,
+        )
+    except LongTermReasoningError as exc:
+        if exc.code != "LIFE_STAGE_NOT_FOUND":
+            raise
+        return LongTermReasoningResult(
+            status=LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION,
+            answer=None,
+            citations=(),
+            provider_error_code=None,
+            ai_provenance=inference.provenance,
+        )
     if (
         revalidated.incomplete
         or revalidated.inventory is None
