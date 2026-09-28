@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from threading import Event, Thread
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
-import app.services.person_duration_service as duration_service
 from app.core.db import SessionLocal
 from app.models import Memory, MemorySource, SourceType, User
 from app.person_duration_models import PersonKnownDurationStatus
@@ -16,6 +16,7 @@ from app.person_memory_models import PersonMemoryLink, PersonMemoryRelationKind
 from app.person_memory_schemas import PersonMemoryLinkCreate, PersonMemoryLinkPatch
 from app.person_models import Person
 from app.services.memory_service import get_memory_for_user, soft_delete_memory
+from app.services.person_duration_service import get_person_known_duration
 from app.services.person_memory_service import (
     create_person_memory_link,
     patch_person_memory_link,
@@ -72,25 +73,24 @@ def _run_paused_after_first_selection(
     release = Event()
     results = []
     errors: list[BaseException] = []
-    original = duration_service._derive_once
+    from app.services.person_duration_service import _derive_once
+
     calls = 0
 
     def wrapped(*args, **kwargs):
         nonlocal calls
-        result = original(*args, **kwargs)
+        result = _derive_once(*args, **kwargs)
         calls += 1
         if calls == 1:
             first_done.set()
             assert release.wait(timeout=15)
         return result
 
-    duration_service._derive_once = wrapped
-
     def reader() -> None:
         try:
             with SessionLocal() as db:
                 results.append(
-                    duration_service.get_person_known_duration(
+                    get_person_known_duration(
                         db,
                         user_id=user_id,
                         person_id=person_id,
@@ -101,21 +101,24 @@ def _run_paused_after_first_selection(
             errors.append(exc)
 
     thread = Thread(target=reader)
-    try:
-        thread.start()
-        assert first_done.wait(timeout=15)
-        mutate()
-        release.set()
-        thread.join(timeout=20)
-        assert not thread.is_alive()
-        if errors:
-            raise errors[0]
-        assert len(results) == 1
-        return results[0]
-    finally:
-        release.set()
-        duration_service._derive_once = original
-        thread.join(timeout=5)
+    with patch(
+        "app.services.person_duration_service._derive_once",
+        side_effect=wrapped,
+    ):
+        try:
+            thread.start()
+            assert first_done.wait(timeout=15)
+            mutate()
+            release.set()
+            thread.join(timeout=20)
+            assert not thread.is_alive()
+            if errors:
+                raise errors[0]
+            assert len(results) == 1
+            return results[0]
+        finally:
+            release.set()
+            thread.join(timeout=5)
 
 
 def _cleanup(user_id: UUID) -> None:
