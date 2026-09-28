@@ -1,8 +1,11 @@
+import hashlib
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -32,6 +35,77 @@ class UserDataRequestStale(RuntimeError):
 
 
 USER_DATA_ADMISSION_INFO_KEY = "user_data_admission"
+
+
+def _user_data_disclosure_lock_key(user_id: UUID) -> int:
+    digest = hashlib.blake2b(
+        user_id.bytes,
+        digest_size=8,
+        person=b"jiyi-disclose-v1",
+    ).digest()
+    return int.from_bytes(digest, byteorder="big", signed=True)
+
+
+def lock_user_data_destructive_handoff(db: Session, *, user_id: UUID) -> None:
+    """Serialize the first destructive gate commit against provider disclosure.
+
+    PostgreSQL transaction-scoped advisory locking is deliberately acquired before the
+    canonical User FOR UPDATE. Re-acquiring the same key in one transaction is safe.
+    Other database engines keep the existing User-row authority only.
+    """
+
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": _user_data_disclosure_lock_key(user_id)},
+    )
+
+
+@contextmanager
+def hold_user_data_disclosure_handoff(bind: Engine, *, user_id: UUID):
+    """Hold a PostgreSQL session advisory *shared* lease across provider disclosure.
+
+    The connection runs in AUTOCOMMIT and has no active SQLAlchemy transaction while
+    yielded. Therefore external provider I/O holds neither a PostgreSQL transaction nor
+    a User row lock. The matching destructive xact lock can commit only before this lease
+    is acquired or after it is released.
+    """
+
+    if bind.dialect.name != "postgresql":
+        yield
+        return
+
+    connection = bind.connect().execution_options(isolation_level="AUTOCOMMIT")
+    lock_key = _user_data_disclosure_lock_key(user_id)
+    try:
+        connection.execute(
+            text("SELECT pg_advisory_lock_shared(:lock_key)"),
+            {"lock_key": lock_key},
+        )
+        # End SQLAlchemy's logical autobegin wrapper. The session-level advisory lock
+        # survives commit while the DBAPI connection remains open.
+        connection.commit()
+        if connection.in_transaction():
+            connection.invalidate()
+            raise RuntimeError("USER_DATA_DISCLOSURE_LOCK_TRANSACTION_ACTIVE")
+        try:
+            yield
+        finally:
+            unlocked = connection.scalar(
+                text("SELECT pg_advisory_unlock_shared(:lock_key)"),
+                {"lock_key": lock_key},
+            )
+            connection.commit()
+            if unlocked is not True:
+                connection.invalidate()
+                raise RuntimeError("USER_DATA_DISCLOSURE_LOCK_RELEASE_FAILED")
+    except Exception:
+        if not connection.closed:
+            connection.invalidate()
+        raise
+    finally:
+        connection.close()
 
 
 class GuardedSession(Session):

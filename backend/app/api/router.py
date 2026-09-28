@@ -11,6 +11,7 @@ from app.api import (
     life_events,
     life_stages,
     location,
+    long_term_reasoning,
     media,
     memories,
     memory_summaries,
@@ -44,6 +45,7 @@ api_router.include_router(memories.router)
 # V2-005 is an explicit structured long-term event authority, separate from MemoryType.EVENT.
 api_router.include_router(life_events.router)
 api_router.include_router(life_stages.router)
+api_router.include_router(long_term_reasoning.router)
 # [人工注释][#103] Trusted summaries use a dedicated POST generation surface;
 # the legacy GET /memory/summarize/day contract remains untouched.
 api_router.include_router(memory_summaries.router)
