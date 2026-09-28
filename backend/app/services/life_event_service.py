@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.life_event_models import LifeEvent, LifeEventKind, LifeEventMemoryLink
+from app.life_stage_models import LifeStageEventLink
 from app.life_event_schemas import (
     LifeEventCreate,
     LifeEventMemoryEvidenceRead,
@@ -293,6 +294,14 @@ def delete_life_event(
     # Explicitly remove evidence in the same locked transaction. Do not rely only
     # on database ON DELETE CASCADE: application semantics stay identical on
     # SQLite tests and PostgreSQL production, and Memory rows are never touched.
+    # V2-006 stage evidence shares this LifeEvent row lock, so no new stage
+    # link can survive once deletion commits.
+    db.execute(
+        delete(LifeStageEventLink).where(
+            LifeStageEventLink.user_id == user_id,
+            LifeStageEventLink.life_event_id == life_event_id,
+        )
+    )
     db.execute(
         delete(LifeEventMemoryLink).where(
             LifeEventMemoryLink.user_id == user_id,
