@@ -3,6 +3,8 @@ name: production-deployment-ci
 on:
   pull_request:
     paths:
+      - "backend/app/core/db.py"
+      - "backend/tests/test_observability.py"
       - "backend/app/main.py"
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
@@ -27,6 +29,8 @@ on:
     branches:
       - main
     paths:
+      - "backend/app/core/db.py"
+      - "backend/tests/test_observability.py"
       - "backend/app/main.py"
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
@@ -94,6 +98,8 @@ jobs:
           AUTO_CREATE_SCHEMA=false
           CORS_ORIGINS=[]
           OBSERVABILITY_LOG_LEVEL=INFO
+          DATABASE_READINESS_CONNECT_TIMEOUT_SECONDS=2
+          DATABASE_READINESS_STATEMENT_TIMEOUT_MS=1500
 
           POSTGRES_DB=jiyi_prod_ci
           POSTGRES_USER=jiyi
@@ -352,6 +358,71 @@ jobs:
 
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             exec -T api python -c             "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)) == {'status':'ready','database':'ready'}"
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             exec -T api python -c             "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3))['status'] == 'ok'"
+
+      - name: Prove production observability JSON reaches container logs exactly once
+        shell: bash
+        run: |
+          REQUEST_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+          export REQUEST_ID
+
+          docker compose \
+            --env-file "$ENV_FILE" \
+            -f docker-compose.prod.yml \
+            exec -T -e REQUEST_ID="$REQUEST_ID" api python - <<'PY'
+          import os
+          import urllib.error
+          import urllib.request
+
+          request_id = os.environ["REQUEST_ID"]
+          request = urllib.request.Request(
+              "http://127.0.0.1:8000/v1/user",
+              headers={"X-Request-ID": request_id},
+              method="GET",
+          )
+          try:
+              urllib.request.urlopen(request, timeout=3)
+          except urllib.error.HTTPError as exc:
+              assert exc.code in {401, 403}, exc.code
+              assert exc.headers["X-Request-ID"] == request_id
+          else:
+              raise AssertionError("unauthenticated /v1/user unexpectedly succeeded")
+          PY
+
+          api_cid="$(docker compose \
+            --env-file "$ENV_FILE" \
+            -f docker-compose.prod.yml \
+            ps -q api)"
+          test -n "$api_cid"
+          docker logs "$api_cid" > "$RUNNER_TEMP/api-observability.log" 2>&1
+
+          python3 - "$REQUEST_ID" "$RUNNER_TEMP/api-observability.log" <<'PY'
+          import json
+          import sys
+
+          request_id = sys.argv[1]
+          log_path = sys.argv[2]
+          matches = []
+          with open(log_path, encoding="utf-8") as handle:
+              for raw_line in handle:
+                  line = raw_line.strip()
+                  if not line.startswith("{"):
+                      continue
+                  try:
+                      event = json.loads(line)
+                  except json.JSONDecodeError:
+                      continue
+                  if (
+                      event.get("event") == "http.request.completed"
+                      and event.get("request_id") == request_id
+                  ):
+                      matches.append(event)
+
+          assert len(matches) == 1, matches
+          event = matches[0]
+          assert event["route"] == "/v1/user"
+          assert event["method"] == "GET"
+          assert event["status_code"] in {401, 403}
+          PY
 
       - name: Production dev-auth fails closed
         shell: bash
