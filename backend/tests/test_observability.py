@@ -117,7 +117,7 @@ async def test_http_event_uses_route_template_and_never_logs_sensitive_request_d
     assert response.status_code == 200
 
     event = _event(caplog, "http.request.completed")
-    assert event["route"] == "/v1/memories/{memory_id}"
+    assert event["route"] == "/memories/{memory_id}"
     assert event["method"] == "GET"
     assert event["status_code"] == 200
     assert UUID(event["request_id"])
