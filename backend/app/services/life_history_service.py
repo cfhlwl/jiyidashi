@@ -145,6 +145,19 @@ def _stage_item(stage: LifeStage, kind: LifeHistoryItemKind) -> LifeHistoryItem:
     )
 
 
+def _local_year_boundary_utc(year: int, zone: ZoneInfo) -> datetime:
+    boundary = datetime(year, 1, 1, tzinfo=zone)
+    try:
+        return boundary.astimezone(UTC)
+    except OverflowError:
+        # Year 1 in an east-of-UTC zone can map before datetime.min. No stored
+        # datetime can exist before datetime.min, so clamping preserves the
+        # representable-domain boundary without rejecting an otherwise valid year.
+        if year == 1:
+            return datetime.min.replace(tzinfo=UTC)
+        raise
+
+
 def _validate_years(
     *,
     start_year: int,
@@ -182,8 +195,8 @@ def list_life_history_timeline(
     )
     cursor = _decode_cursor(cursor_value)
 
-    range_start_utc = datetime(start_year, 1, 1, tzinfo=zone).astimezone(UTC)
-    range_end_utc = datetime(end_year + 1, 1, 1, tzinfo=zone).astimezone(UTC)
+    range_start_utc = _local_year_boundary_utc(start_year, zone)
+    range_end_utc = _local_year_boundary_utc(end_year + 1, zone)
 
     event_query = select(LifeEvent).where(
         LifeEvent.user_id == user_id,
