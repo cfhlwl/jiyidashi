@@ -44,7 +44,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Productization P0 / Production Observability Foundation V1**；V2 Final Closeout 已正式合并，#161 正在实现；OPS-001 真实 public-server 验收仍保持 🟠，SEC-015 / #165 独立开放，V3-001+ 未开始。
+> 当前阶段：**V2 Productization P0 / Production Observability Foundation V1**；V2 Final Closeout 已正式合并，#161 实现与 required CI 已完成、等待正式审查；OPS-001 真实 public-server 验收仍保持 🟠，SEC-015 / #165 独立开放，V3-001+ 未开始。
 
 ## 状态规则
 
@@ -295,7 +295,7 @@
 | V2-010 | Annual Electronic Memoir V1 — 年度电子回忆录 | ✅ | Issue #156 / PR #157：复用 S3-017 Annual Summary + V2-009 timeline + verified PHOTO media gallery 已正式审查并合并；merge `0495112b17d91fb4540048eaa7288047db40fe85` |
 | V2-011 | Life Memoir Foundation V1 — 人生回忆录 | ✅ | Issue #158 / PR #159：explicit LifeStage chapter index + on-demand cited stage memoir via canonical V2-007 已正式审查并合并；merge `6df3a6654f14e715db8e3887582b1f83de78cd7c` |
 | V2-CLOSE | V2 Final Closeout / Productization Review | ✅ | Issue #160 / PR #164 已正式合并；merge `8e463566068e8fc328b86b816576ec907f8d3911`；V2 Personal Memory Graph V1 formally closed |
-| V2-P0-OBS | Production Observability Foundation V1 | 🔵 | Issue #161 / V2-CLOSE-P0-002：request correlation、structured JSON telemetry、AI/storage/delete operational events、DB readiness 与 production healthcheck；实现中 |
+| V2-P0-OBS | Production Observability Foundation V1 | 🟠 | Issue #161 / PR #170：request correlation、structured JSON telemetry、AI/storage/delete operational events、DB readiness 与 production healthcheck 已实现；Backend + Production Deployment exact-head CI 已通过，等待正式审查/合并后再标记 ✅ |
 
 ---
 
