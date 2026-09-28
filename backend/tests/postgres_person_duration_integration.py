@@ -31,6 +31,8 @@ def _seed(label: str) -> tuple[UUID, UUID, UUID]:
     memory_id = uuid4()
     with SessionLocal() as db:
         db.add(User(id=user_id, nickname=label))
+        db.commit()
+
         db.add(Person(id=person_id, user_id=user_id, display_name=label))
         db.add(
             Memory(
@@ -43,7 +45,8 @@ def _seed(label: str) -> tuple[UUID, UUID, UUID]:
                 is_confirmed=True,
             )
         )
-        db.flush()
+        db.commit()
+
         db.add(
             MemorySource(
                 memory_id=memory_id,
