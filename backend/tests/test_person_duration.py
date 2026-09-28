@@ -227,8 +227,18 @@ def test_earliest_occurred_at_then_uuid_then_link_id_is_deterministic():
         db.add_all([
             MemorySource(memory_id=high.id, source_type=SourceType.USER_TEXT, confidence=1.0),
             MemorySource(memory_id=low.id, source_type=SourceType.USER_TEXT, confidence=1.0),
-            PersonMemoryLink(user_id=user.id, person_id=person.id, memory_id=high.id, relation_kind=PersonMemoryRelationKind.MET),
-            PersonMemoryLink(user_id=user.id, person_id=person.id, memory_id=low.id, relation_kind=PersonMemoryRelationKind.MET),
+            PersonMemoryLink(
+                user_id=user.id,
+                person_id=person.id,
+                memory_id=high.id,
+                relation_kind=PersonMemoryRelationKind.MET,
+            ),
+            PersonMemoryLink(
+                user_id=user.id,
+                person_id=person.id,
+                memory_id=low.id,
+                relation_kind=PersonMemoryRelationKind.MET,
+            ),
         ])
         db.commit()
         result = get_person_known_duration(
