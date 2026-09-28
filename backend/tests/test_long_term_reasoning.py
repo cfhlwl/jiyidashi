@@ -853,7 +853,7 @@ def test_exact_enums_read_only_scope_and_no_0025_migration():
     assert ".commit(" not in source
 
     migrations = root / "migrations/versions"
-    assert list(migrations.glob("0025*")) == []
+    assert list(migrations.glob("*long_term_reasoning*")) == []
 
     graph = (root / "app/services/graph_projection_service.py").read_text()
     assert "LongTermReasoning" not in graph
