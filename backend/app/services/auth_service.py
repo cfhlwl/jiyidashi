@@ -8,7 +8,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth_models import AuthIdentity, AuthProvider
-from app.services.entitlement_service import create_legacy_full_entitlement
 from app.models import User
 from app.schemas import LoginRequest, RegisterRequest
 from app.services.auth_rate_limit import (
@@ -18,6 +17,7 @@ from app.services.auth_rate_limit import (
     consume_registration_attempt,
     record_login_failure,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 
 _password_hasher = PasswordHasher()
 # [人工注释][S1-FIX-004] 不存在账号也执行一次固定 Argon2 verify，缩小账号存在性的时间侧信道。
