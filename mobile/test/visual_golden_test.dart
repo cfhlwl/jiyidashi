@@ -1,8 +1,6 @@
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
@@ -17,6 +15,8 @@ import 'package:jiyidashi/ui/jiyi_theme.dart';
 // 统一窗口、DPR、locale 与主题，Linux CI 是首阶段唯一权威像素基线。
 const _goldenSize = Size(390, 844);
 const _goldenFontFamily = 'JiYi Golden CJK';
+const _captureAiInferencePreview =
+    bool.fromEnvironment('AI_INFERENCE_VISUAL_PREVIEW');
 
 // [人工注释][CI-005] Golden 必须显式加载仓库内固定版本的 CJK 字体；禁止依赖 Runner 系统字体，
 // 否则 Ubuntu 镜像变化或 flutter_test 缺字会把中文排版回归伪装成稳定结果。
@@ -265,27 +265,6 @@ Future<Key> _pumpSurface(WidgetTester tester, Widget child) async {
   return key;
 }
 
-Future<void> _writeVisualPreview(
-  WidgetTester tester,
-  Key surfaceKey,
-  String path,
-) async {
-  await tester.pump();
-  final boundary = tester.renderObject<RenderRepaintBoundary>(
-    find.byKey(surfaceKey),
-  );
-  final image = await boundary.toImage(pixelRatio: 1.0);
-  final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-  image.dispose();
-  if (bytes == null) {
-    throw StateError('Unable to encode visual preview PNG');
-  }
-  await File(path).writeAsBytes(
-    bytes.buffer.asUint8List(),
-    flush: true,
-  );
-}
-
 Future<Key> _pumpShell(WidgetTester tester, {JiYiApiClient? api}) async {
   final resolvedApi = api ?? _GoldenApi();
   return _pumpSurface(
@@ -387,25 +366,28 @@ void main() {
     );
   });
 
-  testWidgets('preview: memory query AI inference label', (tester) async {
-    final key = await _pumpShell(tester);
-    await tester.tap(find.text('问记忆'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('memory-query-input')),
-      '护照在哪里？',
-    );
-    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'preview: memory query AI inference label',
+    (tester) async {
+      final key = await _pumpShell(tester);
+      await tester.tap(find.text('问记忆'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('memory-query-input')),
+        '护照在哪里？',
+      );
+      await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+      await tester.pumpAndSettle();
 
-    expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
-    expect(find.textContaining('用户文字记录'), findsOneWidget);
-    await _writeVisualPreview(
-      tester,
-      key,
-      '/tmp/ai_inference_memory_query.png',
-    );
-  });
+      expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
+      expect(find.textContaining('用户文字记录'), findsOneWidget);
+      await expectLater(
+        find.byKey(key),
+        matchesGoldenFile('/tmp/ai_inference_memory_query.png'),
+      );
+    },
+    skip: !_captureAiInferencePreview,
+  );
 
   testWidgets('golden: profile and privacy controls', (tester) async {
     // [人工注释][CI-005] Profile 使用确定性的 fake API 返回固定资料/暂停状态，
