@@ -366,7 +366,7 @@ def test_ai_reservation_is_idempotent_and_exact_limit() -> None:
         user = _seed_entitlement(db, plan_code=PlanCode.FREE)
         first_id = uuid4()
         first = reserve_ai_provider_request(
-            db,
+            db.get_bind(),
             user_id=user.id,
             gateway_request_id=first_id,
             purpose="unit.ai",
@@ -374,7 +374,7 @@ def test_ai_reservation_is_idempotent_and_exact_limit() -> None:
             now=now,
         )
         replay = reserve_ai_provider_request(
-            db,
+            db.get_bind(),
             user_id=user.id,
             gateway_request_id=first_id,
             purpose="unit.ai",
@@ -385,7 +385,7 @@ def test_ai_reservation_is_idempotent_and_exact_limit() -> None:
 
         second_id = uuid4()
         reserve_ai_provider_request(
-            db,
+            db.get_bind(),
             user_id=user.id,
             gateway_request_id=second_id,
             purpose="unit.ai",
@@ -418,7 +418,7 @@ def test_ai_token_finalization_does_not_double_charge_request() -> None:
         user = _seed_entitlement(db, plan_code=PlanCode.FREE)
         operation_id = uuid4()
         reserve_ai_provider_request(
-            db,
+            db.get_bind(),
             user_id=user.id,
             gateway_request_id=operation_id,
             purpose="unit.ai",
@@ -426,7 +426,7 @@ def test_ai_token_finalization_does_not_double_charge_request() -> None:
             now=now,
         )
         finalize_ai_usage(
-            db,
+            db.get_bind(),
             user_id=user.id,
             gateway_request_id=operation_id,
             provider_request_id="provider-1",
@@ -435,7 +435,7 @@ def test_ai_token_finalization_does_not_double_charge_request() -> None:
             now=now,
         )
         finalize_ai_usage(
-            db,
+            db.get_bind(),
             user_id=user.id,
             gateway_request_id=operation_id,
             provider_request_id="provider-1",
