@@ -20,6 +20,10 @@ from app.entitlement_models import (
 from app.media_models import MediaAsset, MediaStatus
 
 
+_POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807
+_PROVIDER_REQUEST_ID_MAX_LENGTH = 255
+
+
 class EntitlementError(RuntimeError):
     def __init__(self, code: str, status_code: int = 403):
         super().__init__(code)
@@ -318,6 +322,9 @@ def reserve_ai_provider_request(
         if limit is not None and period.provider_requests >= limit:
             db.rollback()
             raise EntitlementError("ENTITLEMENT_QUOTA_EXCEEDED", 429)
+        if period.provider_requests >= _POSTGRES_BIGINT_MAX:
+            db.rollback()
+            raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
 
         period.provider_requests += 1
         period.updated_at = observed_at
@@ -374,11 +381,31 @@ def finalize_ai_usage(
 
         safe_input = 0 if input_tokens is None else input_tokens
         safe_output = 0 if output_tokens is None else output_tokens
-        if safe_input < 0 or safe_output < 0:
+        if (
+            not isinstance(safe_input, int)
+            or isinstance(safe_input, bool)
+            or not isinstance(safe_output, int)
+            or isinstance(safe_output, bool)
+            or safe_input < 0
+            or safe_output < 0
+            or safe_input > _POSTGRES_BIGINT_MAX
+            or safe_output > _POSTGRES_BIGINT_MAX
+            or period.input_tokens > _POSTGRES_BIGINT_MAX - safe_input
+            or period.output_tokens > _POSTGRES_BIGINT_MAX - safe_output
+        ):
+            db.rollback()
+            raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
+        if provider_request_id is not None and (
+            not isinstance(provider_request_id, str)
+            or not provider_request_id.strip()
+            or len(provider_request_id.strip()) > _PROVIDER_REQUEST_ID_MAX_LENGTH
+        ):
             db.rollback()
             raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
 
-        event.provider_request_id = provider_request_id
+        event.provider_request_id = (
+            None if provider_request_id is None else provider_request_id.strip()
+        )
         event.input_tokens = input_tokens
         event.output_tokens = output_tokens
         event.finalized_at = observed_at
