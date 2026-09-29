@@ -544,7 +544,7 @@ export default function Page() {
             const provenance = provenanceLabel(evidence.provenance)
             return (
               <View className='evidence' key={evidence.memory_source_id}>
-                {/* AI_INFERENCE is deliberately filtered above and is never promoted as source evidence. */}
+                {/* Evidence source identity stays independent from the top-level AI answer label. */}
                 <Text>{evidence.excerpt}</Text>
                 <View className='muted'>来源：{sourceLabel(evidence.source_type)}</View>
                 {provenance && <View className='muted'>来源链：{provenance}</View>}
