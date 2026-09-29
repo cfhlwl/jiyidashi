@@ -23,6 +23,7 @@ import 'unified_capture_section.dart';
 import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
+import 'v2/v2_home_page.dart';
 
 class JiYiApp extends StatefulWidget {
   const JiYiApp({
@@ -653,7 +654,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final onboardingStep = onboarding?.step;
     final pages = <Widget>[
       TodayPage(api: widget.api, elderMode: _elderModeEnabled),
-      TimelinePage(api: widget.api),
+      TimelinePage(api: widget.api, elderMode: _elderModeEnabled),
       CapturePage(
         api: widget.api,
         offlineQueue: widget.offlineQueue,
@@ -751,9 +752,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 }
 
 class TimelinePage extends StatefulWidget {
-  const TimelinePage({super.key, required this.api});
+  const TimelinePage({
+    super.key,
+    required this.api,
+    this.elderMode = false,
+  });
 
   final JiYiApiClient api;
+  final bool elderMode;
 
   @override
   State<TimelinePage> createState() => _TimelinePageState();
@@ -774,6 +780,25 @@ class _TimelinePageState extends State<TimelinePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (!widget.elderMode) ...[
+            JiYiSectionCard(
+              leading: const Icon(Icons.hub_outlined),
+              title: '个人记忆图谱',
+              subtitle: '人物、关系、人生事件、阶段、跨年历史和回忆录的 V2 产品入口。',
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => V2HomePage(api: widget.api),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('打开个人记忆图谱'),
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.md),
+          ],
           const JiYiSectionCard(
             child: JiYiEmptyState(
               icon: Icons.route_outlined,
