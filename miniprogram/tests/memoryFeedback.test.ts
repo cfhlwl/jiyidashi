@@ -168,9 +168,10 @@ test('CORRECT payload includes only explicitly changed fields and rejects empty/
   assert.throws(() => buildCorrectionFeedback(memory, '原始标题', '原始正文'), /内容没有变化/)
 })
 
-test('AI inference is not displayable Evidence and provenance labels stay explicit', () => {
+test('Evidence provenance remains independent from top-level AI presentation', () => {
   assert.equal(isDisplayableEvidence('USER_TEXT'), true)
-  assert.equal(isDisplayableEvidence('AI_INFERENCE'), false)
+  assert.equal(isDisplayableEvidence('AI_INFERENCE'), true)
+  assert.equal(isDisplayableEvidence('FUTURE_UNKNOWN'), false)
   assert.equal(provenanceLabel('ORIGINAL_SOURCE'), '原始来源')
   assert.equal(provenanceLabel('USER_EDIT'), '用户修正')
   assert.equal(provenanceLabel('FUTURE_VALUE'), null)
@@ -215,6 +216,8 @@ test('Query page uses revision-aware feedback instead of direct delete shortcut'
   assert.match(page, /setResult\(null\)/)
   assert.match(page, /result\.evidence\.filter\(\(evidence\) => isDisplayableEvidence\(evidence\.source_type\)\)/)
   assert.doesNotMatch(page, /可信状态：\{result\.certainty\}/)
+  assert.match(page, /queryAiPresentation\(result\)/)
+  assert.match(page, /AI 可信状态：\$\{trust\.label\}/)
   assert.match(page, /已记录：这条记忆正确/)
   assert.match(page, /const capturedReviewEpoch = reviewEpoch\.current\.capture\(\)/)
   assert.match(page, /if \(!reviewEpoch\.current\.isCurrent\(capturedReviewEpoch\)\) return null/)
