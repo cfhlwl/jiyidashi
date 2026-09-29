@@ -35,6 +35,7 @@ from app.services.ai_gateway import (
     DeterministicAIProvider,
 )
 from app.services.answer_trust_service import AnswerTrustState
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.memory_edit_service import edit_memory
 from app.services.memory_rag_service import answer_from_memory_rag
 
@@ -70,6 +71,8 @@ def _ai_gateway(
 def _owner(db, label: str) -> UUID:
     user = User(id=uuid4(), nickname=f"rag-{label}")
     db.add(user)
+    db.flush()
+    create_legacy_full_entitlement(db, user_id=user.id)
     db.commit()
     return user.id
 
