@@ -106,7 +106,7 @@ export default function Page() {
         current.entityId,
       )) return
       setNeighborhood(null)
-      setError(graphErrorMessage(apiErrorCode(loadError)) || '一跳关系加载失败，请重试')
+      setError(graphErrorMessage(apiErrorCode(loadError)) || '关联内容加载失败，请重试')
       setPhase('error')
     }
   }
@@ -136,7 +136,7 @@ export default function Page() {
   if (phase === 'signed-out') {
     return (
       <View className={elderClassName(elderMode)}>
-        <View className='title'>一跳关系</View>
+        <View className='title'>相关的人和事</View>
         <View className='card'>
           <View className='card-title'>请先登录</View>
           <View className='muted'>登录后才能查看你的直接关系。</View>
@@ -147,8 +147,8 @@ export default function Page() {
 
   return (
     <View className={elderClassName(elderMode)}>
-      <View className='title'>一跳关系</View>
-      <View className='subtitle'>只展示当前节点的一层直接关系，不会自动展开下一层。</View>
+      <View className='title'>相关的人和事</View>
+      <View className='subtitle'>查看与当前内容直接相关的人、地点和经历。</View>
 
       {phase === 'loading' && (
         <View className='card'>
@@ -158,7 +158,7 @@ export default function Page() {
 
       {phase === 'error' && (
         <View className='card'>
-          <View className='error'>{error || '一跳关系加载失败'}</View>
+          <View className='error'>{error || '关联内容加载失败'}</View>
           <Button className='secondary-button' onClick={() => void load()}>重试</Button>
         </View>
       )}
@@ -178,13 +178,13 @@ export default function Page() {
           </View>
 
           {neighborhood.truncated && (
-            <View className='graph-truncated'>仅显示部分直接关系</View>
+            <View className='graph-truncated'>这里只显示部分相关内容</View>
           )}
 
           <View className='card'>
-            <View className='card-title'>直接关系</View>
+            <View className='card-title'>相关内容</View>
             {neighborhood.edges.length === 0 ? (
-              <View className='muted'>当前没有可展示的直接关系。</View>
+              <View className='muted'>当前还没有可展示的相关内容。</View>
             ) : (
               neighborhood.edges.map((edge) => {
                 const neighbor = graphNodeForEdge(edge, neighborhood.center)
@@ -210,7 +210,7 @@ export default function Page() {
                       className='secondary-button'
                       onClick={() => void openNeighbor(neighbor.kind, neighbor.id)}
                     >
-                      查看这个节点的一跳关系
+                      查看相关内容
                     </Button>
                   </View>
                 )
