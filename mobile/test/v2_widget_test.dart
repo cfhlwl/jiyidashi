@@ -7,7 +7,6 @@ import 'package:jiyidashi/v2/life_event_detail_page.dart';
 import 'package:jiyidashi/v2/life_stage_detail_page.dart';
 import 'package:jiyidashi/v2/memoirs_page.dart';
 import 'package:jiyidashi/v2/people_page.dart';
-import 'package:jiyidashi/v2/person_detail_page.dart';
 
 import 'v2_test_api.dart';
 
