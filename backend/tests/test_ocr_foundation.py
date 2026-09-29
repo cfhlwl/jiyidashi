@@ -11,7 +11,7 @@ from app.core.config import Settings
 from app.core.db import SessionLocal
 from app.main import app
 from app.media_models import MediaAsset, MediaKind, MediaStatus
-from app.models import Memory, MemorySource, ObjectItem, Place, Reminder, Visit
+from app.models import Memory, MemorySource, ObjectItem, Place, Reminder, User, Visit
 from app.services.ai_gateway import (
     AIGateway,
     AIImageInferenceRequest,
@@ -24,6 +24,7 @@ from app.services.ai_gateway import (
     OpenAIResponsesProvider,
     get_ai_gateway,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorageError,
@@ -60,6 +61,15 @@ def _gateway_settings(**overrides) -> Settings:
     }
     values.update(overrides)
     return Settings(**values)
+
+
+def _seed_legacy_ai_actor(db) -> UUID:
+    user = User(id=uuid4(), nickname="ocr-gateway-owner")
+    db.add(user)
+    db.flush()
+    create_legacy_full_entitlement(db, user_id=user.id)
+    db.commit()
+    return user.id
 
 
 @pytest.fixture
@@ -433,16 +443,20 @@ async def test_ocr_provider_failure_is_fail_closed(
 async def test_image_gateway_enforces_wall_clock_timeout_for_provider_seams():
     gateway = AIGateway(_gateway_settings(ai_timeout_seconds=1.0), _TimeoutImageProvider())
 
-    with pytest.raises(AITransportError, match="AI_GATEWAY_TIMEOUT"):
-        await gateway.infer_image(
-            AIImageInferenceRequest(
-                purpose="ocr.extract",
-                system_instruction="Return OCR JSON.",
-                input_text="Read visible text.",
-                image_bytes=b"\xff\xd8\xffimage",
-                content_type="image/jpeg",
+    with SessionLocal() as db:
+        actor_user_id = _seed_legacy_ai_actor(db)
+        with pytest.raises(AITransportError, match="AI_GATEWAY_TIMEOUT"):
+            await gateway.infer_image(
+                AIImageInferenceRequest(
+                    purpose="ocr.extract",
+                    system_instruction="Return OCR JSON.",
+                    input_text="Read visible text.",
+                    image_bytes=b"\xff\xd8\xffimage",
+                    content_type="image/jpeg",
+                ),
+                db=db,
+                actor_user_id=actor_user_id,
             )
-        )
 
 
 @pytest.mark.asyncio
@@ -453,16 +467,20 @@ async def test_image_gateway_rejects_oversized_input_before_provider():
         provider,
     )
 
-    with pytest.raises(AIPolicyError, match="AI_IMAGE_TOO_LARGE"):
-        await gateway.infer_image(
-            AIImageInferenceRequest(
-                purpose="ocr.extract",
-                system_instruction="Return OCR JSON.",
-                input_text="Read visible text.",
-                image_bytes=b"12345",
-                content_type="image/jpeg",
+    with SessionLocal() as db:
+        actor_user_id = _seed_legacy_ai_actor(db)
+        with pytest.raises(AIPolicyError, match="AI_IMAGE_TOO_LARGE"):
+            await gateway.infer_image(
+                AIImageInferenceRequest(
+                    purpose="ocr.extract",
+                    system_instruction="Return OCR JSON.",
+                    input_text="Read visible text.",
+                    image_bytes=b"12345",
+                    content_type="image/jpeg",
+                ),
+                db=db,
+                actor_user_id=actor_user_id,
             )
-        )
 
     assert provider.image_requests == []
 
@@ -529,17 +547,21 @@ async def test_openai_image_adapter_keeps_image_and_credentials_inside_gateway()
     )
     gateway = AIGateway(settings, provider)
 
-    result = await gateway.infer_image(
-        AIImageInferenceRequest(
-            purpose="ocr.extract",
-            system_instruction="Return OCR JSON only.",
-            input_text="Read visible text.",
-            image_bytes=b"\xff\xd8\xffprivate",
-            content_type="image/jpeg",
-            detail="high",
-            max_output_tokens=128,
+    with SessionLocal() as db:
+        actor_user_id = _seed_legacy_ai_actor(db)
+        result = await gateway.infer_image(
+            AIImageInferenceRequest(
+                purpose="ocr.extract",
+                system_instruction="Return OCR JSON only.",
+                input_text="Read visible text.",
+                image_bytes=b"\xff\xd8\xffprivate",
+                content_type="image/jpeg",
+                detail="high",
+                max_output_tokens=128,
+            ),
+            db=db,
+            actor_user_id=actor_user_id,
         )
-    )
 
     assert seen["authorization"] == "Bearer server-only-test-key"
     body = seen["body"]
