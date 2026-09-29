@@ -192,7 +192,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
               const SizedBox(height: JiYiSpacing.md),
               JiYiSectionCard(
                 title: '到访历史',
-                subtitle: '只展示服务端保留的 Visit；“仍在更新”不等于已确认事实。',
+                subtitle: '只展示已经形成的到访记录；“仍在更新”不等于已确认事实。',
                 child: _visits.isEmpty
                     ? const JiYiEmptyState(
                         icon: Icons.history_toggle_off,

@@ -134,11 +134,11 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('跨年时间线')),
+      appBar: AppBar(title: const Text('多年时间线')),
       body: SafeArea(
         child: JiYiPageFrame(
-          title: '跨年时间线',
-          subtitle: '确定性服务端投影；游标是 opaque token，客户端不解析、不重写。',
+          title: '多年时间线',
+          subtitle: '按年份回看你已经记录的人生经历和阶段。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -176,15 +176,9 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
               if (page != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 V2SectionCard(
-                  title: '服务端范围',
+                  title: '时间范围',
                   child: Text(
-                    page!.startYear.toString() +
-                        '–' +
-                        page!.endYear.toString() +
-                        ' · ' +
-                        page!.timezone +
-                        ' · as_of ' +
-                        page!.asOf,
+                    '${page!.startYear}–${page!.endYear} · 截至 ${page!.asOf.substring(0, 10)}',
                   ),
                 ),
               ],

@@ -115,7 +115,7 @@ class _TodayPageState extends State<TodayPage> {
           const JiYiStatusBanner(
             kind: JiYiStatusKind.error,
             title: '无法读取今日足迹',
-            message: '当前没有可靠的服务端足迹结果，请检查网络后重试。',
+            message: '当前没有读取到可靠的足迹结果，请检查网络后重试。',
           ),
           const SizedBox(height: JiYiSpacing.md),
           OutlinedButton.icon(
@@ -139,7 +139,7 @@ class _TodayPageState extends State<TodayPage> {
           const JiYiStatusBanner(
             kind: JiYiStatusKind.error,
             title: '今日足迹数据异常',
-            message: '服务端返回的数据不完整，已停止展示，避免把未知信息当成真实足迹。',
+            message: '这次足迹数据不完整，已停止展示，避免把未知信息当成真实足迹。',
           ),
           const SizedBox(height: JiYiSpacing.md),
           OutlinedButton.icon(
@@ -182,7 +182,7 @@ class _TodayFootprintBody extends StatelessWidget {
           title: '今天还没有形成足迹',
           message: elderMode
               ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
-              : '这里只有服务端已经派生出的 Visit；不会用手机当前位置或猜测内容补一条记录。',
+              : '这里只显示已经形成的足迹，不会用手机当前位置或猜测内容补一条记录。',
         ),
       );
     }
