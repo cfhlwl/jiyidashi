@@ -1668,9 +1668,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     // G4 仅重排 Query/Evidence/删除入口的展示层；答案、Evidence、memory_ids 都继续直接使用服务端真实返回。
     final theme = Theme.of(context);
     final evidence = (result?['evidence'] as List<dynamic>? ?? const [])
-        .where((item) =>
-            item is Map<String, dynamic> &&
-            item['source_type']?.toString() != 'AI_INFERENCE')
+        .whereType<Map<String, dynamic>>()
         .toList(growable: false);
     final memoryIds = (result?['memory_ids'] as List<dynamic>? ?? const []);
     final presentation =
