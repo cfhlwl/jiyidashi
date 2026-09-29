@@ -172,7 +172,7 @@ export default function PersonMemorySection({ personId }: Props) {
       setPickerRows([])
       setSelectedMemoryId(null)
       setSelectedRelation(null)
-      setStatus('人物记忆关联已保存')
+      setStatus('关于 TA 的记忆已保存')
       await refreshTimeline(true)
     } catch (linkError) {
       if (!authority.current.isCurrent(snapshot, identity(action, selectedMemoryId))) return
@@ -241,7 +241,7 @@ export default function PersonMemorySection({ personId }: Props) {
       await deletePersonMemoryLink(personId, row.memory_id)
       if (!authority.current.isCurrent(snapshot, identity(action, row.memory_id, row.revision))) return
       setMutationKey('')
-      setStatus('人物关联已取消，原记忆仍然保留')
+      setStatus('关联已取消，原记忆仍然保留')
       await refreshTimeline(true)
     } catch (unlinkError) {
       if (!authority.current.isCurrent(snapshot, identity(action, row.memory_id, row.revision))) return
@@ -252,8 +252,8 @@ export default function PersonMemorySection({ personId }: Props) {
 
   return (
     <View className='card person-memory-section'>
-      <View className='card-title'>相关记忆</View>
-      <Text className='muted'>只显示你明确关联的人物记忆，不会根据文字、地点、照片或 AI 自动关联。</Text>
+      <View className='card-title'>关于 TA 的记忆</View>
+      <Text className='muted'>这里只显示你主动关联的记忆，不会根据文字、地点、照片或 AI 自动关联。</Text>
 
       {loading && <View className='person-memory-status'>正在加载相关记忆…</View>}
       {!loading && loaded && error && (

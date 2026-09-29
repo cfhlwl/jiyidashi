@@ -13,6 +13,7 @@ import {
   subscribeElderMode,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import { ProductHeroHeader } from '../../components/product/ProductUi'
 import RecentPersonInteractions from '../../components/personMemories/RecentPersonInteractions'
 import {
   boundedAliasSummary,
@@ -184,19 +185,22 @@ export default function Page() {
 
   return (
     <View className={elderClassName(elderMode)}>
-      <View className='title'>人物</View>
-      <View className='subtitle'>只管理你明确创建的人物，不会从照片、联系人、家庭或 AI 自动添加。</View>
+      <ProductHeroHeader
+        eyebrow='迹忆 · 重要的人'
+        title='重要的人'
+        subtitle='记录生命中重要的人。只有你主动添加的人才会出现在这里。'
+      />
 
       {phase === 'signed-out' && (
         <View className='card'>
           <View className='card-title'>请先登录</View>
-          <View className='muted'>登录后才能查看和管理你自己的人物。</View>
+          <View className='muted'>登录后才能查看和整理你记录的重要的人。</View>
         </View>
       )}
 
       {phase === 'loading' && (
         <View className='card'>
-          <Text className='muted'>正在加载人物…</Text>
+          <Text className='muted'>正在加载重要的人…</Text>
         </View>
       )}
 
@@ -220,13 +224,13 @@ export default function Page() {
                 setStatus('')
               }}
             >
-              {createOpen ? '收起新增' : '新增人物'}
+              {createOpen ? '收起添加' : '添加重要的人'}
             </Button>
           </View>
 
           {createOpen && (
             <View className='card'>
-              <View className='card-title'>新增人物</View>
+              <View className='card-title'>添加重要的人</View>
               <Input
                 className='field'
                 type='text'
@@ -242,7 +246,7 @@ export default function Page() {
                 className='field'
                 type='text'
                 maxlength={120}
-                placeholder='关系备注，例如：邻居（可选）'
+                placeholder='你们的关系，例如：邻居（可选）'
                 value={draft.relationshipLabel}
                 onInput={(event) => setDraft((current) => ({
                   ...current,
@@ -288,15 +292,15 @@ export default function Page() {
               </View>
 
               <Button className='primary-button' disabled={creating} onClick={() => void submitCreate()}>
-                {creating ? '正在创建…' : '确认创建人物'}
+                {creating ? '正在保存…' : '保存这个人'}
               </Button>
             </View>
           )}
 
           {people.length === 0 ? (
             <View className='card'>
-              <View className='card-title'>还没有人物</View>
-              <View className='muted'>只有你主动点击“新增人物”并提交后，人物才会出现在这里。</View>
+              <View className='card-title'>还没有记录重要的人</View>
+              <View className='muted'>只有你主动添加后，这个人才会出现在这里。</View>
             </View>
           ) : (
             people.map((person) => {
@@ -312,7 +316,7 @@ export default function Page() {
                     className='secondary-button'
                     onClick={() => void openDetail(person.id)}
                   >
-                    查看人物
+                    查看 TA
                   </Button>
                 </View>
               )

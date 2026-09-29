@@ -448,10 +448,10 @@ export default function PersonRelationshipsSection({ personId }: Props) {
 
   return (
     <View className='card person-relationships-section'>
-      <View className='card-title'>人物关系</View>
-      <Text className='muted'>这里只管理你明确维护的两个人之间的直接关系，不会从记忆、别名、家庭、地点、照片或 AI 自动推断。</Text>
+      <View className='card-title'>你们的关系</View>
+      <Text className='muted'>这里只显示你主动维护的人际关系，不会从记忆、别名、家庭、地点、照片或 AI 自动推断。</Text>
 
-      {loading && <View className='relationship-status'>正在加载人物关系…</View>}
+      {loading && <View className='relationship-status'>正在加载关系…</View>}
       {!loading && loaded && error && (
         <>
           <View className='error'>{error}</View>
@@ -459,7 +459,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
         </>
       )}
       {!loading && loaded && !error && rows.length === 0 && (
-        <View className='relationship-status'>还没有直接人物关系。</View>
+        <View className='relationship-status'>还没有记录关系。</View>
       )}
 
       {!loading && !error && rows.map((row) => (
@@ -551,13 +551,13 @@ export default function PersonRelationshipsSection({ personId }: Props) {
           else void openCreate()
         }}
       >
-        {createOpen ? '收起添加关系' : '添加人物关系'}
+        {createOpen ? '收起添加关系' : '添加关系'}
       </Button>
 
       {createOpen && (
         <View className='relationship-create'>
-          <View className='card-title'>选择另一个人物</View>
-          {candidateLoading && <View className='relationship-status'>正在加载人物…</View>}
+          <View className='card-title'>选择另一个人</View>
+          {candidateLoading && <View className='relationship-status'>正在加载其他人…</View>}
           {!candidateLoading && candidateError && (
             <>
               <View className='error'>{candidateError}</View>
@@ -565,7 +565,7 @@ export default function PersonRelationshipsSection({ personId }: Props) {
             </>
           )}
           {!candidateLoading && !candidateError && candidates.length === 0 && (
-            <View className='relationship-status'>没有其他可关联人物。</View>
+            <View className='relationship-status'>没有其他可以关联的人。</View>
           )}
           {!candidateLoading && !candidateError && candidates.map((person) => (
             <View className='relationship-candidate' key={person.id}>

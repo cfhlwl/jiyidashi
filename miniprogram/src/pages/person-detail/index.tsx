@@ -16,6 +16,7 @@ import {
 import { elderClassName } from '../../services/elderMode'
 import { graphNeighborhoodRoute } from '../../services/unifiedGraph'
 import PersonMemorySection from '../../components/personMemories/PersonMemorySection'
+import { ProductHeroHeader } from '../../components/product/ProductUi'
 import PersonRelationshipsSection from '../../components/personRelationships/PersonRelationshipsSection'
 import PersonKnownDurationSection from '../../components/personKnownDuration/PersonKnownDurationSection'
 import {
@@ -117,7 +118,7 @@ export default function Page() {
       if (!isCurrent(snapshot)) return
       setDetail(null)
       setPhase('error')
-      setStatus(personErrorMessage(apiErrorCode(loadError)) || '人物详情加载失败，请重试')
+      setStatus(personErrorMessage(apiErrorCode(loadError)) || '这个人的记录加载失败，请重试')
     }
   }
 
@@ -318,10 +319,10 @@ export default function Page() {
   if (phase === 'signed-out') {
     return (
       <View className={elderClassName(elderMode)}>
-        <View className='title'>人物</View>
+        <ProductHeroHeader eyebrow='迹忆 · 重要的人' title='重要的人' />
         <View className='card'>
           <View className='card-title'>请先登录</View>
-          <View className='muted'>登录后才能查看这个人物。</View>
+          <View className='muted'>登录后才能查看这个人的记录。</View>
         </View>
       </View>
     )
@@ -329,17 +330,17 @@ export default function Page() {
 
   return (
     <View className={elderClassName(elderMode)}>
-      <View className='title'>人物</View>
+      <ProductHeroHeader eyebrow='迹忆 · 重要的人' title='重要的人' />
 
       {phase === 'loading' && (
         <View className='card'>
-          <Text className='muted'>正在加载人物详情…</Text>
+          <Text className='muted'>正在加载这个人的记录…</Text>
         </View>
       )}
 
       {phase === 'error' && (
         <View className='card'>
-          <View className='error'>{status || '人物详情加载失败'}</View>
+          <View className='error'>{status || '这个人的记录加载失败'}</View>
           <Button className='secondary-button' onClick={() => void loadInitial()}>重试</Button>
         </View>
       )}
@@ -349,7 +350,7 @@ export default function Page() {
           <View className='card'>
             <View className='card-title'>{detail.display_name}</View>
             <View className='detail-row'>
-              <Text className='detail-label'>关系备注</Text>
+              <Text className='detail-label'>你们的关系</Text>
               <Text>{detail.relationship_label || '未填写'}</Text>
             </View>
             <View className='detail-row'>
@@ -373,10 +374,10 @@ export default function Page() {
                 url: graphNeighborhoodRoute('PERSON', detail.id),
               })}
             >
-              查看一跳关系
+              查看相关的人和事
             </Button>
             <Button className='danger-button' disabled={saving || deleting} onClick={() => void confirmDelete()}>
-              {deleting ? '正在删除…' : '删除人物'}
+              {deleting ? '正在删除…' : '删除这个人'}
             </Button>
           </View>
         </>
@@ -384,7 +385,7 @@ export default function Page() {
 
       {phase === 'ready' && detail && editing && (
         <View className='card'>
-          <View className='card-title'>编辑人物</View>
+          <View className='card-title'>编辑资料</View>
           <Input
             className='field'
             type='text'
@@ -400,7 +401,7 @@ export default function Page() {
             className='field'
             type='text'
             maxlength={120}
-            placeholder='关系备注；留空会清除'
+            placeholder='你们的关系；留空会清除'
             value={draft.relationshipLabel}
             onInput={(event) => setDraft((current) => ({
               ...current,

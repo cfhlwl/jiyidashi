@@ -158,14 +158,14 @@ export default function Page() {
         </View>
 
         <View className='card'>
-          <View className='card-title'>人物</View>
-          <View className='muted'>管理你明确创建的人物、关系备注、别名和备注。</View>
+          <View className='card-title'>重要的人</View>
+          <View className='muted'>整理你主动记录的重要的人、关系、别名和备注。</View>
           <Button
             className='secondary-button'
             disabled={loading}
             onClick={() => void Taro.navigateTo({ url: '/pages/people/index' })}
           >
-            管理人物
+            查看重要的人
           </Button>
         </View>
 
