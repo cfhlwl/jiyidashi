@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'account_delete_section.dart';
 import 'api_client.dart';
 import 'location_sampling_coordinator.dart';
+import 'memory_detail_page.dart';
 import 'native_location_bridge.dart';
 import 'native_location_controller.dart';
 import 'native_location_section.dart';
@@ -1665,6 +1666,19 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     }
   }
 
+  Future<void> openFirstMemoryDetail() async {
+    final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
+    if (ids.isEmpty || !mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => MemoryDetailPage(
+          api: widget.api,
+          memoryId: ids.first.toString(),
+        ),
+      ),
+    );
+  }
+
   Future<void> createReminderForFirstMemory() async {
     final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
     if (ids.isEmpty) return;
@@ -1958,6 +1972,13 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    FilledButton.tonalIcon(
+                      key: const ValueKey('memory-detail-open'),
+                      onPressed: loading ? null : openFirstMemoryDetail,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('查看完整记忆'),
+                    ),
+                    const SizedBox(height: JiYiSpacing.sm),
                     FilledButton.tonalIcon(
                       key: const ValueKey('memory-reminder-open'),
                       onPressed: loading ? null : createReminderForFirstMemory,

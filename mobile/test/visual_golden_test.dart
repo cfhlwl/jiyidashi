@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/memory_detail_page.dart';
 import 'package:jiyidashi/native_location_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/onboarding_flow.dart';
@@ -133,6 +134,48 @@ class _GoldenApi extends JiYiApiClient {
     if (error != null) throw error;
     return privacyStatus;
   }
+}
+
+class _GoldenMemoryDetailApi extends _GoldenApi {
+  @override
+  Future<Map<String, dynamic>> getMemory(String memoryId) async => {
+    'id': v2MemoryId,
+    'user_id': authenticatedUserId,
+    'memory_type': 'NOTE',
+    'title': '第一次产品讨论',
+    'content': '那天我们在办公室把第一版产品方向写满了整块白板。',
+    'occurred_at': '2025-03-01T01:00:00Z',
+    'source_type': 'USER_TEXT',
+    'confidence': 1.0,
+    'place_id': v2PlaceId,
+    'latitude': null,
+    'longitude': null,
+    'is_confirmed': true,
+    'metadata_json': const <String, dynamic>{},
+    'edit_revision': 3,
+    'edited_at': null,
+    'created_at': '2025-03-01T01:00:00Z',
+  };
+
+  @override
+  Future<Map<String, dynamic>> getPlaceDetail(
+    String placeId, {
+    int limit = 50,
+    String? cursor,
+  }) async => {
+    'place': {
+      'id': v2PlaceId,
+      'name': '上海办公室',
+      'name_source': 'USER',
+      'address': '上海市测试路 1 号',
+      'category': 'OFFICE',
+      'visit_count': 5,
+      'first_visited_at': '2025-01-01T00:00:00Z',
+      'last_visited_at': '2026-09-20T00:00:00Z',
+    },
+    'visits': const <Map<String, dynamic>>[],
+    'next_cursor': null,
+  };
 }
 
 class _GoldenPlaceDetailApi extends JiYiApiClient {
@@ -398,6 +441,24 @@ void main() {
     },
     skip: !_captureDeterministicQueryPreview,
   );
+
+  testWidgets('golden: memory detail', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      MemoryDetailPage(
+        api: _GoldenMemoryDetailApi(),
+        memoryId: v2MemoryId,
+      ),
+    );
+    expect(find.text('第一次产品讨论'), findsWidgets);
+    expect(find.text('上海办公室'), findsOneWidget);
+    expect(find.textContaining('整块白板'), findsOneWidget);
+    expect(find.textContaining(v2MemoryId), findsNothing);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/memory_detail.png'),
+    );
+  });
 
   testWidgets('golden: profile and privacy controls', (tester) async {
     // [人工注释][CI-005] Profile 使用确定性的 fake API 返回固定资料/暂停状态，
