@@ -9,6 +9,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.analytics_models import ProductActiveDay, RetrievalAnalyticsAttempt
 from app.core.config import get_settings
 from app.core.db import lock_user_data_destructive_handoff
 from app.data_deletion_models import (
@@ -102,6 +103,8 @@ USER_DATA_INVENTORY = (
     "media_asr_claims",
     "media_evidence_links",
     "client_mutations",
+    "retrieval_analytics_attempts",
+    "product_active_days",
     "object_storage_final_prefix",
     "object_storage_staging_prefix",
 )
@@ -730,6 +733,16 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
                 FamilyMember.member_user_id == user_id,
             )
         ),
+    )
+    counts["retrieval_analytics_attempts"] = _delete_count(
+        db,
+        delete(RetrievalAnalyticsAttempt).where(
+            RetrievalAnalyticsAttempt.user_id == user_id
+        ),
+    )
+    counts["product_active_days"] = _delete_count(
+        db,
+        delete(ProductActiveDay).where(ProductActiveDay.user_id == user_id),
     )
     counts["client_mutations"] = _delete_count(
         db, delete(ClientMutation).where(ClientMutation.user_id == user_id)

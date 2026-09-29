@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Productization P1 / Retrieval & Retention Analytics Foundation V1**；#168 Entitlement & Quota Foundation 已完成正式复审并合并；#169 进入任务发布/开发阶段；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
+> 当前阶段：**V2 Productization P1 / Retrieval & Retention Analytics Foundation V1**；#168 Entitlement & Quota Foundation 已完成正式复审并合并；#169 / PR #173 已完成实现与 exact-head required CI，进入正式独立审查；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
 
 ## 状态规则
 
@@ -352,9 +352,9 @@
 | BIZ-004 | 高级会员 | 🟠 | Issue #168 / PR #172 已合并：PREMIUM capability + quota foundation ✅；价格、付费、正式 downgrade/upgrade rollout 仍未实现 |
 | BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend 已合并；Mini/Flutter 展示、premium packaging 与 entitlement enforcement 尚未实现 |
 | BIZ-006 | 实体年度回忆录 | ⏸ | 后续增值服务 |
-| BIZ-007 | 北极星指标：成功找回记忆数 | 🔵 | Issue #169：privacy-safe retrieval analytics foundation 开发中；要求可复现的 successful-memory-retrieval 口径 |
-| BIZ-008 | D1 / D7 / D30 留存 | 🔵 | Issue #169：server-owned active-day/cohort 口径与可查询 D1/D7/D30 retention 开发中 |
-| BIZ-009 | Memory Retrieval Success | 🔵 | Issue #169：retrieval attempt / success denominator+numerator 与 privacy-safe aggregation 开发中 |
+| BIZ-007 | 北极星指标：成功找回记忆数 | 🟠 | PR #173：canonical MEMORY_QUERY successful-retrieval 口径、durable dedupe 与 aggregate report 已完成，等待正式审查 |
+| BIZ-008 | D1 / D7 / D30 留存 | 🟠 | PR #173：UTC signup cohort、active-day authority、D1/D7/D30 eligible/retained/null-zero 口径已完成，等待正式审查 |
+| BIZ-009 | Memory Retrieval Success | 🟠 | PR #173：accepted-attempt denominator、SUCCESS numerator 与 privacy-safe success-rate aggregation 已完成，等待正式审查 |
 | BIZ-010 | False Memory Rate | ✅ | S3-019 / Issue #87 / PR #89 已完成首版显式用户反馈驱动的 revision 指标基础：counts + denominator + rate；DELETE-only 不误算 false，不做 AI 质量打分/看板；已正式审查并合并 main |
 
 ---

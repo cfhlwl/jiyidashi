@@ -1,11 +1,12 @@
 from datetime import date
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
+from app.analytics_models import ProductActivity
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.memory_feedback_contracts import MemoryFeedbackCreate, MemoryFeedbackRead
@@ -19,6 +20,10 @@ from app.schemas import (
     MemoryRead,
     MemoryUpdate,
     TimelinePageResponse,
+)
+from app.services.analytics_service import (
+    record_active_day_safe,
+    record_retrieval_and_activity_safe,
 )
 from app.services.idempotency_service import (
     IdempotencyConflict,
@@ -78,7 +83,7 @@ def create_memory_endpoint(
     # response-loss 后相同 key + 相同 payload 必须返回同一 Memory，不能重复创建 Evidence。
     fingerprint_payload = payload.model_dump(mode="json")
     try:
-        return execute_idempotent_mutation(
+        memory = execute_idempotent_mutation(
             db,
             user_id=user_id,
             operation_type="MEMORY_CREATE",
@@ -86,13 +91,19 @@ def create_memory_endpoint(
             fingerprint_payload=fingerprint_payload,
             resource_type="MEMORY",
             create_resource=lambda session: create_user_memory(session, user_id, payload),
-            resource_id=lambda memory: memory.id,
+            resource_id=lambda item: item.id,
             load_resource=lambda session, resource_id: get_memory_for_user(
                 session,
                 user_id,
                 resource_id,
             ),
         )
+        record_active_day_safe(
+            db,
+            user_id=user_id,
+            activity=ProductActivity.MEMORY_CREATE,
+        )
+        return memory
     except IdempotencyConflict as exc:
         raise HTTPException(status_code=409, detail=exc.detail) from exc
     except IdempotencyResourceGone as exc:
@@ -206,7 +217,15 @@ def timeline(
         start, end = user_day_bounds_utc(db, user_id, day)
         query = query.where(Memory.occurred_at >= start, Memory.occurred_at < end)
 
-    return list(db.scalars(query.order_by(Memory.occurred_at.desc()).limit(limit)).all())
+    items = list(
+        db.scalars(query.order_by(Memory.occurred_at.desc()).limit(limit)).all()
+    )
+    record_active_day_safe(
+        db,
+        user_id=user_id,
+        activity=ProductActivity.TIMELINE,
+    )
+    return items
 
 
 @router.get("/timeline/events", response_model=TimelinePageResponse)
@@ -218,13 +237,19 @@ def timeline_events(
     cursor: Annotated[str | None, Query(max_length=512)] = None,
 ) -> TimelinePageResponse:
     try:
-        return list_timeline(
+        page = list_timeline(
             db,
             user_id=user_id,
             day=day,
             limit=limit,
             cursor_value=cursor,
         )
+        record_active_day_safe(
+            db,
+            user_id=user_id,
+            activity=ProductActivity.TIMELINE_EVENTS,
+        )
+        return page
     except TimelineCursorError as exc:
         raise HTTPException(status_code=422, detail=exc.code) from exc
 
@@ -235,7 +260,26 @@ def memory_query(
     user_id: CurrentUser,
     db: DbSession,
 ) -> MemoryQueryResponse:
-    return query_memory(db, user_id, payload.question)
+    analytics_operation_id = uuid4()
+    try:
+        response = query_memory(db, user_id, payload.question)
+    except Exception:
+        record_retrieval_and_activity_safe(
+            db,
+            user_id=user_id,
+            operation_id=analytics_operation_id,
+            response=None,
+            failed=True,
+        )
+        raise
+
+    record_retrieval_and_activity_safe(
+        db,
+        user_id=user_id,
+        operation_id=analytics_operation_id,
+        response=response,
+    )
+    return response
 
 
 @router.get("/memory/summarize/day", response_model=DaySummaryResponse)

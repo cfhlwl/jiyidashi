@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     auto_create_schema: bool = False
     cors_origins: list[str] = Field(default_factory=list)
     observability_log_level: str = "INFO"
+    analytics_retrieval_retention_days: int = Field(default=90, ge=31, le=3650)
+    analytics_active_day_retention_days: int = Field(default=400, ge=31, le=3650)
     database_readiness_connect_timeout_seconds: int = Field(default=2, ge=1, le=10)
     database_readiness_statement_timeout_ms: int = Field(default=1500, ge=100, le=10000)
 
@@ -124,6 +126,14 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def validate_analytics_retention(self):
+        if self.analytics_active_day_retention_days < self.analytics_retrieval_retention_days:
+            raise ValueError(
+                "ANALYTICS_ACTIVE_DAY_RETENTION_DAYS must be >= retrieval retention"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_observability(self):

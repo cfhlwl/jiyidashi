@@ -221,6 +221,7 @@ def create_schema() -> None:
     # 不能依赖 router / schema 的偶然 import 顺序决定数据库是否缺表。
     from app import (  # noqa: F401
         account_deletion_models,
+        analytics_models,
         auth_models,
         data_deletion_models,
         embedding_models,
