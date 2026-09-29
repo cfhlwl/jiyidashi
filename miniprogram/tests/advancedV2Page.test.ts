@@ -38,7 +38,7 @@ test('all seven flows use canonical current APIs', () => {
     '/memoirs/life/stages',
     '/known-duration',
   ]) {
-    assert.match(block, new RegExp(path.replaceAll('/', '\\/')))
+    assert.match(block, new RegExp(path.replace(/\//g, '\\/')))
   }
   assert.doesNotMatch(block, /user_id|confidence|plan_code|trust_state|evidence_id/)
   assert.match(block, /\{ question: question\.trim\(\) \}/)
