@@ -89,7 +89,7 @@ void main() {
           jsonEncode({
             'answer': '物品最后记录在书房。',
             'can_answer': true,
-            'certainty': 'evidence',
+            'certainty': 'confirmed',
             'reason': null,
             'intent': 'FIND_OBJECT',
             'evidence': [
@@ -118,7 +118,7 @@ void main() {
     final evidence = result['evidence'] as List<dynamic>;
     final firstEvidence = evidence.single as Map<String, dynamic>;
     expect(result['can_answer'], isTrue);
-    expect(result['certainty'], 'evidence');
+    expect(result['certainty'], 'confirmed');
     expect(evidence, hasLength(1));
     expect(firstEvidence['excerpt'], '物品：书房');
     expect(firstEvidence['kind'], 'OBJECT_LOCATION');
@@ -608,7 +608,7 @@ void main() {
         jsonEncode({
           'answer': 'A 的书房',
           'can_answer': true,
-          'certainty': 'evidence',
+          'certainty': 'confirmed',
           'reason': null,
           'intent': 'FIND_OBJECT',
           'evidence': [
