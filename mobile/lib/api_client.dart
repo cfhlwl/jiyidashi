@@ -799,6 +799,26 @@ class JiYiApiClient {
     authenticatedUserId = null;
     _sessionVersion += 1;
   }
+  // #163 Flutter V2 reuses the existing authenticated-session snapshot.
+  // V2 operations are never silently added to the existing offline queue.
+  Future<Object?> requestV2Json(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final snapshot = _captureAuthenticatedSession();
+    final decoded = _decodeResponse(
+      await _request(
+        method,
+        path,
+        body: body,
+        authSnapshot: snapshot,
+      ),
+    );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return decoded;
+  }
+
 
   // [人工注释][S1-019] 统一传输层显式支持 DELETE；204 空响应也必须沿同一服务端成功链处理，
   // 不能让删除退化成客户端本地隐藏。

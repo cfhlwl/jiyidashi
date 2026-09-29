@@ -10,6 +10,13 @@ import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
+import 'package:jiyidashi/v2/graph_page.dart';
+import 'package:jiyidashi/v2/life_event_detail_page.dart';
+import 'package:jiyidashi/v2/life_stage_detail_page.dart';
+import 'package:jiyidashi/v2/memoirs_page.dart';
+import 'package:jiyidashi/v2/person_detail_page.dart';
+
+import 'v2_test_api.dart';
 
 // [人工注释][CI-005] Golden 只冻结当前产品渲染结果，不为“好测试”改业务组件；
 // 统一窗口、DPR、locale 与主题，Linux CI 是首阶段唯一权威像素基线。
@@ -279,6 +286,8 @@ Future<Key> _pumpShell(WidgetTester tester, {JiYiApiClient? api}) async {
 }
 
 void main() {
+  // #163: committed V2 baselines are generated from the same Flutter 3.47.4
+  // deterministic CJK-font harness used by the existing mobile visual gate.
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
     await _loadGoldenFont();
@@ -463,6 +472,140 @@ void main() {
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/place_detail_loaded.png'),
+    );
+  });
+
+
+  testWidgets('golden: V2 person detail', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      PersonDetailPage(api: V2TestApi(), personId: v2PersonId),
+    );
+    expect(find.text('认识时长'), findsOneWidget);
+    expect(find.textContaining('至少 577 天'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/v2_person_detail.png'),
+    );
+  });
+
+  testWidgets('golden: V2 graph neighborhood', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      GraphNeighborhoodPage(
+        api: V2TestApi(),
+        kind: 'PERSON',
+        entityId: v2PersonId,
+        title: '老张',
+      ),
+    );
+    expect(find.text('关系图谱'), findsWidgets);
+    expect(find.textContaining('小李'), findsWidgets);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/v2_graph_neighborhood.png'),
+    );
+  });
+
+  testWidgets('golden: V2 life event detail', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      LifeEventDetailPage(api: V2TestApi(), eventId: v2EventId),
+    );
+    expect(find.text('Memory 证据'), findsOneWidget);
+    expect(find.text('AI 推断（有证据支持）'), findsNothing);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/v2_life_event_detail.png'),
+    );
+  });
+
+  testWidgets('golden: V2 long-term reasoning answered', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      LifeStageDetailPage(api: V2TestApi(), stageId: v2StageId),
+    );
+    await tester.enterText(
+      find.byType(TextField).last,
+      '这个阶段发生了什么？',
+    );
+    final generate = find.text('生成证据回顾');
+    await tester.ensureVisible(generate);
+    await tester.pumpAndSettle();
+    await tester.tap(generate);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('AI 推断（有证据支持）'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('持续围绕产品开发'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/v2_reasoning_answered.png'),
+    );
+  });
+
+  testWidgets('golden: V2 annual memoir ready', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      MemoirsPage(api: V2TestApi()),
+    );
+    await tester.enterText(find.byType(TextField).first, '2025');
+    await tester.tap(find.text('生成年度回忆录'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('AI 推断（有证据支持）').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('新的产品阶段'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/v2_annual_memoir_ready.png'),
+    );
+  });
+
+  testWidgets('golden: V2 life memoir chapter ready', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      MemoirsPage(api: V2TestApi()),
+    );
+    final stage = find.text('产品创业阶段');
+    await tester.ensureVisible(stage);
+    await tester.tap(stage);
+    await tester.pumpAndSettle();
+    final generate = find.text('生成这个阶段的章节');
+    await tester.ensureVisible(generate);
+    await tester.tap(generate);
+    await tester.pumpAndSettle();
+    final narrative = find.textContaining('这一阶段以产品开发为主线');
+    await tester.ensureVisible(narrative);
+    await tester.pumpAndSettle();
+    expect(narrative, findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/v2_life_memoir_chapter.png'),
+    );
+  });
+
+  testWidgets('golden: V2 AI unavailable fail closed', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      LifeStageDetailPage(
+        api: V2TestApi(reasoningStatus: 'PROVIDER_FAILED'),
+        stageId: v2StageId,
+      ),
+    );
+    await tester.enterText(
+      find.byType(TextField).last,
+      '这个阶段发生了什么？',
+    );
+    final generate = find.text('生成证据回顾');
+    await tester.ensureVisible(generate);
+    await tester.pumpAndSettle();
+    await tester.tap(generate);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('暂不可用'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('持续围绕产品开发'), findsNothing);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/v2_ai_unavailable.png'),
     );
   });
 
