@@ -106,6 +106,50 @@ import {
   type GraphNodeKind,
 } from './unifiedGraph'
 import {
+  annualMemoirPhotosPath,
+  lifeEventMemoriesPath,
+  lifeEventMemoryPath,
+  lifeEventPath,
+  lifeEventsPath,
+  lifeHistoryPath,
+  lifeMemoirStagesPath,
+  lifeStageEventPath,
+  lifeStageEventsPath,
+  lifeStagePath,
+  lifeStagesPath,
+  knownDurationPath,
+  parseAnnualMemoir,
+  parseAnnualMemoirPhotos,
+  parseKnownDuration,
+  parseLifeEvent,
+  parseLifeEventEvidence,
+  parseLifeEventEvidenceList,
+  parseLifeEventList,
+  parseLifeHistory,
+  parseLifeMemoirChapter,
+  parseLifeMemoirStageIndex,
+  parseLifeStage,
+  parseLifeStageEvidence,
+  parseLifeStageEvidenceList,
+  parseLifeStageList,
+  parseLongTermReasoning,
+  type AnnualMemoir,
+  type AnnualMemoirPhotoPage,
+  type LifeEventCreatePayload,
+  type LifeEventMemoryEvidence,
+  type LifeEventPatchPayload,
+  type LifeEventRead,
+  type LifeHistoryPage,
+  type LifeMemoirChapter,
+  type LifeMemoirStageIndexPage,
+  type LifeStageCreatePayload,
+  type LifeStageEventEvidence,
+  type LifeStagePatchPayload,
+  type LifeStageRead,
+  type LongTermReasoningResult,
+  type PersonKnownDuration,
+} from './advancedV2'
+import {
   buildPeoplePath,
   parsePersonList,
   parsePersonRead,
@@ -117,6 +161,19 @@ export type {
   TodayFootprintResponse,
   TodayFootprintVisit,
 } from './todayFootprint'
+export type {
+  AnnualMemoir,
+  AnnualMemoirPhotoPage,
+  LifeEventMemoryEvidence,
+  LifeEventRead,
+  LifeHistoryPage,
+  LifeMemoirChapter,
+  LifeMemoirStageIndexPage,
+  LifeStageEventEvidence,
+  LifeStageRead,
+  LongTermReasoningResult,
+  PersonKnownDuration,
+} from './advancedV2'
 export type {
   MemoryFeedbackAction,
   MemoryFeedbackOperation,
@@ -517,6 +574,181 @@ async function guardedPeopleRequest<T>(operation: () => Promise<T>): Promise<T> 
     assertCurrentSession()
     throw error
   }
+}
+
+function createAdvancedV2RequestSessionGuard(): () => void {
+  const epoch = authSessionEpoch
+  const owner = currentAuthOwner()
+  if (!owner) throw new Error('请先登录')
+  return () => {
+    if (epoch !== authSessionEpoch || currentAuthOwner() !== owner) {
+      throw new Error('登录状态已变化，请重试')
+    }
+  }
+}
+
+async function guardedAdvancedV2Request<T>(operation: () => Promise<T>): Promise<T> {
+  const assertCurrent = createAdvancedV2RequestSessionGuard()
+  try {
+    const result = await operation()
+    assertCurrent()
+    return result
+  } catch (error) {
+    assertCurrent()
+    throw error
+  }
+}
+
+export async function listLifeEvents(limit = 50): Promise<LifeEventRead[]> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('GET', lifeEventsPath(limit))
+    return parseLifeEventList(raw)
+  })
+}
+export async function createLifeEvent(payload: LifeEventCreatePayload): Promise<LifeEventRead> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('POST', '/life-events', payload)
+    return parseLifeEvent(raw)
+  })
+}
+export async function getLifeEvent(eventId: string): Promise<LifeEventRead> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('GET', lifeEventPath(eventId))
+    return parseLifeEvent(raw, eventId)
+  })
+}
+export async function patchLifeEvent(eventId: string, payload: LifeEventPatchPayload): Promise<LifeEventRead> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('PATCH', lifeEventPath(eventId), payload)
+    return parseLifeEvent(raw, eventId)
+  })
+}
+export async function deleteLifeEvent(eventId: string): Promise<void> {
+  return guardedAdvancedV2Request(async () => {
+    await request<void>('DELETE', lifeEventPath(eventId))
+  })
+}
+export async function listLifeEventMemories(eventId: string, limit = 50): Promise<LifeEventMemoryEvidence[]> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('GET', lifeEventMemoriesPath(eventId, limit))
+    return parseLifeEventEvidenceList(raw)
+  })
+}
+export async function linkLifeEventMemory(eventId: string, memoryId: string): Promise<LifeEventMemoryEvidence> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('POST', lifeEventMemoryPath(eventId, memoryId))
+    return parseLifeEventEvidence(raw)
+  })
+}
+export async function unlinkLifeEventMemory(eventId: string, memoryId: string): Promise<void> {
+  return guardedAdvancedV2Request(async () => {
+    await request<void>('DELETE', lifeEventMemoryPath(eventId, memoryId))
+  })
+}
+
+export async function listLifeStages(limit = 50): Promise<LifeStageRead[]> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('GET', lifeStagesPath(limit))
+    return parseLifeStageList(raw)
+  })
+}
+export async function createLifeStage(payload: LifeStageCreatePayload): Promise<LifeStageRead> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('POST', '/life-stages', payload)
+    return parseLifeStage(raw)
+  })
+}
+export async function getLifeStage(stageId: string): Promise<LifeStageRead> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('GET', lifeStagePath(stageId))
+    return parseLifeStage(raw, stageId)
+  })
+}
+export async function patchLifeStage(stageId: string, payload: LifeStagePatchPayload): Promise<LifeStageRead> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('PATCH', lifeStagePath(stageId), payload)
+    return parseLifeStage(raw, stageId)
+  })
+}
+export async function deleteLifeStage(stageId: string): Promise<void> {
+  return guardedAdvancedV2Request(async () => {
+    await request<void>('DELETE', lifeStagePath(stageId))
+  })
+}
+export async function listLifeStageEvents(stageId: string, limit = 50): Promise<LifeStageEventEvidence[]> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('GET', lifeStageEventsPath(stageId, limit))
+    return parseLifeStageEvidenceList(raw)
+  })
+}
+export async function linkLifeStageEvent(stageId: string, eventId: string): Promise<LifeStageEventEvidence> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('POST', lifeStageEventPath(stageId, eventId))
+    return parseLifeStageEvidence(raw)
+  })
+}
+export async function unlinkLifeStageEvent(stageId: string, eventId: string): Promise<void> {
+  return guardedAdvancedV2Request(async () => {
+    await request<void>('DELETE', lifeStageEventPath(stageId, eventId))
+  })
+}
+
+export async function getPersonKnownDuration(personId: string): Promise<PersonKnownDuration> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('GET', knownDurationPath(personId))
+    return parseKnownDuration(raw, personId)
+  })
+}
+export async function reasonAboutLifeStage(stageId: string, question: string): Promise<LongTermReasoningResult> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('POST', lifeStagePath(stageId) + '/reason', { question: question.trim() })
+    return parseLongTermReasoning(raw)
+  })
+}
+export async function getLifeHistory(
+  startYear: number,
+  endYear: number,
+  options: { limit?: number; cursor?: string | null } = {},
+): Promise<LifeHistoryPage> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('GET', lifeHistoryPath(startYear, endYear, options.limit ?? 50, options.cursor))
+    return parseLifeHistory(raw, { startYear, endYear })
+  })
+}
+export async function generateAnnualMemoir(targetYear: string): Promise<AnnualMemoir> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('POST', '/memoirs/annual', { target_year: targetYear })
+    return parseAnnualMemoir(raw, targetYear)
+  })
+}
+export async function getAnnualMemoirPhotos(
+  targetYear: string,
+  options: { limit?: number; cursor?: string | null } = {},
+): Promise<AnnualMemoirPhotoPage> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>(
+      'GET',
+      annualMemoirPhotosPath(targetYear, options.limit ?? 24, options.cursor),
+    )
+    return parseAnnualMemoirPhotos(raw, targetYear)
+  })
+}
+export async function getLifeMemoirStages(
+  options: { limit?: number; cursor?: string | null } = {},
+): Promise<LifeMemoirStageIndexPage> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>(
+      'GET',
+      lifeMemoirStagesPath(options.limit ?? 50, options.cursor),
+    )
+    return parseLifeMemoirStageIndex(raw)
+  })
+}
+export async function generateLifeMemoirChapter(stageId: string): Promise<LifeMemoirChapter> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('POST', '/memoirs/life/stages/' + encodeURIComponent(stageId))
+    return parseLifeMemoirChapter(raw, stageId)
+  })
 }
 
 export async function listPeople(limit = 100): Promise<PersonRead[]> {
