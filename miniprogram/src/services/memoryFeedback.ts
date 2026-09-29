@@ -373,7 +373,15 @@ export function buildCorrectionFeedback(
 }
 
 export function isDisplayableEvidence(sourceType: string): boolean {
-  return sourceType !== 'AI_INFERENCE'
+  return [
+    'USER_TEXT',
+    'USER_VOICE',
+    'USER_PHOTO',
+    'GPS',
+    'PHOTO_EXIF',
+    'SYSTEM_PLACE',
+    'AI_INFERENCE',
+  ].includes(sourceType)
 }
 
 export function provenanceLabel(provenance: string | null | undefined): string | null {
