@@ -22,11 +22,11 @@ from app.services.ai_gateway import (
     AIProviderResult,
     DeterministicAIProvider,
 )
-from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.embedding_service import (
     build_memory_embedding_text,
     memory_embedding_fingerprint,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.memory_rag_service import answer_from_memory_rag
 
 DATABASE_URL = os.environ["DATABASE_URL"]
