@@ -275,7 +275,9 @@ async def extract_reminder_intent(
                 system_instruction=_SYSTEM_INSTRUCTION,
                 input_text=source_text,
                 max_output_tokens=None,
-            )
+            ),
+            db=db,
+            actor_user_id=user_id,
         )
     except AIGatewayError as exc:
         return ReminderIntentResult(
