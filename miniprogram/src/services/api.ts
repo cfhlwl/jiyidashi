@@ -1,4 +1,5 @@
 import Taro from '@tarojs/taro'
+import { isCanonicalQueryTrustShape } from './aiPresentation'
 import {
   ElderProjectionStore,
   parseElderUserProfile,
@@ -220,11 +221,7 @@ function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
     return item
   })
 
-  if (canAnswer && (!answer || !answer.trim())) {
-    throw new Error('服务端查询响应格式不正确')
-  }
-
-  return {
+  const parsed: MemoryQueryResult = {
     answer,
     can_answer: canAnswer,
     certainty,
@@ -233,6 +230,10 @@ function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
     evidence: parsedEvidence,
     memory_ids: parsedMemoryIds,
   }
+  if (!isCanonicalQueryTrustShape(parsed)) {
+    throw new Error('服务端查询响应格式不正确')
+  }
+  return parsed
 }
 
 export type UserProfile = ElderUserProfile
