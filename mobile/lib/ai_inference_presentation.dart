@@ -67,3 +67,28 @@ bool isCanonicalQueryTrustShape(Map<String, dynamic> result) {
       result['memory_ids'] is List<dynamic> &&
       (result['memory_ids'] as List<dynamic>).isEmpty;
 }
+
+const _readySummaryStatuses = {
+  'DAILY_SUMMARY_READY',
+  'MONTHLY_SUMMARY_READY',
+  'ANNUAL_SUMMARY_READY',
+};
+
+const _unavailableSummaryStatuses = {
+  'NO_SUMMARIZABLE_EVIDENCE',
+  'PROVIDER_FAILED',
+  'MALFORMED_PROVIDER_OUTPUT',
+  'INVALID_CITATION',
+  'DATA_CHANGED_DURING_GENERATION',
+};
+
+AiPresentation summaryAiPresentation(String status) {
+  if (_readySummaryStatuses.contains(status)) return inferredAiPresentation;
+  if (status == 'SUMMARY_INCOMPLETE') return uncertainAiPresentation;
+  return unavailableAiPresentation;
+}
+
+bool isKnownSummaryPresentationStatus(String status) =>
+    _readySummaryStatuses.contains(status) ||
+    status == 'SUMMARY_INCOMPLETE' ||
+    _unavailableSummaryStatuses.contains(status);
