@@ -80,10 +80,10 @@ void main() {
     expect(find.text('2026-09-20 · Asia/Shanghai · 2 条地点记录'), findsOneWidget);
     expect(find.text('家'), findsOneWidget);
     expect(find.text('07:10 - 08:00'), findsOneWidget);
-    expect(find.text('已形成足迹 · LOCATION_CLUSTER'), findsOneWidget);
+    expect(find.text('已形成足迹'), findsOneWidget);
     expect(find.text('公司'), findsOneWidget);
     expect(find.text('08:35 起'), findsOneWidget);
-    expect(find.text('进行中 · LOCATION_CLUSTER'), findsOneWidget);
+    expect(find.text('进行中'), findsOneWidget);
   });
 
   testWidgets('today footprint has explicit empty state', (tester) async {

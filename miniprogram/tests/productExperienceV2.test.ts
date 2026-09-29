@@ -91,7 +91,7 @@ test('Mini Product Experience V2 has deterministic visual review harness', () =>
   assert.match(review, /ProductHeroHeader/)
   assert.match(review, /AiDisclosure/)
   assert.match(review, /ProductStatePanel/)
-  assert.match(reviewStyles, /@import '\\.\\.\\/\\.\\.\\/styles\\/tokens'/)
+  assert.ok(reviewStyles.includes("@import '../../styles/tokens'"))
 })
 
 test('AI references are human-facing reference records, not internal slots or ids', () => {

@@ -161,7 +161,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.updateCalls, 1);
-    expect(find.text('这条记忆刚刚发生了变化，请重新查询后再试'), findsOneWidget);
+    expect(find.text('这条记忆已经在其他地方更新，请重新查询后再编辑'), findsOneWidget);
     expect(find.text('MEMORY_EDIT_REVISION_CONFLICT'), findsNothing);
   });
 
