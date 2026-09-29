@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
 import 'package:jiyidashi/api_client.dart';
 
 const v2OwnerId = '00000000-0000-4000-8000-000000000001';
