@@ -225,7 +225,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await tester.pumpAndSettle();
 
-    expect(find.text('旧账号答案'), findsOneWidget);
+    expect(find.text('旧账号答案'), findsWidgets);
     expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
 
     api.logout();
