@@ -297,7 +297,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
           JiYiStatusBanner(kind: JiYiStatusKind.success, message: status!),
           const SizedBox(height: JiYiSpacing.sm),
         ],
-        JiYiSectionCard(
+        V2SectionCard(
           title: '事件详情',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -318,7 +318,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        JiYiSectionCard(
+        V2SectionCard(
           title: 'Memory 证据',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
