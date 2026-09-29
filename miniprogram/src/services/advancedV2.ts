@@ -885,6 +885,65 @@ export class AdvancedV2Authority {
   }
 }
 
+export type AdvancedV2MutationFlightToken = number
+
+export class AdvancedV2MutationFlight {
+  private generation = 0
+  private active: AdvancedV2MutationFlightToken | null = null
+
+  begin(): AdvancedV2MutationFlightToken | null {
+    if (this.active !== null) return null
+    this.generation += 1
+    this.active = this.generation
+    return this.active
+  }
+
+  invalidate(): void {
+    this.generation += 1
+    this.active = null
+  }
+
+  end(token: AdvancedV2MutationFlightToken): boolean {
+    if (this.active !== token) return false
+    this.active = null
+    return true
+  }
+
+  isCurrent(token: AdvancedV2MutationFlightToken): boolean {
+    return this.active === token
+  }
+
+  isPending(): boolean {
+    return this.active !== null
+  }
+}
+
+export async function continueAdvancedV2Mutation(
+  authority: AdvancedV2Authority,
+  snapshot: AdvancedV2AuthoritySnapshot,
+  currentOwner: () => string | null,
+  currentAuthEpoch: () => number,
+  steps: ReadonlyArray<() => Promise<void>>,
+): Promise<boolean> {
+  const stillCurrent = () => authority.isCurrent(
+    snapshot,
+    currentOwner(),
+    currentAuthEpoch(),
+    snapshot.identity,
+  )
+
+  for (const step of steps) {
+    if (!stillCurrent()) return false
+    try {
+      await step()
+    } catch (error) {
+      if (!stillCurrent()) return false
+      throw error
+    }
+  }
+  return stillCurrent()
+}
+
 export class AdvancedV2SingleFlight {
   private pending = false
   begin(): boolean {
