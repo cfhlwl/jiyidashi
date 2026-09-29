@@ -265,7 +265,7 @@ class JiYiEmptyState extends StatelessWidget {
   }
 }
 
-// EvidenceCard 只负责可信信息排版，不修改 source/type/time/confidence 的来源或判断规则。
+// ReferenceCard 只负责参考记录排版，不修改 source/type/time 的来源或判断规则。
 class JiYiEvidenceCard extends StatelessWidget {
   const JiYiEvidenceCard({
     super.key,
@@ -290,7 +290,7 @@ class JiYiEvidenceCard extends StatelessWidget {
         Icons.fact_check_outlined,
         color: theme.colorScheme.primary,
       ),
-      title: '证据',
+      title: '参考记录',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -303,7 +303,6 @@ class JiYiEvidenceCard extends StatelessWidget {
               _EvidenceMeta(label: '来源', value: source),
               _EvidenceMeta(label: '类型', value: evidenceType),
               _EvidenceMeta(label: '时间', value: occurredAt),
-              _EvidenceMeta(label: '可信度', value: confidence),
             ],
           ),
         ],

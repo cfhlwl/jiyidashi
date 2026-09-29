@@ -1440,6 +1440,29 @@ class _MemoryEditDialogState extends State<_MemoryEditDialog> {
   }
 }
 
+String _queryCertaintyLabel(String value) => switch (value) {
+      'confirmed' => '明确记录',
+      'evidence' => '有相关记录',
+      _ => '没有足够记录',
+    };
+
+String _queryIntentLabel(String value) => switch (value) {
+      'FIND_OBJECT' => '查找物品',
+      'RECALL_EVENT' => '回忆一件事',
+      'FIND_PLACE' => '查找地点',
+      'FIND_PERSON' => '查找人物',
+      _ => '查找记忆',
+    };
+
+String _queryEvidenceKindLabel(String value) => switch (value) {
+      'OBJECT_LOCATION' => '物品位置',
+      'MEMORY' => '记忆',
+      'PLACE' => '地点记录',
+      'PHOTO' => '照片记录',
+      'VOICE' => '语音记录',
+      _ => '相关记录',
+    };
+
 class MemoryQueryPage extends StatefulWidget {
   const MemoryQueryPage({
     super.key,
@@ -1732,8 +1755,10 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     final memoryIds = (result?['memory_ids'] as List<dynamic>? ?? const []);
     final canAnswer = result?['can_answer'] == true;
     final answer = result?['answer']?.toString() ?? '';
-    final certainty = result?['certainty']?.toString() ?? '未知';
-    final intent = result?['intent']?.toString() ?? '未知';
+    final certainty = result?['certainty']?.toString() ?? 'unknown';
+    final intent = result?['intent']?.toString() ?? '';
+    final certaintyLabel = _queryCertaintyLabel(certainty);
+    final intentLabel = _queryIntentLabel(intent);
     // FIND_OBJECT 的 backing Memory 受结构化 ObjectLocation 状态约束，
     // 通用编辑会被后端拒绝，因此 UI 直接隐藏编辑入口而不是让用户走到 409。
     final canEditFirstMemory = memoryIds.isNotEmpty && intent != 'FIND_OBJECT';
@@ -1862,18 +1887,17 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                     ),
                   ],
                   const SizedBox(height: JiYiSpacing.sm),
-                  // certainty / intent 不被 UI 重新推断；这里只把服务端原值放入有标签的 Chip，避免弱化可信状态。
                   Wrap(
                     spacing: JiYiSpacing.xs,
                     runSpacing: JiYiSpacing.xs,
                     children: [
                       Chip(
                         avatar: const Icon(Icons.verified_outlined, size: 18),
-                        label: Text('可信状态：$certainty'),
+                        label: Text(certaintyLabel),
                       ),
                       Chip(
                         avatar: const Icon(Icons.category_outlined, size: 18),
-                        label: Text('识别意图：$intent'),
+                        label: Text(intentLabel),
                       ),
                     ],
                   ),
@@ -1905,9 +1929,11 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   child: JiYiEvidenceCard(
                     excerpt: e['excerpt']?.toString() ?? '',
                     source: displayedSource,
-                    evidenceType: e['kind']?.toString() ?? '未知',
-                    occurredAt: e['occurred_at']?.toString() ?? '未知',
-                    confidence: e['confidence']?.toString() ?? '未知',
+                    evidenceType: _queryEvidenceKindLabel(
+                      e['kind']?.toString() ?? '',
+                    ),
+                    occurredAt: e['occurred_at']?.toString() ?? '时间未知',
+                    confidence: '',
                   ),
                 );
               }),
