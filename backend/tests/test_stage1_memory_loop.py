@@ -78,7 +78,7 @@ async def test_formal_user_object_location_query_returns_evidence(client: AsyncC
     body = query.json()
     assert body["can_answer"] is True
     assert "书房左侧柜子第二层" in body["answer"]
-    assert body["certainty"] in {"confirmed", "evidenced"}
+    assert body["certainty"] == "evidence"
     assert len(body["evidence"]) >= 1
     assert body["evidence"][0]["excerpt"]
     assert body["evidence"][0]["occurred_at"]
