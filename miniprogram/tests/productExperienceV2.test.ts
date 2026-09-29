@@ -78,6 +78,22 @@ test('migrated product surfaces do not expose known implementation vocabulary', 
   assert.doesNotMatch(family, /\{memory\.memory_type\} · \{memory\.source_type\}/)
 })
 
+test('Mini Product Experience V2 has deterministic visual review harness', () => {
+  const review = source('src/pages/visual-review/index.tsx')
+  const reviewStyles = source('src/pages/visual-review/index.scss')
+
+  for (const scene of [
+    'today', 'timeline', 'capture', 'memory', 'people', 'life',
+    'family', 'profile', 'summary', 'states', 'elder',
+  ]) {
+    assert.ok(review.includes("'" + scene + "'"), 'missing visual review scene: ' + scene)
+  }
+  assert.match(review, /ProductHeroHeader/)
+  assert.match(review, /AiDisclosure/)
+  assert.match(review, /ProductStatePanel/)
+  assert.match(reviewStyles, /@import '\\.\\.\\/\\.\\.\\/styles\\/tokens'/)
+})
+
 test('AI references are human-facing reference records, not internal slots or ids', () => {
   assert.match(life, /参考记录 \{index \+ 1\}/)
   assert.doesNotMatch(life, /\{citation\.slot\} · \{citation\.kind\}/)
