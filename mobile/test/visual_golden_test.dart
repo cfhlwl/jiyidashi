@@ -374,9 +374,17 @@ void main() {
   });
 
   testWidgets('golden: capture and object location', (tester) async {
-    final key = await _pumpShell(tester);
-    await tester.tap(find.text('记一下'));
-    await tester.pumpAndSettle();
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: CapturePage(
+            api: _GoldenApi(),
+            offlineQueue: _GoldenQueue(),
+          ),
+        ),
+      ),
+    );
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/capture_object.png'),
@@ -384,9 +392,17 @@ void main() {
   });
 
   testWidgets('golden: unified capture media controls', (tester) async {
-    final key = await _pumpShell(tester);
-    await tester.tap(find.text('记一下'));
-    await tester.pumpAndSettle();
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: CapturePage(
+            api: _GoldenApi(),
+            offlineQueue: _GoldenQueue(),
+          ),
+        ),
+      ),
+    );
 
     final voiceStart =
         find.byKey(const ValueKey<String>('capture-voice-start'));
