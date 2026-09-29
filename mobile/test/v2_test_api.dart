@@ -397,7 +397,7 @@ class V2TestApi extends JiYiApiClient {
         'download': {
           'method': 'GET',
           'url': 'https://example.test/signed-photo.jpg',
-          'headers': const {},
+          'headers': const <String, dynamic>{},
           'expires_at': '2026-09-29T01:00:00Z',
         },
       };
