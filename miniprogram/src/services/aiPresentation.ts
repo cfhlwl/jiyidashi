@@ -50,54 +50,6 @@ export function explicitRecordPresentation(): AiPresentation {
   return PRESENTATION.EXPLICIT
 }
 
-export function queryAiPresentation(input: {
-  can_answer: boolean
-  answer: string | null
-  certainty: string
-  evidence: readonly unknown[]
-  memory_ids: readonly string[]
-}): AiPresentation {
-  if (
-    input.can_answer === true
-    && typeof input.answer === 'string'
-    && input.answer.trim().length > 0
-    && input.certainty === 'evidence'
-    && input.evidence.length > 0
-    && input.memory_ids.length > 0
-  ) {
-    return PRESENTATION.INFERRED
-  }
-  if (
-    input.can_answer === false
-    && input.answer === null
-    && input.certainty === 'unknown'
-    && input.evidence.length === 0
-    && input.memory_ids.length === 0
-  ) {
-    return PRESENTATION.UNAVAILABLE
-  }
-  return PRESENTATION.UNAVAILABLE
-}
-
-export function isCanonicalQueryTrustShape(input: {
-  can_answer: boolean
-  answer: string | null
-  certainty: string
-  evidence: readonly unknown[]
-  memory_ids: readonly string[]
-}): boolean {
-  const state = queryAiPresentation(input).state
-  if (state === 'INFERRED') return true
-  return (
-    state === 'UNAVAILABLE'
-    && input.can_answer === false
-    && input.answer === null
-    && input.certainty === 'unknown'
-    && input.evidence.length === 0
-    && input.memory_ids.length === 0
-  )
-}
-
 const READY_SUMMARY = new Set([
   'DAILY_SUMMARY_READY',
   'MONTHLY_SUMMARY_READY',
