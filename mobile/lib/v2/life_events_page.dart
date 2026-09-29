@@ -166,7 +166,7 @@ class _LifeEventsPageState extends State<LifeEventsPage> {
                   message: '可以从一个明确发生过的事件开始记录。',
                 )
               else
-                JiYiSectionCard(
+                V2SectionCard(
                   title: '事件列表',
                   child: Column(
                     children: [
