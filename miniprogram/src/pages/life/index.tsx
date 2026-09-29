@@ -374,6 +374,9 @@ export default function Page() {
 
   useEffect(() => subscribeAuthSession(() => {
     invalidateAll()
+    reasoningGate.current.end()
+    annualGate.current.end()
+    chapterGate.current.end()
     resetOwnerState()
   }), [])
 
@@ -381,6 +384,9 @@ export default function Page() {
 
   useDidHide(() => {
     invalidateAll()
+    reasoningGate.current.end()
+    annualGate.current.end()
+    chapterGate.current.end()
     setEventsLoading(false)
     setStagesLoading(false)
     setReasoningLoading(false)
@@ -489,6 +495,8 @@ export default function Page() {
   const loadStageDetail = async (stageId: string) => {
     stageDetailAuthority.current.invalidate()
     reasoningAuthority.current.invalidate()
+    reasoningGate.current.end()
+    setReasoningLoading(false)
     setSelectedStage(null)
     setStageEvidence([])
     setStageFormMode('none')
@@ -801,8 +809,10 @@ export default function Page() {
       if (!isCurrent(reasoningAuthority.current, snapshot)) return
       setStageStatus(mutationError(error, '长期回顾生成失败'))
     } finally {
-      reasoningGate.current.end()
-      if (isCurrent(reasoningAuthority.current, snapshot)) setReasoningLoading(false)
+      if (isCurrent(reasoningAuthority.current, snapshot)) {
+        reasoningGate.current.end()
+        setReasoningLoading(false)
+      }
     }
   }
 
@@ -891,8 +901,10 @@ export default function Page() {
       if (!isCurrent(annualAuthority.current, snapshot)) return
       setAnnualStatus(mutationError(error, '年度回忆录生成失败'))
     } finally {
-      annualGate.current.end()
-      if (isCurrent(annualAuthority.current, snapshot)) setAnnualLoading(false)
+      if (isCurrent(annualAuthority.current, snapshot)) {
+        annualGate.current.end()
+        setAnnualLoading(false)
+      }
     }
   }
 
@@ -979,6 +991,8 @@ export default function Page() {
 
   const selectMemoirStage = (stageId: string) => {
     memoirChapterAuthority.current.invalidate()
+    chapterGate.current.end()
+    setChapterLoading(false)
     setSelectedMemoirStageId(stageId)
     setChapter(null)
     setMemoirStatus('')
@@ -1000,14 +1014,18 @@ export default function Page() {
       if (!isCurrent(memoirChapterAuthority.current, snapshot)) return
       setMemoirStatus(mutationError(error, '人生回忆录章节生成失败'))
     } finally {
-      chapterGate.current.end()
-      if (isCurrent(memoirChapterAuthority.current, snapshot)) setChapterLoading(false)
+      if (isCurrent(memoirChapterAuthority.current, snapshot)) {
+        chapterGate.current.end()
+        setChapterLoading(false)
+      }
     }
   }
 
   const changeAnnualYear = (value: string) => {
     annualAuthority.current.invalidate()
     annualTimelineAuthority.current.invalidate()
+    annualGate.current.end()
+    setAnnualLoading(false)
     annualPhotoAuthority.current.invalidate()
     setAnnualYear(value)
     setAnnual(null)
