@@ -444,7 +444,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
           JiYiStatusBanner(kind: JiYiStatusKind.success, message: status!),
           const SizedBox(height: JiYiSpacing.sm),
         ],
-        JiYiSectionCard(
+        V2SectionCard(
           title: '人物资料',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -483,7 +483,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         const SizedBox(height: JiYiSpacing.md),
         _durationCard(),
         const SizedBox(height: JiYiSpacing.md),
-        JiYiSectionCard(
+        V2SectionCard(
           title: '关联记忆',
           subtitle: '只关联当前账号已有的明确 Memory；不会输入自由 UUID。',
           child: Column(
@@ -536,7 +536,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        JiYiSectionCard(
+        V2SectionCard(
           title: '人物关系',
           subtitle: '不根据姓名、别名或共同出现自动创建关系。',
           child: Column(
@@ -584,7 +584,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   Widget _durationCard() {
     final value = duration;
     if (value == null) {
-      return const JiYiSectionCard(
+      return const V2SectionCard(
         title: '认识时长',
         child: Text('暂时无法读取认识时长。'),
       );
@@ -603,7 +603,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     } else {
       message = '还没有足够可靠的认识时间证据。';
     }
-    return JiYiSectionCard(
+    return V2SectionCard(
       title: '认识时长',
       subtitle: '这是确定性服务端投影，不是 AI 推断。',
       child: Text(message),
