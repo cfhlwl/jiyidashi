@@ -38,7 +38,7 @@ async def _new_user(client, nickname: str) -> UUID:
     return UUID(response.json()["user_id"])
 
 
-async def test_extraction_uses_ai_gateway_and_retains_inference_provenance():
+async def test_extraction_uses_ai_gateway_and_retains_inference_provenance(client):
     text = "明天下午把护照带到公司找老张开会"
     gateway, provider = _gateway(
         {
@@ -52,7 +52,14 @@ async def test_extraction_uses_ai_gateway_and_retains_inference_provenance():
         }
     )
 
-    result = await extract_entity_candidates(text=text, gateway=gateway)
+    user_id = await _new_user(client, "entity-candidate-owner")
+    with SessionLocal() as db:
+        result = await extract_entity_candidates(
+            db,
+            user_id=user_id,
+            text=text,
+            gateway=gateway,
+        )
 
     assert [candidate.kind for candidate in result.candidates] == [
         EntityKind.TIME,
@@ -98,11 +105,21 @@ async def test_extraction_uses_ai_gateway_and_retains_inference_provenance():
         ),
     ],
 )
-async def test_untrusted_provider_response_is_strict_and_fail_closed(output, code):
+async def test_untrusted_provider_response_is_strict_and_fail_closed(
+    client,
+    output,
+    code,
+):
     gateway, _ = _gateway(output)
+    user_id = await _new_user(client, f"entity-strict-{uuid4()}")
 
-    with pytest.raises(EntityExtractionError) as exc_info:
-        await extract_entity_candidates(text="我的护照在抽屉", gateway=gateway)
+    with SessionLocal() as db, pytest.raises(EntityExtractionError) as exc_info:
+        await extract_entity_candidates(
+            db,
+            user_id=user_id,
+            text="我的护照在抽屉",
+            gateway=gateway,
+        )
 
     assert exc_info.value.code == code
 
