@@ -342,7 +342,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
           JiYiStatusBanner(kind: JiYiStatusKind.success, message: status!),
           const SizedBox(height: JiYiSpacing.sm),
         ],
-        JiYiSectionCard(
+        V2SectionCard(
           title: '阶段详情',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -362,7 +362,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        JiYiSectionCard(
+        V2SectionCard(
           title: '关联事件',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -392,7 +392,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        JiYiSectionCard(
+        V2SectionCard(
           title: '长期回顾',
           subtitle: '只有点击生成后才调用 AI；引用保留 canonical evidence identity。',
           child: Column(
