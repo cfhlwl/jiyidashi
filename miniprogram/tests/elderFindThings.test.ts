@@ -14,7 +14,7 @@ const queryPage = readFileSync(resolve(process.cwd(), 'src/pages/query/index.tsx
 const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
 
 test('elder find things is presentation over existing queryMemory seam', () => {
-  assert.match(queryPage, /elderMode \? '我想找东西' : '问记忆'/)
+  assert.match(queryPage, /title=\{elderMode \? '我想找东西' : '记忆'\}/)
   assert.match(queryPage, /queryMemory\(submitted\)/)
   assert.match(queryPage, /elderMode \? '帮我找'/)
   assert.doesNotMatch(queryPage, /\/elder\/(?:find|query)/)
