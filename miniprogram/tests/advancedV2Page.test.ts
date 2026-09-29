@@ -92,6 +92,14 @@ test('actual AI surfaces explicitly reuse SEC-013 mappings', () => {
   assert.match(lifePage, /chapter\.citations\.map/)
 })
 
+test('Life section navigation invalidates hidden requests and published AI state', () => {
+  assert.match(lifePage, /const openSection = \(next: Section\) => \{[\s\S]*?invalidateAll\(\)/)
+  assert.match(lifePage, /setReasoning\(null\)/)
+  assert.match(lifePage, /setAnnual\(null\)/)
+  assert.match(lifePage, /setChapter\(null\)/)
+  assert.match(lifePage, /onClick=\{\(\) => openSection\('home'\)\}/)
+})
+
 test('owner/session/page/resource authority invalidates old reads and AI generations', () => {
   assert.match(lifePage, /subscribeAuthSession/)
   assert.match(lifePage, /useDidHide/)
