@@ -15,7 +15,6 @@ import {
   submitMemoryFeedback,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
-import { queryAiPresentation } from '../../services/aiPresentation'
 import {
   ElderFindQueryEpoch,
   ElderFindSingleFlight,
@@ -32,6 +31,7 @@ import {
   MemoryFeedbackSingleFlightGate,
   MemoryReviewEpoch,
   provenanceLabel,
+  trustPresentation,
   type MemoryFeedbackOperation,
   type MemoryRead,
 } from '../../services/memoryFeedback'
@@ -481,7 +481,7 @@ export default function Page() {
     }
   }
 
-  const trust = result ? queryAiPresentation(result) : null
+  const trust = result ? trustPresentation(result) : null
   const elderState = elderFindState({
     loading,
     canAnswer: result ? result.can_answer : null,
@@ -522,16 +522,11 @@ export default function Page() {
         <View className='card'>
           <View className='answer-row'>
             <View className='card-title answer-title'>
-              {trust.state === 'INFERRED'
-                ? result.answer
+              {result.can_answer
+                ? result.answer || '找到相关证据，但答案暂不可显示。'
                 : (elderMode ? '我还不知道它在哪里。' : '我没有找到足够证据回答这个问题。')}
             </View>
-            <View
-              className={`trust-badge trust-${trust.tone}`}
-              aria-label={`AI 可信状态：${trust.label}`}
-            >
-              {trust.label}
-            </View>
+            <View className={`trust-badge trust-${trust.tone}`}>{trust.label}</View>
           </View>
           <View className='muted trust-detail'>{trust.detail}</View>
           {elderMode && !result.can_answer && (
@@ -544,7 +539,7 @@ export default function Page() {
             const provenance = provenanceLabel(evidence.provenance)
             return (
               <View className='evidence' key={evidence.memory_source_id}>
-                {/* Evidence source identity stays independent from the top-level AI answer label. */}
+                {/* AI_INFERENCE is deliberately filtered above and is never promoted as source evidence. */}
                 <Text>{evidence.excerpt}</Text>
                 <View className='muted'>来源：{sourceLabel(evidence.source_type)}</View>
                 {provenance && <View className='muted'>来源链：{provenance}</View>}
