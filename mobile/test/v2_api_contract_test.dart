@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/v2/life_models.dart';
 import 'package:jiyidashi/v2/people_models.dart';
