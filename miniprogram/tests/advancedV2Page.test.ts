@@ -139,6 +139,23 @@ test('AI identity switches release old local gates without letting stale finally
   )
 })
 
+test('mutation workflow uses token-bound gate and owner/session-bound continuation', () => {
+  assert.match(lifePage, /new AdvancedV2MutationFlight\(\)/)
+  assert.match(lifePage, /mutationGate\.current\.invalidate\(\)/)
+  assert.match(lifePage, /continueAdvancedV2Mutation\(/)
+  assert.match(lifePage, /currentAuthenticatedUserId,[\s\S]*?currentAuthSessionEpoch/)
+  assert.match(
+    lifePage,
+    /await continueMutationRefresh\(snapshot, \[[\s\S]*?loadEvents,[\s\S]*?loadEventDetail\(saved\.id\)/,
+  )
+  assert.match(
+    lifePage,
+    /await continueMutationRefresh\(snapshot, \[[\s\S]*?loadStages,[\s\S]*?loadStageDetail\(saved\.id\)/,
+  )
+  assert.match(lifePage, /mutationGate\.current\.end\(snapshot\.mutationToken\)/)
+  assert.match(lifePage, /if \(mutationGate\.current\.end\(snapshot\.mutationToken\)\)/)
+})
+
 test('mutating and generating actions use local single-flight gates', () => {
   assert.match(lifePage, /mutationGate/)
   assert.match(lifePage, /reasoningGate/)
