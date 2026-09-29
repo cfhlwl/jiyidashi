@@ -18,7 +18,6 @@ from app.entitlement_models import (
     UserEntitlement,
 )
 from app.media_models import MediaAsset, MediaStatus
-from app.models import User
 
 
 class EntitlementError(RuntimeError):
@@ -199,8 +198,14 @@ def require_capability(
 
 
 def lock_entitlement_subject(db: Session, *, user_id: UUID) -> None:
-    user = db.scalar(select(User.id).where(User.id == user_id).with_for_update())
-    if user is None:
+    """Serialize one user's commercial authority without upgrading the request User lock."""
+
+    entitlement_user_id = db.scalar(
+        select(UserEntitlement.user_id)
+        .where(UserEntitlement.user_id == user_id)
+        .with_for_update()
+    )
+    if entitlement_user_id is None:
         raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
 
 
