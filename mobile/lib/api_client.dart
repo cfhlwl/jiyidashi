@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'ai_inference_presentation.dart';
+
 const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
 const _developmentApiBaseUrl = 'http://127.0.0.1:8000/v1';
@@ -232,7 +234,7 @@ Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
     parsedIds.add(id);
   }
 
-  return Map<String, dynamic>.unmodifiable({
+  final parsed = Map<String, dynamic>.unmodifiable({
     'answer': answer,
     'can_answer': canAnswer,
     'certainty': certainty,
@@ -241,6 +243,10 @@ Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
     'evidence': List<Map<String, dynamic>>.unmodifiable(parsedEvidence),
     'memory_ids': List<String>.unmodifiable(parsedIds),
   });
+  if (!isCanonicalQueryTrustShape(parsed)) {
+    throw ProtocolException('服务端查询响应格式不正确');
+  }
+  return parsed;
 }
 
 class JiYiApiClient {
