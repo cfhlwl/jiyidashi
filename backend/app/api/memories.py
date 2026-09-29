@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
+from app.analytics_models import ProductActivity
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.memory_feedback_contracts import MemoryFeedbackCreate, MemoryFeedbackRead
@@ -20,7 +21,6 @@ from app.schemas import (
     MemoryUpdate,
     TimelinePageResponse,
 )
-from app.analytics_models import ProductActivity
 from app.services.analytics_service import (
     record_active_day_safe,
     record_retrieval_and_activity_safe,
