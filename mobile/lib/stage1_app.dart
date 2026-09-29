@@ -1675,7 +1675,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
         result == null ? null : queryAiPresentation(result!);
     final canAnswer =
         presentation?.state == AiPresentationState.inferred;
-    final answer = canAnswer ? result?['answer']?.toString() ?? '' : '';
+    final answer =
+        canAnswer ? (result!['answer']?.toString() ?? '') : '';
     final intent = result?['intent']?.toString() ?? '未知';
     // FIND_OBJECT 的 backing Memory 受结构化 ObjectLocation 状态约束，
     // 通用编辑会被后端拒绝，因此 UI 直接隐藏编辑入口而不是让用户走到 409。
@@ -1828,8 +1829,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                 ),
               ),
               const SizedBox(height: JiYiSpacing.sm),
-              ...evidence.map((item) {
-                final e = item as Map<String, dynamic>;
+              ...evidence.map((e) {
                 final sourceLabel =
                     _evidenceSourceLabel(e['source_type']?.toString());
                 final provenance = e['provenance']?.toString();
