@@ -323,6 +323,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_entitlement_quota_integration.py
 
+      - name: PostgreSQL Retrieval & Retention Analytics
+        # [P1][#169] Real PostgreSQL proves retrieval/active-day dedupe,
+        # reproducible retention math, and destructive-generation stale-write safety.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_product_analytics_integration.py
+
       - name: PostgreSQL Life Memoir composition
         # [V2-011] Explicit stage index must remain owner-safe/current-state,
         # and chapter wrapper must inherit V2-007 provider-gap stale-evidence behavior.
