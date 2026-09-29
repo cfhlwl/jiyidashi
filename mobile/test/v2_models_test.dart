@@ -674,4 +674,209 @@ void main() {
     );
   });
 
+
+  test('Known Duration rejects non-authoritative trust states', () {
+    for (final trust in ['INFERENCE_ONLY', 'NO_EVIDENCE']) {
+      expect(
+        () => V2KnownDuration.parse(
+          {
+            'status': 'KNOWN_SINCE_MET',
+            'person_id': personId,
+            'display_name': '老张',
+            'as_of': '2026-09-29T00:00:00+08:00',
+            'at_least_since_at': '2020-01-01T00:00:00+08:00',
+            'elapsed_days': 2463,
+            'earliest_related_at': null,
+            'evidence': {
+              'person_memory_link_id': linkId,
+              'memory_id': memoryId,
+              'memory_source_id': sourceId,
+              'relation_kind': 'MET',
+              'trust_state': trust,
+              'occurred_at': '2020-01-01T00:00:00+08:00',
+            },
+          },
+          personId: personId,
+        ),
+        throwsA(isA<ProtocolException>()),
+        reason: trust,
+      );
+    }
+  });
+
+  test('LifeStageEvent rejects impossible nested event projections', () {
+    Map<String, dynamic> row({
+      String kind = 'WORK',
+      String? customLabel,
+      String startedAt = '2025-03-01T01:00:00Z',
+      String? endedAt,
+    }) =>
+        {
+          'link_id': linkId,
+          'life_event_id': eventId,
+          'event_kind': kind,
+          'title': '阶段事件',
+          'custom_label': customLabel,
+          'note': null,
+          'started_at': startedAt,
+          'ended_at': endedAt,
+          'place_id': null,
+          'created_at': '2025-03-01T01:00:00Z',
+        };
+
+    expect(V2LifeStageEvent.parse(row()).eventKind, 'WORK');
+    expect(
+      () => V2LifeStageEvent.parse(row(kind: 'OTHER')),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => V2LifeStageEvent.parse(row(customLabel: '不应存在')),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => V2LifeStageEvent.parse(
+        row(
+          startedAt: '2025-03-02T01:00:00Z',
+          endedAt: '2025-03-01T01:00:00Z',
+        ),
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      V2LifeStageEvent.parse(
+        row(kind: 'OTHER', customLabel: '重要节点'),
+      ).customLabel,
+      '重要节点',
+    );
+  });
+
+  test('Life History rejects impossible event/stage projection matrices', () {
+    Map<String, dynamic> eventRow({
+      String eventKind = 'WORK',
+      String? customLabel,
+      String? endedAt,
+    }) =>
+        {
+          'kind': 'LIFE_EVENT',
+          'occurred_at': '2025-03-01T01:00:00Z',
+          'title': '事件',
+          'custom_label': customLabel,
+          'life_event_id': eventId,
+          'event_kind': eventKind,
+          'event_ended_at': endedAt,
+          'place_id': null,
+          'life_stage_id': null,
+          'stage_kind': null,
+        };
+
+    Map<String, dynamic> stageRow({
+      String stageKind = 'WORK',
+      String? customLabel,
+      Object? eventEndedAt,
+      Object? placeId,
+    }) =>
+        {
+          'kind': 'LIFE_STAGE_STARTED',
+          'occurred_at': '2025-01-01T00:00:00Z',
+          'title': '阶段',
+          'custom_label': customLabel,
+          'life_event_id': null,
+          'event_kind': null,
+          'event_ended_at': eventEndedAt,
+          'place_id': placeId,
+          'life_stage_id': stageId,
+          'stage_kind': stageKind,
+        };
+
+    expect(V2LifeHistoryItem.parse(eventRow()).kind, 'LIFE_EVENT');
+    expect(
+      () => V2LifeHistoryItem.parse(eventRow(eventKind: 'OTHER')),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => V2LifeHistoryItem.parse(eventRow(customLabel: '不应存在')),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => V2LifeHistoryItem.parse(
+        eventRow(endedAt: '2025-02-28T23:00:00Z'),
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      V2LifeHistoryItem.parse(
+        eventRow(eventKind: 'OTHER', customLabel: '其他事件'),
+      ).customLabel,
+      '其他事件',
+    );
+
+    expect(V2LifeHistoryItem.parse(stageRow()).kind, 'LIFE_STAGE_STARTED');
+    expect(
+      () => V2LifeHistoryItem.parse(stageRow(stageKind: 'OTHER')),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => V2LifeHistoryItem.parse(stageRow(customLabel: '不应存在')),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => V2LifeHistoryItem.parse(
+        stageRow(eventEndedAt: '2025-01-02T00:00:00Z'),
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => V2LifeHistoryItem.parse(stageRow(placeId: person2Id)),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      V2LifeHistoryItem.parse(
+        stageRow(stageKind: 'OTHER', customLabel: '其他阶段'),
+      ).customLabel,
+      '其他阶段',
+    );
+  });
+
+  test('Life Memoir stage rejects impossible nested stage projections', () {
+    Map<String, dynamic> row({
+      String kind = 'WORK',
+      String? customLabel,
+      String startedAt = '2025-01-01T00:00:00Z',
+      String? endedAt,
+    }) =>
+        {
+          'life_stage_id': stageId,
+          'stage_kind': kind,
+          'title': '阶段',
+          'custom_label': customLabel,
+          'started_at': startedAt,
+          'ended_at': endedAt,
+        };
+
+    expect(V2LifeMemoirStage.parse(row()).stageKind, 'WORK');
+    expect(
+      () => V2LifeMemoirStage.parse(row(kind: 'OTHER')),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => V2LifeMemoirStage.parse(row(customLabel: '不应存在')),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => V2LifeMemoirStage.parse(
+        row(
+          startedAt: '2025-02-01T00:00:00Z',
+          endedAt: '2025-01-01T00:00:00Z',
+        ),
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      V2LifeMemoirStage.parse(
+        row(kind: 'OTHER', customLabel: '其他阶段'),
+      ).customLabel,
+      '其他阶段',
+    );
+  });
+
 }

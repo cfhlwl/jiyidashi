@@ -250,19 +250,32 @@ class V2LifeStageEvent {
 
   factory V2LifeStageEvent.parse(Object? value) {
     final raw = v2Map(value, '阶段事件');
+    final eventKind = v2Enum(raw['event_kind'], lifeEventKinds, '阶段事件');
+    final customLabel = v2NullableText(
+      raw['custom_label'],
+      label: '阶段事件',
+      max: 120,
+    );
+    if (eventKind == 'OTHER'
+        ? customLabel == null
+        : customLabel != null) {
+      return v2Invalid('阶段事件');
+    }
+    final startedAt = v2Aware(raw['started_at'], '阶段事件');
+    final endedAt = v2NullableAware(raw['ended_at'], '阶段事件');
+    if (endedAt != null &&
+        DateTime.parse(endedAt).isBefore(DateTime.parse(startedAt))) {
+      return v2Invalid('阶段事件');
+    }
     return V2LifeStageEvent(
       linkId: v2Uuid(raw['link_id'], '阶段事件'),
       lifeEventId: v2Uuid(raw['life_event_id'], '阶段事件'),
-      eventKind: v2Enum(raw['event_kind'], lifeEventKinds, '阶段事件'),
+      eventKind: eventKind,
       title: v2Text(raw['title'], label: '阶段事件', max: 240),
-      customLabel: v2NullableText(
-        raw['custom_label'],
-        label: '阶段事件',
-        max: 120,
-      ),
+      customLabel: customLabel,
       note: v2NullableText(raw['note'], label: '阶段事件', max: 5000),
-      startedAt: v2Aware(raw['started_at'], '阶段事件'),
-      endedAt: v2NullableAware(raw['ended_at'], '阶段事件'),
+      startedAt: startedAt,
+      endedAt: endedAt,
       placeId: v2NullableUuid(raw['place_id'], '阶段事件'),
       createdAt: v2Aware(raw['created_at'], '阶段事件'),
     );
@@ -514,11 +527,30 @@ class V2LifeHistoryItem {
           result.stageKind != null) {
         return v2Invalid('多年时间线');
       }
-    } else if (result.lifeStageId == null ||
-        result.stageKind == null ||
-        result.lifeEventId != null ||
-        result.eventKind != null) {
-      return v2Invalid('多年时间线');
+      if (result.eventKind == 'OTHER'
+          ? result.customLabel == null
+          : result.customLabel != null) {
+        return v2Invalid('多年时间线');
+      }
+      if (result.eventEndedAt != null &&
+          DateTime.parse(result.eventEndedAt!)
+              .isBefore(DateTime.parse(result.occurredAt))) {
+        return v2Invalid('多年时间线');
+      }
+    } else {
+      if (result.lifeStageId == null ||
+          result.stageKind == null ||
+          result.lifeEventId != null ||
+          result.eventKind != null ||
+          result.eventEndedAt != null ||
+          result.placeId != null) {
+        return v2Invalid('多年时间线');
+      }
+      if (result.stageKind == 'OTHER'
+          ? result.customLabel == null
+          : result.customLabel != null) {
+        return v2Invalid('多年时间线');
+      }
     }
     return result;
   }

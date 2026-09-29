@@ -291,17 +291,31 @@ class V2LifeMemoirStage {
 
   factory V2LifeMemoirStage.parse(Object? value) {
     final raw = v2Map(value, '人生回忆录阶段');
+    final stageKind =
+        v2Enum(raw['stage_kind'], lifeStageKinds, '人生回忆录阶段');
+    final customLabel = v2NullableText(
+      raw['custom_label'],
+      label: '人生回忆录阶段',
+      max: 120,
+    );
+    if (stageKind == 'OTHER'
+        ? customLabel == null
+        : customLabel != null) {
+      return v2Invalid('人生回忆录阶段');
+    }
+    final startedAt = v2Aware(raw['started_at'], '人生回忆录阶段');
+    final endedAt = v2NullableAware(raw['ended_at'], '人生回忆录阶段');
+    if (endedAt != null &&
+        DateTime.parse(endedAt).isBefore(DateTime.parse(startedAt))) {
+      return v2Invalid('人生回忆录阶段');
+    }
     return V2LifeMemoirStage(
       lifeStageId: v2Uuid(raw['life_stage_id'], '人生回忆录阶段'),
-      stageKind: v2Enum(raw['stage_kind'], lifeStageKinds, '人生回忆录阶段'),
+      stageKind: stageKind,
       title: v2Text(raw['title'], label: '人生回忆录阶段', max: 240),
-      customLabel: v2NullableText(
-        raw['custom_label'],
-        label: '人生回忆录阶段',
-        max: 120,
-      ),
-      startedAt: v2Aware(raw['started_at'], '人生回忆录阶段'),
-      endedAt: v2NullableAware(raw['ended_at'], '人生回忆录阶段'),
+      customLabel: customLabel,
+      startedAt: startedAt,
+      endedAt: endedAt,
     );
   }
 }

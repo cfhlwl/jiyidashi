@@ -420,7 +420,7 @@ class V2KnownDurationEvidence {
         personMemoryRelationKinds,
         '认识时长证据',
       ),
-      trustState: v2AnswerTrust(raw['trust_state'], '认识时长证据'),
+      trustState: v2CitationTrust(raw['trust_state'], '认识时长证据'),
       occurredAt: v2Aware(raw['occurred_at'], '认识时长证据'),
     );
   }
