@@ -211,9 +211,13 @@ class _CountingSigner:
         )
 
 
-def test_media_capability_denial_happens_before_signing() -> None:
+def test_media_capability_denial_happens_before_signing(monkeypatch) -> None:
     engine = _engine()
     signer = _CountingSigner()
+    monkeypatch.setattr(
+        "app.services.entitlement_service.get_settings",
+        lambda: _settings(),
+    )
     with Session(engine) as db:
         user = _seed_entitlement(db, plan_code=PlanCode.FREE)
         with pytest.raises(
@@ -459,7 +463,7 @@ async def test_formal_registration_creates_legacy_full_in_same_user_lifecycle(cl
             "email": email,
             "password": "correct-horse-battery-staple",
             "nickname": "Entitlement Registration",
-            "timezone": "UTC",
+            "timezone": "Asia/Shanghai",
             "locale": "zh-CN",
         },
     )
