@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+
 const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
 const _developmentApiBaseUrl = 'http://127.0.0.1:8000/v1';
@@ -232,7 +233,7 @@ Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
     parsedIds.add(id);
   }
 
-  return Map<String, dynamic>.unmodifiable({
+  final parsed = Map<String, dynamic>.unmodifiable({
     'answer': answer,
     'can_answer': canAnswer,
     'certainty': certainty,
@@ -241,6 +242,24 @@ Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
     'evidence': List<Map<String, dynamic>>.unmodifiable(parsedEvidence),
     'memory_ids': List<String>.unmodifiable(parsedIds),
   });
+
+  final canonicalAnswer =
+      canAnswer == true &&
+      answer is String &&
+      answer.trim().isNotEmpty &&
+      (certainty == 'confirmed' || certainty == 'evidence') &&
+      parsedEvidence.isNotEmpty &&
+      parsedIds.isNotEmpty;
+  final canonicalNoEvidence =
+      canAnswer == false &&
+      answer == null &&
+      certainty == 'unknown' &&
+      parsedEvidence.isEmpty &&
+      parsedIds.isEmpty;
+  if (!canonicalAnswer && !canonicalNoEvidence) {
+    throw ProtocolException('服务端查询响应格式不正确');
+  }
+  return parsed;
 }
 
 class JiYiApiClient {

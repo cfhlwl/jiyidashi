@@ -271,6 +271,23 @@ export function isReadySummary(result: TrustedSummaryResult): boolean {
   return result.status === expectedReadyStatus(result.period)
 }
 
+export class TrustedSummaryEpoch {
+  private revision = 0
+
+  capture(): number {
+    this.revision += 1
+    return this.revision
+  }
+
+  invalidate(): void {
+    this.revision += 1
+  }
+
+  isCurrent(captured: number): boolean {
+    return captured === this.revision
+  }
+}
+
 export class TrustedSummaryGenerationGate {
   private pending = false
 

@@ -131,3 +131,18 @@
   color: #446a57;
   font-size: 24rpx;
 }
+
+.result-badge.trust-inferred {
+  background: #e9f5ee;
+  color: #2d6848;
+}
+
+.result-badge.trust-uncertain {
+  background: #fff4df;
+  color: #795c24;
+}
+
+.result-badge.trust-unavailable {
+  background: #f3f4f3;
+  color: #626b65;
+}

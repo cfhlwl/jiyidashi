@@ -1428,10 +1428,14 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   String? submittedQuestion;
   bool loading = false;
   int _queryGeneration = 0;
+  late int _observedSessionVersion;
+  String? _observedOwner;
 
   @override
   void initState() {
     super.initState();
+    _observedSessionVersion = widget.api.sessionVersion;
+    _observedOwner = widget.api.authenticatedUserId;
     final initial = widget.initialQuestion?.trim();
     if (initial != null && initial.isNotEmpty) {
       controller.text = initial;
@@ -1441,6 +1445,20 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   @override
   void didUpdateWidget(covariant MemoryQueryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final currentSessionVersion = widget.api.sessionVersion;
+    final currentOwner = widget.api.authenticatedUserId;
+    if (_observedSessionVersion != currentSessionVersion ||
+        _observedOwner != currentOwner) {
+      _queryGeneration += 1;
+      result = null;
+      error = null;
+      actionMessage = null;
+      submittedQuestion = null;
+      loading = false;
+    }
+    _observedSessionVersion = currentSessionVersion;
+    _observedOwner = currentOwner;
+
     final next = widget.initialQuestion?.trim();
     if (oldWidget.initialQuestion != widget.initialQuestion &&
         controller.text.trim().isEmpty &&

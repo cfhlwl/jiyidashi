@@ -1,18 +1,22 @@
-import Taro from '@tarojs/taro'
+import Taro, { useDidHide } from '@tarojs/taro'
 import { Button, Text, View } from '@tarojs/components'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   generateAnnualTrustedSummary,
   generateDailyTrustedSummary,
   generateMonthlyTrustedSummary,
+  currentAuthenticatedUserId,
   isAuthenticated,
+  subscribeAuthSession,
 } from '../../services/api'
+import { summaryAiPresentation } from '../../services/aiPresentation'
 import {
   isReadySummary,
   trustedSummaryCitationLabel,
   trustedSummaryPeriodIdentity,
   trustedSummaryStatusMessage,
   trustedSummaryTrustLabel,
+  TrustedSummaryEpoch,
   TrustedSummaryGenerationGate,
   type TrustedSummaryPeriod,
   type TrustedSummaryResult,
@@ -47,9 +51,40 @@ export default function Page() {
   const [status, setStatus] = useState('')
   const [generating, setGenerating] = useState(false)
   const generationGate = useRef(new TrustedSummaryGenerationGate())
+  const generationEpoch = useRef(new TrustedSummaryEpoch())
+  const authOwnerRef = useRef<string | null>(currentAuthenticatedUserId())
+  const authEpochRef = useRef<number | null>(null)
+
+  useEffect(() => subscribeAuthSession((owner, epoch) => {
+    if (authEpochRef.current === null) {
+      authEpochRef.current = epoch
+      authOwnerRef.current = owner
+      return
+    }
+    if (authEpochRef.current === epoch && authOwnerRef.current === owner) return
+    authEpochRef.current = epoch
+    authOwnerRef.current = owner
+    generationEpoch.current.invalidate()
+    generationGate.current.end()
+    setGenerating(false)
+    setResult(null)
+    setStatus('')
+  }), [])
+
+  useDidHide(() => {
+    generationEpoch.current.invalidate()
+    generationGate.current.end()
+    setGenerating(false)
+  })
+
+  useEffect(() => () => {
+    generationEpoch.current.invalidate()
+    generationGate.current.end()
+  }, [])
 
   const selectPeriod = (next: TrustedSummaryPeriod) => {
     if (generationGate.current.isPending() || next === period) return
+    generationEpoch.current.invalidate()
     setPeriod(next)
     setResult(null)
     setStatus('')
@@ -63,6 +98,15 @@ export default function Page() {
     }
     if (!generationGate.current.begin()) return
 
+    const capturedEpoch = generationEpoch.current.capture()
+    const capturedOwner = authOwnerRef.current
+    const capturedAuthEpoch = authEpochRef.current
+    const isCurrent = () => (
+      generationEpoch.current.isCurrent(capturedEpoch)
+      && authOwnerRef.current === capturedOwner
+      && authEpochRef.current === capturedAuthEpoch
+    )
+
     setGenerating(true)
     setResult(null)
     setStatus('')
@@ -74,20 +118,25 @@ export default function Page() {
         : period === 'monthly'
           ? await generateMonthlyTrustedSummary()
           : await generateAnnualTrustedSummary()
+      if (!isCurrent()) return
       setResult(generated)
     } catch {
+      if (!isCurrent()) return
       // Provider/backend detail strings are intentionally not surfaced in product UI.
       setResult(null)
       setStatus('回忆总结生成失败，请稍后重试')
     } finally {
-      generationGate.current.end()
-      setGenerating(false)
+      if (isCurrent()) {
+        generationGate.current.end()
+        setGenerating(false)
+      }
     }
   }
 
   const copy = PERIOD_COPY[period]
   const ready = result ? isReadySummary(result) : false
   const typedStatus = result ? trustedSummaryStatusMessage(result.status) : ''
+  const presentation = result ? summaryAiPresentation(result.status) : null
 
   return (
     <View className='page summaries-page'>
@@ -128,7 +177,15 @@ export default function Page() {
 
       {status && (
         <View className='card'>
-          <View className='error'>{status}</View>
+          <View className='result-heading'>
+            <View className='error'>{status}</View>
+            <View
+              className='result-badge trust-unavailable'
+              aria-label='AI 可信状态：暂不可用'
+            >
+              暂不可用
+            </View>
+          </View>
         </View>
       )}
 
@@ -136,7 +193,14 @@ export default function Page() {
         <View className='card summary-result-card'>
           <View className='result-heading'>
             <View className='card-title'>AI 回忆总结</View>
-            <View className='result-badge'>{ready ? '已生成' : '暂未生成'}</View>
+            {presentation && (
+              <View
+                className={`result-badge trust-${presentation.tone}`}
+                aria-label={`AI 可信状态：${presentation.label}`}
+              >
+                {presentation.label}
+              </View>
+            )}
           </View>
 
           <View className='result-meta'>
@@ -144,9 +208,9 @@ export default function Page() {
             <Text> · {result.timezone}</Text>
           </View>
 
-          <View className='ai-note'>
-            AI 只根据服务端冻结的可信记录生成；没有足够证据时不会编造总结。
-          </View>
+          {presentation && (
+            <View className='ai-note'>{presentation.detail}</View>
+          )}
 
           {ready && result.summary && (
             <View className='summary-text'>{result.summary}</View>

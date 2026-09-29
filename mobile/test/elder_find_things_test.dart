@@ -17,7 +17,7 @@ Widget _host(JiYiApiClient api, {required bool elderMode}) => MaterialApp(
 Map<String, dynamic> _noAnswer() => {
       'answer': null,
       'can_answer': false,
-      'certainty': 'insufficient',
+      'certainty': 'unknown',
       'reason': 'NO_EVIDENCE',
       'intent': 'FIND_OBJECT',
       'evidence': <Map<String, dynamic>>[],
@@ -87,12 +87,13 @@ void main() {
     expect(api.lastQuestion, '护照');
     expect(find.text('我还不知道它在哪里'), findsOneWidget);
     expect(find.textContaining('没有找到足够可靠的记录'), findsOneWidget);
+    expect(find.text('可信状态：unknown'), findsOneWidget);
     expect(find.textContaining('可能在'), findsNothing);
     expect(find.textContaining('应该在'), findsNothing);
     expect(find.textContaining('大概在'), findsNothing);
   });
 
-  testWidgets('Elder found state displays canonical server answer and filters AI inference evidence', (tester) async {
+  testWidgets('deterministic Elder result preserves canonical evidence identity without AI label', (tester) async {
     final api = _FindApi(
       response: {
         ..._found('护照在书房抽屉。'),
@@ -125,8 +126,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('护照在书房抽屉。'), findsOneWidget);
+    expect(find.text('AI 推断（有证据支持）'), findsNothing);
+    expect(find.text('可信状态：confirmed'), findsOneWidget);
     expect(find.text('书房抽屉'), findsOneWidget);
     expect(find.text('模型猜测的厨房'), findsNothing);
+    expect(find.textContaining('用户文字记录'), findsOneWidget);
+    expect(find.textContaining('AI 推测'), findsNothing);
   });
 
   testWidgets('rapid repeated Elder find submit is single-flight', (tester) async {
@@ -209,6 +214,30 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.text('A 的书房'), findsNothing);
+  });
+
+  testWidgets('published AI label and answer clear after session authority changes', (tester) async {
+    final api = _FindApi(response: _found('旧账号答案'));
+    await tester.pumpWidget(_host(api, elderMode: true));
+    await tester.enterText(
+      find.byKey(const ValueKey('memory-query-input')),
+      '旧账号问题',
+    );
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('旧账号答案'), findsWidgets);
+    expect(find.text('AI 推断（有证据支持）'), findsNothing);
+    expect(find.text('可信状态：confirmed'), findsOneWidget);
+
+    api.logout();
+    api.accessToken = 'token-b';
+    api.authenticatedUserId = 'owner-b';
+    await tester.pumpWidget(_host(api, elderMode: true));
+    await tester.pump();
+
+    expect(find.text('旧账号答案'), findsNothing);
+    expect(find.text('可信状态：confirmed'), findsNothing);
   });
 
   testWidgets('Elder find query has no write, media, or location side effects', (tester) async {

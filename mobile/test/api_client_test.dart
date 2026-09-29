@@ -458,6 +458,76 @@ void main() {
   });
 
 
+  test('memory query canonical no-evidence remains safely unavailable', () async {
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        return http.Response(
+          jsonEncode({
+            'answer': null,
+            'can_answer': false,
+            'certainty': 'unknown',
+            'reason': 'NO_EVIDENCE',
+            'intent': 'MEMORY_SEARCH',
+            'evidence': [],
+            'memory_ids': [],
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    final result = await api.queryMemory('没有记录的问题');
+    expect(result['can_answer'], isFalse);
+    expect(result['answer'], isNull);
+    expect(result['certainty'], 'unknown');
+  });
+
+  test('memory query unknown certainty fails closed', () async {
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        return http.Response(
+          jsonEncode({
+            'answer': '不应展示',
+            'can_answer': true,
+            'certainty': 'future-value',
+            'reason': null,
+            'intent': 'MEMORY_SEARCH',
+            'evidence': [
+              {
+                'kind': 'MEMORY',
+                'id': '33333333-3333-4333-8333-333333333333',
+                'source_type': 'USER_TEXT',
+                'memory_source_id': '44444444-4444-4444-8444-444444444444',
+                'occurred_at': '2026-09-16T00:00:00Z',
+                'excerpt': '原始记录',
+                'confidence': 1.0,
+              }
+            ],
+            'memory_ids': ['55555555-5555-4555-8555-555555555555'],
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    await expectLater(
+      api.queryMemory('未知状态'),
+      throwsA(isA<ProtocolException>()),
+    );
+  });
+
   test('memory query malformed 2xx fails closed', () async {
     var calls = 0;
     final api = JiYiApiClient(
@@ -471,7 +541,7 @@ void main() {
           jsonEncode({
             'answer': '书房',
             'can_answer': true,
-            'certainty': 'confirmed',
+            'certainty': 'evidence',
             'intent': 'FIND_OBJECT',
             'evidence': [],
             // memory_ids deliberately missing

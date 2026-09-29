@@ -289,9 +289,9 @@ class _OnboardingApi extends JiYiApiClient {
     final content = savedContent;
     final found = content != null && question.trim() == content;
     return <String, dynamic>{
-      'answer': found ? content : '',
+      'answer': found ? content : null,
       'can_answer': found,
-      'certainty': found ? 'confirmed' : 'unknown',
+      'certainty': found ? 'evidence' : 'unknown',
       'reason': found ? null : 'NO_EVIDENCE',
       'intent': 'GENERAL',
       'memory_ids': found ? <String>[queryMemoryId] : <String>[],

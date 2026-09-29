@@ -15,6 +15,8 @@ import 'package:jiyidashi/ui/jiyi_theme.dart';
 // 统一窗口、DPR、locale 与主题，Linux CI 是首阶段唯一权威像素基线。
 const _goldenSize = Size(390, 844);
 const _goldenFontFamily = 'JiYi Golden CJK';
+const _captureDeterministicQueryPreview =
+    bool.fromEnvironment('DETERMINISTIC_QUERY_VISUAL_PREVIEW');
 
 // [人工注释][CI-005] Golden 必须显式加载仓库内固定版本的 CJK 字体；禁止依赖 Runner 系统字体，
 // 否则 Ubuntu 镜像变化或 flutter_test 缺字会把中文排版回归伪装成稳定结果。
@@ -62,6 +64,28 @@ class _GoldenApi extends JiYiApiClient {
     'timezone': 'Asia/Shanghai',
     'locale': 'zh-CN',
     'elder_mode_enabled': false,
+  };
+
+  @override
+  Future<Map<String, dynamic>> queryMemory(String question) async => {
+    'answer': '护照最后记录在书房抽屉。',
+    'can_answer': true,
+    'certainty': 'confirmed',
+    'reason': null,
+    'intent': 'FIND_OBJECT',
+    'evidence': [
+      {
+        'kind': 'OBJECT_LOCATION',
+        'id': '33333333-3333-4333-8333-333333333333',
+        'source_type': 'USER_TEXT',
+        'memory_source_id': '44444444-4444-4444-8444-444444444444',
+        'occurred_at': '2026-09-20T02:20:00Z',
+        'excerpt': '护照放在书房抽屉。',
+        'confidence': 1.0,
+        'provenance': 'ORIGINAL_SOURCE',
+      }
+    ],
+    'memory_ids': ['55555555-5555-4555-8555-555555555555'],
   };
 
   @override
@@ -341,6 +365,30 @@ void main() {
       matchesGoldenFile('goldens/memory_query.png'),
     );
   });
+
+  testWidgets(
+    'preview: deterministic memory query trust label',
+    (tester) async {
+      final key = await _pumpShell(tester);
+      await tester.tap(find.text('问记忆'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('memory-query-input')),
+        '护照在哪里？',
+      );
+      await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('AI 推断（有证据支持）'), findsNothing);
+      expect(find.text('可信状态：confirmed'), findsOneWidget);
+      expect(find.textContaining('用户文字记录'), findsOneWidget);
+      await expectLater(
+        find.byKey(key),
+        matchesGoldenFile('/tmp/deterministic_memory_query.png'),
+      );
+    },
+    skip: !_captureDeterministicQueryPreview,
+  );
 
   testWidgets('golden: profile and privacy controls', (tester) async {
     // [人工注释][CI-005] Profile 使用确定性的 fake API 返回固定资料/暂停状态，

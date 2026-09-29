@@ -15,7 +15,6 @@ import {
   parseMemoryFeedbackRead,
   parseMemoryRead,
   provenanceLabel,
-  trustPresentation,
   type MemoryFeedbackPayload,
   type MemoryRead,
   type SafeRequestOptions,
@@ -169,25 +168,10 @@ test('CORRECT payload includes only explicitly changed fields and rejects empty/
   assert.throws(() => buildCorrectionFeedback(memory, '原始标题', '原始正文'), /内容没有变化/)
 })
 
-test('trust presentation maps only current public certainty values and fails future values neutral', () => {
-  assert.deepEqual(
-    trustPresentation({ can_answer: true, certainty: 'confirmed' }),
-    {
-      label: '有证据支持',
-      detail: '这个答案来自当前公开证据链，可继续查看下面的来源。',
-      tone: 'supported',
-    },
-  )
-  assert.equal(trustPresentation({ can_answer: true, certainty: 'evidence' }).label, '有证据支持')
-  assert.equal(trustPresentation({ can_answer: false, certainty: 'unknown' }).label, '没有足够证据')
-  const future = trustPresentation({ can_answer: true, certainty: 'future-new-state' })
-  assert.equal(future.tone, 'neutral')
-  assert.doesNotMatch(future.label, /可信|已确认/)
-})
-
-test('AI inference is not displayable Evidence and provenance labels stay explicit', () => {
+test('Evidence provenance remains independent from top-level AI presentation', () => {
   assert.equal(isDisplayableEvidence('USER_TEXT'), true)
-  assert.equal(isDisplayableEvidence('AI_INFERENCE'), false)
+  assert.equal(isDisplayableEvidence('AI_INFERENCE'), true)
+  assert.equal(isDisplayableEvidence('FUTURE_UNKNOWN'), false)
   assert.equal(provenanceLabel('ORIGINAL_SOURCE'), '原始来源')
   assert.equal(provenanceLabel('USER_EDIT'), '用户修正')
   assert.equal(provenanceLabel('FUTURE_VALUE'), null)
@@ -231,7 +215,10 @@ test('Query page uses revision-aware feedback instead of direct delete shortcut'
   assert.match(page, /operation\.payload\.action === 'CORRECT'/)
   assert.match(page, /setResult\(null\)/)
   assert.match(page, /result\.evidence\.filter\(\(evidence\) => isDisplayableEvidence\(evidence\.source_type\)\)/)
-  assert.doesNotMatch(page, /可信状态：\{result\.certainty\}/)
+  assert.doesNotMatch(page, /AI 可信状态/)
+  assert.doesNotMatch(page, /AI 推断（有证据支持）/)
+  assert.match(page, /trustPresentation\(result\)/)
+  assert.match(page, /\{trust\.label\}/)
   assert.match(page, /已记录：这条记忆正确/)
   assert.match(page, /const capturedReviewEpoch = reviewEpoch\.current\.capture\(\)/)
   assert.match(page, /if \(!reviewEpoch\.current\.isCurrent\(capturedReviewEpoch\)\) return null/)

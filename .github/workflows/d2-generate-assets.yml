@@ -73,6 +73,18 @@ jobs:
           test/onboarding_flow_test.dart
           --reporter expanded
 
+      # SEC-013 Query-origin preview is generated only in /tmp. It proves deterministic
+      # Memory Query is not mislabeled as AI inference and does not mutate committed goldens.
+      - name: Generate deterministic Query visual preview
+        timeout-minutes: 5
+        run: >-
+          flutter test
+          test/visual_golden_test.dart
+          --plain-name "preview: deterministic memory query trust label"
+          --update-goldens
+          --dart-define=DETERMINISTIC_QUERY_VISUAL_PREVIEW=true
+          --reporter expanded
+
       - name: Run Flutter tests including committed goldens
         timeout-minutes: 10
         run: flutter test --reporter expanded
@@ -120,6 +132,7 @@ jobs:
             mobile/test/goldens/*.png
             mobile/test/failures/**/*.png
             /tmp/golden-mismatch-proof/**/*.png
+            /tmp/deterministic_memory_query.png
 
       - name: Build Android debug APK
         run: >-
