@@ -25,6 +25,7 @@ from app.schemas import MemoryUpdate
 from app.services import long_term_reasoning_service as reasoning_service
 from app.services.account_deletion_service import delete_current_account
 from app.services.ai_gateway import AIGateway, AIInferenceRequest, AIProviderResult
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.life_event_service import (
     create_life_event_memory_link,
     delete_life_event,
@@ -81,6 +82,8 @@ def _seed_owner(label: str) -> UUID:
     user_id = uuid4()
     with SessionLocal() as db:
         db.add(User(id=user_id, nickname=f"v2-007-{label}"))
+        db.flush()
+        create_legacy_full_entitlement(db, user_id=user_id)
         db.commit()
     return user_id
 
