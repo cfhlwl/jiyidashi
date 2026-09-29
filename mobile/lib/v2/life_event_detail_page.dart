@@ -302,7 +302,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              V2KeyValue(label: '类型', value: lifeEventLabels[current.kind] ?? current.kind),
+              V2KeyValue(label: '类型', value: lifeEventLabels[current.kind] ?? '其他经历'),
               V2KeyValue(label: '开始', value: current.startedAt),
               V2KeyValue(label: '结束', value: current.endedAt ?? '未设置'),
               V2KeyValue(label: '地点', value: placeName),

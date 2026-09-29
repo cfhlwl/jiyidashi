@@ -347,7 +347,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              V2KeyValue(label: '类型', value: lifeStageLabels[current.kind] ?? current.kind),
+              V2KeyValue(label: '类型', value: lifeStageLabels[current.kind] ?? '其他阶段'),
               V2KeyValue(label: '开始', value: current.startedAt),
               V2KeyValue(label: '结束', value: current.endedAt ?? '开放'),
               V2KeyValue(label: '备注', value: current.note ?? '无'),

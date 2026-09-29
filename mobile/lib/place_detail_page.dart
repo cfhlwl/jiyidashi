@@ -269,7 +269,6 @@ class _VisitTile extends StatelessWidget {
               const SizedBox(height: JiYiSpacing.xs),
               Text(_line('开始', visit.arrivedAt)),
               if (visit.leftAt != null) Text(_line('结束', visit.leftAt)),
-              Text(_line('来源', visit.source)),
             ],
           ),
         ),
