@@ -198,6 +198,7 @@ def main() -> None:
                 created_at=datetime(2026, 7, 1, tzinfo=UTC),
             )
         )
+        db.flush()
         db.add_all(
             [
                 ProductActiveDay(
@@ -229,6 +230,7 @@ def main() -> None:
     delete_user = uuid4()
     with SessionLocal() as db:
         db.add(User(id=delete_user, nickname="analytics-data-delete"))
+        db.flush()
         db.add(
             RetrievalAnalyticsAttempt(
                 user_id=delete_user,
@@ -299,6 +301,7 @@ def main() -> None:
     account_user = uuid4()
     with SessionLocal() as db:
         db.add(User(id=account_user, nickname="analytics-account-delete"))
+        db.flush()
         db.add(
             ProductActiveDay(
                 user_id=account_user,
