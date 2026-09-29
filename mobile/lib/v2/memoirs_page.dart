@@ -425,7 +425,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
           FilledButton.icon(
             onPressed: annualLoading ? null : _generateAnnual,
             icon: const Icon(Icons.auto_awesome),
-            label: Text(annualLoading ? '正在整理年度回忆…' : '生成年度回忆录'),
+            label: Text(annualLoading ? '正在整理年度回顾…' : '生成年度回顾'),
           ),
           if (annualError != null) ...[
             const SizedBox(height: JiYiSpacing.sm),
@@ -435,7 +435,6 @@ class _MemoirsPageState extends State<MemoirsPage> {
             const SizedBox(height: JiYiSpacing.md),
             V2KeyValue(label: '年度', value: result.targetYear),
             V2KeyValue(label: '时区', value: result.timezone),
-            V2KeyValue(label: '状态', value: result.status),
             const SizedBox(height: JiYiSpacing.sm),
             V2TrustBadge(presentation: result.presentation),
             const SizedBox(height: JiYiSpacing.xs),
@@ -445,16 +444,12 @@ class _MemoirsPageState extends State<MemoirsPage> {
               const SizedBox(height: JiYiSpacing.sm),
               Text(result.narrative!),
             ],
-            for (final citation in result.citations)
+            for (var index = 0; index < result.citations.length; index++)
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.fact_check_outlined),
-                title: Text(citation.slot + ' · ' + citation.kind),
-                subtitle: Text(
-                  citation.kind == 'MEMORY'
-                      ? 'Memory · ' + (citation.trustState ?? '')
-                      : 'Visit',
-                ),
+                title: Text('参考记录 ${index + 1}'),
+                subtitle: const Text('年度回顾基于你的相关记录整理。'),
               ),
             const Divider(),
             Text('年度时间线', style: Theme.of(context).textTheme.titleMedium),
@@ -463,7 +458,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(item.title),
-                subtitle: Text(item.kind + ' · ' + item.occurredAt),
+                subtitle: Text(item.occurredAt),
               ),
             if (annualTimelineCursor != null)
               OutlinedButton(
@@ -478,7 +473,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.photo_outlined),
                 title: Text(photo.title ?? '照片记忆'),
-                subtitle: Text(photo.occurredAt + ' · ' + photo.contentType),
+                subtitle: Text(photo.occurredAt),
                 trailing: TextButton(
                   onPressed: () => _previewPhoto(photo),
                   child: const Text('查看'),
@@ -498,14 +493,14 @@ class _MemoirsPageState extends State<MemoirsPage> {
   Widget _lifeMemoirCard() {
     final result = chapter;
     return V2SectionCard(
-      title: '人生回忆录',
-      subtitle: '阶段索引是确定性数据；章节只在你选择阶段并点击后生成。',
+      title: '人生故事',
+      subtitle: '选择一个人生阶段，需要时再让 AI 帮你整理成故事。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           OutlinedButton(
             onPressed: stageLoading ? null : () => _loadStages(append: false),
-            child: Text(stageLoading ? '加载中…' : '刷新阶段索引'),
+            child: Text(stageLoading ? '加载中…' : '刷新人生阶段'),
           ),
           if (stageError != null)
             JiYiStatusBanner(kind: JiYiStatusKind.error, message: stageError!),
@@ -540,7 +535,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
             FilledButton.icon(
               onPressed: chapterLoading ? null : _generateChapter,
               icon: const Icon(Icons.auto_awesome),
-              label: Text(chapterLoading ? '正在生成章节…' : '生成这个阶段的章节'),
+              label: Text(chapterLoading ? '正在整理故事…' : '生成这个阶段的故事'),
             ),
           if (chapterError != null)
             JiYiStatusBanner(kind: JiYiStatusKind.error, message: chapterError!),
@@ -554,14 +549,12 @@ class _MemoirsPageState extends State<MemoirsPage> {
               const SizedBox(height: JiYiSpacing.sm),
               Text(result.narrative!),
             ],
-            for (final citation in result.citations)
+            for (var index = 0; index < result.citations.length; index++)
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.fact_check_outlined),
-                title: Text(citation.slot + ' · ' + citation.kind),
-                subtitle: Text(
-                  citation.memoryTrustState ?? '明确实体引用',
-                ),
+                title: Text('参考记录 ${index + 1}'),
+                subtitle: const Text('这段故事基于你已有的相关记录整理。'),
               ),
           ],
         ],

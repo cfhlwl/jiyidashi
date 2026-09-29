@@ -15,25 +15,25 @@ class AiPresentation {
 const explicitAiPresentation = AiPresentation(
   state: AiPresentationState.explicit,
   label: '明确记录',
-  detail: '这是明确保存的原始记录，不是 AI 生成的结论。',
+  detail: '这是你明确保存的记录。',
 );
 
 const inferredAiPresentation = AiPresentation(
   state: AiPresentationState.inferred,
-  label: 'AI 推断（有证据支持）',
-  detail: '这是 AI 根据下方证据生成的回答，不等同于原始事实记录。',
+  label: 'AI 整理',
+  detail: '基于你的记录整理，你可以查看下方参考记录。',
 );
 
 const uncertainAiPresentation = AiPresentation(
   state: AiPresentationState.uncertain,
-  label: 'AI 推断（证据不足）',
-  detail: '当前证据不足以形成完整结论。',
+  label: '依据还不充分',
+  detail: '现有记录还不足以整理出可靠结论。',
 );
 
 const unavailableAiPresentation = AiPresentation(
   state: AiPresentationState.unavailable,
-  label: '暂不可用',
-  detail: '当前没有可安全展示的 AI 结论。',
+  label: '暂时无法整理',
+  detail: '这次没有整理成功，可以稍后再试。',
 );
 
 const _readySummaryStatuses = {
