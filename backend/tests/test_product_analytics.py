@@ -122,6 +122,7 @@ def test_no_evidence_is_denominator_but_not_success() -> None:
                 created_at=datetime(2026, 9, 1, tzinfo=UTC),
             )
         )
+        db.flush()
         db.add(
             RetrievalAnalyticsAttempt(
                 user_id=user_id,
@@ -174,6 +175,7 @@ def test_retention_uses_utc_signup_cohort_and_null_zero_denominator() -> None:
                 ),
             ]
         )
+        db.flush()
         db.add_all(
             [
                 ProductActiveDay(
@@ -218,6 +220,7 @@ def test_aggregate_report_contains_no_content_sentinels() -> None:
                 created_at=datetime(2026, 7, 1, tzinfo=UTC),
             )
         )
+        db.flush()
         db.add(
             RetrievalAnalyticsAttempt(
                 user_id=user_id,
