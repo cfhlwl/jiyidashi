@@ -36,38 +36,6 @@ const unavailableAiPresentation = AiPresentation(
   detail: '当前没有可安全展示的 AI 结论。',
 );
 
-AiPresentation queryAiPresentation(Map<String, dynamic> result) {
-  final canAnswer = result['can_answer'];
-  final answer = result['answer'];
-  final certainty = result['certainty'];
-  final evidence = result['evidence'];
-  final memoryIds = result['memory_ids'];
-
-  if (canAnswer == true &&
-      answer is String &&
-      answer.trim().isNotEmpty &&
-      certainty == 'evidence' &&
-      evidence is List<dynamic> &&
-      evidence.isNotEmpty &&
-      memoryIds is List<dynamic> &&
-      memoryIds.isNotEmpty) {
-    return inferredAiPresentation;
-  }
-  return unavailableAiPresentation;
-}
-
-bool isCanonicalQueryTrustShape(Map<String, dynamic> result) {
-  final presentation = queryAiPresentation(result);
-  if (presentation.state == AiPresentationState.inferred) return true;
-  return result['can_answer'] == false &&
-      result['answer'] == null &&
-      result['certainty'] == 'unknown' &&
-      result['evidence'] is List<dynamic> &&
-      (result['evidence'] as List<dynamic>).isEmpty &&
-      result['memory_ids'] is List<dynamic> &&
-      (result['memory_ids'] as List<dynamic>).isEmpty;
-}
-
 const _readySummaryStatuses = {
   'DAILY_SUMMARY_READY',
   'MONTHLY_SUMMARY_READY',
