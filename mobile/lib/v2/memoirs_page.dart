@@ -390,10 +390,10 @@ class _MemoirsPageState extends State<MemoirsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('回忆录')),
+      appBar: AppBar(title: const Text('回忆总结')),
       body: SafeArea(
         child: JiYiPageFrame(
-          title: '回忆录',
+          title: '回忆总结',
           subtitle: '生成叙事使用 SEC-013；时间线、阶段索引和已验证照片保持各自确定性来源。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -411,7 +411,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
   Widget _annualCard() {
     final result = annual;
     return V2SectionCard(
-      title: '年度电子回忆录',
+      title: '年度回顾',
       subtitle: '只有年度叙事是 AI 生成面；timeline/photo 不继承 AI 标签。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

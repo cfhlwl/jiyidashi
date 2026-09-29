@@ -29,6 +29,7 @@ void main() {
   test('Flutter Product Experience V2 defines shared design token families', () {
     final tokens = File('lib/ui/jiyi_tokens.dart').readAsStringSync();
     final components = File('lib/ui/jiyi_components.dart').readAsStringSync();
+    final theme = File('lib/ui/jiyi_theme.dart').readAsStringSync();
 
     for (final token in [
       'JiYiProductColors',
@@ -50,5 +51,9 @@ void main() {
     expect(components, contains('class JiYiHeroHeader'));
     expect(components, contains('class JiYiSectionHeader'));
     expect(components, contains('class JiYiActionCard'));
+    expect(theme, contains('JiYiProductColors.brandPrimary'));
+    expect(theme, contains('JiYiProductColors.background'));
+    expect(theme, isNot(contains('0xFF446A57')));
+    expect(theme, isNot(contains('0xFFF7F8F6')));
   });
 }
