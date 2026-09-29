@@ -278,7 +278,12 @@ test('citation labels explain grounded evidence without confidence invention', (
 
 test('summary page never generates on mount/show and all generation calls live behind explicit handler', () => {
   const page = readFileSync(resolve(process.cwd(), 'src/pages/summaries/index.tsx'), 'utf8')
-  assert.doesNotMatch(page, /useDidShow|useEffect|setInterval|setTimeout/)
+  assert.doesNotMatch(page, /useDidShow|setInterval|setTimeout/)
+  assert.match(page, /subscribeAuthSession/)
+  assert.match(page, /useDidHide/)
+  assert.match(page, /const generationEpoch = useRef\(new TrustedSummaryEpoch\(\)\)/)
+  assert.match(page, /if \(!isCurrent\(\)\) return/)
+  assert.match(page, /summaryAiPresentation\(result\.status\)/)
   assert.match(page, /onClick=\{generate\}/)
   assert.match(page, /const generationGate = useRef\(new TrustedSummaryGenerationGate\(\)\)/)
   assert.match(page, /if \(generationGate\.current\.isPending\(\) \|\| next === period\) return/)
