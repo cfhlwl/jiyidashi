@@ -19,12 +19,12 @@ from app.life_stage_models import LifeStage, LifeStageEventLink, LifeStageKind
 from app.life_stage_schemas import LifeStagePatch
 from app.long_term_reasoning_models import LongTermReasoningStatus
 from app.models import Memory, MemorySource, SourceType, User
-from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.ai_gateway import (
     AIGateway,
     AIInferenceRequest,
     AIProviderResult,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.life_memoir_service import (
     build_life_memoir_chapter,
     list_life_memoir_stages,
