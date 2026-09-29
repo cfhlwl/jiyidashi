@@ -17,6 +17,7 @@ import {
   getLifeHistory,
   getLifeMemoirStages,
   getLifeStage,
+  getVerifiedMediaDownload,
   isAuthenticated,
   linkLifeEventMemory,
   linkLifeStageEvent,
@@ -884,6 +885,23 @@ export default function Page() {
     }
   }
 
+  const previewAnnualPhoto = async (mediaId: string) => {
+    annualPhotoAuthority.current.invalidate()
+    const snapshot = capture(annualPhotoAuthority.current, 'annual-photo-preview:' + mediaId)
+    setAnnualStatus('')
+    try {
+      const signed = await getVerifiedMediaDownload(mediaId)
+      if (!isCurrent(annualPhotoAuthority.current, snapshot)) return
+      await Taro.previewImage({
+        current: signed.download.url,
+        urls: [signed.download.url],
+      })
+    } catch (error) {
+      if (!isCurrent(annualPhotoAuthority.current, snapshot)) return
+      setAnnualStatus(mutationError(error, '照片打开失败'))
+    }
+  }
+
   const loadMoreAnnualPhotos = async () => {
     if (!annual || !annualPhotoCursor) return
     annualPhotoAuthority.current.invalidate()
@@ -1523,6 +1541,9 @@ export default function Page() {
                       <View className='record-title'>{photo.title || '照片记忆'}</View>
                       <Text className='muted'>{photo.occurred_at}</Text>
                       <Text className='muted'>{photo.content_type} · media {shortId(photo.media_id)}</Text>
+                      <Button className='secondary-button mini-button' onClick={() => void previewAnnualPhoto(photo.media_id)}>
+                        查看照片
+                      </Button>
                     </View>
                   ))}
                 </View>

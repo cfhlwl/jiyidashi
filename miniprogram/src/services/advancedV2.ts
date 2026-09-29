@@ -202,6 +202,16 @@ export type AnnualMemoirPhoto = {
   title: string | null
   content_type: string
 }
+export type VerifiedMediaDownload = {
+  media_id: string
+  download: {
+    method: string
+    url: string
+    headers: Record<string, string>
+    expires_at: string
+  }
+}
+
 export type AnnualMemoirPhotoPage = {
   timezone: string
   target_year: string
@@ -577,6 +587,32 @@ function parseAnnualCitation(raw: unknown): AnnualMemoirCitation {
   if (kind === 'MEMORY' ? !result.memory_id : !result.visit_id) return invalid('年度回忆录引用')
   return result
 }
+export function parseVerifiedMediaDownload(raw: unknown, expectedMediaId?: string): VerifiedMediaDownload {
+  const v = record(raw, '媒体下载')
+  const mediaId = uuid(v.media_id, '媒体下载')
+  if (expectedMediaId && mediaId !== expectedMediaId) return invalid('媒体下载')
+  const transfer = record(v.download, '媒体下载')
+  const method = text(transfer.method, '媒体下载', 16).toUpperCase()
+  if (method !== 'GET') return invalid('媒体下载')
+  const url = text(transfer.url, '媒体下载', 4096)
+  if (!/^https:\/\//i.test(url)) return invalid('媒体下载')
+  const headersRaw = record(transfer.headers, '媒体下载')
+  const headers: Record<string, string> = {}
+  for (const [key, value] of Object.entries(headersRaw)) {
+    if (typeof value !== 'string' || key.length > 200 || value.length > 4000) return invalid('媒体下载')
+    headers[key] = value
+  }
+  return {
+    media_id: mediaId,
+    download: {
+      method,
+      url,
+      headers,
+      expires_at: aware(transfer.expires_at, '媒体下载'),
+    },
+  }
+}
+
 function parseAnnualPhoto(raw: unknown): AnnualMemoirPhoto {
   const v = record(raw, '年度照片')
   return {

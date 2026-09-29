@@ -133,6 +133,7 @@ import {
   parseLifeStageEvidenceList,
   parseLifeStageList,
   parseLongTermReasoning,
+  parseVerifiedMediaDownload,
   type AnnualMemoir,
   type AnnualMemoirPhotoPage,
   type LifeEventCreatePayload,
@@ -148,6 +149,7 @@ import {
   type LifeStageRead,
   type LongTermReasoningResult,
   type PersonKnownDuration,
+  type VerifiedMediaDownload,
 } from './advancedV2'
 import {
   buildPeoplePath,
@@ -173,6 +175,7 @@ export type {
   LifeStageRead,
   LongTermReasoningResult,
   PersonKnownDuration,
+  VerifiedMediaDownload,
 } from './advancedV2'
 export type {
   MemoryFeedbackAction,
@@ -721,6 +724,13 @@ export async function generateAnnualMemoir(targetYear: string): Promise<AnnualMe
     return parseAnnualMemoir(raw, targetYear)
   })
 }
+export async function getVerifiedMediaDownload(mediaId: string): Promise<VerifiedMediaDownload> {
+  return guardedAdvancedV2Request(async () => {
+    const raw = await request<unknown>('POST', '/media/' + encodeURIComponent(mediaId) + '/download')
+    return parseVerifiedMediaDownload(raw, mediaId)
+  })
+}
+
 export async function getAnnualMemoirPhotos(
   targetYear: string,
   options: { limit?: number; cursor?: string | null } = {},
