@@ -20,7 +20,6 @@ from app.core.db import (
     SessionLocal,
     UserDataAdmission,
 )
-from app.core.observability import reset_request_id, set_request_id
 from app.data_deletion_models import DataDeletionOperation
 from app.models import User
 from app.schemas import MemoryQueryResponse
@@ -76,16 +75,15 @@ def _no_evidence() -> MemoryQueryResponse:
 def _record_same_retrieval(user_id: UUID, operation_id: UUID) -> None:
     with SessionLocal() as source:
         _admit(source, user_id)
-        token = set_request_id(str(operation_id))
         try:
             record_retrieval_and_activity_safe(
                 source,
                 user_id=user_id,
+                operation_id=operation_id,
                 response=_no_evidence(),
                 occurred_at=datetime(2026, 9, 10, 12, tzinfo=UTC),
             )
         finally:
-            reset_request_id(token)
             source.rollback()
 
 
@@ -268,15 +266,12 @@ def main() -> None:
             user_id=delete_user,
             activity=ProductActivity.TIMELINE,
         )
-        token = set_request_id(str(uuid4()))
-        try:
-            record_retrieval_and_activity_safe(
-                stale_source,
-                user_id=delete_user,
-                response=_no_evidence(),
-            )
-        finally:
-            reset_request_id(token)
+        record_retrieval_and_activity_safe(
+            stale_source,
+            user_id=delete_user,
+            operation_id=uuid4(),
+            response=_no_evidence(),
+        )
 
         with SessionLocal() as verify:
             assert (
