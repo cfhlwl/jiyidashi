@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'account_delete_section.dart';
-import 'ai_inference_presentation.dart';
 import 'api_client.dart';
 import 'location_sampling_coordinator.dart';
 import 'native_location_bridge.dart';
@@ -1686,15 +1685,14 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     // G4 仅重排 Query/Evidence/删除入口的展示层；答案、Evidence、memory_ids 都继续直接使用服务端真实返回。
     final theme = Theme.of(context);
     final evidence = (result?['evidence'] as List<dynamic>? ?? const [])
-        .whereType<Map<String, dynamic>>()
+        .where((item) =>
+            item is Map<String, dynamic> &&
+            item['source_type']?.toString() != 'AI_INFERENCE')
         .toList(growable: false);
     final memoryIds = (result?['memory_ids'] as List<dynamic>? ?? const []);
-    final presentation =
-        result == null ? null : queryAiPresentation(result!);
-    final canAnswer =
-        presentation?.state == AiPresentationState.inferred;
-    final answer =
-        canAnswer ? (result!['answer']?.toString() ?? '') : '';
+    final canAnswer = result?['can_answer'] == true;
+    final answer = result?['answer']?.toString() ?? '';
+    final certainty = result?['certainty']?.toString() ?? '未知';
     final intent = result?['intent']?.toString() ?? '未知';
     // FIND_OBJECT 的 backing Memory 受结构化 ObjectLocation 状态约束，
     // 通用编辑会被后端拒绝，因此 UI 直接隐藏编辑入口而不是让用户走到 409。
@@ -1788,15 +1786,6 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                             : '我没有找到能够支持答案的相关记录。'),
                     style: theme.textTheme.titleMedium,
                   ),
-                  if (presentation != null) ...[
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text(
-                      presentation.detail,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
                   if (submittedQuestion != null) ...[
                     const SizedBox(height: JiYiSpacing.xs),
                     Text(
@@ -1807,26 +1796,15 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                     ),
                   ],
                   const SizedBox(height: JiYiSpacing.sm),
-                  // Raw certainty remains protocol-only. Product trust copy comes
-                  // from the shared four-state presentation contract.
+                  // certainty / intent 不被 UI 重新推断；这里只把服务端原值放入有标签的 Chip，避免弱化可信状态。
                   Wrap(
                     spacing: JiYiSpacing.xs,
                     runSpacing: JiYiSpacing.xs,
                     children: [
-                      if (presentation != null)
-                        Semantics(
-                          label: 'AI 可信状态：${presentation.label}',
-                          child: Chip(
-                            key: const ValueKey('memory-query-ai-state'),
-                            avatar: Icon(
-                              presentation.state == AiPresentationState.inferred
-                                  ? Icons.auto_awesome_outlined
-                                  : Icons.info_outline,
-                              size: 18,
-                            ),
-                            label: Text(presentation.label),
-                          ),
-                        ),
+                      Chip(
+                        avatar: const Icon(Icons.verified_outlined, size: 18),
+                        label: Text('可信状态：$certainty'),
+                      ),
                       Chip(
                         avatar: const Icon(Icons.category_outlined, size: 18),
                         label: Text('识别意图：$intent'),
@@ -1847,7 +1825,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                 ),
               ),
               const SizedBox(height: JiYiSpacing.sm),
-              ...evidence.map((e) {
+              ...evidence.map((item) {
+                final e = item as Map<String, dynamic>;
                 final sourceLabel =
                     _evidenceSourceLabel(e['source_type']?.toString());
                 final provenance = e['provenance']?.toString();
