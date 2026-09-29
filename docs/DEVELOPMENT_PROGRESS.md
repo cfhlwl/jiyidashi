@@ -1,5 +1,5 @@
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- PR #173 / #169 Retrieval & Retention Analytics Foundation V1 已完成两轮正式极窄复审并合并 main=a13c2ca7；BIZ-007/008/009 analytics foundation 正式收口。下一开发主线切到 #166 SEC-013 AI Inference Labeling V1；OPS-001 真实 public-server acceptance 继续独立保持 🟠。 -->
+<!-- PR #174 / #166 SEC-013 AI Inference Labeling V1 已完成两轮正式极窄复审并合并 main=7ae43003；deterministic Query 与真实 AI surface 的产品语义已正式拆分收口。下一开发主线切到 #162 Mini Program advanced V2 surfaces；OPS-001 真实 public-server acceptance 继续独立保持 🟠。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- I：Memory Edit / PR #27 已完成正式复审并合并 main=24901d76；S1-018 转 ✅。J：Data Delete / PR #28 随后基于该新 main 完成 MemoryEdit 删除适配、0008 migration 顺延、单提交 clean replay 与 exact-head CI，并合并 main=3abc1366；S1-021 / SEC-007 转 ✅。 -->
@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Productization P1 / SEC-013 AI Inference Labeling V1**；#169 / PR #173 已正式复审并合并；#166 / PR #174 正在修复正式审查发现的 Query origin P1：当前 deterministic Memory Query 明确排除 AI 推断标签，SEC-013 四态保留给 Trusted Summary 与后续真实 AI surfaces；修复后重新跑 exact-head required CI；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
+> 当前阶段：**V2 Productization P1 / Mini Program advanced V2 surfaces**；#166 / PR #174 SEC-013 已正式复审并合并；#162 进入任务发布/开发阶段，把已合并的 V2-005～V2-011 backend 能力产品化到 Mini；后续顺序为 #163 Flutter V2 parity → #167 SEC-014；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
 
 ## 状态规则
 
@@ -297,6 +297,8 @@
 | V2-011 | Life Memoir Foundation V1 — 人生回忆录 | ✅ | Issue #158 / PR #159：explicit LifeStage chapter index + on-demand cited stage memoir via canonical V2-007 已正式审查并合并；merge `6df3a6654f14e715db8e3887582b1f83de78cd7c` |
 | V2-CLOSE | V2 Final Closeout / Productization Review | ✅ | Issue #160 / PR #164 已正式合并；merge `8e463566068e8fc328b86b816576ec907f8d3911`；V2 Personal Memory Graph V1 formally closed |
 | V2-P0-OBS | Production Observability Foundation V1 | ✅ | Issue #161 / PR #170 已正式审查并合并；merge `91e2c8b044912bb61ecada7d679c9054db64df7c`；request correlation、structured JSON telemetry、AI/storage/delete operational events、bounded DB readiness 与 production healthcheck 已收口 |
+| V2-P1-MINI | Mini Program advanced V2 surfaces | 🔵 | Issue #162：产品化 V2-005～V2-011；LifeEvent/LifeStage、Known Duration、Long-term Reasoning、Cross-year History、Annual/Life Memoir；复用 SEC-013，当前开发主线 |
+| V2-P1-FLUTTER | Flutter Personal Memory Graph parity | ⬜ | Issue #163：在 #162 后推进 V2-001～011 客户端 parity；保持 native location/offline/privacy/account-delete 生命周期；之后再做 #167 SEC-014 |
 
 ---
 
@@ -336,7 +338,7 @@
 | SEC-010 | 家庭查看逐项授权 | ✅ | Issue #95 / PR #96 已完成 default-deny per-scope foundation、canonical membership locks、committed persisted-state resolver、PostgreSQL Family Gate 与 exact-head #575（454 passed）；已合并 `main=c933f2a6`，真实敏感读取按 S4-004+ 分阶段接入 |
 | SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁与时区边界均已合并 |
 | SEC-012 | AI 不知道就说不知道 | ✅ | RAG、Daily/Monthly/Annual Summary、V2-007/010/011 已形成 evidence-only、bounded inventory、opaque slots、strict citation、post-provider revalidation 与 fail-closed typed status；无证据/证据不完整不生成可信答案 |
-| SEC-013 | AI 推断显式标记 | 🟠 | PR #174：正式审查确认当前 FIND_OBJECT / MEMORY_SEARCH 是 deterministic retrieval/template，不属于 AI inference；已恢复 Query 既有 evidence trust 展示与 FIND_OBJECT `certainty=confirmed`，四态 contract 仅用于 Trusted Summary / 后续真实 AI surfaces；保持 malformed fail closed、stale/auth guard 与 Evidence provenance 独立，等待新 exact-head CI 与复审 |
+| SEC-013 | AI 推断显式标记 | ✅ | Issue #166 / PR #174 已完成两轮正式极窄复审并合并；merge `7ae43003f817932e38c7d9ef07ea9ce2b67eeee5`；deterministic Query 明确不标 AI，四态 contract 用于 Trusted Summary 与后续真实 AI surfaces |
 | SEC-014 | 敏感操作二次确认 | 🟠 | 账户注销等部分高风险流程已有显式 intent/确认语义；导出、数据删除、家庭授权等尚未统一成跨客户端 reviewed second-confirm 标准 |
 | SEC-015 | 安全事件与异常访问告警 | ✅ | Issue #165 / PR #171 已完成两轮正式极窄复审并合并；merge `75ec2f73084cd4b7d9f4035ae1beeca3f209cae7`；durable anomaly windows、elapsed cooldown、HMAC correlation、Auth/Family/Delete/Storage signals 与 bounded retry 已收口 |
 
