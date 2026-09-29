@@ -1,6 +1,6 @@
 from datetime import date
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import exists, func, select
@@ -260,12 +260,14 @@ def memory_query(
     user_id: CurrentUser,
     db: DbSession,
 ) -> MemoryQueryResponse:
+    analytics_operation_id = uuid4()
     try:
         response = query_memory(db, user_id, payload.question)
     except Exception:
         record_retrieval_and_activity_safe(
             db,
             user_id=user_id,
+            operation_id=analytics_operation_id,
             response=None,
             failed=True,
         )
@@ -274,6 +276,7 @@ def memory_query(
     record_retrieval_and_activity_safe(
         db,
         user_id=user_id,
+        operation_id=analytics_operation_id,
         response=response,
     )
     return response
