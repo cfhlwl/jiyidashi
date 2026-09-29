@@ -135,7 +135,7 @@ def test_plan_catalog_and_legacy_full_are_deterministic() -> None:
         for plan_code, capabilities in expected.items():
             user = _seed_entitlement(db, plan_code=plan_code)
             resolved = resolve_entitlement(
-                db.get_bind(),
+                db,
                 user_id=user.id,
                 settings=settings,
                 now=datetime(2026, 9, 29, 1, 0, tzinfo=UTC),
