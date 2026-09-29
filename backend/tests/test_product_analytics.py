@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import create_engine, select
+import pytest
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -20,9 +21,9 @@ from app.core.db import (
     USER_DATA_ADMISSION_INFO_KEY,
     Base,
     GuardedSession,
+    SessionLocal,
     UserDataAdmission,
 )
-from app.core.observability import reset_request_id, set_request_id
 from app.data_deletion_models import DataDeletionOperation
 from app.models import SourceType, User
 from app.schemas import Evidence, MemoryQueryResponse
@@ -90,16 +91,15 @@ def test_memory_query_success_definition_and_privacy_minimization() -> None:
         memory_ids=[uuid4()],
     )
     source = _source(engine, user_id)
-    token = set_request_id(str(operation_id))
     try:
         record_retrieval_and_activity_safe(
             source,
             user_id=user_id,
+            operation_id=operation_id,
             response=response,
             occurred_at=datetime(2026, 9, 2, tzinfo=UTC),
         )
     finally:
-        reset_request_id(token)
         source.close()
 
     with Session(engine) as db:
@@ -110,6 +110,71 @@ def test_memory_query_success_definition_and_privacy_minimization() -> None:
         assert attempt.answerable_count == 1
         assert sentinel not in repr(attempt.__dict__)
         assert db.scalar(select(ProductActiveDay)) is not None
+
+
+@pytest.mark.asyncio
+async def test_same_client_request_id_counts_two_accepted_http_retrievals(
+    client,
+    auth_headers,
+) -> None:
+    shared_request_id = str(uuid4())
+    with SessionLocal() as db:
+        before = int(db.scalar(select(func.count(RetrievalAnalyticsAttempt.id))) or 0)
+
+    first = await client.post(
+        "/v1/memory/query",
+        headers={**auth_headers, "X-Request-ID": shared_request_id},
+        json={"question": "first accepted retrieval request"},
+    )
+    second = await client.post(
+        "/v1/memory/query",
+        headers={**auth_headers, "X-Request-ID": shared_request_id},
+        json={"question": "second accepted retrieval request"},
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.headers["X-Request-ID"] == shared_request_id
+    assert second.headers["X-Request-ID"] == shared_request_id
+
+    with SessionLocal() as db:
+        after = int(db.scalar(select(func.count(RetrievalAnalyticsAttempt.id))) or 0)
+    assert after - before == 2
+
+
+def test_same_server_operation_id_duplicate_instrumentation_is_exactly_once() -> None:
+    engine = _engine()
+    user_id = uuid4()
+    operation_id = uuid4()
+    with Session(engine) as db:
+        db.add(User(id=user_id, nickname="analytics-dedupe"))
+        db.commit()
+
+    response = MemoryQueryResponse(
+        answer=None,
+        can_answer=False,
+        certainty="unknown",
+        reason="NO_EVIDENCE",
+        intent="MEMORY_SEARCH",
+        evidence=[],
+        memory_ids=[],
+    )
+    source = _source(engine, user_id)
+    try:
+        for _ in range(2):
+            record_retrieval_and_activity_safe(
+                source,
+                user_id=user_id,
+                operation_id=operation_id,
+                response=response,
+                occurred_at=datetime(2026, 9, 2, tzinfo=UTC),
+            )
+    finally:
+        source.close()
+
+    with Session(engine) as db:
+        attempts = list(db.scalars(select(RetrievalAnalyticsAttempt)))
+    assert len(attempts) == 1
+    assert attempts[0].operation_id == operation_id
 
 
 def test_no_evidence_is_denominator_but_not_success() -> None:
