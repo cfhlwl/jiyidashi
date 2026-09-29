@@ -43,6 +43,34 @@ void main() {
     expect(isCanonicalQueryTrustShape(future), isFalse);
   });
 
+  test('summary statuses preserve cross-client four-state parity', () {
+    for (final status in [
+      'DAILY_SUMMARY_READY',
+      'MONTHLY_SUMMARY_READY',
+      'ANNUAL_SUMMARY_READY',
+    ]) {
+      expect(summaryAiPresentation(status).state, AiPresentationState.inferred);
+    }
+    expect(
+      summaryAiPresentation('SUMMARY_INCOMPLETE').state,
+      AiPresentationState.uncertain,
+    );
+    for (final status in [
+      'NO_SUMMARIZABLE_EVIDENCE',
+      'PROVIDER_FAILED',
+      'MALFORMED_PROVIDER_OUTPUT',
+      'INVALID_CITATION',
+      'DATA_CHANGED_DURING_GENERATION',
+      'FUTURE_STATUS',
+    ]) {
+      expect(
+        summaryAiPresentation(status).state,
+        AiPresentationState.unavailable,
+      );
+    }
+    expect(isKnownSummaryPresentationStatus('FUTURE_STATUS'), isFalse);
+  });
+
   test('explicit record presentation is independent from AI answer state', () {
     expect(explicitAiPresentation.state, AiPresentationState.explicit);
     expect(explicitAiPresentation.label, '明确记录');
