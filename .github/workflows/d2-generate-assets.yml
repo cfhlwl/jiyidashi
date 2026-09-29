@@ -120,6 +120,7 @@ jobs:
             mobile/test/goldens/*.png
             mobile/test/failures/**/*.png
             /tmp/golden-mismatch-proof/**/*.png
+            /tmp/ai_inference_memory_query.png
 
       - name: Build Android debug APK
         run: >-
