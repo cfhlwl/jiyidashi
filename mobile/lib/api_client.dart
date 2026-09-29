@@ -852,6 +852,7 @@ class JiYiApiClient {
         'GET' => await _http.get(_uri(path), headers: headers),
         'POST' => await _http.post(_uri(path), headers: headers, body: encoded),
         'PATCH' => await _http.patch(_uri(path), headers: headers, body: encoded),
+        'PUT' => await _http.put(_uri(path), headers: headers, body: encoded),
         'DELETE' => await _http.delete(_uri(path), headers: headers, body: encoded),
         _ => throw ArgumentError('Unsupported method: $method'),
       };
