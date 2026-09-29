@@ -175,7 +175,9 @@ void v2UniqueSlots(
   final seen = <String>{};
   for (final slot in slots) {
     final normalized = slot.trim();
-    if (!seen.add(normalized)) return v2Invalid(label);
+    if (!seen.add(normalized)) {
+      v2Invalid(label);
+    }
   }
 }
 
