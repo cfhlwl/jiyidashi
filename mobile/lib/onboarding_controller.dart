@@ -30,8 +30,8 @@ class OnboardingController extends ChangeNotifier {
 
   int? get navigationIndex => switch (_step) {
         OnboardingStep.intro => 0,
-        OnboardingStep.capture => 2,
-        OnboardingStep.retrieve || OnboardingStep.trust => 3,
+        OnboardingStep.capture => null,
+        OnboardingStep.retrieve || OnboardingStep.trust => 1,
         null => null,
       };
 

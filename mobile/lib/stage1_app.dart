@@ -23,6 +23,8 @@ import 'unified_capture_section.dart';
 import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
+import 'v2/family_page.dart';
+import 'v2/life_page.dart';
 import 'v2/v2_home_page.dart';
 
 class JiYiApp extends StatefulWidget {
@@ -652,36 +654,38 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final onboarding = _onboarding;
     final onboardingStep = onboarding?.step;
+    final capturePage = CapturePage(
+      api: widget.api,
+      offlineQueue: widget.offlineQueue,
+      sync: _sync,
+      syncGeneration: syncGeneration,
+      onQueueChanged: _queueChanged,
+      elderMode: _elderModeEnabled,
+      onAuthoritativeTextMemorySaved:
+          onboardingStep == OnboardingStep.capture
+              ? onboarding?.authoritativeTextMemorySaved
+              : null,
+    );
+    final memoryPage = MemoryQueryPage(
+      api: widget.api,
+      elderMode: _elderModeEnabled,
+      initialQuestion: onboardingStep == OnboardingStep.retrieve ||
+              onboardingStep == OnboardingStep.trust
+          ? onboarding?.querySeed
+          : null,
+      requiredEvidenceMemoryId: onboardingStep == OnboardingStep.retrieve ||
+              onboardingStep == OnboardingStep.trust
+          ? onboarding?.targetMemoryId
+          : null,
+      onTrustedEvidenceShown: onboardingStep == OnboardingStep.retrieve
+          ? onboarding?.trustedEvidenceShown
+          : null,
+    );
     final pages = <Widget>[
       TodayPage(api: widget.api, elderMode: _elderModeEnabled),
-      TimelinePage(api: widget.api, elderMode: _elderModeEnabled),
-      CapturePage(
-        api: widget.api,
-        offlineQueue: widget.offlineQueue,
-        sync: _sync,
-        syncGeneration: syncGeneration,
-        onQueueChanged: _queueChanged,
-        elderMode: _elderModeEnabled,
-        onAuthoritativeTextMemorySaved:
-            onboardingStep == OnboardingStep.capture
-                ? onboarding?.authoritativeTextMemorySaved
-                : null,
-      ),
-      MemoryQueryPage(
-        api: widget.api,
-        elderMode: _elderModeEnabled,
-        initialQuestion: onboardingStep == OnboardingStep.retrieve ||
-                onboardingStep == OnboardingStep.trust
-            ? onboarding?.querySeed
-            : null,
-        requiredEvidenceMemoryId: onboardingStep == OnboardingStep.retrieve ||
-                onboardingStep == OnboardingStep.trust
-            ? onboarding?.targetMemoryId
-            : null,
-        onTrustedEvidenceShown: onboardingStep == OnboardingStep.retrieve
-            ? onboarding?.trustedEvidenceShown
-            : null,
-      ),
+      memoryPage,
+      LifePage(api: widget.api),
+      FamilyPage(api: widget.api),
       ProfilePage(
         api: widget.api,
         onElderModeChanged: (enabled) {
@@ -709,38 +713,51 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           onComplete: () {
             if (onboarding != null) unawaited(onboarding.complete());
           },
-          child: pages[index],
+          child: onboardingStep == OnboardingStep.capture
+              ? capturePage
+              : pages[index],
         ),
       ),
       // [人工注释][S1-026] 引导进行时由 GuideBar 提供唯一退出入口；隐藏而不是保留“看得见但点不动”的底部导航。
+      floatingActionButton:
+          onboardingStep != null || _accountDeletionIntentActive
+              ? null
+              : FloatingActionButton.extended(
+                  onPressed: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute(builder: (_) => capturePage),
+                    );
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('记一下'),
+                ),
       bottomNavigationBar: onboardingStep != null || _accountDeletionIntentActive
           ? null
           : NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
-        // destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
-        destinations: [
+        destinations: const [
           NavigationDestination(
-            icon: const Icon(Icons.today_outlined),
-            selectedIcon: const Icon(Icons.today),
-            label: _elderModeEnabled ? '今天去了哪里' : '今天',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.timeline_outlined),
-            selectedIcon: Icon(Icons.timeline),
-            label: '时间轴',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.add_circle_outline),
-            selectedIcon: Icon(Icons.add_circle),
-            label: '记一下',
+            icon: Icon(Icons.today_outlined),
+            selectedIcon: Icon(Icons.today),
+            label: '今天',
           ),
           NavigationDestination(
-            icon: const Icon(Icons.psychology_alt_outlined),
-            selectedIcon: const Icon(Icons.psychology_alt),
-            label: _elderModeEnabled ? '找东西' : '问记忆',
+            icon: Icon(Icons.auto_stories_outlined),
+            selectedIcon: Icon(Icons.auto_stories),
+            label: '记忆',
           ),
-          const NavigationDestination(
+          NavigationDestination(
+            icon: Icon(Icons.route_outlined),
+            selectedIcon: Icon(Icons.route),
+            label: '人生',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.family_restroom_outlined),
+            selectedIcon: Icon(Icons.family_restroom),
+            label: '家庭',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: '我的',
@@ -775,16 +792,22 @@ class _TimelinePageState extends State<TimelinePage> {
   @override
   Widget build(BuildContext context) {
     return JiYiPageFrame(
-      title: '时间轴',
-      subtitle: '按时间回看已经形成的可信记忆。',
+      title: '时间线',
+      subtitle: '按时间回看已经形成的地点和记忆线索。',
+      hero: const JiYiHeroHeader(
+        eyebrow: '迹忆 · 记忆',
+        title: '时间线',
+        subtitle: '把地点和已经形成的记录按时间串在一起。',
+        icon: Icons.timeline_outlined,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (!widget.elderMode) ...[
             JiYiSectionCard(
               leading: const Icon(Icons.hub_outlined),
-              title: '个人记忆图谱',
-              subtitle: '人物、关系、人生事件、阶段、跨年历史和回忆录的 V2 产品入口。',
+              title: '重要的人和人生故事',
+              subtitle: '查看你记录的重要的人、人生阶段和重要经历。',
               child: OutlinedButton.icon(
                 onPressed: () {
                   Navigator.of(context).push<void>(
@@ -794,22 +817,14 @@ class _TimelinePageState extends State<TimelinePage> {
                   );
                 },
                 icon: const Icon(Icons.open_in_new),
-                label: const Text('打开个人记忆图谱'),
+                label: const Text('打开记忆与人生'),
               ),
             ),
             const SizedBox(height: JiYiSpacing.md),
           ],
-          const JiYiSectionCard(
-            child: JiYiEmptyState(
-              icon: Icons.route_outlined,
-              title: '自动足迹尚未开放',
-              message: '今日足迹仍由后续 S2-012 实现；这里不提前推断今天去了哪里。',
-            ),
-          ),
-          const SizedBox(height: JiYiSpacing.md),
           JiYiSectionCard(
             title: '地点',
-            subtitle: '查看已经形成的地点和 retained Visit 详情。',
+            subtitle: '查看已经形成的地点和到访记录。',
             child: FutureBuilder<List<Map<String, dynamic>>>(
               future: _places,
               builder: (context, snapshot) {
@@ -846,7 +861,7 @@ class _TimelinePageState extends State<TimelinePage> {
                   return const JiYiEmptyState(
                     icon: Icons.place_outlined,
                     title: '还没有地点',
-                    message: '形成 retained Visit 后，这里才会出现可查看的地点。',
+                    message: '形成到访记录后，这里才会出现可查看的地点。',
                   );
                 }
                 return Column(
@@ -1581,7 +1596,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     if (!mounted) return;
     final revision = memory['edit_revision'];
     if (revision is! int || revision < 0) {
-      setState(() => error = '服务端返回的记忆版本不正确，请重新查询后再试');
+      setState(() => error = '这条记忆刚刚发生了变化，请重新查询后再试');
       return;
     }
 
@@ -1611,7 +1626,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       if (!mounted) return;
       setState(() {
         result = refreshed;
-        actionMessage = '✓ 记忆已更新；原始 Evidence 与编辑记录均已保留';
+        actionMessage = '✓ 记忆已更新，原始记录仍然保留';
       });
     } on ApiException catch (exc) {
       if (!mounted) return;
@@ -1724,13 +1739,39 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     final canEditFirstMemory = memoryIds.isNotEmpty && intent != 'FIND_OBJECT';
 
     return JiYiPageFrame(
-      title: widget.elderMode ? '我想找东西' : '问记忆',
+      title: widget.elderMode ? '我想找东西' : '记忆',
       subtitle: widget.elderMode
           ? '只从你自己的可信记录里找；没有可靠记录时，我不会猜。'
-          : '从你自己的记录里查找；答案会把依据一起展示出来。',
+          : '从自己的记录里找回过去发生的事；找不到时不会猜。',
+      hero: widget.elderMode
+          ? null
+          : const JiYiHeroHeader(
+              eyebrow: '迹忆 · 记忆',
+              title: '记忆',
+              subtitle: '从自己的记录里查找过去，也可以打开时间线慢慢回看。',
+              icon: Icons.auto_stories_outlined,
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (!widget.elderMode) ...[
+            JiYiActionCard(
+              icon: Icons.timeline_outlined,
+              title: '时间线',
+              message: '按时间查看已经形成的地点和记录。',
+              onTap: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => TimelinePage(
+                      api: widget.api,
+                      elderMode: widget.elderMode,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: JiYiSpacing.md),
+          ],
           JiYiSectionCard(
             leading: Icon(
               Icons.psychology_alt_outlined,
@@ -1767,7 +1808,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                         )
                       : const Icon(Icons.manage_search_outlined),
                   label: Text(
-                    loading ? '查找中…' : (widget.elderMode ? '帮我找' : '从我的记忆里查找'),
+                    loading ? '查找中…' : (widget.elderMode ? '帮我找' : '从我的记录里找'),
                   ),
                 ),
               ],
@@ -1844,7 +1885,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               Text('为什么这么回答', style: theme.textTheme.titleMedium),
               const SizedBox(height: JiYiSpacing.xs),
               Text(
-                '下面是这次回答实际使用的证据。',
+                '下面是这次回答参考的记录。',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -1875,8 +1916,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               // 若服务端声称可回答却没有可展示 Evidence，UI 明确暴露该异常事实，不用美化层隐藏。
               const JiYiStatusBanner(
                 kind: JiYiStatusKind.warning,
-                title: '没有可展示的证据',
-                message: '这次响应没有返回 Evidence，请谨慎使用这个答案。',
+                title: '没有可展示的参考记录',
+                message: '这次没有返回可查看的参考记录，请谨慎使用这个答案。',
               ),
             ],
             if (memoryIds.isNotEmpty) ...[
@@ -1887,7 +1928,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   color: theme.colorScheme.error,
                 ),
                 title: '管理这条记忆',
-                subtitle: '可设置一次性提醒；编辑保留原始 Evidence，删除会影响后续检索。',
+                subtitle: '可设置提醒；编辑会保留原始记录，删除会影响后续查找。',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [

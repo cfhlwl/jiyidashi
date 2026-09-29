@@ -367,7 +367,7 @@ void main() {
 
   testWidgets('golden: memory query', (tester) async {
     final key = await _pumpShell(tester);
-    await tester.tap(find.text('问记忆'));
+    await tester.tap(find.text('记忆'));
     await tester.pumpAndSettle();
     await expectLater(
       find.byKey(key),
@@ -379,7 +379,7 @@ void main() {
     'preview: deterministic memory query trust label',
     (tester) async {
       final key = await _pumpShell(tester);
-      await tester.tap(find.text('问记忆'));
+      await tester.tap(find.text('记忆'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('memory-query-input')),
