@@ -14,6 +14,7 @@ from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person
 from app.person_relationship_models import PersonRelationship
 from app.services.ai_gateway import AIGateway, DeterministicAIProvider, DisabledAIProvider
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.entity_memory_pipeline_adapter import EntityAnnotatedMemoryExtractor
 from app.services.memory_pipeline import (
     BasicMemoryNormalizer,
@@ -52,6 +53,8 @@ def _gateway(output: dict) -> tuple[AIGateway, DeterministicAIProvider]:
 def _create_user(db, label: str) -> UUID:
     user = User(nickname=label, timezone="Asia/Shanghai", locale="zh-CN")
     db.add(user)
+    db.flush()
+    create_legacy_full_entitlement(db, user_id=user.id)
     db.commit()
     db.refresh(user)
     return user.id
