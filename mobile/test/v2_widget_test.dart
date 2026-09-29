@@ -82,7 +82,10 @@ void main() {
       LifeStageDetailPage(api: V2TestApi(), stageId: v2StageId),
     );
     await tester.enterText(find.byType(TextField).last, '这个阶段发生了什么？');
-    await tester.tap(find.text('生成证据回顾'));
+    final generate = find.text('生成证据回顾');
+    await tester.ensureVisible(generate);
+    await tester.pumpAndSettle();
+    await tester.tap(generate);
     await tester.pumpAndSettle();
     expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
     expect(find.textContaining('持续围绕产品开发'), findsOneWidget);
@@ -98,7 +101,10 @@ void main() {
       ),
     );
     await tester.enterText(find.byType(TextField).last, '这个阶段发生了什么？');
-    await tester.tap(find.text('生成证据回顾'));
+    final generate = find.text('生成证据回顾');
+    await tester.ensureVisible(generate);
+    await tester.pumpAndSettle();
+    await tester.tap(generate);
     await tester.pumpAndSettle();
     expect(find.text('暂不可用'), findsOneWidget);
     expect(find.textContaining('持续围绕产品开发'), findsNothing);
@@ -168,7 +174,10 @@ void main() {
       find.byType(TextField).last,
       '这个阶段发生了什么？',
     );
-    await tester.tap(find.text('生成证据回顾'));
+    final generate = find.text('生成证据回顾');
+    await tester.ensureVisible(generate);
+    await tester.pumpAndSettle();
+    await tester.tap(generate);
     await tester.pumpAndSettle();
 
     expect(
