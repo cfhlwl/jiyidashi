@@ -527,7 +527,10 @@ void main() {
       find.byType(TextField).last,
       '这个阶段发生了什么？',
     );
-    await tester.tap(find.text('生成证据回顾'));
+    final generate = find.text('生成证据回顾');
+    await tester.ensureVisible(generate);
+    await tester.pumpAndSettle();
+    await tester.tap(generate);
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('AI 推断（有证据支持）'));
     await tester.pumpAndSettle();
@@ -590,7 +593,10 @@ void main() {
       find.byType(TextField).last,
       '这个阶段发生了什么？',
     );
-    await tester.tap(find.text('生成证据回顾'));
+    final generate = find.text('生成证据回顾');
+    await tester.ensureVisible(generate);
+    await tester.pumpAndSettle();
+    await tester.tap(generate);
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('暂不可用'));
     await tester.pumpAndSettle();
