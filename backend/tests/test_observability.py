@@ -34,11 +34,11 @@ from app.services.ai_gateway import (
     AIProviderError,
     AIProviderResult,
 )
-from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.data_deletion_service import (
     DataDeletionError,
     DataDeletionResult,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorageError,
