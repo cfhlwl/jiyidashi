@@ -101,4 +101,74 @@ void main() {
       expect(flight.end(tokenB), isTrue);
     }
   });
+
+  test('same owner/session exact operation is single-flight', () {
+    final api = signedIn(ownerA, 'token-a');
+    final authority = V2Authority();
+    final flight = V2OperationFlight();
+
+    final first = beginV2Operation(
+      api,
+      authority,
+      flight,
+      'life-stage:reason:stage-a',
+    );
+    expect(first, isNotNull);
+
+    final duplicate = beginV2Operation(
+      api,
+      authority,
+      flight,
+      'life-stage:reason:stage-a',
+    );
+    expect(duplicate, isNull);
+    expect(flight.isCurrent(first!.token, api), isTrue);
+
+    expect(flight.end(first.token), isTrue);
+    final afterFinish = beginV2Operation(
+      api,
+      authority,
+      flight,
+      'life-stage:reason:stage-a',
+    );
+    expect(afterFinish, isNotNull);
+  });
+
+  test('resource range and year generation invalidate stale success and error', () async {
+    final api = signedIn(ownerA, 'token-a');
+    final authority = V2Authority();
+
+    for (final identities in [
+      ['person:' + ownerA, 'person:' + ownerB],
+      ['history:2020:2024:root', 'history:2021:2025:root'],
+      ['annual:2024', 'annual:2025'],
+      ['chapter:stage-a', 'chapter:stage-b'],
+    ]) {
+      final old = authority.capture(api, identities[0]);
+      expect(authority.isCurrent(api, old, identities[0]), isTrue);
+
+      final current = authority.capture(api, identities[1]);
+      expect(authority.isCurrent(api, old, identities[0]), isFalse);
+      expect(authority.isCurrent(api, current, identities[1]), isTrue);
+
+      var publishedSuccess = false;
+      var publishedError = false;
+      if (authority.isCurrent(api, old, identities[0])) {
+        publishedSuccess = true;
+      }
+      if (authority.isCurrent(api, old, identities[0])) {
+        publishedError = true;
+      }
+      expect(publishedSuccess, isFalse);
+      expect(publishedError, isFalse);
+    }
+
+    final disposed = authority.capture(api, 'graph:PERSON:' + ownerA);
+    authority.invalidate();
+    expect(
+      authority.isCurrent(api, disposed, 'graph:PERSON:' + ownerA),
+      isFalse,
+    );
+  });
+
 }
