@@ -45,6 +45,15 @@ test('all seven flows use canonical current APIs', () => {
   assert.match(block, /\{ target_year: targetYear \}/)
 })
 
+test('LifeEvent place field uses owner-scoped canonical Place rows, not a free UUID', () => {
+  assert.match(lifePage, /listPlaces\(100\)/)
+  assert.match(lifePage, /placeChoices\.map\(\(place\) => place\.name\)/)
+  assert.match(lifePage, /placeId: index <= 0 \? '' : \(placeChoices\[index - 1\]\?\.id \|\| ''\)/)
+  assert.match(lifePage, /place_id: draft\.placeId \|\| null/)
+  assert.doesNotMatch(lifePage, /placeholder=['"][^'"]*place[_ ]?id/i)
+  assert.match(lifePage, /placeAuthority\.current\.invalidate\(\)/)
+})
+
 test('LifeEvent evidence picker uses actual owner Memory rows and no free UUID input', () => {
   assert.match(lifePage, /listMemoryPickerRows\(owner, 50\)/)
   assert.match(lifePage, /memory\.source_type !== 'AI_INFERENCE'/)
