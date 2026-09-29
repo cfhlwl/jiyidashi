@@ -54,6 +54,14 @@ class UserEntitlement(Base):
     __tablename__ = "user_entitlements"
     __table_args__ = (
         CheckConstraint("revision >= 0", name="ck_user_entitlements_revision"),
+        CheckConstraint(
+            "plan_code IN ('FREE','PERSONAL','FAMILY','PREMIUM','LEGACY_FULL')",
+            name="ck_user_entitlements_plan_code",
+        ),
+        CheckConstraint(
+            "expires_at IS NULL OR expires_at > effective_at",
+            name="ck_user_entitlements_effective_range",
+        ),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -80,6 +88,10 @@ class AIQuotaPeriod(Base):
         CheckConstraint("provider_requests >= 0", name="ck_ai_quota_provider_requests"),
         CheckConstraint("input_tokens >= 0", name="ck_ai_quota_input_tokens"),
         CheckConstraint("output_tokens >= 0", name="ck_ai_quota_output_tokens"),
+        CheckConstraint(
+            "period_end > period_start",
+            name="ck_ai_quota_period_range",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
