@@ -1,0 +1,197 @@
+@import '../../app.scss';
+
+.life-back {
+  margin-bottom: 20rpx;
+}
+
+.life-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18rpx;
+}
+
+.life-entry {
+  min-height: 170rpx;
+  margin-bottom: 0;
+}
+
+.section-heading,
+.action-row,
+.evidence-row,
+.record-row,
+.range-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.section-heading {
+  align-items: flex-start;
+}
+
+.compact {
+  flex: 0 0 auto;
+  min-width: 150rpx;
+  margin-top: 0;
+}
+
+.record-row {
+  padding: 22rpx 0;
+  border-top: 2rpx solid #eef1ef;
+}
+
+.record-title {
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.arrow {
+  flex: 0 0 auto;
+  color: #78817c;
+  font-size: 42rpx;
+}
+
+.picker-field {
+  color: #294637;
+}
+
+.action-row {
+  justify-content: flex-start;
+  margin-top: 18rpx;
+}
+
+.action-row .compact {
+  flex: 1;
+}
+
+.danger-button {
+  margin-top: 18rpx;
+  background: #fff0ee;
+  color: #9d241d;
+  border-radius: 18rpx;
+}
+
+.detail-line {
+  padding: 10rpx 0;
+  line-height: 1.6;
+}
+
+.subheading {
+  margin-top: 28rpx;
+  margin-bottom: 12rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.evidence-row {
+  align-items: flex-start;
+  padding: 18rpx 0;
+  border-top: 2rpx solid #eef1ef;
+}
+
+.mini-button {
+  flex: 0 0 auto;
+  margin-top: 0;
+  min-width: 150rpx;
+  font-size: 24rpx;
+}
+
+.ai-result {
+  margin-top: 22rpx;
+  padding: 22rpx;
+  border-radius: 18rpx;
+  background: #f7f9f7;
+}
+
+.trust-badge {
+  display: inline-block;
+  margin-bottom: 12rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.trust-inferred {
+  background: #e9f5ee;
+  color: #2d6848;
+}
+
+.trust-uncertain {
+  background: #fff4df;
+  color: #795c24;
+}
+
+.trust-unavailable {
+  background: #f3f4f3;
+  color: #626b65;
+}
+
+.trust-explicit {
+  background: #edf3ef;
+  color: #315442;
+}
+
+.generated-copy {
+  margin-top: 18rpx;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.citation {
+  margin-top: 14rpx;
+  padding-top: 14rpx;
+  border-top: 2rpx solid #e7ece9;
+}
+
+.range-row .field {
+  flex: 1;
+}
+
+.history-meta,
+.memoir-meta {
+  margin-top: 18rpx;
+}
+
+.timeline-row {
+  position: relative;
+  display: flex;
+  gap: 18rpx;
+  padding: 18rpx 0;
+  border-top: 2rpx solid #eef1ef;
+}
+
+.timeline-dot {
+  width: 16rpx;
+  height: 16rpx;
+  margin-top: 12rpx;
+  border-radius: 50%;
+  background: #446a57;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+}
+
+.photo-card {
+  padding: 18rpx;
+  border: 2rpx solid #eef1ef;
+  border-radius: 16rpx;
+}
+
+.selected-row {
+  background: #edf3ef;
+  border-radius: 14rpx;
+  padding-left: 16rpx;
+  padding-right: 16rpx;
+}
+
+@media (max-width: 360px) {
+  .life-grid,
+  .photo-grid {
+    grid-template-columns: 1fr;
+  }
+}
