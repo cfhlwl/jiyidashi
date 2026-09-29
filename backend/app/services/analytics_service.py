@@ -20,7 +20,7 @@ from app.core.db import (
     GuardedSession,
     UserDataAdmission,
 )
-from app.core.observability import current_request_id, emit_operational_event
+from app.core.observability import emit_operational_event
 from app.models import User
 from app.schemas import MemoryQueryResponse
 
@@ -60,16 +60,6 @@ def _safe_rate(numerator: int, denominator: int) -> float | None:
     if denominator == 0:
         return None
     return numerator / denominator
-
-
-def request_operation_id() -> UUID | None:
-    value = current_request_id()
-    if value is None:
-        return None
-    try:
-        return UUID(value)
-    except ValueError:
-        return None
 
 
 def _copy_admission(source: Session, target: GuardedSession) -> bool:
@@ -170,15 +160,11 @@ def record_retrieval_and_activity_safe(
     source_db: Session,
     *,
     user_id: UUID,
+    operation_id: UUID,
     response: MemoryQueryResponse | None,
     failed: bool = False,
     occurred_at: datetime | None = None,
 ) -> None:
-    operation_id = request_operation_id()
-    if operation_id is None:
-        _emit_recording_failure()
-        return
-
     observed_at = _as_utc(occurred_at or datetime.now(UTC))
     if failed:
         outcome = RetrievalOutcome.FAILED
