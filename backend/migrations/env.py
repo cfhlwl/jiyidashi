@@ -7,6 +7,7 @@ from sqlalchemy import engine_from_config, pool
 # 保证这些表全部进入正式 schema drift gate。
 from app import (  # noqa: F401
     account_deletion_models,
+    analytics_models,
     auth_models,
     data_deletion_models,
     embedding_models,
