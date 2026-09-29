@@ -705,7 +705,7 @@ export async function getPersonKnownDuration(personId: string): Promise<PersonKn
 export async function reasonAboutLifeStage(stageId: string, question: string): Promise<LongTermReasoningResult> {
   return guardedAdvancedV2Request(async () => {
     const raw = await request<unknown>('POST', lifeStagePath(stageId) + '/reason', { question: question.trim() })
-    return parseLongTermReasoning(raw)
+    return parseLongTermReasoning(raw, stageId)
   })
 }
 export async function getLifeHistory(
