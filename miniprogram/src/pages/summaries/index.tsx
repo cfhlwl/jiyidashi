@@ -7,6 +7,7 @@ import {
   generateMonthlyTrustedSummary,
   isAuthenticated,
 } from '../../services/api'
+import { summaryAiPresentation } from '../../services/aiPresentation'
 import {
   isReadySummary,
   trustedSummaryCitationLabel,
@@ -88,6 +89,7 @@ export default function Page() {
   const copy = PERIOD_COPY[period]
   const ready = result ? isReadySummary(result) : false
   const typedStatus = result ? trustedSummaryStatusMessage(result.status) : ''
+  const presentation = result ? summaryAiPresentation(result.status) : null
 
   return (
     <View className='page summaries-page'>
@@ -136,7 +138,14 @@ export default function Page() {
         <View className='card summary-result-card'>
           <View className='result-heading'>
             <View className='card-title'>AI 回忆总结</View>
-            <View className='result-badge'>{ready ? '已生成' : '暂未生成'}</View>
+            {presentation && (
+              <View
+                className={`result-badge trust-${presentation.tone}`}
+                aria-label={`AI 可信状态：${presentation.label}`}
+              >
+                {presentation.label}
+              </View>
+            )}
           </View>
 
           <View className='result-meta'>
@@ -144,9 +153,9 @@ export default function Page() {
             <Text> · {result.timezone}</Text>
           </View>
 
-          <View className='ai-note'>
-            AI 只根据服务端冻结的可信记录生成；没有足够证据时不会编造总结。
-          </View>
+          {presentation && (
+            <View className='ai-note'>{presentation.detail}</View>
+          )}
 
           {ready && result.summary && (
             <View className='summary-text'>{result.summary}</View>
