@@ -394,7 +394,7 @@ def test_ai_reservation_is_idempotent_and_exact_limit() -> None:
         )
         with pytest.raises(EntitlementError, match="ENTITLEMENT_QUOTA_EXCEEDED"):
             reserve_ai_provider_request(
-                db,
+                db.get_bind(),
                 user_id=user.id,
                 gateway_request_id=uuid4(),
                 purpose="unit.ai",
