@@ -1,130 +1,104 @@
+@import './styles/tokens';
+
 page {
-  background: #f7f8f6;
-  color: #1d2521;
+  min-height: 100%;
+  background: $jiyi-background;
+  color: $jiyi-text-primary;
   font-size: 30rpx;
+  line-height: 1.58;
 }
 
 .page {
-  padding: 36rpx;
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 32rpx 32rpx 220rpx;
 }
 
 .title {
-  font-size: 52rpx;
-  font-weight: 700;
-  margin-bottom: 12rpx;
+  margin: 8rpx 0 12rpx;
+  color: $jiyi-text-primary;
+  font-size: 56rpx;
+  font-weight: 750;
+  line-height: 1.22;
+  letter-spacing: -1rpx;
 }
 
 .subtitle {
-  color: #68726c;
-  margin-bottom: 36rpx;
+  margin-bottom: 40rpx;
+  color: $jiyi-text-secondary;
+  font-size: 29rpx;
+  line-height: 1.62;
 }
 
 .card {
-  background: #ffffff;
-  border-radius: 24rpx;
-  padding: 30rpx;
-  margin-bottom: 20rpx;
+  box-sizing: border-box;
+  margin-bottom: 24rpx;
+  padding: 32rpx;
+  border-radius: $jiyi-radius-card;
+  background: $jiyi-surface;
+  box-shadow: 0 10rpx 30rpx rgba(42, 57, 70, 0.055);
 }
 
 .card-title {
-  font-size: 34rpx;
-  font-weight: 600;
   margin-bottom: 12rpx;
+  color: $jiyi-text-primary;
+  font-size: 35rpx;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
-.muted {
-  color: #78817c;
-}
+.muted { color: $jiyi-text-secondary; }
 
 .field {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  min-height: 82rpx;
+  min-height: 88rpx;
   margin: 18rpx 0;
-  padding: 18rpx 20rpx;
-  border: 2rpx solid #dce3df;
-  border-radius: 16rpx;
-  background: #ffffff;
+  padding: 18rpx 22rpx;
+  border: 2rpx solid $jiyi-border;
+  border-radius: $jiyi-radius-control;
+  background: $jiyi-surface-elevated;
+  color: $jiyi-text-primary;
 }
 
-.textarea {
-  min-height: 180rpx;
-}
+.textarea { min-height: 190rpx; }
 
-.primary-button {
-  margin-top: 18rpx;
-  background: #446a57;
-  color: #ffffff;
-  border-radius: 18rpx;
-}
-
+.primary-button,
 .secondary-button {
-  margin-top: 18rpx;
-  background: #edf3ef;
-  color: #294637;
-  border-radius: 18rpx;
+  box-sizing: border-box;
+  min-height: 88rpx;
+  border-radius: $jiyi-radius-control;
+  font-weight: 650;
 }
 
-.status {
-  margin-top: 18rpx;
-  color: #446a57;
-}
+.primary-button { margin-top: 18rpx; background: $jiyi-action-primary; color: #ffffff; }
+.primary-button::after, .secondary-button::after { border: 0; }
+.secondary-button { margin-top: 18rpx; background: $jiyi-action-secondary; color: $jiyi-action-primary; }
 
-.error {
-  margin-top: 18rpx;
-  color: #b3261e;
-}
+.status { margin-top: 18rpx; color: $jiyi-success; }
+.error { margin-top: 18rpx; color: $jiyi-error; }
 
 .evidence {
   margin-top: 16rpx;
   padding-top: 16rpx;
-  border-top: 2rpx solid #eef1ef;
+  border-top: 2rpx solid $jiyi-divider;
 }
 
-
-.elder-mode {
-  font-size: 36rpx;
-  line-height: 1.7;
-}
-
-.elder-mode .title {
-  font-size: 60rpx;
-  line-height: 1.35;
-  margin-bottom: 20rpx;
-}
-
-.elder-mode .subtitle {
-  font-size: 34rpx;
-  line-height: 1.65;
-  margin-bottom: 42rpx;
-}
-
-.elder-mode .card {
-  padding: 36rpx;
-  margin-bottom: 28rpx;
-}
-
-.elder-mode .card-title {
-  font-size: 40rpx;
-  line-height: 1.5;
-  margin-bottom: 18rpx;
-}
+.elder-mode { font-size: 36rpx; line-height: 1.7; }
+.elder-mode .title { margin-bottom: 20rpx; font-size: 60rpx; line-height: 1.35; }
+.elder-mode .subtitle { margin-bottom: 42rpx; color: #4f5c68; font-size: 34rpx; line-height: 1.65; }
+.elder-mode .card { margin-bottom: 28rpx; padding: 36rpx; border-radius: 32rpx; }
+.elder-mode .card-title { margin-bottom: 18rpx; font-size: 40rpx; line-height: 1.5; }
 
 .elder-mode .field,
 .elder-mode button,
 .elder-mode .primary-button,
 .elder-mode .secondary-button {
-  min-height: 96rpx;
+  min-height: 104rpx;
   font-size: 34rpx;
   line-height: 1.5;
 }
 
-.elder-mode .muted {
-  color: #59635d;
-}
-
-.elder-mode .primary-button,
-.elder-mode .secondary-button {
-  margin-top: 24rpx;
-}
+.elder-mode .muted { color: #4f5c68; }
+.elder-mode .primary-button, .elder-mode .secondary-button { margin-top: 24rpx; }
