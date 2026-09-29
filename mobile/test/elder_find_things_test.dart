@@ -27,7 +27,7 @@ Map<String, dynamic> _noAnswer() => {
 Map<String, dynamic> _found(String answer) => {
       'answer': answer,
       'can_answer': true,
-      'certainty': 'evidence',
+      'certainty': 'confirmed',
       'reason': null,
       'intent': 'FIND_OBJECT',
       'evidence': [
@@ -126,7 +126,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('护照在书房抽屉。'), findsOneWidget);
-    expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
+    expect(find.text('AI 推断（有证据支持）'), findsNothing);
+    expect(find.text('可信状态：confirmed'), findsOneWidget);
     expect(find.text('书房抽屉'), findsOneWidget);
     expect(find.text('模型猜测的厨房'), findsOneWidget);
     expect(find.textContaining('用户文字记录'), findsOneWidget);
@@ -226,7 +227,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('旧账号答案'), findsWidgets);
-    expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
+    expect(find.text('AI 推断（有证据支持）'), findsNothing);
+    expect(find.text('可信状态：confirmed'), findsOneWidget);
 
     api.logout();
     api.accessToken = 'token-b';
@@ -235,7 +237,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('旧账号答案'), findsNothing);
-    expect(find.byKey(const ValueKey('memory-query-ai-state')), findsNothing);
+    expect(find.text('可信状态：confirmed'), findsNothing);
   });
 
   testWidgets('Elder find query has no write, media, or location side effects', (tester) async {
