@@ -3,7 +3,9 @@ import test from 'node:test'
 
 import {
   AdvancedV2Authority,
+  AdvancedV2MutationFlight,
   AdvancedV2SingleFlight,
+  continueAdvancedV2Mutation,
   annualMemoirPhotosPath,
   annualNarrativePresentation,
   lifeHistoryPath,
@@ -30,6 +32,44 @@ const LINK_ID = '55555555-5555-4555-8555-555555555555'
 const MEDIA_ID = '66666666-6666-4666-8666-666666666666'
 const VISIT_ID = '77777777-7777-4777-8777-777777777777'
 const PERSON_ID = '88888888-8888-4888-8888-888888888888'
+
+const aiProvenance = () => ({
+  gateway_request_id: 'gw-answered-1',
+  purpose: 'LONG_TERM_REASONING',
+  provider_request_id: 'provider-1',
+  provider: 'test-provider',
+  model: 'test-model',
+})
+
+const stageCitation = () => ({
+  slot: 'stage',
+  kind: 'LIFE_STAGE',
+  life_stage_id: STAGE_ID,
+  life_event_id: null,
+  memory_id: null,
+  memory_source_id: null,
+  memory_trust_state: null,
+})
+
+const eventCitation = () => ({
+  slot: 'event',
+  kind: 'LIFE_EVENT',
+  life_stage_id: STAGE_ID,
+  life_event_id: EVENT_ID,
+  memory_id: null,
+  memory_source_id: null,
+  memory_trust_state: null,
+})
+
+const memoryCitation = () => ({
+  slot: 'memory',
+  kind: 'MEMORY',
+  life_stage_id: STAGE_ID,
+  life_event_id: EVENT_ID,
+  memory_id: MEMORY_ID,
+  memory_source_id: SOURCE_ID,
+  memory_trust_state: 'EVIDENCE_SUPPORTED',
+})
 
 const eventFixture = () => ({
   id: EVENT_ID,
@@ -177,23 +217,9 @@ test('Long-term Reasoning applies SEC-013 only to real AI statuses', () => {
   const answered = parseLongTermReasoning({
     status: 'ANSWERED',
     answer: '这个阶段持续围绕产品开发。',
-    citations: [{
-      slot: 'stage',
-      kind: 'LIFE_STAGE',
-      life_stage_id: STAGE_ID,
-      life_event_id: null,
-      memory_id: null,
-      memory_source_id: null,
-      memory_trust_state: null,
-    }],
+    citations: [stageCitation(), eventCitation(), memoryCitation()],
     provider_error_code: null,
-    ai_provenance: {
-      gateway_request_id: 'gw-answered-1',
-      purpose: 'LONG_TERM_REASONING',
-      provider_request_id: 'provider-1',
-      provider: 'test-provider',
-      model: 'test-model',
-    },
+    ai_provenance: aiProvenance(),
   })
   assert.equal(reasoningPresentation(answered.status).state, 'INFERRED')
 
@@ -253,19 +279,53 @@ test('Long-term Reasoning applies SEC-013 only to real AI statuses', () => {
   assert.throws(() => parseLongTermReasoning({
     status: 'ANSWERED',
     answer: '有引用但 provenance malformed',
-    citations: [{
-      slot: 'stage',
-      kind: 'LIFE_STAGE',
-      life_stage_id: STAGE_ID,
-      life_event_id: null,
-      memory_id: null,
-      memory_source_id: null,
-      memory_trust_state: null,
-    }],
+    citations: [stageCitation()],
     provider_error_code: null,
     ai_provenance: { provider: 'x' },
   }))
-})
+assert.throws(() => parseLongTermReasoning({
+    status: 'ANSWERED',
+    answer: 'stage citation 夹带 event',
+    citations: [{ ...stageCitation(), life_event_id: EVENT_ID }],
+    provider_error_code: null,
+    ai_provenance: aiProvenance(),
+  }, STAGE_ID))
+  assert.throws(() => parseLongTermReasoning({
+    status: 'ANSWERED',
+    answer: 'event citation 缺 stage',
+    citations: [{ ...eventCitation(), life_stage_id: null }],
+    provider_error_code: null,
+    ai_provenance: aiProvenance(),
+  }, STAGE_ID))
+  assert.throws(() => parseLongTermReasoning({
+    status: 'ANSWERED',
+    answer: 'event citation 夹带 memory',
+    citations: [{ ...eventCitation(), memory_id: MEMORY_ID }],
+    provider_error_code: null,
+    ai_provenance: aiProvenance(),
+  }, STAGE_ID))
+  assert.throws(() => parseLongTermReasoning({
+    status: 'ANSWERED',
+    answer: 'memory citation 缺 event',
+    citations: [{ ...memoryCitation(), life_event_id: null }],
+    provider_error_code: null,
+    ai_provenance: aiProvenance(),
+  }, STAGE_ID))
+  assert.throws(() => parseLongTermReasoning({
+    status: 'ANSWERED',
+    answer: 'citation belongs to another stage',
+    citations: [{ ...stageCitation(), life_stage_id: PERSON_ID }],
+    provider_error_code: null,
+    ai_provenance: aiProvenance(),
+  }, STAGE_ID))
+  assert.throws(() => parseLongTermReasoning({
+    status: 'EVIDENCE_INCOMPLETE',
+    answer: null,
+    citations: [stageCitation()],
+    provider_error_code: null,
+    ai_provenance: null,
+  }, STAGE_ID))
+}
 
 test('Life History preserves opaque cursor and server-owned range', () => {
   const page = parseLifeHistory({
@@ -348,7 +408,60 @@ test('Annual Memoir labels only generated narrative while timeline/photo stay in
     ...empty,
     timeline_items: [historyEvent()],
   }, '2025'))
-})
+assert.throws(() => parseAnnualMemoir({
+    ...memoir,
+    narrative_citations: [{
+      slot: 'bad-memory',
+      kind: 'MEMORY',
+      memory_id: MEMORY_ID,
+      visit_id: VISIT_ID,
+      trust_state: 'EVIDENCE_SUPPORTED',
+    }],
+  }, '2025'))
+  assert.throws(() => parseAnnualMemoir({
+    ...memoir,
+    narrative_citations: [{
+      slot: 'bad-memory-trust',
+      kind: 'MEMORY',
+      memory_id: MEMORY_ID,
+      visit_id: null,
+      trust_state: null,
+    }],
+  }, '2025'))
+  assert.throws(() => parseAnnualMemoir({
+    ...memoir,
+    narrative_citations: [{
+      slot: 'bad-visit',
+      kind: 'VISIT',
+      memory_id: MEMORY_ID,
+      visit_id: VISIT_ID,
+      trust_state: null,
+    }],
+  }, '2025'))
+  assert.throws(() => parseAnnualMemoir({
+    ...memoir,
+    narrative_citations: [{
+      slot: 'bad-visit-trust',
+      kind: 'VISIT',
+      memory_id: null,
+      visit_id: VISIT_ID,
+      trust_state: 'CONFIRMED',
+    }],
+  }, '2025'))
+  assert.throws(() => parseAnnualMemoir({
+    ...memoir,
+    status: 'MEMOIR_PARTIAL',
+    narrative_status: 'SUMMARY_INCOMPLETE',
+    narrative: null,
+    narrative_citations: [{
+      slot: 'stale-citation',
+      kind: 'MEMORY',
+      memory_id: MEMORY_ID,
+      visit_id: null,
+      trust_state: 'EVIDENCE_SUPPORTED',
+    }],
+  }, '2025'))
+}
 
 test('Annual photo continuation and signed preview stay canonical', () => {
   const page = parseAnnualMemoirPhotos({
@@ -430,7 +543,37 @@ test('Life Memoir stage index is deterministic and chapter AI state is typed', (
     citations: [],
   }, STAGE_ID)
   assert.equal(lifeMemoirPresentation(failed).state, 'UNAVAILABLE')
-})
+const memoryReady = parseLifeMemoirChapter({
+    status: 'CHAPTER_READY',
+    life_stage_id: STAGE_ID,
+    reasoning_status: 'ANSWERED',
+    narrative: '包含完整 memory citation。',
+    citations: [memoryCitation()],
+  }, STAGE_ID)
+  assert.equal(memoryReady.citations[0].kind, 'MEMORY')
+
+  assert.throws(() => parseLifeMemoirChapter({
+    status: 'CHAPTER_READY',
+    life_stage_id: STAGE_ID,
+    reasoning_status: 'ANSWERED',
+    narrative: 'memory citation 缺 event',
+    citations: [{ ...memoryCitation(), life_event_id: null }],
+  }, STAGE_ID))
+  assert.throws(() => parseLifeMemoirChapter({
+    status: 'CHAPTER_PARTIAL',
+    life_stage_id: STAGE_ID,
+    reasoning_status: 'EVIDENCE_INCOMPLETE',
+    narrative: null,
+    citations: [stageCitation()],
+  }, STAGE_ID))
+  assert.throws(() => parseLifeMemoirChapter({
+    status: 'CHAPTER_READY',
+    life_stage_id: STAGE_ID,
+    reasoning_status: 'ANSWERED',
+    narrative: 'citation stage mismatch',
+    citations: [{ ...stageCitation(), life_stage_id: PERSON_ID }],
+  }, STAGE_ID))
+}
 
 test('authority invalidates stale resource/range/session success and errors', () => {
   const authority = new AdvancedV2Authority()
@@ -453,4 +596,70 @@ test('mutating/generation single-flight rejects duplicate submit', () => {
   assert.equal(gate.isPending(), true)
   gate.end()
   assert.equal(gate.begin(), true)
+})
+
+test('mutation continuation stops cross-account refresh and token-bound stale finally cannot clear B gate', async () => {
+  for (const settle of ['success', 'error'] as const) {
+    let owner: string | null = 'owner-a'
+    let authEpoch = 1
+    const authority = new AdvancedV2Authority()
+    const gate = new AdvancedV2MutationFlight()
+    const tokenA = gate.begin()
+    assert.notEqual(tokenA, null)
+    const snapshotA = authority.capture(owner, authEpoch, 'event:update:a-event')
+
+    let resolveFirst!: () => void
+    let rejectFirst!: (error: Error) => void
+    const firstRefresh = new Promise<void>((resolve, reject) => {
+      resolveFirst = resolve
+      rejectFirst = reject
+    })
+    let firstStarted = false
+    let secondRequested = false
+
+    const continuation = continueAdvancedV2Mutation(
+      authority,
+      snapshotA,
+      () => owner,
+      () => authEpoch,
+      [
+        async () => {
+          firstStarted = true
+          await firstRefresh
+        },
+        async () => {
+          secondRequested = true
+        },
+      ],
+    )
+
+    await Promise.resolve()
+    assert.equal(firstStarted, true)
+
+    owner = 'owner-b'
+    authEpoch = 2
+    authority.invalidate()
+    gate.invalidate()
+
+    const tokenB = gate.begin()
+    assert.notEqual(tokenB, null)
+    assert.equal(gate.isPending(), true)
+
+    if (settle === 'success') resolveFirst()
+    else rejectFirst(new Error('old A refresh failed after account switch'))
+
+    assert.equal(await continuation, false)
+    assert.equal(secondRequested, false)
+
+    // A's stale finally cannot release B's live mutation gate.
+    assert.equal(gate.end(tokenA!), false)
+    assert.equal(gate.isCurrent(tokenB!), true)
+    assert.equal(gate.begin(), null)
+
+    assert.equal(gate.end(tokenB!), true)
+    assert.equal(gate.isPending(), false)
+    const nextB = gate.begin()
+    assert.notEqual(nextB, null)
+    assert.equal(gate.end(nextB!), true)
+  }
 })
