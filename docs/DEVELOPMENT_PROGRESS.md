@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Productization P1 / SEC-013 AI Inference Labeling V1**；#169 / PR #173 已正式复审并合并；#166 进入任务发布/开发阶段，并作为 #162 Mini advanced V2 surfaces 与 #163 Flutter V2 parity 的共享产品语义前置；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
+> 当前阶段：**V2 Productization P1 / SEC-013 AI Inference Labeling V1**；#169 / PR #173 已正式复审并合并；#166 / PR #174 已完成实现与 exact-head required CI，进入正式独立审查，并作为 #162 Mini advanced V2 surfaces 与 #163 Flutter V2 parity 的共享产品语义前置；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
 
 ## 状态规则
 
@@ -336,7 +336,7 @@
 | SEC-010 | 家庭查看逐项授权 | ✅ | Issue #95 / PR #96 已完成 default-deny per-scope foundation、canonical membership locks、committed persisted-state resolver、PostgreSQL Family Gate 与 exact-head #575（454 passed）；已合并 `main=c933f2a6`，真实敏感读取按 S4-004+ 分阶段接入 |
 | SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁与时区边界均已合并 |
 | SEC-012 | AI 不知道就说不知道 | ✅ | RAG、Daily/Monthly/Annual Summary、V2-007/010/011 已形成 evidence-only、bounded inventory、opaque slots、strict citation、post-provider revalidation 与 fail-closed typed status；无证据/证据不完整不生成可信答案 |
-| SEC-013 | AI 推断显式标记 | 🔵 | Issue #166：统一 explicit / inferred / uncertain / unavailable 用户可见语义；先覆盖现有 Mini Query + Trusted Summaries 与 Flutter Query，并冻结 #162/#163 可复用 contract |
+| SEC-013 | AI 推断显式标记 | 🟠 | PR #174：Mini Query + Trusted Summaries 与 Flutter Query 已统一 EXPLICIT / INFERRED / UNCERTAIN / UNAVAILABLE 四态语义，unknown/malformed fail closed、stale/auth guard、Evidence provenance 独立与 Flutter golden 均已完成，等待正式审查 |
 | SEC-014 | 敏感操作二次确认 | 🟠 | 账户注销等部分高风险流程已有显式 intent/确认语义；导出、数据删除、家庭授权等尚未统一成跨客户端 reviewed second-confirm 标准 |
 | SEC-015 | 安全事件与异常访问告警 | ✅ | Issue #165 / PR #171 已完成两轮正式极窄复审并合并；merge `75ec2f73084cd4b7d9f4035ae1beeca3f209cae7`；durable anomaly windows、elapsed cooldown、HMAC correlation、Auth/Family/Delete/Storage signals 与 bounded retry 已收口 |
 
