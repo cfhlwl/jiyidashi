@@ -431,7 +431,6 @@ class _DetailRow extends StatelessWidget {
 class _MemoryDetailView {
   const _MemoryDetailView({
     required this.id,
-    required this.ownerId,
     required this.memoryType,
     required this.title,
     required this.content,
@@ -441,7 +440,6 @@ class _MemoryDetailView {
   });
 
   final String id;
-  final String ownerId;
   final String memoryType;
   final String? title;
   final String content;
@@ -495,7 +493,6 @@ class _MemoryDetailView {
 
     return _MemoryDetailView(
       id: id,
-      ownerId: ownerId,
       memoryType: type,
       title: title is String && title.trim().isNotEmpty ? title.trim() : null,
       content: content.trim(),

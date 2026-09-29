@@ -1669,8 +1669,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   Future<void> openFirstMemoryDetail() async {
     final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
     if (ids.isEmpty || !mounted) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
         builder: (_) => MemoryDetailPage(
           api: widget.api,
           memoryId: ids.first.toString(),
