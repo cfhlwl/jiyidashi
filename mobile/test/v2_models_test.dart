@@ -358,4 +358,320 @@ void main() {
       throwsA(isA<ProtocolException>()),
     );
   });
+
+  test('Known Duration accepts related-only and no-trusted states without guessing', () {
+    final related = V2KnownDuration.parse(
+      {
+        'status': 'RELATED_EVIDENCE_ONLY',
+        'person_id': personId,
+        'display_name': '老张',
+        'as_of': '2026-09-29T00:00:00+08:00',
+        'at_least_since_at': null,
+        'elapsed_days': null,
+        'earliest_related_at': '2021-02-03T04:05:06+08:00',
+        'evidence': {
+          'person_memory_link_id': linkId,
+          'memory_id': memoryId,
+          'memory_source_id': sourceId,
+          'relation_kind': 'RELATED',
+          'trust_state': 'CONFIRMED',
+          'occurred_at': '2021-02-03T04:05:06+08:00',
+        },
+      },
+      personId: personId,
+    );
+    expect(related.elapsedDays, isNull);
+    expect(related.earliestRelatedAt, '2021-02-03T04:05:06+08:00');
+
+    final none = V2KnownDuration.parse(
+      {
+        'status': 'NO_TRUSTED_EVIDENCE',
+        'person_id': personId,
+        'display_name': '老张',
+        'as_of': '2026-09-29T00:00:00+08:00',
+        'at_least_since_at': null,
+        'elapsed_days': null,
+        'earliest_related_at': null,
+        'evidence': null,
+      },
+      personId: personId,
+    );
+    expect(none.elapsedDays, isNull);
+    expect(none.evidence, isNull);
+  });
+
+  test('Cross-year History preserves opaque cursor and typed boundaries', () {
+    const opaque = 'opaque/next?token=a%2Fb+1==';
+    final page = V2LifeHistoryPage.parse(
+      {
+        'timezone': 'Asia/Shanghai',
+        'start_year': 2020,
+        'end_year': 2026,
+        'as_of': '2026-09-29T00:00:00+08:00',
+        'items': [
+          {
+            'kind': 'LIFE_EVENT',
+            'occurred_at': '2025-03-01T01:00:00Z',
+            'title': '加入新团队',
+            'custom_label': null,
+            'life_event_id': eventId,
+            'event_kind': 'WORK',
+            'event_ended_at': null,
+            'place_id': null,
+            'life_stage_id': null,
+            'stage_kind': null,
+          },
+          {
+            'kind': 'LIFE_STAGE_STARTED',
+            'occurred_at': '2024-01-01T00:00:00Z',
+            'title': '产品阶段',
+            'custom_label': null,
+            'life_event_id': null,
+            'event_kind': null,
+            'event_ended_at': null,
+            'place_id': null,
+            'life_stage_id': stageId,
+            'stage_kind': 'WORK',
+          },
+          {
+            'kind': 'LIFE_STAGE_ENDED',
+            'occurred_at': '2025-12-31T23:59:00Z',
+            'title': '产品阶段',
+            'custom_label': null,
+            'life_event_id': null,
+            'event_kind': null,
+            'event_ended_at': null,
+            'place_id': null,
+            'life_stage_id': stageId,
+            'stage_kind': 'WORK',
+          },
+        ],
+        'next_cursor': opaque,
+      },
+      startYear: 2020,
+      endYear: 2026,
+    );
+    expect(page.nextCursor, opaque);
+    expect(page.items.map((item) => item.kind), [
+      'LIFE_EVENT',
+      'LIFE_STAGE_STARTED',
+      'LIFE_STAGE_ENDED',
+    ]);
+  });
+
+  test('Annual Memoir accepts ready partial empty and rejects Visit trust/duplicate slots', () {
+    V2AnnualMemoir base({
+      required String status,
+      required String narrativeStatus,
+      String? narrative,
+      List<Map<String, dynamic>> citations = const [],
+      List<Map<String, dynamic>> timeline = const [],
+    }) =>
+        V2AnnualMemoir.parse(
+          {
+            'status': status,
+            'target_year': '2025',
+            'timezone': 'Asia/Shanghai',
+            'narrative_status': narrativeStatus,
+            'narrative': narrative,
+            'narrative_citations': citations,
+            'timeline_items': timeline,
+            'timeline_next_cursor': null,
+            'photo_items': const [],
+            'photo_next_cursor': null,
+          },
+          year: '2025',
+        );
+
+    expect(
+      base(
+        status: 'MEMOIR_READY',
+        narrativeStatus: 'ANNUAL_SUMMARY_READY',
+        narrative: '年度叙事',
+        citations: [
+          {
+            'slot': 'm1',
+            'kind': 'MEMORY',
+            'memory_id': memoryId,
+            'visit_id': null,
+            'trust_state': 'CONFIRMED',
+          },
+        ],
+      ).status,
+      'MEMOIR_READY',
+    );
+
+    expect(
+      base(
+        status: 'MEMOIR_PARTIAL',
+        narrativeStatus: 'SUMMARY_INCOMPLETE',
+        timeline: [
+          {
+            'kind': 'LIFE_EVENT',
+            'occurred_at': '2025-03-01T01:00:00Z',
+            'title': '事件',
+            'custom_label': null,
+            'life_event_id': eventId,
+            'event_kind': 'WORK',
+            'event_ended_at': null,
+            'place_id': null,
+            'life_stage_id': null,
+            'stage_kind': null,
+          },
+        ],
+      ).status,
+      'MEMOIR_PARTIAL',
+    );
+
+    expect(
+      base(
+        status: 'MEMOIR_EMPTY',
+        narrativeStatus: 'NO_SUMMARIZABLE_EVIDENCE',
+      ).status,
+      'MEMOIR_EMPTY',
+    );
+
+    expect(
+      () => base(
+        status: 'MEMOIR_READY',
+        narrativeStatus: 'ANNUAL_SUMMARY_READY',
+        narrative: '错误 Visit trust',
+        citations: [
+          {
+            'slot': 'v1',
+            'kind': 'VISIT',
+            'memory_id': null,
+            'visit_id': visitId,
+            'trust_state': 'CONFIRMED',
+          },
+        ],
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+
+    expect(
+      () => base(
+        status: 'MEMOIR_READY',
+        narrativeStatus: 'ANNUAL_SUMMARY_READY',
+        narrative: '重复 slot',
+        citations: [
+          {
+            'slot': 'dup',
+            'kind': 'MEMORY',
+            'memory_id': memoryId,
+            'visit_id': null,
+            'trust_state': 'CONFIRMED',
+          },
+          {
+            'slot': 'dup',
+            'kind': 'VISIT',
+            'memory_id': null,
+            'visit_id': visitId,
+            'trust_state': null,
+          },
+        ],
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+  });
+
+  test('Life Memoir chapter accepts ready partial empty only with matching payload', () {
+    final ready = V2LifeMemoirChapter.parse(
+      {
+        'status': 'CHAPTER_READY',
+        'life_stage_id': stageId,
+        'reasoning_status': 'ANSWERED',
+        'narrative': '章节叙事',
+        'citations': [stageCitation()],
+      },
+      stageId: stageId,
+    );
+    expect(ready.status, 'CHAPTER_READY');
+
+    final partial = V2LifeMemoirChapter.parse(
+      {
+        'status': 'CHAPTER_PARTIAL',
+        'life_stage_id': stageId,
+        'reasoning_status': 'EVIDENCE_INCOMPLETE',
+        'narrative': null,
+        'citations': const [],
+      },
+      stageId: stageId,
+    );
+    expect(partial.status, 'CHAPTER_PARTIAL');
+
+    final empty = V2LifeMemoirChapter.parse(
+      {
+        'status': 'CHAPTER_EMPTY',
+        'life_stage_id': stageId,
+        'reasoning_status': 'NO_ANSWERABLE_EVIDENCE',
+        'narrative': null,
+        'citations': const [],
+      },
+      stageId: stageId,
+    );
+    expect(empty.status, 'CHAPTER_EMPTY');
+  });
+
+  test('Annual photo cursor and signed media stay canonical', () {
+    const opaque = 'photo:opaque/next?x=1+2==';
+    final photos = V2AnnualMemoirPhotoPage.parse(
+      {
+        'timezone': 'Asia/Shanghai',
+        'target_year': '2025',
+        'items': const [],
+        'next_cursor': opaque,
+      },
+      year: '2025',
+    );
+    expect(photos.nextCursor, opaque);
+
+    final signed = V2SignedMediaDownload.parse(
+      {
+        'media_id': memoryId,
+        'download': {
+          'method': 'GET',
+          'url': 'https://media.example.test/signed/photo',
+          'headers': {'X-Test': '1'},
+          'expires_at': '2026-09-29T01:00:00Z',
+        },
+      },
+      mediaId: memoryId,
+    );
+    expect(signed.method, 'GET');
+    expect(signed.url.scheme, 'https');
+
+    expect(
+      () => V2SignedMediaDownload.parse(
+        {
+          'media_id': memoryId,
+          'download': {
+            'method': 'GET',
+            'url': 'http://media.example.test/plain',
+            'headers': const {},
+            'expires_at': '2026-09-29T01:00:00Z',
+          },
+        },
+        mediaId: memoryId,
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+
+    expect(
+      () => V2SignedMediaDownload.parse(
+        {
+          'media_id': visitId,
+          'download': {
+            'method': 'GET',
+            'url': 'https://media.example.test/signed/photo',
+            'headers': const {},
+            'expires_at': '2026-09-29T01:00:00Z',
+          },
+        },
+        mediaId: memoryId,
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+  });
+
 }
