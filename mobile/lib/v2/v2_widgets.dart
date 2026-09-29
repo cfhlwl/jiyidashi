@@ -135,3 +135,21 @@ class V2KeyValue extends StatelessWidget {
     );
   }
 }
+
+
+class V2TileSurface extends StatelessWidget {
+  const V2TileSurface({
+    super.key,
+    required this.child,
+  });
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: child,
+    );
+  }
+}
