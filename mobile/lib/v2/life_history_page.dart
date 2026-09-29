@@ -175,7 +175,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
               ],
               if (page != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
-                JiYiSectionCard(
+                V2SectionCard(
                   title: '服务端范围',
                   child: Text(
                     page!.startYear.toString() +
@@ -190,7 +190,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
               ],
               if (items.isNotEmpty) ...[
                 const SizedBox(height: JiYiSpacing.md),
-                JiYiSectionCard(
+                V2SectionCard(
                   title: '时间线',
                   child: Column(
                     children: [
