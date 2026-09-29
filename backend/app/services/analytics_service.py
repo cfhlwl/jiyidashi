@@ -335,6 +335,49 @@ def retention_aggregates(
     return output
 
 
+def analytics_report_payload(
+    db: Session,
+    *,
+    start_date: date,
+    end_date: date,
+) -> dict[str, object]:
+    retrieval = retrieval_aggregate(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    retention = retention_aggregates(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return {
+        "from": start_date.isoformat(),
+        "to": end_date.isoformat(),
+        "retrieval": {
+            "attempts": retrieval.attempts,
+            "successes": retrieval.successes,
+            "success_rate": retrieval.success_rate,
+        },
+        "retention": [
+            {
+                "cohort_day": item.cohort_day.isoformat(),
+                "cohort_users": item.cohort_users,
+                "eligible_d1": item.eligible_d1,
+                "retained_d1": item.retained_d1,
+                "d1_rate": item.d1_rate,
+                "eligible_d7": item.eligible_d7,
+                "retained_d7": item.retained_d7,
+                "d7_rate": item.d7_rate,
+                "eligible_d30": item.eligible_d30,
+                "retained_d30": item.retained_d30,
+                "d30_rate": item.d30_rate,
+            }
+            for item in retention
+        ],
+    }
+
+
 def prune_analytics(
     db: Session,
     *,
