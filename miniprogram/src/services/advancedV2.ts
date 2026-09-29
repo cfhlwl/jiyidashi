@@ -505,14 +505,39 @@ function parseLongTermCitation(raw: unknown, label = 'AI 引用'): LongTermCitat
   return citation
 }
 
+function validateAiProvenance(value: unknown, label: string): void {
+  if (value === null) return
+  const provenance = record(value, label)
+  text(provenance.gateway_request_id, label, 240)
+  text(provenance.purpose, label, 240)
+  if (provenance.provider_request_id !== null) {
+    text(provenance.provider_request_id, label, 500)
+  }
+  text(provenance.provider, label, 240)
+  text(provenance.model, label, 240)
+}
+
 export function parseLongTermReasoning(raw: unknown): LongTermReasoningResult {
   const v = record(raw, '长期推理')
   const status = enumValue<LongTermReasoningStatus>(v.status, REASONING_STATUS_SET, '长期推理')
   const citations = list(v.citations, '长期推理', 100).map((item) => parseLongTermCitation(item))
   const answer = v.answer === null ? null : text(v.answer, '长期推理', 20000)
+  const providerErrorCode = v.provider_error_code === null
+    ? null
+    : text(v.provider_error_code, '长期推理', 500)
+  validateAiProvenance(v.ai_provenance, '长期推理来源')
+
   if (status === 'ANSWERED') {
-    if (!answer || citations.length === 0) return invalid('长期推理')
+    if (!answer || citations.length === 0 || v.ai_provenance === null || providerErrorCode !== null) {
+      return invalid('长期推理')
+    }
   } else if (answer !== null) {
+    return invalid('长期推理')
+  }
+
+  if (status === 'PROVIDER_FAILED') {
+    if (!providerErrorCode) return invalid('长期推理')
+  } else if (providerErrorCode !== null) {
     return invalid('长期推理')
   }
   return { status, answer, citations }
