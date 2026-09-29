@@ -102,7 +102,7 @@ class AIQuotaPeriod(Base):
     )
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    provider_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    provider_requests: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
