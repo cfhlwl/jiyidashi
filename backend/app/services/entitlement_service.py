@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy.engine import Engine
 from sqlalchemy import func, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -18,7 +18,6 @@ from app.entitlement_models import (
     UserEntitlement,
 )
 from app.media_models import MediaAsset, MediaStatus
-
 
 _POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807
 _PROVIDER_REQUEST_ID_MAX_LENGTH = 255
