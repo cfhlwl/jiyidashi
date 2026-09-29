@@ -389,7 +389,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('AI 整理'), findsNothing);
-      expect(find.text('可信状态：confirmed'), findsOneWidget);
+      expect(find.text('明确记录'), findsOneWidget);
       expect(find.textContaining('用户文字记录'), findsOneWidget);
       await expectLater(
         find.byKey(key),
