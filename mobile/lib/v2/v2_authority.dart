@@ -63,6 +63,35 @@ class V2OperationToken {
   final int sessionVersion;
 }
 
+class V2OperationContext {
+  const V2OperationContext({
+    required this.snapshot,
+    required this.token,
+  });
+
+  final V2AuthoritySnapshot snapshot;
+  final V2OperationToken token;
+}
+
+V2OperationContext? beginV2Operation(
+  JiYiApiClient api,
+  V2Authority authority,
+  V2OperationFlight flight,
+  String identity,
+) {
+  final token = flight.begin(api);
+  if (token == null) return null;
+  try {
+    return V2OperationContext(
+      snapshot: authority.capture(api, identity),
+      token: token,
+    );
+  } catch (_) {
+    flight.end(token);
+    rethrow;
+  }
+}
+
 class V2OperationFlight {
   int _generation = 0;
   V2OperationToken? _active;
