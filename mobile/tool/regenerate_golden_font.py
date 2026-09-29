@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+import unicodedata
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PINNED_COMMIT = "523d033d6cb47f4a80c58a35753646f5c3608a78"
@@ -29,7 +30,11 @@ def visible_corpus() -> str:
     paths = list((ROOT / "lib").rglob("*.dart"))
     paths.append(ROOT / "test/visual_golden_test.dart")
     for path in paths:
-        chars.update(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        chars.update(
+            ch for ch in text
+            if not unicodedata.category(ch).startswith("C")
+        )
     return "".join(sorted(chars, key=ord))
 
 
