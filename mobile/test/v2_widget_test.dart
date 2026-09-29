@@ -137,4 +137,45 @@ void main() {
     expect(find.textContaining('网络连接失败'), findsOneWidget);
     expect(find.text('重试'), findsOneWidget);
   });
+
+  testWidgets('V2 trust badge exposes semantics and survives large text', (tester) async {
+    final semantics = tester.ensureSemantics();
+    addTearDown(semantics.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: const TextScaler.linear(1.6),
+          ),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: SafeArea(
+            child: LifeStageDetailPage(
+              api: V2TestApi(),
+              stageId: v2StageId,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('开放'), findsWidgets);
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      '这个阶段发生了什么？',
+    );
+    await tester.tap(find.text('生成证据回顾'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.bySemanticsLabel(RegExp('可信状态：AI 推断（有证据支持）')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
 }
