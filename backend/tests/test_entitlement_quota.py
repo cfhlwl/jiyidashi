@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -143,6 +144,37 @@ def test_plan_catalog_and_legacy_full_are_deterministic() -> None:
             assert set(resolved.capabilities) == capabilities
             if plan_code == PlanCode.LEGACY_FULL:
                 assert all(value is None for value in resolved.quota_limits.values())
+
+
+def test_ai_provider_request_quota_is_bounded_by_postgresql_bigint() -> None:
+    bigint_max = 9_223_372_036_854_775_807
+    settings = Settings(
+        app_env="test",
+        entitlement_quota_catalog={
+            "FREE": {
+                QuotaDimension.AI_PROVIDER_REQUESTS.value: bigint_max,
+            }
+        },
+    )
+    assert (
+        settings.entitlement_quota_catalog["FREE"][
+            QuotaDimension.AI_PROVIDER_REQUESTS.value
+        ]
+        == bigint_max
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="ENTITLEMENT_QUOTA_CATALOG limits must be bounded",
+    ):
+        Settings(
+            app_env="test",
+            entitlement_quota_catalog={
+                "FREE": {
+                    QuotaDimension.AI_PROVIDER_REQUESTS.value: bigint_max + 1,
+                }
+            },
+        )
 
 
 def test_missing_or_unconfigured_entitlement_fails_closed() -> None:
