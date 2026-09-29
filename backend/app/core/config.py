@@ -144,7 +144,8 @@ class Settings(BaseSettings):
             "AI_INPUT_TOKENS",
             "AI_OUTPUT_TOKENS",
         }
-        max_limit = 9_000_000_000_000_000_000
+        # PostgreSQL BIGINT is the canonical persisted quota/counter domain.
+        max_limit = 9_223_372_036_854_775_807
         for plan_code, quotas in self.entitlement_quota_catalog.items():
             if plan_code not in allowed_plans or not isinstance(quotas, dict):
                 raise ValueError("ENTITLEMENT_QUOTA_CATALOG contains an invalid plan")
