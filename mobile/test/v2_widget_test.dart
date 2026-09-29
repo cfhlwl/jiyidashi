@@ -39,7 +39,7 @@ void main() {
     await pumpSurface(tester, PeoplePage(api: api));
     expect(find.text('老张'), findsWidgets);
     expect(find.text('小李'), findsWidgets);
-    expect(find.text('最近互动'), findsOneWidget);
+    expect(find.text('最近相关的记忆'), findsOneWidget);
 
     await tester.tap(find.text('老张').first);
     await tester.pumpAndSettle();

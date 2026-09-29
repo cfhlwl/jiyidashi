@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
 import '../ui/jiyi_tokens.dart';
-import 'v2_widgets.dart';
 import 'life_events_page.dart';
 import 'life_history_page.dart';
 import 'life_stages_page.dart';

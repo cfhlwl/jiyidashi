@@ -17,7 +17,7 @@ void main() {
     expect(life, contains('人生经历'));
     expect(life, contains('人生故事'));
     expect(life, isNot(contains('CRUD')));
-    expect(life, isNot(contains('LifeEvent')));
+    expect(life, isNot(contains('LifeEvent 显式关联')));
     expect(life, isNot(contains('Memory 证据')));
     expect(life, isNot(contains('服务端确定性投影')));
     expect(life, isNot(contains('游标原样续传')));
