@@ -61,6 +61,43 @@ AI success flag.
 
 Unknown enums/statuses fail closed. AI prose cannot render from malformed responses.
 
+Generated citation identity is validated against the backend's exact matrix:
+
+```text
+Long-term Reasoning / Life Memoir
+
+LIFE_STAGE
+  stage required
+  event/memory/source/trust = null
+
+LIFE_EVENT
+  stage + event required
+  memory/source/trust = null
+
+MEMORY
+  stage + event + memory + source + trust required
+```
+
+All non-`ANSWERED` Long-term Reasoning/Life Memoir results require
+`answer/narrative = null` and `citations = []`.
+
+Annual narrative citations are likewise exact:
+
+```text
+MEMORY
+  memory required
+  visit = null
+  trust required
+
+VISIT
+  visit required
+  memory = null
+  trust = null
+```
+
+All non-`ANNUAL_SUMMARY_READY` narrative states require
+`narrative = null` and `narrative_citations = []`.
+
 ## Deterministic vs AI-generated surfaces
 
 Deterministic/stored surfaces do **not** get SEC-013 AI labels:
@@ -116,6 +153,15 @@ Auth switch, page hide, resource switch, range/year switch, mutation, and genera
 invalidate old request generations. Stale success/error/citation/AI label/cursor/photo
 pages cannot republish current state.
 
+Mutation refresh continuation is owner/session/generation-bound across every awaited
+refresh step. For example, Event save performs list refresh and detail refresh only while
+the originating mutation snapshot remains current. If account A switches to B while the
+first refresh is pending, both stale success and stale error terminate the continuation;
+the A resource is never requested under B.
+
+Mutation single-flight is token-bound. Auth/page/section invalidation releases the old
+token so B can mutate immediately, while A's stale `finally` cannot end B's newer token.
+
 ## Pagination
 
 Cross-year History, Annual photo continuation, Annual timeline continuation, and Life
@@ -128,7 +174,7 @@ preview. There is no object-storage listing or bulk signing.
 
 ## Mutations and generation
 
-Local synchronous single-flight gates cover:
+Local single-flight gates cover:
 
 - LifeEvent create/update/delete/link/unlink;
 - LifeStage create/update/delete/link/unlink;
