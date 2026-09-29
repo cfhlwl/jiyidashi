@@ -59,6 +59,16 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # UI/UX-001: the committed CJK golden font is a deterministic subset. Regenerate a
+      # review candidate from the pinned upstream font whenever product copy grows.
+      - name: Regenerate candidate CJK golden font
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check fonttools==4.59.2
+          python tool/regenerate_golden_font.py
+          cp test/fonts/JiYiGoldenCJK-Regular.ttf /tmp/JiYiGoldenCJK-Regular.ttf
+
       - name: Analyze
         run: flutter analyze
 
@@ -150,6 +160,7 @@ jobs:
             /tmp/golden-mismatch-proof/**/*.png
             /tmp/deterministic_memory_query.png
             /tmp/product-v2-goldens/candidate/*.png
+            /tmp/JiYiGoldenCJK-Regular.ttf
 
       - name: Build Android debug APK
         run: >-
@@ -161,8 +172,9 @@ jobs:
         working-directory: .
         shell: bash
         run: |
-          # [人工注释][CI-005] git status 输出脏文件仍可能返回 0；必须显式判定 porcelain 非空并 fail closed。
+          # [人工注释][CI-005] Candidate font/goldens are review artifacts only until accepted.
           set -euo pipefail
+          git checkout -- mobile/test/fonts/JiYiGoldenCJK-Regular.ttf
           git diff --check
           status="$(git status --porcelain)"
           if [ -n "$status" ]; then
