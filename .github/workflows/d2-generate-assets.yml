@@ -73,6 +73,18 @@ jobs:
           test/onboarding_flow_test.dart
           --reporter expanded
 
+      # SEC-013 preview is generated only in /tmp. It is review evidence, not a
+      # committed golden mutation, so normal tests remain read-only against repository baselines.
+      - name: Generate AI inference visual preview
+        timeout-minutes: 5
+        run: >-
+          flutter test
+          test/visual_golden_test.dart
+          --plain-name "preview: memory query AI inference label"
+          --update-goldens
+          --dart-define=AI_INFERENCE_VISUAL_PREVIEW=true
+          --reporter expanded
+
       - name: Run Flutter tests including committed goldens
         timeout-minutes: 10
         run: flutter test --reporter expanded
