@@ -162,7 +162,13 @@ test('Long-term Reasoning applies SEC-013 only to real AI statuses', () => {
       memory_trust_state: null,
     }],
     provider_error_code: null,
-    ai_provenance: null,
+    ai_provenance: {
+      gateway_request_id: 'gw-answered-1',
+      purpose: 'LONG_TERM_REASONING',
+      provider_request_id: 'provider-1',
+      provider: 'test-provider',
+      model: 'test-model',
+    },
   })
   assert.equal(reasoningPresentation(answered.status).state, 'INFERRED')
 
@@ -186,7 +192,7 @@ test('Long-term Reasoning applies SEC-013 only to real AI statuses', () => {
       status,
       answer: null,
       citations: [],
-      provider_error_code: null,
+      provider_error_code: status === 'PROVIDER_FAILED' ? 'AI_PROVIDER_FAILED' : null,
       ai_provenance: null,
     })
     assert.equal(reasoningPresentation(result.status).state, 'UNAVAILABLE')
@@ -196,11 +202,43 @@ test('Long-term Reasoning applies SEC-013 only to real AI statuses', () => {
     status: 'FUTURE_STATUS',
     answer: '不应展示',
     citations: [],
+    provider_error_code: null,
+    ai_provenance: null,
   }))
   assert.throws(() => parseLongTermReasoning({
     status: 'ANSWERED',
     answer: '无引用的生成文本',
     citations: [],
+    provider_error_code: null,
+    ai_provenance: {
+      gateway_request_id: 'gw-invalid',
+      purpose: 'LONG_TERM_REASONING',
+      provider_request_id: null,
+      provider: 'test-provider',
+      model: 'test-model',
+    },
+  }))
+  assert.throws(() => parseLongTermReasoning({
+    status: 'PROVIDER_FAILED',
+    answer: null,
+    citations: [],
+    provider_error_code: null,
+    ai_provenance: null,
+  }))
+  assert.throws(() => parseLongTermReasoning({
+    status: 'ANSWERED',
+    answer: '有引用但 provenance malformed',
+    citations: [{
+      slot: 'stage',
+      kind: 'LIFE_STAGE',
+      life_stage_id: STAGE_ID,
+      life_event_id: null,
+      memory_id: null,
+      memory_source_id: null,
+      memory_trust_state: null,
+    }],
+    provider_error_code: null,
+    ai_provenance: { provider: 'x' },
   }))
 })
 
