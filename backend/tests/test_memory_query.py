@@ -49,7 +49,7 @@ async def test_object_location_query_returns_latest_evidence(
     body = query.json()
     assert body["can_answer"] is True
     assert body["intent"] == "FIND_OBJECT"
-    assert body["certainty"] == "confirmed"
+    assert body["certainty"] == "evidence"
     assert "书房左侧柜子第二层" in body["answer"]
     assert len(body["evidence"]) == 1
 
