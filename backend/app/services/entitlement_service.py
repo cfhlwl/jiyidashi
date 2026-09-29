@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -254,7 +255,7 @@ def _load_or_create_ai_period(
 
 
 def reserve_ai_provider_request(
-    db: Session,
+    bind: Engine,
     *,
     user_id: UUID,
     gateway_request_id: UUID,
@@ -262,49 +263,54 @@ def reserve_ai_provider_request(
     settings: Settings | None = None,
     now: datetime | None = None,
 ) -> AIUsageEvent:
+    """Reserve one provider invocation in an isolated short transaction."""
+
     observed_at = _as_utc(now or datetime.now(UTC))
-    lock_entitlement_subject(db, user_id=user_id)
-    entitlement = require_capability(
-        db,
-        user_id=user_id,
-        capability=CapabilityCode.AI_INFERENCE,
-        settings=settings,
-    )
-
-    existing = db.scalar(
-        select(AIUsageEvent).where(
-            AIUsageEvent.user_id == user_id,
-            AIUsageEvent.gateway_request_id == gateway_request_id,
+    with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
+        lock_entitlement_subject(db, user_id=user_id)
+        entitlement = require_capability(
+            db,
+            user_id=user_id,
+            capability=CapabilityCode.AI_INFERENCE,
+            settings=settings,
         )
-    )
-    if existing is not None:
+
+        existing = db.scalar(
+            select(AIUsageEvent).where(
+                AIUsageEvent.user_id == user_id,
+                AIUsageEvent.gateway_request_id == gateway_request_id,
+            )
+        )
+        if existing is not None:
+            if existing.purpose != purpose:
+                db.rollback()
+                raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
+            db.commit()
+            return existing
+
+        period = _load_or_create_ai_period(db, user_id=user_id, now=observed_at)
+        limit = entitlement.quota_limits[QuotaDimension.AI_PROVIDER_REQUESTS]
+        if limit is not None and period.provider_requests >= limit:
+            db.rollback()
+            raise EntitlementError("ENTITLEMENT_QUOTA_EXCEEDED", 429)
+
+        period.provider_requests += 1
+        period.updated_at = observed_at
+        event = AIUsageEvent(
+            user_id=user_id,
+            gateway_request_id=gateway_request_id,
+            period_id=period.id,
+            purpose=purpose,
+            provider_invocation_reserved=True,
+            created_at=observed_at,
+        )
+        db.add(event)
         db.commit()
-        return existing
-
-    period = _load_or_create_ai_period(db, user_id=user_id, now=observed_at)
-    limit = entitlement.quota_limits[QuotaDimension.AI_PROVIDER_REQUESTS]
-    if limit is not None and period.provider_requests >= limit:
-        db.rollback()
-        raise EntitlementError("ENTITLEMENT_QUOTA_EXCEEDED", 429)
-
-    period.provider_requests += 1
-    period.updated_at = observed_at
-    event = AIUsageEvent(
-        user_id=user_id,
-        gateway_request_id=gateway_request_id,
-        period_id=period.id,
-        purpose=purpose,
-        provider_invocation_reserved=True,
-        created_at=observed_at,
-    )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
-    return event
+        return event
 
 
 def finalize_ai_usage(
-    db: Session,
+    bind: Engine,
     *,
     user_id: UUID,
     gateway_request_id: UUID,
@@ -313,45 +319,48 @@ def finalize_ai_usage(
     output_tokens: int | None,
     now: datetime | None = None,
 ) -> None:
+    """Finalize safe usage metadata without touching the caller's business transaction."""
+
     observed_at = _as_utc(now or datetime.now(UTC))
-    event = db.scalar(
-        select(AIUsageEvent)
-        .where(
-            AIUsageEvent.user_id == user_id,
-            AIUsageEvent.gateway_request_id == gateway_request_id,
+    with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
+        event = db.scalar(
+            select(AIUsageEvent)
+            .where(
+                AIUsageEvent.user_id == user_id,
+                AIUsageEvent.gateway_request_id == gateway_request_id,
+            )
+            .with_for_update()
         )
-        .with_for_update()
-    )
-    if event is None:
-        db.rollback()
-        raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
-    if event.finalized_at is not None:
+        if event is None:
+            db.rollback()
+            raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
+        if event.finalized_at is not None:
+            db.commit()
+            return
+
+        period = db.scalar(
+            select(AIQuotaPeriod)
+            .where(AIQuotaPeriod.id == event.period_id)
+            .with_for_update()
+        )
+        if period is None:
+            db.rollback()
+            raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
+
+        safe_input = 0 if input_tokens is None else input_tokens
+        safe_output = 0 if output_tokens is None else output_tokens
+        if safe_input < 0 or safe_output < 0:
+            db.rollback()
+            raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
+
+        event.provider_request_id = provider_request_id
+        event.input_tokens = input_tokens
+        event.output_tokens = output_tokens
+        event.finalized_at = observed_at
+        period.input_tokens += safe_input
+        period.output_tokens += safe_output
+        period.updated_at = observed_at
         db.commit()
-        return
-
-    period = db.scalar(
-        select(AIQuotaPeriod)
-        .where(AIQuotaPeriod.id == event.period_id)
-        .with_for_update()
-    )
-    if period is None:
-        db.rollback()
-        raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
-
-    safe_input = 0 if input_tokens is None else input_tokens
-    safe_output = 0 if output_tokens is None else output_tokens
-    if safe_input < 0 or safe_output < 0:
-        db.rollback()
-        raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
-
-    event.provider_request_id = provider_request_id
-    event.input_tokens = input_tokens
-    event.output_tokens = output_tokens
-    event.finalized_at = observed_at
-    period.input_tokens += safe_input
-    period.output_tokens += safe_output
-    period.updated_at = observed_at
-    db.commit()
 
 
 def entitlement_snapshot(
