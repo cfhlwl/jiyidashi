@@ -28,6 +28,7 @@ from app.services.ai_gateway import (
     DeterministicAIProvider,
 )
 from app.services.daily_summary_service import summarize_today
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.memory_edit_service import edit_memory
 
 
@@ -47,6 +48,8 @@ def _owner(db, label: str, *, timezone: str = "Asia/Shanghai") -> UUID:
         timezone=timezone,
     )
     db.add(user)
+    db.flush()
+    create_legacy_full_entitlement(db, user_id=user.id)
     db.commit()
     return user.id
 
