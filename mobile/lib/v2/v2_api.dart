@@ -21,7 +21,7 @@ class V2Api {
       Uri(path: path, queryParameters: query).toString();
 
   Future<List<V2Person>> listPeople({int limit = 50}) async {
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final raw = await _request('GET', _query('/people', {'limit': '$bounded'}));
     return parsePersonList(raw, limit: bounded);
   }
@@ -74,7 +74,7 @@ class V2Api {
   Future<List<V2MemoryPickerItem>> listMemoryChoices({int limit = 100}) async {
     final owner = api.authenticatedUserId;
     if (owner == null) throw ApiException(401, '请先登录');
-    final bounded = limit.clamp(1, 500);
+    final bounded = limit.clamp(1, 500).toInt();
     final raw = await _request('GET', _query('/timeline', {'limit': '$bounded'}));
     final rows = v2List(raw, '记忆列表', bounded)
         .map((item) => V2MemoryPickerItem.parse(item, ownerId: owner))
@@ -88,7 +88,7 @@ class V2Api {
   }
 
   Future<List<V2PlacePickerItem>> listPlaceChoices({int limit = 100}) async {
-    final bounded = limit.clamp(1, 500);
+    final bounded = limit.clamp(1, 500).toInt();
     final raw = await _request(
       'GET',
       _query('/location/places', {'limit': '$bounded'}),
@@ -108,7 +108,7 @@ class V2Api {
     int limit = 50,
   }) async {
     final id = v2PathId(personId, '人物');
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final raw = await _request(
       'GET',
       _query('/people/' + id + '/memories', {'limit': '$bounded'}),
@@ -192,7 +192,7 @@ class V2Api {
   Future<List<V2PersonInteraction>> listRecentInteractions({
     int limit = 50,
   }) async {
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final raw = await _request(
       'GET',
       _query('/people/interactions', {'limit': '$bounded'}),
@@ -207,7 +207,7 @@ class V2Api {
     int limit = 50,
   }) async {
     final id = v2PathId(personId, '人物');
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final raw = await _request(
       'GET',
       _query('/people/' + id + '/relationships', {'limit': '$bounded'}),
@@ -304,7 +304,7 @@ class V2Api {
     int limit = 50,
   }) async {
     final normalizedKind = v2Enum(kind, graphNodeKinds, '关系图谱');
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final raw = await _request(
       'GET',
       _query(
@@ -323,7 +323,7 @@ class V2Api {
   }
 
   Future<List<V2LifeEvent>> listLifeEvents({int limit = 50}) async {
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final raw = await _request(
       'GET',
       _query('/life-events', {'limit': '$bounded'}),
@@ -403,7 +403,7 @@ class V2Api {
     String eventId, {
     int limit = 50,
   }) async {
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final raw = await _request(
       'GET',
       _query(
@@ -453,7 +453,7 @@ class V2Api {
   }
 
   Future<List<V2LifeStage>> listLifeStages({int limit = 50}) async {
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final raw = await _request(
       'GET',
       _query('/life-stages', {'limit': '$bounded'}),
@@ -525,7 +525,7 @@ class V2Api {
     String stageId, {
     int limit = 50,
   }) async {
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final raw = await _request(
       'GET',
       _query(
@@ -599,7 +599,7 @@ class V2Api {
     if (startYear < 1 || endYear > 9998 || startYear > endYear) {
       throw ArgumentError('年份范围无效');
     }
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final query = <String, String>{
       'start_year': '$startYear',
       'end_year': '$endYear',
@@ -633,7 +633,7 @@ class V2Api {
     String? cursor,
   }) async {
     final target = v2Year(year, '年度照片');
-    final bounded = limit.clamp(1, 50);
+    final bounded = limit.clamp(1, 50).toInt();
     final query = <String, String>{
       'limit': '$bounded',
       if (cursor != null) 'cursor': v2Cursor(cursor, '年度照片'),
@@ -655,7 +655,7 @@ class V2Api {
     int limit = 50,
     String? cursor,
   }) async {
-    final bounded = limit.clamp(1, 100);
+    final bounded = limit.clamp(1, 100).toInt();
     final query = <String, String>{
       'limit': '$bounded',
       if (cursor != null) 'cursor': v2Cursor(cursor, '人生回忆录阶段'),
