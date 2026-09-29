@@ -91,7 +91,7 @@ Future<void> _openEditDialog(
     ),
   );
   await tester.enterText(find.byType(TextField).first, '测试记忆');
-  await tester.tap(find.text('从我的记忆里查找'));
+  await tester.tap(find.text('从我的记录里找'));
   await tester.pumpAndSettle();
   await tester.ensureVisible(find.byKey(const ValueKey('memory-edit-open')));
   // ensureVisible 会驱动滚动位置；等布局稳定后再 hit-test，避免测试点击旧坐标。
@@ -128,7 +128,7 @@ void main() {
     expect(api.queryCalls, 2);
     expect(find.textContaining('记忆已更新'), findsOneWidget);
     expect(find.textContaining('修正后的正文'), findsWidgets);
-    // provenance 来自服务端；UI 只明确展示“用户编辑”，不自行改变 Evidence 类型。
+    // provenance 仍由服务端提供；UI 只展示用户可理解的“用户编辑”。
     expect(find.textContaining('用户编辑'), findsOneWidget);
   });
 
@@ -141,7 +141,7 @@ void main() {
       ),
     );
     await tester.enterText(find.byType(TextField).first, '护照在哪里');
-    await tester.tap(find.text('从我的记忆里查找'));
+    await tester.tap(find.text('从我的记录里找'));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('memory-edit-open')), findsNothing);
@@ -161,7 +161,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.updateCalls, 1);
-    expect(find.text('这条记忆已经在其他地方更新，请重新查询后再编辑'), findsOneWidget);
+    expect(find.text('这条记忆刚刚发生了变化，请重新查询后再试'), findsOneWidget);
     expect(find.text('MEMORY_EDIT_REVISION_CONFLICT'), findsNothing);
   });
 
