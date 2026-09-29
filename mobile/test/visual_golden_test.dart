@@ -65,6 +65,28 @@ class _GoldenApi extends JiYiApiClient {
   };
 
   @override
+  Future<Map<String, dynamic>> queryMemory(String question) async => {
+    'answer': '护照最后记录在书房抽屉。',
+    'can_answer': true,
+    'certainty': 'evidence',
+    'reason': null,
+    'intent': 'FIND_OBJECT',
+    'evidence': [
+      {
+        'kind': 'OBJECT_LOCATION',
+        'id': '33333333-3333-4333-8333-333333333333',
+        'source_type': 'USER_TEXT',
+        'memory_source_id': '44444444-4444-4444-8444-444444444444',
+        'occurred_at': '2026-09-20T02:20:00Z',
+        'excerpt': '护照放在书房抽屉。',
+        'confidence': 1.0,
+        'provenance': 'ORIGINAL_SOURCE',
+      }
+    ],
+    'memory_ids': ['55555555-5555-4555-8555-555555555555'],
+  };
+
+  @override
   Future<Map<String, dynamic>> getTodayFootprint() async => {
     'timezone': 'Asia/Shanghai',
     'day': '2026-09-20',
@@ -336,6 +358,13 @@ void main() {
     final key = await _pumpShell(tester);
     await tester.tap(find.text('问记忆'));
     await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('memory-query-input')),
+      '护照在哪里？',
+    );
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+    expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/memory_query.png'),
