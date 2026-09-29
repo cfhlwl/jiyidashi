@@ -153,3 +153,35 @@ class V2TileSurface extends StatelessWidget {
     );
   }
 }
+
+
+class V2SectionCard extends StatelessWidget {
+  const V2SectionCard({
+    super.key,
+    required this.child,
+    this.title,
+    this.subtitle,
+    this.leading,
+    this.padding = const EdgeInsets.all(JiYiSpacing.md),
+  });
+
+  final String? title;
+  final String? subtitle;
+  final Widget? leading;
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return JiYiSectionCard(
+      title: title,
+      subtitle: subtitle,
+      leading: leading,
+      padding: padding,
+      child: Material(
+        type: MaterialType.transparency,
+        child: child,
+      ),
+    );
+  }
+}
