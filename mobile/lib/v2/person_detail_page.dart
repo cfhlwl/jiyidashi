@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
@@ -340,7 +342,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     if (operation == null) return;
     try {
       final full = await v2.getRelationship(projection.relationshipId);
-      if (!_mutationCurrent(operation)) return;
+      if (!_mutationCurrent(operation) || !mounted) return;
       final draft = await showDialog<_RelationshipDraft>(
         context: context,
         builder: (_) => _RelationshipDialog(
