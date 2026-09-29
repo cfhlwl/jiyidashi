@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -493,6 +493,89 @@ async def test_gateway_revalidates_provider_result_before_exposing_inference():
                 db=db,
                 actor_user_id=user_id,
             )
+
+
+@pytest.mark.asyncio
+async def test_gateway_rejects_token_count_beyond_bigint_before_finalize():
+    class OversizedUsageProvider:
+        async def infer(self, request: AIInferenceRequest) -> AIProviderResult:
+            del request
+            return AIProviderResult(
+                output_text="ok",
+                provider="provider",
+                model="model",
+                provider_request_id="provider-request",
+                input_tokens=9_223_372_036_854_775_808,
+                output_tokens=1,
+            )
+
+    gateway = AIGateway(_settings(), OversizedUsageProvider())
+    with _legacy_subject() as (db, user_id):
+        with pytest.raises(
+            AIMalformedResponseError,
+            match="AI_PROVIDER_INVALID_RESPONSE",
+        ):
+            await gateway.infer(
+                _request(),
+                db=db,
+                actor_user_id=user_id,
+            )
+
+        event = db.scalar(
+            select(AIUsageEvent).where(AIUsageEvent.user_id == user_id)
+        )
+        period = db.scalar(
+            select(AIQuotaPeriod).where(AIQuotaPeriod.user_id == user_id)
+        )
+        assert event is not None
+        assert event.finalized_at is None
+        assert event.input_tokens is None
+        assert event.output_tokens is None
+        assert period is not None
+        assert period.provider_requests == 1
+        assert period.input_tokens == 0
+        assert period.output_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_gateway_rejects_provider_request_id_beyond_persistence_bound():
+    class OversizedRequestIdProvider:
+        async def infer(self, request: AIInferenceRequest) -> AIProviderResult:
+            del request
+            return AIProviderResult(
+                output_text="ok",
+                provider="provider",
+                model="model",
+                provider_request_id="x" * 256,
+                input_tokens=1,
+                output_tokens=1,
+            )
+
+    gateway = AIGateway(_settings(), OversizedRequestIdProvider())
+    with _legacy_subject() as (db, user_id):
+        with pytest.raises(
+            AIMalformedResponseError,
+            match="AI_PROVIDER_INVALID_RESPONSE",
+        ):
+            await gateway.infer(
+                _request(),
+                db=db,
+                actor_user_id=user_id,
+            )
+
+        event = db.scalar(
+            select(AIUsageEvent).where(AIUsageEvent.user_id == user_id)
+        )
+        period = db.scalar(
+            select(AIQuotaPeriod).where(AIQuotaPeriod.user_id == user_id)
+        )
+        assert event is not None
+        assert event.finalized_at is None
+        assert event.provider_request_id is None
+        assert period is not None
+        assert period.provider_requests == 1
+        assert period.input_tokens == 0
+        assert period.output_tokens == 0
 
 
 def test_ai_provider_configuration_is_fail_closed():
