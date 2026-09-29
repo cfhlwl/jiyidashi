@@ -215,6 +215,29 @@ void main() {
     expect(find.text('A 的书房'), findsNothing);
   });
 
+  testWidgets('published AI label and answer clear after session authority changes', (tester) async {
+    final api = _FindApi(response: _found('旧账号答案'));
+    await tester.pumpWidget(_host(api, elderMode: true));
+    await tester.enterText(
+      find.byKey(const ValueKey('memory-query-input')),
+      '旧账号问题',
+    );
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('旧账号答案'), findsOneWidget);
+    expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
+
+    api.logout();
+    api.accessToken = 'token-b';
+    api.authenticatedUserId = 'owner-b';
+    await tester.pumpWidget(_host(api, elderMode: true));
+    await tester.pump();
+
+    expect(find.text('旧账号答案'), findsNothing);
+    expect(find.byKey(const ValueKey('memory-query-ai-state')), findsNothing);
+  });
+
   testWidgets('Elder find query has no write, media, or location side effects', (tester) async {
     final api = _FindApi(response: _noAnswer());
     await tester.pumpWidget(_host(api, elderMode: true));
