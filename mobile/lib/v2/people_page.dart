@@ -239,27 +239,18 @@ class _PersonDraft {
 class _PersonDialog extends StatefulWidget {
   const _PersonDialog({
     required this.title,
-    this.initialName = '',
-    this.initialRelationshipLabel = '',
-    this.initialNote = '',
   });
 
   final String title;
-  final String initialName;
-  final String initialRelationshipLabel;
-  final String initialNote;
 
   @override
   State<_PersonDialog> createState() => _PersonDialogState();
 }
 
 class _PersonDialogState extends State<_PersonDialog> {
-  late final TextEditingController name =
-      TextEditingController(text: widget.initialName);
-  late final TextEditingController relation =
-      TextEditingController(text: widget.initialRelationshipLabel);
-  late final TextEditingController note =
-      TextEditingController(text: widget.initialNote);
+  final TextEditingController name = TextEditingController();
+  final TextEditingController relation = TextEditingController();
+  final TextEditingController note = TextEditingController();
   String? error;
 
   @override
