@@ -49,6 +49,22 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # TEMP #163 golden bootstrap. Remove after committing generated V2 baselines.
+      - name: Generate V2 golden baselines
+        run: >-
+          flutter test test/visual_golden_test.dart
+          --update-goldens
+          --plain-name "golden: V2"
+          --reporter expanded
+
+      - name: Upload V2 golden baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-golden-baselines-${{ github.event.pull_request.head.sha || github.sha }}
+          path: mobile/test/goldens/v2_*.png
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Analyze
         run: flutter analyze
 
