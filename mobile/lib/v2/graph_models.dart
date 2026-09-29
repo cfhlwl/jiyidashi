@@ -1,3 +1,4 @@
+import 'people_models.dart';
 import 'v2_common.dart';
 
 const Set<String> graphNodeKinds = {'PERSON', 'PLACE', 'OBJECT', 'EVENT'};
@@ -96,12 +97,62 @@ class V2GraphEdge {
     final source = V2GraphNode.parse(raw['source']);
     final target = V2GraphNode.parse(raw['target']);
     if (source.identity == target.identity) return v2Invalid('图谱边');
+    final kind = v2Enum(raw['edge_kind'], graphEdgeKinds, '图谱边');
+    final metadata = V2GraphEdgeMetadata.parse(raw['metadata']);
+
+    final endpointKinds = {source.kind, target.kind};
+    if (kind == 'PERSON_RELATIONSHIP') {
+      if (endpointKinds.length != 1 ||
+          !endpointKinds.contains('PERSON') ||
+          metadata.relationshipKind == null ||
+          !relationshipKinds.contains(metadata.relationshipKind) ||
+          metadata.relationKind != null ||
+          metadata.recordedAt != null) {
+        return v2Invalid('图谱边');
+      }
+      if (metadata.relationshipKind == 'OTHER'
+          ? (metadata.customLabel == null ||
+              metadata.customLabel!.trim().isEmpty)
+          : metadata.customLabel != null) {
+        return v2Invalid('图谱边');
+      }
+    } else if (kind == 'PERSON_EVENT') {
+      if (endpointKinds.length != 2 ||
+          !endpointKinds.contains('PERSON') ||
+          !endpointKinds.contains('EVENT') ||
+          metadata.relationKind == null ||
+          !personMemoryRelationKinds.contains(metadata.relationKind) ||
+          metadata.relationshipKind != null ||
+          metadata.customLabel != null ||
+          metadata.recordedAt != null) {
+        return v2Invalid('图谱边');
+      }
+    } else if (kind == 'OBJECT_PLACE') {
+      if (endpointKinds.length != 2 ||
+          !endpointKinds.contains('OBJECT') ||
+          !endpointKinds.contains('PLACE') ||
+          metadata.recordedAt == null ||
+          metadata.relationshipKind != null ||
+          metadata.customLabel != null ||
+          metadata.relationKind != null) {
+        return v2Invalid('图谱边');
+      }
+    } else if (endpointKinds.length != 2 ||
+        !endpointKinds.contains('EVENT') ||
+        !endpointKinds.contains('PLACE') ||
+        metadata.relationshipKind != null ||
+        metadata.customLabel != null ||
+        metadata.relationKind != null ||
+        metadata.recordedAt != null) {
+      return v2Invalid('图谱边');
+    }
+
     return V2GraphEdge(
-      kind: v2Enum(raw['edge_kind'], graphEdgeKinds, '图谱边'),
+      kind: kind,
       source: source,
       target: target,
       authorityRef: v2Uuid(raw['authority_ref'], '图谱边'),
-      metadata: V2GraphEdgeMetadata.parse(raw['metadata']),
+      metadata: metadata,
     );
   }
 }
