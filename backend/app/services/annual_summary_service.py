@@ -898,7 +898,9 @@ async def summarize_year(
                 system_instruction=_SYSTEM_INSTRUCTION,
                 input_text=input_text,
                 max_output_tokens=_MAX_OUTPUT_TOKENS,
-            )
+            ),
+            db=db,
+            actor_user_id=user_id,
         )
     except AIGatewayError as exc:
         return _empty_result(
