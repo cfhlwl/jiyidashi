@@ -15,6 +15,7 @@ import {
   submitMemoryFeedback,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import { FloatingCaptureAction, ProductHeroHeader } from '../../components/product/ProductUi'
 import {
   ElderFindQueryEpoch,
   ElderFindSingleFlight,
@@ -42,16 +43,12 @@ function sourceLabel(sourceType: string): string {
     USER_TEXT: '用户文字记录',
     USER_VOICE: '用户语音记录',
     USER_PHOTO: '用户照片记录',
-    GPS: 'GPS 位置证据',
+    GPS: '位置记录',
     PHOTO_EXIF: '照片位置信息',
     SYSTEM_PLACE: '系统地点识别',
     AI_INFERENCE: 'AI 推测',
   }
-  return labels[sourceType] || sourceType
-}
-
-function shortMemoryId(memoryId: string): string {
-  return memoryId.length > 12 ? `${memoryId.slice(0, 8)}…${memoryId.slice(-4)}` : memoryId
+  return labels[sourceType] || '其他记录'
 }
 
 function memoryPreview(memory: MemoryRead): string {
@@ -309,7 +306,7 @@ export default function Page() {
       setStatus(
         feedback.result_revision === null
           ? '已纠正，请重新查询查看最新结果'
-          : `已纠正（修订版 ${feedback.result_revision}），请重新查询查看最新结果`,
+          : '已纠正，请重新查询查看最新结果',
       )
       return
     }
@@ -494,12 +491,13 @@ export default function Page() {
 
   return (
     <View className={elderClassName(elderMode)}>
-      <View className='title'>{elderMode ? '我想找东西' : '问记忆'}</View>
-      <View className='subtitle'>
-        {elderMode
+      <ProductHeroHeader
+        eyebrow='迹忆 · 记忆'
+        title={elderMode ? '我想找东西' : '记忆'}
+        subtitle={elderMode
           ? '只从你自己的可信记录里找；没有可靠记录时，我不会猜。'
-          : '只从你的真实记忆证据里找答案。'}
-      </View>
+          : '从自己的记录里查找过去发生的事；没有足够记录时不会猜。'}
+      />
       <View className={elderMode ? 'card elder-find-card' : 'card'}>
         {elderMode && <View className='elder-find-state' aria-live='polite'>{elderStateText}</View>}
         <Input
@@ -514,7 +512,7 @@ export default function Page() {
           disabled={loading || reviewLoading || feedbackBusy}
           onClick={submit}
         >
-          {loading ? '查找中…' : (elderMode ? '帮我找' : '从我的记忆里查找')}
+          {loading ? '查找中…' : (elderMode ? '帮我找' : '从我的记录里找')}
         </Button>
       </View>
 
@@ -523,8 +521,8 @@ export default function Page() {
           <View className='answer-row'>
             <View className='card-title answer-title'>
               {result.can_answer
-                ? result.answer || '找到相关证据，但答案暂不可显示。'
-                : (elderMode ? '我还不知道它在哪里。' : '我没有找到足够证据回答这个问题。')}
+                ? result.answer || '找到相关记录，但答案暂不可显示。'
+                : (elderMode ? '我还不知道它在哪里。' : '没有找到足够记录回答这个问题。')}
             </View>
             <View className={`trust-badge trust-${trust.tone}`}>{trust.label}</View>
           </View>
@@ -543,7 +541,7 @@ export default function Page() {
                 <Text>{evidence.excerpt}</Text>
                 <View className='muted'>来源：{sourceLabel(evidence.source_type)}</View>
                 {provenance && <View className='muted'>来源链：{provenance}</View>}
-                <View className='muted'>证据类型：{evidence.kind} · 时间：{evidence.occurred_at}</View>
+                <View className='muted'>记录时间：{evidence.occurred_at}</View>
                 <View className='muted'>可信度：{evidence.confidence}</View>
               </View>
             )
@@ -566,8 +564,7 @@ export default function Page() {
           <View className='review-heading'>
             <View>
               <View className='card-title'>正在评价这条记忆</View>
-              <View className='muted'>记忆 ID：{shortMemoryId(reviewMemory.id)} · 当前版本：{reviewMemory.edit_revision}</View>
-            </View>
+                </View>
           </View>
           {reviewMemory.title && <View className='memory-title'>{reviewMemory.title}</View>}
           <View className='memory-content'>{reviewMemory.content}</View>
@@ -639,6 +636,7 @@ export default function Page() {
       )}
 
       {status && <View className='status'>{status}</View>}
+      {isAuthenticated() && <FloatingCaptureAction elderMode={elderMode} />}
     </View>
   )
 }

@@ -19,6 +19,7 @@ import {
   updateProfile,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import { FloatingCaptureAction, ProductHeroHeader } from '../../components/product/ProductUi'
 import './index.scss'
 
 export default function Page() {
@@ -142,8 +143,11 @@ export default function Page() {
   if (profile) {
     return (
       <View className={elderClassName(profile.elder_mode_enabled)}>
-        <View className='title'>我的</View>
-        <View className='subtitle'>你的记忆由你控制。</View>
+        <ProductHeroHeader
+          eyebrow='迹忆 · 我的'
+          title='我的'
+          subtitle='管理账号、隐私和记录方式。你的记忆由你控制。'
+        />
         <View className='card'>
           <View className='card-title'>账号资料</View>
           <Text>{profile.email || ''}</Text>
@@ -210,6 +214,7 @@ export default function Page() {
           退出登录
         </Button>
         {status && <View className='status'>{status}</View>}
+        <FloatingCaptureAction elderMode={profile.elder_mode_enabled} />
       </View>
     )
   }
