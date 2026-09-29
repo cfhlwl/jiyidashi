@@ -42,6 +42,8 @@
     "src/services/personRelationships.ts",
     "tests/personRelationships.test.ts",
     "src/services/unifiedGraph.ts",
-    "tests/unifiedGraph.test.ts"
+    "tests/unifiedGraph.test.ts",
+    "tests/advancedV2.test.ts",
+    "tests/advancedV2Page.test.ts"
   ]
 }

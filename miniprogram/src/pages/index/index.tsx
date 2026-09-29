@@ -163,6 +163,11 @@ export default function Page() {
     void Taro.navigateTo({ url: '/pages/summaries/index' })
   }
 
+  const openLife = () => {
+    // #162: Life is one coherent advanced area. Navigation never triggers AI generation.
+    void Taro.navigateTo({ url: '/pages/life/index' })
+  }
+
   const authenticated = isAuthenticated()
   // 展示状态集中由同一状态机决定 loading / signed-out / empty / error / ready，
   // 避免页面分支把 successful-empty 再次误当成可重试错误。
@@ -261,6 +266,14 @@ export default function Page() {
         <Text className='muted'>按可信记录生成今天、本月或年度回忆；只有你主动点击后才会调用 AI。</Text>
         <Button className='secondary-button' onClick={openSummaries}>打开回忆总结</Button>
       </View>
+
+      {!elderMode && (
+        <View className='card'>
+          <View className='card-title'>人生</View>
+          <Text className='muted'>集中整理人生事件、阶段、多年时间线和回忆录；AI 回顾只在你主动点击后生成。</Text>
+          <Button className='secondary-button' onClick={openLife}>打开人生</Button>
+        </View>
+      )}
 
       <View className='card'>
         <View className='card-title'>V1 基础能力</View>
