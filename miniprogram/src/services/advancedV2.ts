@@ -520,9 +520,30 @@ function parseLongTermCitation(raw: unknown, label = 'AI 引用'): LongTermCitat
     memory_source_id: nullableUuid(v.memory_source_id, label),
     memory_trust_state: nullableTrust(v.memory_trust_state, label),
   }
-  if (kind === 'LIFE_STAGE' && !citation.life_stage_id) return invalid(label)
-  if (kind === 'LIFE_EVENT' && !citation.life_event_id) return invalid(label)
-  if (kind === 'MEMORY' && (!citation.memory_id || !citation.memory_source_id || !citation.memory_trust_state)) {
+
+  if (kind === 'LIFE_STAGE') {
+    if (
+      !citation.life_stage_id
+      || citation.life_event_id !== null
+      || citation.memory_id !== null
+      || citation.memory_source_id !== null
+      || citation.memory_trust_state !== null
+    ) return invalid(label)
+  } else if (kind === 'LIFE_EVENT') {
+    if (
+      !citation.life_stage_id
+      || !citation.life_event_id
+      || citation.memory_id !== null
+      || citation.memory_source_id !== null
+      || citation.memory_trust_state !== null
+    ) return invalid(label)
+  } else if (
+    !citation.life_stage_id
+    || !citation.life_event_id
+    || !citation.memory_id
+    || !citation.memory_source_id
+    || !citation.memory_trust_state
+  ) {
     return invalid(label)
   }
   return citation
@@ -540,7 +561,7 @@ function validateAiProvenance(value: unknown, label: string): void {
   text(provenance.model, label, 240)
 }
 
-export function parseLongTermReasoning(raw: unknown): LongTermReasoningResult {
+export function parseLongTermReasoning(raw: unknown, expectedStageId?: string): LongTermReasoningResult {
   const v = record(raw, '长期推理')
   const status = enumValue<LongTermReasoningStatus>(v.status, REASONING_STATUS_SET, '长期推理')
   const citations = list(v.citations, '长期推理', 100).map((item) => parseLongTermCitation(item))
@@ -550,11 +571,15 @@ export function parseLongTermReasoning(raw: unknown): LongTermReasoningResult {
     : text(v.provider_error_code, '长期推理', 500)
   validateAiProvenance(v.ai_provenance, '长期推理来源')
 
+  if (expectedStageId && citations.some((citation) => citation.life_stage_id !== expectedStageId)) {
+    return invalid('长期推理')
+  }
+
   if (status === 'ANSWERED') {
     if (!answer || citations.length === 0 || v.ai_provenance === null || providerErrorCode !== null) {
       return invalid('长期推理')
     }
-  } else if (answer !== null) {
+  } else if (answer !== null || citations.length !== 0) {
     return invalid('长期推理')
   }
 
@@ -632,7 +657,13 @@ function parseAnnualCitation(raw: unknown): AnnualMemoirCitation {
     visit_id: nullableUuid(v.visit_id, '年度回忆录引用'),
     trust_state: nullableTrust(v.trust_state, '年度回忆录引用'),
   }
-  if (kind === 'MEMORY' ? !result.memory_id : !result.visit_id) return invalid('年度回忆录引用')
+  if (kind === 'MEMORY') {
+    if (!result.memory_id || result.visit_id !== null || !result.trust_state) {
+      return invalid('年度回忆录引用')
+    }
+  } else if (!result.visit_id || result.memory_id !== null || result.trust_state !== null) {
+    return invalid('年度回忆录引用')
+  }
   return result
 }
 export function parseVerifiedMediaDownload(raw: unknown, expectedMediaId?: string): VerifiedMediaDownload {
@@ -678,7 +709,7 @@ export function parseAnnualMemoir(raw: unknown, expectedYear?: string): AnnualMe
   const narrativeCitations = list(v.narrative_citations, '年度回忆录', 100).map(parseAnnualCitation)
   if (narrativeStatus === 'ANNUAL_SUMMARY_READY') {
     if (!narrative || narrativeCitations.length === 0) return invalid('年度回忆录')
-  } else if (narrative !== null) {
+  } else if (narrative !== null || narrativeCitations.length !== 0) {
     return invalid('年度回忆录')
   }
   const result: AnnualMemoir = {
@@ -759,10 +790,13 @@ export function parseLifeMemoirChapter(raw: unknown, expectedStageId?: string): 
     citations,
   }
   if (expectedStageId && result.life_stage_id !== expectedStageId) return invalid('人生回忆录章节')
+  if (citations.some((citation) => citation.life_stage_id !== result.life_stage_id)) {
+    return invalid('人生回忆录章节')
+  }
   if (reasoningStatus === 'ANSWERED') {
     if (status !== 'CHAPTER_READY' || !narrative || citations.length === 0) return invalid('人生回忆录章节')
   } else {
-    if (narrative !== null || status === 'CHAPTER_READY') return invalid('人生回忆录章节')
+    if (narrative !== null || citations.length !== 0 || status === 'CHAPTER_READY') return invalid('人生回忆录章节')
     if (reasoningStatus === 'NO_ANSWERABLE_EVIDENCE' && status !== 'CHAPTER_EMPTY') return invalid('人生回忆录章节')
     if (reasoningStatus !== 'NO_ANSWERABLE_EVIDENCE' && status !== 'CHAPTER_PARTIAL') return invalid('人生回忆录章节')
   }
