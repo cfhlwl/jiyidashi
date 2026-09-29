@@ -45,7 +45,7 @@ void main() {
     final today = File('lib/today_footprint_page.dart').readAsStringSync();
     final place = File('lib/place_detail_page.dart').readAsStringSync();
 
-    expect(today, isNot(contains("'$status · \${visit.visitSource}'")));
+    expect(today, isNot(contains('visit.visitSource')));
     expect(place, contains('_placeCategoryLabel(place.category)'));
     expect(place, isNot(contains("Text(_line('类型', place.category))")));
   });
