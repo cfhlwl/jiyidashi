@@ -20,8 +20,8 @@ from app.services.ai_gateway import (
     AIProviderResult,
     DeterministicAIProvider,
 )
-from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.daily_summary_service import summarize_today
+from app.services.entitlement_service import create_legacy_full_entitlement
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 REFERENCE = datetime(2026, 9, 22, 1, 0, tzinfo=UTC)
