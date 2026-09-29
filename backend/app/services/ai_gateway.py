@@ -360,7 +360,7 @@ class AIGateway:
             validated = self._validate_request(request)
             try:
                 reserve_ai_provider_request(
-                    db,
+                    db.get_bind(),
                     user_id=actor_user_id,
                     gateway_request_id=gateway_request_uuid,
                     purpose=validated.purpose,
@@ -378,7 +378,7 @@ class AIGateway:
             checked = _validate_provider_result(provider_result)
             try:
                 finalize_ai_usage(
-                    db,
+                    db.get_bind(),
                     user_id=actor_user_id,
                     gateway_request_id=gateway_request_uuid,
                     provider_request_id=checked.provider_request_id,
@@ -445,7 +445,7 @@ class AIGateway:
             validated = self._validate_image_request(request)
             try:
                 reserve_ai_provider_request(
-                    db,
+                    db.get_bind(),
                     user_id=actor_user_id,
                     gateway_request_id=gateway_request_uuid,
                     purpose=validated.purpose,
@@ -467,7 +467,7 @@ class AIGateway:
             checked = _validate_provider_result(provider_result)
             try:
                 finalize_ai_usage(
-                    db,
+                    db.get_bind(),
                     user_id=actor_user_id,
                     gateway_request_id=gateway_request_uuid,
                     provider_request_id=checked.provider_request_id,
