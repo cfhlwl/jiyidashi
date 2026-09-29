@@ -516,7 +516,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
                     value: item.lifeStageId,
                     title: Text(item.title),
                     subtitle: Text(
-                      (lifeStageLabels[item.stageKind] ?? item.stageKind) +
+                      (lifeStageLabels[item.stageKind] ?? '其他阶段') +
                           ' · ' +
                           item.startedAt +
                           ' → ' +
