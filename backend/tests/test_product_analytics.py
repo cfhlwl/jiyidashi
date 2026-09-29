@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app import analytics_report, analytics_retention
 from app.account_deletion_models import AccountDeletionOperation
 from app.analytics_models import (
     ProductActiveDay,
@@ -285,6 +286,129 @@ def test_analytics_recording_failure_is_non_blocking_and_safe(monkeypatch) -> No
             "retryable": False,
         }
     ]
+
+
+def test_report_cli_emits_aggregate_only_json(
+    monkeypatch,
+    capsys,
+) -> None:
+    engine = _engine()
+    user_id = uuid4()
+    sentinel = "report-private-sentinel"
+    with Session(engine) as db:
+        db.add(
+            User(
+                id=user_id,
+                nickname=sentinel,
+                email=f"{sentinel}@example.test",
+                created_at=datetime(2026, 7, 1, tzinfo=UTC),
+            )
+        )
+        db.flush()
+        db.add(
+            RetrievalAnalyticsAttempt(
+                user_id=user_id,
+                operation_id=uuid4(),
+                surface=RetrievalSurface.MEMORY_QUERY,
+                outcome=RetrievalOutcome.SUCCESS,
+                result_count=1,
+                answerable_count=1,
+                occurred_at=datetime(2026, 7, 2, tzinfo=UTC),
+            )
+        )
+        db.add(
+            ProductActiveDay(
+                user_id=user_id,
+                activity_date_utc=date(2026, 7, 2),
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr(
+        analytics_report,
+        "SessionLocal",
+        lambda: Session(engine),
+    )
+    assert (
+        analytics_report.main(
+            ["--from", "2026-07-01", "--to", "2026-07-02"]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert '"attempts":1' in output
+    assert '"successes":1' in output
+    assert sentinel not in output
+    assert str(user_id) not in output
+
+
+def test_retention_cli_prunes_old_rows_and_keeps_fresh(
+    monkeypatch,
+    capsys,
+) -> None:
+    engine = _engine()
+    user_id = uuid4()
+    now = datetime.now(UTC)
+    old_day = (now - timedelta(days=100)).date()
+    fresh_day = (now - timedelta(days=1)).date()
+
+    with Session(engine) as db:
+        db.add(User(id=user_id, nickname="retention-cli"))
+        db.flush()
+        db.add_all(
+            [
+                RetrievalAnalyticsAttempt(
+                    user_id=user_id,
+                    operation_id=uuid4(),
+                    surface=RetrievalSurface.MEMORY_QUERY,
+                    outcome=RetrievalOutcome.NO_EVIDENCE,
+                    result_count=0,
+                    answerable_count=0,
+                    occurred_at=now - timedelta(days=100),
+                ),
+                RetrievalAnalyticsAttempt(
+                    user_id=user_id,
+                    operation_id=uuid4(),
+                    surface=RetrievalSurface.MEMORY_QUERY,
+                    outcome=RetrievalOutcome.SUCCESS,
+                    result_count=1,
+                    answerable_count=1,
+                    occurred_at=now - timedelta(days=1),
+                ),
+                ProductActiveDay(
+                    user_id=user_id,
+                    activity_date_utc=old_day,
+                ),
+                ProductActiveDay(
+                    user_id=user_id,
+                    activity_date_utc=fresh_day,
+                ),
+            ]
+        )
+        db.commit()
+
+    monkeypatch.setattr(
+        analytics_retention,
+        "SessionLocal",
+        lambda: Session(engine),
+    )
+    assert (
+        analytics_retention.main(
+            ["--retrieval-days", "90", "--active-day-days", "90"]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "retrieval_deleted=1" in output
+    assert "active_day_deleted=1" in output
+
+    with Session(engine) as db:
+        attempts = list(db.scalars(select(RetrievalAnalyticsAttempt)))
+        active_days = list(db.scalars(select(ProductActiveDay)))
+    assert len(attempts) == 1
+    assert attempts[0].outcome == RetrievalOutcome.SUCCESS
+    assert len(active_days) == 1
+    assert active_days[0].activity_date_utc == fresh_day
 
 
 def test_active_day_duplicate_is_idempotent() -> None:
