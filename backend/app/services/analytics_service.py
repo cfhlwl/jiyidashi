@@ -128,8 +128,16 @@ def _insert_retrieval_attempt(
             db.add(row)
             db.flush()
     except IntegrityError:
+        existing = db.scalar(
+            select(RetrievalAnalyticsAttempt.id).where(
+                RetrievalAnalyticsAttempt.user_id == user_id,
+                RetrievalAnalyticsAttempt.operation_id == operation_id,
+                RetrievalAnalyticsAttempt.surface == surface,
+            )
+        )
+        if existing is None:
+            raise
         # Same logical request replay is deliberately idempotent.
-        pass
 
 
 def _insert_active_day(
@@ -148,7 +156,14 @@ def _insert_active_day(
             db.add(row)
             db.flush()
     except IntegrityError:
-        pass
+        existing = db.scalar(
+            select(ProductActiveDay.id).where(
+                ProductActiveDay.user_id == user_id,
+                ProductActiveDay.activity_date_utc == row.activity_date_utc,
+            )
+        )
+        if existing is None:
+            raise
 
 
 def record_retrieval_and_activity_safe(
