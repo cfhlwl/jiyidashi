@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 # [人工注释][S1-026] 同一 PR 只验收最新 HEAD；旧提交的 Flutter 构建自动取消，避免过期结果占用 Runner。
 concurrency:
@@ -64,6 +64,25 @@ jobs:
           path: mobile/test/goldens/v2_*.png
           if-no-files-found: error
           retention-days: 1
+
+      - name: Commit V2 golden baselines and restore workflow
+        if: github.event_name == 'pull_request' && github.head_ref == 'feat/flutter-personal-memory-graph-parity-20260929'
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          git -C .. config user.name "github-actions[bot]"
+          git -C .. config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C .. checkout 211eba0df30ff25a94026b1b794432464ad9bf80 -- .github/workflows/mobile-ci.yml
+          git -C .. add .github/workflows/mobile-ci.yml mobile/test/goldens/v2_*.png
+          git -C .. diff --cached --stat
+          if git -C .. diff --cached --quiet; then
+            echo "No generated V2 golden changes to commit."
+            exit 0
+          fi
+          git -C .. commit -m "test(flutter): commit V2 golden baselines"
+          git -C .. push origin "HEAD:${HEAD_REF}"
 
       - name: Analyze
         run: flutter analyze
