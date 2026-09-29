@@ -17,7 +17,7 @@ Widget _host(JiYiApiClient api, {required bool elderMode}) => MaterialApp(
 Map<String, dynamic> _noAnswer() => {
       'answer': null,
       'can_answer': false,
-      'certainty': 'insufficient',
+      'certainty': 'unknown',
       'reason': 'NO_EVIDENCE',
       'intent': 'FIND_OBJECT',
       'evidence': <Map<String, dynamic>>[],
@@ -27,7 +27,7 @@ Map<String, dynamic> _noAnswer() => {
 Map<String, dynamic> _found(String answer) => {
       'answer': answer,
       'can_answer': true,
-      'certainty': 'confirmed',
+      'certainty': 'evidence',
       'reason': null,
       'intent': 'FIND_OBJECT',
       'evidence': [
@@ -87,12 +87,13 @@ void main() {
     expect(api.lastQuestion, '护照');
     expect(find.text('我还不知道它在哪里'), findsOneWidget);
     expect(find.textContaining('没有找到足够可靠的记录'), findsOneWidget);
+    expect(find.text('暂不可用'), findsOneWidget);
     expect(find.textContaining('可能在'), findsNothing);
     expect(find.textContaining('应该在'), findsNothing);
     expect(find.textContaining('大概在'), findsNothing);
   });
 
-  testWidgets('Elder found state displays canonical server answer and filters AI inference evidence', (tester) async {
+  testWidgets('Elder found state preserves evidence source identity beside AI answer label', (tester) async {
     final api = _FindApi(
       response: {
         ..._found('护照在书房抽屉。'),
@@ -125,8 +126,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('护照在书房抽屉。'), findsOneWidget);
+    expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
     expect(find.text('书房抽屉'), findsOneWidget);
-    expect(find.text('模型猜测的厨房'), findsNothing);
+    expect(find.text('模型猜测的厨房'), findsOneWidget);
+    expect(find.textContaining('用户文字记录'), findsOneWidget);
+    expect(find.textContaining('AI 推测'), findsOneWidget);
   });
 
   testWidgets('rapid repeated Elder find submit is single-flight', (tester) async {
