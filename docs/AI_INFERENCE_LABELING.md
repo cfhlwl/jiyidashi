@@ -1,62 +1,70 @@
 # AI Inference Labeling V1
 
-Issue #166 defines one shared presentation contract for Mini Program and Flutter.
-It is a user-facing trust/presentation contract only; it does not change Memory,
-Evidence, ranking, Family permission, Entitlement/quota, analytics, or provider
-authority.
+Issue #166 defines one shared user-facing presentation contract for **actual AI-generated
+surfaces**. The contract must describe origin truthfully: deterministic retrieval or
+server-side template formatting is not AI inference merely because it is evidence-backed.
 
-## Four states
+It does not change Memory, Evidence, ObjectLocation, ranking, Family permission,
+entitlement/quota, analytics, provider selection, or existing deterministic Query trust
+semantics.
+
+## Four AI presentation states
 
 | State | Chinese product copy | Meaning |
 | --- | --- | --- |
 | `EXPLICIT` | 明确记录 | An authoritative stored record being shown as the record itself. |
-| `INFERRED` | AI 推断（有证据支持） | Generated/synthesized output backed by canonical evidence. It is not the raw record. |
+| `INFERRED` | AI 推断（有证据支持） | AI-generated/synthesized output backed by canonical evidence. |
 | `UNCERTAIN` | AI 推断（证据不足） | Backend explicitly reports an incomplete/partial AI result. |
-| `UNAVAILABLE` | 暂不可用 | No safe generated result can be shown. |
+| `UNAVAILABLE` | 暂不可用 | No safe AI-generated result can be shown. |
 
-Color is never the only disclosure. Mini and Flutter render visible text labels;
-Flutter also exposes a semantic label for the Query state.
+Color is never the only disclosure. AI labels use visible text; raw records and
+deterministic retrieval responses must not be mislabeled as AI.
 
-## Memory Query mapping
+## Deterministic Memory Query is not an AI surface
 
-Canonical surface:
+Current canonical endpoint:
 
 ```text
 POST /v1/memory/query
 ```
 
-`INFERRED` is allowed only for the exact canonical shape:
+The current implementations are deterministic:
 
 ```text
-can_answer == true
-answer is non-empty
-certainty == "evidence"
-evidence is non-empty
-memory_ids is non-empty
+FIND_OBJECT
+confirmed ObjectLocation
+→ deterministic location lookup
+→ server template response
+
+MEMORY_SEARCH
+confirmed Memory rows
+→ deterministic term scoring
+→ server template response
 ```
 
-Canonical no-evidence maps to `UNAVAILABLE`:
+Neither path calls AI Gateway or an AI provider. Therefore SEC-013 does **not** map
+these responses to `INFERRED`.
+
+Existing product trust presentation remains:
 
 ```text
-can_answer == false
-answer == null
-certainty == "unknown"
-evidence is empty
-memory_ids is empty
+can_answer=true + certainty=confirmed/evidence + canonical evidence
+→ 有证据支持
+
+canonical no-evidence
+→ 没有足够证据
 ```
 
-Any contradictory or future/unknown combination fails closed at the client parser.
-Generated prose from a malformed response is never rendered.
+The clients still validate the response strictly. Contradictory, unknown, or malformed
+Query payloads fail closed, but that parser validation does not assign AI origin.
 
-The backend FIND_OBJECT top-level Query response also uses `certainty="evidence"`
-so the public Query contract is uniform. This does not alter ObjectLocation or
-Memory/Evidence authority.
+`FIND_OBJECT` keeps its existing `certainty="confirmed"` backend semantic.
+`MEMORY_SEARCH` keeps its existing evidence-backed semantic. A presentation task
+must not rewrite those backend trust values just to fit an AI UI vocabulary.
 
-## Evidence/source identity is independent
+## Evidence/source identity remains independent
 
-The top-level answer state never rewrites citation truth.
-
-Examples remain:
+Evidence provenance/source labels keep their canonical identity:
 
 ```text
 USER_TEXT       → 用户文字记录
@@ -68,13 +76,11 @@ SYSTEM_PLACE    → 系统地点识别
 AI_INFERENCE    → AI 推测
 ```
 
-Therefore an `INFERRED` answer can cite an explicit `USER_TEXT` Memory, and an
-`AI_INFERENCE` evidence row remains visibly identified as AI-derived. Neither side
-promotes the evidence into another provenance class.
+No top-level presentation state may rewrite a source row into another provenance class.
 
 ## Trusted Summary mapping
 
-Mini Program uses the same presentation vocabulary:
+Trusted Summary is an actual AI-generated surface and uses the four-state contract:
 
 ```text
 DAILY_SUMMARY_READY
@@ -93,75 +99,69 @@ DATA_CHANGED_DURING_GENERATION
 → UNAVAILABLE
 ```
 
-Unknown future status values fail the strict Trusted Summary parser. No generated
-summary body is displayed after a parser failure. READY summaries keep canonical
-citations and `trust_state` visible.
+Unknown future status values fail closed. READY summaries keep canonical citations and
+`trust_state` visible. Invalid or unavailable states never expose unvalidated generated
+prose.
 
-Flutter does not add Summary UI in #166, but its shared presentation helper implements
-the same status mapping so #163 can reuse the contract without redefining semantics.
+Flutter does not add a Summary page in #166; its shared helper retains the same mapping
+for later #163 reuse.
 
-## Cross-client parity table
+## Cross-client origin rule
 
-| Canonical backend state | Mini | Flutter |
+| Surface | Origin | Presentation |
 | --- | --- | --- |
-| Query evidence-backed answer | `INFERRED` | `INFERRED` |
-| Query canonical no-evidence | `UNAVAILABLE` | `UNAVAILABLE` |
-| Summary READY | `INFERRED` | `INFERRED` contract reserved for #163 |
-| Summary INCOMPLETE | `UNCERTAIN` | `UNCERTAIN` contract reserved for #163 |
-| Summary invalid/failure | `UNAVAILABLE` | `UNAVAILABLE` contract reserved for #163 |
-| Explicit Memory record shown as itself | `EXPLICIT` | `EXPLICIT` |
+| Current FIND_OBJECT Query | deterministic retrieval/template | existing evidence trust UI, never AI INFERRED |
+| Current MEMORY_SEARCH Query | deterministic retrieval/template | existing evidence trust UI, never AI INFERRED |
+| Trusted Summary READY | AI-generated | `INFERRED` |
+| Trusted Summary INCOMPLETE | AI-generated partial state | `UNCERTAIN` |
+| Trusted Summary failure/invalid | AI surface unavailable | `UNAVAILABLE` |
+| Explicit Memory record shown as itself | stored record | `EXPLICIT` |
 
-No caller-provided `isAi`, `trusted`, `success`, or equivalent flag can override
-these mappings.
+Future Long-term Reasoning, Annual/Life Memoir, and other provider-generated surfaces
+must reuse this contract only when their origin is genuinely AI-generated.
 
-## What must never be EXPLICIT
+## What must never be labeled INFERRED
 
-- AI Query prose, even when it cites confirmed Memory;
-- Daily/Monthly/Annual generated summary prose;
-- future Reasoning/Memoir prose;
-- provider/model output.
-
-## What must never be INFERRED
-
-- a raw user-authored Memory merely because it appears under an AI answer;
-- a USER_VOICE/USER_PHOTO/GPS/PHOTO_EXIF/SYSTEM_PLACE evidence row;
-- malformed/contradictory Query output;
-- unknown future Summary status;
-- provider failure or invalid citation response.
+- deterministic `/v1/memory/query` FIND_OBJECT output;
+- deterministic `/v1/memory/query` MEMORY_SEARCH output;
+- a raw user-authored Memory;
+- USER_VOICE / USER_PHOTO / GPS / PHOTO_EXIF / SYSTEM_PLACE evidence rows;
+- malformed or unknown AI output;
+- provider failure or invalid citation output.
 
 ## Stale/session safety
 
-Mini Query keeps its existing query epoch + authenticated owner/session epoch.
-Mini Trusted Summaries now use an equivalent generation epoch:
+Query keeps its existing request generation plus authenticated owner/session guards.
+Those guards remain useful even though Query is not an AI surface.
+
+Trusted Summaries use their generation epoch:
 
 ```text
 new generation / period switch / auth owner change / page hide
-→ invalidate old generation epoch
-→ old success and old error cannot publish content or label
+→ invalidate old generation
+→ stale success/error cannot republish summary body or AI label
 ```
 
-Flutter Query keeps the existing request generation and `JiYiApiClient` authenticated
-session snapshot. A response from an old owner/session is rejected before publication,
-and page disposal invalidates the widget generation.
-
-The presentation label and generated body are always published from the same accepted
-response epoch.
+Flutter Query also clears already-published deterministic answer/evidence/trust UI on
+owner/session changes.
 
 ## Scope boundary
 
-#166 changes only:
+#166 covers:
 
-- Mini Query;
+- shared EXPLICIT / INFERRED / UNCERTAIN / UNAVAILABLE semantics for actual AI surfaces;
 - Mini Trusted Summaries;
-- Flutter existing Memory Query;
-- shared presentation helpers/tests/documentation;
-- the Query `certainty` normalization required to keep the frozen public contract
-  coherent.
+- reusable Mini/Flutter presentation helpers for later real AI surfaces;
+- strict fail-closed parsing;
+- evidence/source independence;
+- stale/session safety;
+- documentation and focused regression coverage;
+- explicit regression that deterministic Memory Query is **not** labeled AI.
 
 It does not implement LifeEvent, LifeStage, Long-term Reasoning, Cross-year History,
 new Memoir pages, payment/entitlement work, analytics, Family changes, SEC-014, or V3.
 
-Future sequencing:
+Future sequencing remains:
 
 ```text
 #166 SEC-013
