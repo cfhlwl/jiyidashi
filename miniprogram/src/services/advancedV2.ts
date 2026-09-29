@@ -20,6 +20,8 @@ export type AnswerTrustState =
   | 'INFERENCE_ONLY'
   | 'NO_EVIDENCE'
 
+export type CitationTrustState = 'CONFIRMED' | 'EVIDENCE_SUPPORTED'
+
 export type LifeEventRead = {
   id: string
   event_kind: LifeEventKind
@@ -142,7 +144,7 @@ export type LongTermCitation = {
   life_event_id: string | null
   memory_id: string | null
   memory_source_id: string | null
-  memory_trust_state: AnswerTrustState | null
+  memory_trust_state: CitationTrustState | null
 }
 
 export type LongTermReasoningResult = {
@@ -193,7 +195,7 @@ export type AnnualMemoirCitation = {
   kind: 'MEMORY' | 'VISIT'
   memory_id: string | null
   visit_id: string | null
-  trust_state: AnswerTrustState | null
+  trust_state: CitationTrustState | null
 }
 export type AnnualMemoirPhoto = {
   memory_id: string
@@ -250,7 +252,7 @@ export type LifeMemoirCitation = {
   life_event_id: string | null
   memory_id: string | null
   memory_source_id: string | null
-  memory_trust_state: AnswerTrustState | null
+  memory_trust_state: CitationTrustState | null
 }
 export type LifeMemoirChapterStatus = 'CHAPTER_READY' | 'CHAPTER_EMPTY' | 'CHAPTER_PARTIAL'
 export type LifeMemoirChapter = {
@@ -353,6 +355,27 @@ function trust(value: unknown, label: string): AnswerTrustState {
 function nullableTrust(value: unknown, label: string): AnswerTrustState | null {
   if (value === null) return null
   return trust(value, label)
+}
+function citationTrust(value: unknown, label: string): CitationTrustState {
+  return enumValue<CitationTrustState>(
+    value,
+    new Set(['CONFIRMED', 'EVIDENCE_SUPPORTED']),
+    label,
+  )
+}
+function nullableCitationTrust(value: unknown, label: string): CitationTrustState | null {
+  if (value === null) return null
+  return citationTrust(value, label)
+}
+function ensureUniqueCitationSlots(
+  citations: ReadonlyArray<{ slot: string }>,
+  label: string,
+): void {
+  const slots = new Set<string>()
+  for (const citation of citations) {
+    if (slots.has(citation.slot)) return invalid(label)
+    slots.add(citation.slot)
+  }
 }
 function list(value: unknown, label: string, max = 100): unknown[] {
   if (!Array.isArray(value) || value.length > max) return invalid(label)
@@ -518,7 +541,7 @@ function parseLongTermCitation(raw: unknown, label = 'AI 引用'): LongTermCitat
     life_event_id: nullableUuid(v.life_event_id, label),
     memory_id: nullableUuid(v.memory_id, label),
     memory_source_id: nullableUuid(v.memory_source_id, label),
-    memory_trust_state: nullableTrust(v.memory_trust_state, label),
+    memory_trust_state: nullableCitationTrust(v.memory_trust_state, label),
   }
 
   if (kind === 'LIFE_STAGE') {
@@ -565,21 +588,34 @@ export function parseLongTermReasoning(raw: unknown, expectedStageId?: string): 
   const v = record(raw, '长期推理')
   const status = enumValue<LongTermReasoningStatus>(v.status, REASONING_STATUS_SET, '长期推理')
   const citations = list(v.citations, '长期推理', 100).map((item) => parseLongTermCitation(item))
+  ensureUniqueCitationSlots(citations, '长期推理')
   const answer = v.answer === null ? null : text(v.answer, '长期推理', 20000)
   const providerErrorCode = v.provider_error_code === null
     ? null
     : text(v.provider_error_code, '长期推理', 500)
   validateAiProvenance(v.ai_provenance, '长期推理来源')
+  const hasProvenance = v.ai_provenance !== null
 
   if (expectedStageId && citations.some((citation) => citation.life_stage_id !== expectedStageId)) {
     return invalid('长期推理')
   }
 
   if (status === 'ANSWERED') {
-    if (!answer || citations.length === 0 || v.ai_provenance === null || providerErrorCode !== null) {
+    if (!answer || citations.length === 0 || !hasProvenance || providerErrorCode !== null) {
       return invalid('长期推理')
     }
   } else if (answer !== null || citations.length !== 0) {
+    return invalid('长期推理')
+  }
+
+  const provenanceRequired =
+    status === 'MALFORMED_PROVIDER_OUTPUT'
+    || status === 'INVALID_CITATION'
+  const provenanceForbidden =
+    status === 'NO_ANSWERABLE_EVIDENCE'
+    || status === 'EVIDENCE_INCOMPLETE'
+    || status === 'PROVIDER_FAILED'
+  if ((provenanceRequired && !hasProvenance) || (provenanceForbidden && hasProvenance)) {
     return invalid('长期推理')
   }
 
@@ -655,7 +691,7 @@ function parseAnnualCitation(raw: unknown): AnnualMemoirCitation {
     kind,
     memory_id: nullableUuid(v.memory_id, '年度回忆录引用'),
     visit_id: nullableUuid(v.visit_id, '年度回忆录引用'),
-    trust_state: nullableTrust(v.trust_state, '年度回忆录引用'),
+    trust_state: nullableCitationTrust(v.trust_state, '年度回忆录引用'),
   }
   if (kind === 'MEMORY') {
     if (!result.memory_id || result.visit_id !== null || !result.trust_state) {
@@ -707,6 +743,7 @@ export function parseAnnualMemoir(raw: unknown, expectedYear?: string): AnnualMe
   const narrativeStatus = enumValue<AnnualSummaryStatus>(v.narrative_status, ANNUAL_STATUS_SET, '年度回忆录')
   const narrative = v.narrative === null ? null : text(v.narrative, '年度回忆录', 30000)
   const narrativeCitations = list(v.narrative_citations, '年度回忆录', 100).map(parseAnnualCitation)
+  ensureUniqueCitationSlots(narrativeCitations, '年度回忆录')
   if (narrativeStatus === 'ANNUAL_SUMMARY_READY') {
     if (!narrative || narrativeCitations.length === 0) return invalid('年度回忆录')
   } else if (narrative !== null || narrativeCitations.length !== 0) {
@@ -782,6 +819,7 @@ export function parseLifeMemoirChapter(raw: unknown, expectedStageId?: string): 
     if (!parsed.life_stage_id) return invalid('人生回忆录引用')
     return parsed as LifeMemoirCitation
   })
+  ensureUniqueCitationSlots(citations, '人生回忆录章节')
   const result: LifeMemoirChapter = {
     status,
     life_stage_id: uuid(v.life_stage_id, '人生回忆录章节'),
