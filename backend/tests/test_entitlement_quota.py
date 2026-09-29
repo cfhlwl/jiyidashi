@@ -135,7 +135,7 @@ def test_plan_catalog_and_legacy_full_are_deterministic() -> None:
         for plan_code, capabilities in expected.items():
             user = _seed_entitlement(db, plan_code=plan_code)
             resolved = resolve_entitlement(
-                db,
+                db.get_bind(),
                 user_id=user.id,
                 settings=settings,
                 now=datetime(2026, 9, 29, 1, 0, tzinfo=UTC),
@@ -363,7 +363,7 @@ def test_ai_reservation_is_idempotent_and_exact_limit() -> None:
     settings = _settings()
     now = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
     with Session(engine) as db:
-        user = _seed_entitlement(db, plan_code=PlanCode.FREE)
+        user = _seed_entitlement(db, plan_code=PlanCode.PERSONAL)
         first_id = uuid4()
         first = reserve_ai_provider_request(
             db.get_bind(),
@@ -415,7 +415,7 @@ def test_ai_token_finalization_does_not_double_charge_request() -> None:
     settings = _settings()
     now = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
     with Session(engine) as db:
-        user = _seed_entitlement(db, plan_code=PlanCode.FREE)
+        user = _seed_entitlement(db, plan_code=PlanCode.PERSONAL)
         operation_id = uuid4()
         reserve_ai_provider_request(
             db.get_bind(),
@@ -452,7 +452,7 @@ def test_ai_token_finalization_does_not_double_charge_request() -> None:
 
 @pytest.mark.asyncio
 async def test_formal_registration_creates_legacy_full_in_same_user_lifecycle(client) -> None:
-    email = f"entitlement-{uuid4()}@example.test"
+    email = f"entitlement-{uuid4()}@example.com"
     response = await client.post(
         "/v1/auth/register",
         json={
