@@ -1,5 +1,5 @@
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- PR #175 / #162 Mini Program advanced V2 surfaces 已完成三轮正式极窄复审并合并 main=7c4ba02b；Mini 端 V2-005～011 产品化正式收口。下一开发主线切到 #163 Flutter Personal Memory Graph parity；OPS-001 真实 public-server acceptance 继续独立保持 🟠。 -->
+<!-- PR #176 / #163 Flutter Personal Memory Graph parity 已完成两轮正式极窄复审并合并 main=ce0f1578；Mini + Flutter 的 V2-001～011 产品能力已完成跨端 parity。当前主线切到 #177 JiYi Product Experience V2，进行 Design System、IA、用户文案与 Flutter/Mini 全量视觉收口；OPS-001 真实 public-server acceptance 继续独立保持 🟠。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- I：Memory Edit / PR #27 已完成正式复审并合并 main=24901d76；S1-018 转 ✅。J：Data Delete / PR #28 随后基于该新 main 完成 MemoryEdit 删除适配、0008 migration 顺延、单提交 clean replay 与 exact-head CI，并合并 main=3abc1366；S1-021 / SEC-007 转 ✅。 -->
@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Productization P1 / Flutter Personal Memory Graph parity**；#162 / PR #175 已完成三轮正式极窄复审并合并，Mini V2 advanced surfaces 正式收口；#163 进入任务发布/开发阶段，把 V2-001～011 产品能力补齐到 Flutter，同时保持 native location / offline / privacy / account-delete 生命周期；后续顺序为 #167 SEC-014 → #136 real-env acceptance → commercial rollout；V3-001+ 未开始。
+> 当前阶段：**Product Experience V2 / UI/UX closeout**；#163 / PR #176 已正式复审并合并，Flutter V2 parity 收口；当前主线为 #177 JiYi Product Experience V2，统一 Flutter + Mini 的 Design System V2、一级 IA、用户端文案、旗舰页面视觉、状态体验、accessibility 与 visual regression；完成后进入 #167 SEC-014 → #136 real-env acceptance → commercial rollout；V3-001+ 未开始。
 
 ## 状态规则
 
@@ -298,7 +298,8 @@
 | V2-CLOSE | V2 Final Closeout / Productization Review | ✅ | Issue #160 / PR #164 已正式合并；merge `8e463566068e8fc328b86b816576ec907f8d3911`；V2 Personal Memory Graph V1 formally closed |
 | V2-P0-OBS | Production Observability Foundation V1 | ✅ | Issue #161 / PR #170 已正式审查并合并；merge `91e2c8b044912bb61ecada7d679c9054db64df7c`；request correlation、structured JSON telemetry、AI/storage/delete operational events、bounded DB readiness 与 production healthcheck 已收口 |
 | V2-P1-MINI | Mini Program advanced V2 surfaces | ✅ | Issue #162 / PR #175 已完成三轮正式极窄复审并合并；merge `7c4ba02b64de67f3627980c3978d1ad2d68fedef`；LifeEvent/LifeStage、Known Duration、Long-term Reasoning、Cross-year History、Annual/Life Memoir 与 strict parser/stale-race 边界已收口 |
-| V2-P1-FLUTTER | Flutter Personal Memory Graph parity | 🔵 | Issue #163：当前开发主线；补齐 People / Person-Memory / Relationships / Unified Graph / LifeEvent / LifeStage / Known Duration / Reasoning / Cross-year History / Annual/Life Memoir；保持 native location/offline/privacy/account-delete 生命周期；之后做 #167 SEC-014 |
+| V2-P1-FLUTTER | Flutter Personal Memory Graph parity | ✅ | Issue #163 / PR #176 已完成两轮正式极窄复审并合并；merge `ce0f1578ad3217cb08d5ae7ae7a81d94f33d2d57`；11 条 V2 flow、strict parser、SEC-013、stale authority、single-flight、opaque cursor、signed media、offline boundary 与 Flutter visual gates 已收口 |
+| UIUX-P0-001 | JiYi Product Experience V2 | 🔵 | Issue #177：当前主线；统一 Flutter + Mini Design System V2、`今天/记忆/人生/家庭/我的` IA、全量用户文案、旗舰页面现代化视觉、AI/可信状态 presentation、small-screen/large-font/Elder/accessibility 与跨端 visual regression；不得新增无 authority 的假统计/情绪/回收站等能力 |
 
 ---
 
