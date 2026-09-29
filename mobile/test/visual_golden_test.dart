@@ -50,7 +50,10 @@ Future<void> _loadMaterialIconsFont() async {
 }
 
 // Golden 复用生产 Theme；这里只注入仓库固定 CJK 测试字体，禁止再次复制产品色/布局 token。
-ThemeData _goldenTheme() => JiYiTheme.light(fontFamily: _goldenFontFamily);
+ThemeData _goldenTheme({bool elderMode = false}) => JiYiTheme.light(
+      fontFamily: _goldenFontFamily,
+      elderMode: elderMode,
+    );
 
 class _GoldenApi extends JiYiApiClient {
   _GoldenApi({
@@ -363,7 +366,11 @@ class _GoldenQueue extends OfflineQueueStore {
   Future<void> close() async {}
 }
 
-Future<Key> _pumpSurface(WidgetTester tester, Widget child) async {
+Future<Key> _pumpSurface(
+  WidgetTester tester,
+  Widget child, {
+  bool elderMode = false,
+}) async {
   tester.view.physicalSize = _goldenSize;
   tester.view.devicePixelRatio = 1.0;
   tester.binding.platformDispatcher.localeTestValue = const Locale('zh', 'CN');
@@ -377,7 +384,7 @@ Future<Key> _pumpSurface(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: _goldenTheme(),
+      theme: _goldenTheme(elderMode: elderMode),
       home: RepaintBoundary(key: key, child: child),
     ),
   );
@@ -494,6 +501,7 @@ void main() {
           child: MemoryQueryPage(api: _GoldenApi(), elderMode: true),
         ),
       ),
+      elderMode: true,
     );
     expect(find.text('我想找东西'), findsOneWidget);
     final submit = find.byKey(const ValueKey('memory-query-submit'));

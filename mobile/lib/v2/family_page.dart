@@ -299,21 +299,24 @@ class _FamilyPageState extends State<FamilyPage> {
     return JiYiSectionCard(
       title: '家庭成员 ${index + 1}',
       subtitle: familyRoleLabel(member.role),
-      child: Column(
-        children: [
-          for (final permission in interactiveFamilyPermissions)
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(familyPermissionLabel(permission)),
-              subtitle: permission == familyViewCurrentLocation
-                  ? const Text('位置权限需要单独开启')
-                  : null,
-              value: grant.has(permission),
-              onChanged: pending
-                  ? null
-                  : (enabled) => _toggle(member, permission, enabled),
-            ),
-        ],
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          children: [
+            for (final permission in interactiveFamilyPermissions)
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: Text(familyPermissionLabel(permission)),
+                subtitle: permission == familyViewCurrentLocation
+                    ? const Text('位置权限需要单独开启')
+                    : null,
+                value: grant.has(permission),
+                onChanged: pending
+                    ? null
+                    : (enabled) => _toggle(member, permission, enabled),
+              ),
+          ],
+        ),
       ),
     );
   }
