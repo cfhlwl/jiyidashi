@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Productization P1 / Entitlement & Quota Foundation V1**；#161 Production Observability 与 #165 SEC-015 已正式合并收口；#168 进入任务发布/开发阶段；OPS-001 真实 public-server 验收仍保持 🟠，#169 Analytics 在后，V3-001+ 未开始。
+> 当前阶段：**V2 Productization P1 / Entitlement & Quota Foundation V1**；#161 Production Observability 与 #165 SEC-015 已正式合并收口；#168 已完成实现与 exact-head CI，进入正式审查；OPS-001 真实 public-server 验收仍保持 🟠，#169 Analytics 在后，V3-001+ 未开始。
 
 ## 状态规则
 
@@ -346,10 +346,10 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| BIZ-001 | 免费版权益 | 🔵 | Issue #168：进入 server-owned Plan / Capability / Quota foundation 开发；本轮不接支付、不硬编码价格 |
-| BIZ-002 | 个人会员 | 🔵 | Issue #168：PERSONAL capability bundle + storage/AI quota authority 进入开发 |
-| BIZ-003 | 家庭会员 | 🔵 | Issue #168：FAMILY plan/capability 可表达；Family 业务 authority 不得被 entitlement 层替代 |
-| BIZ-004 | 高级会员 | 🔵 | Issue #168：高阶 capability / larger quota 可表达；现有账号 rollout compatibility 必须保持 |
+| BIZ-001 | 免费版权益 | 🟠 | PR #172：server-owned Plan / Capability / Quota foundation、LEGACY_FULL rollout 与 fail-closed resolver 已完成，等待正式审查 |
+| BIZ-002 | 个人会员 | 🟠 | PR #172：PERSONAL capability bundle + storage/AI provider-request quota authority 已完成，等待正式审查 |
+| BIZ-003 | 家庭会员 | 🟠 | PR #172：FAMILY plan/capability 可表达，且 Family Membership/Grant/Audit authority 保持独立，等待正式审查 |
+| BIZ-004 | 高级会员 | 🟠 | PR #172：PREMIUM 高阶 capability 可表达，现有账号与新注册均显式 LEGACY_FULL rollout compatibility，等待正式审查 |
 | BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend 已合并；Mini/Flutter 展示、premium packaging 与 entitlement enforcement 尚未实现 |
 | BIZ-006 | 实体年度回忆录 | ⏸ | 后续增值服务 |
 | BIZ-007 | 北极星指标：成功找回记忆数 | ⬜ | 需要埋点系统 |
