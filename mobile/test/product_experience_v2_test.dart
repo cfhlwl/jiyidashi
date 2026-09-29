@@ -50,6 +50,21 @@ void main() {
     expect(place, isNot(contains("Text(_line('类型', place.category))")));
   });
 
+  test('Flutter Product Experience V2 family surface never exposes member ids', () {
+    final page = File('lib/v2/family_page.dart').readAsStringSync();
+    expect(page, contains("'家庭成员 \${index + 1}'"));
+    expect(page, isNot(contains('shortFamilyMemberId')));
+  });
+
+  test('Flutter Product Experience V2 reuses shared loading error and offline states', () {
+    final components = File('lib/ui/jiyi_components.dart').readAsStringSync();
+    final shell = File('lib/stage1_app.dart').readAsStringSync();
+    expect(components, contains('class JiYiLoadingState'));
+    expect(components, contains('class JiYiErrorState'));
+    expect(components, contains('class JiYiOfflineState'));
+    expect(shell, contains('JiYiOfflineState(onRetry: _retryPlaces)'));
+  });
+
   test('Flutter Product Experience V2 defines shared design token families', () {
     final tokens = File('lib/ui/jiyi_tokens.dart').readAsStringSync();
     final components = File('lib/ui/jiyi_components.dart').readAsStringSync();

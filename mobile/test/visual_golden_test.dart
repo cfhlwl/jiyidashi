@@ -11,10 +11,13 @@ import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
+import 'package:jiyidashi/v2/family_page.dart';
 import 'package:jiyidashi/v2/graph_page.dart';
+import 'package:jiyidashi/v2/life_page.dart';
 import 'package:jiyidashi/v2/life_event_detail_page.dart';
 import 'package:jiyidashi/v2/life_stage_detail_page.dart';
 import 'package:jiyidashi/v2/memoirs_page.dart';
+import 'package:jiyidashi/v2/people_page.dart';
 import 'package:jiyidashi/v2/person_detail_page.dart';
 
 import 'v2_test_api.dart';
@@ -133,6 +136,73 @@ class _GoldenApi extends JiYiApiClient {
     final error = privacyError;
     if (error != null) throw error;
     return privacyStatus;
+  }
+}
+
+class _GoldenTimelineApi extends _GoldenApi {
+  @override
+  Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async => [
+        {
+          'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          'name': '上海办公室',
+          'address': '上海市测试路 1 号',
+        },
+        {
+          'id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          'name': '周末咖啡店',
+          'address': '上海市安静路 8 号',
+        },
+      ];
+}
+
+class _GoldenEmptyTimelineApi extends _GoldenApi {
+  @override
+  Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async => const [];
+}
+
+class _GoldenOfflineTimelineApi extends _GoldenApi {
+  @override
+  Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async {
+    throw TransportException('网络连接失败');
+  }
+}
+
+class _GoldenFamilyApi extends _GoldenApi {
+  static const memberId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  @override
+  Future<Object?> requestV2Json(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    if (method == 'GET' && path == '/family') {
+      return {
+        'family_id': 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        'current_user_role': 'OWNER',
+        'members': [
+          {
+            'user_id': authenticatedUserId,
+            'role': 'OWNER',
+            'created_at': '2026-09-01T00:00:00Z',
+          },
+          {
+            'user_id': memberId,
+            'role': 'MEMBER',
+            'created_at': '2026-09-02T00:00:00Z',
+          },
+        ],
+      };
+    }
+    if (method == 'GET' && path == '/family/permissions') {
+      return [
+        {
+          'grantee_user_id': memberId,
+          'permissions': ['VIEW_MEMORY', 'VIEW_PHOTOS'],
+        },
+      ];
+    }
+    throw ApiException(404, 'NOT_FOUND');
   }
 }
 
@@ -371,6 +441,64 @@ void main() {
       find.byKey(key),
       matchesGoldenFile('goldens/home_today.png'),
     );
+  });
+
+  testWidgets('golden: timeline', (tester) async {
+    final key = await _pumpSurface(tester, TimelinePage(api: _GoldenTimelineApi()));
+    expect(find.text('时间线'), findsWidgets);
+    expect(find.text('上海办公室'), findsOneWidget);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/timeline.png'));
+  });
+
+  testWidgets('golden: people', (tester) async {
+    final key = await _pumpSurface(tester, PeoplePage(api: V2TestApi()));
+    expect(find.text('重要的人'), findsWidgets);
+    expect(find.text('老张'), findsWidgets);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/people.png'));
+  });
+
+  testWidgets('golden: life home', (tester) async {
+    final key = await _pumpSurface(tester, LifePage(api: V2TestApi()));
+    expect(find.text('我的人生'), findsWidgets);
+    expect(find.text('人生经历'), findsOneWidget);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/life_home.png'));
+  });
+
+  testWidgets('golden: family permissions', (tester) async {
+    final key = await _pumpSurface(tester, FamilyPage(api: _GoldenFamilyApi()));
+    expect(find.text('家庭成员 1'), findsOneWidget);
+    expect(find.text('可查看我的记忆'), findsOneWidget);
+    expect(find.text('可查看我的照片'), findsOneWidget);
+    expect(find.textContaining(_GoldenFamilyApi.memberId), findsNothing);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/family_permissions.png'));
+  });
+
+  testWidgets('golden: empty timeline state', (tester) async {
+    final key = await _pumpSurface(tester, TimelinePage(api: _GoldenEmptyTimelineApi()));
+    expect(find.text('还没有地点'), findsOneWidget);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/state_empty.png'));
+  });
+
+  testWidgets('golden: offline timeline state', (tester) async {
+    final key = await _pumpSurface(tester, TimelinePage(api: _GoldenOfflineTimelineApi()));
+    expect(find.text('当前离线'), findsOneWidget);
+    expect(find.text('重新连接'), findsOneWidget);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/state_offline.png'));
+  });
+
+  testWidgets('golden: Elder memory query', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: MemoryQueryPage(api: _GoldenApi(), elderMode: true),
+        ),
+      ),
+    );
+    expect(find.text('我想找东西'), findsOneWidget);
+    final submit = find.byKey(const ValueKey('memory-query-submit'));
+    expect(tester.getSize(submit).height, greaterThanOrEqualTo(56));
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/elder_memory_query.png'));
   });
 
   testWidgets('golden: capture and object location', (tester) async {

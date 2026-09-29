@@ -151,11 +151,6 @@ class V2FamilyInvite {
   }
 }
 
-String shortFamilyMemberId(String userId) {
-  if (userId.length < 9) return '家庭成员';
-  return '${userId.substring(0, 4)}…${userId.substring(userId.length - 4)}';
-}
-
 String familyRoleLabel(String role) => role == 'OWNER' ? '家庭创建者' : '家庭成员';
 
 String familyPermissionLabel(String code) => switch (code) {

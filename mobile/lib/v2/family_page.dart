@@ -280,15 +280,15 @@ class _FamilyPageState extends State<FamilyPage> {
             title: '还没有其他家庭成员',
             message: '邀请家人加入后，再决定每个人可以查看哪些内容。',
           ),
-        for (final member in others) ...[
-          _memberCard(member),
+        for (var index = 0; index < others.length; index++) ...[
+          _memberCard(others[index], index),
           const SizedBox(height: JiYiSpacing.md),
         ],
       ],
     );
   }
 
-  Widget _memberCard(V2FamilyMember member) {
+  Widget _memberCard(V2FamilyMember member, int index) {
     final key = member.userId.toLowerCase();
     final grant = grants[key] ??
         V2FamilyPermissionGrant(
@@ -297,7 +297,7 @@ class _FamilyPageState extends State<FamilyPage> {
         );
     final pending = mutatingMemberId == key;
     return JiYiSectionCard(
-      title: shortFamilyMemberId(member.userId),
+      title: '家庭成员 ${index + 1}',
       subtitle: familyRoleLabel(member.role),
       child: Column(
         children: [

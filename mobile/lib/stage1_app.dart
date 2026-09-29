@@ -830,31 +830,19 @@ class _TimelinePageState extends State<TimelinePage> {
               future: _places,
               builder: (context, snapshot) {
                 if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(JiYiSpacing.md),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
+                  return const JiYiLoadingState(message: '正在读取地点…');
                 }
                 if (snapshot.hasError) {
                   final error = snapshot.error;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      JiYiStatusBanner(
-                        kind: JiYiStatusKind.error,
-                        title: '地点列表读取失败',
-                        message: error is ApiException
-                            ? error.message
-                            : '暂时无法读取地点',
-                      ),
-                      const SizedBox(height: JiYiSpacing.sm),
-                      OutlinedButton(
-                        onPressed: _retryPlaces,
-                        child: const Text('重试'),
-                      ),
-                    ],
+                  if (error is TransportException) {
+                    return JiYiOfflineState(onRetry: _retryPlaces);
+                  }
+                  return JiYiErrorState(
+                    title: '地点暂时无法读取',
+                    message: error is ApiException
+                        ? error.message
+                        : '可以稍后重试。',
+                    onRetry: _retryPlaces,
                   );
                 }
                 final places = snapshot.data ?? const <Map<String, dynamic>>[];

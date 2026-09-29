@@ -265,6 +265,92 @@ class JiYiEmptyState extends StatelessWidget {
   }
 }
 
+class JiYiLoadingState extends StatelessWidget {
+  const JiYiLoadingState({super.key, this.message = '正在加载…'});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      liveRegion: true,
+      label: message,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: JiYiSpacing.xl),
+        child: Column(
+          children: [
+            const SizedBox.square(
+              dimension: 28,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class JiYiErrorState extends StatelessWidget {
+  const JiYiErrorState({
+    super.key,
+    required this.title,
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String title;
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return JiYiEmptyState(
+      icon: Icons.error_outline,
+      title: title,
+      message: message,
+      action: OutlinedButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh),
+        label: const Text('重试'),
+      ),
+    );
+  }
+}
+
+class JiYiOfflineState extends StatelessWidget {
+  const JiYiOfflineState({
+    super.key,
+    required this.onRetry,
+    this.message = '暂时无法连接网络。联网后可以重试。',
+  });
+
+  final VoidCallback onRetry;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return JiYiEmptyState(
+      icon: Icons.cloud_off_outlined,
+      title: '当前离线',
+      message: message,
+      action: OutlinedButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh),
+        label: const Text('重新连接'),
+      ),
+    );
+  }
+}
+
 // ReferenceCard 只负责参考记录排版，不修改 source/type/time 的来源或判断规则。
 class JiYiEvidenceCard extends StatelessWidget {
   const JiYiEvidenceCard({
