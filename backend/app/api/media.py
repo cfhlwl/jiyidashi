@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.analytics_models import ProductActivity
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.ocr_models import OCRRequest, OCRResult
@@ -21,6 +22,7 @@ from app.schemas import (
     VoiceMemoryResponse,
 )
 from app.services.ai_gateway import AIGateway, get_ai_gateway
+from app.services.analytics_service import record_active_day_safe
 from app.services.asr import ASRProvider, get_asr_provider
 from app.services.entitlement_service import EntitlementError
 from app.services.media_service import (
@@ -90,6 +92,11 @@ def create_upload(
     except MediaError as exc:
         _raise_http(exc)
     db.commit()
+    record_active_day_safe(
+        db,
+        user_id=user_id,
+        activity=ProductActivity.MEDIA_UPLOAD_RESERVED,
+    )
     db.refresh(result.asset)
     media = _media_read(result.asset)
     return MediaUploadResponse(
@@ -112,6 +119,11 @@ def complete_upload(
     except MediaError as exc:
         _raise_http(exc)
     db.commit()
+    record_active_day_safe(
+        db,
+        user_id=user_id,
+        activity=ProductActivity.MEDIA_UPLOAD_COMPLETED,
+    )
     cleanup_media_staging(storage, asset)
     db.refresh(asset)
     return _media_read(asset)
