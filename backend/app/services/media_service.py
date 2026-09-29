@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.entitlement_models import CapabilityCode, QuotaDimension
 from app.media_models import (
     MediaASRClaim,
     MediaAsset,
@@ -22,6 +23,12 @@ from app.models import Memory, MemorySource, MemoryType, SourceType
 from app.schemas import MediaUploadCreate, PhotoMemoryCreate, VoiceMemoryCreate
 from app.security_models import SecuritySignalCode
 from app.services.asr import ASRProvider, ASRProviderError
+from app.services.entitlement_service import (
+    EntitlementError,
+    lock_entitlement_subject,
+    require_capability,
+    storage_usage_bytes,
+)
 from app.services.memory_service import (
     TrustedMemoryWrite,
     create_trusted_memory,
@@ -256,6 +263,18 @@ def start_media_upload(
     content_type = _normalize_content_type(payload.content_type)
     _validate_upload_policy(payload, content_type)
 
+    capability = (
+        CapabilityCode.IMAGE_MEDIA
+        if payload.kind == MediaKind.IMAGE
+        else CapabilityCode.VOICE_MEDIA
+    )
+    lock_entitlement_subject(db, user_id=user_id)
+    entitlement = require_capability(
+        db,
+        user_id=user_id,
+        capability=capability,
+    )
+
     existing = db.scalar(
         select(MediaAsset).where(
             MediaAsset.user_id == user_id,
@@ -268,6 +287,11 @@ def start_media_upload(
         if existing.status == MediaStatus.READY:
             return MediaUploadResult(asset=existing, upload=None)
         return MediaUploadResult(asset=existing, upload=_sign_upload(storage, existing))
+
+    used_bytes = storage_usage_bytes(db, user_id=user_id)
+    storage_limit = entitlement.quota_limits[QuotaDimension.STORAGE_BYTES]
+    if storage_limit is not None and used_bytes + payload.size_bytes > storage_limit:
+        raise EntitlementError("ENTITLEMENT_QUOTA_EXCEEDED", 429)
 
     media_id = uuid4()
     upload_key, final_key = _object_keys(user_id, media_id)

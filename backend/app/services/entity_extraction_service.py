@@ -114,7 +114,9 @@ def _parse_untrusted_candidates(
 
 
 async def extract_entity_candidates(
+    db: Session,
     *,
+    user_id: UUID,
     text: str,
     gateway: AIGateway,
 ) -> EntityExtractionResult:
@@ -128,7 +130,9 @@ async def extract_entity_candidates(
             system_instruction=_SYSTEM_INSTRUCTION,
             input_text=source_text,
             max_output_tokens=None,
-        )
+        ),
+        db=db,
+        actor_user_id=user_id,
     )
     return _parse_untrusted_candidates(
         source_text=source_text,
@@ -242,7 +246,12 @@ async def extract_and_link_entities(
     text: str,
     gateway: AIGateway,
 ) -> EntityExtractionLinkResult:
-    extraction = await extract_entity_candidates(text=text, gateway=gateway)
+    extraction = await extract_entity_candidates(
+        db,
+        user_id=user_id,
+        text=text,
+        gateway=gateway,
+    )
     links = link_entity_candidates(
         db,
         user_id=user_id,

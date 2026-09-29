@@ -501,7 +501,9 @@ async def answer_from_memory_rag(
                 system_instruction=_SYSTEM_INSTRUCTION,
                 input_text=input_text,
                 max_output_tokens=_RAG_MAX_OUTPUT_TOKENS,
-            )
+            ),
+            db=db,
+            actor_user_id=user_id,
         )
     except AIGatewayError as exc:
         return _empty_result(

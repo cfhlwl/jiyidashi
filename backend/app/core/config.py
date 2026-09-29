@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     ai_max_input_chars: int = Field(default=64000, ge=1, le=1_000_000)
     ai_max_output_tokens: int = Field(default=4096, ge=1, le=65536)
 
+    # [BIZ-001..004] Commercial quota values are server-owned configuration.
+    # LEGACY_FULL is intentionally unlimited and does not use this catalog.
+    entitlement_quota_catalog: dict[str, dict[str, int]] = Field(default_factory=dict)
+
     # [人工注释][S3-009] Embedding 是服务端派生索引，模型/维度由 schema policy 固定；
     # provider endpoint/key 不进入客户端，也不能由单次生成请求覆盖。
     embedding_provider: str = "disabled"
@@ -129,6 +133,36 @@ class Settings(BaseSettings):
                 "OBSERVABILITY_LOG_LEVEL must be DEBUG, INFO, WARNING or ERROR"
             )
         self.observability_log_level = level
+        return self
+
+    @model_validator(mode="after")
+    def validate_entitlement_quota_catalog(self):
+        allowed_plans = {"FREE", "PERSONAL", "FAMILY", "PREMIUM"}
+        allowed_dimensions = {
+            "STORAGE_BYTES",
+            "AI_PROVIDER_REQUESTS",
+            "AI_INPUT_TOKENS",
+            "AI_OUTPUT_TOKENS",
+        }
+        # PostgreSQL BIGINT is the canonical persisted quota/counter domain.
+        max_limit = 9_223_372_036_854_775_807
+        for plan_code, quotas in self.entitlement_quota_catalog.items():
+            if plan_code not in allowed_plans or not isinstance(quotas, dict):
+                raise ValueError("ENTITLEMENT_QUOTA_CATALOG contains an invalid plan")
+            for dimension, limit in quotas.items():
+                if dimension not in allowed_dimensions:
+                    raise ValueError(
+                        "ENTITLEMENT_QUOTA_CATALOG contains an invalid quota dimension"
+                    )
+                if (
+                    not isinstance(limit, int)
+                    or isinstance(limit, bool)
+                    or limit < 0
+                    or limit > max_limit
+                ):
+                    raise ValueError(
+                        "ENTITLEMENT_QUOTA_CATALOG limits must be bounded non-negative integers"
+                    )
         return self
 
     @property

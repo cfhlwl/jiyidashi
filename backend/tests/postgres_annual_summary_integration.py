@@ -21,6 +21,7 @@ from app.services.ai_gateway import (
     DeterministicAIProvider,
 )
 from app.services.annual_summary_service import summarize_year
+from app.services.entitlement_service import create_legacy_full_entitlement
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 TARGET_YEAR = "2026"
@@ -46,6 +47,8 @@ def _seed_user(label: str, *, timezone: str = "UTC") -> UUID:
                 timezone=timezone,
             )
         )
+        db.flush()
+        create_legacy_full_entitlement(db, user_id=user_id)
         db.commit()
     return user_id
 

@@ -22,6 +22,7 @@ from app.services.ai_gateway import (
     DeterministicAIProvider,
     DisabledAIProvider,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.reminder_intent_service import (
     ReminderIntentError,
     extract_reminder_intent,
@@ -47,6 +48,8 @@ def _gateway(payload: dict) -> tuple[AIGateway, DeterministicAIProvider]:
 def _owner(db, label: str, *, timezone: str = "Asia/Shanghai") -> UUID:
     user = User(nickname=f"reminder-intent-{label}", timezone=timezone)
     db.add(user)
+    db.flush()
+    create_legacy_full_entitlement(db, user_id=user.id)
     db.commit()
     db.refresh(user)
     return user.id

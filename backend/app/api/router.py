@@ -6,6 +6,7 @@ from app.api import (
     auth,
     data_delete,
     data_export,
+    entitlements,
     family,
     graph,
     intent,
@@ -38,6 +39,7 @@ api_router.include_router(data_export.router)
 # [人工注释][S1-021] 全量数据删除独立走 durable orchestrator；
 # 不与普通 CRUD 分散混用。
 api_router.include_router(data_delete.router)
+api_router.include_router(entitlements.router)
 # Stage 4A family relationship/permission foundation; membership alone grants no data access.
 api_router.include_router(family.router)
 # V2-004 is a read-only typed projection over canonical authorities; it owns no data.

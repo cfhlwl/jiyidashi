@@ -13,6 +13,7 @@ import app.api.account_delete as account_delete_api
 import app.api.data_delete as data_delete_api
 import app.main as main_module
 from app.core.config import Settings
+from app.core.db import SessionLocal
 from app.core.observability import (
     configure_observability_log_level,
     emit_operational_event,
@@ -20,6 +21,7 @@ from app.core.observability import (
 from app.data_deletion_models import DataDeletionStatus
 from app.deps import get_authenticated_user_id
 from app.main import app
+from app.models import User
 from app.services.account_deletion_service import (
     AccountDeletionError,
     AccountDeletionResult,
@@ -36,6 +38,7 @@ from app.services.data_deletion_service import (
     DataDeletionError,
     DataDeletionResult,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorageError,
@@ -306,27 +309,42 @@ def _ai_settings() -> Settings:
     )
 
 
+def _seed_legacy_ai_actor(db) -> UUID:
+    user = User(id=uuid4(), nickname="observability-ai-owner")
+    db.add(user)
+    db.flush()
+    create_legacy_full_entitlement(db, user_id=user.id)
+    db.commit()
+    return user.id
+
+
 @pytest.mark.asyncio
 async def test_ai_gateway_success_metrics_exclude_prompt_output_and_image_bytes(caplog):
     caplog.set_level(logging.INFO, logger=LOGGER)
     gateway = AIGateway(_ai_settings(), _TelemetryProvider())
 
-    text_result = await gateway.infer(
-        AIInferenceRequest(
-            purpose="observability.text",
-            system_instruction="SYSTEM_SECRET_SENTINEL",
-            input_text="PROMPT_SECRET_SENTINEL",
+    with SessionLocal() as db:
+        actor_user_id = _seed_legacy_ai_actor(db)
+        text_result = await gateway.infer(
+            AIInferenceRequest(
+                purpose="observability.text",
+                system_instruction="SYSTEM_SECRET_SENTINEL",
+                input_text="PROMPT_SECRET_SENTINEL",
+            ),
+            db=db,
+            actor_user_id=actor_user_id,
         )
-    )
-    image_result = await gateway.infer_image(
-        AIImageInferenceRequest(
-            purpose="observability.image",
-            system_instruction="IMAGE_SYSTEM_SECRET_SENTINEL",
-            input_text="IMAGE_INPUT_SECRET_SENTINEL",
-            image_bytes=b"IMAGE_BYTES_SECRET_SENTINEL",
-            content_type="image/jpeg",
+        image_result = await gateway.infer_image(
+            AIImageInferenceRequest(
+                purpose="observability.image",
+                system_instruction="IMAGE_SYSTEM_SECRET_SENTINEL",
+                input_text="IMAGE_INPUT_SECRET_SENTINEL",
+                image_bytes=b"IMAGE_BYTES_SECRET_SENTINEL",
+                content_type="image/jpeg",
+            ),
+            db=db,
+            actor_user_id=actor_user_id,
         )
-    )
 
     events = [
         item for item in _events(caplog)
@@ -361,14 +379,18 @@ async def test_ai_gateway_validation_failure_is_logged_without_untrusted_purpose
     gateway = AIGateway(_ai_settings(), _TelemetryProvider())
     secret_purpose = "INVALID PURPOSE SECRET SENTINEL"
 
-    with pytest.raises(AIGatewayError):
-        await gateway.infer(
-            AIInferenceRequest(
-                purpose=secret_purpose,
-                system_instruction="system",
-                input_text="input",
+    with SessionLocal() as db:
+        actor_user_id = _seed_legacy_ai_actor(db)
+        with pytest.raises(AIGatewayError):
+            await gateway.infer(
+                AIInferenceRequest(
+                    purpose=secret_purpose,
+                    system_instruction="system",
+                    input_text="input",
+                ),
+                db=db,
+                actor_user_id=actor_user_id,
             )
-        )
 
     event = _event(caplog, "ai.inference.failed")
     assert event["error_code"] == "AI_REQUEST_PURPOSE_INVALID"
@@ -383,14 +405,18 @@ async def test_ai_gateway_failure_metrics_and_cancellation_semantics(caplog):
     caplog.set_level(logging.INFO, logger=LOGGER)
     failing = AIGateway(_ai_settings(), _FailingProvider())
 
-    with pytest.raises(AIGatewayError):
-        await failing.infer(
-            AIInferenceRequest(
-                purpose="observability.failure",
-                system_instruction="secret-system",
-                input_text="secret-input",
+    with SessionLocal() as db:
+        actor_user_id = _seed_legacy_ai_actor(db)
+        with pytest.raises(AIGatewayError):
+            await failing.infer(
+                AIInferenceRequest(
+                    purpose="observability.failure",
+                    system_instruction="secret-system",
+                    input_text="secret-input",
+                ),
+                db=db,
+                actor_user_id=actor_user_id,
             )
-        )
     event = _event(caplog, "ai.inference.failed")
     assert event["error_code"] == "AI_PROVIDER_FAILED"
     assert event["retryable"] is True
@@ -398,14 +424,18 @@ async def test_ai_gateway_failure_metrics_and_cancellation_semantics(caplog):
     assert UUID(event["gateway_request_id"])
 
     cancelled = AIGateway(_ai_settings(), _CancelledProvider())
-    with pytest.raises(asyncio.CancelledError):
-        await cancelled.infer(
-            AIInferenceRequest(
-                purpose="observability.cancelled",
-                system_instruction="system",
-                input_text="input",
+    with SessionLocal() as db:
+        actor_user_id = _seed_legacy_ai_actor(db)
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled.infer(
+                AIInferenceRequest(
+                    purpose="observability.cancelled",
+                    system_instruction="system",
+                    input_text="input",
+                ),
+                db=db,
+                actor_user_id=actor_user_id,
             )
-        )
 
 
 class _FailingStorageClient:

@@ -1,10 +1,19 @@
 import asyncio
 import json
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import httpx
 import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
+from app.core.db import Base
+from app.entitlement_models import AIQuotaPeriod, AIUsageEvent, PlanCode, UserEntitlement
+from app.models import User
 from app.services.ai_gateway import (
     AIGateway,
     AIInferenceRequest,
@@ -34,6 +43,45 @@ def _settings(**overrides) -> Settings:
     return Settings(**values)
 
 
+@contextmanager
+def _legacy_subject():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            User.__table__,
+            UserEntitlement.__table__,
+            AIQuotaPeriod.__table__,
+            AIUsageEvent.__table__,
+        ],
+    )
+    user_id = uuid4()
+    now = datetime(2026, 9, 29, tzinfo=UTC)
+    db = Session(engine)
+    try:
+        db.add(User(id=user_id, nickname="ai-gateway-test"))
+        db.flush()
+        db.add(
+            UserEntitlement(
+                user_id=user_id,
+                plan_code=PlanCode.LEGACY_FULL.value,
+                revision=0,
+                effective_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+        yield db, user_id
+    finally:
+        db.close()
+        engine.dispose()
+
+
 def _request(**overrides) -> AIInferenceRequest:
     values = {
         "purpose": "memory.normalize",
@@ -50,7 +98,12 @@ async def test_gateway_returns_inference_with_provenance_and_resolved_limits():
     provider = DeterministicAIProvider(output_text="结构化推断")
     gateway = AIGateway(_settings(), provider)
 
-    result = await gateway.infer(_request(max_output_tokens=None))
+    with _legacy_subject() as (db, user_id):
+        result = await gateway.infer(
+            _request(max_output_tokens=None),
+            db=db,
+            actor_user_id=user_id,
+        )
 
     assert result.output_text == "结构化推断"
     assert result.trust_class == "inference"
@@ -80,8 +133,13 @@ async def test_gateway_policy_rejects_invalid_requests_before_provider(
     provider = DeterministicAIProvider()
     gateway = AIGateway(_settings(), provider)
 
-    with pytest.raises(AIPolicyError, match=code):
-        await gateway.infer(inference_request)
+    with _legacy_subject() as (db, user_id):
+        with pytest.raises(AIPolicyError, match=code):
+            await gateway.infer(
+                inference_request,
+                db=db,
+                actor_user_id=user_id,
+            )
 
     assert provider.requests == []
 
@@ -91,8 +149,13 @@ async def test_gateway_rejects_oversized_input_before_provider():
     provider = DeterministicAIProvider()
     gateway = AIGateway(_settings(ai_max_input_chars=10), provider)
 
-    with pytest.raises(AIPolicyError, match="AI_REQUEST_TOO_LARGE"):
-        await gateway.infer(_request(system_instruction="123456", input_text="12345"))
+    with _legacy_subject() as (db, user_id):
+        with pytest.raises(AIPolicyError, match="AI_REQUEST_TOO_LARGE"):
+            await gateway.infer(
+                _request(system_instruction="123456", input_text="12345"),
+                db=db,
+                actor_user_id=user_id,
+            )
 
     assert provider.requests == []
 
@@ -101,8 +164,13 @@ async def test_gateway_rejects_oversized_input_before_provider():
 async def test_disabled_gateway_fails_closed():
     gateway = build_ai_gateway(_settings(ai_provider="disabled"))
 
-    with pytest.raises(AIProviderError, match="AI_PROVIDER_UNAVAILABLE"):
-        await gateway.infer(_request())
+    with _legacy_subject() as (db, user_id):
+        with pytest.raises(AIProviderError, match="AI_PROVIDER_UNAVAILABLE"):
+            await gateway.infer(
+                _request(),
+                db=db,
+                actor_user_id=user_id,
+            )
 
 
 @pytest.mark.asyncio
@@ -388,12 +456,19 @@ async def test_gateway_does_not_swallow_caller_cancellation():
             raise AssertionError("unreachable")
 
     gateway = AIGateway(_settings(), BlockingProvider())
-    task = asyncio.create_task(gateway.infer(_request()))
-    await started.wait()
-    task.cancel()
+    with _legacy_subject() as (db, user_id):
+        task = asyncio.create_task(
+            gateway.infer(
+                _request(),
+                db=db,
+                actor_user_id=user_id,
+            )
+        )
+        await started.wait()
+        task.cancel()
 
-    with pytest.raises(asyncio.CancelledError):
-        await task
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
 
 @pytest.mark.asyncio
@@ -408,11 +483,99 @@ async def test_gateway_revalidates_provider_result_before_exposing_inference():
             )
 
     gateway = AIGateway(_settings(), MalformedProvider())
-    with pytest.raises(
-        AIMalformedResponseError,
-        match="AI_PROVIDER_INVALID_RESPONSE",
-    ):
-        await gateway.infer(_request())
+    with _legacy_subject() as (db, user_id):
+        with pytest.raises(
+            AIMalformedResponseError,
+            match="AI_PROVIDER_INVALID_RESPONSE",
+        ):
+            await gateway.infer(
+                _request(),
+                db=db,
+                actor_user_id=user_id,
+            )
+
+
+@pytest.mark.asyncio
+async def test_gateway_rejects_token_count_beyond_bigint_before_finalize():
+    class OversizedUsageProvider:
+        async def infer(self, request: AIInferenceRequest) -> AIProviderResult:
+            del request
+            return AIProviderResult(
+                output_text="ok",
+                provider="provider",
+                model="model",
+                provider_request_id="provider-request",
+                input_tokens=9_223_372_036_854_775_808,
+                output_tokens=1,
+            )
+
+    gateway = AIGateway(_settings(), OversizedUsageProvider())
+    with _legacy_subject() as (db, user_id):
+        with pytest.raises(
+            AIMalformedResponseError,
+            match="AI_PROVIDER_INVALID_RESPONSE",
+        ):
+            await gateway.infer(
+                _request(),
+                db=db,
+                actor_user_id=user_id,
+            )
+
+        event = db.scalar(
+            select(AIUsageEvent).where(AIUsageEvent.user_id == user_id)
+        )
+        period = db.scalar(
+            select(AIQuotaPeriod).where(AIQuotaPeriod.user_id == user_id)
+        )
+        assert event is not None
+        assert event.finalized_at is None
+        assert event.input_tokens is None
+        assert event.output_tokens is None
+        assert period is not None
+        assert period.provider_requests == 1
+        assert period.input_tokens == 0
+        assert period.output_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_gateway_rejects_provider_request_id_beyond_persistence_bound():
+    class OversizedRequestIdProvider:
+        async def infer(self, request: AIInferenceRequest) -> AIProviderResult:
+            del request
+            return AIProviderResult(
+                output_text="ok",
+                provider="provider",
+                model="model",
+                provider_request_id="x" * 256,
+                input_tokens=1,
+                output_tokens=1,
+            )
+
+    gateway = AIGateway(_settings(), OversizedRequestIdProvider())
+    with _legacy_subject() as (db, user_id):
+        with pytest.raises(
+            AIMalformedResponseError,
+            match="AI_PROVIDER_INVALID_RESPONSE",
+        ):
+            await gateway.infer(
+                _request(),
+                db=db,
+                actor_user_id=user_id,
+            )
+
+        event = db.scalar(
+            select(AIUsageEvent).where(AIUsageEvent.user_id == user_id)
+        )
+        period = db.scalar(
+            select(AIQuotaPeriod).where(AIQuotaPeriod.user_id == user_id)
+        )
+        assert event is not None
+        assert event.finalized_at is None
+        assert event.provider_request_id is None
+        assert period is not None
+        assert period.provider_requests == 1
+        assert period.input_tokens == 0
+        assert period.output_tokens == 0
 
 
 def test_ai_provider_configuration_is_fail_closed():

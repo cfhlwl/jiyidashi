@@ -215,6 +215,13 @@ async def _read_image(
 
 
 def _provider_error(exc: AIGatewayError) -> VisionError:
+    if exc.code == "ENTITLEMENT_STATE_UNAVAILABLE":
+        return VisionError(exc.code, 503)
+    if exc.code == "ENTITLEMENT_CAPABILITY_REQUIRED":
+        return VisionError(exc.code, 403)
+    if exc.code == "ENTITLEMENT_QUOTA_EXCEEDED":
+        return VisionError(exc.code, 429)
+
     mapping = {
         "AI_PROVIDER_UNAVAILABLE": ("VISION_PROVIDER_UNAVAILABLE", 503),
         "AI_GATEWAY_TIMEOUT": ("VISION_TIMEOUT", 504),
@@ -324,7 +331,9 @@ async def observe_vision(
                 content_type=snapshot.content_type,
                 detail="high",
                 max_output_tokens=512,
-            )
+            ),
+            db=db,
+            actor_user_id=user_id,
         )
     except AIGatewayError as exc:
         raise _provider_error(exc) from exc

@@ -14,6 +14,7 @@ from app.services.auth_service import (
     lock_login_for_token_issue,
     register_email_password,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -69,6 +70,8 @@ def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
     if user is None:
         user = User(id=user_id, nickname=payload.nickname)
         db.add(user)
+        db.flush()
+        create_legacy_full_entitlement(db, user_id=user.id)
         db.commit()
 
     return TokenResponse(

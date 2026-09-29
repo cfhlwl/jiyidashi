@@ -16,6 +16,7 @@ from app.services.annual_memoir_service import (
     build_annual_memoir,
     list_annual_memoir_photos,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.life_event_service import patch_life_event
 
 AS_OF = datetime(2026, 9, 28, 12, tzinfo=UTC)
@@ -25,6 +26,8 @@ def _owner(label: str) -> UUID:
     user_id = uuid4()
     with SessionLocal() as db:
         db.add(User(id=user_id, nickname=label, timezone="UTC"))
+        db.flush()
+        create_legacy_full_entitlement(db, user_id=user_id)
         db.commit()
     return user_id
 

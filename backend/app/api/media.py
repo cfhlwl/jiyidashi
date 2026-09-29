@@ -22,6 +22,7 @@ from app.schemas import (
 )
 from app.services.ai_gateway import AIGateway, get_ai_gateway
 from app.services.asr import ASRProvider, get_asr_provider
+from app.services.entitlement_service import EntitlementError
 from app.services.media_service import (
     MediaError,
     cleanup_media_staging,
@@ -84,6 +85,8 @@ def create_upload(
     # staging/final object key 永不进入公开 payload。
     try:
         result = start_media_upload(db, user_id, payload, storage)
+    except EntitlementError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
     except MediaError as exc:
         _raise_http(exc)
     db.commit()

@@ -17,6 +17,7 @@ from app.services.auth_rate_limit import (
     consume_registration_attempt,
     record_login_failure,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 
 _password_hasher = PasswordHasher()
 # [人工注释][S1-FIX-004] 不存在账号也执行一次固定 Argon2 verify，缩小账号存在性的时间侧信道。
@@ -70,6 +71,7 @@ def register_email_password(
             secret_hash=_password_hasher.hash(payload.password),
         )
         db.add(identity)
+        create_legacy_full_entitlement(db, user_id=user.id)
         db.commit()
     except IntegrityError as exc:
         db.rollback()

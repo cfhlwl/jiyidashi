@@ -26,6 +26,7 @@ from app.services.embedding_service import (
     build_memory_embedding_text,
     memory_embedding_fingerprint,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.memory_rag_service import answer_from_memory_rag
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -52,6 +53,8 @@ def _seed_user(label: str) -> UUID:
     user_id = uuid4()
     with SessionLocal() as db:
         db.add(User(id=user_id, nickname=f"rag-pg-{label}"))
+        db.flush()
+        create_legacy_full_entitlement(db, user_id=user_id)
         db.commit()
     return user_id
 

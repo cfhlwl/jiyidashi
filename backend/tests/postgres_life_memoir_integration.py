@@ -24,6 +24,7 @@ from app.services.ai_gateway import (
     AIInferenceRequest,
     AIProviderResult,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.life_memoir_service import (
     build_life_memoir_chapter,
     list_life_memoir_stages,
@@ -46,6 +47,8 @@ def _owner(label: str) -> UUID:
     user_id = uuid4()
     with SessionLocal() as db:
         db.add(User(id=user_id, nickname=label))
+        db.flush()
+        create_legacy_full_entitlement(db, user_id=user_id)
         db.commit()
     return user_id
 
