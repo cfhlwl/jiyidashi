@@ -286,6 +286,8 @@ Future<Key> _pumpShell(WidgetTester tester, {JiYiApiClient? api}) async {
 }
 
 void main() {
+  // #163: committed V2 baselines are generated from the same Flutter 3.47.4
+  // deterministic CJK-font harness used by the existing mobile visual gate.
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
     await _loadGoldenFont();
