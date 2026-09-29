@@ -113,6 +113,24 @@ test('pagination passes opaque cursors and resets on range/year switches', () =>
   assert.match(lifePage, /setMemoirCursor\(null\)/)
 })
 
+test('AI identity switches release old local gates without letting stale finally clear a new gate', () => {
+  assert.match(lifePage, /reasoningAuthority\.current\.invalidate\(\)[\s\S]*?reasoningGate\.current\.end\(\)/)
+  assert.match(lifePage, /memoirChapterAuthority\.current\.invalidate\(\)[\s\S]*?chapterGate\.current\.end\(\)/)
+  assert.match(lifePage, /annualAuthority\.current\.invalidate\(\)[\s\S]*?annualGate\.current\.end\(\)/)
+  assert.match(
+    lifePage,
+    /if \(isCurrent\(reasoningAuthority\.current, snapshot\)\) \{[\s\S]*?reasoningGate\.current\.end\(\)/,
+  )
+  assert.match(
+    lifePage,
+    /if \(isCurrent\(annualAuthority\.current, snapshot\)\) \{[\s\S]*?annualGate\.current\.end\(\)/,
+  )
+  assert.match(
+    lifePage,
+    /if \(isCurrent\(memoirChapterAuthority\.current, snapshot\)\) \{[\s\S]*?chapterGate\.current\.end\(\)/,
+  )
+})
+
 test('mutating and generating actions use local single-flight gates', () => {
   assert.match(lifePage, /mutationGate/)
   assert.match(lifePage, /reasoningGate/)
