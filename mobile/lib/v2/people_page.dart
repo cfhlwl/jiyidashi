@@ -178,7 +178,7 @@ class _PeoplePageState extends State<PeoplePage> {
               ),
             )
           else
-            JiYiSectionCard(
+            V2SectionCard(
               title: '人物列表',
               child: Column(
                 children: [
@@ -202,7 +202,7 @@ class _PeoplePageState extends State<PeoplePage> {
             ),
           if (interactions.isNotEmpty) ...[
             const SizedBox(height: JiYiSpacing.md),
-            JiYiSectionCard(
+            V2SectionCard(
               title: '最近互动',
               subtitle: '来自显式 Person ↔ Memory 关联，不做客户端推断。',
               child: Column(
