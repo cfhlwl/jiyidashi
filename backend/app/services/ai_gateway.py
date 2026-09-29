@@ -21,6 +21,8 @@ from app.services.entitlement_service import (
 )
 
 _PURPOSE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
+_POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807
+_PROVIDER_REQUEST_ID_MAX_LENGTH = 255
 
 
 class AIGatewayError(RuntimeError):
@@ -600,7 +602,12 @@ def _required_string(value: object) -> str:
 def _optional_non_negative_int(value: object) -> int | None:
     if value is None:
         return None
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 0
+        or value > _POSTGRES_BIGINT_MAX
+    ):
         raise AIMalformedResponseError("AI_PROVIDER_INVALID_RESPONSE")
     return value
 
@@ -665,6 +672,8 @@ def _validate_provider_result(result: object) -> AIProviderResult:
     provider_request_id = result.provider_request_id
     if provider_request_id is not None:
         provider_request_id = _required_string(provider_request_id)
+        if len(provider_request_id) > _PROVIDER_REQUEST_ID_MAX_LENGTH:
+            raise AIMalformedResponseError("AI_PROVIDER_INVALID_RESPONSE")
     input_tokens = _optional_non_negative_int(result.input_tokens)
     output_tokens = _optional_non_negative_int(result.output_tokens)
     return AIProviderResult(
