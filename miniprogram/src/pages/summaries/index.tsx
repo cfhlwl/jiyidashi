@@ -177,7 +177,15 @@ export default function Page() {
 
       {status && (
         <View className='card'>
-          <View className='error'>{status}</View>
+          <View className='result-heading'>
+            <View className='error'>{status}</View>
+            <View
+              className='result-badge trust-unavailable'
+              aria-label='AI 可信状态：暂不可用'
+            >
+              暂不可用
+            </View>
+          </View>
         </View>
       )}
 
