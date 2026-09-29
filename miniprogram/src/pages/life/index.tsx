@@ -26,6 +26,7 @@ import {
   listLifeStageEvents,
   listLifeStages,
   listMemoryPickerRows,
+  listPlaces,
   patchLifeEvent,
   patchLifeStage,
   reasonAboutLifeStage,
@@ -58,6 +59,7 @@ import {
   type LifeStageKind,
 } from '../../services/advancedV2'
 import { elderClassName } from '../../services/elderMode'
+import type { PlaceRead } from '../../services/placeDetail'
 import './index.scss'
 
 type Section = 'home' | 'events' | 'stages' | 'history' | 'memoirs'
@@ -70,6 +72,7 @@ type EventDraft = {
   note: string
   startedAt: string
   endedAt: string
+  placeId: string
 }
 
 type StageDraft = {
@@ -112,6 +115,7 @@ function blankEventDraft(): EventDraft {
     note: '',
     startedAt: nowIso(),
     endedAt: '',
+    placeId: '',
   }
 }
 
@@ -134,6 +138,7 @@ function eventDraftFrom(value: LifeEventRead): EventDraft {
     note: value.note || '',
     startedAt: value.started_at,
     endedAt: value.ended_at || '',
+    placeId: value.place_id || '',
   }
 }
 
@@ -180,6 +185,7 @@ function eventPayload(draft: EventDraft): LifeEventCreatePayload {
     note: note || null,
     started_at: started,
     ended_at: ended,
+    place_id: draft.placeId || null,
   }
 }
 
@@ -244,6 +250,7 @@ export default function Page() {
   const [selectedEvent, setSelectedEvent] = useState<LifeEventRead | null>(null)
   const [eventEvidence, setEventEvidence] = useState<LifeEventMemoryEvidence[]>([])
   const [memoryChoices, setMemoryChoices] = useState<MemoryRead[]>([])
+  const [placeChoices, setPlaceChoices] = useState<PlaceRead[]>([])
   const [memoryChoiceIndex, setMemoryChoiceIndex] = useState(0)
   const [eventFormMode, setEventFormMode] = useState<FormMode>('none')
   const [eventDraft, setEventDraft] = useState<EventDraft>(blankEventDraft)
@@ -312,6 +319,7 @@ export default function Page() {
     setSelectedEvent(null)
     setEventEvidence([])
     setMemoryChoices([])
+    setPlaceChoices([])
     setStages([])
     setSelectedStage(null)
     setStageEvidence([])
@@ -441,15 +449,17 @@ export default function Page() {
       return
     }
     try {
-      const [detail, evidence, memories] = await Promise.all([
+      const [detail, evidence, memories, places] = await Promise.all([
         getLifeEvent(eventId),
         listLifeEventMemories(eventId, 100),
         listMemoryPickerRows(owner, 50),
+        listPlaces(100),
       ])
       if (!isCurrent(eventDetailAuthority.current, snapshot)) return
       setSelectedEvent(detail)
       setEventEvidence(evidence)
       setMemoryChoices(memories.filter((memory) => memory.source_type !== 'AI_INFERENCE'))
+      setPlaceChoices(places)
     } catch (error) {
       if (!isCurrent(eventDetailAuthority.current, snapshot)) return
       setEventStatus(mutationError(error, '事件详情加载失败'))
@@ -1065,6 +1075,11 @@ export default function Page() {
                   setEventEvidence([])
                   setEventDraft(blankEventDraft())
                   setEventFormMode('create')
+                  if (placeChoices.length === 0) {
+                    void listPlaces(100)
+                      .then((places) => setPlaceChoices(places))
+                      .catch((error) => setEventStatus(mutationError(error, '地点加载失败')))
+                  }
                   setEventStatus('')
                 }}
               >
@@ -1129,6 +1144,26 @@ export default function Page() {
                 value={eventDraft.endedAt}
                 onInput={(event) => setEventDraft((current) => ({ ...current, endedAt: event.detail.value }))}
               />
+              <Picker
+                mode='selector'
+                range={['不关联地点', ...placeChoices.map((place) => place.name)]}
+                value={eventDraft.placeId
+                  ? Math.max(0, placeChoices.findIndex((place) => place.id === eventDraft.placeId) + 1)
+                  : 0}
+                onChange={(event) => {
+                  const index = Number(event.detail.value)
+                  setEventDraft((current) => ({
+                    ...current,
+                    placeId: index <= 0 ? '' : (placeChoices[index - 1]?.id || ''),
+                  }))
+                }}
+              >
+                <View className='field picker-field'>
+                  地点：{eventDraft.placeId
+                    ? (placeChoices.find((place) => place.id === eventDraft.placeId)?.name || '已关联地点')
+                    : '不关联地点'}
+                </View>
+              </Picker>
               <Textarea
                 className='field textarea'
                 maxlength={5000}
@@ -1158,7 +1193,11 @@ export default function Page() {
               <View className='detail-line'>开始：{selectedEvent.started_at}</View>
               <View className='detail-line'>结束：{selectedEvent.ended_at || '未设置'}</View>
               <View className='detail-line'>备注：{selectedEvent.note || '未填写'}</View>
-              {selectedEvent.place_id && <View className='detail-line'>地点 ID：{shortId(selectedEvent.place_id)}</View>}
+              {selectedEvent.place_id && (
+                <View className='detail-line'>
+                  地点：{placeChoices.find((place) => place.id === selectedEvent.place_id)?.name || shortId(selectedEvent.place_id)}
+                </View>
+              )}
               <View className='action-row'>
                 <Button
                   className='secondary-button compact'
