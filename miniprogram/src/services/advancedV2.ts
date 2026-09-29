@@ -476,10 +476,33 @@ export function parseKnownDuration(raw: unknown, expectedPersonId?: string): Per
   }
   if (expectedPersonId && result.person_id !== expectedPersonId) return invalid('认识时长')
   if (status === 'KNOWN_SINCE_MET') {
-    if (!result.at_least_since_at || result.elapsed_days === null || !result.evidence || result.evidence.relation_kind !== 'MET') {
+    if (
+      !result.at_least_since_at
+      || result.elapsed_days === null
+      || result.earliest_related_at !== null
+      || !result.evidence
+      || result.evidence.relation_kind !== 'MET'
+      || Date.parse(result.at_least_since_at) !== Date.parse(result.evidence.occurred_at)
+    ) {
       return invalid('认识时长')
     }
-  } else if (result.at_least_since_at !== null || result.elapsed_days !== null) {
+  } else if (status === 'RELATED_EVIDENCE_ONLY') {
+    if (
+      result.at_least_since_at !== null
+      || result.elapsed_days !== null
+      || !result.earliest_related_at
+      || !result.evidence
+      || result.evidence.relation_kind !== 'RELATED'
+      || Date.parse(result.earliest_related_at) !== Date.parse(result.evidence.occurred_at)
+    ) {
+      return invalid('认识时长')
+    }
+  } else if (
+    result.at_least_since_at !== null
+    || result.elapsed_days !== null
+    || result.earliest_related_at !== null
+    || result.evidence !== null
+  ) {
     return invalid('认识时长')
   }
   return result
@@ -671,7 +694,15 @@ export function parseAnnualMemoir(raw: unknown, expectedYear?: string): AnnualMe
     photo_next_cursor: cursor(v.photo_next_cursor, '年度回忆录'),
   }
   if (expectedYear && result.target_year !== expectedYear) return invalid('年度回忆录')
-  if (result.status === 'MEMOIR_READY' && narrativeStatus !== 'ANNUAL_SUMMARY_READY') return invalid('年度回忆录')
+  const expectedStatus: AnnualMemoirStatus =
+    narrativeStatus === 'ANNUAL_SUMMARY_READY'
+      ? 'MEMOIR_READY'
+      : narrativeStatus === 'NO_SUMMARIZABLE_EVIDENCE'
+          && result.timeline_items.length === 0
+          && result.photo_items.length === 0
+        ? 'MEMOIR_EMPTY'
+        : 'MEMOIR_PARTIAL'
+  if (result.status !== expectedStatus) return invalid('年度回忆录')
   return result
 }
 export function annualNarrativePresentation(status: AnnualSummaryStatus): AiPresentation {
