@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**V2 Productization P1 / Mini Program advanced V2 surfaces**；#166 / PR #174 SEC-013 已正式复审并合并；#162 进入任务发布/开发阶段，把已合并的 V2-005～V2-011 backend 能力产品化到 Mini；后续顺序为 #163 Flutter V2 parity → #167 SEC-014；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
+> 当前阶段：**V2 Productization P1 / Mini Program advanced V2 surfaces**；#166 / PR #174 SEC-013 已正式复审并合并；#162 / PR #175 已完成 Mini 实现：统一“人生”入口、LifeEvent/LifeStage CRUD 与显式关联、Known Duration、Long-term Reasoning、Cross-year History、Annual/Life Memoir、严格 parser/stale guard/SEC-013 复用均已落地，等待 latest exact-head Mini CI 与正式独立审查；后续顺序为 #163 Flutter V2 parity → #167 SEC-014；OPS-001 真实 public-server 验收仍保持 🟠，V3-001+ 未开始。
 
 ## 状态规则
 
@@ -297,7 +297,7 @@
 | V2-011 | Life Memoir Foundation V1 — 人生回忆录 | ✅ | Issue #158 / PR #159：explicit LifeStage chapter index + on-demand cited stage memoir via canonical V2-007 已正式审查并合并；merge `6df3a6654f14e715db8e3887582b1f83de78cd7c` |
 | V2-CLOSE | V2 Final Closeout / Productization Review | ✅ | Issue #160 / PR #164 已正式合并；merge `8e463566068e8fc328b86b816576ec907f8d3911`；V2 Personal Memory Graph V1 formally closed |
 | V2-P0-OBS | Production Observability Foundation V1 | ✅ | Issue #161 / PR #170 已正式审查并合并；merge `91e2c8b044912bb61ecada7d679c9054db64df7c`；request correlation、structured JSON telemetry、AI/storage/delete operational events、bounded DB readiness 与 production healthcheck 已收口 |
-| V2-P1-MINI | Mini Program advanced V2 surfaces | 🔵 | Issue #162：产品化 V2-005～V2-011；LifeEvent/LifeStage、Known Duration、Long-term Reasoning、Cross-year History、Annual/Life Memoir；复用 SEC-013，当前开发主线 |
+| V2-P1-MINI | Mini Program advanced V2 surfaces | 🟠 | Issue #162 / PR #175：统一“人生”产品入口；LifeEvent/LifeStage CRUD + Memory/Event 显式关联、Person Known Duration、evidence-backed Long-term Reasoning、Cross-year History、Annual/Life Memoir 已完成；deterministic surface 不标 AI，真实生成面严格复用 SEC-013；typed parser、owner/session/resource/range/year stale guard、opaque cursor、verified photo on-demand preview 与 focused tests 已完成，等待正式审查 |
 | V2-P1-FLUTTER | Flutter Personal Memory Graph parity | ⬜ | Issue #163：在 #162 后推进 V2-001～011 客户端 parity；保持 native location/offline/privacy/account-delete 生命周期；之后再做 #167 SEC-014 |
 
 ---
