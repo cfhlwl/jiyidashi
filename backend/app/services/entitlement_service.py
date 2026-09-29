@@ -145,15 +145,13 @@ def create_legacy_full_entitlement(
     return row
 
 
-def resolve_entitlement(
+def _resolve_plan(
     db: Session,
     *,
     user_id: UUID,
-    settings: Settings | None = None,
-    now: datetime | None = None,
-    for_update: bool = False,
-) -> ResolvedEntitlement:
-    observed_at = _as_utc(now or datetime.now(UTC))
+    now: datetime,
+    for_update: bool,
+) -> tuple[PlanCode, frozenset[CapabilityCode]]:
     query = select(UserEntitlement).where(UserEntitlement.user_id == user_id)
     if for_update:
         query = query.with_for_update()
@@ -166,15 +164,32 @@ def resolve_entitlement(
     except ValueError as exc:
         raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503) from exc
 
-    if _as_utc(assignment.effective_at) > observed_at:
+    if _as_utc(assignment.effective_at) > now:
         raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
-    if assignment.expires_at is not None and _as_utc(assignment.expires_at) <= observed_at:
+    if assignment.expires_at is not None and _as_utc(assignment.expires_at) <= now:
         raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
+    return plan_code, _PLAN_CAPABILITIES[plan_code]
 
+
+def resolve_entitlement(
+    db: Session,
+    *,
+    user_id: UUID,
+    settings: Settings | None = None,
+    now: datetime | None = None,
+    for_update: bool = False,
+) -> ResolvedEntitlement:
+    observed_at = _as_utc(now or datetime.now(UTC))
+    plan_code, capabilities = _resolve_plan(
+        db,
+        user_id=user_id,
+        now=observed_at,
+        for_update=for_update,
+    )
     quota_limits = _quota_catalog(settings or get_settings(), plan_code)
     return ResolvedEntitlement(
         plan_code=plan_code,
-        capabilities=_PLAN_CAPABILITIES[plan_code],
+        capabilities=capabilities,
         quota_limits=quota_limits,
     )
 
@@ -186,15 +201,20 @@ def require_capability(
     capability: CapabilityCode,
     settings: Settings | None = None,
 ) -> ResolvedEntitlement:
-    entitlement = resolve_entitlement(
+    observed_at = datetime.now(UTC)
+    plan_code, capabilities = _resolve_plan(
         db,
         user_id=user_id,
-        settings=settings,
+        now=observed_at,
         for_update=True,
     )
-    if capability not in entitlement.capabilities:
+    if capability not in capabilities:
         raise EntitlementError("ENTITLEMENT_CAPABILITY_REQUIRED", 403)
-    return entitlement
+    return ResolvedEntitlement(
+        plan_code=plan_code,
+        capabilities=capabilities,
+        quota_limits=_quota_catalog(settings or get_settings(), plan_code),
+    )
 
 
 def lock_entitlement_subject(db: Session, *, user_id: UUID) -> None:
