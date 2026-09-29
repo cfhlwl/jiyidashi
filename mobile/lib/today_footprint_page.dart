@@ -270,7 +270,7 @@ class _FootprintVisitRow extends StatelessWidget {
                 if (!elderMode) ...[
                   const SizedBox(height: JiYiSpacing.xxs),
                   Text(
-                    '$status · ${visit.visitSource}',
+                    status,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),

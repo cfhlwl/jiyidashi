@@ -98,6 +98,7 @@ jobs:
           flutter test test/visual_golden_test.dart --update-goldens --reporter expanded
           cp test/goldens/*.png /tmp/product-v2-goldens/candidate/
           git checkout -- test/goldens
+          git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
 
       - name: Run Flutter tests including committed goldens

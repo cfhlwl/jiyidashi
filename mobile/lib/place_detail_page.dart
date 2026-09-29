@@ -97,6 +97,22 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     return '地点详情读取失败';
   }
 
+  String? _placeCategoryLabel(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    return switch (value) {
+      'HOME' => '家',
+      'OFFICE' => '办公室',
+      'CAFE' => '咖啡店',
+      'RESTAURANT' => '餐厅',
+      'SHOP' => '商店',
+      'SCHOOL' => '学校',
+      'HOSPITAL' => '医院',
+      'PARK' => '公园',
+      'STATION' => '车站',
+      _ => '其他地点',
+    };
+  }
+
   String _text(String? value, {String fallback = '—'}) {
     final normalized = value?.trim() ?? '';
     return normalized.isEmpty ? fallback : normalized;
@@ -179,7 +195,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_line('类型', place.category)),
+                    Text(_line('类型', _placeCategoryLabel(place.category))),
                     const SizedBox(height: JiYiSpacing.xs),
                     Text('累计到访：${place.visitCount} 次'),
                     const SizedBox(height: JiYiSpacing.xs),

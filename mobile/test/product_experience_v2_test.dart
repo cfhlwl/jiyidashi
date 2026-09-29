@@ -41,6 +41,15 @@ void main() {
     expect(shell, isNot(contains('S2-012')));
   });
 
+  test('Flutter Product Experience V2 does not leak raw place or visit enums', () {
+    final today = File('lib/today_footprint_page.dart').readAsStringSync();
+    final place = File('lib/place_detail_page.dart').readAsStringSync();
+
+    expect(today, isNot(contains("'$status · \${visit.visitSource}'")));
+    expect(place, contains('_placeCategoryLabel(place.category)'));
+    expect(place, isNot(contains("Text(_line('类型', place.category))")));
+  });
+
   test('Flutter Product Experience V2 defines shared design token families', () {
     final tokens = File('lib/ui/jiyi_tokens.dart').readAsStringSync();
     final components = File('lib/ui/jiyi_components.dart').readAsStringSync();
