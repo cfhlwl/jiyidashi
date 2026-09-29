@@ -3,12 +3,17 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
 import {
+  AI_PRESENTATION_STATE,
+  summaryAiPresentation,
+} from '../src/services/aiPresentation'
+import {
   parseAnnualTrustedSummary,
   parseDailyTrustedSummary,
   parseMonthlyTrustedSummary,
   trustedSummaryCitationLabel,
   trustedSummaryStatusMessage,
   trustedSummaryTrustLabel,
+  TrustedSummaryEpoch,
   TrustedSummaryGenerationGate,
   TRUSTED_SUMMARY_STATUS,
 } from '../src/services/memorySummaries'
@@ -198,6 +203,48 @@ test('non-ready status UX remains deliberate and provider-safe', () => {
       'AI 总结暂时生成失败，请稍后重试',
     )
   }
+})
+
+test('trusted summary status maps centrally to four-state presentation', () => {
+  assert.equal(
+    summaryAiPresentation(TRUSTED_SUMMARY_STATUS.DAILY_READY).state,
+    AI_PRESENTATION_STATE.INFERRED,
+  )
+  assert.equal(
+    summaryAiPresentation(TRUSTED_SUMMARY_STATUS.MONTHLY_READY).state,
+    AI_PRESENTATION_STATE.INFERRED,
+  )
+  assert.equal(
+    summaryAiPresentation(TRUSTED_SUMMARY_STATUS.ANNUAL_READY).state,
+    AI_PRESENTATION_STATE.INFERRED,
+  )
+  assert.equal(
+    summaryAiPresentation(TRUSTED_SUMMARY_STATUS.INCOMPLETE).state,
+    AI_PRESENTATION_STATE.UNCERTAIN,
+  )
+  assert.equal(
+    summaryAiPresentation(TRUSTED_SUMMARY_STATUS.NO_EVIDENCE).state,
+    AI_PRESENTATION_STATE.UNAVAILABLE,
+  )
+  assert.equal(
+    summaryAiPresentation(TRUSTED_SUMMARY_STATUS.PROVIDER_FAILED).state,
+    AI_PRESENTATION_STATE.UNAVAILABLE,
+  )
+  assert.equal(
+    summaryAiPresentation('FUTURE_UNKNOWN').state,
+    AI_PRESENTATION_STATE.UNAVAILABLE,
+  )
+})
+
+test('summary epoch rejects stale success and stale error after invalidation', () => {
+  const epoch = new TrustedSummaryEpoch()
+  const first = epoch.capture()
+  assert.equal(epoch.isCurrent(first), true)
+  epoch.invalidate()
+  assert.equal(epoch.isCurrent(first), false)
+  const second = epoch.capture()
+  assert.equal(epoch.isCurrent(second), true)
+  assert.equal(epoch.isCurrent(first), false)
 })
 
 test('summary generation gate rejects rapid duplicate requests until completion', () => {
