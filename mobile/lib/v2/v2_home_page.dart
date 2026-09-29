@@ -15,11 +15,11 @@ class V2HomePage extends StatelessWidget {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('个人记忆图谱'),
+          title: const Text('记忆与人生'),
           bottom: const TabBar(
             tabs: [
-              Tab(text: '人物', icon: Icon(Icons.people_outline)),
-              Tab(text: '人生', icon: Icon(Icons.auto_stories_outlined)),
+              Tab(text: '重要的人', icon: Icon(Icons.people_outline)),
+              Tab(text: '我的人生', icon: Icon(Icons.auto_stories_outlined)),
             ],
           ),
         ),

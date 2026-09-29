@@ -9,10 +9,12 @@ class JiYiPageFrame extends StatelessWidget {
     required this.title,
     required this.child,
     this.subtitle,
+    this.hero,
   });
 
   final String title;
   final String? subtitle;
+  final Widget? hero;
   final Widget child;
 
   @override
@@ -26,20 +28,24 @@ class JiYiPageFrame extends StatelessWidget {
         JiYiSpacing.xxl,
       ),
       children: [
-        Text(
-          title,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (subtitle != null) ...[
-          const SizedBox(height: JiYiSpacing.xs),
+        if (hero != null)
+          hero!
+        else ...[
           Text(
-            subtitle!,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            title,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
             ),
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: JiYiSpacing.xs),
+            Text(
+              subtitle!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ],
         const SizedBox(height: JiYiSpacing.xl),
         child,
@@ -327,6 +333,212 @@ class _EvidenceMeta extends StatelessWidget {
           vertical: JiYiSpacing.xs,
         ),
         child: Text('$label：$value', style: theme.textTheme.bodySmall),
+      ),
+    );
+  }
+}
+
+
+class JiYiHeroHeader extends StatelessWidget {
+  const JiYiHeroHeader({
+    super.key,
+    required this.title,
+    this.eyebrow,
+    this.subtitle,
+    this.icon,
+  });
+
+  final String title;
+  final String? eyebrow;
+  final String? subtitle;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(JiYiRadius.large),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFEEF5FA),
+            Color(0xFFFFF8EF),
+          ],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.xl),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (eyebrow != null) ...[
+                    Text(
+                      eyebrow!,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: JiYiProductColors.brandPrimary,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.sm),
+                  ],
+                  Text(
+                    title,
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: JiYiProductColors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: JiYiSpacing.sm),
+                    Text(
+                      subtitle!,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: JiYiProductColors.textSecondary,
+                        height: 1.55,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (icon != null) ...[
+              const SizedBox(width: JiYiSpacing.md),
+              Icon(
+                icon,
+                size: JiYiIconSize.hero,
+                color: JiYiProductColors.brandPrimary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class JiYiSectionHeader extends StatelessWidget {
+  const JiYiSectionHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: JiYiSpacing.xxs),
+                Text(
+                  subtitle!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+
+class JiYiActionCard extends StatelessWidget {
+  const JiYiActionCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: JiYiProductColors.surface,
+      borderRadius: BorderRadius.circular(JiYiRadius.card),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(JiYiSpacing.lg),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: JiYiProductColors.surfaceSoft,
+                  borderRadius: BorderRadius.circular(JiYiRadius.control),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(JiYiSpacing.sm),
+                  child: Icon(
+                    icon,
+                    color: JiYiProductColors.brandPrimary,
+                    size: JiYiIconSize.medium,
+                  ),
+                ),
+              ),
+              const SizedBox(width: JiYiSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      message,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: JiYiSpacing.sm),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
       ),
     );
   }
