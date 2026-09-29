@@ -45,8 +45,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('认识时长'), findsOneWidget);
     expect(find.textContaining('至少 577 天'), findsOneWidget);
-    expect(find.text('关联记忆'), findsOneWidget);
-    expect(find.text('人物关系'), findsOneWidget);
+    expect(find.text('关于 TA 的记忆'), findsOneWidget);
+    expect(find.text('你们的关系'), findsOneWidget);
     expect(find.textContaining('张老师'), findsOneWidget);
   });
 
@@ -60,7 +60,7 @@ void main() {
         title: '老张',
       ),
     );
-    expect(find.text('关系图谱'), findsWidgets);
+    expect(find.text('相关的人和事'), findsWidgets);
     expect(find.textContaining('小李'), findsWidgets);
     expect(find.textContaining('PERSON_RELATIONSHIP'), findsOneWidget);
   });
@@ -71,9 +71,9 @@ void main() {
       LifeEventDetailPage(api: V2TestApi(), eventId: v2EventId),
     );
     expect(find.text('加入新团队'), findsWidgets);
-    expect(find.text('Memory 证据'), findsOneWidget);
+    expect(find.text('相关记录'), findsOneWidget);
     expect(find.textContaining('团队记录'), findsOneWidget);
-    expect(find.text('AI 推断（有证据支持）'), findsNothing);
+    expect(find.text('AI 整理'), findsNothing);
   });
 
   testWidgets('Long-term Reasoning ANSWERED renders SEC-013 inferred label', (tester) async {
@@ -82,14 +82,14 @@ void main() {
       LifeStageDetailPage(api: V2TestApi(), stageId: v2StageId),
     );
     await tester.enterText(find.byType(TextField).last, '这个阶段发生了什么？');
-    final generate = find.text('生成证据回顾');
+    final generate = find.text('生成回顾');
     await tester.ensureVisible(generate);
     await tester.pumpAndSettle();
     await tester.tap(generate);
     await tester.pumpAndSettle();
-    expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
+    expect(find.text('AI 整理'), findsOneWidget);
     expect(find.textContaining('持续围绕产品开发'), findsOneWidget);
-    expect(find.textContaining('stage · LIFE_STAGE'), findsOneWidget);
+    expect(find.text('参考记录 1'), findsOneWidget);
   });
 
   testWidgets('Long-term provider failure never leaks generated prose', (tester) async {
@@ -101,12 +101,12 @@ void main() {
       ),
     );
     await tester.enterText(find.byType(TextField).last, '这个阶段发生了什么？');
-    final generate = find.text('生成证据回顾');
+    final generate = find.text('生成回顾');
     await tester.ensureVisible(generate);
     await tester.pumpAndSettle();
     await tester.tap(generate);
     await tester.pumpAndSettle();
-    expect(find.text('暂不可用'), findsOneWidget);
+    expect(find.text('暂时无法整理'), findsOneWidget);
     expect(find.textContaining('持续围绕产品开发'), findsNothing);
   });
 
@@ -114,9 +114,9 @@ void main() {
     await pumpSurface(tester, MemoirsPage(api: V2TestApi()));
     final yearField = find.byType(TextField).first;
     await tester.enterText(yearField, '2025');
-    await tester.tap(find.text('生成年度回忆录'));
+    await tester.tap(find.text('生成年度回顾'));
     await tester.pumpAndSettle();
-    expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
+    expect(find.text('AI 整理'), findsOneWidget);
     expect(find.textContaining('新的产品阶段'), findsOneWidget);
     expect(find.text('年度时间线'), findsOneWidget);
     expect(find.text('已验证照片'), findsOneWidget);
@@ -130,11 +130,11 @@ void main() {
     await tester.ensureVisible(stage);
     await tester.tap(stage);
     await tester.pumpAndSettle();
-    final generate = find.text('生成这个阶段的章节');
+    final generate = find.text('生成这个阶段的故事');
     await tester.ensureVisible(generate);
     await tester.tap(generate);
     await tester.pumpAndSettle();
-    expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
+    expect(find.text('AI 整理'), findsOneWidget);
     expect(find.textContaining('这一阶段以产品开发为主线'), findsOneWidget);
   });
 
@@ -173,14 +173,14 @@ void main() {
         find.byType(TextField).last,
         '这个阶段发生了什么？',
       );
-      final generate = find.text('生成证据回顾');
+      final generate = find.text('生成回顾');
       await tester.ensureVisible(generate);
       await tester.pumpAndSettle();
       await tester.tap(generate);
       await tester.pumpAndSettle();
 
       expect(
-        find.bySemanticsLabel(RegExp('可信状态：AI 推断（有证据支持）')),
+        find.bySemanticsLabel(RegExp('可信状态：AI 整理')),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);

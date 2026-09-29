@@ -388,7 +388,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
       await tester.pumpAndSettle();
 
-      expect(find.text('AI 推断（有证据支持）'), findsNothing);
+      expect(find.text('AI 整理'), findsNothing);
       expect(find.text('可信状态：confirmed'), findsOneWidget);
       expect(find.textContaining('用户文字记录'), findsOneWidget);
       await expectLater(
@@ -499,7 +499,7 @@ void main() {
         title: '老张',
       ),
     );
-    expect(find.text('关系图谱'), findsWidgets);
+    expect(find.text('相关的人和事'), findsWidgets);
     expect(find.textContaining('小李'), findsWidgets);
     await expectLater(
       find.byKey(key),
@@ -512,8 +512,8 @@ void main() {
       tester,
       LifeEventDetailPage(api: V2TestApi(), eventId: v2EventId),
     );
-    expect(find.text('Memory 证据'), findsOneWidget);
-    expect(find.text('AI 推断（有证据支持）'), findsNothing);
+    expect(find.text('相关记录'), findsOneWidget);
+    expect(find.text('AI 整理'), findsNothing);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/v2_life_event_detail.png'),
@@ -529,12 +529,12 @@ void main() {
       find.byType(TextField).last,
       '这个阶段发生了什么？',
     );
-    final generate = find.text('生成证据回顾');
+    final generate = find.text('生成回顾');
     await tester.ensureVisible(generate);
     await tester.pumpAndSettle();
     await tester.tap(generate);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('AI 推断（有证据支持）'));
+    await tester.ensureVisible(find.text('AI 整理'));
     await tester.pumpAndSettle();
     expect(find.textContaining('持续围绕产品开发'), findsOneWidget);
     await expectLater(
@@ -549,9 +549,9 @@ void main() {
       MemoirsPage(api: V2TestApi()),
     );
     await tester.enterText(find.byType(TextField).first, '2025');
-    await tester.tap(find.text('生成年度回忆录'));
+    await tester.tap(find.text('生成年度回顾'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('AI 推断（有证据支持）').first);
+    await tester.ensureVisible(find.text('AI 整理').first);
     await tester.pumpAndSettle();
     expect(find.textContaining('新的产品阶段'), findsOneWidget);
     await expectLater(
@@ -569,7 +569,7 @@ void main() {
     await tester.ensureVisible(stage);
     await tester.tap(stage);
     await tester.pumpAndSettle();
-    final generate = find.text('生成这个阶段的章节');
+    final generate = find.text('生成这个阶段的故事');
     await tester.ensureVisible(generate);
     await tester.tap(generate);
     await tester.pumpAndSettle();
@@ -595,12 +595,12 @@ void main() {
       find.byType(TextField).last,
       '这个阶段发生了什么？',
     );
-    final generate = find.text('生成证据回顾');
+    final generate = find.text('生成回顾');
     await tester.ensureVisible(generate);
     await tester.pumpAndSettle();
     await tester.tap(generate);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('暂不可用'));
+    await tester.ensureVisible(find.text('暂时无法整理'));
     await tester.pumpAndSettle();
     expect(find.textContaining('持续围绕产品开发'), findsNothing);
     await expectLater(
