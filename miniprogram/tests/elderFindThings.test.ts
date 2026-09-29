@@ -29,15 +29,17 @@ test('elder no-answer presentation is explicit no-guess state', () => {
   assert.equal(elderFindState({ loading: false, canAnswer: false, failed: false }), 'NOT_ENOUGH_EVIDENCE')
 })
 
-test('query response parser is runtime strict and enforces shared trust shape', () => {
+test('query response parser is runtime strict without inventing AI origin', () => {
   assert.match(api, /function parseMemoryQueryResult\(raw: unknown\)/)
   assert.match(api, /typeof canAnswer !== 'boolean'/)
   assert.match(api, /!Array\.isArray\(evidence\)/)
-  assert.match(api, /isCanonicalQueryTrustShape\(parsed\)/)
+  assert.match(api, /certainty === 'confirmed' \|\| certainty === 'evidence'/)
+  assert.match(api, /canonicalNoEvidence/)
+  assert.doesNotMatch(api, /isCanonicalQueryTrustShape/)
   assert.match(api, /request<unknown>\('POST', '\/memory\/query'/)
 })
 
-test('Evidence source identity remains visible under the shared answer label', () => {
+test('Evidence source identity remains visible without changing Query origin', () => {
   assert.equal(isDisplayableEvidence('AI_INFERENCE'), true)
   assert.equal(isDisplayableEvidence('USER_TEXT'), true)
   assert.equal(isDisplayableEvidence('FUTURE_UNKNOWN'), false)
