@@ -19,6 +19,7 @@ from app.life_stage_models import LifeStage, LifeStageEventLink, LifeStageKind
 from app.life_stage_schemas import LifeStagePatch
 from app.long_term_reasoning_models import LongTermReasoningStatus
 from app.models import Memory, MemorySource, SourceType, User
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.ai_gateway import (
     AIGateway,
     AIInferenceRequest,
@@ -46,6 +47,8 @@ def _owner(label: str) -> UUID:
     user_id = uuid4()
     with SessionLocal() as db:
         db.add(User(id=user_id, nickname=label))
+        db.flush()
+        create_legacy_full_entitlement(db, user_id=user_id)
         db.commit()
     return user_id
 
