@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
 import 'package:flutter/material.dart';
 
 import '../ai_inference_presentation.dart';
@@ -507,22 +509,28 @@ class _MemoirsPageState extends State<MemoirsPage> {
           ),
           if (stageError != null)
             JiYiStatusBanner(kind: JiYiStatusKind.error, message: stageError!),
-          for (final item in stages)
-            RadioListTile<String>(
-              value: item.lifeStageId,
-              groupValue: selectedStageId,
-              onChanged: (value) {
-                if (value != null) _selectStage(value);
-              },
-              title: Text(item.title),
-              subtitle: Text(
-                (lifeStageLabels[item.stageKind] ?? item.stageKind) +
-                    ' · ' +
-                    item.startedAt +
-                    ' → ' +
-                    (item.endedAt ?? '开放'),
-              ),
+          RadioGroup<String>(
+            groupValue: selectedStageId,
+            onChanged: (value) {
+              if (value != null) _selectStage(value);
+            },
+            child: Column(
+              children: [
+                for (final item in stages)
+                  RadioListTile<String>(
+                    value: item.lifeStageId,
+                    title: Text(item.title),
+                    subtitle: Text(
+                      (lifeStageLabels[item.stageKind] ?? item.stageKind) +
+                          ' · ' +
+                          item.startedAt +
+                          ' → ' +
+                          (item.endedAt ?? '开放'),
+                    ),
+                  ),
+              ],
             ),
+          ),
           if (stageCursor != null)
             OutlinedButton(
               onPressed: stageLoading ? null : () => _loadStages(append: true),
