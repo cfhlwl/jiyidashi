@@ -123,7 +123,7 @@ class _GraphView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        JiYiSectionCard(
+        V2SectionCard(
           title: '中心',
           child: ListTile(
             contentPadding: EdgeInsets.zero,
@@ -133,7 +133,7 @@ class _GraphView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        JiYiSectionCard(
+        V2SectionCard(
           title: '节点',
           subtitle: graph.truncated ? '结果已按服务端边界截断' : '完整返回当前 bounded neighborhood',
           child: Wrap(
@@ -152,7 +152,7 @@ class _GraphView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        JiYiSectionCard(
+        V2SectionCard(
           title: '关系',
           child: Column(
             children: [
