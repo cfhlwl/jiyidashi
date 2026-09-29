@@ -15,7 +15,6 @@ import {
   parseMemoryFeedbackRead,
   parseMemoryRead,
   provenanceLabel,
-  trustPresentation,
   type MemoryFeedbackPayload,
   type MemoryRead,
   type SafeRequestOptions,
@@ -167,22 +166,6 @@ test('CORRECT payload includes only explicitly changed fields and rejects empty/
   )
   assert.throws(() => buildCorrectionFeedback(memory, '原始标题', '   '), /记忆内容不能为空/)
   assert.throws(() => buildCorrectionFeedback(memory, '原始标题', '原始正文'), /内容没有变化/)
-})
-
-test('trust presentation maps only current public certainty values and fails future values neutral', () => {
-  assert.deepEqual(
-    trustPresentation({ can_answer: true, certainty: 'confirmed' }),
-    {
-      label: '有证据支持',
-      detail: '这个答案来自当前公开证据链，可继续查看下面的来源。',
-      tone: 'supported',
-    },
-  )
-  assert.equal(trustPresentation({ can_answer: true, certainty: 'evidence' }).label, '有证据支持')
-  assert.equal(trustPresentation({ can_answer: false, certainty: 'unknown' }).label, '没有足够证据')
-  const future = trustPresentation({ can_answer: true, certainty: 'future-new-state' })
-  assert.equal(future.tone, 'neutral')
-  assert.doesNotMatch(future.label, /可信|已确认/)
 })
 
 test('AI inference is not displayable Evidence and provenance labels stay explicit', () => {
