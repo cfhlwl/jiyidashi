@@ -74,7 +74,8 @@ jobs:
           set -euo pipefail
           git -C .. config user.name "github-actions[bot]"
           git -C .. config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C .. checkout 211eba0df30ff25a94026b1b794432464ad9bf80 -- .github/workflows/mobile-ci.yml
+          git -C .. fetch --no-tags --depth=1 origin 211eba0df30ff25a94026b1b794432464ad9bf80
+          git -C .. checkout FETCH_HEAD -- .github/workflows/mobile-ci.yml
           git -C .. add .github/workflows/mobile-ci.yml mobile/test/goldens/v2_*.png
           git -C .. diff --cached --stat
           if git -C .. diff --cached --quiet; then
