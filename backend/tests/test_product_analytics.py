@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select
@@ -21,6 +21,7 @@ from app.core.db import (
     GuardedSession,
     UserDataAdmission,
 )
+from app.core.observability import reset_request_id, set_request_id
 from app.data_deletion_models import DataDeletionOperation
 from app.models import SourceType, User
 from app.schemas import Evidence, MemoryQueryResponse
@@ -31,7 +32,6 @@ from app.services.analytics_service import (
     retention_aggregates,
     retrieval_aggregate,
 )
-from app.core.observability import reset_request_id, set_request_id
 
 
 def _engine():
