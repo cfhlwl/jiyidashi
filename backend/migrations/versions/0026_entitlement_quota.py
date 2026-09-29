@@ -27,6 +27,14 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("revision >= 0", name="ck_user_entitlements_revision"),
+        sa.CheckConstraint(
+            "plan_code IN ('FREE','PERSONAL','FAMILY','PREMIUM','LEGACY_FULL')",
+            name="ck_user_entitlements_plan_code",
+        ),
+        sa.CheckConstraint(
+            "expires_at IS NULL OR expires_at > effective_at",
+            name="ck_user_entitlements_effective_range",
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("user_id"),
     )
@@ -78,6 +86,10 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("input_tokens >= 0", name="ck_ai_quota_input_tokens"),
         sa.CheckConstraint("output_tokens >= 0", name="ck_ai_quota_output_tokens"),
+        sa.CheckConstraint(
+            "period_end > period_start",
+            name="ck_ai_quota_period_range",
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
