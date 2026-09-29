@@ -232,7 +232,7 @@ def _find_object(
     return MemoryQueryResponse(
         answer=answer,
         can_answer=True,
-        certainty="confirmed",
+        certainty="evidence",
         intent="FIND_OBJECT",
         evidence=[evidence],
         memory_ids=[location.memory_id],
