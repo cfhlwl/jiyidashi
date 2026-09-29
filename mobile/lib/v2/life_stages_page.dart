@@ -156,7 +156,7 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
                   message: '可以从一段工作、学习、家庭或居住阶段开始。',
                 )
               else
-                JiYiSectionCard(
+                V2SectionCard(
                   title: '阶段列表',
                   child: Column(
                     children: [
