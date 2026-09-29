@@ -12,11 +12,11 @@ from app.life_event_models import LifeEvent, LifeEventKind
 from app.life_event_schemas import LifeEventPatch
 from app.media_models import MediaAsset, MediaEvidenceLink, MediaKind, MediaStatus
 from app.models import Memory, MemorySource, MemoryType, SourceType, User
-from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.annual_memoir_service import (
     build_annual_memoir,
     list_annual_memoir_photos,
 )
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.life_event_service import patch_life_event
 
 AS_OF = datetime(2026, 9, 28, 12, tzinfo=UTC)
