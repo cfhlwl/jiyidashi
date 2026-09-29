@@ -1,0 +1,69 @@
+enum AiPresentationState { explicit, inferred, uncertain, unavailable }
+
+class AiPresentation {
+  const AiPresentation({
+    required this.state,
+    required this.label,
+    required this.detail,
+  });
+
+  final AiPresentationState state;
+  final String label;
+  final String detail;
+}
+
+const explicitAiPresentation = AiPresentation(
+  state: AiPresentationState.explicit,
+  label: '明确记录',
+  detail: '这是明确保存的原始记录，不是 AI 生成的结论。',
+);
+
+const inferredAiPresentation = AiPresentation(
+  state: AiPresentationState.inferred,
+  label: 'AI 推断（有证据支持）',
+  detail: '这是 AI 根据下方证据生成的回答，不等同于原始事实记录。',
+);
+
+const uncertainAiPresentation = AiPresentation(
+  state: AiPresentationState.uncertain,
+  label: 'AI 推断（证据不足）',
+  detail: '当前证据不足以形成完整结论。',
+);
+
+const unavailableAiPresentation = AiPresentation(
+  state: AiPresentationState.unavailable,
+  label: '暂不可用',
+  detail: '当前没有可安全展示的 AI 结论。',
+);
+
+AiPresentation queryAiPresentation(Map<String, dynamic> result) {
+  final canAnswer = result['can_answer'];
+  final answer = result['answer'];
+  final certainty = result['certainty'];
+  final evidence = result['evidence'];
+  final memoryIds = result['memory_ids'];
+
+  if (canAnswer == true &&
+      answer is String &&
+      answer.trim().isNotEmpty &&
+      certainty == 'evidence' &&
+      evidence is List<dynamic> &&
+      evidence.isNotEmpty &&
+      memoryIds is List<dynamic> &&
+      memoryIds.isNotEmpty) {
+    return inferredAiPresentation;
+  }
+  return unavailableAiPresentation;
+}
+
+bool isCanonicalQueryTrustShape(Map<String, dynamic> result) {
+  final presentation = queryAiPresentation(result);
+  if (presentation.state == AiPresentationState.inferred) return true;
+  return result['can_answer'] == false &&
+      result['answer'] == null &&
+      result['certainty'] == 'unknown' &&
+      result['evidence'] is List<dynamic> &&
+      (result['evidence'] as List<dynamic>).isEmpty &&
+      result['memory_ids'] is List<dynamic> &&
+      (result['memory_ids'] as List<dynamic>).isEmpty;
+}
