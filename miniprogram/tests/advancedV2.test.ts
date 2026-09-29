@@ -118,7 +118,7 @@ test('Known Duration is deterministic and never guesses missing MET evidence', (
     as_of: '2026-09-29T00:00:00+08:00',
     at_least_since_at: '2020-01-01T00:00:00+08:00',
     elapsed_days: 2463,
-    earliest_related_at: '2019-12-01T00:00:00+08:00',
+    earliest_related_at: null,
     evidence: {
       person_memory_link_id: LINK_ID,
       memory_id: MEMORY_ID,
@@ -141,6 +141,31 @@ test('Known Duration is deterministic and never guesses missing MET evidence', (
     evidence: null,
   }, PERSON_ID)
   assert.equal(unavailable.elapsed_days, null)
+
+  const related = parseKnownDuration({
+    status: 'RELATED_EVIDENCE_ONLY',
+    person_id: PERSON_ID,
+    display_name: '老张',
+    as_of: '2026-09-29T00:00:00+08:00',
+    at_least_since_at: null,
+    elapsed_days: null,
+    earliest_related_at: '2019-12-01T00:00:00+08:00',
+    evidence: {
+      person_memory_link_id: LINK_ID,
+      memory_id: MEMORY_ID,
+      memory_source_id: SOURCE_ID,
+      relation_kind: 'RELATED',
+      trust_state: 'EVIDENCE_SUPPORTED',
+      occurred_at: '2019-12-01T00:00:00+08:00',
+    },
+  }, PERSON_ID)
+  assert.equal(related.elapsed_days, null)
+  assert.equal(related.evidence?.relation_kind, 'RELATED')
+
+  assert.throws(() => parseKnownDuration({
+    ...known,
+    earliest_related_at: '2019-12-01T00:00:00+08:00',
+  }, PERSON_ID))
 
   assert.throws(() => parseKnownDuration({
     ...unavailable,
@@ -304,6 +329,24 @@ test('Annual Memoir labels only generated narrative while timeline/photo stay in
     narrative_status: 'PROVIDER_FAILED',
     narrative: '不应展示旧正文',
     narrative_citations: [],
+  }, '2025'))
+
+  const empty = parseAnnualMemoir({
+    ...memoir,
+    status: 'MEMOIR_EMPTY',
+    narrative_status: 'NO_SUMMARIZABLE_EVIDENCE',
+    narrative: null,
+    narrative_citations: [],
+    timeline_items: [],
+    timeline_next_cursor: null,
+    photo_items: [],
+    photo_next_cursor: null,
+  }, '2025')
+  assert.equal(empty.status, 'MEMOIR_EMPTY')
+
+  assert.throws(() => parseAnnualMemoir({
+    ...empty,
+    timeline_items: [historyEvent()],
   }, '2025'))
 })
 
