@@ -793,7 +793,11 @@ async def reason_about_life_stage(
                     disclosure_db,
                     admission=admission,
                 )
-            inference = await ai_gateway.infer(request)
+            inference = await ai_gateway.infer(
+                request,
+                db=caller_db,
+                actor_user_id=user_id,
+            )
     except _DestructiveAdmissionStale:
         return _empty_result(
             LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION
