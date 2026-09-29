@@ -533,11 +533,36 @@ export default function Page() {
   })
 
   const openSection = (next: Section) => {
+    invalidateAll()
+    reasoningGate.current.end()
+    annualGate.current.end()
+    chapterGate.current.end()
+    setEventsLoading(false)
+    setStagesLoading(false)
+    setReasoningLoading(false)
+    setHistoryLoading(false)
+    setAnnualLoading(false)
+    setMemoirIndexLoading(false)
+    setChapterLoading(false)
+    setSelectedEvent(null)
+    setEventEvidence([])
+    setEventFormMode('none')
+    setSelectedStage(null)
+    setStageEvidence([])
+    setStageFormMode('none')
+    setReasoning(null)
+    setAnnual(null)
+    setAnnualTimelineItems([])
+    setAnnualTimelineCursor(null)
+    setAnnualPhotos([])
+    setAnnualPhotoCursor(null)
+    setChapter(null)
+    setSelectedMemoirStageId('')
     setSection(next)
     setGlobalStatus('')
     if (next === 'events') void loadEvents()
     if (next === 'stages') void loadStages()
-    if (next === 'memoirs' && memoirIndex.length === 0) void loadMemoirStages(false)
+    if (next === 'memoirs') void loadMemoirStages(false)
   }
 
   const beginMutation = (identity: string) => {
@@ -1070,7 +1095,7 @@ export default function Page() {
       <View className='subtitle'>把明确记录整理成人生事件和阶段；只有标明的 AI 回顾会调用生成能力。</View>
 
       {section !== 'home' && (
-        <Button className='secondary-button life-back' onClick={() => setSection('home')}>返回人生首页</Button>
+        <Button className='secondary-button life-back' onClick={() => openSection('home')}>返回人生首页</Button>
       )}
 
       {section === 'home' && (
