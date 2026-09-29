@@ -219,6 +219,12 @@ class V2Api {
     );
   }
 
+  Future<V2Relationship> getRelationship(String relationshipId) async {
+    final id = v2PathId(relationshipId, '人物关系');
+    final raw = await _request('GET', '/people/relationships/' + id);
+    return V2Relationship.parse(raw, expectedId: relationshipId);
+  }
+
   Future<V2Relationship> createRelationship({
     required String personAId,
     required String personBId,
@@ -263,15 +269,16 @@ class V2Api {
         : (custom != null && custom.isNotEmpty)) {
       throw ArgumentError('人物关系类型与自定义标签不一致');
     }
+    final body = <String, dynamic>{
+      'expected_revision': relationship.revision,
+      'relationship_kind': normalizedKind,
+      'note': note?.trim().isEmpty == true ? null : note?.trim(),
+      if (normalizedKind == 'OTHER') 'custom_label': custom,
+    };
     final raw = await _request(
       'PATCH',
       '/people/relationships/' + v2PathId(relationship.id, '人物关系'),
-      body: {
-        'expected_revision': relationship.revision,
-        'relationship_kind': normalizedKind,
-        'custom_label': normalizedKind == 'OTHER' ? custom : null,
-        'note': note?.trim().isEmpty == true ? null : note?.trim(),
-      },
+      body: body,
     );
     return V2Relationship.parse(raw, expectedId: relationship.id);
   }
@@ -322,6 +329,12 @@ class V2Api {
       _query('/life-events', {'limit': '$bounded'}),
     );
     return parseLifeEventList(raw, limit: bounded);
+  }
+
+  Future<V2LifeEvent> getLifeEvent(String eventId) async {
+    final id = v2PathId(eventId, '人生事件');
+    final raw = await _request('GET', '/life-events/' + id);
+    return V2LifeEvent.parse(raw, expectedId: eventId);
   }
 
   Future<V2LifeEvent> createLifeEvent({
@@ -446,6 +459,12 @@ class V2Api {
       _query('/life-stages', {'limit': '$bounded'}),
     );
     return parseLifeStageList(raw, limit: bounded);
+  }
+
+  Future<V2LifeStage> getLifeStage(String stageId) async {
+    final id = v2PathId(stageId, '人生阶段');
+    final raw = await _request('GET', '/life-stages/' + id);
+    return V2LifeStage.parse(raw, expectedId: stageId);
   }
 
   Future<V2LifeStage> createLifeStage({
