@@ -87,13 +87,13 @@ void main() {
     expect(api.lastQuestion, '护照');
     expect(find.text('我还不知道它在哪里'), findsOneWidget);
     expect(find.textContaining('没有找到足够可靠的记录'), findsOneWidget);
-    expect(find.text('暂不可用'), findsOneWidget);
+    expect(find.text('可信状态：unknown'), findsOneWidget);
     expect(find.textContaining('可能在'), findsNothing);
     expect(find.textContaining('应该在'), findsNothing);
     expect(find.textContaining('大概在'), findsNothing);
   });
 
-  testWidgets('Elder found state preserves evidence source identity beside AI answer label', (tester) async {
+  testWidgets('deterministic Elder result preserves canonical evidence identity without AI label', (tester) async {
     final api = _FindApi(
       response: {
         ..._found('护照在书房抽屉。'),
@@ -129,9 +129,9 @@ void main() {
     expect(find.text('AI 推断（有证据支持）'), findsNothing);
     expect(find.text('可信状态：confirmed'), findsOneWidget);
     expect(find.text('书房抽屉'), findsOneWidget);
-    expect(find.text('模型猜测的厨房'), findsOneWidget);
+    expect(find.text('模型猜测的厨房'), findsNothing);
     expect(find.textContaining('用户文字记录'), findsOneWidget);
-    expect(find.textContaining('AI 推测'), findsOneWidget);
+    expect(find.textContaining('AI 推测'), findsNothing);
   });
 
   testWidgets('rapid repeated Elder find submit is single-flight', (tester) async {
