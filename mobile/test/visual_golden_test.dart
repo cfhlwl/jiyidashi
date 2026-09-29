@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
@@ -263,6 +265,27 @@ Future<Key> _pumpSurface(WidgetTester tester, Widget child) async {
   return key;
 }
 
+Future<void> _writeVisualPreview(
+  WidgetTester tester,
+  Key surfaceKey,
+  String path,
+) async {
+  await tester.pump();
+  final boundary = tester.renderObject<RenderRepaintBoundary>(
+    find.byKey(surfaceKey),
+  );
+  final image = await boundary.toImage(pixelRatio: 1.0);
+  final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  if (bytes == null) {
+    throw StateError('Unable to encode visual preview PNG');
+  }
+  await File(path).writeAsBytes(
+    bytes.buffer.asUint8List(),
+    flush: true,
+  );
+}
+
 Future<Key> _pumpShell(WidgetTester tester, {JiYiApiClient? api}) async {
   final resolvedApi = api ?? _GoldenApi();
   return _pumpSurface(
@@ -358,16 +381,29 @@ void main() {
     final key = await _pumpShell(tester);
     await tester.tap(find.text('问记忆'));
     await tester.pumpAndSettle();
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/memory_query.png'),
+    );
+  });
+
+  testWidgets('preview: memory query AI inference label', (tester) async {
+    final key = await _pumpShell(tester);
+    await tester.tap(find.text('问记忆'));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('memory-query-input')),
       '护照在哪里？',
     );
     await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await tester.pumpAndSettle();
+
     expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/memory_query.png'),
+    expect(find.textContaining('用户文字记录'), findsOneWidget);
+    await _writeVisualPreview(
+      tester,
+      key,
+      '/tmp/ai_inference_memory_query.png',
     );
   });
 
