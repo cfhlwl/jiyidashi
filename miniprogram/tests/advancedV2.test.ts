@@ -220,7 +220,7 @@ test('Long-term Reasoning applies SEC-013 only to real AI statuses', () => {
     citations: [stageCitation(), eventCitation(), memoryCitation()],
     provider_error_code: null,
     ai_provenance: aiProvenance(),
-  })
+  }, STAGE_ID)
   assert.equal(reasoningPresentation(answered.status).state, 'INFERRED')
 
   const incomplete = parseLongTermReasoning({
@@ -229,7 +229,7 @@ test('Long-term Reasoning applies SEC-013 only to real AI statuses', () => {
     citations: [],
     provider_error_code: null,
     ai_provenance: null,
-  })
+  }, STAGE_ID)
   assert.equal(reasoningPresentation(incomplete.status).state, 'UNCERTAIN')
 
   for (const status of [
@@ -245,7 +245,7 @@ test('Long-term Reasoning applies SEC-013 only to real AI statuses', () => {
       citations: [],
       provider_error_code: status === 'PROVIDER_FAILED' ? 'AI_PROVIDER_FAILED' : null,
       ai_provenance: null,
-    })
+    }, STAGE_ID)
     assert.equal(reasoningPresentation(result.status).state, 'UNAVAILABLE')
   }
 
@@ -255,35 +255,29 @@ test('Long-term Reasoning applies SEC-013 only to real AI statuses', () => {
     citations: [],
     provider_error_code: null,
     ai_provenance: null,
-  }))
+  }, STAGE_ID))
   assert.throws(() => parseLongTermReasoning({
     status: 'ANSWERED',
     answer: '无引用的生成文本',
     citations: [],
     provider_error_code: null,
-    ai_provenance: {
-      gateway_request_id: 'gw-invalid',
-      purpose: 'LONG_TERM_REASONING',
-      provider_request_id: null,
-      provider: 'test-provider',
-      model: 'test-model',
-    },
-  }))
+    ai_provenance: aiProvenance(),
+  }, STAGE_ID))
   assert.throws(() => parseLongTermReasoning({
     status: 'PROVIDER_FAILED',
     answer: null,
     citations: [],
     provider_error_code: null,
     ai_provenance: null,
-  }))
+  }, STAGE_ID))
   assert.throws(() => parseLongTermReasoning({
     status: 'ANSWERED',
     answer: '有引用但 provenance malformed',
     citations: [stageCitation()],
     provider_error_code: null,
     ai_provenance: { provider: 'x' },
-  }))
-assert.throws(() => parseLongTermReasoning({
+  }, STAGE_ID))
+  assert.throws(() => parseLongTermReasoning({
     status: 'ANSWERED',
     answer: 'stage citation 夹带 event',
     citations: [{ ...stageCitation(), life_event_id: EVENT_ID }],
@@ -325,7 +319,7 @@ assert.throws(() => parseLongTermReasoning({
     provider_error_code: null,
     ai_provenance: null,
   }, STAGE_ID))
-}
+})
 
 test('Life History preserves opaque cursor and server-owned range', () => {
   const page = parseLifeHistory({
@@ -358,6 +352,12 @@ test('Annual Memoir labels only generated narrative while timeline/photo stay in
       memory_id: MEMORY_ID,
       visit_id: null,
       trust_state: 'EVIDENCE_SUPPORTED',
+    }, {
+      slot: 'v1',
+      kind: 'VISIT',
+      memory_id: null,
+      visit_id: VISIT_ID,
+      trust_state: null,
     }],
     timeline_items: [historyEvent()],
     timeline_next_cursor: 'timeline-cursor',
@@ -384,13 +384,6 @@ test('Annual Memoir labels only generated narrative while timeline/photo stay in
   }, '2025')
   assert.equal(annualNarrativePresentation(partial.narrative_status).state, 'UNCERTAIN')
 
-  assert.throws(() => parseAnnualMemoir({
-    ...memoir,
-    narrative_status: 'PROVIDER_FAILED',
-    narrative: '不应展示旧正文',
-    narrative_citations: [],
-  }, '2025'))
-
   const empty = parseAnnualMemoir({
     ...memoir,
     status: 'MEMOIR_EMPTY',
@@ -405,10 +398,16 @@ test('Annual Memoir labels only generated narrative while timeline/photo stay in
   assert.equal(empty.status, 'MEMOIR_EMPTY')
 
   assert.throws(() => parseAnnualMemoir({
+    ...memoir,
+    narrative_status: 'PROVIDER_FAILED',
+    narrative: '不应展示旧正文',
+    narrative_citations: [],
+  }, '2025'))
+  assert.throws(() => parseAnnualMemoir({
     ...empty,
     timeline_items: [historyEvent()],
   }, '2025'))
-assert.throws(() => parseAnnualMemoir({
+  assert.throws(() => parseAnnualMemoir({
     ...memoir,
     narrative_citations: [{
       slot: 'bad-memory',
@@ -461,7 +460,7 @@ assert.throws(() => parseAnnualMemoir({
       trust_state: 'EVIDENCE_SUPPORTED',
     }],
   }, '2025'))
-}
+})
 
 test('Annual photo continuation and signed preview stay canonical', () => {
   const page = parseAnnualMemoirPhotos({
@@ -514,15 +513,7 @@ test('Life Memoir stage index is deterministic and chapter AI state is typed', (
     life_stage_id: STAGE_ID,
     reasoning_status: 'ANSWERED',
     narrative: '这是基于阶段证据生成的章节。',
-    citations: [{
-      slot: 'stage',
-      kind: 'LIFE_STAGE',
-      life_stage_id: STAGE_ID,
-      life_event_id: null,
-      memory_id: null,
-      memory_source_id: null,
-      memory_trust_state: null,
-    }],
+    citations: [stageCitation(), eventCitation(), memoryCitation()],
   }, STAGE_ID)
   assert.equal(lifeMemoirPresentation(ready).state, 'INFERRED')
 
@@ -543,14 +534,6 @@ test('Life Memoir stage index is deterministic and chapter AI state is typed', (
     citations: [],
   }, STAGE_ID)
   assert.equal(lifeMemoirPresentation(failed).state, 'UNAVAILABLE')
-const memoryReady = parseLifeMemoirChapter({
-    status: 'CHAPTER_READY',
-    life_stage_id: STAGE_ID,
-    reasoning_status: 'ANSWERED',
-    narrative: '包含完整 memory citation。',
-    citations: [memoryCitation()],
-  }, STAGE_ID)
-  assert.equal(memoryReady.citations[0].kind, 'MEMORY')
 
   assert.throws(() => parseLifeMemoirChapter({
     status: 'CHAPTER_READY',
@@ -573,7 +556,7 @@ const memoryReady = parseLifeMemoirChapter({
     narrative: 'citation stage mismatch',
     citations: [{ ...stageCitation(), life_stage_id: PERSON_ID }],
   }, STAGE_ID))
-}
+})
 
 test('authority invalidates stale resource/range/session success and errors', () => {
   const authority = new AdvancedV2Authority()
