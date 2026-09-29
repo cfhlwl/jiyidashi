@@ -5,6 +5,7 @@ import test from 'node:test'
 
 const lifePage = readFileSync(resolve(process.cwd(), 'src/pages/life/index.tsx'), 'utf8')
 const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+const advancedV2 = readFileSync(resolve(process.cwd(), 'src/services/advancedV2.ts'), 'utf8')
 const appConfig = readFileSync(resolve(process.cwd(), 'src/app.config.ts'), 'utf8')
 const todayPage = readFileSync(resolve(process.cwd(), 'src/pages/index/index.tsx'), 'utf8')
 const personDetail = readFileSync(resolve(process.cwd(), 'src/pages/person-detail/index.tsx'), 'utf8')
@@ -29,20 +30,40 @@ test('all seven flows use canonical current APIs', () => {
     api.indexOf('function createAdvancedV2RequestSessionGuard'),
     api.indexOf('export async function listPeople'),
   )
-  for (const path of [
-    '/life-events',
-    '/life-stages',
-    '/reason',
-    '/life-history/timeline',
-    '/memoirs/annual',
-    '/memoirs/life/stages',
-    '/known-duration',
+
+  // Canonical route literals live in typed path builders; wrappers must consume those
+  // builders rather than duplicating route strings.
+  assert.match(advancedV2, /return '\/life-events\?limit='/)
+  assert.match(advancedV2, /return '\/life-events\/' \+ encodeURIComponent\(id\)/)
+  assert.match(advancedV2, /return '\/life-stages\?limit='/)
+  assert.match(advancedV2, /return '\/life-stages\/' \+ encodeURIComponent\(id\)/)
+  assert.match(advancedV2, /return '\/people\/' \+ encodeURIComponent\(personId\) \+ '\/known-duration'/)
+  assert.match(advancedV2, /let path = '\/life-history\/timeline\?start_year='/)
+  assert.match(advancedV2, /let path = '\/memoirs\/annual\/' \+ encodeURIComponent\(year\) \+ '\/photos\?limit='/)
+  assert.match(advancedV2, /let path = '\/memoirs\/life\/stages\?limit='/)
+
+  for (const helper of [
+    'lifeEventsPath',
+    'lifeEventPath',
+    'lifeEventMemoriesPath',
+    'lifeEventMemoryPath',
+    'lifeStagesPath',
+    'lifeStagePath',
+    'lifeStageEventsPath',
+    'lifeStageEventPath',
+    'knownDurationPath',
+    'lifeHistoryPath',
+    'annualMemoirPhotosPath',
+    'lifeMemoirStagesPath',
   ]) {
-    assert.match(block, new RegExp(path.replace(/\//g, '\\/')))
+    assert.match(block, new RegExp(helper + '\\\('))
   }
+
+  assert.match(block, /lifeStagePath\(stageId\) \+ '\/reason'/)
+  assert.match(block, /request<unknown>\('POST', '\/memoirs\/annual', \{ target_year: targetYear \}\)/)
+  assert.match(block, /'POST', '\/memoirs\/life\/stages\/' \+ encodeURIComponent\(stageId\)/)
   assert.doesNotMatch(block, /user_id|confidence|plan_code|trust_state|evidence_id/)
   assert.match(block, /\{ question: question\.trim\(\) \}/)
-  assert.match(block, /\{ target_year: targetYear \}/)
 })
 
 test('LifeEvent place field uses owner-scoped canonical Place rows, not a free UUID', () => {
