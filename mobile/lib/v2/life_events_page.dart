@@ -141,7 +141,7 @@ class _LifeEventsPageState extends State<LifeEventsPage> {
       body: SafeArea(
         child: JiYiPageFrame(
           title: '人生事件',
-          subtitle: '事件是明确记录；地点与 Memory 都从当前账号已有实体中选择。',
+          subtitle: '这些经历来自你的明确记录；地点和相关记忆都从已有内容中选择。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

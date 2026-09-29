@@ -197,7 +197,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                     ? const JiYiEmptyState(
                         icon: Icons.history_toggle_off,
                         title: '还没有到访记录',
-                        message: '这个地点当前没有可展示的 retained Visit。',
+                        message: '这个地点当前还没有可展示的到访记录。',
                       )
                     : Column(
                         children: [

@@ -341,7 +341,7 @@ class _AuthPageState extends State<AuthPage> {
                       // [人工注释][S1-FIX-007] 生产构建不渲染开发 API 信息，endpoint 只能由 build-time 配置注入。
                       const SizedBox(height: JiYiSpacing.md),
                       Text(
-                        '当前开发环境 API：${widget.api.baseUrl}',
+                        '当前开发环境服务地址：${widget.api.baseUrl}',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -1053,7 +1053,7 @@ class _CapturePageState extends State<CapturePage> {
       if (current.status == OfflineQueueStatus.completed) {
         titleController.clear();
         contentController.clear();
-        setState(() => result = '✓ 已记住 · ${current.serverResourceId}');
+        setState(() => result = '✓ 已记住');
         // Onboarding may advance only after the outbox has received an authoritative
         // server resource id. Local-only queued data cannot be queried yet.
         widget.onAuthoritativeTextMemorySaved?.call(
@@ -1094,7 +1094,7 @@ class _CapturePageState extends State<CapturePage> {
       if (current.status == OfflineQueueStatus.completed) {
         objectController.clear();
         locationController.clear();
-        setState(() => result = '✓ 已记录当前位置 · ${current.serverResourceId}');
+        setState(() => result = '✓ 已记录当前位置');
       } else if (current.status == OfflineQueueStatus.failed && current.retryable) {
         objectController.clear();
         locationController.clear();
@@ -1417,7 +1417,7 @@ class _MemoryEditDialogState extends State<_MemoryEditDialog> {
             ),
             const SizedBox(height: JiYiSpacing.xs),
             Text(
-              '编辑会保留原始 Evidence；正文修改会记录为新的用户修正来源。',
+              '编辑会保留原始记录；正文修改会标记为你的后续修正。',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -1779,24 +1779,6 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!widget.elderMode) ...[
-            JiYiActionCard(
-              icon: Icons.timeline_outlined,
-              title: '时间线',
-              message: '按时间查看已经形成的地点和记录。',
-              onTap: () {
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute(
-                    builder: (_) => TimelinePage(
-                      api: widget.api,
-                      elderMode: widget.elderMode,
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: JiYiSpacing.md),
-          ],
           JiYiSectionCard(
             leading: Icon(
               Icons.psychology_alt_outlined,
@@ -1839,6 +1821,24 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               ],
             ),
           ),
+          if (!widget.elderMode) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            JiYiActionCard(
+              icon: Icons.timeline_outlined,
+              title: '时间线',
+              message: '按时间查看已经形成的地点和记录。',
+              onTap: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => TimelinePage(
+                      api: widget.api,
+                      elderMode: widget.elderMode,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
           if (error != null) ...[
             const SizedBox(height: JiYiSpacing.md),
             JiYiStatusBanner(
@@ -2164,7 +2164,7 @@ class ProfilePage extends StatelessWidget {
                     color: theme.colorScheme.primary,
                   ),
                   title: '新手引导',
-                  subtitle: '随时重新体验“记住、找回、查看 Evidence”，不会创建演示数据。',
+                  subtitle: '随时重新体验“记住、找回、查看依据”，不会创建演示数据。',
                   child: OutlinedButton.icon(
                     key: const ValueKey('profile-restart-onboarding'),
                     onPressed: onStartOnboarding,

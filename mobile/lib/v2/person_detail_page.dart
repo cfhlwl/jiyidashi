@@ -236,7 +236,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     if (current == null) return;
     final ok = await _confirm(
       '删除人物？',
-      '将删除“' + current.displayName + '”及其人物关联。明确的 Memory 本身不会因此删除。',
+      '将删除“' + current.displayName + '”及其人物关联。原有记忆本身不会因此删除。',
       '删除',
     );
     if (!ok || !mounted) return;
@@ -297,7 +297,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   Future<void> _unlinkMemory(V2PersonMemoryTimelineRow row) async {
     final ok = await _confirm(
       '取消记忆关联？',
-      '只删除人物与这条 Memory 的显式关系，不删除 Memory。',
+      '只取消这个人与这条记忆的关联，不会删除原记忆。',
       '取消关联',
     );
     if (!ok || !mounted) return;
