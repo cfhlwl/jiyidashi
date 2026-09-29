@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
 import '../api_client.dart';
 import 'graph_models.dart';
 import 'life_models.dart';
