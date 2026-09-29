@@ -228,6 +228,7 @@ export default function Page() {
 
   const eventListAuthority = useRef(new AdvancedV2Authority())
   const eventDetailAuthority = useRef(new AdvancedV2Authority())
+  const placeAuthority = useRef(new AdvancedV2Authority())
   const stageListAuthority = useRef(new AdvancedV2Authority())
   const stageDetailAuthority = useRef(new AdvancedV2Authority())
   const reasoningAuthority = useRef(new AdvancedV2Authority())
@@ -298,6 +299,7 @@ export default function Page() {
   const authorities = [
     eventListAuthority,
     eventDetailAuthority,
+    placeAuthority,
     stageListAuthority,
     stageDetailAuthority,
     reasoningAuthority,
@@ -429,6 +431,24 @@ export default function Page() {
       setStageStatus(mutationError(error, '人生阶段加载失败'))
     } finally {
       if (isCurrent(stageListAuthority.current, snapshot)) setStagesLoading(false)
+    }
+  }
+
+  const loadPlaces = async () => {
+    placeAuthority.current.invalidate()
+    let snapshot
+    try {
+      snapshot = capture(placeAuthority.current, 'places:event-picker')
+    } catch {
+      return
+    }
+    try {
+      const places = await listPlaces(100)
+      if (!isCurrent(placeAuthority.current, snapshot)) return
+      setPlaceChoices(places)
+    } catch (error) {
+      if (!isCurrent(placeAuthority.current, snapshot)) return
+      setEventStatus(mutationError(error, '地点加载失败'))
     }
   }
 
@@ -1075,11 +1095,7 @@ export default function Page() {
                   setEventEvidence([])
                   setEventDraft(blankEventDraft())
                   setEventFormMode('create')
-                  if (placeChoices.length === 0) {
-                    void listPlaces(100)
-                      .then((places) => setPlaceChoices(places))
-                      .catch((error) => setEventStatus(mutationError(error, '地点加载失败')))
-                  }
+                  if (placeChoices.length === 0) void loadPlaces()
                   setEventStatus('')
                 }}
               >
