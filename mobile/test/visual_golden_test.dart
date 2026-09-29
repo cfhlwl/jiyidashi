@@ -15,8 +15,8 @@ import 'package:jiyidashi/ui/jiyi_theme.dart';
 // 统一窗口、DPR、locale 与主题，Linux CI 是首阶段唯一权威像素基线。
 const _goldenSize = Size(390, 844);
 const _goldenFontFamily = 'JiYi Golden CJK';
-const _captureAiInferencePreview =
-    bool.fromEnvironment('AI_INFERENCE_VISUAL_PREVIEW');
+const _captureDeterministicQueryPreview =
+    bool.fromEnvironment('DETERMINISTIC_QUERY_VISUAL_PREVIEW');
 
 // [人工注释][CI-005] Golden 必须显式加载仓库内固定版本的 CJK 字体；禁止依赖 Runner 系统字体，
 // 否则 Ubuntu 镜像变化或 flutter_test 缺字会把中文排版回归伪装成稳定结果。
@@ -70,7 +70,7 @@ class _GoldenApi extends JiYiApiClient {
   Future<Map<String, dynamic>> queryMemory(String question) async => {
     'answer': '护照最后记录在书房抽屉。',
     'can_answer': true,
-    'certainty': 'evidence',
+    'certainty': 'confirmed',
     'reason': null,
     'intent': 'FIND_OBJECT',
     'evidence': [
@@ -367,7 +367,7 @@ void main() {
   });
 
   testWidgets(
-    'preview: memory query AI inference label',
+    'preview: deterministic memory query trust label',
     (tester) async {
       final key = await _pumpShell(tester);
       await tester.tap(find.text('问记忆'));
@@ -379,14 +379,15 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
       await tester.pumpAndSettle();
 
-      expect(find.text('AI 推断（有证据支持）'), findsOneWidget);
+      expect(find.text('AI 推断（有证据支持）'), findsNothing);
+      expect(find.text('可信状态：confirmed'), findsOneWidget);
       expect(find.textContaining('用户文字记录'), findsOneWidget);
       await expectLater(
         find.byKey(key),
-        matchesGoldenFile('/tmp/ai_inference_memory_query.png'),
+        matchesGoldenFile('/tmp/deterministic_memory_query.png'),
       );
     },
-    skip: !_captureAiInferencePreview,
+    skip: !_captureDeterministicQueryPreview,
   );
 
   testWidgets('golden: profile and privacy controls', (tester) async {
