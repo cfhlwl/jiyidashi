@@ -64,12 +64,6 @@ export type MemoryFeedbackOperation = Readonly<{
   payload: Readonly<MemoryFeedbackPayload>
 }>
 
-export type TrustPresentation = {
-  label: string
-  detail: string
-  tone: 'supported' | 'insufficient' | 'neutral'
-}
-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MEMORY_TYPES = new Set<MemoryType>([
   'NOTE',
@@ -376,31 +370,6 @@ export function buildCorrectionFeedback(
     throw new Error('内容没有变化，无需纠正')
   }
   return payload
-}
-
-export function trustPresentation(input: {
-  can_answer: boolean
-  certainty: string
-}): TrustPresentation {
-  if (!input.can_answer) {
-    return {
-      label: '没有足够证据',
-      detail: '当前记录不足以把答案作为事实展示。',
-      tone: 'insufficient',
-    }
-  }
-  if (input.certainty === 'confirmed' || input.certainty === 'evidence') {
-    return {
-      label: '有证据支持',
-      detail: '这个答案来自当前公开证据链，可继续查看下面的来源。',
-      tone: 'supported',
-    }
-  }
-  return {
-    label: '答案状态待确认',
-    detail: '服务端返回了新的可信状态，当前版本不会把它提升为已确认事实。',
-    tone: 'neutral',
-  }
 }
 
 export function isDisplayableEvidence(sourceType: string): boolean {
