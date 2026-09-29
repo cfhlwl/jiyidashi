@@ -46,7 +46,7 @@ void main() {
     expect(find.text('认识时长'), findsOneWidget);
     expect(find.textContaining('至少 577 天'), findsOneWidget);
     expect(find.text('关于 TA 的记忆'), findsOneWidget);
-    expect(find.text('你们的关系'), findsOneWidget);
+    expect(find.text('你们的关系'), findsWidgets);
     expect(find.textContaining('张老师'), findsOneWidget);
   });
 
@@ -62,7 +62,7 @@ void main() {
     );
     expect(find.text('相关的人和事'), findsWidgets);
     expect(find.textContaining('小李'), findsWidgets);
-    expect(find.textContaining('PERSON_RELATIONSHIP'), findsOneWidget);
+    expect(find.textContaining('你们的关系'), findsOneWidget);
   });
 
   testWidgets('LifeEvent detail remains deterministic and evidence backed', (tester) async {

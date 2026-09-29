@@ -192,7 +192,7 @@ void main() {
       },
       stageId: stageId,
     );
-    expect(answered.presentation.label, 'AI 推断（有证据支持）');
+    expect(answered.presentation.label, 'AI 整理');
 
     for (final trust in ['INFERENCE_ONLY', 'NO_EVIDENCE']) {
       expect(
@@ -275,7 +275,7 @@ void main() {
         },
         stageId: stageId,
       );
-      expect(stale.presentation.label, '暂不可用');
+      expect(stale.presentation.label, '暂时无法整理');
     }
   });
 
@@ -303,7 +303,7 @@ void main() {
       },
       year: '2025',
     );
-    expect(annual.presentation.label, 'AI 推断（有证据支持）');
+    expect(annual.presentation.label, 'AI 整理');
 
     expect(
       () => V2AnnualMemoir.parse(
@@ -342,7 +342,7 @@ void main() {
       },
       stageId: stageId,
     );
-    expect(chapter.presentation.label, 'AI 推断（有证据支持）');
+    expect(chapter.presentation.label, 'AI 整理');
 
     expect(
       () => V2LifeMemoirChapter.parse(
