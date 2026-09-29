@@ -410,7 +410,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
 
   Widget _annualCard() {
     final result = annual;
-    return JiYiSectionCard(
+    return V2SectionCard(
       title: '年度电子回忆录',
       subtitle: '只有年度叙事是 AI 生成面；timeline/photo 不继承 AI 标签。',
       child: Column(
@@ -497,7 +497,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
 
   Widget _lifeMemoirCard() {
     final result = chapter;
-    return JiYiSectionCard(
+    return V2SectionCard(
       title: '人生回忆录',
       subtitle: '阶段索引是确定性数据；章节只在你选择阶段并点击后生成。',
       child: Column(
