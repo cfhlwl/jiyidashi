@@ -30,6 +30,7 @@ class V2Authority {
     if (normalizedIdentity.isEmpty) {
       throw StateError('V2 request identity must not be empty');
     }
+    _generation += 1;
     return V2AuthoritySnapshot(
       generation: _generation,
       owner: owner,
@@ -50,17 +51,45 @@ class V2Authority {
   }
 }
 
-typedef V2OperationToken = int;
+class V2OperationToken {
+  const V2OperationToken({
+    required this.generation,
+    required this.owner,
+    required this.sessionVersion,
+  });
+
+  final int generation;
+  final String owner;
+  final int sessionVersion;
+}
 
 class V2OperationFlight {
   int _generation = 0;
   V2OperationToken? _active;
 
-  V2OperationToken? begin() {
-    if (_active != null) return null;
+  V2OperationToken? begin(JiYiApiClient api) {
+    final owner = api.authenticatedUserId?.trim();
+    if (owner == null || owner.isEmpty) {
+      throw ApiException(401, '请先登录');
+    }
+    final current = _active;
+    if (current != null) {
+      final sameSession = current.owner == owner &&
+          current.sessionVersion == api.sessionVersion;
+      if (sameSession) return null;
+      // Account/session changed while old work is still pending. Release only the
+      // obsolete token; its stale finally cannot end the new token below.
+      _generation += 1;
+      _active = null;
+    }
     _generation += 1;
-    _active = _generation;
-    return _active;
+    final token = V2OperationToken(
+      generation: _generation,
+      owner: owner,
+      sessionVersion: api.sessionVersion,
+    );
+    _active = token;
+    return token;
   }
 
   void invalidate() {
@@ -68,10 +97,16 @@ class V2OperationFlight {
     _active = null;
   }
 
-  bool isCurrent(V2OperationToken token) => _active == token;
+  bool isCurrent(V2OperationToken token, JiYiApiClient api) {
+    final active = _active;
+    return identical(active, token) &&
+        active?.generation == token.generation &&
+        token.owner == api.authenticatedUserId &&
+        token.sessionVersion == api.sessionVersion;
+  }
 
   bool end(V2OperationToken token) {
-    if (_active != token) return false;
+    if (!identical(_active, token)) return false;
     _active = null;
     return true;
   }
