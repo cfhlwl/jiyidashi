@@ -75,7 +75,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("period_start", sa.DateTime(timezone=True), nullable=False),
         sa.Column("period_end", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("provider_requests", sa.Integer(), nullable=False),
+        sa.Column("provider_requests", sa.BigInteger(), nullable=False),
         sa.Column("input_tokens", sa.BigInteger(), nullable=False),
         sa.Column("output_tokens", sa.BigInteger(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
