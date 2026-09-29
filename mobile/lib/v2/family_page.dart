@@ -260,7 +260,7 @@ class _FamilyPageState extends State<FamilyPage> {
                   SelectableText(invite!.token),
                   const SizedBox(height: JiYiSpacing.xs),
                   Text(
-                    '有效期至：' + invite!.expiresAt,
+                    '有效期至：${invite!.expiresAt}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],

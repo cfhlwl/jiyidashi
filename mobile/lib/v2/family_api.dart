@@ -61,7 +61,7 @@ class FamilyApi {
   ) async {
     final raw = await _request(
       'PUT',
-      '/family/permissions/' + grant.granteeUserId,
+      '/family/permissions/${grant.granteeUserId}',
       body: {'permissions': grant.permissions},
     );
     final parsed = V2FamilyPermissionGrant.parse(raw);

@@ -1,4 +1,3 @@
-import '../api_client.dart';
 import 'v2_common.dart';
 
 const Set<String> familyRoles = {'OWNER', 'MEMBER'};
@@ -154,7 +153,7 @@ class V2FamilyInvite {
 
 String shortFamilyMemberId(String userId) {
   if (userId.length < 9) return '家庭成员';
-  return userId.substring(0, 4) + '…' + userId.substring(userId.length - 4);
+  return '${userId.substring(0, 4)}…${userId.substring(userId.length - 4)}';
 }
 
 String familyRoleLabel(String role) => role == 'OWNER' ? '家庭创建者' : '家庭成员';
