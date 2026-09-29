@@ -85,6 +85,21 @@ jobs:
           --dart-define=DETERMINISTIC_QUERY_VISUAL_PREVIEW=true
           --reporter expanded
 
+      # UI/UX-001: generate candidate baselines for product review without accepting them.
+      # The runner restores committed goldens before normal validation, so a visual change
+      # still fails closed until the reviewed PNGs are deliberately committed.
+      - name: Generate candidate Product Experience goldens
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/product-v2-goldens
+          mkdir -p /tmp/product-v2-goldens/candidate
+          flutter test test/visual_golden_test.dart --update-goldens --reporter expanded
+          cp test/goldens/*.png /tmp/product-v2-goldens/candidate/
+          git checkout -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+
       - name: Run Flutter tests including committed goldens
         timeout-minutes: 10
         run: flutter test --reporter expanded
@@ -133,6 +148,7 @@ jobs:
             mobile/test/failures/**/*.png
             /tmp/golden-mismatch-proof/**/*.png
             /tmp/deterministic_memory_query.png
+            /tmp/product-v2-goldens/candidate/*.png
 
       - name: Build Android debug APK
         run: >-
