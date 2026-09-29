@@ -189,6 +189,43 @@ def main() -> None:
         assert cohort.eligible_d7 == 1 and cohort.retained_d7 == 1
         assert cohort.eligible_d30 == 0 and cohort.d30_rate is None
 
+    d30_user = uuid4()
+    with SessionLocal() as db:
+        db.add(
+            User(
+                id=d30_user,
+                nickname="analytics-d30",
+                created_at=datetime(2026, 7, 1, tzinfo=UTC),
+            )
+        )
+        db.add_all(
+            [
+                ProductActiveDay(
+                    user_id=d30_user,
+                    activity_date_utc=date(2026, 7, 2),
+                ),
+                ProductActiveDay(
+                    user_id=d30_user,
+                    activity_date_utc=date(2026, 7, 8),
+                ),
+                ProductActiveDay(
+                    user_id=d30_user,
+                    activity_date_utc=date(2026, 7, 31),
+                ),
+            ]
+        )
+        db.commit()
+        retention = retention_aggregates(
+            db,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+        cohort = next(item for item in retention if item.cohort_day == date(2026, 7, 1))
+        assert cohort.eligible_d1 == 1 and cohort.retained_d1 == 1
+        assert cohort.eligible_d7 == 1 and cohort.retained_d7 == 1
+        assert cohort.eligible_d30 == 1 and cohort.retained_d30 == 1
+        assert cohort.d30_rate == 1.0
+
     delete_user = uuid4()
     with SessionLocal() as db:
         db.add(User(id=delete_user, nickname="analytics-data-delete"))
@@ -229,6 +266,16 @@ def main() -> None:
             user_id=delete_user,
             activity=ProductActivity.TIMELINE,
         )
+        token = set_request_id(str(uuid4()))
+        try:
+            record_retrieval_and_activity_safe(
+                stale_source,
+                user_id=delete_user,
+                response=_no_evidence(),
+            )
+        finally:
+            reset_request_id(token)
+
         with SessionLocal() as verify:
             assert (
                 verify.scalar(
@@ -293,6 +340,7 @@ def main() -> None:
         account_stale.close()
 
     _cleanup_user(user_id)
+    _cleanup_user(d30_user)
     _cleanup_user(delete_user)
     print("PostgreSQL Retrieval & Retention Analytics PASS")
 
