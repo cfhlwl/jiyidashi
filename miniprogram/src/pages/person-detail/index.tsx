@@ -17,6 +17,7 @@ import { elderClassName } from '../../services/elderMode'
 import { graphNeighborhoodRoute } from '../../services/unifiedGraph'
 import PersonMemorySection from '../../components/personMemories/PersonMemorySection'
 import PersonRelationshipsSection from '../../components/personRelationships/PersonRelationshipsSection'
+import PersonKnownDurationSection from '../../components/personKnownDuration/PersonKnownDurationSection'
 import {
   buildPersonPatchPayload,
   hasPersonPatchChanges,
@@ -464,6 +465,8 @@ export default function Page() {
           </View>
         </View>
       )}
+
+      {phase === 'ready' && detail && !editing && <PersonKnownDurationSection personId={personId} />}
 
       {phase === 'ready' && detail && !editing && <PersonRelationshipsSection personId={personId} />}
 

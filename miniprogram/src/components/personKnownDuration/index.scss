@@ -1,0 +1,20 @@
+@import '../../app.scss';
+
+.known-duration-state,
+.known-duration-ready {
+  margin-top: 18rpx;
+  line-height: 1.7;
+}
+
+.known-duration-days {
+  margin-bottom: 8rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #315442;
+}
+
+.known-duration-evidence {
+  margin-top: 18rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid #eef1ef;
+}
