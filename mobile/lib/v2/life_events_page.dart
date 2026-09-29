@@ -175,7 +175,7 @@ class _LifeEventsPageState extends State<LifeEventsPage> {
                           contentPadding: EdgeInsets.zero,
                           title: Text(event.title),
                           subtitle: Text(
-                            (lifeEventLabels[event.kind] ?? event.kind) +
+                            (lifeEventLabels[event.kind] ?? '其他经历') +
                                 ' · ' +
                                 event.startedAt,
                           ),
