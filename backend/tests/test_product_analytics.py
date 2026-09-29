@@ -25,6 +25,7 @@ from app.data_deletion_models import DataDeletionOperation
 from app.models import SourceType, User
 from app.schemas import Evidence, MemoryQueryResponse
 from app.services.analytics_service import (
+    analytics_report_payload,
     record_active_day_safe,
     record_retrieval_and_activity_safe,
     retention_aggregates,
@@ -202,6 +203,85 @@ def test_retention_uses_utc_signup_cohort_and_null_zero_denominator() -> None:
     assert late_row.d1_rate is None
     assert late_row.d7_rate is None
     assert late_row.d30_rate is None
+
+
+def test_aggregate_report_contains_no_content_sentinels() -> None:
+    engine = _engine()
+    user_id = uuid4()
+    sentinel = "private-query-email-coordinate-object-key-sentinel"
+    with Session(engine) as db:
+        db.add(
+            User(
+                id=user_id,
+                nickname=sentinel,
+                email=f"{sentinel}@example.test",
+                created_at=datetime(2026, 7, 1, tzinfo=UTC),
+            )
+        )
+        db.add(
+            RetrievalAnalyticsAttempt(
+                user_id=user_id,
+                operation_id=uuid4(),
+                surface=RetrievalSurface.MEMORY_QUERY,
+                outcome=RetrievalOutcome.SUCCESS,
+                result_count=1,
+                answerable_count=1,
+                occurred_at=datetime(2026, 7, 2, tzinfo=UTC),
+            )
+        )
+        db.add(
+            ProductActiveDay(
+                user_id=user_id,
+                activity_date_utc=date(2026, 7, 2),
+            )
+        )
+        db.commit()
+        payload = analytics_report_payload(
+            db,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 2),
+        )
+
+    rendered = repr(payload)
+    assert sentinel not in rendered
+    assert str(user_id) not in rendered
+
+
+def test_analytics_recording_failure_is_non_blocking_and_safe(monkeypatch) -> None:
+    engine = _engine()
+    user_id = uuid4()
+    with Session(engine) as db:
+        db.add(User(id=user_id, nickname="failure-safe"))
+        db.commit()
+
+    emitted: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "app.services.analytics_service._insert_active_day",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    monkeypatch.setattr(
+        "app.services.analytics_service.emit_operational_event",
+        lambda **kwargs: emitted.append(kwargs) or True,
+    )
+
+    source = _source(engine, user_id)
+    try:
+        record_active_day_safe(
+            source,
+            user_id=user_id,
+            activity=ProductActivity.TIMELINE,
+        )
+    finally:
+        source.close()
+
+    assert emitted == [
+        {
+            "event": "analytics.recording.failed",
+            "level": "WARNING",
+            "error_code": "ANALYTICS_RECORDING_FAILED",
+            "retryable": False,
+        }
+    ]
 
 
 def test_active_day_duplicate_is_idempotent() -> None:
