@@ -47,7 +47,9 @@ import {
 } from '../../services/api'
 import {
   AdvancedV2Authority,
+  AdvancedV2MutationFlight,
   AdvancedV2SingleFlight,
+  continueAdvancedV2Mutation,
   LIFE_EVENT_KINDS,
   LIFE_STAGE_KINDS,
   annualNarrativePresentation,
@@ -64,6 +66,10 @@ import './index.scss'
 
 type Section = 'home' | 'events' | 'stages' | 'history' | 'memoirs'
 type FormMode = 'none' | 'create' | 'edit'
+
+type MutationSnapshot = ReturnType<AdvancedV2Authority['capture']> & {
+  mutationToken: number
+}
 
 type EventDraft = {
   eventKind: LifeEventKind
@@ -240,7 +246,7 @@ export default function Page() {
   const memoirChapterAuthority = useRef(new AdvancedV2Authority())
   const mutationAuthority = useRef(new AdvancedV2Authority())
 
-  const mutationGate = useRef(new AdvancedV2SingleFlight())
+  const mutationGate = useRef(new AdvancedV2MutationFlight())
   const reasoningGate = useRef(new AdvancedV2SingleFlight())
   const annualGate = useRef(new AdvancedV2SingleFlight())
   const chapterGate = useRef(new AdvancedV2SingleFlight())
@@ -374,16 +380,22 @@ export default function Page() {
 
   useEffect(() => subscribeAuthSession(() => {
     invalidateAll()
+    mutationGate.current.invalidate()
     reasoningGate.current.end()
     annualGate.current.end()
     chapterGate.current.end()
     resetOwnerState()
   }), [])
 
-  useEffect(() => () => invalidateAll(), [])
+  useEffect(() => () => {
+    invalidateAll()
+    mutationGate.current.invalidate()
+  }, [])
 
   useDidHide(() => {
     invalidateAll()
+    mutationGate.current.invalidate()
+    setMutating(false)
     reasoningGate.current.end()
     annualGate.current.end()
     chapterGate.current.end()
@@ -534,6 +546,8 @@ export default function Page() {
 
   const openSection = (next: Section) => {
     invalidateAll()
+    mutationGate.current.invalidate()
+    setMutating(false)
     reasoningGate.current.end()
     annualGate.current.end()
     chapterGate.current.end()
@@ -560,26 +574,44 @@ export default function Page() {
     setSelectedMemoirStageId('')
     setSection(next)
     setGlobalStatus('')
+    setEventStatus('')
+    setStageStatus('')
     if (next === 'events') void loadEvents()
     if (next === 'stages') void loadStages()
     if (next === 'memoirs') void loadMemoirStages(false)
   }
 
-  const beginMutation = (identity: string) => {
-    if (!mutationGate.current.begin()) return null
+  const beginMutation = (identity: string): MutationSnapshot | null => {
+    const mutationToken = mutationGate.current.begin()
+    if (mutationToken === null) return null
     setMutating(true)
     try {
-      return capture(mutationAuthority.current, identity)
+      return {
+        ...capture(mutationAuthority.current, identity),
+        mutationToken,
+      }
     } catch (error) {
-      mutationGate.current.end()
+      mutationGate.current.end(mutationToken)
       setMutating(false)
       throw error
     }
   }
 
-  const finishMutation = () => {
-    mutationGate.current.end()
-    setMutating(false)
+  const continueMutationRefresh = async (
+    snapshot: MutationSnapshot,
+    steps: ReadonlyArray<() => Promise<void>>,
+  ) => continueAdvancedV2Mutation(
+    mutationAuthority.current,
+    snapshot,
+    currentAuthenticatedUserId,
+    currentAuthSessionEpoch,
+    steps,
+  )
+
+  const finishMutation = (snapshot: MutationSnapshot) => {
+    if (mutationGate.current.end(snapshot.mutationToken)) {
+      setMutating(false)
+    }
   }
 
   const saveEvent = async () => {
@@ -605,13 +637,15 @@ export default function Page() {
       setEventFormMode('none')
       setSelectedEvent(saved)
       setEventStatus(target ? '事件已更新' : '事件已创建')
-      await loadEvents()
-      await loadEventDetail(saved.id)
+      await continueMutationRefresh(snapshot, [
+        loadEvents,
+        () => loadEventDetail(saved.id),
+      ])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setEventStatus(mutationError(error, target ? '事件更新失败' : '事件创建失败'))
     } finally {
-      finishMutation()
+      finishMutation(snapshot)
     }
   }
 
@@ -635,12 +669,12 @@ export default function Page() {
       setSelectedEvent(null)
       setEventEvidence([])
       setEventStatus('事件已删除')
-      await loadEvents()
+      await continueMutationRefresh(snapshot, [loadEvents])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setEventStatus(mutationError(error, '事件删除失败'))
     } finally {
-      finishMutation()
+      finishMutation(snapshot)
     }
   }
 
@@ -660,12 +694,12 @@ export default function Page() {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setMemoryChoiceIndex(0)
       setEventStatus('记忆证据已关联')
-      await loadEventDetail(target.id)
+      await continueMutationRefresh(snapshot, [() => loadEventDetail(target.id)])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setEventStatus(mutationError(error, '记忆关联失败'))
     } finally {
-      finishMutation()
+      finishMutation(snapshot)
     }
   }
 
@@ -685,12 +719,12 @@ export default function Page() {
       await unlinkLifeEventMemory(target.id, memoryId)
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setEventStatus('记忆证据关联已取消')
-      await loadEventDetail(target.id)
+      await continueMutationRefresh(snapshot, [() => loadEventDetail(target.id)])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setEventStatus(mutationError(error, '取消关联失败'))
     } finally {
-      finishMutation()
+      finishMutation(snapshot)
     }
   }
 
@@ -718,13 +752,15 @@ export default function Page() {
       setStageFormMode('none')
       setSelectedStage(saved)
       setStageStatus(target ? '阶段已更新' : '阶段已创建')
-      await loadStages()
-      await loadStageDetail(saved.id)
+      await continueMutationRefresh(snapshot, [
+        loadStages,
+        () => loadStageDetail(saved.id),
+      ])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setStageStatus(mutationError(error, target ? '阶段更新失败' : '阶段创建失败'))
     } finally {
-      finishMutation()
+      finishMutation(snapshot)
     }
   }
 
@@ -750,12 +786,12 @@ export default function Page() {
       setStageEvidence([])
       setReasoning(null)
       setStageStatus('阶段已删除')
-      await loadStages()
+      await continueMutationRefresh(snapshot, [loadStages])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setStageStatus(mutationError(error, '阶段删除失败'))
     } finally {
-      finishMutation()
+      finishMutation(snapshot)
     }
   }
 
@@ -777,12 +813,12 @@ export default function Page() {
       setEventChoiceIndex(0)
       setReasoning(null)
       setStageStatus('事件已关联到阶段')
-      await loadStageDetail(stage.id)
+      await continueMutationRefresh(snapshot, [() => loadStageDetail(stage.id)])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setStageStatus(mutationError(error, '事件关联失败'))
     } finally {
-      finishMutation()
+      finishMutation(snapshot)
     }
   }
 
@@ -804,12 +840,12 @@ export default function Page() {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setReasoning(null)
       setStageStatus('事件关联已取消')
-      await loadStageDetail(stage.id)
+      await continueMutationRefresh(snapshot, [() => loadStageDetail(stage.id)])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setStageStatus(mutationError(error, '取消事件关联失败'))
     } finally {
-      finishMutation()
+      finishMutation(snapshot)
     }
   }
 
