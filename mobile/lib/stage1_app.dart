@@ -97,7 +97,19 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         });
         return;
       } on ApiException catch (exc) {
-        if (exc.statusCode == 401 || exc.statusCode == 423) {
+        if (exc.statusCode == 423 &&
+            exc.message == 'ACCOUNT_DELETION_IN_PROGRESS') {
+          setState(() {
+            authenticated = true;
+            restoringSession = false;
+            startOnboardingAfterAuth = false;
+            resumeAccountDeletionAfterAuth = true;
+            elderModeEnabled = false;
+            restoreMessage = null;
+          });
+          return;
+        }
+        if (exc.statusCode == 401) {
           setState(() {
             authenticated = false;
             restoringSession = false;
