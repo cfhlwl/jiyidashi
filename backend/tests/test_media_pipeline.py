@@ -555,6 +555,10 @@ def test_production_custom_storage_endpoint_requires_https():
         "storage_bucket": "private-bucket",
         "storage_access_key_id": "test-key",
         "storage_secret_access_key": "test-secret",
+        "auth_email_delivery_mode": "smtp",
+        "auth_public_base_url": "https://app.example.test/auth",
+        "auth_smtp_host": "smtp.example.invalid",
+        "auth_smtp_from": "accounts@example.test",
     }
     with pytest.raises(ValueError, match="HTTPS"):
         Settings(**common, storage_endpoint_url="http://storage.example.com")
