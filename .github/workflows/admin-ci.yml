@@ -54,6 +54,11 @@ jobs:
       - name: Install from committed lockfile
         run: npm ci
 
+      - name: Audit production dependencies
+        # Dev/build tooling is reviewed separately; high/critical vulnerabilities
+        # in browser-shipped production dependencies fail the Admin gate.
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Typecheck
         run: npm run typecheck
 
