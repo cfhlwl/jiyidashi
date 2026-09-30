@@ -38,15 +38,24 @@ V1 不新增用户封禁、强删 user row、隐私授权代操作、secret edit
 
 ## Frontend dependency gate
 
-Admin CI installs only the committed lockfile and blocks high/critical findings in
-browser-shipped dependencies with `npm audit --omit=dev --audit-level=high`.
-Development/build tooling remains outside the deployed static runtime and is triaged
-separately; production dependency findings are not waived by dev-only results. CI also
-stores the full `npm audit --json` result in the Admin visual artifact so dev/build
-advisories remain reviewable instead of disappearing behind the runtime-only gate.
+Admin CI installs only the committed lockfile and runs two blocking audits:
 
-The review hardening upgraded React Router from 6.30.1 to 6.30.6 to remove the
-high-severity production findings without a major-version migration. The remaining
-production findings reported by npm are moderate and require the breaking React Router
-7 migration; they are recorded for follow-up rather than hidden or force-upgraded in
-ADMIN-001.
+- `npm audit --omit=dev --audit-level=high` for browser-shipped dependencies;
+- `npm audit --audit-level=high` for the complete runtime/dev/test/build graph.
+
+No advisory allowlist is active. Any unallowlisted high/critical result fails ADMIN-001.
+The complete `npm audit --json` result is also retained in the Admin artifact for
+moderate/low triage.
+
+Dependency-only review hardening upgraded:
+
+- `@playwright/test 1.55.0 -> 1.63.0`;
+- `vite 7.1.7 -> 7.3.6`;
+- `vitest 3.2.4 -> 3.2.7`;
+- the prior runtime fix remains `react-router-dom 6.30.1 -> 6.30.6`.
+
+After these upgrades, both high/critical gates pass. The full audit currently reports
+only moderate findings. The remaining React Router findings require a breaking 7.x
+migration; the remaining Vitest mocker finding requires a breaking Vitest 5 migration.
+ADMIN-001 does not use `npm audit fix --force` or silently cross either major-version
+boundary.
