@@ -240,6 +240,8 @@ class Settings(BaseSettings):
 
         if self.auth_email_delivery_mode not in {"disabled", "smtp"}:
             raise ValueError("AUTH_EMAIL_DELIVERY_MODE must be disabled or smtp")
+        if self.is_production and self.auth_email_delivery_mode != "smtp":
+            raise ValueError("AUTH_EMAIL_DELIVERY_MODE must be smtp in production")
         if self.auth_email_delivery_mode == "smtp":
             if not self.auth_smtp_host.strip() or not self.auth_smtp_from.strip():
                 raise ValueError(
