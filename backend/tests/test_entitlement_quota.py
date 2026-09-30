@@ -41,7 +41,7 @@ from app.services.entitlement_service import (
 )
 from app.services.media_service import start_media_upload
 from app.services.object_storage import PresignedTransfer
-from tests.auth_test_helpers import register_verified_session
+from auth_test_helpers import register_verified_session
 
 
 def _engine():
