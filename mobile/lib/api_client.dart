@@ -304,6 +304,22 @@ class JiYiApiClient {
   // 登录、注册和退出都会推进会话版本；后台同步用它检测账号切换。
   int get sessionVersion => _sessionVersion;
 
+  String? get authenticatedSessionId => _sessionId;
+
+  bool get hasFreshAuthenticatedOwnerAuthority {
+    final expiry = _accessExpiresAt;
+    return accessToken != null &&
+        _refreshToken != null &&
+        _sessionId != null &&
+        authenticatedUserId != null &&
+        expiry != null &&
+        expiry.isAfter(DateTime.now().toUtc());
+  }
+
+  /// Force a server round-trip to prove the durable session is still authoritative.
+  /// CORE-001 can use this before publishing owner-bound background work.
+  Future<void> revalidateAuthenticatedOwnerAuthority() => refreshCurrentSession();
+
   bool get showDevelopmentEndpoint => _appEnv != 'production';
 
   Map<String, String> get _headers => {
