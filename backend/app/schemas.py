@@ -183,6 +183,7 @@ class DevTokenRequest(BaseModel):
 class RegistrationResponse(BaseModel):
     user_id: UUID
     verification_required: bool = True
+    verification_delivery_pending: bool = False
 
 
 class TokenResponse(BaseModel):
