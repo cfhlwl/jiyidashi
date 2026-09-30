@@ -31,7 +31,7 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop-1440',
-      grep: /@flagship|@matrix/,
+      grep: /@flagship/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } },
     },
     {
