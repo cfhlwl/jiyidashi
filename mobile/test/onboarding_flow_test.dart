@@ -418,7 +418,7 @@ void main() {
       reason: 'auth page after cold-start restore',
     );
 
-    await tester.tap(find.text('返回登录 / 创建账号'));
+    await tester.tap(find.text('第一次使用？创建账号'));
     await tester.pump();
     final fields = find.byType(TextField);
     expect(fields, findsNWidgets(3));
