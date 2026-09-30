@@ -62,7 +62,8 @@ void main() {
       expect(today, contains(section));
     }
     expect(today, contains('getTimelineEvents('));
-    expect(today, contains('FamilyApi(widget.api).getFamily()'));
+    expect(today, contains('进入家庭后，只读取家人明确授权给你的内容。'));
+    expect(today, isNot(contains('FamilyApi(widget.api).getFamily()')));
     expect(today, contains('MemoryDetailPage('));
   });
 
