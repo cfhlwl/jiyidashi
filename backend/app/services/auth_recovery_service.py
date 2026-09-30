@@ -131,7 +131,9 @@ def deliver_registration_verification(
         emit_operational_event(
             event="auth.email_verification.delivery_failed",
             level="ERROR",
-            user_id=str(user_id),
+            correlation_id=str(user_id),
+            operation="EMAIL_VERIFICATION",
+            operation_status="DELIVERY_FAILED",
             error_code="AUTH_EMAIL_DELIVERY_UNAVAILABLE",
         )
         return False
@@ -166,7 +168,9 @@ def resend_email_verification(
         emit_operational_event(
             event="auth.email_verification.delivery_failed",
             level="ERROR",
-            user_id=str(identity.user_id),
+            correlation_id=str(identity.user_id),
+            operation="EMAIL_VERIFICATION",
+            operation_status="DELIVERY_FAILED",
             error_code="AUTH_EMAIL_DELIVERY_UNAVAILABLE",
         )
 
@@ -216,7 +220,9 @@ def verify_email_token(db: Session, *, token: str) -> VerificationResult:
     db.commit()
     emit_operational_event(
         event="auth.email_verified",
-        user_id=str(row.user_id),
+        correlation_id=str(row.user_id),
+        operation="EMAIL_VERIFICATION",
+        operation_status="VERIFIED",
     )
     return VerificationResult(user_id=row.user_id, already_verified=False)
 
@@ -246,7 +252,9 @@ def request_password_reset(
     )
     emit_operational_event(
         event="auth.password_reset.requested",
-        user_id=str(identity.user_id),
+        correlation_id=str(identity.user_id),
+        operation="PASSWORD_RESET",
+        operation_status="REQUESTED",
     )
     try:
         get_auth_email_delivery().send_password_reset(email=subject, token=token)
@@ -254,7 +262,9 @@ def request_password_reset(
         emit_operational_event(
             event="auth.password_reset.delivery_failed",
             level="ERROR",
-            user_id=str(identity.user_id),
+            correlation_id=str(identity.user_id),
+            operation="PASSWORD_RESET",
+            operation_status="DELIVERY_FAILED",
             error_code="AUTH_EMAIL_DELIVERY_UNAVAILABLE",
         )
 
@@ -310,7 +320,10 @@ def reset_password(
     db.commit()
     emit_operational_event(
         event="auth.password_reset.completed",
-        user_id=str(row.user_id),
+        correlation_id=str(row.user_id),
+        operation="PASSWORD_RESET",
+        operation_status="COMPLETED",
+        completed=True,
     )
     return row.user_id
 
@@ -342,5 +355,8 @@ def change_password(
     db.commit()
     emit_operational_event(
         event="auth.password.changed",
-        user_id=str(user_id),
+        correlation_id=str(user_id),
+        operation="PASSWORD_CHANGE",
+        operation_status="COMPLETED",
+        completed=True,
     )
