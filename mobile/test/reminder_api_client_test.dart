@@ -10,8 +10,12 @@ const jsonHeaders = {'content-type': 'application/json; charset=utf-8'};
 http.Response _loginResponse() => http.Response(
       jsonEncode({
         'access_token': 'example-token',
+        'refresh_token': 'example-refresh-abcdefghijklmnopqrstuvwxyz',
+        'session_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         'token_type': 'bearer',
         'user_id': '11111111-1111-1111-1111-111111111111',
+        'access_expires_at': '2030-09-30T00:15:00Z',
+        'refresh_expires_at': '2030-10-30T00:00:00Z',
       }),
       200,
       headers: jsonHeaders,
