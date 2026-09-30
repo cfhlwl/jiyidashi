@@ -1,6 +1,6 @@
 import Taro, { useDidShow } from '@tarojs/taro'
 import { Button, Image, Input, Switch, Text, View } from '@tarojs/components'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   acceptFamilyInvite,
   apiErrorCode,
@@ -20,6 +20,8 @@ import {
   getFamilyPhotos,
   getFamilyTodayFootprint,
   getProfile,
+  currentAuthenticatedUserId,
+  currentAuthSessionEpoch,
   currentElderModeEnabled,
   isAuthenticated,
   listPlaces,
@@ -38,6 +40,7 @@ import {
   familyAuditResultLabel,
   familyErrorMessage,
   familyMemberActions,
+  familyRoleLabel,
   FamilyPermissionMutationGate,
   FamilySensitiveReadEpoch,
   INTERACTIVE_FAMILY_PERMISSIONS,
@@ -55,6 +58,14 @@ import {
   type FamilyResponse,
   type InteractiveFamilyPermissionCode,
 } from '../../services/family'
+import {
+  confirmSensitiveOperation,
+  emergencyLocationShareConfirmation,
+  familyMemberChangeConfirmation,
+  familyPermissionConfirmation,
+  SensitiveOperationEpoch,
+  sensitiveOperationStateChangedMessage,
+} from '../../services/sensitiveOperation'
 import type { PlaceRead } from '../../services/placeDetail'
 import { toTodayFootprintRow, type TodayFootprintResponse } from '../../services/todayFootprint'
 import './index.scss'
@@ -121,6 +132,22 @@ export default function Page() {
   const [emergencyBusy, setEmergencyBusy] = useState<Record<string, boolean>>({})
   const permissionGate = useRef(new FamilyPermissionMutationGate())
   const sensitiveReadEpoch = useRef(new FamilySensitiveReadEpoch())
+  const sensitiveMutationEpoch = useRef(new SensitiveOperationEpoch())
+
+  useEffect(() => () => {
+    sensitiveMutationEpoch.current.invalidate()
+  }, [])
+
+  const captureMutationSession = () => ({
+    owner: currentAuthenticatedUserId(),
+    epoch: currentAuthSessionEpoch(),
+  })
+
+  const mutationSessionCurrent = (session: { owner: string | null; epoch: number }) => (
+    Boolean(session.owner)
+    && session.epoch === currentAuthSessionEpoch()
+    && session.owner === currentAuthenticatedUserId()
+  )
 
   const clearFamilyTransientState = () => {
     setInvite(null)
@@ -136,9 +163,10 @@ export default function Page() {
   }
 
   const refresh = async (clearTransient = false) => {
-    // Every authoritative tab/page refresh invalidates earlier explicit sensitive reads.
-    // A response that was started before this point can no longer repopulate disclosure UI.
+    // Every authoritative refresh invalidates earlier reads and mutation UI
+    // publication. Server mutation authority remains independent.
     sensitiveReadEpoch.current.invalidate()
+    sensitiveMutationEpoch.current.invalidate()
 
     if (!isAuthenticated()) {
       clearFamilyTransientState()
@@ -269,23 +297,53 @@ export default function Page() {
 
   const mutateMember = async (targetUserId: string, mode: 'remove' | 'leave') => {
     if (memberBusy[targetUserId]) return
-    const confirm = await Taro.showModal({
-      title: mode === 'leave' ? '退出家庭？' : '移除成员？',
-      content: mode === 'leave'
-        ? '退出后，你与家庭成员之间现有的共享授权会同步清理。'
-        : '移除后，与该成员相关的家庭共享授权会同步清理。',
-      confirmText: mode === 'leave' ? '确认退出' : '确认移除',
-      confirmColor: '#b3261e',
-    })
-    if (!confirm.confirm) return
+    const session = captureMutationSession()
+    const attempt = sensitiveMutationEpoch.current.capture()
+    if (!session.owner) return
 
+    // Single-flight starts before confirmation so repeated taps cannot open two
+    // destructive chains.
     setMemberBusy((current) => ({ ...current, [targetUserId]: true }))
     setStatus('')
     try {
+      const confirmed = await confirmSensitiveOperation(
+        familyMemberChangeConfirmation({
+          leaving: mode === 'leave',
+          memberLabel: `成员 ${shortMemberId(targetUserId)}`,
+        }),
+      )
+      if (!confirmed) return
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
+
+      const [freshFamily, profile] = await Promise.all([getFamily(), getProfile()])
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
+      assertCurrentFamilyMember(freshFamily, profile.id)
+      if (
+        profile.id !== session.owner
+        || !freshFamily.members.some(
+          (item) => item.user_id.toLowerCase() === targetUserId.toLowerCase(),
+        )
+      ) {
+        setStatus(sensitiveOperationStateChangedMessage)
+        return
+      }
+
       await removeFamilyMember(targetUserId)
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
       await refresh(true)
-      setStatus(mode === 'leave' ? '已退出家庭' : '成员已移除')
+      if (mutationSessionCurrent(session)) {
+        setStatus(mode === 'leave' ? '已退出家庭' : '成员已移除')
+      }
     } catch (error) {
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
       setStatus(mappedError(error, mode, mode === 'leave' ? '退出家庭失败' : '移除成员失败'))
     } finally {
       setMemberBusy((current) => ({ ...current, [targetUserId]: false }))
@@ -300,41 +358,101 @@ export default function Page() {
     if (pageState.phase !== 'family-ready') return
     if (!permissionGate.current.begin(granteeUserId)) return
 
+    const session = captureMutationSession()
+    const attempt = sensitiveMutationEpoch.current.capture()
+    if (!session.owner) {
+      permissionGate.current.end(granteeUserId)
+      return
+    }
+
     sensitiveReadEpoch.current.invalidate()
     setMemberReads({})
-
     setPermissionBusy((current) => ({ ...current, [granteeUserId]: true }))
     setStatus('')
-    const currentGrant = pageState.permissions.find(
-      (item) => item.grantee_user_id.toLowerCase() === granteeUserId.toLowerCase(),
-    )
-    const nextPermissions = replaceVisiblePermission(currentGrant?.permissions || [], code, enabled)
 
     try {
-      // [人工注释][S4-010] PUT 是完整 replacement。只在服务端成功响应后更新 UI，
-      // 并保留当前响应中尚不认识的 future permission code，避免 visible toggle 抹掉它们。
+      const confirmed = await confirmSensitiveOperation(
+        familyPermissionConfirmation({
+          enabled,
+          permissionLabel: permissionLabel(code),
+          memberLabel: `成员 ${shortMemberId(granteeUserId)}`,
+        }),
+      )
+      if (!confirmed) return
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
+
+      // SEC-014: permission PUT is complete replacement. Fetch canonical membership
+      // and grants after confirmation, then derive the toggle from that fresh matrix.
+      const [freshFamily, freshPermissions, profile] = await Promise.all([
+        getFamily(),
+        getFamilyPermissions(),
+        getProfile(),
+      ])
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
+      assertCurrentFamilyMember(freshFamily, profile.id)
+      if (
+        profile.id !== session.owner
+        || !freshFamily.members.some(
+          (item) => item.user_id.toLowerCase() === granteeUserId.toLowerCase(),
+        )
+      ) {
+        setStatus(sensitiveOperationStateChangedMessage)
+        return
+      }
+
+      const currentGrant = freshPermissions.find(
+        (item) => item.grantee_user_id.toLowerCase() === granteeUserId.toLowerCase(),
+      )
+      if (Boolean(currentGrant?.permissions.includes(code)) === enabled) {
+        setPageState((current) => current.phase === 'family-ready'
+          ? { ...current, family: freshFamily, permissions: freshPermissions }
+          : current)
+        setStatus('当前授权状态已经是最新状态')
+        return
+      }
+
+      const nextPermissions = replaceVisiblePermission(
+        currentGrant?.permissions || [],
+        code,
+        enabled,
+      )
       const authoritative = await replaceFamilyPermissions(granteeUserId, nextPermissions)
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
       setPageState((current) => {
         if (current.phase !== 'family-ready') return current
         return {
           ...current,
+          family: freshFamily,
           permissions: [
-            ...current.permissions.filter(
+            ...freshPermissions.filter(
               (item) => item.grantee_user_id.toLowerCase() !== granteeUserId.toLowerCase(),
             ),
             authoritative,
           ],
         }
       })
+      setStatus(enabled ? '已允许这项家庭查看权限' : '已取消这项家庭查看权限')
     } catch (error) {
-      setStatus(mappedError(error, 'permission', '权限更新失败，已重新读取最新状态'))
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
+      setStatus(mappedError(error, 'permission', '权限更新失败，请重新打开后再试'))
       try {
         const authoritative = await getFamilyPermissions()
+        if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+          return
+        }
         setPageState((current) => current.phase === 'family-ready'
           ? { ...current, permissions: authoritative }
           : current)
       } catch {
-        // Keep the visible failure. A subsequent tab show will reload authority.
+        // Keep bounded failure copy. A later tab show reloads authority.
       }
     } finally {
       permissionGate.current.end(granteeUserId)
@@ -610,41 +728,67 @@ export default function Page() {
 
   const createEmergencyShare = async (granteeUserId: string) => {
     if (emergencyBusy[granteeUserId]) return
-    let choice: { tapIndex: number }
-    try {
-      choice = await Taro.showActionSheet({
-        itemList: ['30 分钟', '60 分钟', '180 分钟'],
-      })
-    } catch {
+    setEmergencyBusy((current) => ({ ...current, [granteeUserId]: true }))
+    const session = captureMutationSession()
+    const attempt = sensitiveMutationEpoch.current.capture()
+    if (!session.owner) {
+      setEmergencyBusy((current) => ({ ...current, [granteeUserId]: false }))
       return
     }
-    const duration = ([30, 60, 180] as const)[choice.tapIndex]
-    if (!duration) return
 
-    const expiresAt = new Date(Date.now() + duration * 60_000).toISOString()
-    const confirm = await Taro.showModal({
-      title: '确认紧急共享位置？',
-      content: [
-        `接收成员：${shortMemberId(granteeUserId)}`,
-        `共享时长：${duration} 分钟`,
-        '仅共享：当前位置信息',
-        `预计到期：${expiresAt}`,
-        '共享后可随时停止。',
-      ].join('\n'),
-      confirmText: '开始共享',
-    })
-    if (!confirm.confirm) return
-
-    setEmergencyBusy((current) => ({ ...current, [granteeUserId]: true }))
     try {
+      let choice: { tapIndex: number }
+      try {
+        choice = await Taro.showActionSheet({
+          itemList: ['30 分钟', '60 分钟', '180 分钟'],
+        })
+      } catch {
+        return
+      }
+      const duration = ([30, 60, 180] as const)[choice.tapIndex]
+      if (!duration) return
+
+      const confirmed = await confirmSensitiveOperation(
+        emergencyLocationShareConfirmation({
+          memberLabel: `成员 ${shortMemberId(granteeUserId)}`,
+          durationLabel: `${duration} 分钟`,
+        }),
+      )
+      if (!confirmed) return
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
+
+      const [freshFamily, profile] = await Promise.all([getFamily(), getProfile()])
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
+      assertCurrentFamilyMember(freshFamily, profile.id)
+      if (
+        profile.id !== session.owner
+        || !freshFamily.members.some(
+          (item) => item.user_id.toLowerCase() === granteeUserId.toLowerCase(),
+        )
+      ) {
+        setStatus(sensitiveOperationStateChangedMessage)
+        return
+      }
+
       await createFamilyEmergencyShare(granteeUserId, duration)
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
       sensitiveReadEpoch.current.invalidate()
       setEmergencyReads({})
-      if (pageState.phase === 'family-ready') {
-        setEmergencyShares(await getFamilyEmergencyShares(pageState.currentUserId))
+      setEmergencyShares(await getFamilyEmergencyShares(session.owner))
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
       }
       setStatus('紧急位置共享已开启')
     } catch (error) {
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
       setStatus(mappedError(error, 'emergency-share', '紧急位置共享创建失败'))
     } finally {
       setEmergencyBusy((current) => ({ ...current, [granteeUserId]: false }))
@@ -654,15 +798,44 @@ export default function Page() {
   const revokeEmergencyShare = async (shareId: string) => {
     if (emergencyBusy[shareId]) return
     setEmergencyBusy((current) => ({ ...current, [shareId]: true }))
+    const session = captureMutationSession()
+    const attempt = sensitiveMutationEpoch.current.capture()
+    if (!session.owner) {
+      setEmergencyBusy((current) => ({ ...current, [shareId]: false }))
+      return
+    }
+
     try {
+      // Safe-off path: stopping disclosure remains immediate, but the visible share id
+      // is re-bound to current canonical state before revoke.
+      const shares = await getFamilyEmergencyShares(session.owner)
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
+      const current = shares.find(
+        (share) => share.share_id === shareId && share.direction === 'OUTGOING',
+      )
+      if (!current) {
+        setEmergencyShares(shares)
+        setStatus('紧急位置共享已停止')
+        return
+      }
+
       await revokeFamilyEmergencyShare(shareId)
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
       sensitiveReadEpoch.current.invalidate()
       setEmergencyReads({})
-      if (pageState.phase === 'family-ready') {
-        setEmergencyShares(await getFamilyEmergencyShares(pageState.currentUserId))
+      setEmergencyShares(await getFamilyEmergencyShares(session.owner))
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
       }
       setStatus('紧急位置共享已停止')
     } catch (error) {
+      if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
+        return
+      }
       setStatus(mappedError(error, 'emergency-share', '停止紧急位置共享失败'))
     } finally {
       setEmergencyBusy((current) => ({ ...current, [shareId]: false }))
@@ -925,7 +1098,7 @@ export default function Page() {
           <View className='muted'>家庭成员</View>
         </View>
         <View className='summary-item'>
-          <View className='summary-value'>{family.current_user_role}</View>
+          <View className='summary-value'>{familyRoleLabel(family.current_user_role)}</View>
           <View className='muted'>我的身份</View>
         </View>
       </View>
@@ -982,7 +1155,7 @@ export default function Page() {
             <View className='member-header'>
               <View>
                 <View className='card-title member-title'>
-                  {member.role} · 成员 {shortMemberId(member.user_id)} {actions.isSelf ? '（我）' : ''}
+                  {familyRoleLabel(member.role)} · 成员 {shortMemberId(member.user_id)} {actions.isSelf ? '（我）' : ''}
                 </View>
                 <View className='muted'>加入时间：{member.created_at}</View>
               </View>
