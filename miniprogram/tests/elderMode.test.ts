@@ -73,7 +73,7 @@ test('Mini elder mode is profile-driven and Family role never enables it', () =>
 test('elder home only elevates existing production capabilities', () => {
   const home = readFileSync(resolve(process.cwd(), 'src/pages/index/index.tsx'), 'utf8')
 
-  assert.match(home, /switchTab\(\{ url: '\/pages\/capture\/index' \}\)/)
+  assert.match(home, /navigateTo\(\{ url: '\/pages\/capture\/index' \}\)/)
   assert.match(home, /switchTab\(\{ url: '\/pages\/query\/index' \}\)/)
   assert.match(home, /switchTab\(\{ url: '\/pages\/family\/index' \}\)/)
   assert.match(home, /今天去了哪里/)
@@ -84,7 +84,7 @@ test('elder home only elevates existing production capabilities', () => {
 
 test('elder shared CSS keeps minimum logical touch target and same palette tokens', () => {
   const css = readFileSync(resolve(process.cwd(), 'src/app.scss'), 'utf8')
-  assert.match(css, /\.elder-mode[\s\S]*?button[\s\S]*?min-height: 96rpx/)
+  assert.match(css, /\.elder-mode[\s\S]*?button[\s\S]*?min-height: 104rpx/)
   assert.match(css, /\.elder-mode \.primary-button/)
   assert.doesNotMatch(css, /\.elder-mode[\s\S]*?#(?:ff0000|000000)/i)
 })

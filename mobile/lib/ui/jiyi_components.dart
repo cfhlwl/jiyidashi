@@ -9,10 +9,12 @@ class JiYiPageFrame extends StatelessWidget {
     required this.title,
     required this.child,
     this.subtitle,
+    this.hero,
   });
 
   final String title;
   final String? subtitle;
+  final Widget? hero;
   final Widget child;
 
   @override
@@ -26,20 +28,24 @@ class JiYiPageFrame extends StatelessWidget {
         JiYiSpacing.xxl,
       ),
       children: [
-        Text(
-          title,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (subtitle != null) ...[
-          const SizedBox(height: JiYiSpacing.xs),
+        if (hero != null)
+          hero!
+        else ...[
           Text(
-            subtitle!,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            title,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
             ),
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: JiYiSpacing.xs),
+            Text(
+              subtitle!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ],
         const SizedBox(height: JiYiSpacing.xl),
         child,
@@ -259,7 +265,93 @@ class JiYiEmptyState extends StatelessWidget {
   }
 }
 
-// EvidenceCard 只负责可信信息排版，不修改 source/type/time/confidence 的来源或判断规则。
+class JiYiLoadingState extends StatelessWidget {
+  const JiYiLoadingState({super.key, this.message = '正在加载…'});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      liveRegion: true,
+      label: message,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: JiYiSpacing.xl),
+        child: Column(
+          children: [
+            const SizedBox.square(
+              dimension: 28,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class JiYiErrorState extends StatelessWidget {
+  const JiYiErrorState({
+    super.key,
+    required this.title,
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String title;
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return JiYiEmptyState(
+      icon: Icons.error_outline,
+      title: title,
+      message: message,
+      action: OutlinedButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh),
+        label: const Text('重试'),
+      ),
+    );
+  }
+}
+
+class JiYiOfflineState extends StatelessWidget {
+  const JiYiOfflineState({
+    super.key,
+    required this.onRetry,
+    this.message = '暂时无法连接网络。联网后可以重试。',
+  });
+
+  final VoidCallback onRetry;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return JiYiEmptyState(
+      icon: Icons.cloud_off_outlined,
+      title: '当前离线',
+      message: message,
+      action: OutlinedButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh),
+        label: const Text('重新连接'),
+      ),
+    );
+  }
+}
+
+// ReferenceCard 只负责参考记录排版，不修改 source/type/time 的来源或判断规则。
 class JiYiEvidenceCard extends StatelessWidget {
   const JiYiEvidenceCard({
     super.key,
@@ -284,7 +376,7 @@ class JiYiEvidenceCard extends StatelessWidget {
         Icons.fact_check_outlined,
         color: theme.colorScheme.primary,
       ),
-      title: '证据',
+      title: '参考记录',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -297,7 +389,6 @@ class JiYiEvidenceCard extends StatelessWidget {
               _EvidenceMeta(label: '来源', value: source),
               _EvidenceMeta(label: '类型', value: evidenceType),
               _EvidenceMeta(label: '时间', value: occurredAt),
-              _EvidenceMeta(label: '可信度', value: confidence),
             ],
           ),
         ],
@@ -327,6 +418,212 @@ class _EvidenceMeta extends StatelessWidget {
           vertical: JiYiSpacing.xs,
         ),
         child: Text('$label：$value', style: theme.textTheme.bodySmall),
+      ),
+    );
+  }
+}
+
+
+class JiYiHeroHeader extends StatelessWidget {
+  const JiYiHeroHeader({
+    super.key,
+    required this.title,
+    this.eyebrow,
+    this.subtitle,
+    this.icon,
+  });
+
+  final String title;
+  final String? eyebrow;
+  final String? subtitle;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(JiYiRadius.large),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFEEF5FA),
+            Color(0xFFFFF8EF),
+          ],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.xl),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (eyebrow != null) ...[
+                    Text(
+                      eyebrow!,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: JiYiProductColors.brandPrimary,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.sm),
+                  ],
+                  Text(
+                    title,
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: JiYiProductColors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: JiYiSpacing.sm),
+                    Text(
+                      subtitle!,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: JiYiProductColors.textSecondary,
+                        height: 1.55,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (icon != null) ...[
+              const SizedBox(width: JiYiSpacing.md),
+              Icon(
+                icon,
+                size: JiYiIconSize.hero,
+                color: JiYiProductColors.brandPrimary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class JiYiSectionHeader extends StatelessWidget {
+  const JiYiSectionHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: JiYiSpacing.xxs),
+                Text(
+                  subtitle!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+
+class JiYiActionCard extends StatelessWidget {
+  const JiYiActionCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: JiYiProductColors.surface,
+      borderRadius: BorderRadius.circular(JiYiRadius.card),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(JiYiSpacing.lg),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: JiYiProductColors.surfaceSoft,
+                  borderRadius: BorderRadius.circular(JiYiRadius.control),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(JiYiSpacing.sm),
+                  child: Icon(
+                    icon,
+                    color: JiYiProductColors.brandPrimary,
+                    size: JiYiIconSize.medium,
+                  ),
+                ),
+              ),
+              const SizedBox(width: JiYiSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      message,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: JiYiSpacing.sm),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
       ),
     );
   }

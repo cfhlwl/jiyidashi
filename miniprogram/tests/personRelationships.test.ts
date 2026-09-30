@@ -365,7 +365,7 @@ test('component locks explicit create conflict, revision conflict and destructiv
 test('component has explicit text kind choices and no local ranking/inference/traversal', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/components/personRelationships/PersonRelationshipsSection.tsx'), 'utf8')
   assert.match(source, /relationshipKindLabel\(kind\)/)
-  assert.match(source, /添加人物关系/)
+  assert.match(source, /添加关系/)
   assert.match(source, /编辑关系/)
   assert.match(source, /删除关系/)
   assert.doesNotMatch(source, /sort\(|rank|score|frequency|travers|suggest|infer/i)

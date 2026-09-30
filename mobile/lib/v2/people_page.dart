@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'people_models.dart';
 import 'person_detail_page.dart';
@@ -100,7 +101,7 @@ class _PeoplePageState extends State<PeoplePage> {
   Future<void> _createPerson() async {
     final draft = await showDialog<_PersonDraft>(
       context: context,
-      builder: (context) => const _PersonDialog(title: '新建人物'),
+      builder: (context) => const _PersonDialog(title: '添加重要的人'),
     );
     if (draft == null || !mounted) return;
 
@@ -119,7 +120,7 @@ class _PeoplePageState extends State<PeoplePage> {
         note: draft.note,
       );
       if (!_mutationCurrent(operation)) return;
-      setState(() => status = '已创建人物：' + created.displayName);
+      setState(() => status = '已保存：' + created.displayName);
       await continueV2Operation(
         widget.api,
         mutationAuthority,
@@ -148,15 +149,21 @@ class _PeoplePageState extends State<PeoplePage> {
   @override
   Widget build(BuildContext context) {
     return JiYiPageFrame(
-      title: '人物',
-      subtitle: '维护明确的人物、别名、关系和与真实记忆的显式关联。',
+      title: '重要的人',
+      subtitle: '记录生命中重要的人。只有你主动添加的人才会出现在这里。',
+      hero: const JiYiHeroHeader(
+        eyebrow: '迹忆 · 重要的人',
+        title: '重要的人',
+        subtitle: '记录生命中重要的人。只有你主动添加的人才会出现在这里。',
+        icon: Icons.people_outline,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           FilledButton.icon(
             onPressed: mutationFlight.isPending ? null : _createPerson,
             icon: const Icon(Icons.person_add_alt_1),
-            label: const Text('新建人物'),
+            label: const Text('添加重要的人'),
           ),
           if (status != null) ...[
             const SizedBox(height: JiYiSpacing.sm),
@@ -170,16 +177,16 @@ class _PeoplePageState extends State<PeoplePage> {
           else if (people.isEmpty)
             JiYiEmptyState(
               icon: Icons.people_outline,
-              title: '还没有人物',
-              message: '先创建一个人物，再关联真实记忆和关系。',
+              title: '还没有记录重要的人',
+              message: '先添加一个重要的人，再慢慢整理与 TA 有关的记忆和关系。',
               action: OutlinedButton(
                 onPressed: _createPerson,
-                child: const Text('创建人物'),
+                child: const Text('添加重要的人'),
               ),
             )
           else
             V2SectionCard(
-              title: '人物列表',
+              title: '重要的人',
               child: Column(
                 children: [
                   for (final person in people)
@@ -191,7 +198,7 @@ class _PeoplePageState extends State<PeoplePage> {
                       title: Text(person.displayName),
                       subtitle: Text(
                         person.aliases.isEmpty
-                            ? (person.relationshipLabel ?? '未设置关系备注')
+                            ? (person.relationshipLabel ?? '还没有写下你们的关系')
                             : '别名：' + person.aliases.join(' / '),
                       ),
                       trailing: const Icon(Icons.chevron_right),
@@ -203,8 +210,8 @@ class _PeoplePageState extends State<PeoplePage> {
           if (interactions.isNotEmpty) ...[
             const SizedBox(height: JiYiSpacing.md),
             V2SectionCard(
-              title: '最近互动',
-              subtitle: '来自显式 Person ↔ Memory 关联，不做客户端推断。',
+              title: '最近相关的记忆',
+              subtitle: '来自你主动关联的记忆，不会自动推断。',
               child: Column(
                 children: [
                   for (final row in interactions.take(8))
@@ -212,9 +219,7 @@ class _PeoplePageState extends State<PeoplePage> {
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.history),
                       title: Text(row.personDisplayName),
-                      subtitle: Text(
-                        row.link.relationKind + ' · ' + row.occurredAt,
-                      ),
+                      subtitle: Text('记录时间：' + jiyiDisplayDateTime(row.occurredAt)),
                     ),
                 ],
               ),
@@ -266,11 +271,11 @@ class _PersonDialogState extends State<_PersonDialog> {
   void submit() {
     final display = name.text.trim();
     if (display.isEmpty || display.length > 200) {
-      setState(() => error = '人物名称需为 1–200 个字符');
+      setState(() => error = '姓名需为 1–200 个字符');
       return;
     }
     if (relation.text.trim().length > 120 || note.text.trim().length > 5000) {
-      setState(() => error = '关系备注或人物备注过长');
+      setState(() => error = '关系或备注内容过长');
       return;
     }
     Navigator.of(context).pop(
@@ -293,12 +298,12 @@ class _PersonDialogState extends State<_PersonDialog> {
             TextField(
               controller: name,
               maxLength: 200,
-              decoration: const InputDecoration(labelText: '人物名称'),
+              decoration: const InputDecoration(labelText: '姓名'),
             ),
             TextField(
               controller: relation,
               maxLength: 120,
-              decoration: const InputDecoration(labelText: '关系备注（可选）'),
+              decoration: const InputDecoration(labelText: '你们的关系（可选）'),
             ),
             TextField(
               controller: note,

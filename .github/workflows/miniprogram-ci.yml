@@ -82,3 +82,62 @@ jobs:
         env:
           JIYI_API_BASE_URL: https://api.example.invalid/v1
         run: npm run build:weapp
+
+      # UI/UX-001: review-only H5 renderer. These packages are intentionally not
+      # production dependencies and package-lock is not mutated.
+      - name: Install Mini visual-review renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          taro_version="$(node -p "require('@tarojs/cli/package.json').version")"
+          echo "review renderer Taro version: $taro_version"
+
+          review_dir="$RUNNER_TEMP/jiyi-mini-visual-deps"
+          rm -rf "$review_dir"
+          mkdir -p "$review_dir"
+          (
+            cd "$review_dir"
+            npm init -y >/dev/null
+            npm install --no-save --package-lock=false               "@tarojs/components@$taro_version"               "@tarojs/helper@$taro_version"               "@tarojs/plugin-framework-react@$taro_version"               "@tarojs/plugin-platform-h5@$taro_version"               "@tarojs/react@$taro_version"               "@tarojs/router@$taro_version"               "@tarojs/runtime@$taro_version"               "@tarojs/shared@$taro_version"               "@tarojs/taro@$taro_version"               react@18.3.1 react-dom@18.3.1               playwright@1.55.0
+          )
+
+          # Keep the npm-ci production tree untouched. Expose only packages that
+          # do not already exist in the locked Mini install.
+          for package in "$review_dir"/node_modules/@tarojs/*; do
+            name="$(basename "$package")"
+            target="$GITHUB_WORKSPACE/miniprogram/node_modules/@tarojs/$name"
+            if [ ! -e "$target" ]; then
+              ln -s "$package" "$target"
+            fi
+          done
+          for name in playwright playwright-core; do
+            source="$review_dir/node_modules/$name"
+            target="$GITHUB_WORKSPACE/miniprogram/node_modules/$name"
+            if [ -e "$source" ] && [ ! -e "$target" ]; then
+              ln -s "$source" "$target"
+            fi
+          done
+
+      - name: Build Mini visual-review H5
+        env:
+          JIYI_API_BASE_URL: https://api.example.invalid/v1
+        run: npx taro build --type h5
+
+      - name: Install visual-review browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/jiyi-mini-visual-deps/node_modules/.bin/playwright"             install --with-deps chromium
+
+      - name: Capture deterministic Mini visual-review screenshots
+        run: node scripts/capture-visual-review.mjs
+
+      - name: Upload Mini visual-review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini-product-v2-visual-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            miniprogram/visual-artifacts/*.png
+            miniprogram/visual-artifacts/manifest.json
+          if-no-files-found: error
+          retention-days: 14

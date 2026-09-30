@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'life_models.dart';
 import 'v2_api.dart';
@@ -134,11 +135,11 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('跨年时间线')),
+      appBar: AppBar(title: const Text('多年时间线')),
       body: SafeArea(
         child: JiYiPageFrame(
-          title: '跨年时间线',
-          subtitle: '确定性服务端投影；游标是 opaque token，客户端不解析、不重写。',
+          title: '多年时间线',
+          subtitle: '按年份回看你已经记录的人生经历和阶段。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -176,15 +177,9 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
               if (page != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 V2SectionCard(
-                  title: '服务端范围',
+                  title: '时间范围',
                   child: Text(
-                    page!.startYear.toString() +
-                        '–' +
-                        page!.endYear.toString() +
-                        ' · ' +
-                        page!.timezone +
-                        ' · as_of ' +
-                        page!.asOf,
+                    '${page!.startYear}–${page!.endYear} · 截至 ${jiyiDisplayDate(page!.asOf)}',
                   ),
                 ),
               ],
@@ -203,7 +198,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
                                 : Icons.view_timeline_outlined,
                           ),
                           title: Text(item.title),
-                          subtitle: Text(item.kind + ' · ' + item.occurredAt),
+                          subtitle: Text((item.kind == 'LIFE_EVENT' ? '人生经历' : '人生阶段') + ' · ' + jiyiDisplayDateTime(item.occurredAt)),
                         ),
                     ],
                   ),

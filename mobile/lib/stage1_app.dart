@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'account_delete_section.dart';
 import 'api_client.dart';
 import 'location_sampling_coordinator.dart';
+import 'memory_detail_page.dart';
 import 'native_location_bridge.dart';
 import 'native_location_controller.dart';
 import 'native_location_section.dart';
@@ -17,12 +18,16 @@ import 'onboarding_state.dart';
 import 'place_detail_page.dart';
 import 'reminder_page.dart';
 import 'today_footprint_page.dart';
+import 'timeline_models.dart';
+import 'ui/jiyi_format.dart';
 
 // [人工注释][S1-026] AppShell 只接线 Onboarding；首次自动触发仅来自注册成功，老账号不会因缺少本地状态被误判为新用户。
 import 'unified_capture_section.dart';
 import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
+import 'v2/family_page.dart';
+import 'v2/life_page.dart';
 import 'v2/v2_home_page.dart';
 
 class JiYiApp extends StatefulWidget {
@@ -339,7 +344,7 @@ class _AuthPageState extends State<AuthPage> {
                       // [人工注释][S1-FIX-007] 生产构建不渲染开发 API 信息，endpoint 只能由 build-time 配置注入。
                       const SizedBox(height: JiYiSpacing.md),
                       Text(
-                        '当前开发环境 API：${widget.api.baseUrl}',
+                        '当前开发环境服务地址：${widget.api.baseUrl}',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -652,36 +657,47 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final onboarding = _onboarding;
     final onboardingStep = onboarding?.step;
+    final capturePage = CapturePage(
+      api: widget.api,
+      offlineQueue: widget.offlineQueue,
+      sync: _sync,
+      syncGeneration: syncGeneration,
+      onQueueChanged: _queueChanged,
+      elderMode: _elderModeEnabled,
+      onAuthoritativeTextMemorySaved:
+          onboardingStep == OnboardingStep.capture
+              ? onboarding?.authoritativeTextMemorySaved
+              : null,
+    );
+    final memoryPage = MemoryQueryPage(
+      api: widget.api,
+      elderMode: _elderModeEnabled,
+      initialQuestion: onboardingStep == OnboardingStep.retrieve ||
+              onboardingStep == OnboardingStep.trust
+          ? onboarding?.querySeed
+          : null,
+      requiredEvidenceMemoryId: onboardingStep == OnboardingStep.retrieve ||
+              onboardingStep == OnboardingStep.trust
+          ? onboarding?.targetMemoryId
+          : null,
+      onTrustedEvidenceShown: onboardingStep == OnboardingStep.retrieve
+          ? onboarding?.trustedEvidenceShown
+          : null,
+    );
     final pages = <Widget>[
-      TodayPage(api: widget.api, elderMode: _elderModeEnabled),
-      TimelinePage(api: widget.api, elderMode: _elderModeEnabled),
-      CapturePage(
-        api: widget.api,
-        offlineQueue: widget.offlineQueue,
-        sync: _sync,
-        syncGeneration: syncGeneration,
-        onQueueChanged: _queueChanged,
-        elderMode: _elderModeEnabled,
-        onAuthoritativeTextMemorySaved:
-            onboardingStep == OnboardingStep.capture
-                ? onboarding?.authoritativeTextMemorySaved
-                : null,
-      ),
-      MemoryQueryPage(
+      TodayPage(
         api: widget.api,
         elderMode: _elderModeEnabled,
-        initialQuestion: onboardingStep == OnboardingStep.retrieve ||
-                onboardingStep == OnboardingStep.trust
-            ? onboarding?.querySeed
-            : null,
-        requiredEvidenceMemoryId: onboardingStep == OnboardingStep.retrieve ||
-                onboardingStep == OnboardingStep.trust
-            ? onboarding?.targetMemoryId
-            : null,
-        onTrustedEvidenceShown: onboardingStep == OnboardingStep.retrieve
-            ? onboarding?.trustedEvidenceShown
-            : null,
+        onCapture: () {
+          Navigator.of(context).push<void>(
+            MaterialPageRoute(builder: (_) => capturePage),
+          );
+        },
+        onOpenFamily: () => setState(() => index = 3),
       ),
+      memoryPage,
+      LifePage(api: widget.api),
+      FamilyPage(api: widget.api),
       ProfilePage(
         api: widget.api,
         onElderModeChanged: (enabled) {
@@ -709,38 +725,51 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           onComplete: () {
             if (onboarding != null) unawaited(onboarding.complete());
           },
-          child: pages[index],
+          child: onboardingStep == OnboardingStep.capture
+              ? capturePage
+              : pages[index],
         ),
       ),
       // [人工注释][S1-026] 引导进行时由 GuideBar 提供唯一退出入口；隐藏而不是保留“看得见但点不动”的底部导航。
+      floatingActionButton:
+          onboardingStep != null || _accountDeletionIntentActive
+              ? null
+              : FloatingActionButton.extended(
+                  onPressed: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute(builder: (_) => capturePage),
+                    );
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('记一下'),
+                ),
       bottomNavigationBar: onboardingStep != null || _accountDeletionIntentActive
           ? null
           : NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
-        // destination 数量/顺序/索引语义不变，只补充清晰的选中态图标。
-        destinations: [
+        destinations: const [
           NavigationDestination(
-            icon: const Icon(Icons.today_outlined),
-            selectedIcon: const Icon(Icons.today),
-            label: _elderModeEnabled ? '今天去了哪里' : '今天',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.timeline_outlined),
-            selectedIcon: Icon(Icons.timeline),
-            label: '时间轴',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.add_circle_outline),
-            selectedIcon: Icon(Icons.add_circle),
-            label: '记一下',
+            icon: Icon(Icons.today_outlined),
+            selectedIcon: Icon(Icons.today),
+            label: '今天',
           ),
           NavigationDestination(
-            icon: const Icon(Icons.psychology_alt_outlined),
-            selectedIcon: const Icon(Icons.psychology_alt),
-            label: _elderModeEnabled ? '找东西' : '问记忆',
+            icon: Icon(Icons.auto_stories_outlined),
+            selectedIcon: Icon(Icons.auto_stories),
+            label: '记忆',
           ),
-          const NavigationDestination(
+          NavigationDestination(
+            icon: Icon(Icons.route_outlined),
+            selectedIcon: Icon(Icons.route),
+            label: '人生',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.family_restroom_outlined),
+            selectedIcon: Icon(Icons.family_restroom),
+            label: '家庭',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: '我的',
@@ -766,133 +795,373 @@ class TimelinePage extends StatefulWidget {
 }
 
 class _TimelinePageState extends State<TimelinePage> {
-  late Future<List<Map<String, dynamic>>> _places = widget.api.listPlaces();
+  final List<TimelineReadItem> _items = [];
+  String? _nextCursor;
+  String? _error;
+  bool _offline = false;
+  bool _loading = true;
+  bool _loadingMore = false;
+  int _requestEpoch = 0;
+  String? _timezone;
+  String? _day;
 
-  void _retryPlaces() {
-    setState(() => _places = widget.api.listPlaces());
+  @override
+  void initState() {
+    super.initState();
+    _loadInitial();
+  }
+
+  bool _requestCurrent(int epoch, int sessionVersion, String? ownerId) {
+    return mounted &&
+        epoch == _requestEpoch &&
+        widget.api.sessionVersion == sessionVersion &&
+        widget.api.authenticatedUserId == ownerId;
+  }
+
+  Future<void> _loadInitial() async {
+    final epoch = ++_requestEpoch;
+    final sessionVersion = widget.api.sessionVersion;
+    final ownerId = widget.api.authenticatedUserId;
+    setState(() {
+      _loading = true;
+      _offline = false;
+      _error = null;
+    });
+    try {
+      final raw = await widget.api.getTimelineEvents(limit: 30);
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      final page = TimelineReadPage.parse(raw);
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(page.items);
+        _nextCursor = page.nextCursor;
+        _timezone = page.timezone;
+        _day = page.day;
+        _loading = false;
+      });
+    } on TransportException {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loading = false;
+        _offline = true;
+      });
+    } on ProtocolException {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loading = false;
+        _error = '时间线数据暂时无法识别，可以重新加载。';
+      });
+    } on ApiException catch (exc) {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loading = false;
+        _error = exc.statusCode == 401
+            ? '登录状态已失效，请重新登录。'
+            : '时间线暂时无法读取，可以稍后重试。';
+      });
+    } catch (_) {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loading = false;
+        _error = '时间线暂时无法读取，可以稍后重试。';
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final cursor = _nextCursor;
+    if (cursor == null || _loadingMore) return;
+    final epoch = _requestEpoch;
+    final sessionVersion = widget.api.sessionVersion;
+    final ownerId = widget.api.authenticatedUserId;
+    setState(() {
+      _loadingMore = true;
+      _error = null;
+    });
+    try {
+      final raw = await widget.api.getTimelineEvents(
+        limit: 30,
+        cursor: cursor,
+      );
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      final page = TimelineReadPage.parse(raw);
+      if (page.timezone != _timezone || page.day != _day) {
+        throw ProtocolException('时间线分页范围发生变化');
+      }
+      final seen = _items.map((item) => '${item.kind}:${item.id}').toSet();
+      for (final item in page.items) {
+        if (!seen.add('${item.kind}:${item.id}')) {
+          throw ProtocolException('时间线分页包含重复记录');
+        }
+      }
+      setState(() {
+        _items.addAll(page.items);
+        _nextCursor = page.nextCursor;
+        _loadingMore = false;
+      });
+    } on ProtocolException {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loadingMore = false;
+        _error = '更多时间线记录暂时无法验证，请重新加载。';
+      });
+    } on TransportException {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loadingMore = false;
+        _error = '网络连接中断，可以稍后继续加载。';
+      });
+    } catch (_) {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loadingMore = false;
+        _error = '更多时间线记录暂时无法读取。';
+      });
+    }
+  }
+
+  void _openItem(TimelineReadItem item) {
+    if (item.isMemory) {
+      Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => MemoryDetailPage(
+            api: widget.api,
+            memoryId: item.id,
+          ),
+        ),
+      );
+      return;
+    }
+    final placeId = item.placeId;
+    if (placeId == null) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PlaceDetailPage(
+          api: widget.api,
+          placeId: placeId,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return JiYiPageFrame(
-      title: '时间轴',
-      subtitle: '按时间回看已经形成的可信记忆。',
+      title: '时间线',
+      subtitle: '按时间回看已经形成的地点和记忆线索。',
+      hero: const JiYiHeroHeader(
+        eyebrow: '迹忆 · 记忆',
+        title: '时间线',
+        subtitle: '把你记录的事和已经形成的到访按时间串在一起。',
+        icon: Icons.timeline_outlined,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!widget.elderMode) ...[
-            JiYiSectionCard(
-              leading: const Icon(Icons.hub_outlined),
-              title: '个人记忆图谱',
-              subtitle: '人物、关系、人生事件、阶段、跨年历史和回忆录的 V2 产品入口。',
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => V2HomePage(api: widget.api),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('打开个人记忆图谱'),
-              ),
+          if (_loading)
+            const JiYiLoadingState(message: '正在整理时间线…')
+          else if (_offline)
+            JiYiOfflineState(onRetry: _loadInitial)
+          else if (_error != null && _items.isEmpty)
+            JiYiErrorState(
+              title: '时间线暂时不可用',
+              message: _error!,
+              onRetry: _loadInitial,
+            )
+          else if (_items.isEmpty)
+            const JiYiEmptyState(
+              icon: Icons.timeline_outlined,
+              title: '还没有时间线记录',
+              message: '记下一件事或形成到访后，这里会按时间慢慢串起来。',
+            )
+          else ...[
+            const JiYiSectionHeader(
+              title: '最近的记录',
+              subtitle: '按时间从新到旧排列。',
             ),
             const SizedBox(height: JiYiSpacing.md),
+            for (var index = 0; index < _items.length; index++)
+              _TimelineEntry(
+                item: _items[index],
+                isLast: index == _items.length - 1,
+                onTap: () => _openItem(_items[index]),
+              ),
+            if (_error != null) ...[
+              const SizedBox(height: JiYiSpacing.sm),
+              JiYiStatusBanner(
+                kind: JiYiStatusKind.error,
+                message: _error!,
+              ),
+            ],
+            if (_nextCursor != null) ...[
+              const SizedBox(height: JiYiSpacing.md),
+              OutlinedButton.icon(
+                onPressed: _loadingMore ? null : _loadMore,
+                icon: _loadingMore
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.expand_more),
+                label: Text(_loadingMore ? '正在加载…' : '查看更多'),
+              ),
+            ],
           ],
-          const JiYiSectionCard(
-            child: JiYiEmptyState(
-              icon: Icons.route_outlined,
-              title: '自动足迹尚未开放',
-              message: '今日足迹仍由后续 S2-012 实现；这里不提前推断今天去了哪里。',
-            ),
-          ),
-          const SizedBox(height: JiYiSpacing.md),
-          JiYiSectionCard(
-            title: '地点',
-            subtitle: '查看已经形成的地点和 retained Visit 详情。',
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: _places,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(JiYiSpacing.md),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                }
-                if (snapshot.hasError) {
-                  final error = snapshot.error;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      JiYiStatusBanner(
-                        kind: JiYiStatusKind.error,
-                        title: '地点列表读取失败',
-                        message: error is ApiException
-                            ? error.message
-                            : '暂时无法读取地点',
-                      ),
-                      const SizedBox(height: JiYiSpacing.sm),
-                      OutlinedButton(
-                        onPressed: _retryPlaces,
-                        child: const Text('重试'),
-                      ),
-                    ],
-                  );
-                }
-                final places = snapshot.data ?? const <Map<String, dynamic>>[];
-                if (places.isEmpty) {
-                  return const JiYiEmptyState(
-                    icon: Icons.place_outlined,
-                    title: '还没有地点',
-                    message: '形成 retained Visit 后，这里才会出现可查看的地点。',
-                  );
-                }
-                return Column(
-                  children: [
-                    for (var i = 0; i < places.length; i++) ...[
-                      // [人工注释][S2-013] JiYiSectionCard 使用 DecoratedBox；
-                      // ListTile 需要自己的透明 Material 承载 ink，不能让点击反馈被卡片背景遮住。
-                      Material(
-                        type: MaterialType.transparency,
-                        child: ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.place_outlined),
-                          title: Text(
-                            places[i]['name']?.toString() ?? '未命名地点',
-                          ),
-                          subtitle: Text(
-                            places[i]['address']?.toString() ?? '暂无地址信息',
-                          ),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () {
-                            final placeId = places[i]['id']?.toString() ?? '';
-                            if (placeId.isEmpty) return;
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => PlaceDetailPage(
-                                  api: widget.api,
-                                  placeId: placeId,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      if (i != places.length - 1)
-                        const Divider(height: JiYiSpacing.sm),
-                    ],
-                  ],
+          if (!widget.elderMode) ...[
+            const SizedBox(height: JiYiSpacing.lg),
+            JiYiActionCard(
+              icon: Icons.hub_outlined,
+              title: '重要的人和人生故事',
+              message: '查看你记录的重要的人、人生阶段和重要经历。',
+              onTap: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => V2HomePage(api: widget.api),
+                  ),
                 );
               },
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 }
+
+class _TimelineEntry extends StatelessWidget {
+  const _TimelineEntry({
+    required this.item,
+    required this.isLast,
+    required this.onTap,
+  });
+
+  final TimelineReadItem item;
+  final bool isLast;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final occurred = DateTime.parse(item.occurredAt).toLocal();
+    final day = '${occurred.month}月${occurred.day}日';
+    final time = jiyiDisplayTime(item.occurredAt);
+    final title = item.isMemory
+        ? (item.title ?? _timelineMemoryTypeLabel(item.memoryType))
+        : (item.placeName ?? '一次到访');
+    final message = item.isMemory
+        ? (item.content ?? '一段记忆')
+        : (item.visitFinalized == true ? '已形成足迹' : '到访仍在更新');
+    final icon = item.isMemory
+        ? _timelineMemoryIcon(item.memoryType)
+        : Icons.place_outlined;
+
+    return Semantics(
+      button: true,
+      label: '$day $time $title',
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(JiYiRadius.card),
+          onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 70,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: JiYiSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        day,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: JiYiSpacing.xxs),
+                      Text(
+                        time,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: JiYiSpacing.sm),
+              SizedBox(
+                width: 20,
+                child: Column(
+                  children: [
+                    const SizedBox(height: JiYiSpacing.md),
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: theme.colorScheme.surface,
+                          width: 3,
+                        ),
+                      ),
+                    ),
+                    if (!isLast)
+                      Container(
+                        width: 2,
+                        height: 94,
+                        color: theme.colorScheme.outlineVariant,
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: JiYiSpacing.sm),
+              Expanded(
+                child: JiYiSectionCard(
+                  leading: Icon(icon),
+                  title: title,
+                  subtitle: item.placeName != null && item.isMemory
+                      ? item.placeName
+                      : null,
+                  child: Text(
+                    message,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+    );
+  }
+}
+
+String _timelineMemoryTypeLabel(String? value) => switch (value) {
+      'NOTE' => '文字记忆',
+      'VOICE' => '语音记忆',
+      'PHOTO' => '照片记忆',
+      'PLACE' => '地点记忆',
+      'OBJECT_LOCATION' => '物品位置',
+      'REMINDER' => '提醒',
+      'EVENT' => '事件记录',
+      _ => '一段记忆',
+    };
+
+IconData _timelineMemoryIcon(String? value) => switch (value) {
+      'VOICE' => Icons.mic_none_outlined,
+      'PHOTO' => Icons.photo_outlined,
+      'PLACE' => Icons.place_outlined,
+      'OBJECT_LOCATION' => Icons.inventory_2_outlined,
+      _ => Icons.auto_stories_outlined,
+    };
 
 class CapturePage extends StatefulWidget {
   const CapturePage({
@@ -1038,7 +1307,7 @@ class _CapturePageState extends State<CapturePage> {
       if (current.status == OfflineQueueStatus.completed) {
         titleController.clear();
         contentController.clear();
-        setState(() => result = '✓ 已记住 · ${current.serverResourceId}');
+        setState(() => result = '✓ 已记住');
         // Onboarding may advance only after the outbox has received an authoritative
         // server resource id. Local-only queued data cannot be queried yet.
         widget.onAuthoritativeTextMemorySaved?.call(
@@ -1079,7 +1348,7 @@ class _CapturePageState extends State<CapturePage> {
       if (current.status == OfflineQueueStatus.completed) {
         objectController.clear();
         locationController.clear();
-        setState(() => result = '✓ 已记录当前位置 · ${current.serverResourceId}');
+        setState(() => result = '✓ 已记录当前位置');
       } else if (current.status == OfflineQueueStatus.failed && current.retryable) {
         objectController.clear();
         locationController.clear();
@@ -1402,7 +1671,7 @@ class _MemoryEditDialogState extends State<_MemoryEditDialog> {
             ),
             const SizedBox(height: JiYiSpacing.xs),
             Text(
-              '编辑会保留原始 Evidence；正文修改会记录为新的用户修正来源。',
+              '编辑会保留原始记录；正文修改会标记为你的后续修正。',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -1424,6 +1693,29 @@ class _MemoryEditDialogState extends State<_MemoryEditDialog> {
     );
   }
 }
+
+String _queryCertaintyLabel(String value) => switch (value) {
+      'confirmed' => '明确记录',
+      'evidence' => '有相关记录',
+      _ => '没有足够记录',
+    };
+
+String _queryIntentLabel(String value) => switch (value) {
+      'FIND_OBJECT' => '查找物品',
+      'RECALL_EVENT' => '回忆一件事',
+      'FIND_PLACE' => '查找地点',
+      'FIND_PERSON' => '查找人物',
+      _ => '查找记忆',
+    };
+
+String _queryEvidenceKindLabel(String value) => switch (value) {
+      'OBJECT_LOCATION' => '物品位置',
+      'MEMORY' => '记忆',
+      'PLACE' => '地点记录',
+      'PHOTO' => '照片记录',
+      'VOICE' => '语音记录',
+      _ => '相关记录',
+    };
 
 class MemoryQueryPage extends StatefulWidget {
   const MemoryQueryPage({
@@ -1581,7 +1873,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     if (!mounted) return;
     final revision = memory['edit_revision'];
     if (revision is! int || revision < 0) {
-      setState(() => error = '服务端返回的记忆版本不正确，请重新查询后再试');
+      setState(() => error = '这条记忆刚刚发生了变化，请重新查询后再试');
       return;
     }
 
@@ -1611,7 +1903,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       if (!mounted) return;
       setState(() {
         result = refreshed;
-        actionMessage = '✓ 记忆已更新；原始 Evidence 与编辑记录均已保留';
+        actionMessage = '✓ 记忆已更新，原始记录仍然保留';
       });
     } on ApiException catch (exc) {
       if (!mounted) return;
@@ -1625,6 +1917,19 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     } finally {
       if (mounted) setState(() => loading = false);
     }
+  }
+
+  Future<void> openFirstMemoryDetail() async {
+    final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
+    if (ids.isEmpty || !mounted) return;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => MemoryDetailPage(
+          api: widget.api,
+          memoryId: ids.first.toString(),
+        ),
+      ),
+    );
   }
 
   Future<void> createReminderForFirstMemory() async {
@@ -1717,17 +2022,27 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     final memoryIds = (result?['memory_ids'] as List<dynamic>? ?? const []);
     final canAnswer = result?['can_answer'] == true;
     final answer = result?['answer']?.toString() ?? '';
-    final certainty = result?['certainty']?.toString() ?? '未知';
-    final intent = result?['intent']?.toString() ?? '未知';
+    final certainty = result?['certainty']?.toString() ?? 'unknown';
+    final intent = result?['intent']?.toString() ?? '';
+    final certaintyLabel = _queryCertaintyLabel(certainty);
+    final intentLabel = _queryIntentLabel(intent);
     // FIND_OBJECT 的 backing Memory 受结构化 ObjectLocation 状态约束，
     // 通用编辑会被后端拒绝，因此 UI 直接隐藏编辑入口而不是让用户走到 409。
     final canEditFirstMemory = memoryIds.isNotEmpty && intent != 'FIND_OBJECT';
 
     return JiYiPageFrame(
-      title: widget.elderMode ? '我想找东西' : '问记忆',
+      title: widget.elderMode ? '我想找东西' : '记忆',
       subtitle: widget.elderMode
           ? '只从你自己的可信记录里找；没有可靠记录时，我不会猜。'
-          : '从你自己的记录里查找；答案会把依据一起展示出来。',
+          : '从自己的记录里找回过去发生的事；找不到时不会猜。',
+      hero: widget.elderMode
+          ? null
+          : const JiYiHeroHeader(
+              eyebrow: '迹忆 · 记忆',
+              title: '记忆',
+              subtitle: '从自己的记录里查找过去，也可以打开时间线慢慢回看。',
+              icon: Icons.auto_stories_outlined,
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1767,12 +2082,30 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                         )
                       : const Icon(Icons.manage_search_outlined),
                   label: Text(
-                    loading ? '查找中…' : (widget.elderMode ? '帮我找' : '从我的记忆里查找'),
+                    loading ? '查找中…' : (widget.elderMode ? '帮我找' : '从我的记录里找'),
                   ),
                 ),
               ],
             ),
           ),
+          if (!widget.elderMode) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            JiYiActionCard(
+              icon: Icons.timeline_outlined,
+              title: '时间线',
+              message: '按时间查看已经形成的地点和记录。',
+              onTap: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => TimelinePage(
+                      api: widget.api,
+                      elderMode: widget.elderMode,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
           if (error != null) ...[
             const SizedBox(height: JiYiSpacing.md),
             JiYiStatusBanner(
@@ -1821,18 +2154,17 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                     ),
                   ],
                   const SizedBox(height: JiYiSpacing.sm),
-                  // certainty / intent 不被 UI 重新推断；这里只把服务端原值放入有标签的 Chip，避免弱化可信状态。
                   Wrap(
                     spacing: JiYiSpacing.xs,
                     runSpacing: JiYiSpacing.xs,
                     children: [
                       Chip(
                         avatar: const Icon(Icons.verified_outlined, size: 18),
-                        label: Text('可信状态：$certainty'),
+                        label: Text(certaintyLabel),
                       ),
                       Chip(
                         avatar: const Icon(Icons.category_outlined, size: 18),
-                        label: Text('识别意图：$intent'),
+                        label: Text(intentLabel),
                       ),
                     ],
                   ),
@@ -1844,7 +2176,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               Text('为什么这么回答', style: theme.textTheme.titleMedium),
               const SizedBox(height: JiYiSpacing.xs),
               Text(
-                '下面是这次回答实际使用的证据。',
+                '下面是这次回答参考的记录。',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -1864,9 +2196,11 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   child: JiYiEvidenceCard(
                     excerpt: e['excerpt']?.toString() ?? '',
                     source: displayedSource,
-                    evidenceType: e['kind']?.toString() ?? '未知',
-                    occurredAt: e['occurred_at']?.toString() ?? '未知',
-                    confidence: e['confidence']?.toString() ?? '未知',
+                    evidenceType: _queryEvidenceKindLabel(
+                      e['kind']?.toString() ?? '',
+                    ),
+                    occurredAt: e['occurred_at']?.toString() ?? '时间未知',
+                    confidence: '',
                   ),
                 );
               }),
@@ -1875,8 +2209,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               // 若服务端声称可回答却没有可展示 Evidence，UI 明确暴露该异常事实，不用美化层隐藏。
               const JiYiStatusBanner(
                 kind: JiYiStatusKind.warning,
-                title: '没有可展示的证据',
-                message: '这次响应没有返回 Evidence，请谨慎使用这个答案。',
+                title: '没有可展示的参考记录',
+                message: '这次没有返回可查看的参考记录，请谨慎使用这个答案。',
               ),
             ],
             if (memoryIds.isNotEmpty) ...[
@@ -1887,10 +2221,17 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   color: theme.colorScheme.error,
                 ),
                 title: '管理这条记忆',
-                subtitle: '可设置一次性提醒；编辑保留原始 Evidence，删除会影响后续检索。',
+                subtitle: '可设置提醒；编辑会保留原始记录，删除会影响后续查找。',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    FilledButton.tonalIcon(
+                      key: const ValueKey('memory-detail-open'),
+                      onPressed: loading ? null : openFirstMemoryDetail,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('查看完整记忆'),
+                    ),
+                    const SizedBox(height: JiYiSpacing.sm),
                     FilledButton.tonalIcon(
                       key: const ValueKey('memory-reminder-open'),
                       onPressed: loading ? null : createReminderForFirstMemory,
@@ -2097,7 +2438,7 @@ class ProfilePage extends StatelessWidget {
                     color: theme.colorScheme.primary,
                   ),
                   title: '新手引导',
-                  subtitle: '随时重新体验“记住、找回、查看 Evidence”，不会创建演示数据。',
+                  subtitle: '随时重新体验“记住、找回、查看依据”，不会创建演示数据。',
                   child: OutlinedButton.icon(
                     key: const ValueKey('profile-restart-onboarding'),
                     onPressed: onStartOnboarding,

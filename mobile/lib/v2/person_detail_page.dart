@@ -4,12 +4,29 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'graph_page.dart';
 import 'people_models.dart';
 import 'v2_api.dart';
 import 'v2_authority.dart';
 import 'v2_widgets.dart';
+
+String _personMemoryRelationLabel(String kind) {
+  return kind == 'MET' ? '见过 / 互动过' : '相关';
+}
+
+String _relationshipKindLabel(String kind, String? customLabel) {
+  final custom = customLabel?.trim();
+  if (custom != null && custom.isNotEmpty) return custom;
+  return switch (kind) {
+    'FAMILY' => '家人',
+    'FRIEND' => '朋友',
+    'COLLEAGUE' => '同事',
+    'CLASSMATE' => '同学',
+    _ => '其他关系',
+  };
+}
 
 class PersonDetailPage extends StatefulWidget {
   const PersonDetailPage({
@@ -220,7 +237,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     if (current == null) return;
     final ok = await _confirm(
       '删除人物？',
-      '将删除“' + current.displayName + '”及其人物关联。明确的 Memory 本身不会因此删除。',
+      '将删除“' + current.displayName + '”及其人物关联。原有记忆本身不会因此删除。',
       '删除',
     );
     if (!ok || !mounted) return;
@@ -241,7 +258,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         .where((item) => !linked.contains(item.id.toLowerCase()))
         .toList(growable: false);
     if (choices.isEmpty) {
-      setState(() => status = '没有可继续关联的明确 Memory');
+      setState(() => status = '没有可继续关联的记忆');
       return;
     }
     final draft = await showDialog<_MemoryLinkDraft>(
@@ -281,7 +298,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   Future<void> _unlinkMemory(V2PersonMemoryTimelineRow row) async {
     final ok = await _confirm(
       '取消记忆关联？',
-      '只删除人物与这条 Memory 的显式关系，不删除 Memory。',
+      '只取消这个人与这条记忆的关联，不会删除原记忆。',
       '取消关联',
     );
     if (!ok || !mounted) return;
@@ -411,11 +428,11 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   Widget build(BuildContext context) {
     final current = person;
     return Scaffold(
-      appBar: AppBar(title: Text(current?.displayName ?? '人物详情')),
+      appBar: AppBar(title: Text(current?.displayName ?? '重要的人')),
       body: SafeArea(
         child: JiYiPageFrame(
-          title: current?.displayName ?? '人物详情',
-          subtitle: '人物、别名、Memory 与关系都来自服务端明确记录，不从名称或时间自动推断。',
+          title: current?.displayName ?? '重要的人',
+          subtitle: '这里展示你主动记录的资料、关系和相关记忆，不会自动猜测。',
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null && current == null
@@ -445,11 +462,11 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
           const SizedBox(height: JiYiSpacing.sm),
         ],
         V2SectionCard(
-          title: '人物资料',
+          title: '基本信息',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              V2KeyValue(label: '关系备注', value: current.relationshipLabel ?? '未设置'),
+              V2KeyValue(label: '你们的关系', value: current.relationshipLabel ?? '未填写'),
               V2KeyValue(
                 label: '别名',
                 value: current.aliases.isEmpty ? '无' : current.aliases.join(' / '),
@@ -463,17 +480,17 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
                   OutlinedButton.icon(
                     onPressed: mutationFlight.isPending ? null : _editPerson,
                     icon: const Icon(Icons.edit_outlined),
-                    label: const Text('编辑人物'),
+                    label: const Text('编辑资料'),
                   ),
                   OutlinedButton.icon(
                     onPressed: _openGraph,
                     icon: const Icon(Icons.hub_outlined),
-                    label: const Text('关系图谱'),
+                    label: const Text('相关的人和事'),
                   ),
                   TextButton.icon(
                     onPressed: mutationFlight.isPending ? null : _deletePerson,
                     icon: const Icon(Icons.delete_outline),
-                    label: const Text('删除人物'),
+                    label: const Text('删除这个人'),
                   ),
                 ],
               ),
@@ -484,27 +501,29 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         _durationCard(),
         const SizedBox(height: JiYiSpacing.md),
         V2SectionCard(
-          title: '关联记忆',
-          subtitle: '只关联当前账号已有的明确 Memory；不会输入自由 UUID。',
+          title: '关于 TA 的记忆',
+          subtitle: '只显示你主动关联的记忆，不会自动推断。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               OutlinedButton.icon(
                 onPressed: mutationFlight.isPending ? null : _linkMemory,
                 icon: const Icon(Icons.add_link),
-                label: const Text('关联 Memory'),
+                label: const Text('关联已有记忆'),
               ),
               if (memories.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: JiYiSpacing.sm),
-                  child: Text('还没有关联 Memory。'),
+                  child: Text('还没有关联记忆。'),
                 ),
               for (final row in memories)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(row.memoryTitle ?? row.memoryContent),
                   subtitle: Text(
-                    row.link.relationKind + ' · ' + row.occurredAt,
+                    _personMemoryRelationLabel(row.link.relationKind) +
+                        ' · ' +
+                        jiyiDisplayDateTime(row.occurredAt),
                   ),
                   trailing: PopupMenuButton<String>(
                     onSelected: (value) {
@@ -537,27 +556,30 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         ),
         const SizedBox(height: JiYiSpacing.md),
         V2SectionCard(
-          title: '人物关系',
-          subtitle: '不根据姓名、别名或共同出现自动创建关系。',
+          title: '你们的关系',
+          subtitle: '只显示你主动维护的人际关系，不会根据姓名、别名或共同出现自动创建。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               OutlinedButton.icon(
                 onPressed: mutationFlight.isPending ? null : _createRelationship,
                 icon: const Icon(Icons.group_add_outlined),
-                label: const Text('建立人物关系'),
+                label: const Text('添加关系'),
               ),
               if (relationships.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: JiYiSpacing.sm),
-                  child: Text('还没有人物关系。'),
+                  child: Text('还没有记录关系。'),
                 ),
               for (final relation in relationships)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(relation.otherPersonName),
                   subtitle: Text(
-                    (relation.customLabel ?? relation.kind) +
+                    _relationshipKindLabel(
+                          relation.kind,
+                          relation.customLabel,
+                        ) +
                         (relation.note == null ? '' : ' · ' + relation.note!),
                   ),
                   trailing: PopupMenuButton<String>(
@@ -594,18 +616,18 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       message = '至少 ' +
           value.elapsedDays.toString() +
           ' 天，从 ' +
-          (value.atLeastSinceAt ?? '') +
-          ' 起有可信“见过”证据。';
+          jiyiDisplayDate(value.atLeastSinceAt ?? '') +
+          ' 起有明确“见过”记录。';
     } else if (value.status == 'RELATED_EVIDENCE_ONLY') {
-      message = '有相关记录，但没有可信“见过”起点，不估算认识时长。';
+      message = '有相关记录，但没有明确“见过”起点，不估算认识时长。';
     } else if (value.status == 'EVIDENCE_INCOMPLETE') {
-      message = '相关证据不完整，暂不估算认识时长。';
+      message = '相关记录不完整，暂不估算认识时长。';
     } else {
-      message = '还没有足够可靠的认识时间证据。';
+      message = '还没有足够可靠的认识时间记录。';
     }
     return V2SectionCard(
       title: '认识时长',
-      subtitle: '这是确定性服务端投影，不是 AI 推断。',
+      subtitle: '根据你已有的明确记录计算，不由 AI 猜测。',
       child: Text(message),
     );
   }
@@ -688,13 +710,13 @@ class _PersonEditDialogState extends State<_PersonEditDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('编辑人物'),
+      title: const Text('编辑资料'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: name, decoration: const InputDecoration(labelText: '名称')),
-            TextField(controller: relation, decoration: const InputDecoration(labelText: '关系备注')),
+            TextField(controller: name, decoration: const InputDecoration(labelText: '姓名')),
+            TextField(controller: relation, decoration: const InputDecoration(labelText: '你们的关系')),
             TextField(
               controller: aliases,
               minLines: 2,
@@ -745,13 +767,13 @@ class _MemoryLinkDialogState extends State<_MemoryLinkDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('关联 Memory'),
+      title: const Text('关联已有记忆'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           DropdownButtonFormField<String>(
             initialValue: memoryId,
-            decoration: const InputDecoration(labelText: 'Memory'),
+            decoration: const InputDecoration(labelText: '记忆'),
             items: [
               for (final item in widget.choices)
                 DropdownMenuItem(

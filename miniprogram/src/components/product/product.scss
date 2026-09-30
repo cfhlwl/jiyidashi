@@ -1,0 +1,124 @@
+@import '../../styles/tokens';
+
+.product-hero {
+  margin: 4rpx 0 $jiyi-space-6;
+  padding: $jiyi-space-5 $jiyi-space-4;
+  border-radius: $jiyi-radius-large;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(242, 191, 132, 0.28), transparent 34%),
+    linear-gradient(145deg, #eef5fa 0%, #fff8ef 100%);
+}
+
+.product-hero-eyebrow {
+  display: block;
+  margin-bottom: $jiyi-space-2;
+  color: $jiyi-action-primary;
+  font-size: 24rpx;
+  font-weight: 600;
+  letter-spacing: 2rpx;
+}
+
+.product-hero-title {
+  color: $jiyi-text-primary;
+  font-size: 58rpx;
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: -1rpx;
+}
+
+.product-hero-subtitle {
+  margin-top: $jiyi-space-2;
+  color: $jiyi-text-secondary;
+  font-size: 29rpx;
+  line-height: 1.65;
+}
+
+.product-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: $jiyi-space-3;
+  margin: $jiyi-space-6 0 $jiyi-space-3;
+}
+
+.product-section-copy { min-width: 0; flex: 1; }
+.product-section-title { color: $jiyi-text-primary; font-size: 36rpx; font-weight: 700; line-height: 1.35; }
+.product-section-subtitle { display: block; margin-top: 8rpx; color: $jiyi-text-secondary; font-size: 27rpx; line-height: 1.55; }
+
+.product-section-action {
+  width: auto;
+  min-height: 64rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  border-radius: $jiyi-radius-pill;
+  background: $jiyi-action-secondary;
+  color: $jiyi-action-primary;
+  font-size: 26rpx;
+  line-height: 64rpx;
+}
+
+.product-ai-disclosure {
+  display: flex;
+  align-items: flex-start;
+  gap: $jiyi-space-2;
+  padding: $jiyi-space-3;
+  border-radius: $jiyi-radius-control;
+  background: rgba(116, 103, 167, 0.10);
+  color: $jiyi-text-primary;
+}
+
+.product-ai-mark {
+  flex: 0 0 auto;
+  padding: 4rpx 12rpx;
+  border-radius: $jiyi-radius-pill;
+  background: rgba(116, 103, 167, 0.16);
+  color: $jiyi-ai;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.product-ai-title { color: $jiyi-ai; font-size: 28rpx; font-weight: 700; }
+.product-ai-detail { display: block; margin-top: 6rpx; color: $jiyi-text-secondary; font-size: 26rpx; line-height: 1.55; }
+
+.product-state {
+  padding: $jiyi-space-4;
+  border-radius: $jiyi-radius-card;
+  background: $jiyi-surface-soft;
+}
+.product-state-success { background: rgba(57, 119, 90, 0.10); }
+.product-state-warning { background: rgba(169, 101, 24, 0.11); }
+.product-state-error { background: rgba(180, 35, 24, 0.09); }
+.product-state-title { font-size: 32rpx; font-weight: 700; }
+.product-state-message { display: block; margin-top: $jiyi-space-1; color: $jiyi-text-secondary; line-height: 1.6; }
+.product-state-action { margin-top: $jiyi-space-3; }
+
+.floating-capture-shell {
+  position: fixed;
+  right: 28rpx;
+  bottom: calc(150rpx + env(safe-area-inset-bottom));
+  z-index: 80;
+}
+
+.floating-capture-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  width: 174rpx;
+  min-height: 88rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  border: 0;
+  border-radius: $jiyi-radius-pill;
+  background: $jiyi-action-primary;
+  box-shadow: 0 16rpx 34rpx rgba(53, 106, 154, 0.26);
+  color: #ffffff;
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 88rpx;
+}
+
+.floating-capture-action::after { border: 0; }
+.floating-capture-plus { flex: 0 0 auto; font-size: 38rpx; font-weight: 400; line-height: 1; }
+.floating-capture-label { flex: 0 0 auto; white-space: nowrap; line-height: 1; }
+.floating-capture-elder .floating-capture-action { width: 206rpx; min-height: 104rpx; font-size: 34rpx; line-height: 104rpx; }

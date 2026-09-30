@@ -165,7 +165,7 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
                           contentPadding: EdgeInsets.zero,
                           title: Text(stage.title),
                           subtitle: Text(
-                            (lifeStageLabels[stage.kind] ?? stage.kind) +
+                            (lifeStageLabels[stage.kind] ?? '其他阶段') +
                                 ' · ' +
                                 stage.startedAt +
                                 ' → ' +

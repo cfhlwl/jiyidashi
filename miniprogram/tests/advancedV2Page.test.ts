@@ -18,11 +18,11 @@ test('Mini navigation exposes one coherent Life area, not seven home buttons', (
   assert.match(appConfig, /pages\/life\/index/)
   assert.match(todayPage, /打开人生/)
   assert.match(todayPage, /\/pages\/life\/index/)
-  assert.match(lifePage, /人生事件/)
+  assert.match(lifePage, /人生经历/)
   assert.match(lifePage, /人生阶段/)
   assert.match(lifePage, /多年时间线/)
-  assert.match(lifePage, /年度电子回忆录/)
-  assert.match(lifePage, /人生回忆录/)
+  assert.match(lifePage, /年度回顾/)
+  assert.match(lifePage, /人生故事/)
 })
 
 test('all seven flows use canonical current APIs', () => {
@@ -89,15 +89,16 @@ test('LifeStage links only existing loaded events and never auto-links by simila
 })
 
 test('destructive event/stage/unlink actions use existing explicit modal confirmation', () => {
-  assert.match(lifePage, /title: '删除人生事件？'/)
+  assert.match(lifePage, /title: '删除人生经历？'/)
   assert.match(lifePage, /title: '删除人生阶段？'/)
-  assert.match(lifePage, /title: '取消证据关联？'/)
-  assert.match(lifePage, /title: '取消事件关联？'/)
+  assert.match(lifePage, /title: '取消相关记录关联？'/)
+  assert.match(lifePage, /title: '取消经历关联？'/)
   assert.doesNotMatch(lifePage, /SEC-014/)
 })
 
 test('deterministic surfaces do not consume AI presentation labels', () => {
-  assert.match(lifePage, /这是服务端确定性投影，不是 AI 推断/)
+  assert.match(lifePage, /按时间回看跨年的重要经历和人生阶段/)
+  assert.doesNotMatch(lifePage, /服务端确定性投影|游标按原值续传|服务端范围：/)
   assert.match(knownDuration, /不会根据人物创建时间、别名或关系记录猜测/)
   assert.doesNotMatch(knownDuration, /AI 推断|reasoningPresentation|annualNarrativePresentation/)
   assert.match(personDetail, /PersonKnownDurationSection/)

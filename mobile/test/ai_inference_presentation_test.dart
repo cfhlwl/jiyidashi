@@ -10,7 +10,7 @@ void main() {
     ]) {
       final presentation = summaryAiPresentation(status);
       expect(presentation.state, AiPresentationState.inferred);
-      expect(presentation.label, 'AI 推断（有证据支持）');
+      expect(presentation.label, 'AI 整理');
     }
   });
 

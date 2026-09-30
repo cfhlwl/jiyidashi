@@ -112,7 +112,7 @@ class OnboardingIntroPage extends StatelessWidget {
               _IntroItem(
                 icon: Icons.fact_check_outlined,
                 title: '3. 看清回答为什么可信',
-                message: '查看这次回答实际使用的来源、时间和 Evidence。',
+                message: '查看这次回答实际使用的来源和时间。',
               ),
             ],
           ),
@@ -204,12 +204,12 @@ class OnboardingGuideBar extends StatelessWidget {
       OnboardingStep.retrieve => (
           2 / 3,
           '第 2 步 · 把刚才的记忆找回来',
-          '刚才记录的正文已经带入查询。点“从我的记忆里查找”，看看服务端能否找到真实记录。',
+          '刚才记录的正文已经带入查询。点“从我的记录里找”，看看服务端能否找到真实记录。',
         ),
       OnboardingStep.trust => (
           1.0,
           '第 3 步 · 看懂为什么可信',
-          '下面仍是刚才真实查询的结果。找到“为什么这么回答”，看看来源、时间和 Evidence，再完成引导。',
+          '下面仍是刚才真实查询的结果。找到“为什么这么回答”，看看来源和时间，再完成引导。',
         ),
       OnboardingStep.intro => throw StateError('Intro uses OnboardingIntroPage'),
     };

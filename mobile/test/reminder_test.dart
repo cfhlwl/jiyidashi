@@ -162,7 +162,7 @@ void main() {
     );
 
     await tester.enterText(find.byType(TextField).first, '交材料');
-    await tester.tap(find.text('从我的记忆里查找'));
+    await tester.tap(find.text('从我的记录里找'));
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.byKey(const ValueKey('memory-reminder-open')));
@@ -210,7 +210,7 @@ void main() {
     );
 
     await tester.enterText(find.byType(TextField).first, '交材料');
-    await tester.tap(find.text('从我的记忆里查找'));
+    await tester.tap(find.text('从我的记录里找'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('memory-reminder-open')));
     await tester.pumpAndSettle();

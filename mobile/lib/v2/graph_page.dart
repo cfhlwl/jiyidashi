@@ -10,6 +10,26 @@ import 'v2_api.dart';
 import 'v2_authority.dart';
 import 'v2_widgets.dart';
 
+String _graphNodeLabel(String kind) {
+  return switch (kind) {
+    'PERSON' => '重要的人',
+    'PLACE' => '地点',
+    'OBJECT' => '物品',
+    'EVENT' => '人生经历',
+    _ => '相关内容',
+  };
+}
+
+String _graphEdgeLabel(String kind) {
+  return switch (kind) {
+    'PERSON_RELATIONSHIP' => '你们的关系',
+    'PERSON_EVENT' => '人物与经历',
+    'OBJECT_PLACE' => '物品与地点',
+    'EVENT_PLACE' => '经历与地点',
+    _ => '相关',
+  };
+}
+
 class GraphNeighborhoodPage extends StatefulWidget {
   const GraphNeighborhoodPage({
     super.key,
@@ -97,11 +117,11 @@ class _GraphNeighborhoodPageState extends State<GraphNeighborhoodPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title + ' · 关系图谱')),
+      appBar: AppBar(title: Text(widget.title + ' · 相关的人和事')),
       body: SafeArea(
         child: JiYiPageFrame(
-          title: '关系图谱',
-          subtitle: '只展示服务端返回的 bounded neighborhood；不会在客户端补造节点或关系。',
+          title: '相关的人和事',
+          subtitle: '查看与当前内容直接相关的人、地点、物品和经历。',
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null
@@ -124,28 +144,28 @@ class _GraphView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         V2SectionCard(
-          title: '中心',
+          title: '当前内容',
           child: ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.hub_outlined),
             title: Text(graph.center.label),
-            subtitle: Text(graph.center.kind),
+            subtitle: Text(_graphNodeLabel(graph.center.kind)),
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
         V2SectionCard(
-          title: '节点',
-          subtitle: graph.truncated ? '结果已按服务端边界截断' : '完整返回当前 bounded neighborhood',
+          title: '相关内容',
+          subtitle: graph.truncated ? '这里只显示部分直接相关内容' : '显示当前直接相关内容',
           child: Wrap(
             spacing: JiYiSpacing.sm,
             runSpacing: JiYiSpacing.sm,
             children: [
               for (final node in graph.nodes)
                 Semantics(
-                  label: '图谱节点：' + node.label + '，类型 ' + node.kind,
+                  label: '相关内容：' + node.label + '，' + _graphNodeLabel(node.kind),
                   child: Chip(
                     avatar: const Icon(Icons.circle_outlined, size: 18),
-                    label: Text(node.label + ' · ' + node.kind),
+                    label: Text(node.label + ' · ' + _graphNodeLabel(node.kind)),
                   ),
                 ),
             ],
@@ -153,17 +173,17 @@ class _GraphView extends StatelessWidget {
         ),
         const SizedBox(height: JiYiSpacing.md),
         V2SectionCard(
-          title: '关系',
+          title: '关联方式',
           child: Column(
             children: [
               if (graph.edges.isEmpty)
-                const Text('当前没有服务端可见关系。'),
+                const Text('当前没有可展示的相关内容。'),
               for (final edge in graph.edges)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.link),
                   title: Text(edge.source.label + ' → ' + edge.target.label),
-                  subtitle: Text(edge.kind),
+                  subtitle: Text(_graphEdgeLabel(edge.kind)),
                 ),
             ],
           ),

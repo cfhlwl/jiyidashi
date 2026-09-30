@@ -18,6 +18,47 @@ abstract final class JiYiRadius {
   static const double control = 12;
   static const double card = 16;
   static const double large = 24;
+  static const double sheet = 28;
+  static const double pill = 999;
+}
+
+// Product Experience V2 visual tokens. These complement Material ColorScheme without
+// changing existing authority/state behavior.
+abstract final class JiYiProductColors {
+  static const Color brandPrimary = Color(0xFF356A9A);
+  static const Color brandSecondary = Color(0xFF6F7F91);
+  static const Color background = Color(0xFFF7F4EE);
+  static const Color surface = Color(0xFFFFFDF9);
+  static const Color surfaceElevated = Color(0xFFFFFFFF);
+  static const Color surfaceSoft = Color(0xFFEEF3F7);
+  static const Color textPrimary = Color(0xFF1D2732);
+  static const Color textSecondary = Color(0xFF5E6975);
+  static const Color textTertiary = Color(0xFF7A8590);
+  static const Color border = Color(0xFFDCE3E8);
+  static const Color divider = Color(0xFFE8EDF0);
+  static const Color aiAssisted = Color(0xFF7467A7);
+  static const Color family = Color(0xFF7A6395);
+  static const Color location = Color(0xFFBD7544);
+  static const Color media = Color(0xFF4F7D69);
+}
+
+abstract final class JiYiIconSize {
+  static const double small = 18;
+  static const double medium = 24;
+  static const double large = 32;
+  static const double hero = 40;
+}
+
+abstract final class JiYiTapTarget {
+  static const double normal = 48;
+  static const double elder = 56;
+}
+
+abstract final class JiYiMotion {
+  static const Duration fast = Duration(milliseconds: 140);
+  static const Duration standard = Duration(milliseconds: 220);
+  static const Duration emphasized = Duration(milliseconds: 320);
+  static const Curve easing = Curves.easeOutCubic;
 }
 
 // Material ColorScheme 没有 success/warning/info 三类产品状态色；

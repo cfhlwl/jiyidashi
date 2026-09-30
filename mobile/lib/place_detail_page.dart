@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'ui/jiyi_components.dart';
+import 'ui/jiyi_format.dart';
 import 'ui/jiyi_tokens.dart';
 
 // 地点详情只消费服务端权威 Place/Visit read model；客户端负责严格解析与展示，不重算命名优先级或 Visit 可信状态。
@@ -97,6 +98,22 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     return '地点详情读取失败';
   }
 
+  String? _placeCategoryLabel(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    return switch (value) {
+      'HOME' => '家',
+      'OFFICE' => '办公室',
+      'CAFE' => '咖啡店',
+      'RESTAURANT' => '餐厅',
+      'SHOP' => '商店',
+      'SCHOOL' => '学校',
+      'HOSPITAL' => '医院',
+      'PARK' => '公园',
+      'STATION' => '车站',
+      _ => '其他地点',
+    };
+  }
+
   String _text(String? value, {String fallback = '—'}) {
     final normalized = value?.trim() ?? '';
     return normalized.isEmpty ? fallback : normalized;
@@ -179,25 +196,25 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_line('类型', place.category)),
+                    Text(_line('类型', _placeCategoryLabel(place.category))),
                     const SizedBox(height: JiYiSpacing.xs),
                     Text('累计到访：${place.visitCount} 次'),
                     const SizedBox(height: JiYiSpacing.xs),
-                    Text(_line('首次到访', place.firstVisitedAt)),
+                    Text(_line('首次到访', place.firstVisitedAt == null ? null : jiyiDisplayDateTime(place.firstVisitedAt!))),
                     const SizedBox(height: JiYiSpacing.xs),
-                    Text(_line('最近到访', place.lastVisitedAt)),
+                    Text(_line('最近到访', place.lastVisitedAt == null ? null : jiyiDisplayDateTime(place.lastVisitedAt!))),
                   ],
                 ),
               ),
               const SizedBox(height: JiYiSpacing.md),
               JiYiSectionCard(
                 title: '到访历史',
-                subtitle: '只展示服务端保留的 Visit；“仍在更新”不等于已确认事实。',
+                subtitle: '只展示已经形成的到访记录；“仍在更新”不等于已确认事实。',
                 child: _visits.isEmpty
                     ? const JiYiEmptyState(
                         icon: Icons.history_toggle_off,
                         title: '还没有到访记录',
-                        message: '这个地点当前没有可展示的 retained Visit。',
+                        message: '这个地点当前还没有可展示的到访记录。',
                       )
                     : Column(
                         children: [
@@ -267,9 +284,8 @@ class _VisitTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: JiYiSpacing.xs),
-              Text(_line('开始', visit.arrivedAt)),
-              if (visit.leftAt != null) Text(_line('结束', visit.leftAt)),
-              Text(_line('来源', visit.source)),
+              Text(_line('开始', jiyiDisplayDateTime(visit.arrivedAt))),
+              if (visit.leftAt != null) Text(_line('结束', jiyiDisplayDateTime(visit.leftAt!))),
             ],
           ),
         ),

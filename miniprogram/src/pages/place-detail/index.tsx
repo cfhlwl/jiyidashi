@@ -122,7 +122,7 @@ export default function Page() {
                 url: graphNeighborhoodRoute('PLACE', detail.place.id),
               })}
             >
-              查看一跳关系
+              查看相关的人和事
             </Button>
           </View>
 

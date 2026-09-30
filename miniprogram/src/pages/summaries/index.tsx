@@ -222,14 +222,14 @@ export default function Page() {
 
           {ready && (
             <View className='citations-section'>
-              <View className='section-title'>证据来源</View>
-              {result.citations.map((citation) => (
+              <View className='section-title'>参考记录</View>
+              {result.citations.map((citation, index) => (
                 <View className='citation-row' key={citation.slot}>
                   <View>
                     <View className='citation-kind'>
                       {trustedSummaryCitationLabel(citation)}
                     </View>
-                    <View className='muted'>证据槽位 {citation.slot}</View>
+                    <View className='muted'>参考记录 {index + 1}</View>
                   </View>
                   {citation.trust_state && (
                     <View className='trust-label'>

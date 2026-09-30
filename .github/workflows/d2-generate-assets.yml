@@ -59,6 +59,24 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # UI/UX-001: the committed CJK golden font is a deterministic subset. Regenerate a
+      # review candidate from the pinned upstream font whenever product copy grows.
+      - name: Regenerate candidate CJK golden font
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check fonttools==4.59.2
+          committed_font_sha="$(git show HEAD:mobile/test/fonts/JiYiGoldenCJK-Regular.ttf | sha256sum | awk '{print $1}')"
+          python tool/regenerate_golden_font.py
+          generated_font_sha="$(sha256sum test/fonts/JiYiGoldenCJK-Regular.ttf | awk '{print $1}')"
+          echo "committed font sha:  $committed_font_sha"
+          echo "generated font sha:  $generated_font_sha"
+          cp test/fonts/JiYiGoldenCJK-Regular.ttf /tmp/JiYiGoldenCJK-Regular.ttf
+
+          # The committed deterministic test font must be byte-for-byte
+          # reproducible from the pinned source, corpus and toolchain.
+          test "$committed_font_sha" = "$generated_font_sha"
+
       - name: Analyze
         run: flutter analyze
 
@@ -84,6 +102,22 @@ jobs:
           --update-goldens
           --dart-define=DETERMINISTIC_QUERY_VISUAL_PREVIEW=true
           --reporter expanded
+
+      # UI/UX-001: generate candidate baselines for product review without accepting them.
+      # The runner restores committed goldens before normal validation, so a visual change
+      # still fails closed until the reviewed PNGs are deliberately committed.
+      - name: Generate candidate Product Experience goldens
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/product-v2-goldens
+          mkdir -p /tmp/product-v2-goldens/candidate
+          flutter test test/visual_golden_test.dart --update-goldens --reporter expanded
+          cp test/goldens/*.png /tmp/product-v2-goldens/candidate/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
 
       - name: Run Flutter tests including committed goldens
         timeout-minutes: 10
@@ -133,6 +167,8 @@ jobs:
             mobile/test/failures/**/*.png
             /tmp/golden-mismatch-proof/**/*.png
             /tmp/deterministic_memory_query.png
+            /tmp/product-v2-goldens/candidate/*.png
+            /tmp/JiYiGoldenCJK-Regular.ttf
 
       - name: Build Android debug APK
         run: >-
@@ -144,8 +180,9 @@ jobs:
         working-directory: .
         shell: bash
         run: |
-          # [人工注释][CI-005] git status 输出脏文件仍可能返回 0；必须显式判定 porcelain 非空并 fail closed。
+          # [人工注释][CI-005] Candidate font/goldens are review artifacts only until accepted.
           set -euo pipefail
+          git checkout -- mobile/test/fonts/JiYiGoldenCJK-Regular.ttf
           git diff --check
           status="$(git status --porcelain)"
           if [ -n "$status" ]; then

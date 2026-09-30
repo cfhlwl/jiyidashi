@@ -4,13 +4,22 @@ import 'jiyi_tokens.dart';
 
 // JiYiTheme 是 Flutter 产品视觉的唯一事实源；页面不得再次复制品牌色、输入框、按钮、Card、Dialog 或底部导航样式。
 abstract final class JiYiTheme {
-  static const Color brandSeed = Color(0xFF446A57);
-  static const Color appBackground = Color(0xFFF7F8F6);
+  static const Color brandSeed = JiYiProductColors.brandPrimary;
+  static const Color appBackground = JiYiProductColors.background;
 
   static ThemeData light({String? fontFamily, bool elderMode = false}) {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: brandSeed,
       brightness: Brightness.light,
+    ).copyWith(
+      primary: JiYiProductColors.brandPrimary,
+      secondary: JiYiProductColors.brandSecondary,
+      surface: JiYiProductColors.surface,
+      surfaceContainerHighest: JiYiProductColors.surfaceSoft,
+      onSurface: JiYiProductColors.textPrimary,
+      onSurfaceVariant: JiYiProductColors.textSecondary,
+      outline: JiYiProductColors.brandSecondary,
+      outlineVariant: JiYiProductColors.border,
     );
     final base = ThemeData(
       useMaterial3: true,
@@ -45,6 +54,13 @@ abstract final class JiYiTheme {
         titleMedium: elderTextTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w700,
         ),
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: JiYiProductColors.background,
+        foregroundColor: JiYiProductColors.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: false,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -104,7 +120,7 @@ abstract final class JiYiTheme {
       cardTheme: CardThemeData(
         margin: EdgeInsets.zero,
         elevation: 0,
-        color: colorScheme.surface,
+        color: JiYiProductColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(JiYiRadius.card),
           side: BorderSide(color: colorScheme.outlineVariant),
@@ -113,20 +129,20 @@ abstract final class JiYiTheme {
       navigationBarTheme: NavigationBarThemeData(
         height: elderMode ? 84 : 72,
         elevation: 0,
-        backgroundColor: colorScheme.surface,
-        indicatorColor: colorScheme.secondaryContainer,
+        backgroundColor: JiYiProductColors.surface,
+        indicatorColor: JiYiProductColors.surfaceSoft,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return base.textTheme.labelMedium?.copyWith(
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             color: selected
-                ? colorScheme.onSecondaryContainer
-                : colorScheme.onSurfaceVariant,
+                ? JiYiProductColors.brandPrimary
+                : JiYiProductColors.textSecondary,
           );
         }),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: colorScheme.surface,
+        backgroundColor: JiYiProductColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(JiYiRadius.large),
         ),

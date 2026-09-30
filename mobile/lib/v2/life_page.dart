@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
 import '../ui/jiyi_tokens.dart';
-import 'v2_widgets.dart';
 import 'life_events_page.dart';
 import 'life_history_page.dart';
 import 'life_stages_page.dart';
@@ -17,14 +16,20 @@ class LifePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return JiYiPageFrame(
-      title: '人生',
-      subtitle: '整理明确的人生事件和阶段；AI 回顾只在你主动点击后生成。',
+      title: '我的人生',
+      subtitle: '把重要经历、人生阶段和跨年的故事慢慢整理在一起。',
+      hero: const JiYiHeroHeader(
+        eyebrow: '迹忆 · 人生',
+        title: '我的人生',
+        subtitle: '把重要经历、人生阶段和跨年的故事慢慢整理在一起；AI 只在你主动回顾时参与。',
+        icon: Icons.auto_stories_outlined,
+      ),
       child: Column(
         children: [
           _Entry(
             icon: Icons.event_note_outlined,
-            title: '人生事件',
-            message: 'CRUD、地点选择和显式 Memory 证据关联。',
+            title: '人生经历',
+            message: '整理重要经历，并关联你亲自确认的相关记录。',
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => LifeEventsPage(api: api)),
             ),
@@ -33,7 +38,7 @@ class LifePage extends StatelessWidget {
           _Entry(
             icon: Icons.view_timeline_outlined,
             title: '人生阶段',
-            message: 'CRUD、LifeEvent 显式关联和 evidence-backed 长期回顾。',
+            message: '整理人生阶段与重要经历之间的关系，需要时再生成长期回顾。',
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => LifeStagesPage(api: api)),
             ),
@@ -41,8 +46,8 @@ class LifePage extends StatelessWidget {
           const SizedBox(height: JiYiSpacing.sm),
           _Entry(
             icon: Icons.history_outlined,
-            title: '跨年时间线',
-            message: '按服务端确定性投影跨年份浏览，游标原样续传。',
+            title: '多年时间线',
+            message: '按时间回看跨年的重要经历和人生阶段。',
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => LifeHistoryPage(api: api)),
             ),
@@ -50,8 +55,8 @@ class LifePage extends StatelessWidget {
           const SizedBox(height: JiYiSpacing.sm),
           _Entry(
             icon: Icons.auto_stories_outlined,
-            title: '回忆录',
-            message: '年度电子回忆录和按人生阶段生成的人生回忆录。',
+            title: '人生故事',
+            message: '查看年度回顾，也可以按人生阶段生成故事章节。',
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => MemoirsPage(api: api)),
             ),
@@ -77,20 +82,11 @@ class _Entry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return V2SectionCard(
-      leading: Icon(icon),
+    return JiYiActionCard(
+      icon: icon,
       title: title,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(message),
-          const SizedBox(height: JiYiSpacing.sm),
-          OutlinedButton(
-            onPressed: onTap,
-            child: const Text('打开'),
-          ),
-        ],
-      ),
+      message: message,
+      onTap: onTap,
     );
   }
 }

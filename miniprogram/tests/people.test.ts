@@ -313,9 +313,9 @@ test('list/detail guard auth owner epoch and Elder mode without hidden gesture c
     assert.match(source, /subscribeElderMode\(setElderMode\)/)
     assert.match(source, /elderClassName\(elderMode\)/)
   }
-  assert.match(list, /createOpen \? '收起新增' : '新增人物'/)
+  assert.match(list, /createOpen \? '收起添加' : '添加重要的人'/)
   assert.match(detail, /onClick=\{beginEdit\}/)
-  assert.match(detail, /'删除人物'/)
+  assert.match(detail, /'删除这个人'/)
 })
 
 test('list/create publish success and errors only while owner-session action snapshot is current', () => {

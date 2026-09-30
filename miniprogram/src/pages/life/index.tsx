@@ -61,6 +61,7 @@ import {
   type LifeStageKind,
 } from '../../services/advancedV2'
 import { elderClassName } from '../../services/elderMode'
+import { FloatingCaptureAction, ProductHeroHeader } from '../../components/product/ProductUi'
 import type { PlaceRead } from '../../services/placeDetail'
 import './index.scss'
 
@@ -424,7 +425,7 @@ export default function Page() {
       setEvents(rows)
     } catch (error) {
       if (!isCurrent(eventListAuthority.current, snapshot)) return
-      setEventStatus(mutationError(error, '人生事件加载失败'))
+      setEventStatus(mutationError(error, '人生经历加载失败'))
     } finally {
       if (isCurrent(eventListAuthority.current, snapshot)) setEventsLoading(false)
     }
@@ -500,7 +501,7 @@ export default function Page() {
       setPlaceChoices(places)
     } catch (error) {
       if (!isCurrent(eventDetailAuthority.current, snapshot)) return
-      setEventStatus(mutationError(error, '事件详情加载失败'))
+      setEventStatus(mutationError(error, '经历详情加载失败'))
     }
   }
 
@@ -636,14 +637,14 @@ export default function Page() {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setEventFormMode('none')
       setSelectedEvent(saved)
-      setEventStatus(target ? '事件已更新' : '事件已创建')
+      setEventStatus(target ? '经历已更新' : '经历已创建')
       await continueMutationRefresh(snapshot, [
         loadEvents,
         () => loadEventDetail(saved.id),
       ])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
-      setEventStatus(mutationError(error, target ? '事件更新失败' : '事件创建失败'))
+      setEventStatus(mutationError(error, target ? '经历更新失败' : '经历创建失败'))
     } finally {
       finishMutation(snapshot)
     }
@@ -653,7 +654,7 @@ export default function Page() {
     const target = selectedEvent
     if (!target || mutating) return
     const modal = await Taro.showModal({
-      title: '删除人生事件？',
+      title: '删除人生经历？',
       content: '将删除“' + target.title + '”以及它的显式关联关系。',
       confirmText: '删除',
       confirmColor: '#b3261e',
@@ -668,11 +669,11 @@ export default function Page() {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setSelectedEvent(null)
       setEventEvidence([])
-      setEventStatus('事件已删除')
+      setEventStatus('经历已删除')
       await continueMutationRefresh(snapshot, [loadEvents])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
-      setEventStatus(mutationError(error, '事件删除失败'))
+      setEventStatus(mutationError(error, '经历删除失败'))
     } finally {
       finishMutation(snapshot)
     }
@@ -693,7 +694,7 @@ export default function Page() {
       await linkLifeEventMemory(target.id, memory.id)
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setMemoryChoiceIndex(0)
-      setEventStatus('记忆证据已关联')
+      setEventStatus('相关记录已关联')
       await continueMutationRefresh(snapshot, [() => loadEventDetail(target.id)])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
@@ -707,7 +708,7 @@ export default function Page() {
     const target = selectedEvent
     if (!target) return
     const modal = await Taro.showModal({
-      title: '取消证据关联？',
+      title: '取消相关记录关联？',
       content: '只会删除事件与这条记忆的显式关联，不会删除记忆本身。',
       confirmText: '取消关联',
     })
@@ -718,7 +719,7 @@ export default function Page() {
     try {
       await unlinkLifeEventMemory(target.id, memoryId)
       if (!isCurrent(mutationAuthority.current, snapshot)) return
-      setEventStatus('记忆证据关联已取消')
+      setEventStatus('相关记录关联已取消')
       await continueMutationRefresh(snapshot, [() => loadEventDetail(target.id)])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
@@ -769,7 +770,7 @@ export default function Page() {
     if (!target || mutating) return
     const modal = await Taro.showModal({
       title: '删除人生阶段？',
-      content: '将删除“' + target.title + '”以及它的事件关联。',
+      content: '将删除“' + target.title + '”以及与它相关的经历关联。',
       confirmText: '删除',
       confirmColor: '#b3261e',
     })
@@ -812,11 +813,11 @@ export default function Page() {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setEventChoiceIndex(0)
       setReasoning(null)
-      setStageStatus('事件已关联到阶段')
+      setStageStatus('经历已关联到阶段')
       await continueMutationRefresh(snapshot, [() => loadStageDetail(stage.id)])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
-      setStageStatus(mutationError(error, '事件关联失败'))
+      setStageStatus(mutationError(error, '经历关联失败'))
     } finally {
       finishMutation(snapshot)
     }
@@ -826,7 +827,7 @@ export default function Page() {
     const stage = selectedStage
     if (!stage) return
     const modal = await Taro.showModal({
-      title: '取消事件关联？',
+      title: '取消经历关联？',
       content: '只删除人生阶段与事件之间的显式关系。',
       confirmText: '取消关联',
     })
@@ -839,11 +840,11 @@ export default function Page() {
       await unlinkLifeStageEvent(stage.id, eventId)
       if (!isCurrent(mutationAuthority.current, snapshot)) return
       setReasoning(null)
-      setStageStatus('事件关联已取消')
+      setStageStatus('经历关联已取消')
       await continueMutationRefresh(snapshot, [() => loadStageDetail(stage.id)])
     } catch (error) {
       if (!isCurrent(mutationAuthority.current, snapshot)) return
-      setStageStatus(mutationError(error, '取消事件关联失败'))
+      setStageStatus(mutationError(error, '取消经历关联失败'))
     } finally {
       finishMutation(snapshot)
     }
@@ -1044,7 +1045,7 @@ export default function Page() {
       setMemoirCursor(page.next_cursor)
     } catch (error) {
       if (!isCurrent(memoirIndexAuthority.current, snapshot)) return
-      setMemoirStatus(mutationError(error, '人生回忆录阶段加载失败'))
+      setMemoirStatus(mutationError(error, '人生故事加载失败'))
     } finally {
       if (isCurrent(memoirIndexAuthority.current, snapshot)) setMemoirIndexLoading(false)
     }
@@ -1073,7 +1074,7 @@ export default function Page() {
       setChapter(result)
     } catch (error) {
       if (!isCurrent(memoirChapterAuthority.current, snapshot)) return
-      setMemoirStatus(mutationError(error, '人生回忆录章节生成失败'))
+      setMemoirStatus(mutationError(error, '人生故事生成失败'))
     } finally {
       if (isCurrent(memoirChapterAuthority.current, snapshot)) {
         chapterGate.current.end()
@@ -1103,7 +1104,7 @@ export default function Page() {
         <View className='title'>人生</View>
         <View className='card'>
           <View className='card-title'>请先登录</View>
-          <Text className='muted'>登录后才能查看和维护你的人生事件、阶段与回忆录。</Text>
+          <Text className='muted'>登录后才能查看和整理你的人生经历、人生阶段与故事。</Text>
         </View>
       </View>
     )
@@ -1127,8 +1128,11 @@ export default function Page() {
 
   return (
     <View>
-      <View className='title'>人生</View>
-      <View className='subtitle'>把明确记录整理成人生事件和阶段；只有标明的 AI 回顾会调用生成能力。</View>
+      <ProductHeroHeader
+        eyebrow='迹忆 · 人生'
+        title='我的人生'
+        subtitle='把重要经历、人生阶段和跨年的故事慢慢整理在一起；AI 只在你主动使用回顾功能时参与。'
+      />
 
       {section !== 'home' && (
         <Button className='secondary-button life-back' onClick={() => openSection('home')}>返回人生首页</Button>
@@ -1138,20 +1142,20 @@ export default function Page() {
         <>
           <View className='life-grid'>
             <View className='card life-entry' onClick={() => openSection('events')}>
-              <View className='card-title'>人生事件</View>
-              <Text className='muted'>创建、编辑、删除，并关联真实 Memory 证据。</Text>
+              <View className='card-title'>人生经历</View>
+              <Text className='muted'>整理重要经历，并关联你亲自确认的相关记录。</Text>
             </View>
             <View className='card life-entry' onClick={() => openSection('stages')}>
               <View className='card-title'>人生阶段</View>
-              <Text className='muted'>维护阶段与事件关系，并按证据生成长期回顾。</Text>
+              <Text className='muted'>整理人生阶段与经历之间的关系，需要时再生成长期回顾。</Text>
             </View>
             <View className='card life-entry' onClick={() => openSection('history')}>
               <View className='card-title'>多年时间线</View>
-              <Text className='muted'>只读查看服务端跨年事件和阶段边界。</Text>
+              <Text className='muted'>按时间回看跨年的重要经历和人生阶段。</Text>
             </View>
             <View className='card life-entry' onClick={() => openSection('memoirs')}>
-              <View className='card-title'>回忆录</View>
-              <Text className='muted'>年度电子回忆录与按人生阶段生成的章节。</Text>
+              <View className='card-title'>人生故事</View>
+              <Text className='muted'>查看年度回顾，也可以按人生阶段生成故事章节。</Text>
             </View>
           </View>
           {globalStatus && <View className='status'>{globalStatus}</View>}
@@ -1163,7 +1167,7 @@ export default function Page() {
           <View className='card'>
             <View className='section-heading'>
               <View>
-                <View className='card-title'>人生事件</View>
+                <View className='card-title'>人生经历</View>
                 <Text className='muted'>事件本身是明确记录，不使用 AI 标签。</Text>
               </View>
               <Button
@@ -1182,7 +1186,7 @@ export default function Page() {
               </Button>
             </View>
             {eventsLoading && <Text className='muted'>正在加载…</Text>}
-            {!eventsLoading && events.length === 0 && <Text className='muted'>还没有人生事件。</Text>}
+            {!eventsLoading && events.length === 0 && <Text className='muted'>还没有人生经历。</Text>}
             {events.map((event) => (
               <View className='record-row' key={event.id} onClick={() => void loadEventDetail(event.id)}>
                 <View>
@@ -1309,13 +1313,13 @@ export default function Page() {
                 </Button>
               </View>
 
-              <View className='subheading'>Memory 证据</View>
-              {eventEvidence.length === 0 && <Text className='muted'>尚未关联记忆证据。</Text>}
+              <View className='subheading'>相关记录</View>
+              {eventEvidence.length === 0 && <Text className='muted'>还没有关联相关记录。</Text>}
               {eventEvidence.map((evidence) => (
                 <View className='evidence-row' key={evidence.link_id}>
                   <View>
                     <View>{evidence.title || evidence.content}</View>
-                    <Text className='muted'>{evidence.source_type} · {evidence.occurred_at}</Text>
+                    <Text className='muted'>记录时间：{evidence.occurred_at}</Text>
                   </View>
                   <Button
                     className='secondary-button mini-button'
@@ -1529,7 +1533,7 @@ export default function Page() {
                   disabled={reasoningLoading || mutating}
                   onClick={() => void generateReasoning()}
                 >
-                  {reasoningLoading ? '正在根据证据整理…' : '生成证据回顾'}
+                  {reasoningLoading ? '正在根据相关记录整理…' : '生成回顾'}
                 </Button>
                 {reasoning && reasonPresentation && (
                   <View className='ai-result'>
@@ -1538,16 +1542,14 @@ export default function Page() {
                     {reasonPresentation.state === 'INFERRED' && reasoning.answer && (
                       <View className='generated-copy'>{reasoning.answer}</View>
                     )}
-                    {reasoning.citations.map((citation) => (
-                      <View className='citation' key={citation.slot}>
-                        <View>{citation.slot} · {citation.kind}</View>
-                        <Text className='muted'>
-                          Memory {shortId(citation.memory_id)} · Event {shortId(citation.life_event_id)}
-                          {' · '}Stage {shortId(citation.life_stage_id)}
-                          {citation.memory_trust_state ? ' · ' + citation.memory_trust_state : ''}
-                        </Text>
+                    {reasoning.citations.length > 0 && (
+                      <View className='reference-list'>
+                        <View className='subheading'>参考记录</View>
+                        {reasoning.citations.map((citation, index) => (
+                          <View className='citation' key={citation.slot}>参考记录 {index + 1}</View>
+                        ))}
                       </View>
-                    ))}
+                    )}
                   </View>
                 )}
               </View>
@@ -1560,7 +1562,7 @@ export default function Page() {
       {section === 'history' && (
         <View className='card'>
           <View className='card-title'>多年时间线</View>
-          <Text className='muted'>这是服务端确定性投影，不是 AI 推断。游标按原值续传。</Text>
+          <Text className='muted'>按时间回看跨年的重要经历和人生阶段；这里展示已有记录，不会自动补写内容。</Text>
           <View className='range-row'>
             <Input
               className='field'
@@ -1594,7 +1596,7 @@ export default function Page() {
           </Button>
           {history && (
             <View className='history-meta muted'>
-              服务端范围：{history.start_year}–{history.end_year} · {history.timezone} · as_of {history.as_of}
+              时间范围：{history.start_year}–{history.end_year}
             </View>
           )}
           {historyItems.map((item, index) => (
@@ -1602,7 +1604,7 @@ export default function Page() {
               <View className='timeline-dot' />
               <View>
                 <View className='record-title'>{item.title}</View>
-                <Text className='muted'>{item.kind} · {item.occurred_at}</Text>
+                <Text className='muted'>{item.occurred_at}</Text>
               </View>
             </View>
           ))}
@@ -1618,7 +1620,7 @@ export default function Page() {
       {section === 'memoirs' && (
         <>
           <View className='card'>
-            <View className='card-title'>年度电子回忆录</View>
+            <View className='card-title'>年度回顾</View>
             <Text className='muted'>AI 标签只标记生成叙事；时间线和已验证照片仍是独立的确定性数据。</Text>
             <Input
               className='field'
@@ -1642,22 +1644,21 @@ export default function Page() {
                 {annualPresentation.state === 'INFERRED' && annual.narrative && (
                   <View className='generated-copy'>{annual.narrative}</View>
                 )}
-                {annual.narrative_citations.map((citation) => (
-                  <View className='citation' key={citation.slot}>
-                    <View>{citation.slot} · {citation.kind}</View>
-                    <Text className='muted'>
-                      Memory {shortId(citation.memory_id)} · Visit {shortId(citation.visit_id)}
-                      {citation.trust_state ? ' · ' + citation.trust_state : ''}
-                    </Text>
+                {annual.narrative_citations.length > 0 && (
+                  <View className='reference-list'>
+                    <View className='subheading'>参考记录</View>
+                    {annual.narrative_citations.map((citation, index) => (
+                      <View className='citation' key={citation.slot}>参考记录 {index + 1}</View>
+                    ))}
                   </View>
-                ))}
+                )}
 
                 <View className='subheading'>年度时间线</View>
                 {annualTimelineItems.map((item, index) => (
                   <View className='record-row' key={'annual-history:' + index + ':' + item.occurred_at}>
                     <View>
                       <View className='record-title'>{item.title}</View>
-                      <Text className='muted'>{item.kind} · {item.occurred_at}</Text>
+                      <Text className='muted'>{item.occurred_at}</Text>
                     </View>
                   </View>
                 ))}
@@ -1692,10 +1693,10 @@ export default function Page() {
           </View>
 
           <View className='card'>
-            <View className='card-title'>人生回忆录</View>
+            <View className='card-title'>人生故事</View>
             <Text className='muted'>阶段索引是确定性数据；只有你点击“生成章节”后才会调用 AI。</Text>
             <Button className='secondary-button' disabled={memoirIndexLoading} onClick={() => void loadMemoirStages(false)}>
-              {memoirIndexLoading ? '正在加载阶段…' : '刷新阶段索引'}
+              {memoirIndexLoading ? '正在加载阶段…' : '刷新人生阶段'}
             </Button>
             {memoirIndex.map((item) => (
               <View
@@ -1728,22 +1729,22 @@ export default function Page() {
                 {chapterPresentation.state === 'INFERRED' && chapter.narrative && (
                   <View className='generated-copy'>{chapter.narrative}</View>
                 )}
-                {chapter.citations.map((citation) => (
-                  <View className='citation' key={citation.slot}>
-                    <View>{citation.slot} · {citation.kind}</View>
-                    <Text className='muted'>
-                      Stage {shortId(citation.life_stage_id)} · Event {shortId(citation.life_event_id)}
-                      {' · '}Memory {shortId(citation.memory_id)}
-                      {citation.memory_trust_state ? ' · ' + citation.memory_trust_state : ''}
-                    </Text>
+                {chapter.citations.length > 0 && (
+                  <View className='reference-list'>
+                    <View className='subheading'>参考记录</View>
+                    <Text className='muted'>这段故事基于你已有的相关记录整理。</Text>
+                    {chapter.citations.map((citation, index) => (
+                      <View className='citation' key={citation.slot}>参考记录 {index + 1}</View>
+                    ))}
                   </View>
-                ))}
+                )}
               </View>
             )}
             {memoirStatus && <View className='error'>{memoirStatus}</View>}
           </View>
         </>
       )}
+      <FloatingCaptureAction />
     </View>
   )
 }

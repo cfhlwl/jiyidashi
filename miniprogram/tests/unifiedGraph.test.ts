@@ -460,7 +460,7 @@ test('graph UI preserves edge order and never renders authority_ref or hidden fi
 
 test('truncated warning is visible and no automatic pagination exists', () => {
   const page = readFileSync(resolve(process.cwd(), 'src/pages/graph-neighborhood/index.tsx'), 'utf8')
-  assert.match(page, /仅显示部分直接关系/)
+  assert.match(page, /这里只显示部分相关内容/)
   assert.doesNotMatch(page, /loadMore|next_cursor|pagination|limit=100/)
 })
 
@@ -479,8 +479,8 @@ test('Person and Place detail expose exact typed one-hop entry routes', () => {
   const place = readFileSync(resolve(process.cwd(), 'src/pages/place-detail/index.tsx'), 'utf8')
   assert.match(person, /graphNeighborhoodRoute\('PERSON', detail\.id\)/)
   assert.match(place, /graphNeighborhoodRoute\('PLACE', detail\.place\.id\)/)
-  assert.match(person, /查看一跳关系/)
-  assert.match(place, /查看一跳关系/)
+  assert.match(person, /查看相关的人和事/)
+  assert.match(place, /查看相关的人和事/)
 })
 
 test('generic graph page is registered without changing the five-tab shell', () => {

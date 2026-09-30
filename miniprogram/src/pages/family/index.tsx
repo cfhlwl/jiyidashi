@@ -30,6 +30,7 @@ import {
   revokeFamilyInvite,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import { ProductHeroHeader } from '../../components/product/ProductUi'
 import {
   assertCurrentFamilyMember,
   familyArrivalStatusLabel,
@@ -271,8 +272,8 @@ export default function Page() {
     const confirm = await Taro.showModal({
       title: mode === 'leave' ? '退出家庭？' : '移除成员？',
       content: mode === 'leave'
-        ? '退出后，你与家庭成员之间现有的共享授权会由服务端清理。'
-        : '移除后，与该成员相关的家庭共享授权会由服务端清理。',
+        ? '退出后，你与家庭成员之间现有的共享授权会同步清理。'
+        : '移除后，与该成员相关的家庭共享授权会同步清理。',
       confirmText: mode === 'leave' ? '确认退出' : '确认移除',
       confirmColor: '#b3261e',
     })
@@ -326,7 +327,7 @@ export default function Page() {
         }
       })
     } catch (error) {
-      setStatus(mappedError(error, 'permission', '权限更新失败，已重新读取服务端状态'))
+      setStatus(mappedError(error, 'permission', '权限更新失败，已重新读取最新状态'))
       try {
         const authoritative = await getFamilyPermissions()
         setPageState((current) => current.phase === 'family-ready'
@@ -819,7 +820,7 @@ export default function Page() {
             <View className='memory-content'>{memory.content}</View>
             <View className='muted'>{memory.occurred_at}</View>
             <View className='muted'>
-              {memory.memory_type} · {memory.source_type} · {memory.is_confirmed ? '已确认' : '待确认'}
+              {memory.is_confirmed ? '明确记录' : '对方尚未确认的记录'}
             </View>
           </View>
         ))}
@@ -830,8 +831,11 @@ export default function Page() {
   if (pageState.phase === 'signed-out') {
     return (
       <View className={elderClassName(currentElderModeEnabled())}>
-        <View className='title'>家庭</View>
-        <View className='subtitle'>共享必须逐项授权。</View>
+        <ProductHeroHeader
+          eyebrow='迹忆 · 家庭'
+          title='家庭'
+          subtitle='每一项共享都由你明确授权，位置权限需要单独开启。'
+        />
         <View className='card empty-card'>
           <View className='card-title'>请先登录后使用家庭功能</View>
           <Text className='muted'>登录后才能创建或加入家庭，加入同一个家庭也不会自动共享任何数据。</Text>
@@ -846,8 +850,11 @@ export default function Page() {
   if (pageState.phase === 'loading') {
     return (
       <View className={elderClassName(currentElderModeEnabled())}>
-        <View className='title'>家庭</View>
-        <View className='subtitle'>共享必须逐项授权。</View>
+        <ProductHeroHeader
+          eyebrow='迹忆 · 家庭'
+          title='家庭'
+          subtitle='每一项共享都由你明确授权，位置权限需要单独开启。'
+        />
         <View className='card'><Text className='muted'>正在加载家庭状态…</Text></View>
       </View>
     )
@@ -856,8 +863,11 @@ export default function Page() {
   if (pageState.phase === 'error') {
     return (
       <View className={elderClassName(currentElderModeEnabled())}>
-        <View className='title'>家庭</View>
-        <View className='subtitle'>共享必须逐项授权。</View>
+        <ProductHeroHeader
+          eyebrow='迹忆 · 家庭'
+          title='家庭'
+          subtitle='每一项共享都由你明确授权，位置权限需要单独开启。'
+        />
         <View className='card'>
           <View className='error'>{pageState.message}</View>
           <Button className='secondary-button' onClick={() => refresh()}>重新加载</Button>
@@ -869,8 +879,11 @@ export default function Page() {
   if (pageState.phase === 'no-family') {
     return (
       <View className={elderClassName(currentElderModeEnabled())}>
-        <View className='title'>家庭</View>
-        <View className='subtitle'>共享必须逐项授权。</View>
+        <ProductHeroHeader
+          eyebrow='迹忆 · 家庭'
+          title='家庭'
+          subtitle='每一项共享都由你明确授权，位置权限需要单独开启。'
+        />
         <View className='privacy-note'>加入同一个家庭 ≠ 自动共享数据。共享必须由本人逐项授权。</View>
         <View className='card'>
           <View className='card-title'>创建家庭</View>
@@ -881,7 +894,7 @@ export default function Page() {
         </View>
         <View className='card'>
           <View className='card-title'>加入家庭</View>
-          <Text className='muted'>粘贴家人发给你的邀请口令。口令只按原样提交给服务端判断。</Text>
+          <Text className='muted'>粘贴家人发给你的邀请口令。口令只按原样提交验证。</Text>
           <Input
             className='field'
             type='text'

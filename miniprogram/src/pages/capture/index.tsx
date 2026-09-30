@@ -65,7 +65,7 @@ type VoiceClip = {
 const PHOTO_PHASE_TEXT: Record<PhotoSubmissionPhase, string> = {
   selected: '待上传',
   uploading: '上传中',
-  verifying: '服务端验证中',
+  verifying: '正在确认图片',
   saving: '正在写入记忆',
   recorded: '已记录',
   failed: '失败，可重试',
@@ -74,8 +74,8 @@ const PHOTO_PHASE_TEXT: Record<PhotoSubmissionPhase, string> = {
 const VOICE_PHASE_TEXT: Record<VoiceSubmissionPhase, string> = {
   recorded: '待上传',
   uploading: '上传原始录音中',
-  verifying: '服务端验证音频中',
-  transcribing: '服务端转写中',
+  verifying: '正在确认录音',
+  transcribing: '正在整理文字',
   saved: '已记录',
   failed: '失败，可重试',
 }
@@ -261,7 +261,7 @@ export default function Page() {
   const [voiceError, setVoiceError] = useState('')
   const [voiceMemoryId, setVoiceMemoryId] = useState<string | null>(null)
   const [voiceSubmitting, setVoiceSubmitting] = useState(false)
-  const [voiceStatus, setVoiceStatus] = useState('录音完成后可上传，由服务端验证原始音频并执行 ASR。')
+  const [voiceStatus, setVoiceStatus] = useState('录音完成后可以保存；迹忆会先确认录音可用，再帮你整理成文字。')
   const voiceClipRef = useRef<VoiceClip | null>(null)
   const voiceSubmitLock = useRef(new VoiceSubmissionLock())
   const voiceRecordingRef = useRef(false)
@@ -299,7 +299,7 @@ export default function Page() {
         setVoicePhase('recorded')
         setVoiceError('')
         setVoiceMemoryId(null)
-        setVoiceStatus(`录音已完成（${Math.max(1, Math.round(result.duration / 1000))} 秒），可上传并由服务端转写。`)
+        setVoiceStatus(`录音已完成（${Math.max(1, Math.round(result.duration / 1000))} 秒），可以保存并整理成文字。`)
       },
       onError: (error) => {
         voiceRecordingRef.current = false
@@ -337,7 +337,7 @@ export default function Page() {
     setVoiceError('')
     setVoiceMemoryId(null)
     setVoiceSubmitting(false)
-    setVoiceStatus('录音完成后可上传，由服务端验证原始音频并执行 ASR。')
+    setVoiceStatus('录音完成后可以保存；迹忆会先确认录音可用，再帮你整理成文字。')
     setSelectedPhoto(null)
     setPhotoPhase('selected')
     setPhotoError('')
@@ -386,7 +386,7 @@ export default function Page() {
       guard()
       setContent('')
       setTitle('')
-      setStatus(`✓ 已经帮你记住 · ${memory.id}`)
+      setStatus('✓ 已经帮你记住')
     } catch (error) {
       if (!isStaleCaptureSessionError(error)) {
         setStatus(getErrorMessage(error, '保存失败'))
@@ -651,7 +651,7 @@ export default function Page() {
       setVoiceClip(null)
       setVoiceTitle('')
       setVoiceMemoryId(result.memoryId)
-      setVoiceStatus(`✓ 原始录音已验证、转写并写入可信 Evidence · ${result.memoryId}`)
+      setVoiceStatus('✓ 这段录音已经整理并记住')
     } catch (error) {
       if (!isStaleCaptureSessionError(error)) {
         setVoiceError(getErrorMessage(error, '语音记录失败'))
@@ -670,7 +670,7 @@ export default function Page() {
     setVoiceClip(null)
     setVoiceError('')
     setVoicePhase('recorded')
-    setVoiceStatus('本地临时录音已清除；未提交的录音不会成为 Memory。')
+    setVoiceStatus('本地临时录音已清除；没有保存的录音不会进入你的记忆。')
   }
 
   const saveObject = async () => {
@@ -731,7 +731,7 @@ export default function Page() {
       <View className='subtitle'>
         {elderMode
           ? '先用语音说下来；你也可以选择打字或拍照。'
-          : '主动写下、拍下或录下需要记住的内容；图片和语音都必须通过服务端 Evidence 门禁后才算真正记录。'}
+          : '主动写下、拍下或录下需要记住的内容；图片和语音会在确认可用后再保存。'}
       </View>
 
       {elderMode && privacyPaused && (
@@ -832,13 +832,13 @@ export default function Page() {
           </>
         )}
         {photoError && <View className='error'>{photoError}</View>}
-        {photoMemoryId && <View className='status'>✓ 图片已通过服务端验证并记录 · {photoMemoryId}</View>}
+        {photoMemoryId && <View className='status'>✓ 图片已经记录</View>}
       </View>
 
       {!elderMode && (
       <View className='card'>
         <View className='card-title'>录一句</View>
-        <View className='muted capture-note'>用户主动录音最长 60 秒。原始 MP3 会先进入私有 Evidence；服务端验证后再执行 ASR。失败、超时、空文本或低置信结果都不会生成 Memory。</View>
+        <View className='muted capture-note'>用户主动录音最长 60 秒。迹忆会先确认录音可用，再帮你整理成文字；失败、超时或没有可用文字时不会保存。</View>
         {!voiceRecording && <Button className='secondary-button' disabled={busy} onClick={startVoiceRecording}>开始录音</Button>}
         {voiceRecording && <Button className='primary-button recording-button' onClick={stopVoiceRecording}>停止录音</Button>}
         {voicePermission === 'denied' && <Button className='secondary-button' disabled={busy} onClick={openMicrophoneSettings}>打开设置恢复麦克风权限</Button>}
@@ -853,7 +853,7 @@ export default function Page() {
           </>
         )}
         {voiceError && <View className='error'>{voiceError}</View>}
-        {voiceMemoryId && <View className='status'>✓ 语音已形成可信 Memory / Evidence · {voiceMemoryId}</View>}
+        {voiceMemoryId && <View className='status'>✓ 这段语音已经记录</View>}
         <View className={voicePermission === 'denied' ? 'error' : 'status'}>{voiceStatus}</View>
       </View>
       )}

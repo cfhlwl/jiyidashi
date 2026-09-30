@@ -16,6 +16,7 @@ import {
 import { elderClassName } from '../../services/elderMode'
 import { TodayFootprintRequestEpoch, toTodayFootprintRow } from '../../services/todayFootprint'
 import { PlaceListRequestEpoch, placeDetailRoute, placeListPresentation, type PlaceRead } from '../../services/placeDetail'
+import { FloatingCaptureAction, ProductHeroHeader } from '../../components/product/ProductUi'
 import './index.scss'
 
 // Today Footprint 与地点列表是两个独立的服务端权威 read model。
@@ -165,7 +166,7 @@ export default function Page() {
 
   const openLife = () => {
     // #162: Life is one coherent advanced area. Navigation never triggers AI generation.
-    void Taro.navigateTo({ url: '/pages/life/index' })
+    void Taro.switchTab({ url: '/pages/life/index' })
   }
 
   const authenticated = isAuthenticated()
@@ -181,15 +182,18 @@ export default function Page() {
 
   return (
     <View className={elderClassName(elderMode)}>
-      <View className='title'>{elderMode ? '今天去了哪里' : '今天'}</View>
-      <View className='subtitle'>
-        {elderMode ? '这里只显示已经形成的足迹，不会用当前位置猜测。' : '按账号时区回看今天真实形成的地点足迹。'}
-      </View>
+      <ProductHeroHeader
+        eyebrow='迹忆 · 今天'
+        title={elderMode ? '今天去了哪里' : '今天'}
+        subtitle={elderMode
+          ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
+          : '把今天真实形成的足迹、地点和回忆放在一起，安静地回看一天。'}
+      />
 
       {elderMode && (
         <View className='card elder-home-actions'>
           <View className='card-title'>常用功能</View>
-          <Button className='primary-button elder-primary-action' onClick={() => Taro.switchTab({ url: '/pages/capture/index' })}>
+          <Button className='primary-button elder-primary-action' onClick={() => Taro.navigateTo({ url: '/pages/capture/index' })}>
             记一下
           </Button>
           <Button className='primary-button elder-primary-action' onClick={() => Taro.switchTab({ url: '/pages/query/index' })}>
@@ -218,7 +222,7 @@ export default function Page() {
         {!loading && footprint && rows.length === 0 && (
           <View className='footprint-state'>
             <View>今天还没有形成足迹</View>
-            <Text className='muted'>{elderMode ? '这里只显示已经形成的足迹，不会用当前位置猜测。' : '这里只展示服务端已经派生出的 Visit，不用手机当前位置补记录。'}</Text>
+            <Text className='muted'>{elderMode ? '这里只显示已经形成的足迹，不会用当前位置猜测。' : '这里只展示已经形成的足迹记录，不用手机当前位置补写。'}</Text>
           </View>
         )}
 
@@ -276,9 +280,11 @@ export default function Page() {
       )}
 
       <View className='card'>
-        <View className='card-title'>V1 基础能力</View>
-        <Text className='muted'>APP 端负责主要自动足迹；小程序提供快速查看和记录入口。</Text>
+        <View className='card-title'>记录方式</View>
+        <Text className='muted'>手机端可持续记录你已授权的足迹；小程序适合随时查看和主动记下一件事。</Text>
       </View>
+
+      {authenticated && <FloatingCaptureAction elderMode={elderMode} />}
     </View>
   )
 }

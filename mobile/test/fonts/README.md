@@ -8,9 +8,9 @@
 - Upstream file: `Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf`
 - Derived family: `JiYi Golden CJK`
 - Derived face: Regular (variable `wght` instantiated at 400)
-- Subset corpus: current `mobile/lib/**/*.dart`, `mobile/test/visual_golden_test.dart`, and printable ASCII
+- Subset corpus: current `mobile/lib/**/*.dart`, `mobile/test/**/*.dart`, and printable ASCII
 - Subset tool: `fonttools 4.59.2`
-- SHA-256: `c07a6646153eabe2f78d08131a71f8dff8d29d4fa6313d6e593681be38f18955`
+- SHA-256: `f46e03facd2de8a74395b7f0c325dc993e0112f13b8f5d23cf2a4350f9d2cf81`
 - License: SIL Open Font License 1.1; see `OFL.txt`
 
 The derived font is intentionally test-only and is loaded with Flutter `FontLoader`; it is not bundled into the production app.

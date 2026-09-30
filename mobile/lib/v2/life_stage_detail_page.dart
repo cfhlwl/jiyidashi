@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../ai_inference_presentation.dart';
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'life_editors.dart';
 import 'life_models.dart';
@@ -347,9 +348,9 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              V2KeyValue(label: '类型', value: lifeStageLabels[current.kind] ?? current.kind),
-              V2KeyValue(label: '开始', value: current.startedAt),
-              V2KeyValue(label: '结束', value: current.endedAt ?? '开放'),
+              V2KeyValue(label: '类型', value: lifeStageLabels[current.kind] ?? '其他阶段'),
+              V2KeyValue(label: '开始', value: jiyiDisplayDateTime(current.startedAt)),
+              V2KeyValue(label: '结束', value: current.endedAt == null ? '至今' : jiyiDisplayDateTime(current.endedAt!)),
               V2KeyValue(label: '备注', value: current.note ?? '无'),
               Wrap(
                 spacing: JiYiSpacing.sm,
@@ -370,18 +371,18 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
               OutlinedButton.icon(
                 onPressed: mutationFlight.isPending ? null : _linkEvent,
                 icon: const Icon(Icons.add_link),
-                label: const Text('关联已有事件'),
+                label: const Text('关联已有经历'),
               ),
               if (linkedEvents.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: JiYiSpacing.sm),
-                  child: Text('尚未关联人生事件。'),
+                  child: Text('尚未关联人生经历。'),
                 ),
               for (final item in linkedEvents)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(item.title),
-                  subtitle: Text(item.eventKind + ' · ' + item.startedAt),
+                  subtitle: Text((lifeEventLabels[item.eventKind] ?? '人生经历') + ' · ' + jiyiDisplayDate(item.startedAt)),
                   trailing: IconButton(
                     tooltip: '取消关联',
                     onPressed: mutationFlight.isPending ? null : () => _unlinkEvent(item),
@@ -394,7 +395,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
         const SizedBox(height: JiYiSpacing.md),
         V2SectionCard(
           title: '长期回顾',
-          subtitle: '只有点击生成后才调用 AI；引用保留 canonical evidence identity。',
+          subtitle: '只有你主动点击后才会由 AI 帮你整理，并保留可查看的参考记录。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -411,7 +412,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
               FilledButton.icon(
                 onPressed: reasoningLoading ? null : _generateReasoning,
                 icon: const Icon(Icons.auto_awesome),
-                label: Text(reasoningLoading ? '正在整理…' : '生成证据回顾'),
+                label: Text(reasoningLoading ? '正在整理…' : '生成回顾'),
               ),
               if (result != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
@@ -423,17 +424,12 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
                   const SizedBox(height: JiYiSpacing.sm),
                   Text(result.answer!),
                 ],
-                for (final citation in result.citations)
+                for (var index = 0; index < result.citations.length; index++)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.fact_check_outlined),
-                    title: Text(citation.slot + ' · ' + citation.kind),
-                    subtitle: Text(
-                      (citation.memoryTrustState ?? '明确实体引用') +
-                          (citation.memoryId == null
-                              ? ''
-                              : ' · Memory ' + citation.memoryId!),
-                    ),
+                    title: Text('参考记录 ${index + 1}'),
+                    subtitle: const Text('这条回顾基于你的相关记录。'),
                   ),
               ],
             ],

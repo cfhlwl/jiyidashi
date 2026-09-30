@@ -44,6 +44,7 @@
     "src/services/unifiedGraph.ts",
     "tests/unifiedGraph.test.ts",
     "tests/advancedV2.test.ts",
-    "tests/advancedV2Page.test.ts"
+    "tests/advancedV2Page.test.ts",
+    "tests/productExperienceV2.test.ts"
   ]
 }

@@ -4,16 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/memory_detail_page.dart';
 import 'package:jiyidashi/native_location_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
+import 'package:jiyidashi/v2/family_page.dart';
 import 'package:jiyidashi/v2/graph_page.dart';
+import 'package:jiyidashi/v2/life_page.dart';
 import 'package:jiyidashi/v2/life_event_detail_page.dart';
 import 'package:jiyidashi/v2/life_stage_detail_page.dart';
 import 'package:jiyidashi/v2/memoirs_page.dart';
+import 'package:jiyidashi/v2/people_page.dart';
 import 'package:jiyidashi/v2/person_detail_page.dart';
 
 import 'v2_test_api.dart';
@@ -46,7 +50,10 @@ Future<void> _loadMaterialIconsFont() async {
 }
 
 // Golden 复用生产 Theme；这里只注入仓库固定 CJK 测试字体，禁止再次复制产品色/布局 token。
-ThemeData _goldenTheme() => JiYiTheme.light(fontFamily: _goldenFontFamily);
+ThemeData _goldenTheme({bool elderMode = false}) => JiYiTheme.light(
+      fontFamily: _goldenFontFamily,
+      elderMode: elderMode,
+    );
 
 class _GoldenApi extends JiYiApiClient {
   _GoldenApi({
@@ -128,11 +135,195 @@ class _GoldenApi extends JiYiApiClient {
   };
 
   @override
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async => {
+        'timezone': 'Asia/Shanghai',
+        'day': day,
+        'items': day == '2026-09-20'
+            ? [
+                {
+                  'kind': 'MEMORY',
+                  'id': v2MemoryId,
+                  'occurred_at': '2026-09-20T01:15:00Z',
+                  'ended_at': null,
+                  'place_id': v2PlaceId,
+                  'place_name': '上海办公室',
+                  'memory_type': 'NOTE',
+                  'title': '第一次产品讨论',
+                  'content': '把第一版产品方向写满了整块白板。',
+                  'source_type': 'USER_TEXT',
+                  'is_confirmed': true,
+                  'confidence': 1.0,
+                  'visit_source': null,
+                  'visit_finalized': null,
+                },
+              ]
+            : const <Map<String, dynamic>>[],
+        'next_cursor': null,
+      };
+
+  @override
   Future<Map<String, dynamic>> getPrivacyStatus() async {
     final error = privacyError;
     if (error != null) throw error;
     return privacyStatus;
   }
+}
+
+class _GoldenTimelineApi extends _GoldenApi {
+  @override
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async => {
+        'timezone': 'Asia/Shanghai',
+        'day': null,
+        'items': [
+          {
+            'kind': 'MEMORY',
+            'id': v2MemoryId,
+            'occurred_at': '2025-03-01T09:30:00Z',
+            'ended_at': null,
+            'place_id': v2PlaceId,
+            'place_name': '上海办公室',
+            'memory_type': 'NOTE',
+            'title': '第一次产品讨论',
+            'content': '把第一版产品方向写满了整块白板。',
+            'source_type': 'USER_TEXT',
+            'is_confirmed': true,
+            'confidence': 1.0,
+            'visit_source': null,
+            'visit_finalized': null,
+          },
+          {
+            'kind': 'VISIT',
+            'id': '33333333-3333-4333-8333-333333333333',
+            'occurred_at': '2025-02-28T05:20:00Z',
+            'ended_at': '2025-02-28T06:40:00Z',
+            'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            'place_name': '周末咖啡店',
+            'memory_type': null,
+            'title': null,
+            'content': null,
+            'source_type': null,
+            'is_confirmed': null,
+            'confidence': 0.96,
+            'visit_source': 'LOCATION_CLUSTER',
+            'visit_finalized': true,
+          },
+        ],
+        'next_cursor': null,
+      };
+}
+
+class _GoldenEmptyTimelineApi extends _GoldenApi {
+  @override
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async => {
+        'timezone': 'Asia/Shanghai',
+        'day': null,
+        'items': const <Map<String, dynamic>>[],
+        'next_cursor': null,
+      };
+}
+
+class _GoldenOfflineTimelineApi extends _GoldenApi {
+  @override
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async {
+    throw TransportException('网络连接失败');
+  }
+}
+
+class _GoldenFamilyApi extends _GoldenApi {
+  static const memberId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  @override
+  Future<Object?> requestV2Json(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    if (method == 'GET' && path == '/family') {
+      return {
+        'family_id': 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        'current_user_role': 'OWNER',
+        'members': [
+          {
+            'user_id': authenticatedUserId,
+            'role': 'OWNER',
+            'created_at': '2026-09-01T00:00:00Z',
+          },
+          {
+            'user_id': memberId,
+            'role': 'MEMBER',
+            'created_at': '2026-09-02T00:00:00Z',
+          },
+        ],
+      };
+    }
+    if (method == 'GET' && path == '/family/permissions') {
+      return [
+        {
+          'grantee_user_id': memberId,
+          'permissions': ['VIEW_MEMORY', 'VIEW_PHOTOS'],
+        },
+      ];
+    }
+    throw ApiException(404, 'NOT_FOUND');
+  }
+}
+
+class _GoldenMemoryDetailApi extends _GoldenApi {
+  @override
+  Future<Map<String, dynamic>> getMemory(String memoryId) async => {
+    'id': v2MemoryId,
+    'user_id': authenticatedUserId,
+    'memory_type': 'NOTE',
+    'title': '第一次产品讨论',
+    'content': '那天我们在办公室把第一版产品方向写满了整块白板。',
+    'occurred_at': '2025-03-01T01:00:00Z',
+    'source_type': 'USER_TEXT',
+    'confidence': 1.0,
+    'place_id': v2PlaceId,
+    'latitude': null,
+    'longitude': null,
+    'is_confirmed': true,
+    'metadata_json': const <String, dynamic>{},
+    'edit_revision': 3,
+    'edited_at': null,
+    'created_at': '2025-03-01T01:00:00Z',
+  };
+
+  @override
+  Future<Map<String, dynamic>> getPlaceDetail(
+    String placeId, {
+    int limit = 50,
+    String? cursor,
+  }) async => {
+    'place': {
+      'id': v2PlaceId,
+      'name': '上海办公室',
+      'name_source': 'USER',
+      'address': '上海市测试路 1 号',
+      'category': 'OFFICE',
+      'visit_count': 5,
+      'first_visited_at': '2025-01-01T00:00:00Z',
+      'last_visited_at': '2026-09-20T00:00:00Z',
+    },
+    'visits': const <Map<String, dynamic>>[],
+    'next_cursor': null,
+  };
 }
 
 class _GoldenPlaceDetailApi extends JiYiApiClient {
@@ -250,7 +441,11 @@ class _GoldenQueue extends OfflineQueueStore {
   Future<void> close() async {}
 }
 
-Future<Key> _pumpSurface(WidgetTester tester, Widget child) async {
+Future<Key> _pumpSurface(
+  WidgetTester tester,
+  Widget child, {
+  bool elderMode = false,
+}) async {
   tester.view.physicalSize = _goldenSize;
   tester.view.devicePixelRatio = 1.0;
   tester.binding.platformDispatcher.localeTestValue = const Locale('zh', 'CN');
@@ -264,7 +459,7 @@ Future<Key> _pumpSurface(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: _goldenTheme(),
+      theme: _goldenTheme(elderMode: elderMode),
       home: RepaintBoundary(key: key, child: child),
     ),
   );
@@ -330,10 +525,90 @@ void main() {
     );
   });
 
+  testWidgets('golden: timeline', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      TimelinePage(api: _GoldenTimelineApi()),
+    );
+    expect(find.text('时间线'), findsWidgets);
+    expect(find.text('第一次产品讨论'), findsOneWidget);
+    expect(find.text('周末咖啡店'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/timeline.png'),
+    );
+  });
+
+  testWidgets('golden: people', (tester) async {
+    final key = await _pumpSurface(tester, PeoplePage(api: V2TestApi()));
+    expect(find.text('重要的人'), findsWidgets);
+    expect(find.text('老张'), findsWidgets);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/people.png'));
+  });
+
+  testWidgets('golden: life home', (tester) async {
+    final key = await _pumpSurface(tester, LifePage(api: V2TestApi()));
+    expect(find.text('我的人生'), findsWidgets);
+    expect(find.text('人生经历'), findsOneWidget);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/life_home.png'));
+  });
+
+  testWidgets('golden: family permissions', (tester) async {
+    final key = await _pumpSurface(tester, FamilyPage(api: _GoldenFamilyApi()));
+    expect(find.text('家庭成员 1'), findsOneWidget);
+    expect(find.text('可查看我的记忆'), findsOneWidget);
+    expect(find.text('可查看我的照片'), findsOneWidget);
+    expect(find.textContaining(_GoldenFamilyApi.memberId), findsNothing);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/family_permissions.png'));
+  });
+
+  testWidgets('golden: empty timeline state', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      TimelinePage(api: _GoldenEmptyTimelineApi()),
+    );
+    expect(find.text('还没有时间线记录'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/state_empty.png'),
+    );
+  });
+
+  testWidgets('golden: offline timeline state', (tester) async {
+    final key = await _pumpSurface(tester, TimelinePage(api: _GoldenOfflineTimelineApi()));
+    expect(find.text('当前离线'), findsOneWidget);
+    expect(find.text('重新连接'), findsOneWidget);
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/state_offline.png'));
+  });
+
+  testWidgets('golden: Elder memory query', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: MemoryQueryPage(api: _GoldenApi(), elderMode: true),
+        ),
+      ),
+      elderMode: true,
+    );
+    expect(find.text('我想找东西'), findsOneWidget);
+    final submit = find.byKey(const ValueKey('memory-query-submit'));
+    expect(tester.getSize(submit).height, greaterThanOrEqualTo(56));
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/elder_memory_query.png'));
+  });
+
   testWidgets('golden: capture and object location', (tester) async {
-    final key = await _pumpShell(tester);
-    await tester.tap(find.text('记一下'));
-    await tester.pumpAndSettle();
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: CapturePage(
+            api: _GoldenApi(),
+            offlineQueue: _GoldenQueue(),
+          ),
+        ),
+      ),
+    );
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/capture_object.png'),
@@ -341,9 +616,17 @@ void main() {
   });
 
   testWidgets('golden: unified capture media controls', (tester) async {
-    final key = await _pumpShell(tester);
-    await tester.tap(find.text('记一下'));
-    await tester.pumpAndSettle();
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: CapturePage(
+            api: _GoldenApi(),
+            offlineQueue: _GoldenQueue(),
+          ),
+        ),
+      ),
+    );
 
     final voiceStart =
         find.byKey(const ValueKey<String>('capture-voice-start'));
@@ -367,7 +650,7 @@ void main() {
 
   testWidgets('golden: memory query', (tester) async {
     final key = await _pumpShell(tester);
-    await tester.tap(find.text('问记忆'));
+    await tester.tap(find.text('记忆'));
     await tester.pumpAndSettle();
     await expectLater(
       find.byKey(key),
@@ -379,7 +662,7 @@ void main() {
     'preview: deterministic memory query trust label',
     (tester) async {
       final key = await _pumpShell(tester);
-      await tester.tap(find.text('问记忆'));
+      await tester.tap(find.text('记忆'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('memory-query-input')),
@@ -388,8 +671,8 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
       await tester.pumpAndSettle();
 
-      expect(find.text('AI 推断（有证据支持）'), findsNothing);
-      expect(find.text('可信状态：confirmed'), findsOneWidget);
+      expect(find.text('AI 整理'), findsNothing);
+      expect(find.text('明确记录'), findsOneWidget);
       expect(find.textContaining('用户文字记录'), findsOneWidget);
       await expectLater(
         find.byKey(key),
@@ -398,6 +681,24 @@ void main() {
     },
     skip: !_captureDeterministicQueryPreview,
   );
+
+  testWidgets('golden: memory detail', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      MemoryDetailPage(
+        api: _GoldenMemoryDetailApi(),
+        memoryId: v2MemoryId,
+      ),
+    );
+    expect(find.text('第一次产品讨论'), findsWidgets);
+    expect(find.text('上海办公室'), findsOneWidget);
+    expect(find.textContaining('整块白板'), findsOneWidget);
+    expect(find.textContaining(v2MemoryId), findsNothing);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/memory_detail.png'),
+    );
+  });
 
   testWidgets('golden: profile and privacy controls', (tester) async {
     // [人工注释][CI-005] Profile 使用确定性的 fake API 返回固定资料/暂停状态，
@@ -499,7 +800,7 @@ void main() {
         title: '老张',
       ),
     );
-    expect(find.text('关系图谱'), findsWidgets);
+    expect(find.text('相关的人和事'), findsWidgets);
     expect(find.textContaining('小李'), findsWidgets);
     await expectLater(
       find.byKey(key),
@@ -512,8 +813,8 @@ void main() {
       tester,
       LifeEventDetailPage(api: V2TestApi(), eventId: v2EventId),
     );
-    expect(find.text('Memory 证据'), findsOneWidget);
-    expect(find.text('AI 推断（有证据支持）'), findsNothing);
+    expect(find.text('相关记录'), findsOneWidget);
+    expect(find.text('AI 整理'), findsNothing);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/v2_life_event_detail.png'),
@@ -529,12 +830,12 @@ void main() {
       find.byType(TextField).last,
       '这个阶段发生了什么？',
     );
-    final generate = find.text('生成证据回顾');
+    final generate = find.text('生成回顾');
     await tester.ensureVisible(generate);
     await tester.pumpAndSettle();
     await tester.tap(generate);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('AI 推断（有证据支持）'));
+    await tester.ensureVisible(find.text('AI 整理'));
     await tester.pumpAndSettle();
     expect(find.textContaining('持续围绕产品开发'), findsOneWidget);
     await expectLater(
@@ -549,10 +850,16 @@ void main() {
       MemoirsPage(api: V2TestApi()),
     );
     await tester.enterText(find.byType(TextField).first, '2025');
-    await tester.tap(find.text('生成年度回忆录'));
+    final annual = find.text('开始回看');
+    await tester.ensureVisible(annual);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('AI 推断（有证据支持）').first);
+    await tester.tap(annual);
     await tester.pumpAndSettle();
+    final storyHero = find.byKey(const ValueKey('annual-story-hero'));
+    await tester.ensureVisible(storyHero);
+    await tester.pumpAndSettle();
+    expect(storyHero, findsOneWidget);
+    expect(find.text('这一年的故事'), findsOneWidget);
     expect(find.textContaining('新的产品阶段'), findsOneWidget);
     await expectLater(
       find.byKey(key),
@@ -566,10 +873,15 @@ void main() {
       MemoirsPage(api: V2TestApi()),
     );
     final stage = find.text('产品创业阶段');
-    await tester.ensureVisible(stage);
+    await tester.scrollUntilVisible(
+      stage,
+      280,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(stage);
     await tester.pumpAndSettle();
-    final generate = find.text('生成这个阶段的章节');
+    final generate = find.text('生成这个阶段的故事');
     await tester.ensureVisible(generate);
     await tester.tap(generate);
     await tester.pumpAndSettle();
@@ -595,12 +907,12 @@ void main() {
       find.byType(TextField).last,
       '这个阶段发生了什么？',
     );
-    final generate = find.text('生成证据回顾');
+    final generate = find.text('生成回顾');
     await tester.ensureVisible(generate);
     await tester.pumpAndSettle();
     await tester.tap(generate);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('暂不可用'));
+    await tester.ensureVisible(find.text('暂时无法整理'));
     await tester.pumpAndSettle();
     expect(find.textContaining('持续围绕产品开发'), findsNothing);
     await expectLater(

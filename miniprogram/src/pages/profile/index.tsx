@@ -19,6 +19,7 @@ import {
   updateProfile,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import { FloatingCaptureAction, ProductHeroHeader } from '../../components/product/ProductUi'
 import './index.scss'
 
 export default function Page() {
@@ -142,8 +143,11 @@ export default function Page() {
   if (profile) {
     return (
       <View className={elderClassName(profile.elder_mode_enabled)}>
-        <View className='title'>我的</View>
-        <View className='subtitle'>你的记忆由你控制。</View>
+        <ProductHeroHeader
+          eyebrow='迹忆 · 我的'
+          title='我的'
+          subtitle='管理账号、隐私和记录方式。你的记忆由你控制。'
+        />
         <View className='card'>
           <View className='card-title'>账号资料</View>
           <Text>{profile.email || ''}</Text>
@@ -154,14 +158,14 @@ export default function Page() {
         </View>
 
         <View className='card'>
-          <View className='card-title'>人物</View>
-          <View className='muted'>管理你明确创建的人物、关系备注、别名和备注。</View>
+          <View className='card-title'>重要的人</View>
+          <View className='muted'>整理你主动记录的重要的人、关系、别名和备注。</View>
           <Button
             className='secondary-button'
             disabled={loading}
             onClick={() => void Taro.navigateTo({ url: '/pages/people/index' })}
           >
-            管理人物
+            查看重要的人
           </Button>
         </View>
 
@@ -210,6 +214,7 @@ export default function Page() {
           退出登录
         </Button>
         {status && <View className='status'>{status}</View>}
+        <FloatingCaptureAction elderMode={profile.elder_mode_enabled} />
       </View>
     )
   }

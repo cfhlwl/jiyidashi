@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'life_editors.dart';
 import 'life_models.dart';
@@ -187,7 +188,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
         .where((item) => !linked.contains(item.id.toLowerCase()))
         .toList(growable: false);
     if (choices.isEmpty) {
-      setState(() => status = '没有可继续关联的明确 Memory');
+      setState(() => status = '没有可继续关联的记忆');
       return;
     }
     final selected = await showDialog<String>(
@@ -196,7 +197,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
         String value = choices.first.id;
         return StatefulBuilder(
           builder: (context, setLocal) => AlertDialog(
-            title: const Text('关联 Memory 证据'),
+            title: const Text('关联相关记录'),
             content: DropdownButtonFormField<String>(
               initialValue: value,
               items: [
@@ -226,7 +227,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
           eventId: widget.eventId,
           memoryId: selected,
         );
-        return 'Memory 证据已关联';
+        return '相关记录已关联';
       },
     );
   }
@@ -235,8 +236,8 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('取消证据关联？'),
-        content: const Text('只删除事件与 Memory 的显式关联，不删除 Memory。'),
+        title: const Text('取消相关记录关联？'),
+        content: const Text('只取消这段经历与相关记录的关联，不会删除原记录。'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('取消关联')),
@@ -251,7 +252,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
           eventId: widget.eventId,
           memoryId: item.memoryId,
         );
-        return '证据关联已取消';
+        return '相关记录关联已取消';
       },
     );
   }
@@ -260,17 +261,17 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
   Widget build(BuildContext context) {
     final current = event;
     return Scaffold(
-      appBar: AppBar(title: Text(current?.title ?? '人生事件')),
+      appBar: AppBar(title: Text(current?.title ?? '人生经历')),
       body: SafeArea(
         child: JiYiPageFrame(
-          title: current?.title ?? '人生事件',
-          subtitle: '这是明确记录，不使用 AI 推断标签。',
+          title: current?.title ?? '人生经历',
+          subtitle: '这是你明确保存的人生经历。',
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null && current == null
                   ? V2ErrorState(message: error!, onRetry: _load)
                   : current == null
-                      ? const Text('事件当前不可用')
+                      ? const Text('这段经历当前不可用')
                       : _ready(current),
         ),
       ),
@@ -285,7 +286,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
             .map((item) => item.name)
             .cast<String?>()
             .firstOrNull ??
-            current.placeId!;
+            '已关联地点';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -298,13 +299,13 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
           const SizedBox(height: JiYiSpacing.sm),
         ],
         V2SectionCard(
-          title: '事件详情',
+          title: '经历详情',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              V2KeyValue(label: '类型', value: lifeEventLabels[current.kind] ?? current.kind),
-              V2KeyValue(label: '开始', value: current.startedAt),
-              V2KeyValue(label: '结束', value: current.endedAt ?? '未设置'),
+              V2KeyValue(label: '类型', value: lifeEventLabels[current.kind] ?? '其他经历'),
+              V2KeyValue(label: '开始', value: jiyiDisplayDateTime(current.startedAt)),
+              V2KeyValue(label: '结束', value: current.endedAt == null ? '未设置' : jiyiDisplayDateTime(current.endedAt!)),
               V2KeyValue(label: '地点', value: placeName),
               V2KeyValue(label: '备注', value: current.note ?? '无'),
               Wrap(
@@ -319,25 +320,25 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
         ),
         const SizedBox(height: JiYiSpacing.md),
         V2SectionCard(
-          title: 'Memory 证据',
+          title: '相关记录',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               OutlinedButton.icon(
                 onPressed: mutationFlight.isPending ? null : _linkMemory,
                 icon: const Icon(Icons.add_link),
-                label: const Text('关联已有 Memory'),
+                label: const Text('关联已有记录'),
               ),
               if (evidence.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: JiYiSpacing.sm),
-                  child: Text('尚未关联 Memory 证据。'),
+                  child: Text('还没有关联相关记录。'),
                 ),
               for (final item in evidence)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(item.title ?? item.content),
-                  subtitle: Text(item.sourceType + ' · ' + item.occurredAt),
+                  subtitle: Text('记录时间：' + jiyiDisplayDateTime(item.occurredAt)),
                   trailing: IconButton(
                     tooltip: '取消关联',
                     onPressed: mutationFlight.isPending ? null : () => _unlink(item),
