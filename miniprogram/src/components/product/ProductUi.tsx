@@ -95,7 +95,7 @@ export function FloatingCaptureAction({ elderMode = false }: FloatingCaptureActi
     <View className={elderMode ? 'floating-capture-shell floating-capture-elder' : 'floating-capture-shell'}>
       <Button className='floating-capture-action' onClick={openCapture}>
         <Text className='floating-capture-plus'>＋</Text>
-        <Text>记一下</Text>
+        <Text className='floating-capture-label'>记一下</Text>
       </Button>
     </View>
   )

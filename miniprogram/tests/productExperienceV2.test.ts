@@ -78,6 +78,12 @@ test('migrated product surfaces do not expose known implementation vocabulary', 
   assert.doesNotMatch(family, /\{memory\.memory_type\} · \{memory\.source_type\}/)
 })
 
+test('Mini floating capture remains a single readable action at narrow width', () => {
+  assert.match(productUi, /floating-capture-label/)
+  const productStyles = source('src/components/product/product.scss')
+  assert.match(productStyles, /\.floating-capture-label\s*\{[^}]*white-space:\s*nowrap/s)
+})
+
 test('Mini Product Experience V2 has deterministic visual review harness', () => {
   const review = source('src/pages/visual-review/index.tsx')
   const reviewStyles = source('src/pages/visual-review/index.scss')
