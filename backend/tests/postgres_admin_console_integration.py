@@ -20,6 +20,7 @@ from app.admin_models import (
 )
 from app.admin_schemas import AdminQuotaCatalogWrite, AdminQuotaPlanWrite
 from app.core.db import SessionLocal, engine
+from app.maintenance.admin_bootstrap import bootstrap_super_admin
 from app.services.admin_operations import write_quota_catalog
 from app.services.admin_security import AdminOperationError, hash_admin_password
 
@@ -81,6 +82,108 @@ def _prove_migration_roundtrip() -> None:
                 {"name": table},
             )
             assert exists is True
+
+
+def _prove_bootstrap_singleton_race() -> AdminAccount:
+    email = f"bootstrap-{uuid4()}@example.com"
+    os.environ["ADMIN_BOOTSTRAP_EMAIL"] = email
+    os.environ["ADMIN_BOOTSTRAP_PASSWORD"] = "Bootstrap-Gate-Password-123!"
+    os.environ["ADMIN_BOOTSTRAP_NAME"] = "Bootstrap Gate"
+
+    barrier = Barrier(2)
+    lock = Lock()
+    results: list[bool] = []
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            barrier.wait(timeout=15)
+            created = bootstrap_super_admin()
+            with lock:
+                results.append(created)
+        except BaseException as exc:  # noqa: BLE001
+            with lock:
+                errors.append(exc)
+
+    first = Thread(target=worker, name="admin-bootstrap-a")
+    second = Thread(target=worker, name="admin-bootstrap-b")
+    first.start()
+    second.start()
+    first.join(timeout=30)
+    second.join(timeout=30)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert errors == []
+    assert sorted(results) == [False, True]
+
+    with SessionLocal() as db:
+        rows = list(
+            db.scalars(
+                select(AdminAccount).where(
+                    AdminAccount.role == AdminRole.SUPER_ADMIN.value,
+                    AdminAccount.disabled.is_(False),
+                )
+            )
+        )
+        assert len(rows) == 1
+        assert rows[0].email == email
+        db.expunge(rows[0])
+        return rows[0]
+
+
+def _prove_quota_initialization_race(actor: AdminAccount) -> None:
+    with SessionLocal() as db:
+        db.execute(delete(EntitlementQuotaPolicy))
+        db.commit()
+
+    barrier = Barrier(2)
+    lock = Lock()
+    successes: list[int] = []
+    stale: list[str] = []
+    errors: list[BaseException] = []
+
+    def worker(storage_base: int) -> None:
+        db = SessionLocal()
+        try:
+            principal = db.get(AdminAccount, actor.id)
+            assert principal is not None
+            barrier.wait(timeout=15)
+            rows = write_quota_catalog(
+                db,
+                actor=principal,
+                payload=_payload(expected_revision=None, storage_base=storage_base),
+            )
+            with lock:
+                successes.append(rows[0].revision)
+        except AdminOperationError as exc:
+            db.rollback()
+            with lock:
+                stale.append(exc.code)
+        except BaseException as exc:  # noqa: BLE001
+            db.rollback()
+            with lock:
+                errors.append(exc)
+        finally:
+            db.close()
+
+    first = Thread(target=worker, args=(1100,), name="admin-quota-init-a")
+    second = Thread(target=worker, args=(2200,), name="admin-quota-init-b")
+    first.start()
+    second.start()
+    first.join(timeout=30)
+    second.join(timeout=30)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert errors == []
+    assert successes == [0]
+    assert stale == ["ADMIN_STATE_STALE"]
+
+    with SessionLocal() as db:
+        rows = list(db.scalars(select(EntitlementQuotaPolicy)))
+        assert len(rows) == 4
+        assert {row.revision for row in rows} == {0}
 
 
 def _prove_audit_is_database_append_only(actor: AdminAccount) -> None:
@@ -238,8 +341,9 @@ def _cleanup() -> None:
 def main() -> None:
     assert DATABASE_URL.startswith("postgresql")
     _prove_migration_roundtrip()
-    actor = _seed_super_admin()
+    actor = _prove_bootstrap_singleton_race()
     _prove_audit_is_database_append_only(actor)
+    _prove_quota_initialization_race(actor)
     _prove_quota_revision_race(actor)
     _prove_revision_snapshot_is_persisted(actor)
     print("PostgreSQL ADMIN-001 authority/concurrency PASS")
