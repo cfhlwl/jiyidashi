@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+from auth_test_helpers import register_verified_session
 import pytest
 from sqlalchemy import select
 
@@ -20,7 +21,6 @@ from app.person_models import Person, PersonAlias
 from app.person_relationship_models import PersonRelationship, PersonRelationshipKind
 from app.services import account_deletion_service
 from app.services.object_storage import ObjectStorageError, get_object_storage
-from auth_test_helpers import register_verified_session
 
 
 class AccountDeleteStorage:
