@@ -1,5 +1,5 @@
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- PR #179 / #167 SEC-014 Sensitive Operation Confirmation Standard V1 已完成两轮正式 security review 并合并 main=2080174f；Account Delete operation-level session binding、Family/Emergency stale-state suppression、location/privacy fresh authority 与跨端 sensitive-operation confirmation 已收口。当前主线切到 ADMIN-001 JiYi Production Admin Console V1；OPS-001 真实 public-server acceptance 顺延到管理后台正式收口后，继续保持 🟠。 -->
+<!-- PR #179 / #167 SEC-014 Sensitive Operation Confirmation Standard V1 已完成两轮正式 security review 并合并 main=2080174f；Account Delete operation-level session binding、Family/Emergency stale-state suppression、location/privacy fresh authority 与跨端 sensitive-operation confirmation 已收口。当前主线为 ADMIN-001 JiYi Production Admin Console V1；新增 OPS-002 Async Job & Worker Foundation V1 作为正式规模化前置架构任务，顺序调整为 ADMIN-001 → OPS-002 → OPS-001/#136 真实 public-server acceptance → commercial rollout → V3。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- I：Memory Edit / PR #27 已完成正式复审并合并 main=24901d76；S1-018 转 ✅。J：Data Delete / PR #28 随后基于该新 main 完成 MemoryEdit 删除适配、0008 migration 顺延、单提交 clean replay 与 exact-head CI，并合并 main=3abc1366；S1-021 / SEC-007 转 ✅。 -->
@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**ADMIN-001 / JiYi Production Admin Console V1**；#167 / PR #179 已完成正式 security review 并合并，SEC-014 收口；当前主线建设独立安全的生产管理后台，包括 Admin 身份/角色、Dashboard、用户/家庭/会员与额度、删除/注销、安全告警、AI/存储/系统状态、审计日志、受控设置中心，以及企业级 Admin Design System / Product Language / visual regression；完成后进入 #136 real-env acceptance → commercial rollout；V3-001+ 未开始。
+> 当前阶段：**ADMIN-001 / JiYi Production Admin Console V1**；#167 / PR #179 已完成正式 security review 并合并，SEC-014 收口；当前主线建设独立安全的生产管理后台，包括 Admin 身份/角色、Dashboard、用户/家庭/会员与额度、删除/注销、安全告警、AI/存储/系统状态、审计日志、受控设置中心，以及企业级 Admin Design System / Product Language / visual regression；完成后按 **OPS-002 Async Job & Worker Foundation V1 → #136 real-env acceptance → commercial rollout** 推进；V3-001+ 未开始。
 
 ## 状态规则
 
@@ -308,8 +308,51 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| ADMIN-001 | JiYi Production Admin Console V1 | 🔵 | 当前主线：独立 Admin 身份/角色、Dashboard、用户/家庭/会员与额度、删除/注销、安全告警、AI/ASR/检索/存储/系统健康、审计日志、受控设置中心；要求企业级管理后台视觉、无开发语言泄漏、私密内容默认不可见、危险操作二次确认与 Admin visual regression；完成后再进入 OPS-001 真环境验收 |
-| OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：Docker/Compose/Caddy、production env fail-closed、migration、immutable image、backup/restore/rollback 与 CI 已合并；真实 public-server DNS/TLS/object-storage/client-domain 验收顺延到 ADMIN-001 收口后，因此不标记 ✅ |
+| ADMIN-001 | JiYi Production Admin Console V1 | 🔵 | 当前主线：独立 Admin 身份/角色、Dashboard、用户/家庭/会员与额度、删除/注销、安全告警、AI/ASR/检索/存储/系统健康、审计日志、受控设置中心；要求企业级管理后台视觉、无开发语言泄漏、私密内容默认不可见、危险操作二次确认与 Admin visual regression；完成后进入 OPS-002 |
+| OPS-002 | Async Job & Worker Foundation V1 | ⬜ | 已记录为正式规模化前置任务：将 Annual/Life Memoir、Monthly/Annual Summary、Embedding refresh 等长耗时/可延迟 AI 工作从 HTTP 生命周期解耦；PostgreSQL 保持 durable Job authority，Queue 仅负责投递/唤醒，Worker 必须在 claim/provider 前后/commit 前重新验证 owner、revision、deletion/privacy authority；首版建议 Redis + worker-ai / worker-media，交互式 Memory Query 保持同步。触发依据不是单一 DAU，而是 peak provider concurrency、P95/P99 latency、timeout/429/retry volume 与正式规模化准备。 |
+| OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：Docker/Compose/Caddy、production env fail-closed、migration、immutable image、backup/restore/rollback 与 CI 已合并；真实 public-server DNS/TLS/object-storage/client-domain 验收顺延到 OPS-002 收口后，以最终 API + Queue + Worker 拓扑进行正式生产验收，因此不标记 ✅ |
+### OPS-002 架构决策（2026-09-30）
+
+当前 production Compose 仍为：
+
+```text
+postgres
+migrate
+api
+reverse-proxy / Caddy
+```
+
+当前 OCR、Vision、ASR、Embedding、Summary、Memoir 等多类 Provider I/O 仍有请求内执行路径。现阶段可继续服务小规模上线，但正式规模化前需要把**长耗时、可延迟、可重试**的任务迁移到 durable Job + Queue + Worker；交互式查询不强制异步化。
+
+冻结原则：
+
+```text
+PostgreSQL = Job authority / durable truth
+Queue      = delivery / wake-up only
+Worker     = executor
+```
+
+Worker 不得继承“创建 Job 时已经授权”的旧状态。每个任务必须在 claim、provider 前、provider 后、commit 前按现有安全模型重新验证必要的 owner/session/resource revision/deletion/privacy authority；Data Delete / Account Delete 后，旧 queued/running job 不得重新生成或重新发布用户数据。
+
+首版建议拓扑：
+
+```text
+Caddy / LB
+   ├─ API #1..N
+   │
+PostgreSQL
+   │
+Durable Jobs
+   │
+Redis Queue
+   ├─ worker-ai
+   └─ worker-media
+```
+
+优先异步化：Annual/Life Memoir、Monthly/Annual Summary、Embedding refresh；随后 Vision/OCR/ASR/Daily Summary/Long-term Reasoning。普通交互式 Memory Query 保持同步，除非后续负载数据证明需要改变。
+
+OPS-002 不以“5000/10000 DAU”作为单一启动条件；重点观察 provider peak concurrency、P95/P99 latency、timeout、429/5xx、retry volume 与 API long-request concurrency。正式商业 rollout 前应完成该 Foundation。
+
 
 # 7. V3：AI 人生助手与硬件扩展
 
