@@ -100,7 +100,7 @@ List<_UiCopyLeak> _productionLanguageLeaks() {
           _UiCopyLeak(
             file.path,
             literal,
-            'raw trust/status/domain enum ' + enumMatch.group(0)!,
+            'raw trust/status/domain enum ${enumMatch.group(0)}',
           ),
         );
       }
@@ -205,7 +205,7 @@ void main() {
       isEmpty,
       reason: leaks.isEmpty
           ? null
-          : 'Production-facing language leaks:\n' + leaks.join('\n'),
+          : 'Production-facing language leaks:\n${leaks.join('\n')}',
     );
   });
 
