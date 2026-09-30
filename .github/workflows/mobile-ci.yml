@@ -49,6 +49,19 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify dependency lock
+        id: android-lock
+        shell: bash
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Upload resolved dependency lock
+        if: failure() && steps.android-lock.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: auth001-pubspec-lock-${{ github.event.pull_request.head.sha || github.sha }}
+          path: mobile/pubspec.lock
+          retention-days: 3
+
       - name: Analyze
         run: flutter analyze
 
@@ -77,6 +90,8 @@ jobs:
           grep -q 'android.permission.ACCESS_BACKGROUND_LOCATION' android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' android/app/src/main/AndroidManifest.xml
           grep -q 'android:foregroundServiceType="location"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:allowBackup="false"' android/app/src/main/AndroidManifest.xml
+          grep -q 'minSdk = 24' android/app/build.gradle.kts
 
       - name: Build Android debug APK
         # Debug 继续覆盖开发安装包；production dart-define 禁止静默回退 localhost。
@@ -133,6 +148,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify dependency lock
+        shell: bash
+        run: git diff --exit-code -- pubspec.lock
+
       - name: Test iOS native location policy
         timeout-minutes: 10
         shell: bash
@@ -157,6 +176,10 @@ jobs:
           grep -q 'NSLocationWhenInUseUsageDescription' ios/Runner/Info.plist
           grep -q 'NSLocationAlwaysAndWhenInUseUsageDescription' ios/Runner/Info.plist
           grep -q '<string>location</string>' ios/Runner/Info.plist
+          grep -q '<key>keychain-access-groups</key>' ios/Runner/DebugProfile.entitlements
+          grep -q '<key>keychain-access-groups</key>' ios/Runner/Release.entitlements
+          grep -q 'CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;' ios/Runner.xcodeproj/project.pbxproj
+          grep -q 'CODE_SIGN_ENTITLEMENTS = Runner/Release.entitlements;' ios/Runner.xcodeproj/project.pbxproj
 
       - name: Build iOS without codesigning
         # [人工注释][S1-FIX-007] iOS 同样以 production dart-define 验证 build-time endpoint 契约。
