@@ -420,14 +420,15 @@ class JiYiApiClient {
   Future<Map<String, dynamic>> deleteAccount({
     required String requestId,
     required bool localCleanupReady,
-  }) {
+  }) async {
     final normalized = requestId.trim();
     if (normalized.isEmpty) {
       throw ArgumentError.value(requestId, 'requestId', 'request ID must not be empty');
     }
-    // [人工注释][S1-022] 客户端只发送精确 destructive protocol value；
-    // 服务器仍独立校验，不能把普通“删除数据”误接成账号注销。
-    return _jsonRequest(
+    final snapshot = _captureAuthenticatedSession();
+    // [人工注释][SEC-014][S1-022] 第二确认只表达用户 intent。真正请求绑定
+    // authenticated-session snapshot；确认后切换账号/会话时，late response 必须 fail closed。
+    final data = await _jsonRequest(
       'POST',
       '/account/delete',
       body: {
@@ -435,7 +436,10 @@ class JiYiApiClient {
         'confirmation': 'DELETE_MY_ACCOUNT',
         'local_cleanup_ready': localCleanupReady,
       },
+      authSnapshot: snapshot,
     );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return data;
   }
 
   Future<Map<String, dynamic>> updateProfile({
