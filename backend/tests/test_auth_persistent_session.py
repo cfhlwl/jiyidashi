@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import jwt
 import pytest
 from sqlalchemy import select
 
-from app.auth_models import AuthSession
+from app.auth_models import AuthOneTimePurpose, AuthOneTimeToken, AuthSession
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.security import decode_access_token_claims
+from app.models import User
 from app.services import auth_rate_limit
 from app.services.auth_delivery import MemoryAuthEmailDelivery
 
@@ -175,6 +176,46 @@ async def test_access_jwt_has_issuer_audience_jti_and_session_binding(
     )
     assert denied.status_code == 401
     assert denied.json()["detail"] == "INVALID_ACCESS_TOKEN"
+
+    wrong_audience = jwt.encode(
+        {
+            "iss": settings.jwt_issuer,
+            "aud": "wrong-audience",
+            "sub": session["user_id"],
+            "jti": "00000000-0000-4000-8000-000000000002",
+            "session_id": session["session_id"],
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+        },
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    audience_denied = await client.get(
+        "/v1/user",
+        headers={"Authorization": f"Bearer {wrong_audience}"},
+    )
+    assert audience_denied.status_code == 401
+    assert audience_denied.json()["detail"] == "INVALID_ACCESS_TOKEN"
+
+    wrong_session = jwt.encode(
+        {
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+            "sub": session["user_id"],
+            "jti": "00000000-0000-4000-8000-000000000003",
+            "session_id": str(uuid4()),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+        },
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    session_denied = await client.get(
+        "/v1/user",
+        headers={"Authorization": f"Bearer {wrong_session}"},
+    )
+    assert session_denied.status_code == 401
+    assert session_denied.json()["detail"] == "AUTH_SESSION_INVALID"
 
 
 async def test_refresh_rotates_and_old_token_replay_revokes_session(
@@ -358,3 +399,210 @@ async def test_session_listing_and_owner_scoped_revoke(
     assert revoked.status_code == 200
     assert (await client.get("/v1/user", headers=_headers(second))).status_code == 401
     assert (await client.get("/v1/user", headers=_headers(first))).status_code == 200
+
+async def test_email_verification_token_expires(
+    client,
+    auth_email_delivery: MemoryAuthEmailDelivery,
+):
+    user_id, token = await _register(
+        client,
+        auth_email_delivery,
+        email="auth001-verify-expired@example.com",
+    )
+    with SessionLocal() as db:
+        row = db.scalar(
+            select(AuthOneTimeToken).where(
+                AuthOneTimeToken.user_id == UUID(user_id),
+                AuthOneTimeToken.purpose == AuthOneTimePurpose.EMAIL_VERIFY,
+            )
+        )
+        assert row is not None
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+
+    response = await client.post(
+        "/v1/auth/verify-email",
+        json={"token": token, "device_id": "expired-verify"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "VERIFICATION_TOKEN_EXPIRED"
+
+
+async def test_password_reset_token_expires(
+    client,
+    auth_email_delivery: MemoryAuthEmailDelivery,
+):
+    email = "auth001-reset-expired@example.com"
+    user_id, token = await _register(client, auth_email_delivery, email=email)
+    await _verify(client, token, device_id="reset-expired")
+
+    requested = await client.post(
+        "/v1/auth/forgot-password",
+        json={"email": email},
+    )
+    assert requested.status_code == 202
+    _, reset_token = auth_email_delivery.password_reset_tokens[-1]
+
+    with SessionLocal() as db:
+        row = db.scalar(
+            select(AuthOneTimeToken).where(
+                AuthOneTimeToken.user_id == UUID(user_id),
+                AuthOneTimeToken.purpose == AuthOneTimePurpose.PASSWORD_RESET,
+            )
+        )
+        assert row is not None
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+
+    response = await client.post(
+        "/v1/auth/reset-password",
+        json={
+            "token": reset_token,
+            "new_password": "expired-reset-new-password",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "PASSWORD_RESET_TOKEN_EXPIRED"
+
+
+async def test_password_change_revokes_all_existing_sessions(
+    client,
+    auth_email_delivery: MemoryAuthEmailDelivery,
+):
+    email = "auth001-change-password@example.com"
+    old_password = "correct-horse-battery-staple"
+    _, token = await _register(
+        client,
+        auth_email_delivery,
+        email=email,
+        password=old_password,
+    )
+    first = await _verify(client, token, device_id="password-change-a")
+    second_response = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": email,
+            "password": old_password,
+            "device_id": "password-change-b",
+        },
+    )
+    assert second_response.status_code == 200
+    second = second_response.json()
+
+    changed = await client.post(
+        "/v1/auth/change-password",
+        headers=_headers(first),
+        json={
+            "current_password": old_password,
+            "new_password": "new-correct-horse-battery-staple",
+        },
+    )
+    assert changed.status_code == 200
+    assert (await client.get("/v1/user", headers=_headers(first))).status_code == 401
+    assert (await client.get("/v1/user", headers=_headers(second))).status_code == 401
+
+    old_login = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": email,
+            "password": old_password,
+            "device_id": "old-password-after-change",
+        },
+    )
+    assert old_login.status_code == 401
+    new_login = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": email,
+            "password": "new-correct-horse-battery-staple",
+            "device_id": "new-password-after-change",
+        },
+    )
+    assert new_login.status_code == 200
+
+
+async def test_disabled_user_fails_closed_even_with_unexpired_access_jwt(
+    client,
+    auth_email_delivery: MemoryAuthEmailDelivery,
+):
+    user_id, token = await _register(
+        client,
+        auth_email_delivery,
+        email="auth001-disabled@example.com",
+    )
+    session = await _verify(client, token, device_id="disabled-device")
+
+    with SessionLocal() as db:
+        user = db.get(User, UUID(user_id))
+        assert user is not None
+        user.auth_disabled_at = datetime.now(UTC)
+        db.commit()
+
+    denied = await client.get("/v1/user", headers=_headers(session))
+    assert denied.status_code == 401
+    assert denied.json()["detail"] == "AUTH_ACCOUNT_UNAVAILABLE"
+
+
+async def test_account_delete_revokes_other_sessions_and_preserves_two_phase_continuation(
+    client,
+    auth_email_delivery: MemoryAuthEmailDelivery,
+):
+    email = "auth001-account-delete@example.com"
+    password = "correct-horse-battery-staple"
+    _, token = await _register(
+        client,
+        auth_email_delivery,
+        email=email,
+        password=password,
+    )
+    continuation = await _verify(client, token, device_id="delete-continuation")
+    other_response = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": email,
+            "password": password,
+            "device_id": "delete-other",
+        },
+    )
+    assert other_response.status_code == 200
+    other = other_response.json()
+
+    request_id = str(uuid4())
+    prepared = await client.post(
+        "/v1/account/delete",
+        headers=_headers(continuation),
+        json={
+            "request_id": request_id,
+            "confirmation": "DELETE_MY_ACCOUNT",
+            "local_cleanup_ready": False,
+        },
+    )
+    assert prepared.status_code == 202
+    assert prepared.json()["completed"] is False
+
+    # Other devices lose session authority immediately.
+    other_denied = await client.get("/v1/user", headers=_headers(other))
+    assert other_denied.status_code == 401
+    assert other_denied.json()["detail"] == "AUTH_SESSION_INVALID"
+
+    # The exact continuation session cannot re-enter ordinary owner data.
+    ordinary_denied = await client.get("/v1/user", headers=_headers(continuation))
+    assert ordinary_denied.status_code == 423
+    assert ordinary_denied.json()["detail"] == "ACCOUNT_DELETION_IN_PROGRESS"
+
+    # It can finish the reviewed PREPARE -> local purge -> COMMIT protocol.
+    committed = await client.post(
+        "/v1/account/delete",
+        headers=_headers(continuation),
+        json={
+            "request_id": request_id,
+            "confirmation": "DELETE_MY_ACCOUNT",
+            "local_cleanup_ready": True,
+        },
+    )
+    assert committed.status_code == 200
+    assert committed.json()["completed"] is True
+
+    after_delete = await client.get("/v1/user", headers=_headers(continuation))
+    assert after_delete.status_code == 401
+
