@@ -20,6 +20,8 @@ _SECURITY_SCOPE_BY_RATE_SCOPE = {
     "register_ip": SecurityScope.AUTH_REGISTER_IP,
     "login_ip": SecurityScope.AUTH_LOGIN_IP,
     "login_account_ip": SecurityScope.AUTH_LOGIN_ACCOUNT_IP,
+    "admin_login_ip": SecurityScope.ADMIN_LOGIN_IP,
+    "admin_login_account_ip": SecurityScope.ADMIN_LOGIN_ACCOUNT_IP,
 }
 
 
@@ -267,3 +269,97 @@ def clear_login_account_penalty(db: Session, client_ip: str, subject: str) -> No
     bucket.blocked_until = None
     bucket.updated_at = now
     db.commit()
+
+def consume_admin_login_ip_attempt(db: Session, client_ip: str) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+    _consume(
+        db,
+        scope="admin_login_ip",
+        value=client_ip,
+        policy=RatePolicy(
+            limit=settings.admin_login_ip_limit,
+            window_seconds=settings.admin_login_window_seconds,
+        ),
+    )
+
+
+def consume_admin_login_account_attempt(
+    db: Session,
+    client_ip: str,
+    subject: str,
+) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+    _consume(
+        db,
+        scope="admin_login_account_ip",
+        value=f"{client_ip}\n{subject}",
+        policy=RatePolicy(
+            limit=settings.admin_login_account_ip_limit,
+            window_seconds=settings.admin_login_window_seconds,
+        ),
+    )
+
+
+def record_admin_login_failure(db: Session, client_ip: str, subject: str) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+
+    now = datetime.now(UTC)
+    policy = RatePolicy(
+        limit=settings.admin_login_account_ip_limit,
+        window_seconds=settings.admin_login_window_seconds,
+    )
+    bucket = _get_or_create_bucket(
+        db,
+        scope="admin_login_account_ip",
+        value=f"{client_ip}\n{subject}",
+        now=now,
+    )
+    _refresh_window(bucket, now=now, policy=policy)
+    bucket.failures += 1
+
+    if bucket.failures >= settings.admin_login_backoff_after_failures:
+        exponent = bucket.failures - settings.admin_login_backoff_after_failures
+        seconds = min(
+            2 ** (exponent + 1),
+            settings.admin_login_backoff_max_seconds,
+        )
+        bucket.blocked_until = now + timedelta(seconds=seconds)
+
+    bucket.updated_at = now
+    db.commit()
+    _record_auth_security_signal(
+        db,
+        signal_code=SecuritySignalCode.AUTH_LOGIN_FAILURE_BURST,
+        scope="admin_login_account_ip",
+        value=f"{client_ip}\n{subject}",
+    )
+
+
+def clear_admin_login_account_penalty(
+    db: Session,
+    client_ip: str,
+    subject: str,
+) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+
+    key = _bucket_key("admin_login_account_ip", f"{client_ip}\n{subject}")
+    bucket = db.scalar(
+        select(AuthRateLimitBucket)
+        .where(AuthRateLimitBucket.key == key)
+        .with_for_update()
+    )
+    if bucket is None:
+        return
+
+    now = datetime.now(UTC)
+    bucket.window_started_at = now
+    bucket.attempts = 0
+    bucket.failures = 0
+    bucket.blocked_until = None
+    bucket.updated_at = now
+    db.commit()
+
