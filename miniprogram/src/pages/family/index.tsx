@@ -731,7 +731,8 @@ export default function Page() {
     setEmergencyBusy((current) => ({ ...current, [granteeUserId]: true }))
     const session = captureMutationSession()
     const attempt = sensitiveMutationEpoch.current.capture()
-    if (!session.owner) {
+    const ownerUserId = session.owner
+    if (!ownerUserId) {
       setEmergencyBusy((current) => ({ ...current, [granteeUserId]: false }))
       return
     }
@@ -780,7 +781,7 @@ export default function Page() {
       }
       sensitiveReadEpoch.current.invalidate()
       setEmergencyReads({})
-      setEmergencyShares(await getFamilyEmergencyShares(session.owner))
+      setEmergencyShares(await getFamilyEmergencyShares(ownerUserId))
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
         return
       }
@@ -800,7 +801,8 @@ export default function Page() {
     setEmergencyBusy((current) => ({ ...current, [shareId]: true }))
     const session = captureMutationSession()
     const attempt = sensitiveMutationEpoch.current.capture()
-    if (!session.owner) {
+    const ownerUserId = session.owner
+    if (!ownerUserId) {
       setEmergencyBusy((current) => ({ ...current, [shareId]: false }))
       return
     }
@@ -808,7 +810,7 @@ export default function Page() {
     try {
       // Safe-off path: stopping disclosure remains immediate, but the visible share id
       // is re-bound to current canonical state before revoke.
-      const shares = await getFamilyEmergencyShares(session.owner)
+      const shares = await getFamilyEmergencyShares(ownerUserId)
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
         return
       }
@@ -827,7 +829,7 @@ export default function Page() {
       }
       sensitiveReadEpoch.current.invalidate()
       setEmergencyReads({})
-      setEmergencyShares(await getFamilyEmergencyShares(session.owner))
+      setEmergencyShares(await getFamilyEmergencyShares(ownerUserId))
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
         return
       }
