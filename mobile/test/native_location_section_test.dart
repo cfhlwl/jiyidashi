@@ -250,6 +250,10 @@ void main() {
       find.byKey(const ValueKey('location-request-foreground')),
     );
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('location-share-confirm-submit')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('location-share-confirm-submit')));
+    await tester.pumpAndSettle();
+    expect(authorityChecks, 1);
     expect(
       bridge.calls,
       <String>['status', 'requestForegroundPermission'],
@@ -266,7 +270,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('location-share-confirm-submit')));
     await tester.pumpAndSettle();
 
-    expect(authorityChecks, 1);
+    expect(authorityChecks, 2);
     expect(
       bridge.calls,
       <String>[
