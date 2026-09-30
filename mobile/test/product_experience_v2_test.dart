@@ -62,7 +62,10 @@ void main() {
     expect(components, contains('class JiYiLoadingState'));
     expect(components, contains('class JiYiErrorState'));
     expect(components, contains('class JiYiOfflineState'));
-    expect(shell, contains('JiYiOfflineState(onRetry: _retryPlaces)'));
+    expect(shell, contains('JiYiOfflineState(onRetry: _loadInitial)'));
+    expect(shell, contains('getTimelineEvents(limit: 30)'));
+    expect(shell, contains('TimelineReadPage.parse(raw)'));
+    expect(shell, isNot(contains('late Future<List<Map<String, dynamic>>> _places')));
   });
 
   test('Flutter Product Experience V2 defines shared design token families', () {
