@@ -62,6 +62,7 @@ export const deliveryStatusLabel: Record<string, string> = {
 export const serviceStatusLabel: Record<string, string> = {
   NORMAL: '正常',
   DISABLED: '未启用',
+  UNVERIFIED: '已配置 / 未验证',
   WARNING: '需要关注',
   ERROR: '异常',
 }
