@@ -4,12 +4,13 @@ publish_to: "none"
 version: 0.1.0+1
 
 environment:
-  sdk: ">=3.5.0 <4.0.0"
+  sdk: ">=3.8.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.2
+  flutter_secure_storage: 11.2.0
   image_picker: ^1.2.3
   record: ^7.1.1
   # Android / iOS 本地持久化使用 SQLite；禁止用内存队列冒充离线可靠存储。
