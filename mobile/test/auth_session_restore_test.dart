@@ -281,4 +281,84 @@ void main() {
     expect(call, 4);
   });
 
+
+  test('access rotation preserves durable session authority version', () async {
+    final store = MemoryAuthSessionStore()..installationId = 'install-version';
+    var call = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        call += 1;
+        if (call == 1) {
+          return http.Response(
+            jsonEncode(sessionPayload()),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        expect(request.url.path, '/v1/auth/refresh');
+        return http.Response(
+          jsonEncode(
+            sessionPayload(
+              access: 'access-v2',
+              refresh: 'refresh-v2-abcdefghijklmnopqrstuvwxyz',
+            ),
+          ),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'owner@example.test', password: 'password-123456');
+    final version = api.sessionVersion;
+    final sessionId = api.authenticatedSessionId;
+
+    await api.revalidateAuthenticatedOwnerAuthority();
+
+    expect(api.sessionVersion, version);
+    expect(api.authenticatedSessionId, sessionId);
+    expect(api.accessToken, 'access-v2');
+  });
+
+  test('logout invalidates local authority synchronously before network completes', () async {
+    final store = MemoryAuthSessionStore()..installationId = 'install-sync-logout';
+    final release = Completer<void>();
+    var call = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        call += 1;
+        if (call == 1) {
+          return http.Response(
+            jsonEncode(sessionPayload()),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        expect(request.url.path, '/v1/auth/logout');
+        await release.future;
+        return http.Response(
+          jsonEncode({'accepted': true}),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'owner@example.test', password: 'password-123456');
+    final before = api.sessionVersion;
+    final pending = api.logout();
+
+    expect(api.authenticatedUserId, isNull);
+    expect(api.accessToken, isNull);
+    expect(api.sessionVersion, greaterThan(before));
+
+    release.complete();
+    await pending;
+    expect(store.session, isNull);
+  });
+
 }
