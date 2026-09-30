@@ -719,6 +719,240 @@ class JiYiApiClient {
     return LocationBatchResult.fromJson(data);
   }
 
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) {
+    if (limit < 1 || limit > 100) {
+      throw ArgumentError.value(limit, 'limit', 'timeline limit must be 1..100');
+    }
+    final query = <String, String>{'limit': limit.toString()};
+    final normalizedCursor = cursor?.trim();
+    if (normalizedCursor != null && normalizedCursor.isNotEmpty) {
+      query['cursor'] = normalizedCursor;
+    }
+    final normalizedDay = day?.trim();
+    if (normalizedDay != null && normalizedDay.isNotEmpty) {
+      if (!RegExp(r'^\d{4}-\d{2}-\d{2}    if (limit < 1 || limit > 500) {
+      throw ArgumentError.value(limit, 'limit', 'place limit must be 1..500');
+    }
+    return _jsonListRequest(
+      Uri(
+        path: '/location/places',
+        queryParameters: {'limit': limit.toString()},
+      ).toString(),
+    );
+  }
+
+  Future<Map<String, dynamic>> getPlaceDetail(
+    String placeId, {
+    int limit = 50,
+    String? cursor,
+  }) {
+    final normalized = placeId.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(placeId, 'placeId', 'place ID must not be empty');
+    }
+    if (limit < 1 || limit > 200) {
+      throw ArgumentError.value(limit, 'limit', 'visit limit must be 1..200');
+    }
+    final query = <String, String>{'limit': limit.toString()};
+    final normalizedCursor = cursor?.trim();
+    if (normalizedCursor != null && normalizedCursor.isNotEmpty) {
+      query['cursor'] = normalizedCursor;
+    }
+    return _jsonRequest(
+      'GET',
+      Uri(
+        path: '/location/places/$normalized',
+        queryParameters: query,
+      ).toString(),
+    );
+  }
+
+  Future<Map<String, dynamic>> getPrivacyStatus() {
+    return _jsonRequest('GET', '/privacy/status');
+  }
+
+  Future<Map<String, dynamic>> pauseMemory(int minutes) {
+    // [人工注释][S1-023] 客户端只选择暂停时长，历史 pause interval 仍由服务端持久化。
+    return _jsonRequest(
+      'POST',
+      '/privacy/pause',
+      body: {'duration_minutes': minutes},
+    );
+  }
+
+  Future<Map<String, dynamic>> pauseMemoryToday() {
+    // [人工注释][S1-023] “今天”由服务端按用户 IANA timezone 计算本地午夜。
+    return _jsonRequest('POST', '/privacy/pause/today');
+  }
+
+  Future<Map<String, dynamic>> resumeMemory() {
+    // [人工注释][S1-024] 恢复只结束当前暂停，服务端仍保留历史暂停区间阻断延迟补传。
+    return _jsonRequest('POST', '/privacy/resume');
+  }
+
+  Future<Map<String, dynamic>> queryMemory(String question) async {
+    // [人工注释][S1-013][S4-013] 查询绑定发起时的认证会话；malformed 2xx 必须 fail closed。
+    final snapshot = _captureAuthenticatedSession();
+    final raw = await _jsonRequest(
+      'POST',
+      '/memory/query',
+      body: {'question': question.trim()},
+      authSnapshot: snapshot,
+    );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return _parseMemoryQueryResult(raw);
+  }
+
+  void logout() {
+    accessToken = null;
+    // [人工注释][S1-015] 退出登录同时清掉当前本机账号作用域；SQLite 数据保留但下一个账号不能读取它。
+    authenticatedUserId = null;
+    _sessionVersion += 1;
+  }
+  // #163 Flutter V2 reuses the existing authenticated-session snapshot.
+  // V2 operations are never silently added to the existing offline queue.
+  Future<Object?> requestV2Json(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final snapshot = _captureAuthenticatedSession();
+    final decoded = _decodeResponse(
+      await _request(
+        method,
+        path,
+        body: body,
+        authSnapshot: snapshot,
+      ),
+    );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return decoded;
+  }
+
+
+  // [人工注释][S1-019] 统一传输层显式支持 DELETE；204 空响应也必须沿同一服务端成功链处理，
+  // 不能让删除退化成客户端本地隐藏。
+  Future<http.Response> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    bool authenticated = true,
+    Map<String, String>? extraHeaders,
+    _AuthenticatedSessionSnapshot? authSnapshot,
+  }) async {
+    final token = authSnapshot?.accessToken ?? accessToken;
+    if (authenticated && (token == null || token.trim().isEmpty)) {
+      throw ApiException(401, '请先登录');
+    }
+    final headers = <String, String>{
+      ...(authenticated
+          ? (authSnapshot == null
+              ? _headers
+              : {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer ${authSnapshot.accessToken}',
+                })
+          : const {'Content-Type': 'application/json'}),
+      ...?extraHeaders,
+    };
+    final encoded = body == null ? null : jsonEncode(body);
+    // [人工注释][S1-016] transport 分类只在底层 HTTP 边界捕获 ClientException/TimeoutException；其他异常原样向上，绝不触发离线入队。
+    try {
+      return switch (method) {
+        'GET' => await _http.get(_uri(path), headers: headers),
+        'POST' => await _http.post(_uri(path), headers: headers, body: encoded),
+        'PATCH' => await _http.patch(_uri(path), headers: headers, body: encoded),
+        'PUT' => await _http.put(_uri(path), headers: headers, body: encoded),
+        'DELETE' => await _http.delete(_uri(path), headers: headers, body: encoded),
+        _ => throw ArgumentError('Unsupported method: $method'),
+      };
+    } on http.ClientException catch (exc) {
+      throw TransportException('网络连接失败', exc);
+    } on TimeoutException catch (exc) {
+      throw TransportException('网络请求超时', exc);
+    }
+  }
+
+  // [人工注释][S1-019][S1-016] 204 空响应仍合法；非 2xx 即使 body 为 HTML/坏 JSON 也属于服务端失败，只有 2xx 坏 JSON 才是协议异常。
+  dynamic _decodeResponse(http.Response response) {
+    final isError = response.statusCode < 200 || response.statusCode >= 300;
+    dynamic decoded;
+    if (response.body.isEmpty) {
+      decoded = <String, dynamic>{};
+    } else {
+      try {
+        decoded = jsonDecode(response.body);
+      } on FormatException catch (exc) {
+        if (isError) throw ApiException(response.statusCode, '请求失败');
+        throw ProtocolException('服务端返回格式不正确', exc);
+      }
+    }
+    if (isError) {
+      final detail = decoded is Map<String, dynamic> ? decoded['detail'] : null;
+      throw ApiException(response.statusCode, detail?.toString() ?? '请求失败');
+    }
+    return decoded;
+  }
+
+  Future<Map<String, dynamic>> _jsonRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    bool authenticated = true,
+    Map<String, String>? extraHeaders,
+    _AuthenticatedSessionSnapshot? authSnapshot,
+  }) async {
+    final decoded = _decodeResponse(
+      await _request(
+        method,
+        path,
+        body: body,
+        authenticated: authenticated,
+        extraHeaders: extraHeaders,
+        authSnapshot: authSnapshot,
+      ),
+    );
+    if (decoded is! Map<String, dynamic>) {
+      // [人工注释][S1-016] 2xx 结构异常是协议失败，不是 transport。
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    return decoded;
+  }
+
+  // [人工注释][S1-011] 物品失效前必须读取用户真实 Object 列表；这个 helper 只解析服务端列表，
+  // 不创建、猜测或补造 Object。
+  Future<List<Map<String, dynamic>>> _jsonListRequest(String path) async {
+    final decoded = _decodeResponse(await _request('GET', path));
+    if (decoded is! List<dynamic>) {
+      // [人工注释][S1-016] 列表结构异常同样 fail closed，不允许降级为 offline。
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    return decoded.map((item) {
+      if (item is! Map<String, dynamic>) {
+        throw ProtocolException('服务端返回格式不正确');
+      }
+      return item;
+    }).toList();
+  }
+}
+).hasMatch(normalizedDay)) {
+        throw ArgumentError.value(day, 'day', 'timeline day must be YYYY-MM-DD');
+      }
+      query['day'] = normalizedDay;
+    }
+    return _jsonRequest(
+      'GET',
+      Uri(
+        path: '/timeline/events',
+        queryParameters: query,
+      ).toString(),
+    );
+  }
+
   Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) {
     if (limit < 1 || limit > 500) {
       throw ArgumentError.value(limit, 'limit', 'place limit must be 1..500');
