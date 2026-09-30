@@ -1,6 +1,7 @@
 import { Col, Row, Typography } from 'antd'
 import { adminRequest } from '../api'
 import {
+  DescriptionList,
   DetailSection,
   ErrorState,
   Loading,
@@ -8,6 +9,7 @@ import {
   SettingRow,
   StatusCard,
 } from '../components/AdminUi'
+import { formatNumber } from '../productLanguage'
 import type { HealthPayload, SettingsPayload } from '../types'
 import { useAdminData } from '../useAdminData'
 
@@ -63,6 +65,28 @@ export function AiServicesPage() {
           </Col>
         ))}
       </Row>
+      <DetailSection
+        title="本月聚合用量"
+        description="仅展示现有配额账本的全站聚合数字，不读取用户提示词、回答内容或 provider 私有数据。"
+      >
+        <DescriptionList
+          columns={3}
+          items={[
+            {
+              label: 'AI 请求',
+              value: formatNumber(health.data.ai_requests_current_month),
+            },
+            {
+              label: '输入计量',
+              value: formatNumber(health.data.ai_input_tokens_current_month),
+            },
+            {
+              label: '输出计量',
+              value: formatNumber(health.data.ai_output_tokens_current_month),
+            },
+          ]}
+        />
+      </DetailSection>
       <div className="admin-section-stack">
         {sections.map((section) => (
           <DetailSection key={section.key} title={section.title}>
