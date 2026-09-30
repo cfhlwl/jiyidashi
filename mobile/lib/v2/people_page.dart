@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'people_models.dart';
 import 'person_detail_page.dart';
@@ -218,7 +219,7 @@ class _PeoplePageState extends State<PeoplePage> {
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.history),
                       title: Text(row.personDisplayName),
-                      subtitle: Text('记录时间：' + row.occurredAt),
+                      subtitle: Text('记录时间：' + jiyiDisplayDateTime(row.occurredAt)),
                     ),
                 ],
               ),

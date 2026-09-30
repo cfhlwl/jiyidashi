@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../ai_inference_presentation.dart';
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'life_editors.dart';
 import 'life_models.dart';
@@ -348,8 +349,8 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               V2KeyValue(label: '类型', value: lifeStageLabels[current.kind] ?? '其他阶段'),
-              V2KeyValue(label: '开始', value: current.startedAt),
-              V2KeyValue(label: '结束', value: current.endedAt ?? '开放'),
+              V2KeyValue(label: '开始', value: jiyiDisplayDateTime(current.startedAt)),
+              V2KeyValue(label: '结束', value: current.endedAt == null ? '至今' : jiyiDisplayDateTime(current.endedAt!)),
               V2KeyValue(label: '备注', value: current.note ?? '无'),
               Wrap(
                 spacing: JiYiSpacing.sm,
@@ -381,7 +382,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(item.title),
-                  subtitle: Text((lifeEventLabels[item.eventKind] ?? '人生经历') + ' · ' + item.startedAt),
+                  subtitle: Text((lifeEventLabels[item.eventKind] ?? '人生经历') + ' · ' + jiyiDisplayDate(item.startedAt)),
                   trailing: IconButton(
                     tooltip: '取消关联',
                     onPressed: mutationFlight.isPending ? null : () => _unlinkEvent(item),

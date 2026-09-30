@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'life_models.dart';
 import 'v2_api.dart';
@@ -178,7 +179,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
                 V2SectionCard(
                   title: '时间范围',
                   child: Text(
-                    '${page!.startYear}–${page!.endYear} · 截至 ${page!.asOf.substring(0, 10)}',
+                    '${page!.startYear}–${page!.endYear} · 截至 ${jiyiDisplayDate(page!.asOf)}',
                   ),
                 ),
               ],
@@ -197,7 +198,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
                                 : Icons.view_timeline_outlined,
                           ),
                           title: Text(item.title),
-                          subtitle: Text(item.kind + ' · ' + item.occurredAt),
+                          subtitle: Text((item.kind == 'LIFE_EVENT' ? '人生经历' : '人生阶段') + ' · ' + jiyiDisplayDateTime(item.occurredAt)),
                         ),
                     ],
                   ),

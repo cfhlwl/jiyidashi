@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'life_editors.dart';
 import 'life_models.dart';
@@ -303,8 +304,8 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               V2KeyValue(label: '类型', value: lifeEventLabels[current.kind] ?? '其他经历'),
-              V2KeyValue(label: '开始', value: current.startedAt),
-              V2KeyValue(label: '结束', value: current.endedAt ?? '未设置'),
+              V2KeyValue(label: '开始', value: jiyiDisplayDateTime(current.startedAt)),
+              V2KeyValue(label: '结束', value: current.endedAt == null ? '未设置' : jiyiDisplayDateTime(current.endedAt!)),
               V2KeyValue(label: '地点', value: placeName),
               V2KeyValue(label: '备注', value: current.note ?? '无'),
               Wrap(
@@ -337,7 +338,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(item.title ?? item.content),
-                  subtitle: Text('记录时间：' + item.occurredAt),
+                  subtitle: Text('记录时间：' + jiyiDisplayDateTime(item.occurredAt)),
                   trailing: IconButton(
                     tooltip: '取消关联',
                     onPressed: mutationFlight.isPending ? null : () => _unlink(item),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'graph_page.dart';
 import 'people_models.dart';
@@ -522,7 +523,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
                   subtitle: Text(
                     _personMemoryRelationLabel(row.link.relationKind) +
                         ' · ' +
-                        row.occurredAt,
+                        jiyiDisplayDateTime(row.occurredAt),
                   ),
                   trailing: PopupMenuButton<String>(
                     onSelected: (value) {
@@ -615,7 +616,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       message = '至少 ' +
           value.elapsedDays.toString() +
           ' 天，从 ' +
-          (value.atLeastSinceAt ?? '') +
+          jiyiDisplayDate(value.atLeastSinceAt ?? '') +
           ' 起有明确“见过”记录。';
     } else if (value.status == 'RELATED_EVIDENCE_ONLY') {
       message = '有相关记录，但没有明确“见过”起点，不估算认识时长。';
