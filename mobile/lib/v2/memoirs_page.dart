@@ -459,6 +459,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
         if (result != null) ...[
           const SizedBox(height: JiYiSpacing.lg),
           _AnnualStoryHero(
+            key: const ValueKey('annual-story-hero'),
             year: result.targetYear,
             presentation: result.presentation,
             narrative: result.narrative,
@@ -637,6 +638,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
 
 class _AnnualStoryHero extends StatelessWidget {
   const _AnnualStoryHero({
+    super.key,
     required this.year,
     required this.presentation,
     required this.narrative,

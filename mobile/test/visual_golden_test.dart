@@ -855,10 +855,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(annual);
     await tester.pumpAndSettle();
-    final story = find.text('这一年的故事');
-    await tester.ensureVisible(story);
+    final storyHero = find.byKey(const ValueKey('annual-story-hero'));
+    await tester.ensureVisible(storyHero);
     await tester.pumpAndSettle();
-    expect(story, findsOneWidget);
+    expect(storyHero, findsOneWidget);
+    expect(find.text('这一年的故事'), findsOneWidget);
     expect(find.textContaining('新的产品阶段'), findsOneWidget);
     await expectLater(
       find.byKey(key),
