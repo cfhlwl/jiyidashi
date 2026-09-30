@@ -20,7 +20,12 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./jiyi.db"
     jwt_secret: str = "change-this-in-real-environments"
     jwt_algorithm: str = "HS256"
-    access_token_minutes: int = 60 * 24 * 7
+    jwt_issuer: str = "jiyidashi-api"
+    jwt_audience: str = "jiyidashi-public"
+    access_token_minutes: int = Field(default=15, ge=5, le=120)
+    refresh_token_days: int = Field(default=30, ge=1, le=180)
+    email_verification_minutes: int = Field(default=30, ge=5, le=1440)
+    password_reset_minutes: int = Field(default=30, ge=5, le=240)
 
     # ADMIN-001: privileged browser auth is an independent opaque session domain.
     # No Admin bearer token is issued to browser JavaScript.
@@ -111,6 +116,15 @@ class Settings(BaseSettings):
     auth_login_window_seconds: int = 900
     auth_login_backoff_after_failures: int = 3
     auth_login_backoff_max_seconds: int = 60
+    auth_refresh_session_limit: int = Field(default=30, ge=5, le=300)
+    auth_refresh_window_seconds: int = Field(default=900, ge=60, le=86400)
+    auth_verify_resend_ip_limit: int = Field(default=10, ge=1, le=100)
+    auth_verify_resend_account_limit: int = Field(default=5, ge=1, le=50)
+    auth_verify_resend_window_seconds: int = Field(default=3600, ge=60, le=86400)
+    auth_password_reset_ip_limit: int = Field(default=10, ge=1, le=100)
+    auth_password_reset_account_limit: int = Field(default=5, ge=1, le=50)
+    auth_password_reset_confirm_limit: int = Field(default=10, ge=1, le=50)
+    auth_password_reset_window_seconds: int = Field(default=3600, ge=60, le=86400)
 
     # ADMIN-001 review hardening: privileged login has a separate, stricter
     # namespace/policy so ordinary-user traffic cannot consume or reset Admin buckets.
