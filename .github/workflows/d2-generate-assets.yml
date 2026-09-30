@@ -136,10 +136,15 @@ jobs:
           grep -Fxq "source_sha=$REVIEWED_SOURCE_SHA" "$sentinel"
           grep -Fxq "artifact_id=$REVIEWED_ARTIFACT_ID" "$sentinel"
 
-          # The acceptance-prep commit may only change this workflow and sentinel.
-          if ! git diff --quiet "$REVIEWED_SOURCE_SHA"...HEAD -- mobile/lib mobile/test mobile/pubspec.yaml; then
+          # checkout is intentionally shallow; fetch only this PR branch history so the
+          # reviewed source commit can be compared without broadening repository state.
+          git fetch --no-tags --depth=64 origin "$HEAD_BRANCH"
+          git cat-file -e "$REVIEWED_SOURCE_SHA^{commit}"
+
+          # Acceptance-prep commits may only touch workflow/sentinel metadata.
+          if ! git diff --quiet "$REVIEWED_SOURCE_SHA"..HEAD -- mobile/lib mobile/test mobile/pubspec.yaml; then
             echo "Flutter product/test inputs changed after visual review; refusing acceptance."
-            git diff --stat "$REVIEWED_SOURCE_SHA"...HEAD -- mobile/lib mobile/test mobile/pubspec.yaml
+            git diff --stat "$REVIEWED_SOURCE_SHA"..HEAD -- mobile/lib mobile/test mobile/pubspec.yaml
             exit 1
           fi
 
