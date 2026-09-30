@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 # [人工注释][S1-026] 同一 PR 只验收最新 HEAD；旧提交的 Flutter 构建自动取消，避免过期结果占用 Runner。
 concurrency:
@@ -48,6 +48,22 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Commit AUTH-001 resolved dependency lock
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.lock
+          if git diff --cached --quiet; then
+            echo "Flutter dependency lock already current."
+            exit 0
+          fi
+          git commit -m "fix(auth): lock secure-storage Flutter dependencies"
+          git push origin "HEAD:${HEAD_BRANCH}"
 
       - name: Verify dependency lock
         id: android-lock
