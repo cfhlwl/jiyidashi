@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**ADMIN-001 / JiYi Production Admin Console V1**；SEC-014 已收口。ADMIN-001 完成后进入 **Production Launch Hardening**：AUTH-001/002、BIZ-011、OPS-002、SEC-016、OPS-003，以及媒体/API/告警/运行边界收口；随后执行 OPS-005 Production Capacity Acceptance，最后进入 **#136 real-env Production Acceptance → public/commercial rollout**；V3-001+ 未开始。
+> 当前阶段：**ADMIN-001 / JiYi Production Admin Console V1**；SEC-014 已收口。2026-09-30 core-product audit 确认上线前还必须完成 **AUTH-001 持久 Session → CORE-001 Passive Memory Reliability → CORE-002 Historical Day Footprint / Date Query → CORE-003 Recording Health → CORE-004 real-device certification**，再继续 BIZ/OPS/SEC Production Launch Hardening、OPS-005 Capacity Acceptance，最后进入 **#136 real-env Production Acceptance → public/commercial rollout**；V3-001+ 未开始。
 
 ## 状态规则
 
@@ -308,7 +308,7 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| ADMIN-001 | JiYi Production Admin Console V1 | 🔵 | 当前主线：独立 Admin 身份/角色、Dashboard、用户/家庭/会员与额度、删除/注销、安全告警、AI/ASR/检索/存储/系统健康、审计日志、受控设置中心；要求企业级管理后台视觉、无开发语言泄漏、私密内容默认不可见、危险操作二次确认与 Admin visual regression；完成后进入 OPS-002 |
+| ADMIN-001 | JiYi Production Admin Console V1 | 🔵 | 当前主线：独立 Admin 身份/角色、Dashboard、用户/家庭/会员与额度、删除/注销、安全告警、AI/ASR/检索/存储/系统健康、审计日志、受控设置中心；要求企业级管理后台视觉、无开发语言泄漏、私密内容默认不可见、危险操作二次确认与 Admin visual regression；完成后进入 AUTH-001 + Core Product Closure |
 | OPS-002 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | **P0 public-launch blocker**。首版优先 PostgreSQL-backed durable jobs + claim/lease worker，不强制 Redis；先接管 Data Delete progression、Account Delete 在 `local_cleanup_ready=true` 后的服务端 progression、stale PENDING media cleanup、Security Alert retry、analytics/location retention 等不能依赖客户端/人工触发的任务；第二阶段再迁移 Annual/Life Memoir、Monthly/Annual Summary、Embedding refresh 等长耗时 AI。Redis 仅作为后续 wake-up/scale 层，PostgreSQL 始终是 Job authority。 |
 | OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：Docker/Compose/Caddy、production env fail-closed、migration、immutable image、backup/restore/rollback 与 CI 已合并；真实 public-server acceptance 继续作为**最终上线 Gate**，顺延到 Production Launch Hardening + OPS-005 capacity acceptance 全部完成后，以最终生产拓扑验收 DNS/TLS/private storage/client domains/backup/restore/rollback/容量。 |
 ### OPS-002 架构决策（2026-09-30，production-launch audit 修订）
@@ -378,7 +378,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 
 | ID | 优先级 | 功能 / 风险 | 状态 | 冻结结论 |
 | --- | --- | --- | --- | --- |
-| AUTH-001 | P0 | Public Auth & Session Hardening | ⬜ | 当前用户认证仍是 access-token-only；production template 为 10080 分钟。新增 server-side device session、短时 access token、refresh rotation、logout/revoke/logout-all、JWT `iss/aud/jti/session_id`、邮箱验证、忘记密码/一次性 reset、改密后 revoke；现有 Account Delete recovery 语义必须保持。 |
+| AUTH-001 | P0 | Public Auth & Persistent Session Hardening | ⬜ | 当前用户认证仍是 access-token-only；Flutter `accessToken/authenticatedUserId` 只存当前进程，冷启动 `JiYiApp.authenticated=false`。新增 server-side device session、短时 access token、refresh rotation、logout/revoke/logout-all、JWT `iss/aud/jti/session_id`、邮箱验证、忘记密码/一次性 reset、改密后 revoke；Flutter 必须把 refresh/session material 安全保存在 iOS Keychain / Android Keystore-backed secure storage，冷启动先 restore/refresh 正确 owner 后才恢复后台记录 authority；logout/revoke/account-delete 必须清除对应 secure session；现有 Account Delete recovery 语义保持。 |
 | AUTH-002 | P0* | WeChat Mini Program Identity | ⬜ | 若微信小程序作为正式主入口，则在公开发布前加入 `WECHAT_MINIPROGRAM` AuthIdentity：`wx.login → code2session → stable provider subject → User`；微信 secret 仅服务端。若小程序不是首发主入口，可降为 P1。 |
 | BIZ-011 | P0 | Production Registration Entitlement Default | ⬜ | 当前 `register_email_password()` 仍创建 `LEGACY_FULL`，而该计划拥有全部 capability 且 quota unlimited。正式注册必须切为 FREE（或另行正式定义的 trial），`LEGACY_FULL` 仅 migration/legacy compatibility；历史用户迁移语义不变。 |
 | OPS-002 | P0 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | PostgreSQL-backed durable job/lease 优先；服务端自动推进 deletion/maintenance，并逐步异步化长耗时 AI。客户端只能发起/查询状态，不再承担服务端任务推进责任。 |
@@ -390,18 +390,27 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | REM-001 | P1/P0* | Reminder Delivery / Product Promise Gate | ⬜ | 当前 Reminder 有 PENDING/DONE/CANCELLED/remind_at，但未形成到点扫描→Push/微信订阅/APNs/FCM 的正式 delivery。若正式 UI 承诺“到点提醒”，则升级为 P0 并在上线前实现；否则首发必须明确降级/隐藏通知承诺。 |
 | OPS-004 | P1 | Production Runtime Guardrails | ⬜ | Compose 增加日志 rotation；SQLAlchemy 显式 `DB_POOL_SIZE/DB_MAX_OVERFLOW/POOL_TIMEOUT/RECYCLE`；Caddy 增 HSTS、X-Content-Type-Options、Referrer-Policy 与合理 API body ceiling。Provider process-lifetime HTTP client pooling 记为 P2 性能优化，可后续完成。 |
 | OPS-005 | P0 Gate | Production Capacity Acceptance | ⬜ | #136 前在真实目标规格（当前计划 2C2G3M）执行可重复的容量测试；至少 50/100/200 concurrent mixed workload，记录 CPU/RAM/Swap/Postgres connections/DB latency/API P50/P95/P99/5xx/429/provider latency/OOM/network，得到实测安全容量，不用 DAU 估算替代。 |
+| CORE-001 | P0 | Passive Memory Reliability V1 | ⬜ | **核心产品 blocker**。当前原生 Android/iOS 可以后台采样，但上传仍依赖已认证 AppShell 中的 `LocationSamplingCoordinator`；Android service 为 `START_NOT_STICKY` 且 Manifest 无 reboot/package-replace recovery；Android/iOS native queue 均有每 owner 1000 条上限，满后 sample drop；iOS 已有 location relaunch `restore_pending`，但缺持久 Session 无法自动完成 server privacy revalidation。目标：上传进度不依赖用户主动打开 UI；实现 platform-compliant background uploader/recovery、process-death/reboot/relaunch 恢复、Native Durable Queue V2/backpressure、stable UUID offline replay，并始终按 owner/auth/privacy fail closed。 |
+| CORE-002 | P0 | Historical Day Footprint & Natural-language Date Query V1 | ⬜ | 当前 `TodayFootprintService` 已正确按用户 IANA timezone + Visit overlap-day 语义查询，但只暴露“今天”；Intent Router 已能返回 `PLACE_HISTORY_QUERY`，`/memory/query` executor 却仍只做 Object location + Memory text search。新增 first-class `DayFootprintService(user_id, day)` + typed historical endpoint + deterministic date parser / `DATE_FOOTPRINT_QUERY`：用户问“我25号去哪了？”必须直接查询 Visit+Place、0 次 LLM；“25号发生了什么？”先组合 DayFootprint + Memory + Photo/Voice evidence，再允许 AI 总结。 |
+| CORE-003 | P0 | Automatic Recording Health & Coverage V1 | ⬜ | 当前已有 automatic_enabled/location_services/last_fix 与 native counters，但没有完整“记录是否真的健康”的产品状态。建立 owner-scoped Recording Health：last_fix_at、last_upload_at、native_queue_depth、sqlite_queue_depth、producer/runtime、background permission、location services、Android battery-optimization state、drop/backlog 状态；用户界面提供“今天记录正常 / 最后记录 / 今日覆盖”等可信提示；增加 privacy-safe Memory/Location/Visit coverage、Healthy Days、Location Gap Hours 等指标，避免只看 DAU/打开时长。 |
+| CORE-004 | P0 Gate | Passive Recording Real-device Certification | ⬜ | CORE-001/002/003 合并后必须做 Android+iOS 真机长时验收：授权后 24h 不主动打开 UI 仍形成 Visit；72h 步行/驾车/静止连续性与耗电；断网 12h 后自动补传且 UUID 不重不丢；系统进程终止后的平台允许恢复；手机重启后的真实行为；Privacy Pause 立即停产且迟到点 server reject；“我25号去哪了？”纯结构化查询 PASS；“25号发生了什么？”先 Evidence 后 AI。不得用模拟器结论替代。 |
+| PROD-001 | P1 | Core Product Positioning & Promise Refresh | ⬜ | 当前 README 仍写“个人 AI 第二记忆”，与最新定位不完全一致。改为“自动记录生活、需要时帮助找回过去”的个人/家庭长期记忆产品；继续强化“结构化检索优先于 LLM / 无证据不生成个人事实 / AI 是辅助不是事实来源”。对外不得承诺“100% 不用打开”，改为“完成授权后尽可能自动记录”，并以 Recording Health 告知真实覆盖状态。 |
 
 ### Public launch 顺序
 
 ```text
 ADMIN-001
-→ AUTH-001
+→ AUTH-001 persistent session
+→ CORE-001 Passive Memory Reliability
+→ CORE-002 Historical Day Footprint / Date Query
+→ CORE-003 Recording Health
+→ CORE-004 real-device certification
 → AUTH-002（若 Mini 为首发主入口）
 → BIZ-011
 → OPS-002
 → SEC-016
 → OPS-003
-→ MEDIA-001 / API-001 / SEC-017 / REM-001 decision / OPS-004
+→ MEDIA-001 / API-001 / SEC-017 / REM-001 decision / OPS-004 / PROD-001
 → OPS-005 Production Capacity Acceptance
 → #136 OPS-001 real-environment Production Acceptance
 → public/commercial rollout
@@ -413,8 +422,104 @@ ADMIN-001
 ```text
 Provider HTTP client process-lifetime pooling / keep-alive / connection limits
 更细的 Worker 拆分与 Redis wake-up layer
+iOS CLVisit / startMonitoringVisits() 低功耗信号可行性研究（仅作 Visit 候选辅助，server Visit 聚类继续是统一 authority）
 更高阶 autoscaling / multi-node / Kubernetes 等
 ```
+
+## 6.3 Core Product Closure（2026-09-30 core-product audit）
+
+产品总原则冻结为：
+
+> **自动记录用户真实生活，在用户需要的时候帮他找回来。**
+
+工程判断优先级：
+
+```text
+自动记得住
+> 数据不丢
+> 停留识别准确
+> 耗电可接受
+> 需要时找得到
+> 答案可信
+> 更多 AI 花样
+```
+
+现有地基继续保留，不做推倒重构：
+
+```text
+LocationPoint / Visit / Place
+Timeline / Today Footprint
+Privacy Pause
+Raw Location Retention
+Adaptive Sampling
+Native Location Bridge
+Offline Queue / stable client_uuid
+Structured Retrieval / Evidence Ranking / Answer Trust
+NO EVIDENCE → NO MEMORY
+Family Permission
+Data Delete / Account Delete
+```
+
+### CORE-001 关键安全边界
+
+后台恢复/上传不得为了“自动化”绕过隐私：
+
+```text
+secure session restore
+→ exact owner restore
+→ native permission/runtime check
+→ fresh server Privacy authority
+→ PASS 才允许 producer/upload
+```
+
+失败、token refresh 失败、owner mismatch、Privacy Pause、permission revoke 均 fail closed。原生队列不得因为达到容量静默形成不可见记忆缺口；必须有 backpressure/drop diagnostics 与 Recording Health 告警。
+
+Android recovery 必须符合当前平台后台启动限制，不能简单用 BootReceiver 无条件拉起 location FGS。iOS location relaunch 继续保持“先 quarantine，后 server privacy revalidation，再恢复”的既有安全思路。
+
+### CORE-002 结构化查询原则
+
+```text
+“我25号去哪了？”
+Question
+→ deterministic date parse
+→ server timezone day bounds
+→ DayFootprint
+→ Visit + Place
+→ structured answer
+→ LLM calls = 0
+```
+
+```text
+“25号发生了什么？”
+DayFootprint
++ Memory
++ Photo metadata
++ Voice
+→ bounded Evidence Set
+→ optional AI summary
+```
+
+AI 永远不是生活事实来源。
+
+### Product metrics
+
+传统 DAU/打开时长继续保留运营参考，但核心新增：
+
+```text
+Memory Coverage Rate
+Location Coverage
+Visit Coverage
+Automatic Recording Healthy Days
+Location Gap Hours
+Query Success Rate
+Evidence-backed Answer Rate
+False Memory Rate
+User Correction Rate
+```
+
+对迹忆而言，“几天不打开 App，之后 10 秒找回真实一天”可以是成功体验，不以高打开时长作为唯一目标。
+
+---
 
 # 7. V3：AI 人生助手与硬件扩展
 
