@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.admin_models import (
     AdminAccount,
@@ -10,13 +10,29 @@ from app.admin_models import (
     AdminRole,
     EntitlementQuotaPolicy,
 )
+from app.auth_models import AuthRateLimitBucket
 from app.core.db import SessionLocal
 from app.models import User
 from app.services.admin_security import hash_admin_password
 from app.services.entitlement_service import create_legacy_full_entitlement
 
 
+
+
+def _reset_admin_login_buckets() -> None:
+    with SessionLocal() as db:
+        db.execute(
+            delete(AuthRateLimitBucket).where(
+                AuthRateLimitBucket.scope.in_(
+                    ("admin_login_ip", "admin_login_account_ip")
+                )
+            )
+        )
+        db.commit()
+
+
 def _create_admin(*, role: AdminRole) -> tuple[str, str]:
+    _reset_admin_login_buckets()
     email = f"admin-{uuid4()}@example.com"
     password = "Admin-Test-Password-123!"
     with SessionLocal() as db:
