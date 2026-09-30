@@ -3,10 +3,13 @@ from __future__ import annotations
 import os
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.admin_models import AdminAccount, AdminRole
 from app.core.db import SessionLocal
+_ADMIN_BOOTSTRAP_LOCK_KEY = 0x4A4959491002
+
+
 from app.services.admin_security import (
     append_admin_audit,
     hash_admin_password,
@@ -30,6 +33,15 @@ def bootstrap_super_admin() -> bool:
 
     email = normalize_admin_email(email_raw)
     with SessionLocal() as db:
+        # The "first SUPER_ADMIN" invariant is a logical singleton. Row locks
+        # cannot protect an empty admin_accounts table, so serialize bootstrap
+        # transactions before checking whether the singleton already exists.
+        if db.get_bind().dialect.name == "postgresql":
+            db.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                {"lock_key": _ADMIN_BOOTSTRAP_LOCK_KEY},
+            )
+
         active_super_count = int(
             db.scalar(
                 select(func.count(AdminAccount.id)).where(
