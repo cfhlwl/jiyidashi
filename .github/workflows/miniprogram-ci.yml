@@ -88,7 +88,8 @@ jobs:
       - name: Install Mini visual-review renderer
         run: >-
           npm install --no-save --package-lock=false
-          @tarojs/plugin-platform-h5@4.1.0 playwright@1.55.0
+          @tarojs/plugin-platform-h5@4.1.0 @tarojs/router@4.1.0
+          playwright@1.55.0
 
       - name: Build Mini visual-review H5
         env:
