@@ -59,6 +59,17 @@ jobs:
         # in browser-shipped production dependencies fail the Admin gate.
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Record full dependency audit for dev/build triage
+        shell: bash
+        run: |
+          mkdir -p visual-artifacts
+          set +e
+          npm audit --json > visual-artifacts/npm-audit-full.json
+          audit_status="$?"
+          set -e
+          echo "Full dependency audit exit code: $audit_status (informational; production gate above is canonical)"
+          test -s visual-artifacts/npm-audit-full.json
+
       - name: Typecheck
         run: npm run typecheck
 
