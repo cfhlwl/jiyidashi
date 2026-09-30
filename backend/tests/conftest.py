@@ -17,8 +17,6 @@ os.environ["AUTO_CREATE_SCHEMA"] = "true"
 from app.main import app  # noqa: E402
 
 
-
-
 @pytest.fixture
 async def client():
     async with app.router.lifespan_context(app):
