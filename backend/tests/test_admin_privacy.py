@@ -17,8 +17,6 @@ from app.models import Memory, User
 from app.services.admin_security import hash_admin_password
 
 
-
-
 def _reset_admin_login_buckets() -> None:
     with SessionLocal() as db:
         db.execute(
