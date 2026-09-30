@@ -685,7 +685,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           : null,
     );
     final pages = <Widget>[
-      TodayPage(api: widget.api, elderMode: _elderModeEnabled),
+      TodayPage(
+        api: widget.api,
+        elderMode: _elderModeEnabled,
+        onCapture: () {
+          Navigator.of(context).push<void>(
+            MaterialPageRoute(builder: (_) => capturePage),
+          );
+        },
+        onOpenFamily: () => setState(() => index = 3),
+      ),
       memoryPage,
       LifePage(api: widget.api),
       FamilyPage(api: widget.api),

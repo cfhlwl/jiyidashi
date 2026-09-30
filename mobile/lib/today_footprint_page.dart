@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
+import 'memory_detail_page.dart';
+import 'timeline_models.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_format.dart';
 import 'ui/jiyi_tokens.dart';
+import 'v2/family_api.dart';
 
 // Today Footprint 是服务端按账号时区和 Visit overlap 生成的权威只读投影。
 // Flutter 只做严格协议解析与展示；网络/协议失败时 fail closed，不用设备当前位置或客户端猜测补足“今天”。
@@ -12,10 +15,14 @@ class TodayPage extends StatefulWidget {
     super.key,
     required this.api,
     this.elderMode = false,
+    this.onCapture,
+    this.onOpenFamily,
   });
 
   final JiYiApiClient api;
   final bool elderMode;
+  final VoidCallback? onCapture;
+  final VoidCallback? onOpenFamily;
 
   @override
   State<TodayPage> createState() => _TodayPageState();
@@ -23,6 +30,9 @@ class TodayPage extends StatefulWidget {
 
 class _TodayPageState extends State<TodayPage> {
   Map<String, dynamic>? _data;
+  List<TimelineReadItem> _todayMemories = const [];
+  bool _memoryUnavailable = false;
+  int? _familyMemberCount;
   Object? _error;
   bool _loading = true;
   int _generation = 0;
@@ -56,6 +66,9 @@ class _TodayPageState extends State<TodayPage> {
         _loading = true;
         _error = null;
         _data = null;
+        _todayMemories = const [];
+        _memoryUnavailable = false;
+        _familyMemberCount = null;
       });
     }
     bool current() =>
@@ -66,7 +79,42 @@ class _TodayPageState extends State<TodayPage> {
     try {
       final data = await widget.api.getTodayFootprint();
       if (!current()) return;
-      setState(() => _data = data);
+
+      // Validate the Today authority before using its account-timezone day as the
+      // boundary for the secondary memory projection.
+      final footprint = _TodayFootprint.fromJson(data);
+      List<TimelineReadItem> memories = const [];
+      var memoryUnavailable = false;
+      try {
+        final timelineRaw = await widget.api.getTimelineEvents(
+          limit: 8,
+          day: footprint.day,
+        );
+        if (!current()) return;
+        final timeline = TimelineReadPage.parse(timelineRaw);
+        memories = List.unmodifiable(
+          timeline.items.where((item) => item.isMemory).take(4),
+        );
+      } catch (_) {
+        if (!current()) return;
+        memoryUnavailable = true;
+      }
+
+      int? familyMemberCount;
+      try {
+        final family = await FamilyApi(widget.api).getFamily();
+        if (!current()) return;
+        familyMemberCount = family.members.length;
+      } catch (_) {
+        if (!current()) return;
+      }
+
+      setState(() {
+        _data = data;
+        _todayMemories = memories;
+        _memoryUnavailable = memoryUnavailable;
+        _familyMemberCount = familyMemberCount;
+      });
     } catch (error) {
       if (!current()) return;
       setState(() => _error = error);
@@ -82,7 +130,13 @@ class _TodayPageState extends State<TodayPage> {
       title: elderMode ? '今天去了哪里' : '今天',
       subtitle: elderMode
           ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
-          : '按账号时区回看今天真实形成的地点足迹。',
+          : '看看今天留下了哪些值得记住的片段。',
+      hero: JiYiHeroHeader(
+        eyebrow: '迹忆 · 今天',
+        title: elderMode ? '今天去了哪里' : _todayGreeting(),
+        subtitle: _todayHeroSubtitle(),
+        icon: Icons.wb_sunny_outlined,
+      ),
       child: _buildContent(elderMode),
     );
   }
@@ -153,37 +207,110 @@ class _TodayPageState extends State<TodayPage> {
       );
     }
 
-    return _TodayFootprintBody(
+    return _TodayExperienceBody(
+      api: widget.api,
       footprint: footprint,
+      memories: _todayMemories,
+      memoryUnavailable: _memoryUnavailable,
+      familyMemberCount: _familyMemberCount,
       elderMode: elderMode,
+      onCapture: widget.onCapture,
+      onOpenFamily: widget.onOpenFamily,
     );
   }
 }
 
-class _TodayFootprintBody extends StatelessWidget {
-  const _TodayFootprintBody({
+class _TodayExperienceBody extends StatelessWidget {
+  const _TodayExperienceBody({
+    required this.api,
     required this.footprint,
+    required this.memories,
+    required this.memoryUnavailable,
+    required this.familyMemberCount,
     required this.elderMode,
+    this.onCapture,
+    this.onOpenFamily,
   });
 
+  final JiYiApiClient api;
   final _TodayFootprint footprint;
+  final List<TimelineReadItem> memories;
+  final bool memoryUnavailable;
+  final int? familyMemberCount;
   final bool elderMode;
+  final VoidCallback? onCapture;
+  final VoidCallback? onOpenFamily;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        JiYiSectionHeader(
+          title: elderMode ? '今天去了哪里' : '今日足迹',
+          subtitle: elderMode
+              ? '只显示已经形成的足迹。'
+              : jiyiDisplayDate(footprint.day),
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
+        _footprintCard(theme),
+        const SizedBox(height: JiYiSpacing.xl),
+        const JiYiSectionHeader(
+          title: '今日记忆',
+          subtitle: '今天主动记下的内容，会在这里留下可以回看的片段。',
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
+        _memorySection(context),
+        const SizedBox(height: JiYiSpacing.xl),
+        const JiYiSectionHeader(
+          title: '快速记录',
+          subtitle: '现在想记住的事，不必等到以后。',
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
+        _quickCapture(context),
+        const SizedBox(height: JiYiSpacing.xl),
+        const JiYiSectionHeader(
+          title: '家庭共享',
+          subtitle: '只有家人明确授权给你的内容才会被读取。',
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
+        JiYiSectionCard(
+          leading: const Icon(
+            Icons.family_restroom_outlined,
+            color: JiYiProductColors.family,
+          ),
+          title: familyMemberCount == null
+              ? '家庭内容按授权显示'
+              : '家庭 · $familyMemberCount 位成员',
+          subtitle: familyMemberCount == null
+              ? '进入家庭查看成员和共享权限。'
+              : '进入家庭查看已经明确授权给你的内容。',
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: onOpenFamily,
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('查看家庭'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _footprintCard(ThemeData theme) {
     if (footprint.visits.isEmpty) {
       return JiYiSectionCard(
         key: const ValueKey('today-footprint-empty'),
         leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-        title: elderMode ? '今天还没有形成足迹' : '今日足迹',
-        subtitle: elderMode ? null : jiyiDisplayDate(footprint.day),
+        title: '今天还没有形成足迹',
         child: JiYiEmptyState(
           icon: Icons.location_off_outlined,
-          title: '今天还没有形成足迹',
+          title: '还没有足迹',
           message: elderMode
-              ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
-              : '这里只显示已经形成的足迹，不会用手机当前位置或猜测内容补一条记录。',
+              ? '不会用当前位置猜测你去过哪里。'
+              : '形成到访后，会在这里按时间留下今天的足迹。',
         ),
       );
     }
@@ -191,10 +318,8 @@ class _TodayFootprintBody extends StatelessWidget {
     return JiYiSectionCard(
       key: const ValueKey('today-footprint-loaded'),
       leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-      title: elderMode ? '今天去了哪里' : '今日足迹',
-      subtitle: elderMode
-          ? null
-          : '${jiyiDisplayDate(footprint.day)} · ${footprint.visits.length} 条地点记录',
+      title: '${footprint.visits.length} 个地点片段',
+      subtitle: '按今天真实形成的到访记录整理',
       child: Column(
         children: [
           for (var index = 0; index < footprint.visits.length; index++) ...[
@@ -209,6 +334,239 @@ class _TodayFootprintBody extends StatelessWidget {
       ),
     );
   }
+
+  Widget _memorySection(BuildContext context) {
+    if (memoryUnavailable) {
+      return const JiYiSectionCard(
+        child: JiYiStatusBanner(
+          kind: JiYiStatusKind.warning,
+          title: '今日记忆暂时没有整理好',
+          message: '足迹仍可正常查看，稍后回来会重新读取今天的记忆。',
+        ),
+      );
+    }
+    if (memories.isEmpty) {
+      return const JiYiSectionCard(
+        child: JiYiEmptyState(
+          icon: Icons.auto_stories_outlined,
+          title: '今天还没有主动记录',
+          message: '记下一句话、一张照片或一段语音后，会从这里开始积累。',
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (var index = 0; index < memories.length; index++) ...[
+          _TodayMemoryCard(
+            item: memories[index],
+            onTap: () {
+              Navigator.of(context).push<bool>(
+                MaterialPageRoute<bool>(
+                  builder: (_) => MemoryDetailPage(
+                    api: api,
+                    memoryId: memories[index].id,
+                  ),
+                ),
+              );
+            },
+          ),
+          if (index != memories.length - 1)
+            const SizedBox(height: JiYiSpacing.sm),
+        ],
+      ],
+    );
+  }
+
+  Widget _quickCapture(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 360;
+        final actions = [
+          (Icons.edit_note_outlined, '写一条', '一句话也可以'),
+          (Icons.photo_camera_outlined, '拍一张', '留住眼前的画面'),
+          (Icons.mic_none_outlined, '录一段', '先说下来再整理'),
+        ];
+        return Wrap(
+          spacing: JiYiSpacing.sm,
+          runSpacing: JiYiSpacing.sm,
+          children: [
+            for (final action in actions)
+              SizedBox(
+                width: compact
+                    ? constraints.maxWidth
+                    : (constraints.maxWidth - JiYiSpacing.sm * 2) / 3,
+                child: _TodayQuickAction(
+                  icon: action.$1,
+                  title: action.$2,
+                  subtitle: action.$3,
+                  onTap: onCapture,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TodayMemoryCard extends StatelessWidget {
+  const _TodayMemoryCard({required this.item, required this.onTap});
+
+  final TimelineReadItem item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final title = item.title ?? _todayMemoryTypeLabel(item.memoryType);
+    return Material(
+      color: JiYiProductColors.surface,
+      borderRadius: BorderRadius.circular(JiYiRadius.card),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        child: Padding(
+          padding: const EdgeInsets.all(JiYiSpacing.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: JiYiProductColors.surfaceSoft,
+                  borderRadius: BorderRadius.circular(JiYiRadius.control),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(JiYiSpacing.sm),
+                  child: Icon(
+                    _todayMemoryIcon(item.memoryType),
+                    color: JiYiProductColors.brandPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: JiYiSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (item.content != null && item.content!.trim().isNotEmpty) ...[
+                      const SizedBox(height: JiYiSpacing.xs),
+                      Text(
+                        item.content!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: JiYiProductColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      jiyiDisplayTime(item.occurredAt),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: JiYiProductColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TodayQuickAction extends StatelessWidget {
+  const _TodayQuickAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: JiYiProductColors.surface,
+      borderRadius: BorderRadius.circular(JiYiRadius.card),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: JiYiTapTarget.normal + 56),
+          child: Padding(
+            padding: const EdgeInsets.all(JiYiSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, color: JiYiProductColors.brandPrimary),
+                const SizedBox(height: JiYiSpacing.sm),
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.xxs),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: JiYiProductColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _todayMemoryTypeLabel(String? value) => switch (value) {
+      'VOICE' => '一段语音记忆',
+      'PHOTO' => '一张照片记忆',
+      'PLACE' => '一个地点记忆',
+      'OBJECT_LOCATION' => '一条物品位置',
+      _ => '一段记忆',
+    };
+
+IconData _todayMemoryIcon(String? value) => switch (value) {
+      'VOICE' => Icons.mic_none_outlined,
+      'PHOTO' => Icons.photo_outlined,
+      'PLACE' => Icons.place_outlined,
+      'OBJECT_LOCATION' => Icons.inventory_2_outlined,
+      _ => Icons.auto_stories_outlined,
+    };
+
+String _todayGreeting() {
+  final hour = DateTime.now().hour;
+  if (hour < 11) return '早上好';
+  if (hour < 14) return '中午好';
+  if (hour < 18) return '下午好';
+  return '晚上好';
+}
+
+String _todayHeroSubtitle() {
+  final now = DateTime.now();
+  const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+  return '${now.month}月${now.day}日 · 星期${weekdays[now.weekday - 1]}';
 }
 
 class _FootprintVisitRow extends StatelessWidget {

@@ -50,6 +50,22 @@ void main() {
     expect(place, isNot(contains("Text(_line('类型', place.category))")));
   });
 
+  test('Flutter Product Experience V2 Today has the complete consumer hierarchy', () {
+    final today = File('lib/today_footprint_page.dart').readAsStringSync();
+
+    for (final section in [
+      '今日足迹',
+      '今日记忆',
+      '快速记录',
+      '家庭共享',
+    ]) {
+      expect(today, contains(section));
+    }
+    expect(today, contains('getTimelineEvents('));
+    expect(today, contains('FamilyApi(widget.api).getFamily()'));
+    expect(today, contains('MemoryDetailPage('));
+  });
+
   test('Flutter Product Experience V2 memoir is story-first and hides implementation language', () {
     final memoir = File('lib/v2/memoirs_page.dart').readAsStringSync();
 
