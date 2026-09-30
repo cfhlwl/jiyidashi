@@ -114,12 +114,15 @@ void main() {
     await pumpSurface(tester, MemoirsPage(api: V2TestApi()));
     final yearField = find.byType(TextField).first;
     await tester.enterText(yearField, '2025');
-    await tester.tap(find.text('生成年度回顾'));
+    final annual = find.text('开始回看');
+    await tester.ensureVisible(annual);
+    await tester.pumpAndSettle();
+    await tester.tap(annual);
     await tester.pumpAndSettle();
     expect(find.text('AI 整理'), findsOneWidget);
     expect(find.textContaining('新的产品阶段'), findsOneWidget);
-    expect(find.text('年度时间线'), findsOneWidget);
-    expect(find.text('已验证照片'), findsOneWidget);
+    expect(find.text('这一年的时间线'), findsOneWidget);
+    expect(find.text('这一年的照片'), findsOneWidget);
     expect(find.text('团队合影'), findsOneWidget);
   });
 
@@ -127,7 +130,12 @@ void main() {
     await pumpSurface(tester, MemoirsPage(api: V2TestApi()));
     expect(find.textContaining('这一阶段以产品开发为主线'), findsNothing);
     final stage = find.text('产品创业阶段');
-    await tester.ensureVisible(stage);
+    await tester.scrollUntilVisible(
+      stage,
+      280,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(stage);
     await tester.pumpAndSettle();
     final generate = find.text('生成这个阶段的故事');

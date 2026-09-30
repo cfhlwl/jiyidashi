@@ -819,7 +819,10 @@ void main() {
       MemoirsPage(api: V2TestApi()),
     );
     await tester.enterText(find.byType(TextField).first, '2025');
-    await tester.tap(find.text('生成年度回顾'));
+    final annual = find.text('开始回看');
+    await tester.ensureVisible(annual);
+    await tester.pumpAndSettle();
+    await tester.tap(annual);
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('AI 整理').first);
     await tester.pumpAndSettle();
@@ -836,7 +839,12 @@ void main() {
       MemoirsPage(api: V2TestApi()),
     );
     final stage = find.text('产品创业阶段');
-    await tester.ensureVisible(stage);
+    await tester.scrollUntilVisible(
+      stage,
+      280,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(stage);
     await tester.pumpAndSettle();
     final generate = find.text('生成这个阶段的故事');

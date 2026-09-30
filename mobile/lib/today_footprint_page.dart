@@ -6,7 +6,6 @@ import 'timeline_models.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_format.dart';
 import 'ui/jiyi_tokens.dart';
-import 'v2/family_api.dart';
 
 // Today Footprint 是服务端按账号时区和 Visit overlap 生成的权威只读投影。
 // Flutter 只做严格协议解析与展示；网络/协议失败时 fail closed，不用设备当前位置或客户端猜测补足“今天”。
@@ -32,7 +31,6 @@ class _TodayPageState extends State<TodayPage> {
   Map<String, dynamic>? _data;
   List<TimelineReadItem> _todayMemories = const [];
   bool _memoryUnavailable = false;
-  int? _familyMemberCount;
   Object? _error;
   bool _loading = true;
   int _generation = 0;
@@ -68,7 +66,6 @@ class _TodayPageState extends State<TodayPage> {
         _data = null;
         _todayMemories = const [];
         _memoryUnavailable = false;
-        _familyMemberCount = null;
       });
     }
     bool current() =>
@@ -80,9 +77,17 @@ class _TodayPageState extends State<TodayPage> {
       final data = await widget.api.getTodayFootprint();
       if (!current()) return;
 
-      // Validate the Today authority before using its account-timezone day as the
-      // boundary for the secondary memory projection.
-      final footprint = _TodayFootprint.fromJson(data);
+      // Validate Today first. Malformed authority stays a protocol fail-closed
+      // state; secondary reads must never reclassify it as a network failure.
+      late final _TodayFootprint footprint;
+      try {
+        footprint = _TodayFootprint.fromJson(data);
+      } catch (_) {
+        if (!current()) return;
+        setState(() => _data = data);
+        return;
+      }
+
       List<TimelineReadItem> memories = const [];
       var memoryUnavailable = false;
       try {
@@ -100,20 +105,10 @@ class _TodayPageState extends State<TodayPage> {
         memoryUnavailable = true;
       }
 
-      int? familyMemberCount;
-      try {
-        final family = await FamilyApi(widget.api).getFamily();
-        if (!current()) return;
-        familyMemberCount = family.members.length;
-      } catch (_) {
-        if (!current()) return;
-      }
-
       setState(() {
         _data = data;
         _todayMemories = memories;
         _memoryUnavailable = memoryUnavailable;
-        _familyMemberCount = familyMemberCount;
       });
     } catch (error) {
       if (!current()) return;
@@ -212,7 +207,6 @@ class _TodayPageState extends State<TodayPage> {
       footprint: footprint,
       memories: _todayMemories,
       memoryUnavailable: _memoryUnavailable,
-      familyMemberCount: _familyMemberCount,
       elderMode: elderMode,
       onCapture: widget.onCapture,
       onOpenFamily: widget.onOpenFamily,
@@ -226,7 +220,6 @@ class _TodayExperienceBody extends StatelessWidget {
     required this.footprint,
     required this.memories,
     required this.memoryUnavailable,
-    required this.familyMemberCount,
     required this.elderMode,
     this.onCapture,
     this.onOpenFamily,
@@ -236,7 +229,6 @@ class _TodayExperienceBody extends StatelessWidget {
   final _TodayFootprint footprint;
   final List<TimelineReadItem> memories;
   final bool memoryUnavailable;
-  final int? familyMemberCount;
   final bool elderMode;
   final VoidCallback? onCapture;
   final VoidCallback? onOpenFamily;
@@ -280,12 +272,8 @@ class _TodayExperienceBody extends StatelessWidget {
             Icons.family_restroom_outlined,
             color: JiYiProductColors.family,
           ),
-          title: familyMemberCount == null
-              ? '家庭内容按授权显示'
-              : '家庭 · $familyMemberCount 位成员',
-          subtitle: familyMemberCount == null
-              ? '进入家庭查看成员和共享权限。'
-              : '进入家庭查看已经明确授权给你的内容。',
+          title: '家庭内容按授权显示',
+          subtitle: '进入家庭后，只读取家人明确授权给你的内容。',
           child: Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(

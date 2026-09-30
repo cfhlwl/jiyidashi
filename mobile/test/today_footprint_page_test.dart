@@ -77,7 +77,8 @@ void main() {
     );
 
     expect(find.byKey(const ValueKey('today-footprint-loaded')), findsOneWidget);
-    expect(find.text('2026年9月20日 · 2 条地点记录'), findsOneWidget);
+    expect(find.text('2 个地点片段'), findsOneWidget);
+    expect(find.text('2026年9月20日'), findsWidgets);
     expect(find.text('家'), findsOneWidget);
     expect(find.text('07:10 - 08:00'), findsOneWidget);
     expect(find.text('已形成足迹'), findsOneWidget);
