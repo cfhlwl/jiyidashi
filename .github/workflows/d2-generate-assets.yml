@@ -69,8 +69,18 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check fonttools==4.59.2
+          committed_font_sha="$(git show HEAD:mobile/test/fonts/JiYiGoldenCJK-Regular.ttf | sha256sum | awk '{print $1}')"
           python tool/regenerate_golden_font.py
+          generated_font_sha="$(sha256sum test/fonts/JiYiGoldenCJK-Regular.ttf | awk '{print $1}')"
+          echo "committed font sha:  $committed_font_sha"
+          echo "generated font sha:  $generated_font_sha"
           cp test/fonts/JiYiGoldenCJK-Regular.ttf /tmp/JiYiGoldenCJK-Regular.ttf
+
+          # During the one-time reviewed acceptance the old committed font is
+          # intentionally replaced. Normal validation must be byte-reproducible.
+          if [ ! -f ../.github/UI_UX_001_ACCEPT_REVIEWED_GOLDENS ]; then
+            test "$committed_font_sha" = "$generated_font_sha"
+          fi
 
       - name: Analyze
         run: flutter analyze
@@ -123,7 +133,7 @@ jobs:
         env:
           REVIEWED_SOURCE_SHA: 08c0b877e015c0a19a1784d67671a3d80d810261
           REVIEWED_ARTIFACT_ID: "11074965668"
-          REVIEWED_FONT_SHA: 60ed5ebca7663680be415413d64726a6f2c3592759dabc687351868dc53346ad
+          REVIEWED_FONT_SHA: f46e03facd2de8a74395b7f0c325dc993e0112f13b8f5d23cf2a4350f9d2cf81
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail

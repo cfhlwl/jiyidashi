@@ -87,6 +87,15 @@ def regenerate() -> str:
             "--recommended-glyphs",
         )
 
+        # fontTools updates head.modified when saving. That timestamp made an
+        # otherwise identical subset hash differently on every CI run. Normalize
+        # it to the pinned source creation timestamp and save without recalculation.
+        from fontTools.ttLib import TTFont
+
+        normalized = TTFont(OUTPUT, recalcTimestamp=False)
+        normalized["head"].modified = normalized["head"].created
+        normalized.save(OUTPUT, reorderTables=False)
+
     digest = hashlib.sha256(OUTPUT.read_bytes()).hexdigest()
     print(f"golden font: {OUTPUT}")
     print(f"sha256: {digest}")
