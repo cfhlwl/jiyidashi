@@ -90,8 +90,11 @@ def register(
     db: DbSession,
 ) -> RegistrationResponse:
     user = register_email_password(db, payload, client_ip=_client_ip(request))
-    deliver_registration_verification(db, user_id=user.id)
-    return RegistrationResponse(user_id=user.id)
+    delivered = deliver_registration_verification(db, user_id=user.id)
+    return RegistrationResponse(
+        user_id=user.id,
+        verification_delivery_pending=not delivered,
+    )
 
 
 @router.post("/verify-email", response_model=EmailVerificationResponse)
