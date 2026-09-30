@@ -135,10 +135,16 @@ export type HealthPayload = {
   environment: string
   api_status: string
   database_status: string
+  database_schema_status: string
+  database_schema_version: string | null
   storage_status: string
+  storage_alerts_needing_attention: number
   ai_status: string
   asr_status: string
   embedding_status: string
+  ai_requests_current_month: number
+  ai_input_tokens_current_month: number
+  ai_output_tokens_current_month: number
   app_version: string
   git_sha: string | null
   build_time: string | null
