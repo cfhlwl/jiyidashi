@@ -154,8 +154,6 @@ export function AdminShell({ children }: PropsWithChildren) {
         collapsedWidth={72}
         collapsed={collapsed}
         className="admin-sider"
-        breakpoint="lg"
-        onBreakpoint={(broken) => setCollapsed(broken)}
       >
         <SideNavigation collapsed={collapsed} />
       </Sider>
