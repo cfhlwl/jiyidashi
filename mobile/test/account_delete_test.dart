@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -127,6 +128,41 @@ void main() {
     );
     expect(prepared['completed'], isTrue);
     expect(calls, 1);
+  });
+
+  test('late account-delete response is rejected after auth session switch', () async {
+    final responseGate = Completer<void>();
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        await responseGate.future;
+        return http.Response(
+          jsonEncode({
+            'request_id': '11111111-1111-4111-8111-111111111111',
+            'data_deletion_status': null,
+            'completed': false,
+            'retry_after_seconds': null,
+            'deleted_counts': <String, int>{},
+          }),
+          202,
+          headers: const {'content-type': 'application/json'},
+        );
+      }),
+    );
+    api.accessToken = 'account-token';
+    api.authenticatedUserId = owner;
+
+    final pending = api.deleteAccount(
+      requestId: '11111111-1111-4111-8111-111111111111',
+      localCleanupReady: false,
+    );
+    await Future<void>.delayed(Duration.zero);
+    api.logout();
+    api.accessToken = 'new-account-token';
+    api.authenticatedUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    responseGate.complete();
+
+    await expectLater(pending, throwsA(isA<ProtocolException>()));
   });
 
   testWidgets('typed confirmation then 202 retry reuses one request id', (tester) async {
