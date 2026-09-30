@@ -13,8 +13,6 @@ from app.services.admin_security import hash_admin_password
 from app.services.security_alerting import SecurityScope
 
 
-
-
 def _reset_admin_login_buckets() -> None:
     with SessionLocal() as db:
         db.execute(
