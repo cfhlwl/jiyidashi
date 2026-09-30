@@ -17,9 +17,16 @@ from app.core.db import get_db
 from app.services.admin_security import (
     AdminOperationError,
     authenticate_admin,
+    normalize_admin_email,
     open_admin_session,
     revoke_admin_session,
     rotate_presented_admin_session,
+)
+from app.services.auth_rate_limit import (
+    clear_admin_login_account_penalty,
+    consume_admin_login_account_attempt,
+    consume_admin_login_ip_attempt,
+    record_admin_login_failure,
 )
 
 router = APIRouter(prefix="/auth", tags=["admin-auth"])
@@ -36,6 +43,13 @@ AnyAdminMutation = Annotated[
     ),
 ]
 
+
+
+
+def _client_ip(request: Request) -> str:
+    # Use only ASGI's parsed peer address. Do not trust client-supplied forwarding
+    # headers at this privileged boundary.
+    return request.client.host if request.client is not None else "unknown"
 
 def _set_no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
@@ -94,12 +108,29 @@ def login(
     response: Response,
     db: DbSession,
 ) -> AdminSessionRead:
+    client_ip = _client_ip(request)
+    subject = normalize_admin_email(str(payload.email))
+
+    # Privileged abuse gates run before Argon2 so an attacker cannot turn the
+    # management login endpoint into an unbounded password-hashing oracle.
+    consume_admin_login_ip_attempt(db, client_ip)
+    consume_admin_login_account_attempt(db, client_ip, subject)
+
     try:
         account = authenticate_admin(
             db,
-            email=str(payload.email),
+            email=subject,
             password=payload.password,
         )
+    except AdminOperationError as exc:
+        if exc.code == "ADMIN_INVALID_CREDENTIALS":
+            record_admin_login_failure(db, client_ip, subject)
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+
+    clear_admin_login_account_penalty(db, client_ip, subject)
+
+    try:
         rotate_presented_admin_session(
             db,
             raw_session_token=request.cookies.get(settings.admin_session_cookie_name),
