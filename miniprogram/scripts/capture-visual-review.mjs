@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:http'
 import { extname, join, normalize } from 'node:path'
 import { chromium } from 'playwright'
@@ -15,6 +23,54 @@ const widths = [320, 390, 430]
 const height = 844
 
 mkdirSync(out, { recursive: true })
+
+function listFiles(base, relative = '') {
+  const absolute = join(base, relative)
+  const entries = readdirSync(absolute, { withFileTypes: true })
+  const files = []
+  for (const entry of entries) {
+    const next = relative ? join(relative, entry.name) : entry.name
+    if (entry.isDirectory()) files.push(...listFiles(base, next))
+    else if (entry.isFile()) files.push(next.replaceAll('\\\\', '/'))
+  }
+  return files
+}
+
+function ensureReviewHtml() {
+  const index = join(root, 'index.html')
+  if (existsSync(index)) return
+
+  const files = listFiles(root)
+  const css = files.filter((item) => item.endsWith('.css')).sort()
+  const js = files.filter((item) => item.endsWith('.js')).sort((a, b) => {
+    const aApp = a.endsWith('/app.js') || a === 'app.js'
+    const bApp = b.endsWith('/app.js') || b === 'app.js'
+    if (aApp !== bApp) return aApp ? 1 : -1
+    return a.localeCompare(b)
+  })
+  if (!js.some((item) => item.endsWith('/app.js') || item === 'app.js')) {
+    throw new Error('H5 review bundle has no app.js entrypoint')
+  }
+
+  const html = [
+    '<!doctype html>',
+    '<html lang="zh-CN">',
+    '<head>',
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">',
+    ...css.map((item) => '<link rel="stylesheet" href="/' + item + '">'),
+    '</head>',
+    '<body>',
+    '<div id="app"></div>',
+    ...js.map((item) => '<script src="/' + item + '"></script>'),
+    '</body>',
+    '</html>',
+    '',
+  ].join('\n')
+  writeFileSync(index, html)
+}
+
+ensureReviewHtml()
 
 const mime = {
   '.html': 'text/html; charset=utf-8',
