@@ -63,23 +63,6 @@ jobs:
       - name: Install
         run: pip install -e ".[dev]"
 
-      - name: Normalize AUTH-001 test imports with pinned Ruff
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        shell: bash
-        env:
-          HEAD_BRANCH: ${{ github.head_ref }}
-        run: |
-          ruff check             tests/conftest.py             tests/test_auth.py             tests/test_observability.py             --fix
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tests/conftest.py tests/test_auth.py tests/test_observability.py
-          if git diff --cached --quiet; then
-            echo "AUTH-001 test imports already normalized."
-          else
-            git commit -m "test(auth): normalize AUTH-001 imports with pinned Ruff"
-            git push origin "HEAD:${HEAD_BRANCH}"
-          fi
-
       - name: Lint
         run: ruff check .
 
