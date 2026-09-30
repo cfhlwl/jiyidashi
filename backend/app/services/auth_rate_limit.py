@@ -20,6 +20,12 @@ _SECURITY_SCOPE_BY_RATE_SCOPE = {
     "register_ip": SecurityScope.AUTH_REGISTER_IP,
     "login_ip": SecurityScope.AUTH_LOGIN_IP,
     "login_account_ip": SecurityScope.AUTH_LOGIN_ACCOUNT_IP,
+    "refresh_session": SecurityScope.AUTH_REFRESH_SESSION,
+    "verify_ip": SecurityScope.AUTH_VERIFY_IP,
+    "verify_account": SecurityScope.AUTH_VERIFY_ACCOUNT,
+    "password_reset_ip": SecurityScope.AUTH_PASSWORD_RESET_IP,
+    "password_reset_account": SecurityScope.AUTH_PASSWORD_RESET_ACCOUNT,
+    "password_reset_confirm": SecurityScope.AUTH_PASSWORD_RESET_CONFIRM,
     "admin_login_ip": SecurityScope.ADMIN_LOGIN_IP,
     "admin_login_account_ip": SecurityScope.ADMIN_LOGIN_ACCOUNT_IP,
 }
@@ -362,4 +368,89 @@ def clear_admin_login_account_penalty(
     bucket.blocked_until = None
     bucket.updated_at = now
     db.commit()
+
+def consume_refresh_attempt(db: Session, refresh_digest: str) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+    _consume(
+        db,
+        scope="refresh_session",
+        value=refresh_digest,
+        policy=RatePolicy(
+            limit=settings.auth_refresh_session_limit,
+            window_seconds=settings.auth_refresh_window_seconds,
+        ),
+    )
+
+
+def consume_verification_resend(
+    db: Session,
+    client_ip: str,
+    subject: str,
+) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+    _consume(
+        db,
+        scope="verify_ip",
+        value=client_ip,
+        policy=RatePolicy(
+            limit=settings.auth_verify_resend_ip_limit,
+            window_seconds=settings.auth_verify_resend_window_seconds,
+        ),
+    )
+    _consume(
+        db,
+        scope="verify_account",
+        value=subject,
+        policy=RatePolicy(
+            limit=settings.auth_verify_resend_account_limit,
+            window_seconds=settings.auth_verify_resend_window_seconds,
+        ),
+    )
+
+
+def consume_password_reset_request(
+    db: Session,
+    client_ip: str,
+    subject: str,
+) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+    _consume(
+        db,
+        scope="password_reset_ip",
+        value=client_ip,
+        policy=RatePolicy(
+            limit=settings.auth_password_reset_ip_limit,
+            window_seconds=settings.auth_password_reset_window_seconds,
+        ),
+    )
+    _consume(
+        db,
+        scope="password_reset_account",
+        value=subject,
+        policy=RatePolicy(
+            limit=settings.auth_password_reset_account_limit,
+            window_seconds=settings.auth_password_reset_window_seconds,
+        ),
+    )
+
+
+def consume_password_reset_confirmation(
+    db: Session,
+    client_ip: str,
+    token_digest: str,
+) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+    _consume(
+        db,
+        scope="password_reset_confirm",
+        value=f"{client_ip}\n{token_digest}",
+        policy=RatePolicy(
+            limit=settings.auth_password_reset_confirm_limit,
+            window_seconds=settings.auth_password_reset_window_seconds,
+        ),
+    )
 
