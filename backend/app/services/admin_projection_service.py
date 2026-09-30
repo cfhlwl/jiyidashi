@@ -1358,6 +1358,36 @@ def system_settings_projection(
                     classification="需要重新部署",
                     value=cfg.auth_login_backoff_max_seconds,
                 ),
+                AdminSettingRead(
+                    key="admin_login_ip_limit",
+                    label="管理后台来源登录限制",
+                    classification="需要重新部署",
+                    value=cfg.admin_login_ip_limit,
+                ),
+                AdminSettingRead(
+                    key="admin_login_account_limit",
+                    label="管理后台账号失败限制",
+                    classification="需要重新部署",
+                    value=cfg.admin_login_account_ip_limit,
+                ),
+                AdminSettingRead(
+                    key="admin_login_window",
+                    label="管理后台限制窗口（秒）",
+                    classification="需要重新部署",
+                    value=cfg.admin_login_window_seconds,
+                ),
+                AdminSettingRead(
+                    key="admin_login_backoff_threshold",
+                    label="管理后台触发等待的失败次数",
+                    classification="需要重新部署",
+                    value=cfg.admin_login_backoff_after_failures,
+                ),
+                AdminSettingRead(
+                    key="admin_login_backoff",
+                    label="管理后台失败等待上限（秒）",
+                    classification="需要重新部署",
+                    value=cfg.admin_login_backoff_max_seconds,
+                ),
             ],
         ),
         AdminSettingSectionRead(
