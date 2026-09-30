@@ -5,6 +5,9 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.admin_models import AdminAccount, AdminRole, AdminSession
+from app.security_models import SecurityAlert, SecuritySignalCode
+from app.services import auth_rate_limit
+from app.services.security_alerting import SecurityScope
 from app.core.db import SessionLocal
 from app.services.admin_security import hash_admin_password
 
@@ -129,3 +132,82 @@ async def test_revoked_admin_session_is_rejected(client):
     response = await client.get("/admin/api/v1/auth/session")
     assert response.status_code == 401
     assert response.json()["detail"] == "ADMIN_SESSION_STALE"
+
+async def test_admin_login_is_rate_limited_before_repeated_argon2_and_emits_security_signal(
+    client,
+    monkeypatch,
+):
+    email, _ = _create_admin()
+    monkeypatch.setattr(auth_rate_limit.settings, "admin_login_ip_limit", 50)
+    monkeypatch.setattr(auth_rate_limit.settings, "admin_login_account_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "admin_login_backoff_after_failures", 2)
+    monkeypatch.setattr(auth_rate_limit.settings, "admin_login_backoff_max_seconds", 60)
+
+    first = await client.post(
+        "/admin/api/v1/auth/login",
+        json={"email": email, "password": "wrong-password-one"},
+    )
+    second = await client.post(
+        "/admin/api/v1/auth/login",
+        json={"email": email, "password": "wrong-password-two"},
+    )
+    blocked = await client.post(
+        "/admin/api/v1/auth/login",
+        json={"email": email, "password": "wrong-password-three"},
+    )
+
+    assert first.status_code == 401
+    assert second.status_code == 401
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == "AUTH_RATE_LIMITED"
+    assert int(blocked.headers["Retry-After"]) >= 1
+
+    with SessionLocal() as db:
+        alert = db.scalar(
+            select(SecurityAlert)
+            .where(
+                SecurityAlert.rule_code
+                == SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED.value,
+                SecurityAlert.scope == SecurityScope.ADMIN_LOGIN_ACCOUNT_IP.value,
+            )
+            .order_by(SecurityAlert.created_at.desc())
+            .limit(1)
+        )
+        assert alert is not None
+
+
+async def test_successful_admin_login_clears_only_account_ip_penalty(client, monkeypatch):
+    email, password = _create_admin()
+    monkeypatch.setattr(auth_rate_limit.settings, "admin_login_ip_limit", 50)
+    monkeypatch.setattr(auth_rate_limit.settings, "admin_login_account_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "admin_login_backoff_after_failures", 5)
+
+    failed = await client.post(
+        "/admin/api/v1/auth/login",
+        json={"email": email, "password": "wrong-password"},
+    )
+    assert failed.status_code == 401
+
+    ok = await client.post(
+        "/admin/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert ok.status_code == 200
+
+    # A successful login clears the account+IP failure penalty but the separate
+    # IP spray bucket remains durable.
+    with SessionLocal() as db:
+        subject = email.casefold()
+        account_key = auth_rate_limit._bucket_key(
+            "admin_login_account_ip",
+            f"127.0.0.1\n{subject}",
+        )
+        account_bucket = db.scalar(
+            select(auth_rate_limit.AuthRateLimitBucket).where(
+                auth_rate_limit.AuthRateLimitBucket.key == account_key
+            )
+        )
+        assert account_bucket is not None
+        assert account_bucket.failures == 0
+        assert account_bucket.blocked_until is None
+
