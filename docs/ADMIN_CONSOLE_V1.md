@@ -41,4 +41,12 @@ V1 不新增用户封禁、强删 user row、隐私授权代操作、secret edit
 Admin CI installs only the committed lockfile and blocks high/critical findings in
 browser-shipped dependencies with `npm audit --omit=dev --audit-level=high`.
 Development/build tooling remains outside the deployed static runtime and is triaged
-separately; production dependency findings are not waived by dev-only results.
+separately; production dependency findings are not waived by dev-only results. CI also
+stores the full `npm audit --json` result in the Admin visual artifact so dev/build
+advisories remain reviewable instead of disappearing behind the runtime-only gate.
+
+The review hardening upgraded React Router from 6.30.1 to 6.30.6 to remove the
+high-severity production findings without a major-version migration. The remaining
+production findings reported by npm are moderate and require the breaking React Router
+7 migration; they are recorded for follow-up rather than hidden or force-upgraded in
+ADMIN-001.
