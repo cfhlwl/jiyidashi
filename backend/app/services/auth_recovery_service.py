@@ -295,7 +295,7 @@ def reset_password(
         raise AuthRecoveryError("INVALID_PASSWORD_RESET_TOKEN")
 
     now = datetime.now(UTC)
-    if row.expires_at <= now:
+    if _as_utc(row.expires_at) <= now:
         raise AuthRecoveryError("PASSWORD_RESET_TOKEN_EXPIRED")
 
     identity = db.scalar(
