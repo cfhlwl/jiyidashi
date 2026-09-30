@@ -6,21 +6,16 @@ from sqlalchemy import func, select
 from app.core.db import SessionLocal
 from app.idempotency_models import ClientMutation
 from app.models import Memory, MemorySource, ObjectLocation
+from tests.auth_test_helpers import register_verified_session
 
 
 async def _headers(client: AsyncClient, email: str) -> dict[str, str]:
-    response = await client.post(
-        "/v1/auth/register",
-        json={
-            "email": email,
-            "password": "correct-horse-battery-staple",
-            "nickname": "离线同步用户",
-            "timezone": "Asia/Shanghai",
-            "locale": "zh-CN",
-        },
+    headers, _, _ = await register_verified_session(
+        client,
+        email=email,
+        nickname="离线同步用户",
     )
-    assert response.status_code == 201
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+    return headers
 
 
 async def test_response_loss_retry_returns_same_memory_without_duplicate_evidence(
