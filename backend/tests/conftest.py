@@ -24,9 +24,6 @@ from app.services.auth_delivery import (  # noqa: E402
 )
 
 
-
-
-
 _PUBLIC_AUTH_RATE_SCOPES = (
     "register_ip",
     "login_ip",
