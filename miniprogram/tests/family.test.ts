@@ -779,9 +779,11 @@ test('Family page emergency flow is explicit and never auto-fetches coordinates'
   assert.doesNotMatch(refreshBody, /getFamilyEmergencyLocation\(/)
   assert.match(page, /紧急共享我的位置/)
   assert.match(page, /showActionSheet[\s\S]*?30 分钟[\s\S]*?60 分钟[\s\S]*?180 分钟/)
-  assert.match(page, /确认紧急共享位置/)
-  assert.match(page, /仅共享：当前位置信息/)
-  assert.match(page, /共享后可随时停止/)
+  const sensitive = readFileSync(resolve(process.cwd(), 'src/services/sensitiveOperation.ts'), 'utf8')
+  assert.match(page, /confirmSensitiveOperation/)
+  assert.match(sensitive, /开始紧急共享位置/)
+  assert.match(sensitive, /共享当前位置/)
+  assert.match(sensitive, /可以随时停止共享/)
   assert.match(page, /查看紧急位置/)
   assert.match(
     page,
