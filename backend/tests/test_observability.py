@@ -511,9 +511,19 @@ def test_storage_failure_event_is_safe_and_not_found_is_not_noisy(caplog):
 @pytest.fixture
 def deletion_api_overrides():
     user_id = uuid4()
+    now = datetime.now(UTC)
+    claims = AccessTokenClaims(
+        user_id=user_id,
+        session_id=uuid4(),
+        jti=uuid4(),
+        issued_at=now,
+        expires_at=now + timedelta(minutes=15),
+    )
+    app.dependency_overrides[get_authenticated_claims] = lambda: claims
     app.dependency_overrides[get_authenticated_user_id] = lambda: user_id
     app.dependency_overrides[get_object_storage] = lambda: object()
     yield user_id
+    app.dependency_overrides.pop(get_authenticated_claims, None)
     app.dependency_overrides.pop(get_authenticated_user_id, None)
     app.dependency_overrides.pop(get_object_storage, None)
 
