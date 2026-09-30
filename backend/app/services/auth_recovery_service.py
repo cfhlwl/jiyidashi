@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -120,21 +119,22 @@ def deliver_registration_verification(
     db: Session,
     *,
     user_id: UUID,
-) -> None:
+) -> bool:
     email, token = issue_email_verification(db, user_id=user_id)
     try:
         get_auth_email_delivery().send_verification(email=email, token=token)
-    except Exception as exc:
+        return True
+    except Exception:
+        # Registration is already durable at this point. Do not turn a transient SMTP
+        # outage into a misleading "registration failed" response that traps the user
+        # behind duplicate-registration on retry; the explicit resend path can recover.
         emit_operational_event(
             event="auth.email_verification.delivery_failed",
             level="ERROR",
             user_id=str(user_id),
             error_code="AUTH_EMAIL_DELIVERY_UNAVAILABLE",
         )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AUTH_EMAIL_DELIVERY_UNAVAILABLE",
-        ) from exc
+        return False
 
 
 def resend_email_verification(
