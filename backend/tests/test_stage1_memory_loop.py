@@ -1,6 +1,6 @@
 from httpx import AsyncClient
 
-from tests.auth_test_helpers import register_verified_session
+from auth_test_helpers import register_verified_session
 
 
 async def _stage1_headers(client: AsyncClient, email: str) -> dict[str, str]:
