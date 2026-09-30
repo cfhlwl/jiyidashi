@@ -20,6 +20,7 @@ from app.person_models import Person, PersonAlias
 from app.person_relationship_models import PersonRelationship, PersonRelationshipKind
 from app.services import account_deletion_service
 from app.services.object_storage import ObjectStorageError, get_object_storage
+from tests.auth_test_helpers import register_verified_session
 
 
 class AccountDeleteStorage:
@@ -66,22 +67,13 @@ async def _register(
     password: str = "Delete-Me-123!",
     nickname: str = "Delete Owner",
 ) -> tuple[dict[str, str], UUID]:
-    response = await client.post(
-        "/v1/auth/register",
-        json={
-            "email": email,
-            "password": password,
-            "nickname": nickname,
-            "timezone": "Asia/Shanghai",
-            "locale": "zh-CN",
-        },
+    headers, user_id, _ = await register_verified_session(
+        client,
+        email=email,
+        password=password,
+        nickname=nickname,
     )
-    assert response.status_code == 201
-    payload = response.json()
-    return (
-        {"Authorization": f"Bearer {payload['access_token']}"},
-        UUID(payload["user_id"]),
-    )
+    return headers, user_id
 
 
 @pytest.mark.asyncio
