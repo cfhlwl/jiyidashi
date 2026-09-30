@@ -124,7 +124,10 @@ jobs:
         run: npx taro build --type h5
 
       - name: Install visual-review browser
-        run: npx playwright install --with-deps chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/jiyi-mini-visual-deps/node_modules/.bin/playwright"             install --with-deps chromium
 
       - name: Capture deterministic Mini visual-review screenshots
         run: node scripts/capture-visual-review.mjs
