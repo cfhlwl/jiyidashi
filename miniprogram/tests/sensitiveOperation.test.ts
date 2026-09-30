@@ -8,6 +8,7 @@ import {
   emergencyLocationShareConfirmation,
   familyPermissionConfirmation,
   SensitiveOperationEpoch,
+  SensitiveOperationSingleFlight,
   sensitiveOperationStateChangedMessage,
 } from '../src/services/sensitiveOperation'
 
@@ -38,6 +39,15 @@ test('SEC-014 confirmation specs use explicit user-facing action copy', () => {
     '开始共享位置',
   )
   assert.equal(sensitiveOperationStateChangedMessage, '状态刚刚发生变化，请重新打开后再试')
+})
+
+test('SensitiveOperationSingleFlight closes the pre-render double-tap window', () => {
+  const gate = new SensitiveOperationSingleFlight()
+  assert.equal(gate.begin('member:ABC'), true)
+  assert.equal(gate.begin('member:abc'), false)
+  assert.equal(gate.isPending('MEMBER:abc'), true)
+  gate.end('member:abc')
+  assert.equal(gate.begin('member:ABC'), true)
 })
 
 test('SensitiveOperationEpoch discards late success/error publication after invalidation', async () => {
@@ -82,4 +92,23 @@ test('Family permission mutation revalidates canonical grants after confirmation
   assert.ok(body.indexOf('getFamilyPermissions()') < body.indexOf('replaceFamilyPermissions'))
   assert.match(body, /mutationSessionCurrent/)
   assert.match(body, /sensitiveMutationEpoch\.current\.isCurrent/)
+})
+
+test('member and emergency mutations enter synchronous single-flight before confirmation', () => {
+  const page = readFileSync(resolve(process.cwd(), 'src/pages/family/index.tsx'), 'utf8')
+  const memberStart = page.indexOf('const mutateMember = async')
+  const permissionStart = page.indexOf('const updatePermission = async')
+  const memberBody = page.slice(memberStart, permissionStart)
+  assert.ok(
+    memberBody.indexOf('sensitiveMutationFlight.current.begin') <
+      memberBody.indexOf('confirmSensitiveOperation'),
+  )
+
+  const emergencyStart = page.indexOf('const createEmergencyShare = async')
+  const emergencyRevoke = page.indexOf('const revokeEmergencyShare = async')
+  const emergencyBody = page.slice(emergencyStart, emergencyRevoke)
+  assert.ok(
+    emergencyBody.indexOf('sensitiveMutationFlight.current.begin') <
+      emergencyBody.indexOf('confirmSensitiveOperation'),
+  )
 })
