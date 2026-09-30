@@ -144,14 +144,15 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     try {
       await api.logout();
     } finally {
-      if (!mounted) return;
-      setState(() {
-        authenticated = false;
-        startOnboardingAfterAuth = false;
-        resumeAccountDeletionAfterAuth = false;
-        elderModeEnabled = false;
-        restoreMessage = null;
-      });
+      if (mounted) {
+        setState(() {
+          authenticated = false;
+          startOnboardingAfterAuth = false;
+          resumeAccountDeletionAfterAuth = false;
+          elderModeEnabled = false;
+          restoreMessage = null;
+        });
+      }
     }
   }
 
