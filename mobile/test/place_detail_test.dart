@@ -29,6 +29,44 @@ class _PlaceApi extends JiYiApiClient {
   Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async => places;
 
   @override
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async {
+    if (places.isEmpty) {
+      return {
+        'timezone': 'Asia/Shanghai',
+        'day': null,
+        'items': const <Map<String, dynamic>>[],
+        'next_cursor': null,
+      };
+    }
+    final place = places.first;
+    return {
+      'timezone': 'Asia/Shanghai',
+      'day': null,
+      'items': [
+        {
+          'kind': 'VISIT',
+          'id': '11111111-1111-4111-8111-111111111111',
+          'occurred_at': '2026-09-20T08:00:00Z',
+          'ended_at': '2026-09-20T09:00:00Z',
+          'place_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          'place_name': place['name'],
+          'memory_type': null,
+          'title': null,
+          'content': null,
+          'is_confirmed': null,
+          'confidence': 0.92,
+          'visit_finalized': true,
+        },
+      ],
+      'next_cursor': null,
+    };
+  }
+
+  @override
   Future<Map<String, dynamic>> getPlaceDetail(
     String placeId, {
     int limit = 50,
@@ -184,7 +222,7 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimelinePage(api: api))));
     await tester.pumpAndSettle();
-    expect(find.text('地点'), findsOneWidget);
+    expect(find.text('家'), findsOneWidget);
     await tester.tap(find.text('家'));
     await tester.pumpAndSettle();
     expect(find.text('地点详情'), findsOneWidget);

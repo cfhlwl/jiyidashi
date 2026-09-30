@@ -167,7 +167,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('开放'), findsWidgets);
+      expect(find.text('长期回顾'), findsOneWidget);
 
       await tester.enterText(
         find.byType(TextField).last,

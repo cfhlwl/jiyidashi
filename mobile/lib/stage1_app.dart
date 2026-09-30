@@ -1050,9 +1050,11 @@ class _TimelineEntry extends StatelessWidget {
     return Semantics(
       button: true,
       label: '$day $time $title',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(JiYiRadius.card),
-        onTap: onTap,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(JiYiRadius.card),
+          onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
           child: Row(
@@ -1128,6 +1130,7 @@ class _TimelineEntry extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }
