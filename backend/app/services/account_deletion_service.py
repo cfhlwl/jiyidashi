@@ -119,6 +119,7 @@ def _begin_or_load_account_deletion(
         db,
         user_id=user_id,
         reason="ACCOUNT_DELETION",
+        except_session_id=continuation_session_id,
     )
     try:
         db.commit()
