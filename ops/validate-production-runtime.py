@@ -11,6 +11,7 @@ REQUIRED_EXACT = {
     "ENABLE_DEV_AUTH": "false",
     "AUTH_RATE_LIMIT_ENABLED": "true",
     "AUTO_CREATE_SCHEMA": "false",
+    "AUTH_EMAIL_DELIVERY_MODE": "smtp",
 }
 
 
@@ -44,6 +45,14 @@ def main() -> None:
     jwt_secret = values.get("JWT_SECRET", "")
     if len(jwt_secret.encode("utf-8")) < 32 or jwt_secret == "change-this-in-real-environments":
         errors.append("JWT_SECRET must be non-default and at least 32 bytes")
+
+    public_auth_base = values.get("AUTH_PUBLIC_BASE_URL", "")
+    if not public_auth_base.startswith("https://"):
+        errors.append("AUTH_PUBLIC_BASE_URL must use HTTPS")
+    if not values.get("AUTH_SMTP_HOST", ""):
+        errors.append("AUTH_SMTP_HOST is required")
+    if not values.get("AUTH_SMTP_FROM", ""):
+        errors.append("AUTH_SMTP_FROM is required")
 
     database_url = values.get("DATABASE_URL", "")
     if not database_url.startswith("postgresql+psycopg://") or "@postgres:5432/" not in database_url:
