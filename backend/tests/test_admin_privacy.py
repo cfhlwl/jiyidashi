@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from uuid import uuid4
 
+from sqlalchemy import delete
+
 from app.account_deletion_models import AccountDeletionOperation
 from app.admin_models import AdminAccount, AdminRole
+from app.auth_models import AuthRateLimitBucket
 from app.core.db import SessionLocal
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.entitlement_models import PlanCode, UserEntitlement
@@ -14,7 +17,22 @@ from app.models import Memory, User
 from app.services.admin_security import hash_admin_password
 
 
+
+
+def _reset_admin_login_buckets() -> None:
+    with SessionLocal() as db:
+        db.execute(
+            delete(AuthRateLimitBucket).where(
+                AuthRateLimitBucket.scope.in_(
+                    ("admin_login_ip", "admin_login_account_ip")
+                )
+            )
+        )
+        db.commit()
+
+
 async def _admin_login(client):
+    _reset_admin_login_buckets()
     email = f"privacy-admin-{uuid4()}@example.com"
     password = "Admin-Test-Password-123!"
     with SessionLocal() as db:
