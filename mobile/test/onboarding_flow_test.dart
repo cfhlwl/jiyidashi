@@ -223,6 +223,10 @@ class _ZeroQueue extends OfflineQueueStore {
 class _AuthenticationApi extends JiYiApiClient {
   _AuthenticationApi() : super(baseUrl: 'https://auth-onboarding.invalid/v1');
 
+  @override
+  Future<AuthRestoreStatus> restorePersistedSession() async =>
+      AuthRestoreStatus.noPersistedSession;
+
   void _authenticate() {
     accessToken = 'auth-onboarding-token';
     authenticatedUserId = owner;
@@ -408,6 +412,11 @@ void main() {
         onboardingStore: store,
       ),
     );
+    await _pumpUntil(
+      tester,
+      () => find.text('第一次使用？创建账号').evaluate().isNotEmpty,
+      reason: 'auth page after cold-start restore',
+    );
 
     await tester.tap(find.text('第一次使用？创建账号'));
     await tester.pump();
@@ -448,6 +457,11 @@ void main() {
         offlineQueue: _ZeroQueue(),
         onboardingStore: store,
       ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.byType(TextField).evaluate().length == 2,
+      reason: 'login page after cold-start restore',
     );
 
     final fields = find.byType(TextField);
