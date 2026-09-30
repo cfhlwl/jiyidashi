@@ -91,7 +91,32 @@ jobs:
           set -euo pipefail
           taro_version="$(node -p "require('@tarojs/cli/package.json').version")"
           echo "review renderer Taro version: $taro_version"
-          npm install --no-save --package-lock=false             "@tarojs/plugin-platform-h5@$taro_version"             "@tarojs/router@$taro_version"             playwright@1.55.0
+
+          review_dir="$RUNNER_TEMP/jiyi-mini-visual-deps"
+          rm -rf "$review_dir"
+          mkdir -p "$review_dir"
+          (
+            cd "$review_dir"
+            npm init -y >/dev/null
+            npm install --no-save --package-lock=false               "@tarojs/plugin-platform-h5@$taro_version"               "@tarojs/router@$taro_version"               playwright@1.55.0
+          )
+
+          # Keep the npm-ci production tree untouched. Expose only packages that
+          # do not already exist in the locked Mini install.
+          for package in "$review_dir"/node_modules/@tarojs/*; do
+            name="$(basename "$package")"
+            target="$GITHUB_WORKSPACE/miniprogram/node_modules/@tarojs/$name"
+            if [ ! -e "$target" ]; then
+              ln -s "$package" "$target"
+            fi
+          done
+          for name in playwright playwright-core; do
+            source="$review_dir/node_modules/$name"
+            target="$GITHUB_WORKSPACE/miniprogram/node_modules/$name"
+            if [ -e "$source" ] && [ ! -e "$target" ]; then
+              ln -s "$source" "$target"
+            fi
+          done
 
       - name: Build Mini visual-review H5
         env:
