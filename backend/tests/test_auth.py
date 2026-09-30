@@ -3,7 +3,6 @@ import pytest
 from app.api import auth as auth_api
 from app.core.config import Settings
 
-
 _PROD_AUTH_EMAIL = {
     "auth_email_delivery_mode": "smtp",
     "auth_public_base_url": "https://app.example.test/auth",
