@@ -21,17 +21,16 @@ class AccessTokenClaims:
     expires_at: datetime
 
 
-def create_access_token(user_id: UUID, session_id: UUID | None = None) -> str:
+def create_access_token(user_id: UUID, session_id: UUID) -> str:
     """Create a short-lived public access JWT bound to a durable session."""
 
     now = datetime.now(UTC)
-    bound_session_id = session_id or user_id
     payload = {
         "iss": settings.jwt_issuer,
         "aud": settings.jwt_audience,
         "sub": str(user_id),
         "jti": str(uuid4()),
-        "session_id": str(bound_session_id),
+        "session_id": str(session_id),
         "iat": int(now.timestamp()),
         "exp": int(
             (now + timedelta(minutes=settings.access_token_minutes)).timestamp()
