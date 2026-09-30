@@ -659,9 +659,11 @@ class _AuthPageState extends State<AuthPage> {
                                     tokenController.clear();
                                   }),
                             child: Text(
-                              mode == _AuthMode.register
-                                  ? '已有账号？返回登录'
-                                  : '返回登录 / 创建账号',
+                              switch (mode) {
+                                _AuthMode.login => '第一次使用？创建账号',
+                                _AuthMode.register => '已有账号？返回登录',
+                                _ => '返回登录 / 创建账号',
+                              },
                             ),
                           ),
                         ],
