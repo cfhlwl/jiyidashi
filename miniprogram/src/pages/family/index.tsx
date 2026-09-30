@@ -321,14 +321,24 @@ export default function Page() {
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
         return
       }
-      assertCurrentFamilyMember(freshFamily, profile.id)
-      if (
-        profile.id !== session.owner
-        || !freshFamily.members.some(
-          (item) => item.user_id.toLowerCase() === targetUserId.toLowerCase(),
-        )
-      ) {
+      const freshActor = assertCurrentFamilyMember(freshFamily, profile.id)
+      const freshTarget = freshFamily.members.find(
+        (item) => item.user_id.toLowerCase() === targetUserId.toLowerCase(),
+      )
+      if (profile.id !== session.owner || !freshTarget) {
         setStatus(sensitiveOperationStateChangedMessage)
+        return
+      }
+      const freshActions = familyMemberActions(
+        profile.id,
+        freshActor.role,
+        freshTarget,
+      )
+      const stillAuthorized = mode === 'leave'
+        ? freshActions.showMemberLeave
+        : freshActions.showOwnerRemove
+      if (!stillAuthorized) {
+        setStatus('你现在没有权限执行这个操作')
         return
       }
 
