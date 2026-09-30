@@ -112,6 +112,14 @@ class Settings(BaseSettings):
     auth_login_backoff_after_failures: int = 3
     auth_login_backoff_max_seconds: int = 60
 
+    # ADMIN-001 review hardening: privileged login has a separate, stricter
+    # namespace/policy so ordinary-user traffic cannot consume or reset Admin buckets.
+    admin_login_ip_limit: int = Field(default=12, ge=1, le=100)
+    admin_login_account_ip_limit: int = Field(default=5, ge=1, le=50)
+    admin_login_window_seconds: int = Field(default=900, ge=60, le=86400)
+    admin_login_backoff_after_failures: int = Field(default=2, ge=1, le=20)
+    admin_login_backoff_max_seconds: int = Field(default=300, ge=1, le=3600)
+
     # [人工注释][S2-006~S2-014] Stage 2 第一条线只在服务端定义定位派生参数。
     # late-arrival grace 决定历史点可回补多久；raw retention 必须明显长于它，
     # 才能保证 Visit 已 durable finalization 后再清理原始位置证据。
