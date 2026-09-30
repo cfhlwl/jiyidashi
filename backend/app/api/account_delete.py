@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
