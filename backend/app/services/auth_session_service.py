@@ -161,7 +161,36 @@ def refresh_public_session(
     if not digest:
         raise PublicAuthError("INVALID_REFRESH_TOKEN")
 
+    # Resolve a stable abuse-protection scope *before* the rotation transaction.
+    # auth_rate_limit owns its own commit, so it must never run while holding the
+    # AuthSession row lock used for exactly-one-success refresh rotation.
+    scope_row = db.execute(
+        select(AuthSession.user_id, AuthSession.id).where(
+            AuthSession.refresh_digest == digest
+        )
+    ).first()
+    if scope_row is not None:
+        session_scope = f"{scope_row.user_id}:{scope_row.id}"
+    else:
+        receipt_scope = db.get(AuthRefreshTokenReceipt, digest)
+        if receipt_scope is None:
+            consume_refresh_attempt(db, f"unknown:{digest}")
+            raise PublicAuthError("INVALID_REFRESH_TOKEN")
+        replay_scope = db.execute(
+            select(AuthSession.user_id, AuthSession.id).where(
+                AuthSession.id == receipt_scope.session_id
+            )
+        ).first()
+        session_scope = (
+            f"{replay_scope.user_id}:{replay_scope.id}"
+            if replay_scope is not None
+            else f"deleted-session:{receipt_scope.session_id}"
+        )
+
+    consume_refresh_attempt(db, session_scope)
     now = datetime.now(UTC)
+
+    # From here through commit, rotation state is serialized by the session row.
     row = db.scalar(
         select(AuthSession)
         .where(AuthSession.refresh_digest == digest)
@@ -170,9 +199,8 @@ def refresh_public_session(
     if row is None:
         receipt = db.get(AuthRefreshTokenReceipt, digest)
         if receipt is None:
-            # Unknown credentials still enter a bounded keyed bucket without storing
-            # plaintext token material.
-            consume_refresh_attempt(db, f"unknown:{digest}")
+            # The credential ceased to be current after the preflight lookup but no
+            # consumed receipt exists. Fail closed without minting a successor.
             raise PublicAuthError("INVALID_REFRESH_TOKEN")
 
         replay_session = db.scalar(
@@ -181,10 +209,6 @@ def refresh_public_session(
             .with_for_update()
         )
         if replay_session is not None:
-            consume_refresh_attempt(
-                db,
-                f"{replay_session.user_id}:{replay_session.id}",
-            )
             if replay_session.revoked_at is None:
                 replay_session.revoked_at = now
                 replay_session.revoke_reason = "REFRESH_REPLAY"
@@ -194,8 +218,8 @@ def refresh_public_session(
             _record_refresh_replay(db, replay_session)
         raise PublicAuthError("REFRESH_TOKEN_REUSED")
 
-    consume_refresh_attempt(db, f"{row.user_id}:{row.id}")
     if row.revoked_at is not None:
+        db.rollback()
         raise PublicAuthError("AUTH_SESSION_REVOKED")
     if _as_utc(row.expires_at) <= now:
         row.revoked_at = now
@@ -234,7 +258,6 @@ def refresh_public_session(
         rotation_revision=row.rotation_revision,
     )
     return _session_tokens(row, successor)
-
 
 def revoke_session(
     db: Session,
