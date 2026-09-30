@@ -67,7 +67,7 @@ export function AiServicesPage() {
       </Row>
       <DetailSection
         title="本月聚合用量"
-        description="仅展示现有配额账本的全站聚合数字，不读取用户提示词、回答内容或 provider 私有数据。"
+        description="仅展示现有配额账本的全站聚合数字，不读取用户提示词、回答内容或模型服务私有数据。"
       >
         <DescriptionList
           columns={3}
