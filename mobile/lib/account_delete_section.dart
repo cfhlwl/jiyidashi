@@ -248,7 +248,10 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
               foregroundColor: Theme.of(context).colorScheme.error,
               side: BorderSide(color: Theme.of(context).colorScheme.error),
             ),
-            icon: deleting || confirming
+            // Keep confirmation itself animation-free. The modal already blocks
+            // interaction, and an indeterminate spinner would make widget tests (and
+            // accessibility settle semantics) wait forever while the dialog is open.
+            icon: deleting
                 ? const SizedBox.square(
                     dimension: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
