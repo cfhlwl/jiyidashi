@@ -51,3 +51,13 @@ for (const [name, path] of screens) {
     await expect(page).toHaveScreenshot(name + '.png', { fullPage: true })
   })
 }
+
+test('@flagship canonical desktop navigation is expanded', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  const navigation = page.getByLabel('管理后台主导航')
+  await expect(navigation.getByText('概览', { exact: true })).toBeVisible()
+  await expect(navigation.getByText('会员与额度', { exact: true })).toBeVisible()
+  await expect(page.locator('.admin-sider')).not.toHaveClass(/ant-layout-sider-collapsed/)
+})
+
