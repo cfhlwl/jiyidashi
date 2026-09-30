@@ -65,6 +65,15 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Test AUTH-001 secure session
+        timeout-minutes: 5
+        run: >-
+          flutter test
+          test/auth_session_restore_test.dart
+          test/api_client_test.dart
+          test/offline_identity_test.dart
+          --reporter expanded
+
       # [人工注释][S1-026] Onboarding 先单独跑，失败时能直接定位；全量测试继续作为正式回归门禁。
       - name: Test onboarding
         timeout-minutes: 5
