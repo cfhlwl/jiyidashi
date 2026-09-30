@@ -35,3 +35,10 @@ V1 不新增用户封禁、强删 user row、隐私授权代操作、secret edit
 ## 初始管理员
 
 首个 SUPER_ADMIN 只允许通过部署 CLI python -m app.maintenance.admin_bootstrap 创建。需要 ADMIN_BOOTSTRAP_EMAIL、ADMIN_BOOTSTRAP_PASSWORD，可选 ADMIN_BOOTSTRAP_NAME。存在有效 SUPER_ADMIN 后 bootstrap 自动拒绝重复初始化。
+
+## Frontend dependency gate
+
+Admin CI installs only the committed lockfile and blocks high/critical findings in
+browser-shipped dependencies with `npm audit --omit=dev --audit-level=high`.
+Development/build tooling remains outside the deployed static runtime and is triaged
+separately; production dependency findings are not waived by dev-only results.
