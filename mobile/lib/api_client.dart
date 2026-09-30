@@ -734,7 +734,26 @@ class JiYiApiClient {
     }
     final normalizedDay = day?.trim();
     if (normalizedDay != null && normalizedDay.isNotEmpty) {
-      if (!RegExp(r'^\d{4}-\d{2}-\d{2}    if (limit < 1 || limit > 500) {
+      if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(normalizedDay)) {
+        throw ArgumentError.value(
+          day,
+          'day',
+          'timeline day must be YYYY-MM-DD',
+        );
+      }
+      query['day'] = normalizedDay;
+    }
+    return _jsonRequest(
+      'GET',
+      Uri(
+        path: '/timeline/events',
+        queryParameters: query,
+      ).toString(),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) {
+    if (limit < 1 || limit > 500) {
       throw ArgumentError.value(limit, 'limit', 'place limit must be 1..500');
     }
     return _jsonListRequest(
