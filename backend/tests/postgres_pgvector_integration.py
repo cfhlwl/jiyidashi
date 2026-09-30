@@ -42,7 +42,11 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                       -- later migrations are expected to disappear and be recreated.
                       AND NOT (
                           table_name = 'users'
-                          AND column_name = 'elder_mode_enabled'
+                          AND column_name IN ('elder_mode_enabled', 'auth_disabled_at')
+                      )
+                      AND NOT (
+                          table_name = 'auth_identities'
+                          AND column_name = 'verified_at'
                       )
                       AND table_name NOT IN (
                           'alembic_version',
@@ -73,7 +77,10 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'admin_accounts',
                           'admin_sessions',
                           'admin_audit_events',
-                          'entitlement_quota_policies'
+                          'entitlement_quota_policies',
+                          'auth_sessions',
+                          'auth_refresh_token_receipts',
+                          'auth_one_time_tokens'
                       )
                     ORDER BY table_name, ordinal_position
                     """
