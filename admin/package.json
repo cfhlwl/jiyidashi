@@ -1,0 +1,36 @@
+{
+  "name": "jiyi-admin-console",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "lint": "node scripts/lint.mjs",
+    "language": "node scripts/product-language-gate.mjs",
+    "test": "vitest run --config vitest.config.ts",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "visual": "playwright test",
+    "visual:manifest": "node scripts/visual-manifest.mjs",
+    "visual:mismatch": "node scripts/prove-visual-mismatch.mjs"
+  },
+  "dependencies": {
+    "antd": "5.29.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.30.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.0",
+    "@types/node": "22.15.34",
+    "@types/react": "18.3.24",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "5.0.4",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "3.2.7"
+  }
+}

@@ -31,6 +31,8 @@ class SecurityScope(StrEnum):
     AUTH_REGISTER_IP = "AUTH_REGISTER_IP"
     AUTH_LOGIN_IP = "AUTH_LOGIN_IP"
     AUTH_LOGIN_ACCOUNT_IP = "AUTH_LOGIN_ACCOUNT_IP"
+    ADMIN_LOGIN_IP = "ADMIN_LOGIN_IP"
+    ADMIN_LOGIN_ACCOUNT_IP = "ADMIN_LOGIN_ACCOUNT_IP"
     FAMILY_CURRENT_LOCATION = "FAMILY_CURRENT_LOCATION"
     FAMILY_TODAY_FOOTPRINT = "FAMILY_TODAY_FOOTPRINT"
     FAMILY_MEMORY = "FAMILY_MEMORY"
@@ -65,6 +67,8 @@ RULES: dict[SecuritySignalCode, SecurityRulePolicy] = {
                 SecurityScope.AUTH_REGISTER_IP,
                 SecurityScope.AUTH_LOGIN_IP,
                 SecurityScope.AUTH_LOGIN_ACCOUNT_IP,
+                SecurityScope.ADMIN_LOGIN_IP,
+                SecurityScope.ADMIN_LOGIN_ACCOUNT_IP,
             }
         ),
     ),
@@ -73,7 +77,12 @@ RULES: dict[SecuritySignalCode, SecurityRulePolicy] = {
         threshold=5,
         cooldown_seconds=900,
         severity=SecuritySeverity.HIGH,
-        allowed_scopes=frozenset({SecurityScope.AUTH_LOGIN_ACCOUNT_IP}),
+        allowed_scopes=frozenset(
+            {
+                SecurityScope.AUTH_LOGIN_ACCOUNT_IP,
+                SecurityScope.ADMIN_LOGIN_ACCOUNT_IP,
+            }
+        ),
     ),
     SecuritySignalCode.FAMILY_SENSITIVE_READ_DENIED: SecurityRulePolicy(
         window_seconds=600,

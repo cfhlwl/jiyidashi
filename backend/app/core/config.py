@@ -14,10 +14,20 @@ from app.embedding_policy import (
 class Settings(BaseSettings):
     app_env: str = "development"
     app_name: str = "迹忆 API"
+    app_version: str = "0.1.0"
+    app_git_sha: str = ""
+    app_build_time: str = ""
     database_url: str = "sqlite:///./jiyi.db"
     jwt_secret: str = "change-this-in-real-environments"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
+
+    # ADMIN-001: privileged browser auth is an independent opaque session domain.
+    # No Admin bearer token is issued to browser JavaScript.
+    admin_session_minutes: int = Field(default=30, ge=5, le=480)
+    admin_session_cookie_name: str = "jiyi_admin_session"
+    admin_csrf_cookie_name: str = "jiyi_admin_csrf"
+
     enable_dev_auth: bool = False
     auto_create_schema: bool = False
     cors_origins: list[str] = Field(default_factory=list)
@@ -101,6 +111,14 @@ class Settings(BaseSettings):
     auth_login_window_seconds: int = 900
     auth_login_backoff_after_failures: int = 3
     auth_login_backoff_max_seconds: int = 60
+
+    # ADMIN-001 review hardening: privileged login has a separate, stricter
+    # namespace/policy so ordinary-user traffic cannot consume or reset Admin buckets.
+    admin_login_ip_limit: int = Field(default=30, ge=1, le=100)
+    admin_login_account_ip_limit: int = Field(default=5, ge=1, le=50)
+    admin_login_window_seconds: int = Field(default=900, ge=60, le=86400)
+    admin_login_backoff_after_failures: int = Field(default=2, ge=1, le=20)
+    admin_login_backoff_max_seconds: int = Field(default=300, ge=1, le=3600)
 
     # [人工注释][S2-006~S2-014] Stage 2 第一条线只在服务端定义定位派生参数。
     # late-arrival grace 决定历史点可回补多久；raw retention 必须明显长于它，

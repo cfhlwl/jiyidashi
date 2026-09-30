@@ -323,6 +323,16 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_entitlement_quota_integration.py
 
+      - name: PostgreSQL Admin Console authority
+        # [P0][ADMIN-001] Real PostgreSQL proves migration roundtrip, append-only
+        # audit enforcement, quota optimistic-concurrency single winner, and
+        # persisted session revision invalidation semantics.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_admin_console_integration.py
+
       - name: PostgreSQL Retrieval & Retention Analytics
         # [P1][#169] Real PostgreSQL proves retrieval/active-day dedupe,
         # reproducible retention math, and destructive-generation stale-write safety.

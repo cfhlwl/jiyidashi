@@ -1,0 +1,121 @@
+name: admin-ci
+
+on:
+  pull_request:
+    paths:
+      - "admin/**"
+      - "backend/app/admin_*.py"
+      - "backend/app/api/admin_*.py"
+      - "backend/app/services/admin_*.py"
+      - "backend/app/services/runtime_policy_service.py"
+      - "backend/tests/postgres_admin_console_integration.py"
+      - "backend/migrations/versions/0028_admin_console.py"
+      - ".github/workflows/admin-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  admin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Verify committed lockfile and Goldens
+        shell: bash
+        run: |
+          test -f package-lock.json
+          test -d tests/visual/snapshots
+          test "$(find tests/visual/snapshots -type f -name '*.png' | wc -l)" -ge 20
+          test -z "$(git status --porcelain -- package-lock.json tests/visual/snapshots)"
+
+      - name: Install from committed lockfile
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit all dependencies
+        # No advisory allowlist is active. Any high/critical finding in runtime,
+        # dev, test, or build tooling fails ADMIN-001.
+        run: npm audit --audit-level=high
+
+      - name: Record full dependency audit evidence
+        shell: bash
+        run: |
+          mkdir -p visual-artifacts
+          set +e
+          npm audit --json > visual-artifacts/npm-audit-full.json
+          audit_status="$?"
+          set -e
+          echo "Full audit JSON exit code: $audit_status; high/critical blocking is enforced by the previous step."
+          test -s visual-artifacts/npm-audit-full.json
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Admin lint
+        run: npm run lint
+
+      - name: Admin Product Language Gate
+        run: npm run language
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install deterministic Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Compare committed Admin Goldens
+        run: >
+          npx playwright test
+          tests/visual/flagship.spec.ts
+          tests/visual/matrix.spec.ts
+          tests/visual/accessibility.spec.ts
+
+      - name: Prove visual mismatch detection
+        run: npm run visual:mismatch
+
+      - name: Build screenshot manifest
+        run: npm run visual:manifest
+
+      - name: Prove Golden comparison was read-only
+        shell: bash
+        run: |
+          test -z "$(git status --porcelain -- package-lock.json tests/visual/snapshots)"
+
+      - name: Upload Admin visual artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-visual-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            admin/visual-artifacts/**
+            admin/playwright-report/**
+            admin/test-results/**
+          if-no-files-found: warn
+          retention-days: 14

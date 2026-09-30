@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.admin_models import EntitlementQuotaPolicy
 from app.core.config import Settings
 from app.core.db import Base
 from app.entitlement_models import (
@@ -56,6 +57,7 @@ def _engine():
             AIQuotaPeriod.__table__,
             AIUsageEvent.__table__,
             MediaAsset.__table__,
+            EntitlementQuotaPolicy.__table__,
         ],
     )
     return engine
