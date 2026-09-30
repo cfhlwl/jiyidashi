@@ -132,7 +132,12 @@ def authenticate_access_session(
         raise PublicAuthError("AUTH_SESSION_INVALID")
 
     user = db.get(User, claims.user_id)
-    if user is None or user.auth_disabled_at is not None:
+    if user is None:
+        # Keep deleted-account behavior deterministic across SQLite tests and
+        # PostgreSQL FK-cascade timing: a token whose owner no longer exists is
+        # simply no longer backed by a valid durable session.
+        raise PublicAuthError("AUTH_SESSION_INVALID")
+    if user.auth_disabled_at is not None:
         raise PublicAuthError("AUTH_ACCOUNT_UNAVAILABLE")
     return claims.user_id
 
