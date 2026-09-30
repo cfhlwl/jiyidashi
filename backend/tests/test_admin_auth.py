@@ -5,11 +5,11 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.admin_models import AdminAccount, AdminRole, AdminSession
+from app.core.db import SessionLocal
 from app.security_models import SecurityAlert, SecuritySignalCode
 from app.services import auth_rate_limit
-from app.services.security_alerting import SecurityScope
-from app.core.db import SessionLocal
 from app.services.admin_security import hash_admin_password
+from app.services.security_alerting import SecurityScope
 
 
 def _create_admin(*, role: AdminRole = AdminRole.SUPER_ADMIN) -> tuple[str, str]:
