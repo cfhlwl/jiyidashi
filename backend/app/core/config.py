@@ -14,10 +14,20 @@ from app.embedding_policy import (
 class Settings(BaseSettings):
     app_env: str = "development"
     app_name: str = "迹忆 API"
+    app_version: str = "0.1.0"
+    app_git_sha: str = ""
+    app_build_time: str = ""
     database_url: str = "sqlite:///./jiyi.db"
     jwt_secret: str = "change-this-in-real-environments"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
+
+    # ADMIN-001: privileged browser auth is an independent opaque session domain.
+    # No Admin bearer token is issued to browser JavaScript.
+    admin_session_minutes: int = Field(default=30, ge=5, le=480)
+    admin_session_cookie_name: str = "jiyi_admin_session"
+    admin_csrf_cookie_name: str = "jiyi_admin_csrf"
+
     enable_dev_auth: bool = False
     auto_create_schema: bool = False
     cors_origins: list[str] = Field(default_factory=list)

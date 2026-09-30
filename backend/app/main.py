@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.api.admin_router import admin_api_router
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.db import UserDataRequestStale, create_schema, readiness_engine
@@ -44,6 +45,7 @@ if settings.cors_origins:
     )
 
 app.include_router(api_router)
+app.include_router(admin_api_router)
 
 
 def _route_template(request: Request) -> str:

@@ -18,6 +18,10 @@ from app.entitlement_models import (
     UserEntitlement,
 )
 from app.media_models import MediaAsset, MediaStatus
+from app.services.runtime_policy_service import (
+    RuntimeQuotaPolicyUnavailable,
+    quota_limits_for_plan,
+)
 
 _POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807
 _PROVIDER_REQUEST_ID_MAX_LENGTH = 255
@@ -85,47 +89,12 @@ _PLAN_CAPABILITIES: dict[PlanCode, frozenset[CapabilityCode]] = {
     PlanCode.PREMIUM: _ALL_CAPABILITIES,
     PlanCode.LEGACY_FULL: _ALL_CAPABILITIES,
 }
-_REQUIRED_COMMERCIAL_QUOTAS = frozenset(
-    {
-        QuotaDimension.STORAGE_BYTES,
-        QuotaDimension.AI_PROVIDER_REQUESTS,
-    }
-)
-
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
 
-
-def _quota_catalog(
-    settings: Settings,
-    plan_code: PlanCode,
-) -> dict[QuotaDimension, int | None]:
-    if plan_code == PlanCode.LEGACY_FULL:
-        return {dimension: None for dimension in QuotaDimension}
-
-    raw = settings.entitlement_quota_catalog.get(plan_code.value)
-    if not isinstance(raw, dict):
-        raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
-
-    parsed: dict[QuotaDimension, int | None] = {}
-    try:
-        for dimension in QuotaDimension:
-            value = raw.get(dimension.value)
-            if value is None:
-                parsed[dimension] = None
-            elif isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-                parsed[dimension] = value
-            else:
-                raise ValueError
-    except ValueError as exc:
-        raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503) from exc
-
-    if any(parsed[dimension] is None for dimension in _REQUIRED_COMMERCIAL_QUOTAS):
-        raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503)
-    return parsed
 
 
 def create_legacy_full_entitlement(
@@ -189,7 +158,14 @@ def resolve_entitlement(
         now=observed_at,
         for_update=for_update,
     )
-    quota_limits = _quota_catalog(settings or get_settings(), plan_code)
+    try:
+        quota_limits = quota_limits_for_plan(
+            db,
+            plan_code=plan_code,
+            settings=settings or get_settings(),
+        )
+    except RuntimeQuotaPolicyUnavailable as exc:
+        raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503) from exc
     return ResolvedEntitlement(
         plan_code=plan_code,
         capabilities=capabilities,
@@ -213,10 +189,18 @@ def require_capability(
     )
     if capability not in capabilities:
         raise EntitlementError("ENTITLEMENT_CAPABILITY_REQUIRED", 403)
+    try:
+        quota_limits = quota_limits_for_plan(
+            db,
+            plan_code=plan_code,
+            settings=settings or get_settings(),
+        )
+    except RuntimeQuotaPolicyUnavailable as exc:
+        raise EntitlementError("ENTITLEMENT_STATE_UNAVAILABLE", 503) from exc
     return ResolvedEntitlement(
         plan_code=plan_code,
         capabilities=capabilities,
-        quota_limits=_quota_catalog(settings or get_settings(), plan_code),
+        quota_limits=quota_limits,
     )
 
 
