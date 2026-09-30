@@ -21,6 +21,7 @@ const safeErrors: Record<string, string> = {
   ADMIN_AUTH_REQUIRED: '登录状态已失效，请重新登录',
   ADMIN_SESSION_STALE: '登录状态刚刚发生变化，请重新登录',
   ADMIN_INVALID_CREDENTIALS: '账号或密码不正确',
+  AUTH_RATE_LIMITED: '登录尝试过于频繁，请稍后再试',
   ADMIN_PERMISSION_DENIED: '你现在没有权限执行这个操作',
   ADMIN_CSRF_REQUIRED: '操作验证信息缺失，请刷新页面后重试',
   ADMIN_CSRF_INVALID: '操作验证已失效，请刷新页面后重试',
