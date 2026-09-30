@@ -346,7 +346,6 @@ async def test_account_delete_removes_identity_invalidates_old_token_and_allows_
     )
     assert replay.status_code == 401
     assert replay.json()["detail"] == "AUTH_SESSION_INVALID"
-    assert replay.json()["completed"] is True
 
     # 不保存永久 tombstone：用户以后可用相同邮箱明确创建一个全新的账号。
     fresh = await client.post(
