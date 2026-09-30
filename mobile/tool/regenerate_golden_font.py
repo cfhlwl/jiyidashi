@@ -28,7 +28,7 @@ OUTPUT = ROOT / "test/fonts/JiYiGoldenCJK-Regular.ttf"
 def visible_corpus() -> str:
     chars: set[str] = {chr(code) for code in range(0x20, 0x7F)}
     paths = list((ROOT / "lib").rglob("*.dart"))
-    paths.append(ROOT / "test/visual_golden_test.dart")
+    paths.extend((ROOT / "test").rglob("*.dart"))
     for path in paths:
         text = path.read_text(encoding="utf-8")
         chars.update(

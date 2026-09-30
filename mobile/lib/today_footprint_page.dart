@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'ui/jiyi_components.dart';
+import 'ui/jiyi_format.dart';
 import 'ui/jiyi_tokens.dart';
 
 // Today Footprint 是服务端按账号时区和 Visit overlap 生成的权威只读投影。
@@ -176,7 +177,7 @@ class _TodayFootprintBody extends StatelessWidget {
         key: const ValueKey('today-footprint-empty'),
         leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
         title: elderMode ? '今天还没有形成足迹' : '今日足迹',
-        subtitle: elderMode ? null : '${footprint.day} · ${footprint.timezone}',
+        subtitle: elderMode ? null : jiyiDisplayDate(footprint.day),
         child: JiYiEmptyState(
           icon: Icons.location_off_outlined,
           title: '今天还没有形成足迹',
@@ -193,7 +194,7 @@ class _TodayFootprintBody extends StatelessWidget {
       title: elderMode ? '今天去了哪里' : '今日足迹',
       subtitle: elderMode
           ? null
-          : '${footprint.day} · ${footprint.timezone} · ${footprint.visits.length} 条地点记录',
+          : '${jiyiDisplayDate(footprint.day)} · ${footprint.visits.length} 条地点记录',
       child: Column(
         children: [
           for (var index = 0; index < footprint.visits.length; index++) ...[

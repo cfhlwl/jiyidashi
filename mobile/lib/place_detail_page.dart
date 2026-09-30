@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'ui/jiyi_components.dart';
+import 'ui/jiyi_format.dart';
 import 'ui/jiyi_tokens.dart';
 
 // 地点详情只消费服务端权威 Place/Visit read model；客户端负责严格解析与展示，不重算命名优先级或 Visit 可信状态。
@@ -199,9 +200,9 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                     const SizedBox(height: JiYiSpacing.xs),
                     Text('累计到访：${place.visitCount} 次'),
                     const SizedBox(height: JiYiSpacing.xs),
-                    Text(_line('首次到访', place.firstVisitedAt)),
+                    Text(_line('首次到访', place.firstVisitedAt == null ? null : jiyiDisplayDateTime(place.firstVisitedAt!))),
                     const SizedBox(height: JiYiSpacing.xs),
-                    Text(_line('最近到访', place.lastVisitedAt)),
+                    Text(_line('最近到访', place.lastVisitedAt == null ? null : jiyiDisplayDateTime(place.lastVisitedAt!))),
                   ],
                 ),
               ),
@@ -283,8 +284,8 @@ class _VisitTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: JiYiSpacing.xs),
-              Text(_line('开始', visit.arrivedAt)),
-              if (visit.leftAt != null) Text(_line('结束', visit.leftAt)),
+              Text(_line('开始', jiyiDisplayDateTime(visit.arrivedAt))),
+              if (visit.leftAt != null) Text(_line('结束', jiyiDisplayDateTime(visit.leftAt!))),
             ],
           ),
         ),

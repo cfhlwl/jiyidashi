@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../ai_inference_presentation.dart';
 import '../api_client.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'life_editors.dart';
 import 'life_models.dart';
@@ -434,7 +435,6 @@ class _MemoirsPageState extends State<MemoirsPage> {
           if (result != null) ...[
             const SizedBox(height: JiYiSpacing.md),
             V2KeyValue(label: '年度', value: result.targetYear),
-            V2KeyValue(label: '时区', value: result.timezone),
             const SizedBox(height: JiYiSpacing.sm),
             V2TrustBadge(presentation: result.presentation),
             const SizedBox(height: JiYiSpacing.xs),
@@ -458,7 +458,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(item.title),
-                subtitle: Text(item.occurredAt),
+                subtitle: Text(jiyiDisplayDateTime(item.occurredAt)),
               ),
             if (annualTimelineCursor != null)
               OutlinedButton(
@@ -473,7 +473,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.photo_outlined),
                 title: Text(photo.title ?? '照片记忆'),
-                subtitle: Text(photo.occurredAt),
+                subtitle: Text(jiyiDisplayDateTime(photo.occurredAt)),
                 trailing: TextButton(
                   onPressed: () => _previewPhoto(photo),
                   child: const Text('查看'),
@@ -518,9 +518,11 @@ class _MemoirsPageState extends State<MemoirsPage> {
                     subtitle: Text(
                       (lifeStageLabels[item.stageKind] ?? '其他阶段') +
                           ' · ' +
-                          item.startedAt +
+                          jiyiDisplayDate(item.startedAt) +
                           ' → ' +
-                          (item.endedAt ?? '开放'),
+                          (item.endedAt == null
+                              ? '至今'
+                              : jiyiDisplayDate(item.endedAt!)),
                     ),
                   ),
               ],
