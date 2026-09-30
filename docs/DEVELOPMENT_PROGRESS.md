@@ -1,5 +1,5 @@
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- PR #176 / #163 Flutter Personal Memory Graph parity 已完成两轮正式极窄复审并合并 main=ce0f1578；Mini + Flutter 的 V2-001～011 产品能力已完成跨端 parity。当前主线切到 #177 JiYi Product Experience V2，进行 Design System、IA、用户文案与 Flutter/Mini 全量视觉收口；OPS-001 真实 public-server acceptance 继续独立保持 🟠。 -->
+<!-- PR #178 / #177 JiYi Product Experience V2 已完成多轮正式极窄复审并合并 main=84e68c44；Flutter + Mini 的 Design System V2、五域 IA、用户文案、旗舰视觉、accessibility、Flutter Golden 与 Mini 真视觉 artifact 已正式收口。当前主线切到 #167 SEC-014 Sensitive Operation Confirmation Standard V1；OPS-001 真实 public-server acceptance 继续独立保持 🟠。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- I：Memory Edit / PR #27 已完成正式复审并合并 main=24901d76；S1-018 转 ✅。J：Data Delete / PR #28 随后基于该新 main 完成 MemoryEdit 删除适配、0008 migration 顺延、单提交 clean replay 与 exact-head CI，并合并 main=3abc1366；S1-021 / SEC-007 转 ✅。 -->
@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**Product Experience V2 / UI/UX closeout**；#163 / PR #176 已正式复审并合并，Flutter V2 parity 收口；当前主线为 #177 JiYi Product Experience V2，统一 Flutter + Mini 的 Design System V2、一级 IA、用户端文案、旗舰页面视觉、状态体验、accessibility 与 visual regression；完成后进入 #167 SEC-014 → #136 real-env acceptance → commercial rollout；V3-001+ 未开始。
+> 当前阶段：**SEC-014 / Sensitive Operation Confirmation Standard V1**；#177 / PR #178 已正式复审并合并，Product Experience V2 收口；当前主线切到 #167，统一导出、数据删除、账号注销、家庭授权与敏感位置/紧急共享等高风险操作的二次确认、stale-state revalidation、double-submit/idempotency 与跨客户端一致性；完成后进入 #136 real-env acceptance → commercial rollout；V3-001+ 未开始。
 
 ## 状态规则
 
@@ -299,7 +299,7 @@
 | V2-P0-OBS | Production Observability Foundation V1 | ✅ | Issue #161 / PR #170 已正式审查并合并；merge `91e2c8b044912bb61ecada7d679c9054db64df7c`；request correlation、structured JSON telemetry、AI/storage/delete operational events、bounded DB readiness 与 production healthcheck 已收口 |
 | V2-P1-MINI | Mini Program advanced V2 surfaces | ✅ | Issue #162 / PR #175 已完成三轮正式极窄复审并合并；merge `7c4ba02b64de67f3627980c3978d1ad2d68fedef`；LifeEvent/LifeStage、Known Duration、Long-term Reasoning、Cross-year History、Annual/Life Memoir 与 strict parser/stale-race 边界已收口 |
 | V2-P1-FLUTTER | Flutter Personal Memory Graph parity | ✅ | Issue #163 / PR #176 已完成两轮正式极窄复审并合并；merge `ce0f1578ad3217cb08d5ae7ae7a81d94f33d2d57`；11 条 V2 flow、strict parser、SEC-013、stale authority、single-flight、opaque cursor、signed media、offline boundary 与 Flutter visual gates 已收口 |
-| UIUX-P0-001 | JiYi Product Experience V2 | 🔵 | Issue #177：当前主线；统一 Flutter + Mini Design System V2、`今天/记忆/人生/家庭/我的` IA、全量用户文案、旗舰页面现代化视觉、AI/可信状态 presentation、small-screen/large-font/Elder/accessibility 与跨端 visual regression；不得新增无 authority 的假统计/情绪/回收站等能力 |
+| UIUX-P0-001 | JiYi Product Experience V2 | ✅ | Issue #177 / PR #178 已完成最终 extremely narrow review 并合并；merge `84e68c44c08ecea209d34b53b35569cce781ffdb`；Flutter + Mini 五域 IA、Design System V2、用户文案、旗舰视觉、small-screen/large-font/Elder/accessibility、Flutter Golden、Mini 33 张真视觉 artifact 与 production-language regression 已收口 |
 
 ---
 
@@ -340,7 +340,7 @@
 | SEC-011 | 记忆暂停 | ✅ | 暂停/恢复、PrivacyPauseInterval 历史门禁与时区边界均已合并 |
 | SEC-012 | AI 不知道就说不知道 | ✅ | RAG、Daily/Monthly/Annual Summary、V2-007/010/011 已形成 evidence-only、bounded inventory、opaque slots、strict citation、post-provider revalidation 与 fail-closed typed status；无证据/证据不完整不生成可信答案 |
 | SEC-013 | AI 推断显式标记 | ✅ | Issue #166 / PR #174 已完成两轮正式极窄复审并合并；merge `7ae43003f817932e38c7d9ef07ea9ce2b67eeee5`；deterministic Query 明确不标 AI，四态 contract 用于 Trusted Summary 与后续真实 AI surfaces |
-| SEC-014 | 敏感操作二次确认 | 🟠 | 账户注销等部分高风险流程已有显式 intent/确认语义；导出、数据删除、家庭授权等尚未统一成跨客户端 reviewed second-confirm 标准 |
+| SEC-014 | 敏感操作二次确认 | 🔵 | Issue #167：当前主线；统一导出、数据删除、账号注销、家庭授权/撤权、敏感位置与紧急共享的 second-confirm contract；要求 stale-state revalidation、cancel/retry、double-submit/idempotency、Mini/Flutter parity 与 backend authority 不下放 |
 | SEC-015 | 安全事件与异常访问告警 | ✅ | Issue #165 / PR #171 已完成两轮正式极窄复审并合并；merge `75ec2f73084cd4b7d9f4035ae1beeca3f209cae7`；durable anomaly windows、elapsed cooldown、HMAC correlation、Auth/Family/Delete/Storage signals 与 bounded retry 已收口 |
 
 ---
@@ -353,7 +353,7 @@
 | BIZ-002 | 个人会员 | 🟠 | Issue #168 / PR #172 已合并：PERSONAL capability + storage/AI quota authority ✅；支付/购买/续费/客户端包装仍未实现 |
 | BIZ-003 | 家庭会员 | 🟠 | Issue #168 / PR #172 已合并：FAMILY capability 可表达且 Family authority 保持独立；household billing / pooled quota / purchase rollout 仍未实现 |
 | BIZ-004 | 高级会员 | 🟠 | Issue #168 / PR #172 已合并：PREMIUM capability + quota foundation ✅；价格、付费、正式 downgrade/upgrade rollout 仍未实现 |
-| BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend 已合并；Mini/Flutter 展示、premium packaging 与 entitlement enforcement 尚未实现 |
+| BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend + Mini/Flutter 产品展示已完成；premium packaging、正式 entitlement enforcement 与商业 rollout 尚未实现 |
 | BIZ-006 | 实体年度回忆录 | ⏸ | 后续增值服务 |
 | BIZ-007 | 北极星指标：成功找回记忆数 | ✅ | Issue #169 / PR #173 已完成两轮正式极窄复审并合并；server-owned successful-memory-retrieval 口径、durable dedupe 与 aggregate report 已收口 |
 | BIZ-008 | D1 / D7 / D30 留存 | ✅ | Issue #169 / PR #173 已合并；UTC signup cohort、active-day authority、D1/D7/D30 eligible/retained/null-zero 口径已收口 |
