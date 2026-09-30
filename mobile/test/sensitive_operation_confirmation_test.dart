@@ -45,6 +45,10 @@ void main() {
 
   test('SEC-014 error mapping never publishes raw backend enum text', () {
     expect(
+      sensitiveOperationSafeError(ProtocolException('session changed')),
+      '状态刚刚发生变化，请重新打开后再试',
+    );
+    expect(
       sensitiveOperationSafeError(ApiException(403, 'FAMILY_OWNER_REQUIRED')),
       '你现在没有权限执行这个操作',
     );
