@@ -64,6 +64,7 @@ import {
   familyMemberChangeConfirmation,
   familyPermissionConfirmation,
   SensitiveOperationEpoch,
+  SensitiveOperationSingleFlight,
   sensitiveOperationStateChangedMessage,
 } from '../../services/sensitiveOperation'
 import type { PlaceRead } from '../../services/placeDetail'
@@ -133,6 +134,7 @@ export default function Page() {
   const permissionGate = useRef(new FamilyPermissionMutationGate())
   const sensitiveReadEpoch = useRef(new FamilySensitiveReadEpoch())
   const sensitiveMutationEpoch = useRef(new SensitiveOperationEpoch())
+  const sensitiveMutationFlight = useRef(new SensitiveOperationSingleFlight())
 
   useEffect(() => () => {
     sensitiveMutationEpoch.current.invalidate()
@@ -296,10 +298,14 @@ export default function Page() {
   }
 
   const mutateMember = async (targetUserId: string, mode: 'remove' | 'leave') => {
-    if (memberBusy[targetUserId]) return
+    const flightKey = `member:${targetUserId}`
+    if (!sensitiveMutationFlight.current.begin(flightKey)) return
     const session = captureMutationSession()
     const attempt = sensitiveMutationEpoch.current.capture()
-    if (!session.owner) return
+    if (!session.owner) {
+      sensitiveMutationFlight.current.end(flightKey)
+      return
+    }
 
     // Single-flight starts before confirmation so repeated taps cannot open two
     // destructive chains.
@@ -356,6 +362,7 @@ export default function Page() {
       }
       setStatus(mappedError(error, mode, mode === 'leave' ? '退出家庭失败' : '移除成员失败'))
     } finally {
+      sensitiveMutationFlight.current.end(flightKey)
       setMemberBusy((current) => ({ ...current, [targetUserId]: false }))
     }
   }
@@ -737,12 +744,14 @@ export default function Page() {
   }
 
   const createEmergencyShare = async (granteeUserId: string) => {
-    if (emergencyBusy[granteeUserId]) return
+    const flightKey = `emergency-start:${granteeUserId}`
+    if (!sensitiveMutationFlight.current.begin(flightKey)) return
     setEmergencyBusy((current) => ({ ...current, [granteeUserId]: true }))
     const session = captureMutationSession()
     const attempt = sensitiveMutationEpoch.current.capture()
     const ownerUserId = session.owner
     if (!ownerUserId) {
+      sensitiveMutationFlight.current.end(flightKey)
       setEmergencyBusy((current) => ({ ...current, [granteeUserId]: false }))
       return
     }
@@ -802,17 +811,20 @@ export default function Page() {
       }
       setStatus(mappedError(error, 'emergency-share', '紧急位置共享创建失败'))
     } finally {
+      sensitiveMutationFlight.current.end(flightKey)
       setEmergencyBusy((current) => ({ ...current, [granteeUserId]: false }))
     }
   }
 
   const revokeEmergencyShare = async (shareId: string) => {
-    if (emergencyBusy[shareId]) return
+    const flightKey = `emergency-revoke:${shareId}`
+    if (!sensitiveMutationFlight.current.begin(flightKey)) return
     setEmergencyBusy((current) => ({ ...current, [shareId]: true }))
     const session = captureMutationSession()
     const attempt = sensitiveMutationEpoch.current.capture()
     const ownerUserId = session.owner
     if (!ownerUserId) {
+      sensitiveMutationFlight.current.end(flightKey)
       setEmergencyBusy((current) => ({ ...current, [shareId]: false }))
       return
     }
@@ -850,6 +862,7 @@ export default function Page() {
       }
       setStatus(mappedError(error, 'emergency-share', '停止紧急位置共享失败'))
     } finally {
+      sensitiveMutationFlight.current.end(flightKey)
       setEmergencyBusy((current) => ({ ...current, [shareId]: false }))
     }
   }
