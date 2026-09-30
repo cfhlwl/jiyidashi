@@ -4,8 +4,8 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from auth_test_helpers import register_verified_session
 import pytest
+from auth_test_helpers import register_verified_session
 from sqlalchemy import select
 
 from app.account_deletion_models import AccountDeletionOperation
