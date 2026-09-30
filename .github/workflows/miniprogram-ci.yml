@@ -82,3 +82,31 @@ jobs:
         env:
           JIYI_API_BASE_URL: https://api.example.invalid/v1
         run: npm run build:weapp
+
+      # UI/UX-001: review-only H5 renderer. These packages are intentionally not
+      # production dependencies and package-lock is not mutated.
+      - name: Install Mini visual-review renderer
+        run: >-
+          npm install --no-save --package-lock=false
+          @tarojs/plugin-platform-h5@4.1.0 playwright@1.55.0
+
+      - name: Build Mini visual-review H5
+        env:
+          JIYI_API_BASE_URL: https://api.example.invalid/v1
+        run: npx taro build --type h5
+
+      - name: Install visual-review browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Capture deterministic Mini visual-review screenshots
+        run: node scripts/capture-visual-review.mjs
+
+      - name: Upload Mini visual-review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini-product-v2-visual-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            miniprogram/visual-artifacts/*.png
+            miniprogram/visual-artifacts/manifest.json
+          if-no-files-found: error
+          retention-days: 14

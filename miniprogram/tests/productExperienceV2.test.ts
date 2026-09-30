@@ -92,6 +92,16 @@ test('Mini Product Experience V2 has deterministic visual review harness', () =>
   assert.match(review, /AiDisclosure/)
   assert.match(review, /ProductStatePanel/)
   assert.ok(reviewStyles.includes("@import '../../styles/tokens'"))
+  assert.match(appConfig, /'pages\/visual-review\/index'/)
+  assert.doesNotMatch(appConfig, /pagePath: 'pages\/visual-review\/index'/)
+
+  const workflow = source('../.github/workflows/miniprogram-ci.yml')
+  const captureScript = source('scripts/capture-visual-review.mjs')
+  assert.match(workflow, /Capture deterministic Mini visual-review screenshots/)
+  assert.match(workflow, /Upload Mini visual-review artifact/)
+  assert.match(captureScript, /const widths = \[320, 390, 430\]/)
+  assert.match(captureScript, /horizontal overflow/)
+  assert.match(captureScript, /page\.screenshot\(\{ path, fullPage: true \}\)/)
 })
 
 test('AI references are human-facing reference records, not internal slots or ids', () => {
