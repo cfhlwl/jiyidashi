@@ -263,6 +263,21 @@ class AuthPage extends StatefulWidget {
 
 enum _AuthMode { login, register, verifyEmail, forgotPassword, resetPassword }
 
+String _authProductMessage(String code) {
+  return switch (code) {
+    'EMAIL_VERIFICATION_REQUIRED' => '这个邮箱还没有完成验证。',
+    'INVALID_CREDENTIALS' => '邮箱或密码不正确。',
+    'AUTH_RATE_LIMITED' => '尝试次数较多，请稍后再试。',
+    'INVALID_VERIFICATION_TOKEN' => '验证凭证无效，请重新发送验证邮件。',
+    'VERIFICATION_TOKEN_EXPIRED' => '验证凭证已过期，请重新发送验证邮件。',
+    'INVALID_PASSWORD_RESET_TOKEN' => '重置凭证无效，请重新申请。',
+    'PASSWORD_RESET_TOKEN_EXPIRED' => '重置凭证已过期，请重新申请。',
+    'AUTH_EMAIL_DELIVERY_UNAVAILABLE' => '邮件暂时没有发送成功，请稍后重试。',
+    _ => '暂时无法完成操作，请稍后重试。',
+  };
+}
+
+
 class _AuthPageState extends State<AuthPage> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
@@ -334,10 +349,10 @@ class _AuthPageState extends State<AuthPage> {
       if (exc.message == 'EMAIL_VERIFICATION_REQUIRED') {
         setState(() {
           mode = _AuthMode.verifyEmail;
-          error = '这个邮箱还没有完成验证。';
+          error = _authProductMessage(exc.message);
         });
       } else {
-        setState(() => error = exc.message);
+        setState(() => error = _authProductMessage(exc.message));
       }
     } catch (_) {
       setState(() => error = '暂时无法连接服务器');
