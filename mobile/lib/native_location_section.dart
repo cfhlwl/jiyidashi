@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'native_location_bridge.dart';
 import 'native_location_controller.dart';
+import 'sensitive_operation_confirmation.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
@@ -11,15 +12,19 @@ class NativeLocationSection extends StatefulWidget {
   const NativeLocationSection({
     super.key,
     required this.controller,
+    required this.revalidateAuthority,
   });
 
   final NativeLocationController controller;
+  final Future<void> Function() revalidateAuthority;
 
   @override
   State<NativeLocationSection> createState() => _NativeLocationSectionState();
 }
 
 class _NativeLocationSectionState extends State<NativeLocationSection> {
+  bool confirmingSensitiveLocation = false;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +48,32 @@ class _NativeLocationSectionState extends State<NativeLocationSection> {
 
   void _changed() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _confirmSensitiveLocationAction(
+    Future<void> Function(NativeLocationController controller) action,
+  ) async {
+    final controller = widget.controller;
+    if (confirmingSensitiveLocation || controller.busy) return;
+    setState(() => confirmingSensitiveLocation = true);
+    try {
+      final confirmed = await showSensitiveOperationConfirmation(
+        context,
+        const SensitiveOperationSpec.automaticLocationStart(),
+      );
+      if (!mounted || !identical(controller, widget.controller) || !confirmed) {
+        return;
+      }
+
+      // SEC-014: confirmation is intent, not authority. Re-read server privacy
+      // and native status after confirmation and before permission/start.
+      await widget.revalidateAuthority();
+      if (!mounted || !identical(controller, widget.controller)) return;
+      if (!controller.privacyAllowsProduction) return;
+      await action(controller);
+    } finally {
+      if (mounted) setState(() => confirmingSensitiveLocation = false);
+    }
   }
 
   @override
@@ -99,7 +130,7 @@ class _NativeLocationSectionState extends State<NativeLocationSection> {
             if (!status.hasForegroundPermission)
               FilledButton.icon(
                 key: const ValueKey('location-request-foreground'),
-                onPressed: controller.busy
+                onPressed: controller.busy || confirmingSensitiveLocation
                     ? null
                     : () => controller.requestForegroundPermission(),
                 icon: const Icon(Icons.location_searching_outlined),
@@ -109,25 +140,33 @@ class _NativeLocationSectionState extends State<NativeLocationSection> {
                 status.reason == 'background_settings_required')
               FilledButton.icon(
                 key: const ValueKey('location-open-background-settings'),
-                onPressed: controller.busy
+                onPressed: controller.busy || confirmingSensitiveLocation
                     ? null
-                    : () => controller.openBackgroundLocationSettings(),
+                    : () => _confirmSensitiveLocationAction(
+                          (current) => current.openBackgroundLocationSettings(),
+                        ),
                 icon: const Icon(Icons.settings_outlined),
                 label: const Text('前往系统设置允许始终定位'),
               )
             else if (!status.automaticEnabled)
               FilledButton.icon(
                 key: const ValueKey('location-enable-automatic'),
-                onPressed: controller.busy
+                onPressed: controller.busy || confirmingSensitiveLocation
                     ? null
-                    : () => controller.enableAutomaticLocation(),
+                    : () => _confirmSensitiveLocationAction(
+                          (current) => current.enableAutomaticLocation(),
+                        ),
                 icon: const Icon(Icons.my_location_outlined),
                 label: const Text('启用自动位置记忆'),
               )
             else if (status.runtime != NativeLocationRuntime.running)
               FilledButton.icon(
                 key: const ValueKey('location-start'),
-                onPressed: controller.busy ? null : () => controller.start(),
+                onPressed: controller.busy || confirmingSensitiveLocation
+                    ? null
+                    : () => _confirmSensitiveLocationAction(
+                          (current) => current.start(),
+                        ),
                 icon: const Icon(Icons.play_arrow_rounded),
                 label: const Text('启动自动位置记忆'),
               ),
