@@ -98,7 +98,7 @@ jobs:
           (
             cd "$review_dir"
             npm init -y >/dev/null
-            npm install --no-save --package-lock=false               "@tarojs/plugin-platform-h5@$taro_version"               "@tarojs/router@$taro_version"               playwright@1.55.0
+            npm install --no-save --package-lock=false               "@tarojs/components@$taro_version"               "@tarojs/helper@$taro_version"               "@tarojs/plugin-framework-react@$taro_version"               "@tarojs/plugin-platform-h5@$taro_version"               "@tarojs/react@$taro_version"               "@tarojs/router@$taro_version"               "@tarojs/runtime@$taro_version"               "@tarojs/shared@$taro_version"               "@tarojs/taro@$taro_version"               react@18.3.1 react-dom@18.3.1               playwright@1.55.0
           )
 
           # Keep the npm-ci production tree untouched. Expose only packages that
