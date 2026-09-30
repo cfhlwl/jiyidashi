@@ -55,6 +55,7 @@ export function SystemHealthPage() {
           items={[
             { label: '运行环境', value: health.environment === 'production' ? '生产环境' : '非生产环境' },
             { label: '应用版本', value: health.app_version },
+            { label: '数据库结构', value: health.database_schema_status },
             { label: '部署时间', value: health.build_time ?? '未提供' },
             { label: '聚合存储使用', value: formatBytes(health.total_storage_used_bytes) },
           ]}
@@ -63,6 +64,7 @@ export function SystemHealthPage() {
       <TechnicalDetails
         items={[
           { label: '代码版本', value: health.git_sha },
+          { label: '数据库结构版本', value: health.database_schema_version },
         ]}
       />
     </>
