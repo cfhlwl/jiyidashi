@@ -395,12 +395,18 @@ class _MemoirsPageState extends State<MemoirsPage> {
       body: SafeArea(
         child: JiYiPageFrame(
           title: '回忆总结',
-          subtitle: '生成叙事使用 SEC-013；时间线、阶段索引和已验证照片保持各自确定性来源。',
+          subtitle: '用已经记录的照片、时间和重要经历，慢慢把过去翻回来。',
+          hero: const JiYiHeroHeader(
+            eyebrow: '迹忆 · 回忆总结',
+            title: '把生活翻回来',
+            subtitle: '从照片和时间开始，再把值得记住的片段整理成故事。',
+            icon: Icons.auto_awesome_outlined,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _annualCard(),
-              const SizedBox(height: JiYiSpacing.lg),
+              const SizedBox(height: JiYiSpacing.xxl),
               _lifeMemoirCard(),
             ],
           ),
@@ -411,82 +417,145 @@ class _MemoirsPageState extends State<MemoirsPage> {
 
   Widget _annualCard() {
     final result = annual;
-    return V2SectionCard(
-      title: '年度回顾',
-      subtitle: '只有年度叙事是 AI 生成面；timeline/photo 不继承 AI 标签。',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: year,
-            keyboardType: TextInputType.number,
-            maxLength: 4,
-            decoration: const InputDecoration(labelText: '年度'),
-          ),
-          FilledButton.icon(
-            onPressed: annualLoading ? null : _generateAnnual,
-            icon: const Icon(Icons.auto_awesome),
-            label: Text(annualLoading ? '正在整理年度回顾…' : '生成年度回顾'),
-          ),
-          if (annualError != null) ...[
-            const SizedBox(height: JiYiSpacing.sm),
-            JiYiStatusBanner(kind: JiYiStatusKind.error, message: annualError!),
-          ],
-          if (result != null) ...[
-            const SizedBox(height: JiYiSpacing.md),
-            V2KeyValue(label: '年度', value: result.targetYear),
-            const SizedBox(height: JiYiSpacing.sm),
-            V2TrustBadge(presentation: result.presentation),
-            const SizedBox(height: JiYiSpacing.xs),
-            Text(result.presentation.detail),
-            if (result.presentation.state == AiPresentationState.inferred &&
-                result.narrative != null) ...[
-              const SizedBox(height: JiYiSpacing.sm),
-              Text(result.narrative!),
-            ],
-            for (var index = 0; index < result.citations.length; index++)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.fact_check_outlined),
-                title: Text('参考记录 ${index + 1}'),
-                subtitle: const Text('年度回顾基于你的相关记录整理。'),
-              ),
-            const Divider(),
-            Text('年度时间线', style: Theme.of(context).textTheme.titleMedium),
-            if (annualTimeline.isEmpty) const Text('当前没有时间线条目。'),
-            for (final item in annualTimeline)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(item.title),
-                subtitle: Text(jiyiDisplayDateTime(item.occurredAt)),
-              ),
-            if (annualTimelineCursor != null)
-              OutlinedButton(
-                onPressed: _moreAnnualTimeline,
-                child: const Text('继续加载时间线'),
-              ),
-            const Divider(),
-            Text('已验证照片', style: Theme.of(context).textTheme.titleMedium),
-            if (annualPhotos.isEmpty) const Text('当前没有可展示的已验证照片。'),
-            for (final photo in annualPhotos)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.photo_outlined),
-                title: Text(photo.title ?? '照片记忆'),
-                subtitle: Text(jiyiDisplayDateTime(photo.occurredAt)),
-                trailing: TextButton(
-                  onPressed: () => _previewPhoto(photo),
-                  child: const Text('查看'),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const JiYiSectionHeader(
+          title: '年度回顾',
+          subtitle: '选择一年，用已经保存的照片和记录回看那一年的生活。',
+        ),
+        const SizedBox(height: JiYiSpacing.md),
+        V2SectionCard(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: year,
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  decoration: const InputDecoration(
+                    labelText: '想回看的年份',
+                    hintText: '例如 2025',
+                  ),
                 ),
               ),
-            if (annualPhotoCursor != null)
-              OutlinedButton(
-                onPressed: _moreAnnualPhotos,
-                child: const Text('加载更多照片'),
+              const SizedBox(width: JiYiSpacing.sm),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: FilledButton.icon(
+                  onPressed: annualLoading ? null : _generateAnnual,
+                  icon: const Icon(Icons.auto_awesome),
+                  label: Text(annualLoading ? '整理中…' : '开始回看'),
+                ),
               ),
+            ],
+          ),
+        ),
+        if (annualError != null) ...[
+          const SizedBox(height: JiYiSpacing.sm),
+          JiYiStatusBanner(kind: JiYiStatusKind.error, message: annualError!),
+        ],
+        if (result != null) ...[
+          const SizedBox(height: JiYiSpacing.lg),
+          _AnnualStoryHero(
+            year: result.targetYear,
+            presentation: result.presentation,
+            narrative: result.narrative,
+          ),
+          const SizedBox(height: JiYiSpacing.xl),
+          JiYiSectionHeader(
+            title: '这一年的照片',
+            subtitle: annualPhotos.isEmpty
+                ? '这一年还没有可展示的照片。'
+                : '照片先于文字，点开可以查看原图。',
+          ),
+          const SizedBox(height: JiYiSpacing.sm),
+          if (annualPhotos.isEmpty)
+            const JiYiEmptyState(
+              icon: Icons.photo_outlined,
+              title: '还没有照片片段',
+              message: '以后保存的照片会在年度回顾里成为可回看的生活片段。',
+            )
+          else
+            SizedBox(
+              height: 164,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: annualPhotos.length,
+                separatorBuilder: (_, __) => const SizedBox(width: JiYiSpacing.sm),
+                itemBuilder: (context, index) {
+                  final photo = annualPhotos[index];
+                  return _AnnualPhotoCard(
+                    photo: photo,
+                    onTap: () => _previewPhoto(photo),
+                  );
+                },
+              ),
+            ),
+          if (annualPhotoCursor != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _moreAnnualPhotos,
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                label: const Text('查看更多照片'),
+              ),
+            ),
+          ],
+          const SizedBox(height: JiYiSpacing.xl),
+          JiYiSectionHeader(
+            title: '这一年的时间线',
+            subtitle: annualTimeline.isEmpty
+                ? '这一年还没有可展示的重要片段。'
+                : '按时间回看已经形成的人生经历和阶段。',
+          ),
+          const SizedBox(height: JiYiSpacing.sm),
+          if (annualTimeline.isEmpty)
+            const JiYiEmptyState(
+              icon: Icons.timeline_outlined,
+              title: '还没有时间线片段',
+              message: '已经记录的重要经历会慢慢出现在这里。',
+            )
+          else
+            for (var index = 0; index < annualTimeline.length; index++)
+              _AnnualTimelineRow(
+                item: annualTimeline[index],
+                isLast: index == annualTimeline.length - 1,
+              ),
+          if (annualTimelineCursor != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _moreAnnualTimeline,
+                icon: const Icon(Icons.expand_more),
+                label: const Text('继续回看'),
+              ),
+            ),
+          ],
+          if (result.citations.isNotEmpty) ...[
+            const SizedBox(height: JiYiSpacing.xl),
+            const JiYiSectionHeader(
+              title: '参考记录',
+              subtitle: '这段年度故事只基于你已有的相关记录整理。',
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+            Wrap(
+              spacing: JiYiSpacing.xs,
+              runSpacing: JiYiSpacing.xs,
+              children: [
+                for (var index = 0; index < result.citations.length; index++)
+                  Chip(
+                    avatar: const Icon(Icons.fact_check_outlined, size: 18),
+                    label: Text('参考记录 ${index + 1}'),
+                  ),
+              ],
+            ),
           ],
         ],
-      ),
+      ],
     );
   }
 
@@ -561,6 +630,206 @@ class _MemoirsPageState extends State<MemoirsPage> {
           ],
         ],
       ),
+    );
+  }
+}
+
+
+class _AnnualStoryHero extends StatelessWidget {
+  const _AnnualStoryHero({
+    required this.year,
+    required this.presentation,
+    required this.narrative,
+  });
+
+  final String year;
+  final AiPresentation presentation;
+  final String? narrative;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(JiYiRadius.large),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFFFF3E4),
+            Color(0xFFEAF3FA),
+          ],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.xl),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              year,
+              style: theme.textTheme.displaySmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: JiYiProductColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            Text(
+              '这一年的故事',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.md),
+            V2TrustBadge(presentation: presentation),
+            const SizedBox(height: JiYiSpacing.sm),
+            Text(
+              presentation.detail,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: JiYiProductColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            if (presentation.state == AiPresentationState.inferred &&
+                narrative != null) ...[
+              const SizedBox(height: JiYiSpacing.md),
+              Text(
+                narrative!,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  height: 1.7,
+                  color: JiYiProductColors.textPrimary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnnualPhotoCard extends StatelessWidget {
+  const _AnnualPhotoCard({required this.photo, required this.onTap});
+
+  final V2AnnualMemoirPhoto photo;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      width: 184,
+      child: Material(
+        color: JiYiProductColors.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(JiYiRadius.card),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(JiYiSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: JiYiProductColors.surfaceSoft,
+                    borderRadius: BorderRadius.circular(JiYiRadius.control),
+                  ),
+                  child: const SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Icon(
+                      Icons.photo_outlined,
+                      color: JiYiProductColors.media,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  photo.title ?? '照片记忆',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.xxs),
+                Text(
+                  jiyiDisplayDate(photo.occurredAt),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: JiYiProductColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnnualTimelineRow extends StatelessWidget {
+  const _AnnualTimelineRow({required this.item, required this.isLast});
+
+  final V2LifeHistoryItem item;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 76,
+          child: Padding(
+            padding: const EdgeInsets.only(top: JiYiSpacing.sm),
+            child: Text(
+              jiyiDisplayDate(item.occurredAt),
+              textAlign: TextAlign.end,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: JiYiProductColors.textSecondary,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: JiYiSpacing.sm),
+        SizedBox(
+          width: 18,
+          child: Column(
+            children: [
+              const SizedBox(height: JiYiSpacing.sm),
+              Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: JiYiProductColors.location,
+                ),
+              ),
+              if (!isLast)
+                Container(
+                  width: 2,
+                  height: 58,
+                  color: JiYiProductColors.border,
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: JiYiSpacing.sm),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: JiYiSpacing.md),
+            child: Text(
+              item.title,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

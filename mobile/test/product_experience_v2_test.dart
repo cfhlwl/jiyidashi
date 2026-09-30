@@ -50,6 +50,23 @@ void main() {
     expect(place, isNot(contains("Text(_line('类型', place.category))")));
   });
 
+  test('Flutter Product Experience V2 memoir is story-first and hides implementation language', () {
+    final memoir = File('lib/v2/memoirs_page.dart').readAsStringSync();
+
+    expect(memoir, contains('这一年的照片'));
+    expect(memoir, contains('这一年的时间线'));
+    expect(memoir, contains('这一年的故事'));
+    expect(memoir, contains('参考记录'));
+    for (final forbidden in [
+      'SEC-013',
+      'timeline/photo',
+      '确定性来源',
+      'AI 生成面',
+    ]) {
+      expect(memoir, isNot(contains(forbidden)));
+    }
+  });
+
   test('Flutter Product Experience V2 family surface never exposes member ids', () {
     final page = File('lib/v2/family_page.dart').readAsStringSync();
     expect(page, contains("'家庭成员 \${index + 1}'"));
