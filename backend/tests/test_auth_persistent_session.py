@@ -13,7 +13,10 @@ from app.core.db import SessionLocal
 from app.core.security import decode_access_token_claims
 from app.models import User
 from app.services import auth_rate_limit
-from app.services.auth_delivery import MemoryAuthEmailDelivery
+from app.services.auth_delivery import (
+    MemoryAuthEmailDelivery,
+    set_auth_email_delivery_for_testing,
+)
 
 settings = get_settings()
 
@@ -81,6 +84,48 @@ async def _verify(
 
 def _headers(session: dict) -> dict[str, str]:
     return {"Authorization": f"Bearer {session['access_token']}"}
+
+
+
+
+class _FailingAuthEmailDelivery:
+    def send_verification(self, *, email: str, token: str) -> None:
+        raise RuntimeError("simulated delivery outage")
+
+    def send_password_reset(self, *, email: str, token: str) -> None:
+        raise RuntimeError("simulated delivery outage")
+
+
+async def test_registration_survives_verification_delivery_outage(
+    client,
+    auth_email_delivery: MemoryAuthEmailDelivery,
+):
+    set_auth_email_delivery_for_testing(_FailingAuthEmailDelivery())
+    try:
+        response = await client.post(
+            "/v1/auth/register",
+            json={
+                "email": "auth001-mail-outage@example.com",
+                "password": "correct-horse-battery-staple",
+                "nickname": "Mail Outage",
+                "timezone": "Asia/Shanghai",
+                "locale": "zh-CN",
+            },
+        )
+    finally:
+        set_auth_email_delivery_for_testing(auth_email_delivery)
+
+    assert response.status_code == 201
+    assert response.json()["verification_required"] is True
+    assert response.json()["verification_delivery_pending"] is True
+    assert "access_token" not in response.json()
+
+    resent = await client.post(
+        "/v1/auth/resend-verification",
+        json={"email": "auth001-mail-outage@example.com"},
+    )
+    assert resent.status_code == 202
+    assert auth_email_delivery.verification_tokens
 
 
 async def test_registration_requires_email_verification_before_login(
