@@ -132,7 +132,9 @@ class _NativeLocationSectionState extends State<NativeLocationSection> {
                 key: const ValueKey('location-request-foreground'),
                 onPressed: controller.busy || confirmingSensitiveLocation
                     ? null
-                    : () => controller.requestForegroundPermission(),
+                    : () => _confirmSensitiveLocationAction(
+                          (current) => current.requestForegroundPermission(),
+                        ),
                 icon: const Icon(Icons.location_searching_outlined),
                 label: const Text('先允许使用时定位'),
               )
