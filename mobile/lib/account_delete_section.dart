@@ -121,6 +121,13 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
             );
           });
           return;
+        } on ProtocolException catch (exc) {
+          if (!mounted) return;
+          setState(() {
+            messageIsError = true;
+            message = sensitiveOperationSafeError(exc);
+          });
+          return;
         } catch (_) {
           if (!mounted) return;
           setState(() {
@@ -182,9 +189,15 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
         setState(() {
           messageIsError = true;
           message = sensitiveOperationSafeError(
-              exc,
-              fallback: '账号注销暂时没有完成，请重新打开后再试',
-            );
+            exc,
+            fallback: '账号注销暂时没有完成，请重新打开后再试',
+          );
+        });
+      } on ProtocolException catch (exc) {
+        if (!mounted) return;
+        setState(() {
+          messageIsError = true;
+          message = sensitiveOperationSafeError(exc);
         });
       } catch (_) {
         if (!mounted) return;
