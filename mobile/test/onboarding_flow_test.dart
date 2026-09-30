@@ -414,7 +414,7 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => find.text('返回登录 / 创建账号').evaluate().isNotEmpty,
+      () => find.text('第一次使用？创建账号').evaluate().isNotEmpty,
       reason: 'auth page after cold-start restore',
     );
 
