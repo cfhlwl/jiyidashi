@@ -55,6 +55,19 @@ export function StoragePage() {
               label: '全站聚合使用量',
               value: formatBytes(health.data.total_storage_used_bytes),
             },
+            {
+              label: '待处理存储告警',
+              value: (
+                <StatusBadge
+                  status={health.data.storage_alerts_needing_attention > 0 ? 'warning' : 'success'}
+                  label={
+                    health.data.storage_alerts_needing_attention > 0
+                      ? `${health.data.storage_alerts_needing_attention} 条需要关注`
+                      : '暂无'
+                  }
+                />
+              ),
+            },
             { label: '存储策略', value: '私有访问；临时能力由服务端按需签发' },
           ]}
         />
