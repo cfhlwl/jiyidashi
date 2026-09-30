@@ -8,18 +8,28 @@ import 'package:jiyidashi/api_client.dart';
 
 const jsonHeaders = {'content-type': 'application/json; charset=utf-8'};
 
-http.Response loginResponse() => http.Response(
+http.Response loginResponse({
+  String accessToken = 'example-token',
+  String refreshToken = 'example-refresh-token-value-1234567890',
+  String sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  String userId = '11111111-1111-1111-1111-111111111111',
+}) =>
+    http.Response(
       jsonEncode({
-        'access_token': 'example-token',
+        'access_token': accessToken,
+        'refresh_token': refreshToken,
+        'session_id': sessionId,
         'token_type': 'bearer',
-        'user_id': '11111111-1111-1111-1111-111111111111',
+        'user_id': userId,
+        'access_expires_at': '2030-09-30T00:15:00Z',
+        'refresh_expires_at': '2030-10-30T00:00:00Z',
       }),
       200,
       headers: jsonHeaders,
     );
 
 void main() {
-  test('register keeps user ownership server-side and stores token in session', () async {
+  test('register keeps user ownership server-side and does not create a session', () async {
     late Map<String, dynamic> requestBody;
     final api = JiYiApiClient(
       baseUrl: 'https://example.test/v1',
@@ -28,9 +38,8 @@ void main() {
         expect(request.url.path, '/v1/auth/register');
         return http.Response(
           jsonEncode({
-            'access_token': 'example-token',
-            'token_type': 'bearer',
             'user_id': '11111111-1111-1111-1111-111111111111',
+            'verification_required': true,
           }),
           201,
           headers: jsonHeaders,
@@ -47,7 +56,8 @@ void main() {
 
     expect(requestBody.containsKey('user_id'), isFalse);
     expect(requestBody['email'], 'user@example.test');
-    expect(api.accessToken, 'example-token');
+    expect(api.accessToken, isNull);
+    expect(api.authenticatedUserId, isNull);
   });
 
   test('text memory uses formal token and USER_TEXT capture source', () async {
@@ -569,14 +579,11 @@ void main() {
       httpClient: MockClient((request) async {
         calls += 1;
         if (calls == 1) {
-          return http.Response(
-            jsonEncode({
-              'access_token': 'token-a',
-              'token_type': 'bearer',
-              'user_id': ownerA,
-            }),
-            200,
-            headers: jsonHeaders,
+          return loginResponse(
+            accessToken: 'token-a',
+            refreshToken: 'refresh-a-abcdefghijklmnopqrstuvwxyz',
+            sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            userId: ownerA,
           );
         }
         if (calls == 2) {
@@ -584,14 +591,20 @@ void main() {
           return lateQuery.future;
         }
         if (calls == 3) {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/v1/auth/logout');
           return http.Response(
-            jsonEncode({
-              'access_token': 'token-b',
-              'token_type': 'bearer',
-              'user_id': ownerB,
-            }),
+            jsonEncode({'accepted': true}),
             200,
             headers: jsonHeaders,
+          );
+        }
+        if (calls == 4) {
+          return loginResponse(
+            accessToken: 'token-b',
+            refreshToken: 'refresh-b-abcdefghijklmnopqrstuvwxyz',
+            sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            userId: ownerB,
           );
         }
         throw StateError('unexpected request');
@@ -601,7 +614,7 @@ void main() {
     await api.login(email: 'a@example.test', password: 'password-123');
     final stale = api.queryMemory('A 的护照在哪里？');
     await Future<void>.delayed(Duration.zero);
-    api.logout();
+    await api.logout();
     await api.login(email: 'b@example.test', password: 'password-123');
     lateQuery.complete(
       http.Response(
