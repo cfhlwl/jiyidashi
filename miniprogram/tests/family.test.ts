@@ -462,7 +462,7 @@ test('page contract has explicit states and does not auto-fetch family sensitive
   )
   assert.match(
     page,
-    /const confirm = await Taro\.showModal\([\s\S]*?if \(!confirm\.confirm\) return[\s\S]*?await removeFamilyMember\(targetUserId\)[\s\S]*?await refresh\(true\)/,
+    /confirmSensitiveOperation\([\s\S]*?familyMemberChangeConfirmation[\s\S]*?if \(!confirmed\) return[\s\S]*?getFamily\(\)[\s\S]*?getProfile\(\)[\s\S]*?await removeFamilyMember\(targetUserId\)[\s\S]*?await refresh\(true\)/,
   )
   assert.match(page, /onClick=\{\(\) => mutateMember\(member\.user_id, 'remove'\)\}/)
   assert.match(page, /onClick=\{\(\) => mutateMember\(member\.user_id, 'leave'\)\}/)
