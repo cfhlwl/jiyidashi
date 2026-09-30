@@ -41,6 +41,7 @@ from app.services.entitlement_service import (
 )
 from app.services.media_service import start_media_upload
 from app.services.object_storage import PresignedTransfer
+from tests.auth_test_helpers import register_verified_session
 
 
 def _engine():
@@ -491,18 +492,11 @@ def test_ai_token_finalization_does_not_double_charge_request() -> None:
 @pytest.mark.asyncio
 async def test_formal_registration_creates_legacy_full_in_same_user_lifecycle(client) -> None:
     email = f"entitlement-{uuid4()}@example.com"
-    response = await client.post(
-        "/v1/auth/register",
-        json={
-            "email": email,
-            "password": "correct-horse-battery-staple",
-            "nickname": "Entitlement Registration",
-            "timezone": "Asia/Shanghai",
-            "locale": "zh-CN",
-        },
+    headers, _, _ = await register_verified_session(
+        client,
+        email=email,
+        nickname="Entitlement Registration",
     )
-    assert response.status_code == 201
-    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
     entitlement = await client.get("/v1/entitlements/me", headers=headers)
     assert entitlement.status_code == 200
     assert entitlement.json()["plan_code"] == "LEGACY_FULL"
