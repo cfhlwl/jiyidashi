@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.admin_models import AdminAccount, AdminRole, AdminSession
+from app.auth_models import AuthRateLimitBucket
 from app.core.db import SessionLocal
 from app.security_models import SecurityAlert, SecuritySignalCode
 from app.services import auth_rate_limit
@@ -12,7 +13,22 @@ from app.services.admin_security import hash_admin_password
 from app.services.security_alerting import SecurityScope
 
 
+
+
+def _reset_admin_login_buckets() -> None:
+    with SessionLocal() as db:
+        db.execute(
+            delete(AuthRateLimitBucket).where(
+                AuthRateLimitBucket.scope.in_(
+                    ("admin_login_ip", "admin_login_account_ip")
+                )
+            )
+        )
+        db.commit()
+
+
 def _create_admin(*, role: AdminRole = AdminRole.SUPER_ADMIN) -> tuple[str, str]:
+    _reset_admin_login_buckets()
     email = f"admin-{uuid4()}@example.com"
     password = "Admin-Test-Password-123!"
     with SessionLocal() as db:
