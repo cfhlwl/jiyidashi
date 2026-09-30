@@ -55,11 +55,13 @@ class _AuthenticatedSessionSnapshot {
   const _AuthenticatedSessionSnapshot({
     required this.accessToken,
     required this.userId,
+    required this.sessionId,
     required this.sessionVersion,
   });
 
   final String accessToken;
   final String userId;
+  final String? sessionId;
   final int sessionVersion;
 }
 
@@ -329,8 +331,8 @@ class JiYiApiClient {
 
   void _assertAuthenticatedSessionCurrent(_AuthenticatedSessionSnapshot snapshot) {
     if (_sessionVersion != snapshot.sessionVersion ||
-        accessToken != snapshot.accessToken ||
-        authenticatedUserId != snapshot.userId) {
+        authenticatedUserId != snapshot.userId ||
+        _sessionId != snapshot.sessionId) {
       throw ProtocolException('登录状态已变化，请重试');
     }
   }
@@ -347,6 +349,7 @@ class JiYiApiClient {
     return _AuthenticatedSessionSnapshot(
       accessToken: token,
       userId: userId,
+      sessionId: _sessionId,
       sessionVersion: _sessionVersion,
     );
   }
@@ -613,11 +616,7 @@ class JiYiApiClient {
     Map<String, dynamic> data,
     _AuthenticatedSessionSnapshot snapshot,
   ) {
-    if (_sessionVersion != snapshot.sessionVersion ||
-        accessToken != snapshot.accessToken ||
-        authenticatedUserId != snapshot.userId) {
-      throw ProtocolException('登录状态已变化，请重试');
-    }
+    _assertAuthenticatedSessionCurrent(snapshot);
     final id = data['id'];
     if (id is! String || id != snapshot.userId) {
       throw ProtocolException('个人资料账号不匹配');
@@ -1086,21 +1085,42 @@ class JiYiApiClient {
   }
 
   Future<void> logout() async {
+    final snapshot = accessToken != null && authenticatedUserId != null
+        ? _captureAuthenticatedSession()
+        : null;
+    // _clearLocalSession mutates memory before its first await. This preserves the
+    // existing synchronous stale-session boundary for callers that intentionally
+    // fire-and-forget logout during long operations.
+    final clearFuture = _clearLocalSession();
     try {
-      if (accessToken != null && authenticatedUserId != null) {
-        await _jsonRequest('POST', '/auth/logout');
+      if (snapshot != null) {
+        await _jsonRequest(
+          'POST',
+          '/auth/logout',
+          authSnapshot: snapshot,
+        );
       }
+    } on TransportException {
+      // Local logout remains authoritative for the device. The short-lived JWT
+      // expires quickly; a later explicit login creates a fresh server session.
     } finally {
-      // User intent always removes local owner authority and secure refresh material.
-      await _clearLocalSession();
+      await clearFuture;
     }
   }
 
   Future<void> logoutAll() async {
+    final snapshot = _captureAuthenticatedSession();
+    final clearFuture = _clearLocalSession();
     try {
-      await _jsonRequest('POST', '/auth/logout-all');
+      await _jsonRequest(
+        'POST',
+        '/auth/logout-all',
+        authSnapshot: snapshot,
+      );
+    } on TransportException {
+      // Fail local state closed even when the network is unavailable.
     } finally {
-      await _clearLocalSession();
+      await clearFuture;
     }
   }
   // #163 Flutter V2 reuses the existing authenticated-session snapshot.
@@ -1197,7 +1217,7 @@ class JiYiApiClient {
       extraHeaders: extraHeaders,
       authSnapshot: authSnapshot,
     );
-    if (!authenticated || authSnapshot != null || response.statusCode != 401) {
+    if (!authenticated || response.statusCode != 401) {
       return response;
     }
 
@@ -1212,13 +1232,22 @@ class JiYiApiClient {
       return response;
     }
 
+    if (authSnapshot != null) {
+      _assertAuthenticatedSessionCurrent(authSnapshot);
+    }
     await refreshCurrentSession();
+    if (authSnapshot != null) {
+      _assertAuthenticatedSessionCurrent(authSnapshot);
+    }
+    final retrySnapshot =
+        authSnapshot == null ? null : _captureAuthenticatedSession();
     response = await _sendRequestOnce(
       method,
       path,
       body: body,
       authenticated: true,
       extraHeaders: extraHeaders,
+      authSnapshot: retrySnapshot,
     );
     return response;
   }
