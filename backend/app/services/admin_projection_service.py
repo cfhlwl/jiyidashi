@@ -41,14 +41,16 @@ from app.admin_schemas import (
 from app.analytics_models import ProductActiveDay, RetrievalAnalyticsAttempt, RetrievalOutcome
 from app.core.config import Settings, get_settings
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
-from app.entitlement_models import AIQuotaPeriod, PlanCode, UserEntitlement
+from app.embedding_models import MemoryEmbedding
+from app.entitlement_models import AIQuotaPeriod, AIUsageEvent, PlanCode, UserEntitlement
 from app.family_models import Family, FamilyMembership, FamilyPermissionGrant
-from app.media_models import MediaAsset, MediaStatus
-from app.models import Device, Memory, User
+from app.media_models import MediaASRClaim, MediaAsset, MediaStatus
+from app.models import Device, Memory, MemorySource, SourceType, User
 from app.security_models import (
     SecurityAlert,
     SecurityAlertDeliveryStatus,
     SecuritySeverity,
+    SecuritySignalCode,
 )
 from app.services.admin_security import AdminOperationError
 from app.services.entitlement_service import EntitlementError, entitlement_snapshot
@@ -112,6 +114,123 @@ def _service_configured(provider: str, api_key: str, model: str) -> bool:
     if provider == "disabled":
         return False
     return bool(api_key.strip() and model.strip())
+
+
+
+_RUNTIME_EVIDENCE_WINDOW = timedelta(hours=24)
+_STALE_PROVIDER_RESERVATION_GRACE = timedelta(minutes=5)
+
+
+def _latest_datetime(db: Session, statement) -> datetime | None:
+    value = db.scalar(statement)
+    return None if value is None else _as_utc(value)
+
+
+def _runtime_service_evidence(
+    db: Session,
+    *,
+    settings: Settings,
+    observed: datetime,
+) -> dict[str, tuple[str, str]]:
+    recent_since = observed - _RUNTIME_EVIDENCE_WINDOW
+
+    ai_configured = _service_configured(
+        settings.ai_provider,
+        settings.ai_api_key,
+        settings.ai_model,
+    )
+    ai_success = _latest_datetime(
+        db,
+        select(func.max(AIUsageEvent.finalized_at)).where(
+            AIUsageEvent.finalized_at.is_not(None),
+            AIUsageEvent.finalized_at >= recent_since,
+        ),
+    )
+    ai_failure = _latest_datetime(
+        db,
+        select(func.max(AIUsageEvent.created_at)).where(
+            AIUsageEvent.finalized_at.is_(None),
+            AIUsageEvent.created_at >= recent_since,
+            AIUsageEvent.created_at <= observed - _STALE_PROVIDER_RESERVATION_GRACE,
+        ),
+    )
+
+    asr_configured = _service_configured(
+        settings.asr_provider,
+        settings.asr_api_key,
+        settings.asr_model,
+    )
+    asr_success = _latest_datetime(
+        db,
+        select(func.max(MemorySource.created_at)).where(
+            MemorySource.source_type == SourceType.USER_VOICE,
+            MemorySource.created_at >= recent_since,
+        ),
+    )
+    asr_failure = _latest_datetime(
+        db,
+        select(func.max(MediaASRClaim.updated_at)).where(
+            MediaASRClaim.lease_expires_at < observed,
+            MediaASRClaim.updated_at >= recent_since,
+        ),
+    )
+
+    embedding_configured = _service_configured(
+        settings.embedding_provider,
+        settings.embedding_api_key,
+        settings.embedding_model,
+    )
+    embedding_success = _latest_datetime(
+        db,
+        select(func.max(MemoryEmbedding.updated_at)).where(
+            MemoryEmbedding.updated_at >= recent_since,
+        ),
+    )
+
+    storage_configured = settings.storage_backend == "s3"
+    storage_success = _latest_datetime(
+        db,
+        select(func.max(MediaAsset.completed_at)).where(
+            MediaAsset.status == MediaStatus.READY,
+            MediaAsset.completed_at.is_not(None),
+            MediaAsset.completed_at >= recent_since,
+        ),
+    )
+    storage_failure = _latest_datetime(
+        db,
+        select(func.max(SecurityAlert.updated_at)).where(
+            SecurityAlert.rule_code
+            == SecuritySignalCode.STORAGE_CAPABILITY_FAILURE_BURST.value,
+            SecurityAlert.updated_at >= recent_since,
+        ),
+    )
+
+    def status(
+        configured: bool,
+        *,
+        success_at: datetime | None,
+        failure_at: datetime | None = None,
+    ) -> tuple[str, str]:
+        if not configured:
+            return "DISABLED", "未启用"
+        if failure_at is not None and (
+            success_at is None or failure_at > success_at
+        ):
+            return "WARNING", "需要关注"
+        if success_at is not None:
+            return "NORMAL", "正常（有真实近期运行证据）"
+        return "UNVERIFIED", "已配置 / 未验证"
+
+    return {
+        "storage": status(
+            storage_configured,
+            success_at=storage_success,
+            failure_at=storage_failure,
+        ),
+        "ai": status(ai_configured, success_at=ai_success, failure_at=ai_failure),
+        "asr": status(asr_configured, success_at=asr_success, failure_at=asr_failure),
+        "embedding": status(embedding_configured, success_at=embedding_success),
+    }
 
 
 def dashboard_projection(
@@ -223,25 +342,10 @@ def dashboard_projection(
         for offset in range(7)
     ]
 
-    storage_status = "正常" if cfg.storage_backend == "s3" else "未启用"
-    ai_status = (
-        "正常"
-        if _service_configured(cfg.ai_provider, cfg.ai_api_key, cfg.ai_model)
-        else "未启用"
-    )
-    asr_status = (
-        "正常"
-        if _service_configured(cfg.asr_provider, cfg.asr_api_key, cfg.asr_model)
-        else "未启用"
-    )
-    embedding_status = (
-        "正常"
-        if _service_configured(
-            cfg.embedding_provider,
-            cfg.embedding_api_key,
-            cfg.embedding_model,
-        )
-        else "未启用"
+    runtime_services = _runtime_service_evidence(
+        db,
+        settings=cfg,
+        observed=observed,
     )
     return AdminDashboardRead(
         overview=overview,
@@ -261,26 +365,26 @@ def dashboard_projection(
             AdminServiceStatus(
                 key="storage",
                 label="文件存储",
-                status="NORMAL" if storage_status == "正常" else "DISABLED",
-                detail=storage_status,
+                status=runtime_services["storage"][0],
+                detail=runtime_services["storage"][1],
             ),
             AdminServiceStatus(
                 key="ai",
                 label="AI 整理",
-                status="NORMAL" if ai_status == "正常" else "DISABLED",
-                detail=ai_status,
+                status=runtime_services["ai"][0],
+                detail=runtime_services["ai"][1],
             ),
             AdminServiceStatus(
                 key="asr",
                 label="语音识别",
-                status="NORMAL" if asr_status == "正常" else "DISABLED",
-                detail=asr_status,
+                status=runtime_services["asr"][0],
+                detail=runtime_services["asr"][1],
             ),
             AdminServiceStatus(
                 key="embedding",
                 label="记忆检索",
-                status="NORMAL" if embedding_status == "正常" else "DISABLED",
-                detail=embedding_status,
+                status=runtime_services["embedding"][0],
+                detail=runtime_services["embedding"][1],
             ),
         ],
         trend=trend,
@@ -1313,6 +1417,11 @@ def system_health_projection(
     )
 
     observed = datetime.now(UTC)
+    runtime_services = _runtime_service_evidence(
+        db,
+        settings=cfg,
+        observed=observed,
+    )
     month_start = datetime(observed.year, observed.month, 1, tzinfo=UTC)
     if observed.month == 12:
         month_end = datetime(observed.year + 1, 1, 1, tzinfo=UTC)
@@ -1335,21 +1444,11 @@ def system_health_projection(
         database_status="正常",
         database_schema_status="正常" if schema_version else "未记录",
         database_schema_version=schema_version,
-        storage_status="正常" if cfg.storage_backend == "s3" else "未启用",
+        storage_status=runtime_services["storage"][1],
         storage_alerts_needing_attention=storage_alerts,
-        ai_status="正常"
-        if _service_configured(cfg.ai_provider, cfg.ai_api_key, cfg.ai_model)
-        else "未启用",
-        asr_status="正常"
-        if _service_configured(cfg.asr_provider, cfg.asr_api_key, cfg.asr_model)
-        else "未启用",
-        embedding_status="正常"
-        if _service_configured(
-            cfg.embedding_provider,
-            cfg.embedding_api_key,
-            cfg.embedding_model,
-        )
-        else "未启用",
+        ai_status=runtime_services["ai"][1],
+        asr_status=runtime_services["asr"][1],
+        embedding_status=runtime_services["embedding"][1],
         ai_requests_current_month=int(usage_row[0] or 0),
         ai_input_tokens_current_month=int(usage_row[1] or 0),
         ai_output_tokens_current_month=int(usage_row[2] or 0),
