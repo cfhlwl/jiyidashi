@@ -15,6 +15,20 @@ os.environ["ENABLE_DEV_AUTH"] = "true"
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
 
 from app.main import app  # noqa: E402
+from app.services.auth_delivery import (  # noqa: E402
+    MemoryAuthEmailDelivery,
+    set_auth_email_delivery_for_testing,
+)
+
+
+@pytest.fixture(autouse=True)
+def auth_email_delivery():
+    provider = MemoryAuthEmailDelivery()
+    set_auth_email_delivery_for_testing(provider)
+    try:
+        yield provider
+    finally:
+        set_auth_email_delivery_for_testing(None)
 
 
 @pytest.fixture
