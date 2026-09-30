@@ -51,6 +51,7 @@ def _client_ip(request: Request) -> str:
     # headers at this privileged boundary.
     return request.client.host if request.client is not None else "unknown"
 
+
 def _set_no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
