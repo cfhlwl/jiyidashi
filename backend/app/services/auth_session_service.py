@@ -106,8 +106,9 @@ def create_public_session(
     db.refresh(row)
     emit_operational_event(
         event="auth.session.created",
-        user_id=str(user_id),
-        session_id=str(row.id),
+        correlation_id=str(row.id),
+        operation="PUBLIC_AUTH_SESSION",
+        operation_status="CREATED",
     )
     return _session_tokens(row, refresh_token)
 
@@ -147,8 +148,9 @@ def _record_refresh_replay(db: Session, session: AuthSession) -> None:
     emit_operational_event(
         event="auth.refresh.replay_detected",
         level="WARNING",
-        user_id=str(session.user_id),
-        session_id=str(session.id),
+        correlation_id=str(session.id),
+        operation="PUBLIC_AUTH_REFRESH",
+        operation_status="REPLAY_DETECTED",
     )
 
 
@@ -253,9 +255,9 @@ def refresh_public_session(
     db.refresh(row)
     emit_operational_event(
         event="auth.refresh.success",
-        user_id=str(row.user_id),
-        session_id=str(row.id),
-        rotation_revision=row.rotation_revision,
+        correlation_id=str(row.id),
+        operation="PUBLIC_AUTH_REFRESH",
+        operation_status="ROTATED",
     )
     return _session_tokens(row, successor)
 
@@ -282,9 +284,9 @@ def revoke_session(
         db.commit()
         emit_operational_event(
             event="auth.session.revoked",
-            user_id=str(user_id),
-            session_id=str(session_id),
-            reason=reason[:64],
+            correlation_id=str(session_id),
+            operation="PUBLIC_AUTH_SESSION",
+            operation_status=reason[:64],
         )
     else:
         db.rollback()
@@ -327,9 +329,10 @@ def revoke_all_sessions(
     db.commit()
     emit_operational_event(
         event="auth.session.logout_all",
-        user_id=str(user_id),
-        revoked_count=count,
-        reason=reason[:64],
+        correlation_id=str(user_id),
+        operation="PUBLIC_AUTH_SESSION",
+        operation_status=reason[:64],
+        completed=True,
     )
     return count
 
