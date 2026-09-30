@@ -161,8 +161,6 @@ def refresh_public_session(
     if not digest:
         raise PublicAuthError("INVALID_REFRESH_TOKEN")
 
-    # The rate-limit bucket stores another keyed digest, never the presented token.
-    consume_refresh_attempt(db, digest)
     now = datetime.now(UTC)
     row = db.scalar(
         select(AuthSession)
@@ -172,6 +170,9 @@ def refresh_public_session(
     if row is None:
         receipt = db.get(AuthRefreshTokenReceipt, digest)
         if receipt is None:
+            # Unknown credentials still enter a bounded keyed bucket without storing
+            # plaintext token material.
+            consume_refresh_attempt(db, f"unknown:{digest}")
             raise PublicAuthError("INVALID_REFRESH_TOKEN")
 
         replay_session = db.scalar(
@@ -180,6 +181,10 @@ def refresh_public_session(
             .with_for_update()
         )
         if replay_session is not None:
+            consume_refresh_attempt(
+                db,
+                f"{replay_session.user_id}:{replay_session.id}",
+            )
             if replay_session.revoked_at is None:
                 replay_session.revoked_at = now
                 replay_session.revoke_reason = "REFRESH_REPLAY"
@@ -189,6 +194,7 @@ def refresh_public_session(
             _record_refresh_replay(db, replay_session)
         raise PublicAuthError("REFRESH_TOKEN_REUSED")
 
+    consume_refresh_attempt(db, f"{row.user_id}:{row.id}")
     if row.revoked_at is not None:
         raise PublicAuthError("AUTH_SESSION_REVOKED")
     if _as_utc(row.expires_at) <= now:
