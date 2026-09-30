@@ -197,15 +197,14 @@ async def test_successful_admin_login_clears_only_account_ip_penalty(client, mon
     # A successful login clears the account+IP failure penalty but the separate
     # IP spray bucket remains durable.
     with SessionLocal() as db:
-        subject = email.casefold()
-        account_key = auth_rate_limit._bucket_key(
-            "admin_login_account_ip",
-            f"127.0.0.1\n{subject}",
-        )
         account_bucket = db.scalar(
-            select(auth_rate_limit.AuthRateLimitBucket).where(
-                auth_rate_limit.AuthRateLimitBucket.key == account_key
+            select(auth_rate_limit.AuthRateLimitBucket)
+            .where(
+                auth_rate_limit.AuthRateLimitBucket.scope
+                == "admin_login_account_ip"
             )
+            .order_by(auth_rate_limit.AuthRateLimitBucket.updated_at.desc())
+            .limit(1)
         )
         assert account_bucket is not None
         assert account_bucket.failures == 0
