@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'auth_session_store.dart';
 
 const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
@@ -270,17 +271,35 @@ Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
   return parsed;
 }
 
+enum AuthRestoreStatus {
+  restored,
+  noPersistedSession,
+  serverUnavailable,
+  invalidSession,
+}
+
+
 class JiYiApiClient {
-  JiYiApiClient({http.Client? httpClient, String? baseUrl})
-      : _http = httpClient ?? http.Client(),
+  JiYiApiClient({
+    http.Client? httpClient,
+    String? baseUrl,
+    AuthSessionStore? sessionStore,
+  })  : _http = httpClient ?? http.Client(),
+        _sessionStore = sessionStore ?? SecureAuthSessionStore(),
         baseUrl = _resolveApiBaseUrl(baseUrl);
 
   final http.Client _http;
+  final AuthSessionStore _sessionStore;
   final String baseUrl;
   String? accessToken;
-  // [人工注释][S1-015] 登录态同时保留服务端签发的 user_id，作为本机 SQLite 数据的账号隔离键；不得用昵称/邮箱猜身份。
+  String? _refreshToken;
+  String? _sessionId;
+  DateTime? _accessExpiresAt;
+  // Authenticated user ID is never restored from local storage. It becomes
+  // authoritative only after login/verification/refresh returns from the server.
   String? authenticatedUserId;
   int _sessionVersion = 0;
+  Future<void>? _refreshInFlight;
 
   // 登录、注册和退出都会推进会话版本；后台同步用它检测账号切换。
   int get sessionVersion => _sessionVersion;
@@ -324,9 +343,10 @@ class JiYiApiClient {
     required String nickname,
     String timezone = 'Asia/Shanghai',
     String locale = 'zh-CN',
-  }) async {
-    // [人工注释][S1-001] Flutter 正式注册只提交凭证与公开资料，不允许客户端指定 user_id。
-    final data = await _jsonRequest(
+  }) {
+    // Registration creates an unverified account only. No owner authority exists until
+    // the email token is verified against the server.
+    return _jsonRequest(
       'POST',
       '/auth/register',
       body: {
@@ -338,40 +358,229 @@ class JiYiApiClient {
       },
       authenticated: false,
     );
-    // [人工注释][S1-015] 注册响应必须同时提供 token + user_id 才建立本机登录作用域，避免半登录状态写入无归属 SQLite 数据。
-    _establishAuthenticatedSession(data);
+  }
+
+  Future<Map<String, dynamic>> verifyEmail(String token) async {
+    final installationId = await _sessionStore.readOrCreateInstallationId();
+    final data = await _jsonRequest(
+      'POST',
+      '/auth/verify-email',
+      body: {
+        'token': token.trim(),
+        'device_id': installationId,
+        'client_platform': 'flutter',
+      },
+      authenticated: false,
+    );
+    final rawSession = data['session'];
+    if (rawSession is Map<String, dynamic>) {
+      await _establishAuthenticatedSession(rawSession);
+    }
     return data;
+  }
+
+  Future<void> resendVerification(String email) async {
+    await _jsonRequest(
+      'POST',
+      '/auth/resend-verification',
+      body: {'email': email.trim()},
+      authenticated: false,
+    );
+  }
+
+  Future<void> requestPasswordReset(String email) async {
+    await _jsonRequest(
+      'POST',
+      '/auth/forgot-password',
+      body: {'email': email.trim()},
+      authenticated: false,
+    );
+  }
+
+  Future<void> resetPassword({
+    required String token,
+    required String newPassword,
+  }) async {
+    await _jsonRequest(
+      'POST',
+      '/auth/reset-password',
+      body: {
+        'token': token.trim(),
+        'new_password': newPassword,
+      },
+      authenticated: false,
+    );
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _jsonRequest(
+      'POST',
+      '/auth/change-password',
+      body: {
+        'current_password': currentPassword,
+        'new_password': newPassword,
+      },
+    );
+    await _clearLocalSession();
   }
 
   Future<Map<String, dynamic>> login({
     required String email,
     required String password,
   }) async {
-    // [人工注释][S1-001] 登录成功后只在当前进程保存正式 Token；持久化会在独立认证持久化任务中处理。
+    final installationId = await _sessionStore.readOrCreateInstallationId();
     final data = await _jsonRequest(
       'POST',
       '/auth/login',
-      body: {'email': email.trim(), 'password': password},
+      body: {
+        'email': email.trim(),
+        'password': password,
+        'device_id': installationId,
+        'client_platform': 'flutter',
+      },
       authenticated: false,
     );
-    // [人工注释][S1-015] 离线 SQLite 必须按认证响应的真实 user_id 分区；token/user_id 原子建立，协议异常时两者都不落入会话。
-    _establishAuthenticatedSession(data);
+    await _establishAuthenticatedSession(data);
     return data;
   }
 
-  // [人工注释][S1-015] 本机会话身份以服务端认证响应为唯一来源；字段缺失、空值或类型错误都 fail-closed，不创建模糊账号作用域。
-  void _establishAuthenticatedSession(Map<String, dynamic> data) {
+  DateTime _requiredServerDateTime(
+    Map<String, dynamic> data,
+    String key,
+  ) {
+    final raw = data[key];
+    if (raw is! String) {
+      throw ProtocolException('认证服务返回格式不正确');
+    }
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null || !parsed.isUtc) {
+      throw ProtocolException('认证服务返回格式不正确');
+    }
+    return parsed;
+  }
+
+  Future<void> _establishAuthenticatedSession(
+    Map<String, dynamic> data, {
+    String? expectedSessionId,
+  }) async {
     final token = data['access_token'];
+    final refresh = data['refresh_token'];
+    final sessionId = data['session_id'];
     final userId = data['user_id'];
     if (token is! String ||
         token.trim().isEmpty ||
+        refresh is! String ||
+        refresh.trim().isEmpty ||
+        sessionId is! String ||
+        sessionId.trim().isEmpty ||
         userId is! String ||
-        userId.trim().isEmpty) {
-      throw ApiException(200, '认证服务返回格式不正确');
+        userId.trim().isEmpty ||
+        (expectedSessionId != null && sessionId != expectedSessionId)) {
+      throw ProtocolException('认证服务返回格式不正确');
     }
+    final accessExpiresAt = _requiredServerDateTime(data, 'access_expires_at');
+
+    // Secure persistence succeeds before in-memory owner authority is published.
+    await _sessionStore.writeSession(
+      PersistedAuthSession(
+        refreshToken: refresh,
+        sessionId: sessionId,
+      ),
+    );
     accessToken = token;
+    _refreshToken = refresh;
+    _sessionId = sessionId;
+    _accessExpiresAt = accessExpiresAt;
     authenticatedUserId = userId;
     _sessionVersion += 1;
+  }
+
+  Future<Map<String, dynamic>> _refreshWith(
+    String refreshToken, {
+    String? expectedSessionId,
+  }) async {
+    final data = await _jsonRequest(
+      'POST',
+      '/auth/refresh',
+      body: {'refresh_token': refreshToken},
+      authenticated: false,
+    );
+    await _establishAuthenticatedSession(
+      data,
+      expectedSessionId: expectedSessionId,
+    );
+    return data;
+  }
+
+  Future<void> refreshCurrentSession() async {
+    final refresh = _refreshToken;
+    final sessionId = _sessionId;
+    if (refresh == null || sessionId == null) {
+      throw ApiException(401, '请先登录');
+    }
+    final existing = _refreshInFlight;
+    if (existing != null) return existing;
+
+    final completer = Completer<void>();
+    _refreshInFlight = completer.future;
+    try {
+      await _refreshWith(refresh, expectedSessionId: sessionId);
+      completer.complete();
+    } catch (error, stack) {
+      completer.completeError(error, stack);
+      rethrow;
+    } finally {
+      _refreshInFlight = null;
+    }
+  }
+
+  Future<void> ensureFreshServerAuthority() async {
+    final expiry = _accessExpiresAt;
+    if (accessToken == null || authenticatedUserId == null || expiry == null) {
+      throw ApiException(401, '请先登录');
+    }
+    if (expiry.isBefore(DateTime.now().toUtc().add(const Duration(minutes: 2)))) {
+      await refreshCurrentSession();
+    }
+  }
+
+  Future<AuthRestoreStatus> restorePersistedSession() async {
+    final persisted = await _sessionStore.readSession();
+    if (persisted == null) return AuthRestoreStatus.noPersistedSession;
+
+    // Never publish locally cached owner identity. The server refresh response is the
+    // only source allowed to reconstruct user_id/access authority after cold start.
+    try {
+      await _refreshWith(
+        persisted.refreshToken,
+        expectedSessionId: persisted.sessionId,
+      );
+      return AuthRestoreStatus.restored;
+    } on TransportException {
+      return AuthRestoreStatus.serverUnavailable;
+    } on ApiException catch (exc) {
+      if (exc.statusCode == 400 || exc.statusCode == 401) {
+        await _clearLocalSession();
+        return AuthRestoreStatus.invalidSession;
+      }
+      return AuthRestoreStatus.serverUnavailable;
+    } on ProtocolException {
+      await _clearLocalSession();
+      return AuthRestoreStatus.invalidSession;
+    }
+  }
+
+  Future<void> _clearLocalSession() async {
+    accessToken = null;
+    _refreshToken = null;
+    _sessionId = null;
+    _accessExpiresAt = null;
+    authenticatedUserId = null;
+    _sessionVersion += 1;
+    await _sessionStore.clearSession();
   }
 
   Map<String, dynamic> _canonicalProfile(
@@ -850,11 +1059,23 @@ class JiYiApiClient {
     return _parseMemoryQueryResult(raw);
   }
 
-  void logout() {
-    accessToken = null;
-    // [人工注释][S1-015] 退出登录同时清掉当前本机账号作用域；SQLite 数据保留但下一个账号不能读取它。
-    authenticatedUserId = null;
-    _sessionVersion += 1;
+  Future<void> logout() async {
+    try {
+      if (accessToken != null && authenticatedUserId != null) {
+        await _jsonRequest('POST', '/auth/logout');
+      }
+    } finally {
+      // User intent always removes local owner authority and secure refresh material.
+      await _clearLocalSession();
+    }
+  }
+
+  Future<void> logoutAll() async {
+    try {
+      await _jsonRequest('POST', '/auth/logout-all');
+    } finally {
+      await _clearLocalSession();
+    }
   }
   // #163 Flutter V2 reuses the existing authenticated-session snapshot.
   // V2 operations are never silently added to the existing offline queue.
