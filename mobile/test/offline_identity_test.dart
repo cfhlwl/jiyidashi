@@ -12,24 +12,35 @@ void main() {
     // [人工注释][S1-015] SQLite 账号隔离键必须直接来自成功认证响应，并在退出登录时与 token 一起清除。
     final api = JiYiApiClient(
       baseUrl: 'https://example.test/v1',
-      httpClient: MockClient(
-        (_) async => http.Response(
+      httpClient: MockClient((request) async {
+        if (request.url.path == '/v1/auth/logout') {
+          return http.Response(
+            jsonEncode({'accepted': true}),
+            200,
+            headers: headers,
+          );
+        }
+        return http.Response(
           jsonEncode({
             'access_token': 'token-a',
+            'refresh_token': 'refresh-a-abcdefghijklmnopqrstuvwxyz',
+            'session_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
             'token_type': 'bearer',
             'user_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'access_expires_at': '2030-09-30T00:15:00Z',
+            'refresh_expires_at': '2030-10-30T00:00:00Z',
           }),
           200,
           headers: headers,
-        ),
-      ),
+        );
+      }),
     );
 
     await api.login(email: 'a@example.test', password: 'example-password-123');
     expect(api.accessToken, 'token-a');
     expect(api.authenticatedUserId, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
 
-    api.logout();
+    await api.logout();
     expect(api.accessToken, isNull);
     expect(api.authenticatedUserId, isNull);
   });
@@ -53,7 +64,7 @@ void main() {
     await expectLater(
       api.login(email: 'a@example.test', password: 'example-password-123'),
       throwsA(
-        isA<ApiException>().having(
+        isA<ProtocolException>().having(
           (error) => error.message,
           'message',
           '认证服务返回格式不正确',
