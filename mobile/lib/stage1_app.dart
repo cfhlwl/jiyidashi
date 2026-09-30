@@ -50,9 +50,8 @@ class JiYiApp extends StatefulWidget {
   State<JiYiApp> createState() => _JiYiAppState();
 }
 
-class _JiYiAppState extends State<JiYiApp> {
+class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   late final JiYiApiClient api = widget.api ?? JiYiApiClient();
-  // [人工注释][S1-015] App 级共享一个 SQLite queue store；测试可注入独立数据库，生产默认使用系统数据库目录。
   late final OfflineQueueStore offlineQueue =
       widget.offlineQueue ?? OfflineQueueStore();
   late final OfflineSyncCoordinator sync = OfflineSyncCoordinator(
@@ -63,14 +62,110 @@ class _JiYiAppState extends State<JiYiApp> {
       widget.onboardingStore ?? OnboardingStore();
   late final NativeLocationBridge locationBridge =
       widget.locationBridge ?? MethodChannelNativeLocationBridge();
+
   bool authenticated = false;
+  bool restoringSession = true;
   bool startOnboardingAfterAuth = false;
   bool resumeAccountDeletionAfterAuth = false;
   bool elderModeEnabled = false;
+  String? restoreMessage;
+  Timer? _authorityRefreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_restoreServerSession());
+    _authorityRefreshTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) => unawaited(_refreshServerAuthority()),
+    );
+  }
+
+  Future<void> _restoreServerSession() async {
+    final result = await api.restorePersistedSession();
+    if (!mounted) return;
+    if (result == AuthRestoreStatus.restored) {
+      try {
+        final profile = await api.getProfile();
+        if (!mounted) return;
+        setState(() {
+          authenticated = true;
+          restoringSession = false;
+          restoreMessage = null;
+          elderModeEnabled = profile['elder_mode_enabled'] == true;
+        });
+        return;
+      } on ApiException catch (exc) {
+        if (exc.statusCode == 401 || exc.statusCode == 423) {
+          setState(() {
+            authenticated = false;
+            restoringSession = false;
+            restoreMessage = '之前的登录状态已经失效，请重新登录。';
+          });
+          return;
+        }
+      } catch (_) {
+        // Fall through to a safe unauthenticated state.
+      }
+    }
+
+    setState(() {
+      authenticated = false;
+      restoringSession = false;
+      restoreMessage = result == AuthRestoreStatus.serverUnavailable
+          ? '暂时无法向服务器确认登录状态，请联网后重新尝试。'
+          : null;
+    });
+  }
+
+  Future<void> _refreshServerAuthority() async {
+    if (!authenticated) return;
+    try {
+      await api.ensureFreshServerAuthority();
+    } on ApiException catch (exc) {
+      if (!mounted) return;
+      if (exc.statusCode == 400 || exc.statusCode == 401) {
+        setState(() {
+          authenticated = false;
+          startOnboardingAfterAuth = false;
+          resumeAccountDeletionAfterAuth = false;
+          elderModeEnabled = false;
+          restoreMessage = '登录状态已失效，请重新登录。';
+        });
+      }
+    } on TransportException {
+      // Keep the server-issued session material for a later retry, but never mint
+      // local authority or silently replace it with cached user identity.
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      await api.logout();
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        authenticated = false;
+        startOnboardingAfterAuth = false;
+        resumeAccountDeletionAfterAuth = false;
+        elderModeEnabled = false;
+        restoreMessage = null;
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshServerAuthority());
+    }
+  }
 
   @override
   void dispose() {
-    // [人工注释][S1-015] 只关闭本组件自己创建的数据库句柄；外部注入 Store 的生命周期由调用方负责。
+    WidgetsBinding.instance.removeObserver(this);
+    _authorityRefreshTimer?.cancel();
     if (widget.offlineQueue == null) {
       unawaited(offlineQueue.close());
     }
@@ -85,44 +180,50 @@ class _JiYiAppState extends State<JiYiApp> {
     return MaterialApp(
       title: '迹忆',
       debugShowCheckedModeBanner: false,
-      // 生产 Theme 改为单一事实源；G1 参数与原 Theme 完全一致，预期不产生视觉漂移。
       theme: JiYiTheme.light(elderMode: elderModeEnabled),
-      home: authenticated
-          ? AppShell(
-              api: api,
-              offlineQueue: offlineQueue,
-              onboardingStore: onboardingStore,
-              startOnboarding: startOnboardingAfterAuth,
-              resumeAccountDeletion: resumeAccountDeletionAfterAuth,
-              locationBridge: locationBridge,
-              motionSamplingBridge: widget.motionSamplingBridge,
-              sync: sync,
-              onElderModeChanged: (enabled) {
-                if (mounted) setState(() => elderModeEnabled = enabled);
-              },
-              onLogout: () {
-                api.logout();
-                setState(() {
-                  authenticated = false;
-                  startOnboardingAfterAuth = false;
-                  resumeAccountDeletionAfterAuth = false;
-                  elderModeEnabled = false;
-                });
-              },
+      home: restoringSession
+          ? const Scaffold(
+              body: SafeArea(
+                child: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
             )
-          : AuthPage(
-              api: api,
-              onRegistrationCompleted: () {
-                startOnboardingAfterAuth = true;
-                resumeAccountDeletionAfterAuth = false;
-              },
-              onAccountDeletionRecovery: () {
-                // [人工注释][S1-022-FIX-001] 恢复登录只进入注销收尾，不启动普通数据空间/离线同步。
-                resumeAccountDeletionAfterAuth = true;
-                startOnboardingAfterAuth = false;
-              },
-              onAuthenticated: () => setState(() => authenticated = true),
-            ),
+          : authenticated
+              ? AppShell(
+                  api: api,
+                  offlineQueue: offlineQueue,
+                  onboardingStore: onboardingStore,
+                  startOnboarding: startOnboardingAfterAuth,
+                  resumeAccountDeletion: resumeAccountDeletionAfterAuth,
+                  locationBridge: locationBridge,
+                  motionSamplingBridge: widget.motionSamplingBridge,
+                  sync: sync,
+                  onElderModeChanged: (enabled) {
+                    if (mounted) setState(() => elderModeEnabled = enabled);
+                  },
+                  onLogout: () => unawaited(_logout()),
+                )
+              : AuthPage(
+                  api: api,
+                  initialMessage: restoreMessage,
+                  onRegistrationCompleted: () {
+                    startOnboardingAfterAuth = true;
+                    resumeAccountDeletionAfterAuth = false;
+                  },
+                  onAccountDeletionRecovery: () {
+                    resumeAccountDeletionAfterAuth = true;
+                    startOnboardingAfterAuth = false;
+                  },
+                  onAuthenticated: () {
+                    if (mounted) {
+                      setState(() {
+                        authenticated = true;
+                        restoreMessage = null;
+                      });
+                    }
+                  },
+                ),
     );
   }
 }
@@ -132,12 +233,14 @@ class AuthPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.onAuthenticated,
+    this.initialMessage,
     this.onRegistrationCompleted,
     this.onAccountDeletionRecovery,
   });
 
   final JiYiApiClient api;
   final VoidCallback onAuthenticated;
+  final String? initialMessage;
   final VoidCallback? onRegistrationCompleted;
   final VoidCallback? onAccountDeletionRecovery;
 
@@ -145,30 +248,90 @@ class AuthPage extends StatefulWidget {
   State<AuthPage> createState() => _AuthPageState();
 }
 
+enum _AuthMode { login, register, verifyEmail, forgotPassword, resetPassword }
+
 class _AuthPageState extends State<AuthPage> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final nicknameController = TextEditingController();
-  bool registerMode = false;
+  final tokenController = TextEditingController();
+  _AuthMode mode = _AuthMode.login;
   bool loading = false;
   String? error;
+  String? message;
+
+  @override
+  void initState() {
+    super.initState();
+    message = widget.initialMessage;
+  }
 
   @override
   void dispose() {
     emailController.dispose();
     passwordController.dispose();
     nicknameController.dispose();
+    tokenController.dispose();
     super.dispose();
   }
 
-  Future<void> submit() async {
-    if (emailController.text.trim().isEmpty ||
-        passwordController.text.isEmpty) {
+  Future<void> _submitCredentials() async {
+    if (emailController.text.trim().isEmpty || passwordController.text.isEmpty) {
       setState(() => error = '请输入邮箱和密码');
       return;
     }
-    if (registerMode && nicknameController.text.trim().isEmpty) {
+    if (mode == _AuthMode.register && nicknameController.text.trim().isEmpty) {
       setState(() => error = '请输入昵称');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = null;
+      message = null;
+    });
+    try {
+      if (mode == _AuthMode.register) {
+        await widget.api.register(
+          email: emailController.text,
+          password: passwordController.text,
+          nickname: nicknameController.text,
+        );
+        if (!mounted) return;
+        setState(() {
+          mode = _AuthMode.verifyEmail;
+          passwordController.clear();
+          message = '验证邮件已发送。完成邮箱验证后才能进入你的记忆空间。';
+        });
+        return;
+      }
+
+      final login = await widget.api.login(
+        email: emailController.text,
+        password: passwordController.text,
+      );
+      if (login['account_deletion_in_progress'] == true) {
+        widget.onAccountDeletionRecovery?.call();
+      }
+      widget.onAuthenticated();
+    } on ApiException catch (exc) {
+      if (exc.message == 'EMAIL_VERIFICATION_REQUIRED') {
+        setState(() {
+          mode = _AuthMode.verifyEmail;
+          error = '这个邮箱还没有完成验证。';
+        });
+      } else {
+        setState(() => error = exc.message);
+      }
+    } catch (_) {
+      setState(() => error = '暂时无法连接服务器');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _verifyEmail() async {
+    if (tokenController.text.trim().isEmpty) {
+      setState(() => error = '请输入验证邮件中的验证凭证');
       return;
     }
     setState(() {
@@ -176,26 +339,17 @@ class _AuthPageState extends State<AuthPage> {
       error = null;
     });
     try {
-      // [人工注释][S1-001] 登录/注册成功后才进入个人记忆空间，匿名用户不能调用个人数据 API。
-      if (registerMode) {
-        await widget.api.register(
-          email: emailController.text,
-          password: passwordController.text,
-          nickname: nicknameController.text,
-        );
-        // Only a confirmed new registration auto-starts onboarding. Existing users
-        // logging into an upgraded app are never inferred to be "new" from missing local state.
+      final result = await widget.api.verifyEmail(tokenController.text);
+      if (result['session'] != null) {
         widget.onRegistrationCompleted?.call();
-      } else {
-        final login = await widget.api.login(
-          email: emailController.text,
-          password: passwordController.text,
-        );
-        if (login['account_deletion_in_progress'] == true) {
-          widget.onAccountDeletionRecovery?.call();
-        }
+        widget.onAuthenticated();
+      } else if (mounted) {
+        setState(() {
+          mode = _AuthMode.login;
+          message = '邮箱已经验证，请登录。';
+          tokenController.clear();
+        });
       }
-      widget.onAuthenticated();
     } on ApiException catch (exc) {
       setState(() => error = exc.message);
     } catch (_) {
@@ -205,9 +359,102 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
+  Future<void> _resendVerification() async {
+    if (emailController.text.trim().isEmpty) {
+      setState(() => error = '请输入邮箱');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      await widget.api.resendVerification(emailController.text);
+      if (mounted) setState(() => message = '如果账号可以验证，新的验证邮件已经发送。');
+    } catch (_) {
+      if (mounted) setState(() => error = '暂时无法发送验证邮件');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _requestReset() async {
+    if (emailController.text.trim().isEmpty) {
+      setState(() => error = '请输入邮箱');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      await widget.api.requestPasswordReset(emailController.text);
+      if (!mounted) return;
+      setState(() {
+        mode = _AuthMode.resetPassword;
+        tokenController.clear();
+        passwordController.clear();
+        message = '如果账号存在，密码重置邮件已经发送。';
+      });
+    } catch (_) {
+      if (mounted) setState(() => error = '暂时无法提交重置请求');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    if (tokenController.text.trim().isEmpty || passwordController.text.isEmpty) {
+      setState(() => error = '请输入重置凭证和新密码');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      await widget.api.resetPassword(
+        token: tokenController.text,
+        newPassword: passwordController.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        mode = _AuthMode.login;
+        tokenController.clear();
+        passwordController.clear();
+        message = '密码已更新，请重新登录。';
+      });
+    } on ApiException catch (exc) {
+      setState(() => error = exc.message);
+    } catch (_) {
+      setState(() => error = '暂时无法重置密码');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  String get _title => switch (mode) {
+        _AuthMode.login => '欢迎回来',
+        _AuthMode.register => '创建你的记忆空间',
+        _AuthMode.verifyEmail => '验证邮箱',
+        _AuthMode.forgotPassword => '找回密码',
+        _AuthMode.resetPassword => '设置新密码',
+      };
+
+  String get _subtitle => switch (mode) {
+        _AuthMode.login => '登录后继续查看和管理属于你的可信记忆。',
+        _AuthMode.register => '注册后先验证邮箱，再建立属于你的安全登录会话。',
+        _AuthMode.verifyEmail => '验证完成前不会建立个人记忆空间的访问权限。',
+        _AuthMode.forgotPassword => '提交后，无论账号是否存在都会得到相同结果。',
+        _AuthMode.resetPassword => '重置成功会撤销这个账号现有的全部登录会话。',
+      };
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final showPassword = mode == _AuthMode.login ||
+        mode == _AuthMode.register ||
+        mode == _AuthMode.resetPassword;
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -225,7 +472,6 @@ class _AuthPageState extends State<AuthPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 登录页品牌区只增强视觉识别，不增加未实现能力或营销承诺。
                     Align(
                       alignment: Alignment.centerLeft,
                       child: DecoratedBox(
@@ -254,48 +500,66 @@ class _AuthPageState extends State<AuthPage> {
                     ),
                     const SizedBox(height: JiYiSpacing.xxl),
                     JiYiSectionCard(
-                      title: registerMode ? '创建你的记忆空间' : '欢迎回来',
-                      subtitle: registerMode
-                          ? '注册后，你的记录、找回和隐私设置都归属于自己的账号。'
-                          : '登录后继续查看和管理属于你的可信记忆。',
+                      title: _title,
+                      subtitle: _subtitle,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          TextField(
-                            controller: emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            decoration: const InputDecoration(
-                              labelText: '邮箱',
-                              hintText: 'name@example.com',
-                              prefixIcon: Icon(Icons.mail_outline),
+                          if (mode != _AuthMode.resetPassword) ...[
+                            TextField(
+                              controller: emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              decoration: const InputDecoration(
+                                labelText: '邮箱',
+                                hintText: 'name@example.com',
+                                prefixIcon: Icon(Icons.mail_outline),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: JiYiSpacing.sm),
-                          TextField(
-                            controller: passwordController,
-                            obscureText: true,
-                            textInputAction: registerMode
-                                ? TextInputAction.next
-                                : TextInputAction.done,
-                            onSubmitted: loading || registerMode
-                                ? null
-                                : (_) => submit(),
-                            decoration: const InputDecoration(
-                              labelText: '密码',
-                              prefixIcon: Icon(Icons.lock_outline),
+                            const SizedBox(height: JiYiSpacing.sm),
+                          ],
+                          if (showPassword)
+                            TextField(
+                              controller: passwordController,
+                              obscureText: true,
+                              decoration: InputDecoration(
+                                labelText: mode == _AuthMode.resetPassword
+                                    ? '新密码'
+                                    : '密码',
+                                prefixIcon: const Icon(Icons.lock_outline),
+                              ),
                             ),
-                          ),
-                          if (registerMode) ...[
+                          if (mode == _AuthMode.register) ...[
                             const SizedBox(height: JiYiSpacing.sm),
                             TextField(
                               controller: nicknameController,
-                              textInputAction: TextInputAction.done,
-                              onSubmitted: loading ? null : (_) => submit(),
                               decoration: const InputDecoration(
                                 labelText: '昵称',
                                 prefixIcon: Icon(Icons.person_outline),
                               ),
+                            ),
+                          ],
+                          if (mode == _AuthMode.verifyEmail ||
+                              mode == _AuthMode.resetPassword) ...[
+                            const SizedBox(height: JiYiSpacing.sm),
+                            TextField(
+                              controller: tokenController,
+                              autocorrect: false,
+                              enableSuggestions: false,
+                              decoration: InputDecoration(
+                                labelText: mode == _AuthMode.verifyEmail
+                                    ? '验证凭证'
+                                    : '重置凭证',
+                                prefixIcon: const Icon(Icons.key_outlined),
+                              ),
+                            ),
+                          ],
+                          if (message != null) ...[
+                            const SizedBox(height: JiYiSpacing.sm),
+                            JiYiStatusBanner(
+                              kind: JiYiStatusKind.info,
+                              title: '提示',
+                              message: message!,
                             ),
                           ],
                           if (error != null) ...[
@@ -307,41 +571,71 @@ class _AuthPageState extends State<AuthPage> {
                             ),
                           ],
                           const SizedBox(height: JiYiSpacing.md),
-                          FilledButton.icon(
-                            onPressed: loading ? null : submit,
-                            icon: loading
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Icon(
-                                    registerMode
-                                        ? Icons.person_add_alt_1_outlined
-                                        : Icons.login,
-                                  ),
-                            label: Text(
-                              loading ? '请稍候…' : (registerMode ? '创建账号' : '登录'),
+                          FilledButton(
+                            onPressed: loading
+                                ? null
+                                : switch (mode) {
+                                    _AuthMode.login ||
+                                    _AuthMode.register =>
+                                      _submitCredentials,
+                                    _AuthMode.verifyEmail => _verifyEmail,
+                                    _AuthMode.forgotPassword => _requestReset,
+                                    _AuthMode.resetPassword => _resetPassword,
+                                  },
+                            child: Text(
+                              loading
+                                  ? '请稍候…'
+                                  : switch (mode) {
+                                      _AuthMode.login => '登录',
+                                      _AuthMode.register => '创建账号',
+                                      _AuthMode.verifyEmail => '完成验证',
+                                      _AuthMode.forgotPassword => '发送重置邮件',
+                                      _AuthMode.resetPassword => '更新密码',
+                                    },
                             ),
                           ),
+                          if (mode == _AuthMode.verifyEmail) ...[
+                            const SizedBox(height: JiYiSpacing.xs),
+                            TextButton(
+                              onPressed: loading ? null : _resendVerification,
+                              child: const Text('重新发送验证邮件'),
+                            ),
+                          ],
+                          if (mode == _AuthMode.login) ...[
+                            const SizedBox(height: JiYiSpacing.xs),
+                            TextButton(
+                              onPressed: loading
+                                  ? null
+                                  : () => setState(() {
+                                      mode = _AuthMode.forgotPassword;
+                                      error = null;
+                                      message = null;
+                                    }),
+                              child: const Text('忘记密码？'),
+                            ),
+                          ],
                           const SizedBox(height: JiYiSpacing.xs),
                           TextButton(
                             onPressed: loading
                                 ? null
                                 : () => setState(() {
-                                    registerMode = !registerMode;
+                                    mode = mode == _AuthMode.register
+                                        ? _AuthMode.login
+                                        : _AuthMode.register;
                                     error = null;
+                                    message = null;
+                                    tokenController.clear();
                                   }),
                             child: Text(
-                              registerMode ? '已有账号？返回登录' : '第一次使用？创建账号',
+                              mode == _AuthMode.register
+                                  ? '已有账号？返回登录'
+                                  : '返回登录 / 创建账号',
                             ),
                           ),
                         ],
                       ),
                     ),
                     if (widget.api.showDevelopmentEndpoint) ...[
-                      // [人工注释][S1-FIX-007] 生产构建不渲染开发 API 信息，endpoint 只能由 build-time 配置注入。
                       const SizedBox(height: JiYiSpacing.md),
                       Text(
                         '当前开发环境服务地址：${widget.api.baseUrl}',
