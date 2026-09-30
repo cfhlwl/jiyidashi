@@ -304,16 +304,20 @@ class _AuthPageState extends State<AuthPage> {
     });
     try {
       if (mode == _AuthMode.register) {
-        await widget.api.register(
+        final registration = await widget.api.register(
           email: emailController.text,
           password: passwordController.text,
           nickname: nicknameController.text,
         );
         if (!mounted) return;
+        final deliveryPending =
+            registration['verification_delivery_pending'] == true;
         setState(() {
           mode = _AuthMode.verifyEmail;
           passwordController.clear();
-          message = '验证邮件已发送。完成邮箱验证后才能进入你的记忆空间。';
+          message = deliveryPending
+              ? '账号已创建，但验证邮件暂时没有送达。请使用“重新发送验证邮件”。'
+              : '验证邮件已发送。完成邮箱验证后才能进入你的记忆空间。';
         });
         return;
       }
