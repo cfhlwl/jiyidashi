@@ -7,14 +7,13 @@ from sqlalchemy import func, select, text
 
 from app.admin_models import AdminAccount, AdminRole
 from app.core.db import SessionLocal
-_ADMIN_BOOTSTRAP_LOCK_KEY = 0x4A4959491002
-
-
 from app.services.admin_security import (
     append_admin_audit,
     hash_admin_password,
     normalize_admin_email,
 )
+
+_ADMIN_BOOTSTRAP_LOCK_KEY = 0x4A4959491002
 
 
 def bootstrap_super_admin() -> bool:
