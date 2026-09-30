@@ -47,6 +47,7 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
   int? retryAfterSeconds;
   bool gatePrepared = false;
   bool intentPrepared = false;
+  AccountDeleteSessionBinding? operationSession;
 
   @override
   void initState() {
@@ -64,6 +65,25 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
 
   Future<void> startOrContinue({bool requireConfirmation = false}) async {
     if (deleting || confirming) return;
+
+    AccountDeleteSessionBinding session;
+    try {
+      // Capture before the dialog opens. A confirmation that started under account A
+      // cannot silently become an account-B destructive intent while the dialog waits.
+      session = operationSession ??= widget.api.captureAccountDeleteSession();
+      widget.api.assertAccountDeleteSessionCurrent(session);
+    } on Object catch (exc) {
+      if (!mounted) return;
+      setState(() {
+        messageIsError = true;
+        message = sensitiveOperationSafeError(
+          exc,
+          fallback: '账号注销暂时没有完成，请重新打开后再试',
+        );
+      });
+      return;
+    }
+
     if (requireConfirmation) {
       setState(() => confirming = true);
       var confirmed = false;
@@ -73,6 +93,19 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
         if (mounted) setState(() => confirming = false);
       }
       if (!mounted || !confirmed) return;
+      try {
+        widget.api.assertAccountDeleteSessionCurrent(session);
+      } on Object catch (exc) {
+        if (!mounted) return;
+        setState(() {
+          messageIsError = true;
+          message = sensitiveOperationSafeError(
+            exc,
+            fallback: '账号注销暂时没有完成，请重新打开后再试',
+          );
+        });
+        return;
+      }
     }
     requestId ??= _newAccountDeleteRequestId();
 
@@ -91,6 +124,7 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
           final prepared = await widget.api.deleteAccount(
             requestId: requestId!,
             localCleanupReady: false,
+            session: session,
           );
           final canonical = prepared['request_id']?.toString().trim();
           if (canonical != null && canonical.isNotEmpty) {
@@ -99,6 +133,7 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
           if (prepared['completed'] == true) {
             // 只会发生在旧 token 重放“已经完成的注销”时；先清本机再退出。
             await widget.onIntentConfirmed();
+            widget.api.assertAccountDeleteSessionCurrent(session);
             intentPrepared = true;
             await widget.onDeleted();
             return;
@@ -141,8 +176,20 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
       if (!intentPrepared) {
         try {
           // durable gate 已存在后才清本机；清理失败时账号继续保持 423 锁定，可重试恢复。
+          widget.api.assertAccountDeleteSessionCurrent(session);
           await widget.onIntentConfirmed();
+          // P1-1: local purge can be long. Revalidate the *same* captured session
+          // after it completes and before COMMIT is even constructed.
+          widget.api.assertAccountDeleteSessionCurrent(session);
           intentPrepared = true;
+        } on ProtocolException catch (exc) {
+          if (mounted) {
+            setState(() {
+              messageIsError = true;
+              message = sensitiveOperationSafeError(exc);
+            });
+          }
+          return;
         } catch (_) {
           if (mounted) {
             setState(() {
@@ -155,9 +202,11 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
       }
 
       try {
+        widget.api.assertAccountDeleteSessionCurrent(session);
         final response = await widget.api.deleteAccount(
           requestId: requestId!,
           localCleanupReady: true,
+          session: session,
         );
         final canonical = response['request_id']?.toString().trim();
         if (canonical != null && canonical.isNotEmpty) {
