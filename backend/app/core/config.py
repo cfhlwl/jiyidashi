@@ -114,7 +114,7 @@ class Settings(BaseSettings):
 
     # ADMIN-001 review hardening: privileged login has a separate, stricter
     # namespace/policy so ordinary-user traffic cannot consume or reset Admin buckets.
-    admin_login_ip_limit: int = Field(default=12, ge=1, le=100)
+    admin_login_ip_limit: int = Field(default=30, ge=1, le=100)
     admin_login_account_ip_limit: int = Field(default=5, ge=1, le=50)
     admin_login_window_seconds: int = Field(default=900, ge=60, le=86400)
     admin_login_backoff_after_failures: int = Field(default=2, ge=1, le=20)
