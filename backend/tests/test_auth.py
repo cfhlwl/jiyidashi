@@ -4,6 +4,14 @@ from app.api import auth as auth_api
 from app.core.config import Settings
 
 
+_PROD_AUTH_EMAIL = {
+    "auth_email_delivery_mode": "smtp",
+    "auth_public_base_url": "https://app.example.test/auth",
+    "auth_smtp_host": "smtp.example.invalid",
+    "auth_smtp_from": "accounts@example.test",
+}
+
+
 def test_dev_auth_is_fail_closed_by_default():
     settings = Settings(
         _env_file=None,
@@ -27,6 +35,7 @@ def test_prod_alias_is_treated_as_production():
         enable_dev_auth=False,
         auth_rate_limit_enabled=True,
         auto_create_schema=False,
+        **_PROD_AUTH_EMAIL,
     )
     assert settings.is_production is True
 
@@ -42,6 +51,7 @@ def test_production_configuration_rejects_enabled_dev_auth():
             enable_dev_auth=True,
             auth_rate_limit_enabled=True,
             auto_create_schema=False,
+            **_PROD_AUTH_EMAIL,
         )
 
 
@@ -56,6 +66,7 @@ def test_production_configuration_rejects_disabled_auth_rate_limit():
             enable_dev_auth=False,
             auth_rate_limit_enabled=False,
             auto_create_schema=False,
+            **_PROD_AUTH_EMAIL,
         )
 
 
