@@ -86,10 +86,12 @@ jobs:
       # UI/UX-001: review-only H5 renderer. These packages are intentionally not
       # production dependencies and package-lock is not mutated.
       - name: Install Mini visual-review renderer
-        run: >-
-          npm install --no-save --package-lock=false
-          @tarojs/plugin-platform-h5@4.1.0 @tarojs/router@4.1.0
-          playwright@1.55.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          taro_version="$(node -p "require('@tarojs/cli/package.json').version")"
+          echo "review renderer Taro version: $taro_version"
+          npm install --no-save --package-lock=false             "@tarojs/plugin-platform-h5@$taro_version"             "@tarojs/router@$taro_version"             playwright@1.55.0
 
       - name: Build Mini visual-review H5
         env:
