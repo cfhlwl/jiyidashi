@@ -169,4 +169,50 @@ void main() {
     expect(api.authenticatedUserId, isNull);
     expect(api.accessToken, isNull);
   });
+
+  test('background authority seam stays false until server session exists', () async {
+    final store = MemoryAuthSessionStore()..installationId = 'install-authority';
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) {
+          return http.Response(
+            jsonEncode(sessionPayload()),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        expect(request.url.path, '/v1/auth/refresh');
+        return http.Response(
+          jsonEncode(
+            sessionPayload(
+              access: 'access-v2',
+              refresh: 'refresh-v2-abcdefghijklmnopqrstuvwxyz',
+            ),
+          ),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    expect(api.hasFreshAuthenticatedOwnerAuthority, isFalse);
+    expect(api.authenticatedSessionId, isNull);
+
+    await api.login(email: 'owner@example.test', password: 'password-123456');
+    expect(api.hasFreshAuthenticatedOwnerAuthority, isTrue);
+    expect(
+      api.authenticatedSessionId,
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+
+    await api.revalidateAuthenticatedOwnerAuthority();
+    expect(calls, 2);
+    expect(api.accessToken, 'access-v2');
+    expect(api.hasFreshAuthenticatedOwnerAuthority, isTrue);
+  });
+
 }
