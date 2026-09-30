@@ -55,7 +55,7 @@ class SmtpAuthEmailDelivery:
         self._send(
             to=email,
             subject="验证你的迹忆邮箱",
-            body=f"请在有效期内完成邮箱验证：\n{link}\n",
+            body=f"请在有效期内完成邮箱验证：\n{link}\n\n验证凭证：\n{token}\n",
         )
 
     def send_password_reset(self, *, email: str, token: str) -> None:
@@ -64,7 +64,7 @@ class SmtpAuthEmailDelivery:
         self._send(
             to=email,
             subject="重置你的迹忆密码",
-            body=f"请在有效期内重置密码：\n{link}\n",
+            body=f"请在有效期内重置密码：\n{link}\n\n重置凭证：\n{token}\n",
         )
 
 
