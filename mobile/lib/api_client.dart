@@ -506,12 +506,16 @@ class JiYiApiClient {
         sessionId: sessionId,
       ),
     );
+    final sameOwnerSession =
+        authenticatedUserId == userId && _sessionId == sessionId;
     accessToken = token;
     _refreshToken = refresh;
     _sessionId = sessionId;
     _accessExpiresAt = accessExpiresAt;
     authenticatedUserId = userId;
-    _sessionVersion += 1;
+    if (!sameOwnerSession) {
+      _sessionVersion += 1;
+    }
   }
 
   Future<Map<String, dynamic>> _refreshWith(
@@ -1122,11 +1126,24 @@ class JiYiApiClient {
 
   // [人工注释][S1-019] 统一传输层显式支持 DELETE；204 空响应也必须沿同一服务端成功链处理，
   // 不能让删除退化成客户端本地隐藏。
-  Future<http.Response> _request(
+  String? _responseErrorDetail(http.Response response) {
+    if (response.body.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded['detail']?.toString();
+      }
+    } on FormatException {
+      return null;
+    }
+    return null;
+  }
+
+  Future<http.Response> _sendRequestOnce(
     String method,
     String path, {
     Map<String, dynamic>? body,
-    bool authenticated = true,
+    required bool authenticated,
     Map<String, String>? extraHeaders,
     _AuthenticatedSessionSnapshot? authSnapshot,
   }) async {
@@ -1146,7 +1163,6 @@ class JiYiApiClient {
       ...?extraHeaders,
     };
     final encoded = body == null ? null : jsonEncode(body);
-    // [人工注释][S1-016] transport 分类只在底层 HTTP 边界捕获 ClientException/TimeoutException；其他异常原样向上，绝不触发离线入队。
     try {
       return switch (method) {
         'GET' => await _http.get(_uri(path), headers: headers),
@@ -1161,6 +1177,50 @@ class JiYiApiClient {
     } on TimeoutException catch (exc) {
       throw TransportException('网络请求超时', exc);
     }
+  }
+
+  // [AUTH-001] Ordinary authenticated requests get exactly one transparent access-token
+  // refresh. Exact-session snapshot operations intentionally do not auto-rotate.
+  Future<http.Response> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    bool authenticated = true,
+    Map<String, String>? extraHeaders,
+    _AuthenticatedSessionSnapshot? authSnapshot,
+  }) async {
+    var response = await _sendRequestOnce(
+      method,
+      path,
+      body: body,
+      authenticated: authenticated,
+      extraHeaders: extraHeaders,
+      authSnapshot: authSnapshot,
+    );
+    if (!authenticated || authSnapshot != null || response.statusCode != 401) {
+      return response;
+    }
+
+    final detail = _responseErrorDetail(response);
+    if (detail == 'AUTH_SESSION_INVALID' || detail == 'AUTH_ACCOUNT_UNAVAILABLE') {
+      await _clearLocalSession();
+      return response;
+    }
+    if (detail != 'INVALID_ACCESS_TOKEN' ||
+        _refreshToken == null ||
+        _sessionId == null) {
+      return response;
+    }
+
+    await refreshCurrentSession();
+    response = await _sendRequestOnce(
+      method,
+      path,
+      body: body,
+      authenticated: true,
+      extraHeaders: extraHeaders,
+    );
+    return response;
   }
 
   // [人工注释][S1-019][S1-016] 204 空响应仍合法；非 2xx 即使 body 为 HTML/坏 JSON 也属于服务端失败，只有 2xx 坏 JSON 才是协议异常。
