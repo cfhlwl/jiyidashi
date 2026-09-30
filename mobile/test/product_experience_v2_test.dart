@@ -37,12 +37,15 @@ List<File> _productionUiFiles() {
 List<String> _visibleUiLiterals(String source) {
   final literals = <String>[];
   final patterns = [
+    // Only direct literals are production copy. Do not walk forward through an
+    // arbitrary expression, otherwise internal switch values can be mistaken
+    // for a title/message that happens to precede them in the source.
     RegExp(
-      r'''Text(?:\.[A-Za-z]+)?\([^;]{0,360}?(?:'([^']*)'|"([^"]*)")''',
+      r'''Text(?:\.[A-Za-z]+)?\(\s*(?:const\s+)?(?:'([^']*)'|"([^"]*)")''',
       multiLine: true,
     ),
     RegExp(
-      r'''(?:title|subtitle|message|label|eyebrow|hintText|helperText|errorText|tooltip|semanticLabel|text)\s*:\s*[^;,\n]{0,240}?(?:'([^']*)'|"([^"]*)")''',
+      r'''(?:title|subtitle|message|label|eyebrow|hintText|helperText|errorText|tooltip|semanticLabel|text)\s*:\s*(?:const\s+Text\(\s*)?(?:'([^']*)'|"([^"]*)")''',
       multiLine: true,
     ),
   ];
@@ -78,11 +81,11 @@ List<_UiCopyLeak> _productionLanguageLeaks() {
     r'\b(?:UNKNOWN|CONFIRMED|INFERRED|UNAVAILABLE|READY|FAILED|ERROR|LOADING|ACTIVE|PAUSED|PENDING|DENIED|GRANTED|ALLOWED|BLOCKED|REVOKED|EXPIRED|STALE|NOTE|VOICE|PHOTO|PLACE|OBJECT_LOCATION|REMINDER|EVENT|VISIT|MEMORY|PERSON|LIFE_EVENT|LIFE_STAGE)\b',
   );
   final directRawUiExpression = RegExp(
-    r'''(?:Text(?:\.[A-Za-z]+)?\(|(?:title|subtitle|message|label|eyebrow|hintText|helperText|errorText|tooltip|semanticLabel|text)\s*:)\s*(?:[A-Za-z_]\w*\.)*(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)\b''',
+    r'''(?:Text(?:\.[A-Za-z]+)?\(|(?:title|subtitle|message|label|eyebrow|hintText|helperText|errorText|tooltip|semanticLabel|text)\s*:)\s*(?:(?:[A-Za-z_]\w*\.)+(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)|(?:certainty|memoryType|visitSource|stageKind|relationKind))\b''',
     multiLine: true,
   );
   final interpolatedRawUiValue = RegExp(
-    r'''(?:\$|\$\{)[^}\n]*(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)\b''',
+    r'''(?:\$|\$\{)\s*(?:(?:[A-Za-z_]\w*\.)+(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)|(?:certainty|memoryType|visitSource|stageKind|relationKind))\s*\}?''',
     caseSensitive: false,
   );
 
