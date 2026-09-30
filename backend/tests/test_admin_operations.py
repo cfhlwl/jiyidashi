@@ -17,8 +17,6 @@ from app.services.admin_security import hash_admin_password
 from app.services.entitlement_service import create_legacy_full_entitlement
 
 
-
-
 def _reset_admin_login_buckets() -> None:
     with SessionLocal() as db:
         db.execute(
