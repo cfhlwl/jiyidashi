@@ -1,18 +1,52 @@
 from typing import Annotated
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
+from app.account_deletion_models import AccountDeletionOperation
 from app.core.config import get_settings
 from app.core.db import get_db
-from app.core.security import create_access_token
+from app.deps import AuthenticatedClaims
 from app.models import User
-from app.schemas import DevTokenRequest, LoginRequest, RegisterRequest, TokenResponse
+from app.schemas import (
+    AuthAcceptedResponse,
+    AuthSessionRead,
+    ChangePasswordRequest,
+    DevTokenRequest,
+    EmailResendRequest,
+    EmailVerificationRequest,
+    EmailVerificationResponse,
+    ForgotPasswordRequest,
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    RegistrationResponse,
+    ResetPasswordRequest,
+    TokenResponse,
+)
+from app.services.auth_recovery_service import (
+    AuthRecoveryError,
+    change_password,
+    deliver_registration_verification,
+    request_password_reset,
+    resend_email_verification,
+    reset_password,
+    verify_email_token,
+)
 from app.services.auth_service import (
     authenticate_email_password,
     lock_login_for_token_issue,
     register_email_password,
+)
+from app.services.auth_session_service import (
+    PublicAuthError,
+    PublicSessionTokens,
+    create_public_session,
+    list_active_sessions,
+    refresh_public_session,
+    revoke_all_sessions,
+    revoke_session,
 )
 from app.services.entitlement_service import create_legacy_full_entitlement
 
@@ -22,43 +56,258 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def _client_ip(request: Request) -> str:
-    # [人工注释][S1-FIX-003] 只使用 ASGI 已解析的 client host；
-    # 不信任客户端可自行伪造的普通转发请求头。
+    # Only trust the peer address parsed by ASGI at this boundary.
     return request.client.host if request.client is not None else "unknown"
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, request: Request, db: DbSession) -> TokenResponse:
-    # [人工注释][S1-001] 正式注册由服务端生成 user_id，客户端不能选择或覆盖身份归属。
-    user = register_email_password(db, payload, client_ip=_client_ip(request))
-    return TokenResponse(
-        access_token=create_access_token(user.id),
-        user_id=user.id,
-    )
+def _raise_auth_error(exc: PublicAuthError | AuthRecoveryError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
 
-@router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenResponse:
-    # [人工注释][S1-001] 登录只在凭证校验成功后签发正式访问 Token。
-    # [人工注释][S1-022-FIX-001] 注销进行中也允许重新认证以恢复 /account/delete；
-    # 返回 flag 只帮助客户端直接进入恢复 UI，普通数据 API 仍由账号删除 gate 拒绝。
-    user = authenticate_email_password(db, payload, client_ip=_client_ip(request))
-    # [人工注释][S1-022-FIX-005] final token issuance gate：这次 KEY SHARE 不 commit，
-    # 由 request-scoped Session 在响应结束时释放，保证账号不会在 token 构造前被并发注销。
-    locked_user, account_deletion_in_progress = lock_login_for_token_issue(
-        db,
-        user.id,
-    )
+def _token_response(
+    pair: PublicSessionTokens,
+    *,
+    account_deletion_in_progress: bool = False,
+) -> TokenResponse:
     return TokenResponse(
-        access_token=create_access_token(locked_user.id),
-        user_id=locked_user.id,
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        session_id=pair.session_id,
+        user_id=pair.user_id,
+        access_expires_at=pair.expires_at,
+        refresh_expires_at=pair.refresh_expires_at,
         account_deletion_in_progress=account_deletion_in_progress,
     )
 
 
+@router.post(
+    "/register",
+    response_model=RegistrationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def register(
+    payload: RegisterRequest,
+    request: Request,
+    db: DbSession,
+) -> RegistrationResponse:
+    user = register_email_password(db, payload, client_ip=_client_ip(request))
+    deliver_registration_verification(db, user_id=user.id)
+    return RegistrationResponse(user_id=user.id)
+
+
+@router.post("/verify-email", response_model=EmailVerificationResponse)
+def verify_email(
+    payload: EmailVerificationRequest,
+    db: DbSession,
+) -> EmailVerificationResponse:
+    try:
+        result = verify_email_token(db, token=payload.token)
+        if result.already_verified:
+            return EmailVerificationResponse(
+                verified=True,
+                already_verified=True,
+                session=None,
+            )
+        pair = create_public_session(
+            db,
+            user_id=result.user_id,
+            device_id=payload.device_id,
+            client_platform=payload.client_platform,
+            device_name=payload.device_name,
+        )
+        return EmailVerificationResponse(
+            verified=True,
+            already_verified=False,
+            session=_token_response(pair),
+        )
+    except (PublicAuthError, AuthRecoveryError) as exc:
+        _raise_auth_error(exc)
+
+
+@router.post(
+    "/resend-verification",
+    response_model=AuthAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def resend_verification(
+    payload: EmailResendRequest,
+    request: Request,
+    db: DbSession,
+) -> AuthAcceptedResponse:
+    resend_email_verification(
+        db,
+        email=str(payload.email),
+        client_ip=_client_ip(request),
+    )
+    return AuthAcceptedResponse()
+
+
+@router.post("/login", response_model=TokenResponse)
+def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenResponse:
+    user = authenticate_email_password(db, payload, client_ip=_client_ip(request))
+    locked_user, account_deletion_in_progress = lock_login_for_token_issue(
+        db,
+        user.id,
+    )
+    try:
+        pair = create_public_session(
+            db,
+            user_id=locked_user.id,
+            device_id=payload.device_id,
+            client_platform=payload.client_platform,
+            device_name=payload.device_name,
+        )
+    except PublicAuthError as exc:
+        _raise_auth_error(exc)
+    return _token_response(
+        pair,
+        account_deletion_in_progress=account_deletion_in_progress,
+    )
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh(payload: RefreshRequest, db: DbSession) -> TokenResponse:
+    try:
+        pair = refresh_public_session(db, refresh_token=payload.refresh_token)
+    except PublicAuthError as exc:
+        _raise_auth_error(exc)
+    return _token_response(pair)
+
+
+@router.post(
+    "/logout",
+    response_model=AuthAcceptedResponse,
+)
+def logout(
+    claims: AuthenticatedClaims,
+    db: DbSession,
+) -> AuthAcceptedResponse:
+    revoke_session(
+        db,
+        user_id=claims.user_id,
+        session_id=claims.session_id,
+        reason="LOGOUT",
+    )
+    return AuthAcceptedResponse()
+
+
+@router.post(
+    "/logout-all",
+    response_model=AuthAcceptedResponse,
+)
+def logout_all(
+    claims: AuthenticatedClaims,
+    db: DbSession,
+) -> AuthAcceptedResponse:
+    revoke_all_sessions(db, user_id=claims.user_id, reason="LOGOUT_ALL")
+    return AuthAcceptedResponse()
+
+
+@router.get("/sessions", response_model=list[AuthSessionRead])
+def sessions(
+    claims: AuthenticatedClaims,
+    db: DbSession,
+) -> list[AuthSessionRead]:
+    return [
+        AuthSessionRead(
+            id=row.id,
+            device_id=row.device_id,
+            client_platform=row.client_platform,
+            device_name=row.device_name,
+            created_at=row.created_at,
+            last_used_at=row.last_used_at,
+            expires_at=row.expires_at,
+            current=row.id == claims.session_id,
+        )
+        for row in list_active_sessions(db, user_id=claims.user_id)
+    ]
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    response_model=AuthAcceptedResponse,
+)
+def revoke_own_session(
+    session_id: UUID,
+    claims: AuthenticatedClaims,
+    db: DbSession,
+) -> AuthAcceptedResponse:
+    if not revoke_session(
+        db,
+        user_id=claims.user_id,
+        session_id=session_id,
+        reason="USER_REVOKE",
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AUTH_SESSION_NOT_FOUND",
+        )
+    return AuthAcceptedResponse()
+
+
+@router.post(
+    "/forgot-password",
+    response_model=AuthAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    db: DbSession,
+) -> AuthAcceptedResponse:
+    request_password_reset(
+        db,
+        email=str(payload.email),
+        client_ip=_client_ip(request),
+    )
+    # Enumeration-safe regardless of whether the account exists or delivery succeeds.
+    return AuthAcceptedResponse()
+
+
+@router.post(
+    "/reset-password",
+    response_model=AuthAcceptedResponse,
+)
+def password_reset(
+    payload: ResetPasswordRequest,
+    request: Request,
+    db: DbSession,
+) -> AuthAcceptedResponse:
+    try:
+        reset_password(
+            db,
+            token=payload.token,
+            new_password=payload.new_password,
+            client_ip=_client_ip(request),
+        )
+    except AuthRecoveryError as exc:
+        _raise_auth_error(exc)
+    return AuthAcceptedResponse()
+
+
+@router.post(
+    "/change-password",
+    response_model=AuthAcceptedResponse,
+)
+def password_change(
+    payload: ChangePasswordRequest,
+    claims: AuthenticatedClaims,
+    db: DbSession,
+) -> AuthAcceptedResponse:
+    try:
+        change_password(
+            db,
+            user_id=claims.user_id,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except AuthRecoveryError as exc:
+        _raise_auth_error(exc)
+    return AuthAcceptedResponse()
+
+
 @router.post("/dev-token", response_model=TokenResponse)
 def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
-    # [人工注释][FND-019] 生产环境无条件禁用开发认证；即使误配 ENABLE_DEV_AUTH=true 也必须 404。
     if settings.is_production or not settings.enable_dev_auth:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -74,7 +323,14 @@ def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
         create_legacy_full_entitlement(db, user_id=user.id)
         db.commit()
 
-    return TokenResponse(
-        access_token=create_access_token(user_id),
-        user_id=user_id,
-    )
+    try:
+        pair = create_public_session(
+            db,
+            user_id=user_id,
+            device_id="dev-token",
+            client_platform="development",
+            device_name="development token",
+        )
+    except PublicAuthError as exc:
+        _raise_auth_error(exc)
+    return _token_response(pair)
