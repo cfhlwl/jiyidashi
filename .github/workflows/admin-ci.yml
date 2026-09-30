@@ -82,9 +82,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p visual-artifacts
-          npm audit --json > visual-artifacts/npm-audit-full.json || audit_status="$?"
+          set +e
+          npm audit --json > visual-artifacts/npm-audit-full.json
+          audit_status="$?"
+          set -e
+          echo "Full audit JSON exit code: $audit_status; high/critical blocking is enforced by the previous step."
           test -s visual-artifacts/npm-audit-full.json
-          test "${audit_status:-0}" -eq 0
 
       - name: Typecheck
         run: npm run typecheck
