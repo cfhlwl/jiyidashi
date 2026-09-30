@@ -164,17 +164,35 @@ export default function Page() {
     setPermissionBusy({})
   }
 
-  const refresh = async (clearTransient = false) => {
-    // Every authoritative refresh invalidates earlier reads and mutation UI
-    // publication. Server mutation authority remains independent.
+  const refresh = async (
+    clearTransient = false,
+    expectedSession?: { owner: string | null; epoch: number },
+  ): Promise<boolean> => {
+    // Every authoritative refresh owns a fresh UI-publication generation. A mutation
+    // can pass its original auth session so account switching during follow-up reads
+    // cannot publish old Family/Emergency data into the new session.
     sensitiveReadEpoch.current.invalidate()
-    sensitiveMutationEpoch.current.invalidate()
+    const refreshAttempt = sensitiveMutationEpoch.current.invalidate()
+    const refreshSession = expectedSession || captureMutationSession()
+    const refreshCurrent = () => (
+      sensitiveMutationEpoch.current.isCurrent(refreshAttempt)
+      && (
+        refreshSession.owner
+          ? mutationSessionCurrent(refreshSession)
+          : (
+            refreshSession.epoch === currentAuthSessionEpoch()
+            && currentAuthenticatedUserId() === null
+            && !isAuthenticated()
+          )
+      )
+    )
 
+    if (!refreshCurrent()) return false
     if (!isAuthenticated()) {
       clearFamilyTransientState()
       setStatus('')
       setPageState({ phase: 'signed-out' })
-      return
+      return true
     }
 
     setPageState({ phase: 'loading' })
@@ -190,13 +208,23 @@ export default function Page() {
       // [人工注释][S4-010][S4-006][S4-007] tab 激活只读取 Family 自身与 outbound grants。
       // 家人位置/足迹/个人记忆/照片都不在这里探测，必须由用户点击对应按钮后再读取。
       const family = await getFamily()
+      if (!refreshCurrent()) return false
+
       const profile = await getProfile()
+      if (!refreshCurrent()) return false
       assertCurrentFamilyMember(family, profile.id)
+      if (profile.id !== refreshSession.owner) return false
+
       const permissions = await getFamilyPermissions()
+      if (!refreshCurrent()) return false
+
       const [shares, reminders] = await Promise.all([
         getFamilyEmergencyShares(profile.id),
         getFamilyArrivalReminders(profile.id),
       ])
+      if (!refreshCurrent()) return false
+
+      // No old-session payload is published before this final freshness check.
       setEmergencyShares(shares)
       setArrivalReminders(reminders)
       setPageState({
@@ -205,16 +233,19 @@ export default function Page() {
         currentUserId: profile.id,
         permissions,
       })
+      return true
     } catch (error) {
+      if (!refreshCurrent()) return false
       if (apiErrorCode(error) === 'FAMILY_NOT_FOUND') {
         clearFamilyTransientState()
         setPageState({ phase: 'no-family' })
-        return
+        return true
       }
       setPageState({
         phase: 'error',
         message: mappedError(error, 'load', '家庭信息加载失败，请重试'),
       })
+      return true
     }
   }
 
@@ -352,10 +383,9 @@ export default function Page() {
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
         return
       }
-      await refresh(true)
-      if (mutationSessionCurrent(session)) {
-        setStatus(mode === 'leave' ? '已退出家庭' : '成员已移除')
-      }
+      const refreshed = await refresh(true, session)
+      if (!refreshed || !mutationSessionCurrent(session)) return
+      setStatus(mode === 'leave' ? '已退出家庭' : '成员已移除')
     } catch (error) {
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
         return
@@ -800,10 +830,11 @@ export default function Page() {
       }
       sensitiveReadEpoch.current.invalidate()
       setEmergencyReads({})
-      setEmergencyShares(await getFamilyEmergencyShares(ownerUserId))
+      const nextShares = await getFamilyEmergencyShares(ownerUserId)
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
         return
       }
+      setEmergencyShares(nextShares)
       setStatus('紧急位置共享已开启')
     } catch (error) {
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
@@ -851,10 +882,11 @@ export default function Page() {
       }
       sensitiveReadEpoch.current.invalidate()
       setEmergencyReads({})
-      setEmergencyShares(await getFamilyEmergencyShares(ownerUserId))
+      const nextShares = await getFamilyEmergencyShares(ownerUserId)
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
         return
       }
+      setEmergencyShares(nextShares)
       setStatus('紧急位置共享已停止')
     } catch (error) {
       if (!sensitiveMutationEpoch.current.isCurrent(attempt) || !mutationSessionCurrent(session)) {
