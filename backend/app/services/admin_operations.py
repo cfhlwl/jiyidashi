@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,18 @@ from app.services.runtime_policy_service import (
 )
 
 _COMMERCIAL_PLAN_VALUES = {item.value for item in COMMERCIAL_PLAN_CODES}
+_QUOTA_CATALOG_LOCK_KEY = 0x4A4959491001
+
+
+def _lock_quota_catalog_identity(db: Session) -> None:
+    # Empty-set initialization cannot be protected by SELECT ... FOR UPDATE.
+    # PostgreSQL serializes the logical catalog identity before either first-write
+    # or revisioned update paths inspect the rows.
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": _QUOTA_CATALOG_LOCK_KEY},
+        )
 
 
 def _require_super_admin(actor: AdminAccount) -> None:
@@ -306,6 +318,7 @@ def write_quota_catalog(
     _require_super_admin(actor)
     require_confirmation(payload.confirmation, "保存额度配置")
 
+    _lock_quota_catalog_identity(db)
     rows = read_runtime_quota_rows(db, for_update=True)
     if len(rows) not in {0, len(COMMERCIAL_PLAN_CODES)}:
         raise AdminOperationError("ADMIN_QUOTA_POLICY_UNAVAILABLE", 503)
