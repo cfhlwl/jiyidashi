@@ -137,7 +137,11 @@ jobs:
           grep -Fxq "artifact_id=$REVIEWED_ARTIFACT_ID" "$sentinel"
           grep -Fxq "font_sha256=$REVIEWED_FONT_SHA" "$sentinel"
 
-          git fetch --no-tags --depth=96 origin "$HEAD_BRANCH"
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --no-tags --unshallow origin "$HEAD_BRANCH"
+          else
+            git fetch --no-tags origin "$HEAD_BRANCH"
+          fi
           git cat-file -e "$REVIEWED_SOURCE_SHA^{commit}"
           if ! git diff --quiet "$REVIEWED_SOURCE_SHA"..HEAD --               mobile/lib mobile/test mobile/pubspec.yaml; then
             echo "Flutter product/test inputs changed after visual review; refusing acceptance."
