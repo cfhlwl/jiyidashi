@@ -1,5 +1,5 @@
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- PR #179 / #167 SEC-014 Sensitive Operation Confirmation Standard V1 已完成两轮正式 security review 并合并 main=2080174f；Account Delete operation-level session binding、Family/Emergency stale-state suppression、location/privacy fresh authority 与跨端 sensitive-operation confirmation 已收口。当前主线为 ADMIN-001 JiYi Production Admin Console V1；新增 OPS-002 Async Job & Worker Foundation V1 作为正式规模化前置架构任务，顺序调整为 ADMIN-001 → OPS-002 → OPS-001/#136 真实 public-server acceptance → commercial rollout → V3。 -->
+<!-- PR #179 / #167 SEC-014 Sensitive Operation Confirmation Standard V1 已完成两轮正式 security review 并合并 main=2080174f。2026-09-30 production-launch audit 进一步确认：公开注册仍创建 LEGACY_FULL、用户认证仍为 7-day bearer-only、删除 durable state machine 缺少服务端自动 progression、备份默认同机、普通认证 API/AI provider 缺少统一瞬时滥用/并发门禁，并存在同步大导出、stale PENDING media、Security Alert 无人类通知、运行资源边界与真实容量 Gate 等上线前缺口。当前主线保持 ADMIN-001；其后先完成 Production Launch Hardening，再做 #136 最终真实生产验收。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
 <!-- I：Memory Edit / PR #27 已完成正式复审并合并 main=24901d76；S1-018 转 ✅。J：Data Delete / PR #28 随后基于该新 main 完成 MemoryEdit 删除适配、0008 migration 顺延、单提交 clean replay 与 exact-head CI，并合并 main=3abc1366；S1-021 / SEC-007 转 ✅。 -->
@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**ADMIN-001 / JiYi Production Admin Console V1**；#167 / PR #179 已完成正式 security review 并合并，SEC-014 收口；当前主线建设独立安全的生产管理后台，包括 Admin 身份/角色、Dashboard、用户/家庭/会员与额度、删除/注销、安全告警、AI/存储/系统状态、审计日志、受控设置中心，以及企业级 Admin Design System / Product Language / visual regression；完成后按 **OPS-002 Async Job & Worker Foundation V1 → #136 real-env acceptance → commercial rollout** 推进；V3-001+ 未开始。
+> 当前阶段：**ADMIN-001 / JiYi Production Admin Console V1**；SEC-014 已收口。ADMIN-001 完成后进入 **Production Launch Hardening**：AUTH-001/002、BIZ-011、OPS-002、SEC-016、OPS-003，以及媒体/API/告警/运行边界收口；随后执行 OPS-005 Production Capacity Acceptance，最后进入 **#136 real-env Production Acceptance → public/commercial rollout**；V3-001+ 未开始。
 
 ## 状态规则
 
@@ -309,9 +309,9 @@
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | ADMIN-001 | JiYi Production Admin Console V1 | 🔵 | 当前主线：独立 Admin 身份/角色、Dashboard、用户/家庭/会员与额度、删除/注销、安全告警、AI/ASR/检索/存储/系统健康、审计日志、受控设置中心；要求企业级管理后台视觉、无开发语言泄漏、私密内容默认不可见、危险操作二次确认与 Admin visual regression；完成后进入 OPS-002 |
-| OPS-002 | Async Job & Worker Foundation V1 | ⬜ | 已记录为正式规模化前置任务：将 Annual/Life Memoir、Monthly/Annual Summary、Embedding refresh 等长耗时/可延迟 AI 工作从 HTTP 生命周期解耦；PostgreSQL 保持 durable Job authority，Queue 仅负责投递/唤醒，Worker 必须在 claim/provider 前后/commit 前重新验证 owner、revision、deletion/privacy authority；首版建议 Redis + worker-ai / worker-media，交互式 Memory Query 保持同步。触发依据不是单一 DAU，而是 peak provider concurrency、P95/P99 latency、timeout/429/retry volume 与正式规模化准备。 |
-| OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：Docker/Compose/Caddy、production env fail-closed、migration、immutable image、backup/restore/rollback 与 CI 已合并；真实 public-server DNS/TLS/object-storage/client-domain 验收顺延到 OPS-002 收口后，以最终 API + Queue + Worker 拓扑进行正式生产验收，因此不标记 ✅ |
-### OPS-002 架构决策（2026-09-30）
+| OPS-002 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | **P0 public-launch blocker**。首版优先 PostgreSQL-backed durable jobs + claim/lease worker，不强制 Redis；先接管 Data Delete progression、Account Delete 在 `local_cleanup_ready=true` 后的服务端 progression、stale PENDING media cleanup、Security Alert retry、analytics/location retention 等不能依赖客户端/人工触发的任务；第二阶段再迁移 Annual/Life Memoir、Monthly/Annual Summary、Embedding refresh 等长耗时 AI。Redis 仅作为后续 wake-up/scale 层，PostgreSQL 始终是 Job authority。 |
+| OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：Docker/Compose/Caddy、production env fail-closed、migration、immutable image、backup/restore/rollback 与 CI 已合并；真实 public-server acceptance 继续作为**最终上线 Gate**，顺延到 Production Launch Hardening + OPS-005 capacity acceptance 全部完成后，以最终生产拓扑验收 DNS/TLS/private storage/client domains/backup/restore/rollback/容量。 |
+### OPS-002 架构决策（2026-09-30，production-launch audit 修订）
 
 当前 production Compose 仍为：
 
@@ -322,37 +322,99 @@ api
 reverse-proxy / Caddy
 ```
 
-当前 OCR、Vision、ASR、Embedding、Summary、Memoir 等多类 Provider I/O 仍有请求内执行路径。现阶段可继续服务小规模上线，但正式规模化前需要把**长耗时、可延迟、可重试**的任务迁移到 durable Job + Queue + Worker；交互式查询不强制异步化。
+生产审查确认：Data Delete / Account Delete 的服务端 durable 状态机、Security Alert retry、analytics/location retention 等已有可靠业务逻辑或 CLI，但没有 scheduler/worker 自动推进；同时 OCR/Vision/ASR/Embedding/Summary/Memoir 中仍存在请求内 Provider I/O。
 
-冻结原则：
-
-```text
-PostgreSQL = Job authority / durable truth
-Queue      = delivery / wake-up only
-Worker     = executor
-```
-
-Worker 不得继承“创建 Job 时已经授权”的旧状态。每个任务必须在 claim、provider 前、provider 后、commit 前按现有安全模型重新验证必要的 owner/session/resource revision/deletion/privacy authority；Data Delete / Account Delete 后，旧 queued/running job 不得重新生成或重新发布用户数据。
-
-首版建议拓扑：
+首版 OPS-002 不直接强制 Redis。对首台 2C2G 环境，优先：
 
 ```text
-Caddy / LB
-   ├─ API #1..N
-   │
-PostgreSQL
-   │
-Durable Jobs
-   │
-Redis Queue
-   ├─ worker-ai
-   └─ worker-media
+PostgreSQL = durable job authority / lease / retry truth
+Worker     = executor + scheduler
+Redis      = optional future wake-up / scale layer
 ```
 
-优先异步化：Annual/Life Memoir、Monthly/Annual Summary、Embedding refresh；随后 Vision/OCR/ASR/Daily Summary/Long-term Reasoning。普通交互式 Memory Query 保持同步，除非后续负载数据证明需要改变。
+第一阶段 worker 负责：
 
-OPS-002 不以“5000/10000 DAU”作为单一启动条件；重点观察 provider peak concurrency、P95/P99 latency、timeout、429/5xx、retry volume 与 API long-request concurrency。正式商业 rollout 前应完成该 Foundation。
+```text
+Data Delete progression
+Account Delete progression（仅在客户端已完成本机 owner purge，并持久化 local_cleanup_ready=true 后）
+stale PENDING media cleanup
+Security Alert retry
+Analytics retention
+Location retention
+其他明确的 bounded maintenance
+```
 
+Account Delete 必须保留现有：
+
+```text
+PREPARE
+→ client local owner purge
+→ local_cleanup_ready=true
+→ server durable progression
+```
+
+Worker 不得绕过本机清理确认边界。
+
+第二阶段再将天然异步的长任务迁移到 worker：
+
+```text
+Annual / Life Memoir
+Monthly / Annual Summary
+Embedding refresh
+随后 Vision / OCR / ASR / Daily Summary / Long-term Reasoning
+```
+
+普通交互式 Memory Query 保持同步，除非真实负载数据证明需要改变。
+
+所有 worker job 必须在 claim、外部 I/O 前、外部 I/O 后、commit 前重新验证必要的 owner/resource revision/deletion/privacy authority。Data Delete / Account Delete 后，旧 queued/running job 不得重新生成或重新发布已删除用户数据。
+
+OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判断看 provider peak concurrency、P95/P99 latency、timeout、429/5xx、retry volume 与 API long-request concurrency。
+
+---
+
+## 6.2 Production Launch Hardening（2026-09-30 production audit）
+
+> 目标：服务器可以继续作为 staging / production-acceptance 环境部署，但在以下 P0 完成前不开放无约束公网注册/正式放量。P1 原则上在 #136 最终验收前收口；P2 不阻断第一版公网，但进入后续性能清单。
+
+| ID | 优先级 | 功能 / 风险 | 状态 | 冻结结论 |
+| --- | --- | --- | --- | --- |
+| AUTH-001 | P0 | Public Auth & Session Hardening | ⬜ | 当前用户认证仍是 access-token-only；production template 为 10080 分钟。新增 server-side device session、短时 access token、refresh rotation、logout/revoke/logout-all、JWT `iss/aud/jti/session_id`、邮箱验证、忘记密码/一次性 reset、改密后 revoke；现有 Account Delete recovery 语义必须保持。 |
+| AUTH-002 | P0* | WeChat Mini Program Identity | ⬜ | 若微信小程序作为正式主入口，则在公开发布前加入 `WECHAT_MINIPROGRAM` AuthIdentity：`wx.login → code2session → stable provider subject → User`；微信 secret 仅服务端。若小程序不是首发主入口，可降为 P1。 |
+| BIZ-011 | P0 | Production Registration Entitlement Default | ⬜ | 当前 `register_email_password()` 仍创建 `LEGACY_FULL`，而该计划拥有全部 capability 且 quota unlimited。正式注册必须切为 FREE（或另行正式定义的 trial），`LEGACY_FULL` 仅 migration/legacy compatibility；历史用户迁移语义不变。 |
+| OPS-002 | P0 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | PostgreSQL-backed durable job/lease 优先；服务端自动推进 deletion/maintenance，并逐步异步化长耗时 AI。客户端只能发起/查询状态，不再承担服务端任务推进责任。 |
+| SEC-016 | P0 | Authenticated API Abuse & Provider Concurrency Guard | ⬜ | 在现有 Auth rate limit 之外增加 authenticated user/IP/route-class 限流；高成本 OCR/Vision/Summary/RAG/Export 独立门禁；增加跨 Uvicorn worker 的 per-user/global provider concurrency；登录增加全局 Argon2 并发边界并与 edge/WAF + per-IP 组合，禁止通过降低 Argon2 安全参数解决。 |
+| OPS-003 | P0 | Off-host Backup & Scheduled Operations | ⬜ | 当前 pg_dump 默认写本机目录。增加私有异地 COS/OSS backup bucket、保留策略、校验、自动上传与定期 restore drill；本机短期备份仅作为一层缓存，不能是唯一灾备。 |
+| MEDIA-001 | P1 | AI Media Input & Stale Upload Hardening | ⬜ | 原始图片存储上限与 AI 分析输入上限分离；增加 `AI_IMAGE_MAX_BYTES`/analysis derivative（缩放压缩，原图保留），避免 20MB→base64 大请求与 30s provider timeout/3M 出口冲突；stale PENDING upload 按 presign expiry + quiet settle + object absence 安全回收并释放 quota reservation。 |
+| API-001 | P1 | Export & Legacy Pagination Hardening | ⬜ | 当前 Data Export 虽有 section 5000 行硬上限，但仍同步将多 section 装入内存并返回 JSON；改为 async ExportJob→private object storage→短时签名下载，或至少真正 streaming。统一审计旧 API，无界列表（已确认 `GET /objects`）补 `limit + opaque cursor + stable order`。 |
+| SEC-017 | P1 | Human Security Alert Delivery | ⬜ | 当前 durable Security Alert 的 delivery adapter 实际为结构化日志 stream；ADMIN-001 Security Center 可承接查看，但 HIGH/CRITICAL 至少接一个真实人类通知渠道（飞书/企业微信/邮件等），并保留 durable retry/backoff。 |
+| REM-001 | P1/P0* | Reminder Delivery / Product Promise Gate | ⬜ | 当前 Reminder 有 PENDING/DONE/CANCELLED/remind_at，但未形成到点扫描→Push/微信订阅/APNs/FCM 的正式 delivery。若正式 UI 承诺“到点提醒”，则升级为 P0 并在上线前实现；否则首发必须明确降级/隐藏通知承诺。 |
+| OPS-004 | P1 | Production Runtime Guardrails | ⬜ | Compose 增加日志 rotation；SQLAlchemy 显式 `DB_POOL_SIZE/DB_MAX_OVERFLOW/POOL_TIMEOUT/RECYCLE`；Caddy 增 HSTS、X-Content-Type-Options、Referrer-Policy 与合理 API body ceiling。Provider process-lifetime HTTP client pooling 记为 P2 性能优化，可后续完成。 |
+| OPS-005 | P0 Gate | Production Capacity Acceptance | ⬜ | #136 前在真实目标规格（当前计划 2C2G3M）执行可重复的容量测试；至少 50/100/200 concurrent mixed workload，记录 CPU/RAM/Swap/Postgres connections/DB latency/API P50/P95/P99/5xx/429/provider latency/OOM/network，得到实测安全容量，不用 DAU 估算替代。 |
+
+### Public launch 顺序
+
+```text
+ADMIN-001
+→ AUTH-001
+→ AUTH-002（若 Mini 为首发主入口）
+→ BIZ-011
+→ OPS-002
+→ SEC-016
+→ OPS-003
+→ MEDIA-001 / API-001 / SEC-017 / REM-001 decision / OPS-004
+→ OPS-005 Production Capacity Acceptance
+→ #136 OPS-001 real-environment Production Acceptance
+→ public/commercial rollout
+→ V3
+```
+
+### 非阻断 P2
+
+```text
+Provider HTTP client process-lifetime pooling / keep-alive / connection limits
+更细的 Worker 拆分与 Redis wake-up layer
+更高阶 autoscaling / multi-node / Kubernetes 等
+```
 
 # 7. V3：AI 人生助手与硬件扩展
 
