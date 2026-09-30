@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from app.core.db import SessionLocal
 from app.idempotency_models import ClientMutation
 from app.models import Memory, MemorySource, ObjectLocation
-from tests.auth_test_helpers import register_verified_session
+from auth_test_helpers import register_verified_session
 
 
 async def _headers(client: AsyncClient, email: str) -> dict[str, str]:
