@@ -135,6 +135,37 @@ class _GoldenApi extends JiYiApiClient {
   };
 
   @override
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async => {
+        'timezone': 'Asia/Shanghai',
+        'day': day,
+        'items': day == '2026-09-20'
+            ? [
+                {
+                  'kind': 'MEMORY',
+                  'id': v2MemoryId,
+                  'occurred_at': '2026-09-20T01:15:00Z',
+                  'ended_at': null,
+                  'place_id': v2PlaceId,
+                  'place_name': '上海办公室',
+                  'memory_type': 'NOTE',
+                  'title': '第一次产品讨论',
+                  'content': '把第一版产品方向写满了整块白板。',
+                  'source_type': 'USER_TEXT',
+                  'is_confirmed': true,
+                  'confidence': 1.0,
+                  'visit_source': null,
+                  'visit_finalized': null,
+                },
+              ]
+            : const <Map<String, dynamic>>[],
+        'next_cursor': null,
+      };
+
+  @override
   Future<Map<String, dynamic>> getPrivacyStatus() async {
     final error = privacyError;
     if (error != null) throw error;
@@ -824,8 +855,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(annual);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('AI 整理').first);
+    final story = find.text('这一年的故事');
+    await tester.ensureVisible(story);
     await tester.pumpAndSettle();
+    expect(story, findsOneWidget);
     expect(find.textContaining('新的产品阶段'), findsOneWidget);
     await expectLater(
       find.byKey(key),
