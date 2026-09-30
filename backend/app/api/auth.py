@@ -1,10 +1,9 @@
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.account_deletion_models import AccountDeletionOperation
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.deps import AuthenticatedClaims
