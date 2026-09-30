@@ -179,18 +179,20 @@ def dashboard_projection(
     )
 
     trend_start = today - timedelta(days=6)
-    active_rows = dict(
-        db.execute(
+    active_rows = {
+        row[0]: int(row[1])
+        for row in db.execute(
             select(
                 ProductActiveDay.activity_date_utc,
                 func.count(ProductActiveDay.id),
             )
             .where(ProductActiveDay.activity_date_utc >= trend_start)
             .group_by(ProductActiveDay.activity_date_utc)
-        )
-    )
-    retrieval_rows = dict(
-        db.execute(
+        ).all()
+    }
+    retrieval_rows = {
+        row[0]: int(row[1])
+        for row in db.execute(
             select(
                 func.date(RetrievalAnalyticsAttempt.occurred_at),
                 func.count(RetrievalAnalyticsAttempt.id),
@@ -204,8 +206,8 @@ def dashboard_projection(
                 RetrievalAnalyticsAttempt.outcome == RetrievalOutcome.SUCCESS,
             )
             .group_by(func.date(RetrievalAnalyticsAttempt.occurred_at))
-        )
-    )
+        ).all()
+    }
     trend = [
         AdminDashboardTrendPoint(
             day=trend_start + timedelta(days=offset),
