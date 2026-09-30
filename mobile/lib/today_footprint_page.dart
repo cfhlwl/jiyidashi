@@ -133,8 +133,8 @@ class _TodayPageState extends State<TodayPage> {
           : '看看今天留下了哪些值得记住的片段。',
       hero: JiYiHeroHeader(
         eyebrow: '迹忆 · 今天',
-        title: elderMode ? '今天去了哪里' : _todayGreeting(),
-        subtitle: _todayHeroSubtitle(),
+        title: elderMode ? '今天去了哪里' : '今天好',
+        subtitle: _todayHeroSubtitle(_data),
         icon: Icons.wb_sunny_outlined,
       ),
       child: _buildContent(elderMode),
@@ -555,18 +555,12 @@ IconData _todayMemoryIcon(String? value) => switch (value) {
       _ => Icons.auto_stories_outlined,
     };
 
-String _todayGreeting() {
-  final hour = DateTime.now().hour;
-  if (hour < 11) return '早上好';
-  if (hour < 14) return '中午好';
-  if (hour < 18) return '下午好';
-  return '晚上好';
-}
-
-String _todayHeroSubtitle() {
-  final now = DateTime.now();
-  const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
-  return '${now.month}月${now.day}日 · 星期${weekdays[now.weekday - 1]}';
+String _todayHeroSubtitle(Map<String, dynamic>? data) {
+  final day = data?['day'];
+  if (day is String && _isStrictDateOnly(day)) {
+    return jiyiDisplayDate(day);
+  }
+  return '正在整理今天';
 }
 
 class _FootprintVisitRow extends StatelessWidget {
