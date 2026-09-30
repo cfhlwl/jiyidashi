@@ -1,0 +1,4 @@
+source_sha=08c0b877e015c0a19a1784d67671a3d80d810261
+artifact_id=11074965668
+font_sha256=60ed5ebca7663680be415413d64726a6f2c3592759dabc687351868dc53346ad
+review=25 Flutter candidate goldens and deterministic CJK font visually reviewed after final UI/UX-001 narrow fixes

@@ -17,7 +17,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # UI/UX-001 closeout only: one reviewed-golden sentinel may create one
+  # baseline commit. The sentinel deletes itself; this permission is reverted
+  # immediately after acceptance.
+  contents: write
 
 # [人工注释][S1-026] 同一 PR 只验收最新 HEAD；旧提交的 Flutter 构建自动取消，避免过期结果占用 Runner。
 concurrency:
@@ -110,6 +113,76 @@ jobs:
           git checkout -- test/goldens
           git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
+
+      - name: Accept reviewed UI/UX-001 final goldens and font
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: .
+        shell: bash
+        env:
+          REVIEWED_SOURCE_SHA: 08c0b877e015c0a19a1784d67671a3d80d810261
+          REVIEWED_ARTIFACT_ID: "11074965668"
+          REVIEWED_FONT_SHA: 60ed5ebca7663680be415413d64726a6f2c3592759dabc687351868dc53346ad
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          sentinel=".github/UI_UX_001_ACCEPT_REVIEWED_GOLDENS"
+          if [ ! -f "$sentinel" ]; then
+            echo "No reviewed-golden sentinel; validation-only mode."
+            exit 0
+          fi
+
+          grep -Fxq "source_sha=$REVIEWED_SOURCE_SHA" "$sentinel"
+          grep -Fxq "artifact_id=$REVIEWED_ARTIFACT_ID" "$sentinel"
+          grep -Fxq "font_sha256=$REVIEWED_FONT_SHA" "$sentinel"
+
+          git fetch --no-tags --depth=96 origin "$HEAD_BRANCH"
+          git cat-file -e "$REVIEWED_SOURCE_SHA^{commit}"
+          if ! git diff --quiet "$REVIEWED_SOURCE_SHA"..HEAD --               mobile/lib mobile/test mobile/pubspec.yaml; then
+            echo "Flutter product/test inputs changed after visual review; refusing acceptance."
+            git diff --stat "$REVIEWED_SOURCE_SHA"..HEAD --               mobile/lib mobile/test mobile/pubspec.yaml
+            exit 1
+          fi
+
+          candidate_dir="/tmp/product-v2-goldens/candidate"
+          test -d "$candidate_dir"
+          test "$(find "$candidate_dir" -maxdepth 1 -type f -name '*.png' | wc -l | tr -d ' ')" = "25"
+          test -s /tmp/JiYiGoldenCJK-Regular.ttf
+          actual_font_sha="$(sha256sum /tmp/JiYiGoldenCJK-Regular.ttf | awk '{print $1}')"
+          test "$actual_font_sha" = "$REVIEWED_FONT_SHA"
+
+          cp "$candidate_dir"/*.png mobile/test/goldens/
+          cp /tmp/JiYiGoldenCJK-Regular.ttf mobile/test/fonts/JiYiGoldenCJK-Regular.ttf
+
+          python - "$REVIEWED_FONT_SHA" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          path = pathlib.Path("mobile/test/fonts/README.md")
+          value = path.read_text(encoding="utf-8")
+          replacement = f"- SHA-256: `{sys.argv[1]}`"
+          value, count = re.subn(
+              r"- SHA-256: `[0-9a-f]{64}`",
+              replacement,
+              value,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("README golden font SHA anchor mismatch")
+          path.write_text(value, encoding="utf-8")
+          PY
+
+          rm "$sentinel"
+          git add -A "$sentinel" mobile/test/goldens mobile/test/fonts
+          git diff --cached --check
+          test "$(git diff --cached --name-only -- mobile/test/goldens | wc -l | tr -d ' ')" -ge "1"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "test(ui): accept reviewed Product Experience V2 closeout"
+          git push origin "HEAD:$HEAD_BRANCH"
 
       - name: Run Flutter tests including committed goldens
         timeout-minutes: 10
