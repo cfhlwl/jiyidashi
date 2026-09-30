@@ -17,11 +17,11 @@ os.environ["AUTO_CREATE_SCHEMA"] = "true"
 
 from app.auth_models import AuthRateLimitBucket  # noqa: E402
 from app.core.db import SessionLocal, engine  # noqa: E402
-from app.main import app  # noqa: E402
 from app.services.auth_delivery import (  # noqa: E402
     MemoryAuthEmailDelivery,
     set_auth_email_delivery_for_testing,
 )
+from app.main import app  # noqa: E402
 
 
 _PUBLIC_AUTH_RATE_SCOPES = (
