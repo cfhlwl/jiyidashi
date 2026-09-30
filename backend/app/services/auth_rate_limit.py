@@ -369,13 +369,13 @@ def clear_admin_login_account_penalty(
     bucket.updated_at = now
     db.commit()
 
-def consume_refresh_attempt(db: Session, refresh_digest: str) -> None:
+def consume_refresh_attempt(db: Session, session_scope: str) -> None:
     if not settings.auth_rate_limit_enabled:
         return
     _consume(
         db,
         scope="refresh_session",
-        value=refresh_digest,
+        value=session_scope,
         policy=RatePolicy(
             limit=settings.auth_refresh_session_limit,
             window_seconds=settings.auth_refresh_window_seconds,
