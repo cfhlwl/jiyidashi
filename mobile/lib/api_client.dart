@@ -1085,7 +1085,9 @@ class JiYiApiClient {
   }
 
   Future<void> logout() async {
-    final snapshot = accessToken != null && authenticatedUserId != null
+    final snapshot = accessToken != null &&
+            authenticatedUserId != null &&
+            _sessionId != null
         ? _captureAuthenticatedSession()
         : null;
     // _clearLocalSession mutates memory before its first await. This preserves the
@@ -1103,6 +1105,9 @@ class JiYiApiClient {
     } on TransportException {
       // Local logout remains authoritative for the device. The short-lived JWT
       // expires quickly; a later explicit login creates a fresh server session.
+    } on ApiException {
+      // A rejected/expired remote session is already unusable for this device.
+      // Do not resurrect local authority after explicit logout intent.
     } finally {
       await clearFuture;
     }
