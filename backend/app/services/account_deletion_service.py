@@ -69,6 +69,7 @@ def _begin_or_load_account_deletion(
     *,
     user_id: UUID,
     request_id: UUID,
+    continuation_session_id: UUID | None = None,
 ) -> AccountDeletionOperation | None:
     lock_user_data_destructive_handoff(db, user_id=user_id)
     user = db.scalar(select(User).where(User.id == user_id).with_for_update())
@@ -89,6 +90,7 @@ def _begin_or_load_account_deletion(
             db,
             user_id=user_id,
             reason="ACCOUNT_DELETION",
+            except_session_id=continuation_session_id,
         )
         db.commit()
         return existing
@@ -230,6 +232,7 @@ def delete_current_account(
     request_id: UUID,
     storage: ObjectStorage,
     local_cleanup_ready: bool,
+    continuation_session_id: UUID | None = None,
 ) -> AccountDeletionResult:
     """Converge account deletion through the existing S1-021 durable data erasure path."""
 
@@ -237,6 +240,7 @@ def delete_current_account(
         db,
         user_id=user_id,
         request_id=request_id,
+        continuation_session_id=continuation_session_id,
     )
     if operation is None:
         return _already_deleted(request_id)
