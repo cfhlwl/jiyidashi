@@ -12,7 +12,7 @@ from app.core.db import (
     UserDataAdmission,
     get_db,
 )
-from app.core.security import decode_access_token_claims
+from app.core.security import AccessTokenClaims, decode_access_token_claims
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.models import User
 from app.services.auth_session_service import PublicAuthError, authenticate_access_session
@@ -22,20 +22,28 @@ BearerCredentials = Annotated[HTTPAuthorizationCredentials, Depends(bearer)]
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-def get_authenticated_user_id(
+def get_authenticated_claims(
     credentials: BearerCredentials,
     db: DbSession,
-) -> UUID:
+) -> AccessTokenClaims:
     """Authenticate against JWT signature *and* current durable session authority."""
 
     claims = decode_access_token_claims(credentials.credentials)
     try:
-        return authenticate_access_session(db, claims)
+        authenticate_access_session(db, claims)
     except PublicAuthError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=exc.code,
         ) from exc
+    return claims
+
+
+AuthenticatedClaims = Annotated[AccessTokenClaims, Depends(get_authenticated_claims)]
+
+
+def get_authenticated_user_id(claims: AuthenticatedClaims) -> UUID:
+    return claims.user_id
 
 
 AuthenticatedUser = Annotated[UUID, Depends(get_authenticated_user_id)]
