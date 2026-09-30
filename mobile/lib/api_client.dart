@@ -62,6 +62,14 @@ class _AuthenticatedSessionSnapshot {
   final int sessionVersion;
 }
 
+class AccountDeleteSessionBinding {
+  const AccountDeleteSessionBinding._(this._snapshot);
+
+  final _AuthenticatedSessionSnapshot _snapshot;
+
+  String get ownerUserId => _snapshot.userId;
+}
+
 class SignedUploadTarget {
   const SignedUploadTarget({
     required this.method,
@@ -417,17 +425,29 @@ class JiYiApiClient {
     return data;
   }
 
+  AccountDeleteSessionBinding captureAccountDeleteSession() {
+    return AccountDeleteSessionBinding._(_captureAuthenticatedSession());
+  }
+
+  void assertAccountDeleteSessionCurrent(AccountDeleteSessionBinding binding) {
+    _assertAuthenticatedSessionCurrent(binding._snapshot);
+  }
+
   Future<Map<String, dynamic>> deleteAccount({
     required String requestId,
     required bool localCleanupReady,
+    AccountDeleteSessionBinding? session,
   }) async {
     final normalized = requestId.trim();
     if (normalized.isEmpty) {
       throw ArgumentError.value(requestId, 'requestId', 'request ID must not be empty');
     }
-    final snapshot = _captureAuthenticatedSession();
-    // [人工注释][SEC-014][S1-022] 第二确认只表达用户 intent。真正请求绑定
-    // authenticated-session snapshot；确认后切换账号/会话时，late response 必须 fail closed。
+    final snapshot = session?._snapshot ?? _captureAuthenticatedSession();
+
+    // SEC-014/P1-1: the complete PREPARE → local purge → COMMIT transaction
+    // is bound to the session captured before confirmation opened. Never recapture
+    // the currently logged-in account for a later phase of the same destructive intent.
+    _assertAuthenticatedSessionCurrent(snapshot);
     final data = await _jsonRequest(
       'POST',
       '/account/delete',
