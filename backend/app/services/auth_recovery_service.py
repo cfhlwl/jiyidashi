@@ -32,6 +32,12 @@ from app.services.auth_session_service import revoke_all_sessions_in_transaction
 settings = get_settings()
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 class AuthRecoveryError(RuntimeError):
     def __init__(self, code: str, status_code: int = 400):
         super().__init__(code)
@@ -202,7 +208,7 @@ def verify_email_token(db: Session, *, token: str) -> VerificationResult:
         raise AuthRecoveryError("INVALID_VERIFICATION_TOKEN")
 
     now = datetime.now(UTC)
-    if row.expires_at <= now:
+    if _as_utc(row.expires_at) <= now:
         raise AuthRecoveryError("VERIFICATION_TOKEN_EXPIRED")
 
     identity.verified_at = now
