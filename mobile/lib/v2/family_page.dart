@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
+import '../sensitive_operation_confirmation.dart';
 import '../ui/jiyi_components.dart';
 import '../ui/jiyi_tokens.dart';
 import 'family_api.dart';
@@ -139,37 +140,111 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
+  bool _sameSession(int version, String ownerUserId) {
+    return widget.api.sessionVersion == version &&
+        widget.api.authenticatedUserId?.toLowerCase() ==
+            ownerUserId.toLowerCase();
+  }
+
   Future<void> _toggle(
     V2FamilyMember member,
     String permission,
     bool enabled,
   ) async {
     if (mutatingMemberId != null) return;
+    final ownerUserId = widget.api.authenticatedUserId?.trim();
+    if (ownerUserId == null || ownerUserId.isEmpty) return;
+    final sessionVersion = widget.api.sessionVersion;
     final key = member.userId.toLowerCase();
-    final current = grants[key] ??
-        V2FamilyPermissionGrant(
-          granteeUserId: member.userId,
-          permissions: const [],
-        );
-    final next = current.toggle(permission, enabled);
+
+    // SEC-014: single-flight begins before the dialog. A double tap cannot create
+    // two confirmation/mutation chains for the same stale rendered state.
     setState(() {
       mutatingMemberId = key;
       error = null;
+      status = null;
     });
+
     try {
-      final saved = await familyApi.replacePermissions(next);
-      if (!mounted) return;
+      final confirmed = await showSensitiveOperationConfirmation(
+        context,
+        SensitiveOperationSpec.familyPermission(
+          enabled: enabled,
+          permissionLabel: familyPermissionLabel(permission),
+          memberLabel: '该家庭成员',
+        ),
+      );
+      if (!mounted || !confirmed) return;
+      if (!_sameSession(sessionVersion, ownerUserId)) {
+        setState(() {
+          error = '状态刚刚发生变化，请重新打开后再试';
+        });
+        return;
+      }
+
+      // PUT is complete replacement. Re-read membership and the grant matrix
+      // after confirmation; never derive the payload from the old switch state.
+      final latestFamily = await familyApi.getFamily();
+      if (!mounted || !_sameSession(sessionVersion, ownerUserId)) return;
+      final targetStillExists = latestFamily.members.any(
+        (item) => item.userId.toLowerCase() == key,
+      );
+      if (!targetStillExists) {
+        setState(() {
+          error = '状态刚刚发生变化，请重新打开后再试';
+        });
+        return;
+      }
+
+      final rows = await familyApi.listPermissions();
+      if (!mounted || !_sameSession(sessionVersion, ownerUserId)) return;
+      var current = V2FamilyPermissionGrant(
+        granteeUserId: member.userId,
+        permissions: const [],
+      );
+      for (final row in rows) {
+        if (row.granteeUserId.toLowerCase() == key) {
+          current = row;
+          break;
+        }
+      }
+
+      if (current.has(permission) == enabled) {
+        setState(() {
+          family = latestFamily;
+          grants = {
+            for (final item in rows) item.granteeUserId.toLowerCase(): item,
+          };
+          status = '当前授权状态已经是最新状态';
+        });
+        return;
+      }
+
+      final saved = await familyApi.replacePermissions(
+        current.toggle(permission, enabled),
+      );
+      if (!mounted || !_sameSession(sessionVersion, ownerUserId)) return;
+      final nextGrants = {
+        for (final item in rows) item.granteeUserId.toLowerCase(): item,
+      };
+      nextGrants[key] = saved;
       setState(() {
-        grants = {...grants, key: saved};
-        mutatingMemberId = null;
-        status = '共享权限已更新';
+        family = latestFamily;
+        grants = nextGrants;
+        status = enabled ? '已允许这项家庭查看权限' : '已取消这项家庭查看权限';
       });
-    } catch (_) {
-      if (!mounted) return;
+    } catch (exc) {
+      if (!mounted || !_sameSession(sessionVersion, ownerUserId)) return;
       setState(() {
-        mutatingMemberId = null;
-        error = '权限更新失败，原有权限保持不变';
+        error = sensitiveOperationSafeError(
+          exc,
+          fallback: '权限更新失败，请重新打开后再试',
+        );
       });
+    } finally {
+      if (mounted && mutatingMemberId == key) {
+        setState(() => mutatingMemberId = null);
+      }
     }
   }
 

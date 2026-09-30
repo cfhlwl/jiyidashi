@@ -62,6 +62,14 @@ class _AuthenticatedSessionSnapshot {
   final int sessionVersion;
 }
 
+class AccountDeleteSessionBinding {
+  const AccountDeleteSessionBinding._(this._snapshot);
+
+  final _AuthenticatedSessionSnapshot _snapshot;
+
+  String get ownerUserId => _snapshot.userId;
+}
+
 class SignedUploadTarget {
   const SignedUploadTarget({
     required this.method,
@@ -417,17 +425,30 @@ class JiYiApiClient {
     return data;
   }
 
+  AccountDeleteSessionBinding captureAccountDeleteSession() {
+    return AccountDeleteSessionBinding._(_captureAuthenticatedSession());
+  }
+
+  void assertAccountDeleteSessionCurrent(AccountDeleteSessionBinding binding) {
+    _assertAuthenticatedSessionCurrent(binding._snapshot);
+  }
+
   Future<Map<String, dynamic>> deleteAccount({
     required String requestId,
     required bool localCleanupReady,
-  }) {
+    AccountDeleteSessionBinding? session,
+  }) async {
     final normalized = requestId.trim();
     if (normalized.isEmpty) {
       throw ArgumentError.value(requestId, 'requestId', 'request ID must not be empty');
     }
-    // [人工注释][S1-022] 客户端只发送精确 destructive protocol value；
-    // 服务器仍独立校验，不能把普通“删除数据”误接成账号注销。
-    return _jsonRequest(
+    final snapshot = session?._snapshot ?? _captureAuthenticatedSession();
+
+    // SEC-014/P1-1: the complete PREPARE → local purge → COMMIT transaction
+    // is bound to the session captured before confirmation opened. Never recapture
+    // the currently logged-in account for a later phase of the same destructive intent.
+    _assertAuthenticatedSessionCurrent(snapshot);
+    final data = await _jsonRequest(
       'POST',
       '/account/delete',
       body: {
@@ -435,7 +456,10 @@ class JiYiApiClient {
         'confirmation': 'DELETE_MY_ACCOUNT',
         'local_cleanup_ready': localCleanupReady,
       },
+      authSnapshot: snapshot,
     );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return data;
   }
 
   Future<Map<String, dynamic>> updateProfile({

@@ -561,6 +561,19 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _revalidateNativeLocationAuthority() async {
+    final location = _nativeLocation;
+    if (location == null || _accountDeletionIntentActive) return;
+    await _reconcileNativeLocationPrivacy(
+      location,
+      restoreAfterVerification: false,
+    );
+    if (!mounted || _accountDeletionIntentActive) return;
+    // Native status is an independent authority boundary. refresh() is read-only:
+    // it cannot request permission or start location production.
+    await location.refresh();
+  }
+
   Future<void> _stopLocationAndLogout() async {
     // Seal sampling first so a late native event cannot enqueue/upload after logout begins.
     await _locationSampling?.suspendForLogout();
@@ -709,6 +722,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         onAccountDeleted: () async => _stopLocationAndLogout(),
         resumeAccountDeletion: _accountDeletionIntentActive,
         nativeLocationController: _nativeLocation,
+        onRevalidateLocationAuthority: _revalidateNativeLocationAuthority,
         onStartOnboarding: onboarding == null
             ? null
             : () => unawaited(onboarding.restart()),
@@ -2293,6 +2307,7 @@ class ProfilePage extends StatelessWidget {
     required this.onAccountDeleted,
     this.resumeAccountDeletion = false,
     this.nativeLocationController,
+    this.onRevalidateLocationAuthority,
     this.onStartOnboarding,
   });
 
@@ -2303,6 +2318,7 @@ class ProfilePage extends StatelessWidget {
   final Future<void> Function() onAccountDeleted;
   final bool resumeAccountDeletion;
   final NativeLocationController? nativeLocationController;
+  final Future<void> Function()? onRevalidateLocationAuthority;
   final VoidCallback? onStartOnboarding;
 
   @override
@@ -2428,7 +2444,11 @@ class ProfilePage extends StatelessWidget {
               ),
               if (nativeLocationController != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
-                NativeLocationSection(controller: nativeLocationController!),
+                NativeLocationSection(
+                  controller: nativeLocationController!,
+                  revalidateAuthority: onRevalidateLocationAuthority ??
+                      () async => nativeLocationController!.privacyStatusUnknown(),
+                ),
               ],
               if (onStartOnboarding != null) ...[
                 const SizedBox(height: JiYiSpacing.md),

@@ -137,13 +137,20 @@ void main() {
     );
     await controller.initialize();
     controller.markPrivacyActive();
+    var authorityChecks = 0;
 
     await tester.pumpWidget(
       MaterialApp(
         theme: JiYiTheme.light(),
         home: Scaffold(
           body: SingleChildScrollView(
-            child: NativeLocationSection(controller: controller),
+            child: NativeLocationSection(
+              controller: controller,
+              revalidateAuthority: () async {
+                authorityChecks += 1;
+                controller.markPrivacyActive();
+              },
+            ),
           ),
         ),
       ),
@@ -154,7 +161,11 @@ void main() {
       find.byKey(const ValueKey('location-enable-automatic')),
     );
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('location-share-confirm-submit')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('location-share-confirm-submit')));
+    await tester.pumpAndSettle();
 
+    expect(authorityChecks, 1);
     expect(
       bridge.calls,
       <String>['status', 'enableAutomaticLocation'],
@@ -169,7 +180,10 @@ void main() {
       find.byKey(const ValueKey('location-open-background-settings')),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('location-share-confirm-submit')));
+    await tester.pumpAndSettle();
 
+    expect(authorityChecks, 2);
     expect(
       bridge.calls,
       <String>[
@@ -183,7 +197,10 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('location-start')));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('location-share-confirm-submit')));
+    await tester.pumpAndSettle();
 
+    expect(authorityChecks, 3);
     expect(bridge.calls.last, 'start');
     expect(find.text('自动位置记忆正在运行'), findsOneWidget);
     controller.dispose();
@@ -199,13 +216,20 @@ void main() {
     );
     await controller.initialize();
     controller.markPrivacyActive();
+    var authorityChecks = 0;
 
     await tester.pumpWidget(
       MaterialApp(
         theme: JiYiTheme.light(),
         home: Scaffold(
           body: SingleChildScrollView(
-            child: NativeLocationSection(controller: controller),
+            child: NativeLocationSection(
+              controller: controller,
+              revalidateAuthority: () async {
+                authorityChecks += 1;
+                controller.markPrivacyActive();
+              },
+            ),
           ),
         ),
       ),
@@ -226,6 +250,10 @@ void main() {
       find.byKey(const ValueKey('location-request-foreground')),
     );
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('location-share-confirm-submit')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('location-share-confirm-submit')));
+    await tester.pumpAndSettle();
+    expect(authorityChecks, 1);
     expect(
       bridge.calls,
       <String>['status', 'requestForegroundPermission'],
@@ -239,7 +267,10 @@ void main() {
       find.byKey(const ValueKey('location-enable-automatic')),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('location-share-confirm-submit')));
+    await tester.pumpAndSettle();
 
+    expect(authorityChecks, 2);
     expect(
       bridge.calls,
       <String>[

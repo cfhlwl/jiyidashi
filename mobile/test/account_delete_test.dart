@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -26,6 +27,7 @@ class _AccountDeleteApi extends JiYiApiClient {
   Future<Map<String, dynamic>> deleteAccount({
     required String requestId,
     required bool localCleanupReady,
+    AccountDeleteSessionBinding? session,
   }) async {
     requestIds.add(requestId);
     cleanupReady.add(localCleanupReady);
@@ -127,6 +129,132 @@ void main() {
     );
     expect(prepared['completed'], isTrue);
     expect(calls, 1);
+  });
+
+  test('late account-delete response is rejected after auth session switch', () async {
+    final responseGate = Completer<void>();
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        await responseGate.future;
+        return http.Response(
+          jsonEncode({
+            'request_id': '11111111-1111-4111-8111-111111111111',
+            'data_deletion_status': null,
+            'completed': false,
+            'retry_after_seconds': null,
+            'deleted_counts': <String, int>{},
+          }),
+          202,
+          headers: const {'content-type': 'application/json'},
+        );
+      }),
+    );
+    api.accessToken = 'account-token';
+    api.authenticatedUserId = owner;
+
+    final pending = api.deleteAccount(
+      requestId: '11111111-1111-4111-8111-111111111111',
+      localCleanupReady: false,
+    );
+    await Future<void>.delayed(Duration.zero);
+    api.logout();
+    api.accessToken = 'new-account-token';
+    api.authenticatedUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    responseGate.complete();
+
+    await expectLater(pending, throwsA(isA<ProtocolException>()));
+  });
+
+  testWidgets(
+      'account switch during local purge never sends COMMIT under the new session',
+      (tester) async {
+    final purgeStarted = Completer<void>();
+    final releasePurge = Completer<void>();
+    final requests = <Map<String, Object?>>[];
+    var deletedCallbacks = 0;
+
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        requests.add(<String, Object?>{
+          'authorization': request.headers['authorization'],
+          'cleanup_ready': body['local_cleanup_ready'],
+          'request_id': body['request_id'],
+        });
+        return http.Response(
+          jsonEncode({
+            'request_id': body['request_id'],
+            'data_deletion_status': null,
+            'completed': false,
+            'retry_after_seconds': null,
+            'deleted_counts': <String, int>{},
+          }),
+          202,
+          headers: const {'content-type': 'application/json'},
+        );
+      }),
+    );
+    api.accessToken = 'account-a-token';
+    api.authenticatedUserId = owner;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AccountDeleteSection(
+            api: api,
+            onIntentConfirmed: () async {
+              if (!purgeStarted.isCompleted) purgeStarted.complete();
+              await releasePurge.future;
+            },
+            onDeleted: () async {
+              deletedCallbacks += 1;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('account-delete-open')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('account-delete-confirm-input')),
+      '注销账号',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('account-delete-confirm-submit')));
+
+    // Let PREPARE complete and the local purge enter its long await.
+    for (var index = 0; index < 6 && !purgeStarted.isCompleted; index += 1) {
+      await tester.pump();
+    }
+    expect(purgeStarted.isCompleted, isTrue);
+    expect(requests, hasLength(1));
+    expect(requests.single['authorization'], 'Bearer account-a-token');
+    expect(requests.single['cleanup_ready'], isFalse);
+
+    // Switch to another account while A's local purge is still pending.
+    api.logout();
+    api.accessToken = 'account-b-token';
+    api.authenticatedUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    releasePurge.complete();
+
+    await tester.pumpAndSettle();
+
+    // The old A operation fails closed before COMMIT. In particular, no request
+    // with local_cleanup_ready=true can be sent using B's credentials.
+    expect(requests, hasLength(1));
+    expect(
+      requests.where((row) => row['cleanup_ready'] == true),
+      isEmpty,
+    );
+    expect(
+      requests.where((row) => row['authorization'] == 'Bearer account-b-token'),
+      isEmpty,
+    );
+    expect(deletedCallbacks, 0);
+    expect(find.textContaining('状态刚刚发生变化'), findsOneWidget);
   });
 
   testWidgets('typed confirmation then 202 retry reuses one request id', (tester) async {

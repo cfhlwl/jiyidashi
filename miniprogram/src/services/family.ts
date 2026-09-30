@@ -713,6 +713,10 @@ export function shortMemberId(userId: string): string {
   return `${userId.slice(0, 4)}…${userId.slice(-4)}`
 }
 
+export function familyRoleLabel(role: FamilyRole): string {
+  return role === 'OWNER' ? '家庭创建者' : '家庭成员'
+}
+
 export function permissionLabel(code: InteractiveFamilyPermissionCode): string {
   if (code === FAMILY_PERMISSION.VIEW_CURRENT_LOCATION) {
     return '我允许 TA 查看我的当前位置'
@@ -799,7 +803,7 @@ export function familyErrorMessage(code: string | null, context: FamilyErrorCont
     case 'FAMILY_ALREADY_JOINED':
       return '你已经加入了一个家庭'
     case 'FAMILY_OWNER_REQUIRED':
-      return '只有家庭 OWNER 可以执行此操作'
+      return '只有家庭创建者可以执行此操作'
     case 'FAMILY_MEMBER_NOT_FOUND':
       return '该家庭成员已不存在，请刷新后重试'
     case 'FAMILY_OWNER_CANNOT_LEAVE':
@@ -833,7 +837,7 @@ export function familyErrorMessage(code: string | null, context: FamilyErrorCont
     case 'CURRENT_LOCATION_UNAVAILABLE':
       return '当前位置暂不可用'
     case 'OWNER_REQUIRED':
-      return context === 'audit' ? '无权查看家庭隐私访问记录' : '只有家庭 OWNER 可以执行此操作'
+      return context === 'audit' ? '无权查看家庭隐私访问记录' : '只有家庭创建者可以执行此操作'
     case 'EMERGENCY_SHARE_NOT_AVAILABLE':
       return context === 'emergency-location' ? '紧急位置共享已不可用' : '紧急位置共享不可用'
     case 'EMERGENCY_SHARE_TARGET_INVALID':

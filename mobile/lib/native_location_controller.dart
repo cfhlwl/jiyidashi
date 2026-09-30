@@ -181,13 +181,14 @@ class NativeLocationController extends ChangeNotifier {
           reason: 'native_bridge_unavailable',
         );
         if (exposeError) _error = '当前设备暂不支持自动位置记忆';
-      } on PlatformException catch (exc) {
+      } on PlatformException {
         if (_disposed) return;
         _status = const NativeLocationStatus.unavailable(
           reason: 'native_bridge_error',
         );
         if (exposeError) {
-          _error = exc.message ?? '无法读取系统定位状态';
+          // SEC-014: native/platform details are diagnostic only, never product copy.
+          _error = '系统定位操作未完成，请检查权限后重试';
         }
       } catch (_) {
         if (_disposed) return;

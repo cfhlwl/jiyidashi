@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
+import 'sensitive_operation_confirmation.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
@@ -15,76 +16,6 @@ String _newAccountDeleteRequestId() {
   return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
       '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
       '${hex.substring(20)}';
-}
-
-class _AccountDeleteConfirmDialog extends StatefulWidget {
-  const _AccountDeleteConfirmDialog();
-
-  @override
-  State<_AccountDeleteConfirmDialog> createState() =>
-      _AccountDeleteConfirmDialogState();
-}
-
-class _AccountDeleteConfirmDialogState
-    extends State<_AccountDeleteConfirmDialog> {
-  final TextEditingController controller = TextEditingController();
-
-  @override
-  void dispose() {
-    // [人工注释][S1-022] Controller 生命周期绑定 Dialog State，而不是 showDialog Future。
-    // 路由 pop 后退出动画期间 TextField 仍可能存活，不能提前 dispose controller。
-    controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('永久注销账号？'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              '注销会永久删除账号身份、记忆、媒体、提醒和其他个人数据；完成后无法恢复。'
-              '以后使用相同邮箱注册，会得到一个全新的账号。',
-            ),
-            const SizedBox(height: JiYiSpacing.md),
-            const Text('请输入“注销账号”确认这次不可逆操作。'),
-            const SizedBox(height: JiYiSpacing.sm),
-            TextField(
-              key: const ValueKey('account-delete-confirm-input'),
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '确认文字',
-                hintText: '注销账号',
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          key: const ValueKey('account-delete-confirm-submit'),
-          onPressed: controller.text.trim() == '注销账号'
-              ? () => Navigator.pop(context, true)
-              : null,
-          style: FilledButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.error,
-            foregroundColor: Theme.of(context).colorScheme.onError,
-          ),
-          child: const Text('永久注销'),
-        ),
-      ],
-    );
-  }
 }
 
 class AccountDeleteSection extends StatefulWidget {
@@ -110,11 +41,13 @@ class AccountDeleteSection extends StatefulWidget {
 class _AccountDeleteSectionState extends State<AccountDeleteSection> {
   String? requestId;
   bool deleting = false;
+  bool confirming = false;
   String? message;
   bool messageIsError = false;
   int? retryAfterSeconds;
   bool gatePrepared = false;
   bool intentPrepared = false;
+  AccountDeleteSessionBinding? operationSession;
 
   @override
   void initState() {
@@ -123,17 +56,57 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
     gatePrepared = widget.resumeInProgress;
   }
 
-  Future<bool> _confirm() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (_) => const _AccountDeleteConfirmDialog(),
+  Future<bool> _confirm() {
+    return showSensitiveOperationConfirmation(
+      context,
+      const SensitiveOperationSpec.accountDelete(),
     );
-    return result == true;
   }
 
   Future<void> startOrContinue({bool requireConfirmation = false}) async {
-    if (deleting) return;
-    if (requireConfirmation && !await _confirm()) return;
+    if (deleting || confirming) return;
+
+    AccountDeleteSessionBinding session;
+    try {
+      // Capture before the dialog opens. A confirmation that started under account A
+      // cannot silently become an account-B destructive intent while the dialog waits.
+      session = operationSession ??= widget.api.captureAccountDeleteSession();
+      widget.api.assertAccountDeleteSessionCurrent(session);
+    } on Object catch (exc) {
+      if (!mounted) return;
+      setState(() {
+        messageIsError = true;
+        message = sensitiveOperationSafeError(
+          exc,
+          fallback: '账号注销暂时没有完成，请重新打开后再试',
+        );
+      });
+      return;
+    }
+
+    if (requireConfirmation) {
+      setState(() => confirming = true);
+      var confirmed = false;
+      try {
+        confirmed = await _confirm();
+      } finally {
+        if (mounted) setState(() => confirming = false);
+      }
+      if (!mounted || !confirmed) return;
+      try {
+        widget.api.assertAccountDeleteSessionCurrent(session);
+      } on Object catch (exc) {
+        if (!mounted) return;
+        setState(() {
+          messageIsError = true;
+          message = sensitiveOperationSafeError(
+            exc,
+            fallback: '账号注销暂时没有完成，请重新打开后再试',
+          );
+        });
+        return;
+      }
+    }
     requestId ??= _newAccountDeleteRequestId();
 
     setState(() {
@@ -151,6 +124,7 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
           final prepared = await widget.api.deleteAccount(
             requestId: requestId!,
             localCleanupReady: false,
+            session: session,
           );
           final canonical = prepared['request_id']?.toString().trim();
           if (canonical != null && canonical.isNotEmpty) {
@@ -159,6 +133,7 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
           if (prepared['completed'] == true) {
             // 只会发生在旧 token 重放“已经完成的注销”时；先清本机再退出。
             await widget.onIntentConfirmed();
+            widget.api.assertAccountDeleteSessionCurrent(session);
             intentPrepared = true;
             await widget.onDeleted();
             return;
@@ -175,7 +150,17 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
           if (!mounted) return;
           setState(() {
             messageIsError = true;
-            message = exc.message;
+            message = sensitiveOperationSafeError(
+              exc,
+              fallback: '账号注销暂时没有完成，请重新打开后再试',
+            );
+          });
+          return;
+        } on ProtocolException catch (exc) {
+          if (!mounted) return;
+          setState(() {
+            messageIsError = true;
+            message = sensitiveOperationSafeError(exc);
           });
           return;
         } catch (_) {
@@ -191,8 +176,20 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
       if (!intentPrepared) {
         try {
           // durable gate 已存在后才清本机；清理失败时账号继续保持 423 锁定，可重试恢复。
+          widget.api.assertAccountDeleteSessionCurrent(session);
           await widget.onIntentConfirmed();
+          // P1-1: local purge can be long. Revalidate the *same* captured session
+          // after it completes and before COMMIT is even constructed.
+          widget.api.assertAccountDeleteSessionCurrent(session);
           intentPrepared = true;
+        } on ProtocolException catch (exc) {
+          if (mounted) {
+            setState(() {
+              messageIsError = true;
+              message = sensitiveOperationSafeError(exc);
+            });
+          }
+          return;
         } catch (_) {
           if (mounted) {
             setState(() {
@@ -205,9 +202,11 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
       }
 
       try {
+        widget.api.assertAccountDeleteSessionCurrent(session);
         final response = await widget.api.deleteAccount(
           requestId: requestId!,
           localCleanupReady: true,
+          session: session,
         );
         final canonical = response['request_id']?.toString().trim();
         if (canonical != null && canonical.isNotEmpty) {
@@ -238,7 +237,16 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
         if (!mounted) return;
         setState(() {
           messageIsError = true;
-          message = exc.message;
+          message = sensitiveOperationSafeError(
+            exc,
+            fallback: '账号注销暂时没有完成，请重新打开后再试',
+          );
+        });
+      } on ProtocolException catch (exc) {
+        if (!mounted) return;
+        setState(() {
+          messageIsError = true;
+          message = sensitiveOperationSafeError(exc);
         });
       } catch (_) {
         if (!mounted) return;
@@ -282,13 +290,16 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
           ],
           OutlinedButton.icon(
             key: const ValueKey('account-delete-open'),
-            onPressed: deleting
+            onPressed: deleting || confirming
                 ? null
                 : () => startOrContinue(requireConfirmation: !inProgress),
             style: OutlinedButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
               side: BorderSide(color: Theme.of(context).colorScheme.error),
             ),
+            // Keep confirmation itself animation-free. The modal already blocks
+            // interaction, and an indeterminate spinner would make widget tests (and
+            // accessibility settle semantics) wait forever while the dialog is open.
             icon: deleting
                 ? const SizedBox.square(
                     dimension: 18,
@@ -296,9 +307,11 @@ class _AccountDeleteSectionState extends State<AccountDeleteSection> {
                   )
                 : const Icon(Icons.person_off_outlined),
             label: Text(
-              deleting
-                  ? '正在注销…'
-                  : (inProgress ? '继续注销' : '永久注销账号'),
+              confirming
+                  ? '正在确认…'
+                  : deleting
+                      ? '正在注销…'
+                      : (inProgress ? '继续注销' : '永久注销账号'),
             ),
           ),
         ],

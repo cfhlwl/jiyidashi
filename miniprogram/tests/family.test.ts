@@ -462,7 +462,7 @@ test('page contract has explicit states and does not auto-fetch family sensitive
   )
   assert.match(
     page,
-    /const confirm = await Taro\.showModal\([\s\S]*?if \(!confirm\.confirm\) return[\s\S]*?await removeFamilyMember\(targetUserId\)[\s\S]*?await refresh\(true\)/,
+    /confirmSensitiveOperation\([\s\S]*?familyMemberChangeConfirmation[\s\S]*?if \(!confirmed\) return[\s\S]*?getFamily\(\)[\s\S]*?getProfile\(\)[\s\S]*?await removeFamilyMember\(targetUserId\)[\s\S]*?await refresh\(true, session\)/,
   )
   assert.match(page, /onClick=\{\(\) => mutateMember\(member\.user_id, 'remove'\)\}/)
   assert.match(page, /onClick=\{\(\) => mutateMember\(member\.user_id, 'leave'\)\}/)
@@ -779,9 +779,11 @@ test('Family page emergency flow is explicit and never auto-fetches coordinates'
   assert.doesNotMatch(refreshBody, /getFamilyEmergencyLocation\(/)
   assert.match(page, /紧急共享我的位置/)
   assert.match(page, /showActionSheet[\s\S]*?30 分钟[\s\S]*?60 分钟[\s\S]*?180 分钟/)
-  assert.match(page, /确认紧急共享位置/)
-  assert.match(page, /仅共享：当前位置信息/)
-  assert.match(page, /共享后可随时停止/)
+  const sensitive = readFileSync(resolve(process.cwd(), 'src/services/sensitiveOperation.ts'), 'utf8')
+  assert.match(page, /confirmSensitiveOperation/)
+  assert.match(sensitive, /开始紧急共享位置/)
+  assert.match(sensitive, /共享当前位置/)
+  assert.match(sensitive, /可以随时停止共享/)
   assert.match(page, /查看紧急位置/)
   assert.match(
     page,
