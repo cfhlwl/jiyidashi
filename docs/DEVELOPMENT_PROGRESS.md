@@ -455,16 +455,385 @@ Provider HTTP client process-lifetime pooling / keep-alive / connection limits
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| BIZ-001 | 免费版权益 | 🟠 | Issue #168 / PR #172 已合并：FREE/LEGACY_FULL plan authority 与 quota foundation ✅；正式商业包装/价格/支付/rollout 仍未上线，因此产品状态保持 🟠 |
-| BIZ-002 | 个人会员 | 🟠 | Issue #168 / PR #172 已合并：PERSONAL capability + storage/AI quota authority ✅；支付/购买/续费/客户端包装仍未实现 |
-| BIZ-003 | 家庭会员 | 🟠 | Issue #168 / PR #172 已合并：FAMILY capability 可表达且 Family authority 保持独立；household billing / pooled quota / purchase rollout 仍未实现 |
-| BIZ-004 | 高级会员 | 🟠 | Issue #168 / PR #172 已合并：PREMIUM capability + quota foundation ✅；价格、付费、正式 downgrade/upgrade rollout 仍未实现 |
-| BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend + Mini/Flutter 产品展示已完成；premium packaging、正式 entitlement enforcement 与商业 rollout 尚未实现 |
-| BIZ-006 | 实体年度回忆录 | ⏸ | 后续增值服务 |
+| BIZ-001 | 免费版权益 | 🟠 | Issue #168 / PR #172 已合并 FREE plan/capability/quota foundation。V1 商业基线：¥0 永久；基础“记录→保存→找到”长期可用，含基础文字/时间线/搜索/足迹/人物地点物品/导出，以及受 quota 控制的基础照片、语音、AI 回忆、OCR/Vision/总结体验；建议首发存储 500MB～1GB，但最终值只由 canonical server config 决定。 |
+| BIZ-002 | 个人会员 | 🟠 | PERSONAL authority 已有。V1 价格基线：¥15/月、¥129/年；创始会员首发 ¥99/年。建议首发存储 20GB；包含更高媒体/AI quota、高级时间线/历史/检索/RAG/总结/导出等。禁止宣传“无限 AI/OCR/Vision”，统一使用“包含充足的 AI 使用额度”。 |
+| BIZ-003 | 家庭会员 | 🟠 | FAMILY authority 已有且 Family permission/grant/privacy authority 保持独立。V1 价格基线：¥25/月、¥239/年；首发推广 ¥199/年；建议最多 5 人、共享存储 100GB。会员 capability 永远不能替代家庭成员隐私授权。 |
+| BIZ-004 | 高级会员 | ⏸ | PREMUIM/PREMIUM capability foundation 可继续保留，但 **V1 消费者页面不展示、不销售**。后续根据真实 AI 成本和高频需求再评估“迹忆 Pro / AI 高级版”，参考区间 ¥199～299/年；V1 不实现该商业 SKU。 |
+| BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend + Mini/Flutter 产品展示已完成；V1 作为 PERSONAL/FAMILY 高价值能力的一部分，正式 entitlement packaging、quota、rollout 仍待商业化任务收口。 |
+| BIZ-006 | 实体年度回忆录 | ⏸ | 后续增值服务；V1 不做一次买断/实体商业闭环。 |
 | BIZ-007 | 北极星指标：成功找回记忆数 | ✅ | Issue #169 / PR #173 已完成两轮正式极窄复审并合并；server-owned successful-memory-retrieval 口径、durable dedupe 与 aggregate report 已收口 |
 | BIZ-008 | D1 / D7 / D30 留存 | ✅ | Issue #169 / PR #173 已合并；UTC signup cohort、active-day authority、D1/D7/D30 eligible/retained/null-zero 口径已收口 |
 | BIZ-009 | Memory Retrieval Success | ✅ | Issue #169 / PR #173 已合并；accepted-attempt denominator、SUCCESS numerator 与 privacy-safe success-rate aggregation 已收口 |
 | BIZ-010 | False Memory Rate | ✅ | S3-019 / Issue #87 / PR #89 已完成首版显式用户反馈驱动的 revision 指标基础：counts + denominator + rate；DELETE-only 不误算 false，不做 AI 质量打分/看板；已正式审查并合并 main |
+| BIZ-011 | Production Registration Entitlement Default | ⬜ | **P0 public-launch blocker**：正常注册必须默认 FREE，不得再调用 `create_legacy_full_entitlement()`；`LEGACY_FULL` 仅历史兼容/migration-only，不出现在购买/营销/客户端升级入口；历史用户必须显式兼容迁移，禁止误批量降级。 |
+| BIZ-012 | Pricing Catalog & Commercial Policy V1 | ⬜ | 建立独立 Product/Price Catalog 与 Commercial Policy。首发逻辑产品：PERSONAL_MONTHLY/ANNUAL、FAMILY_MONTHLY/ANNUAL，以及 Founder/Launch price entry；价格使用 integer minor unit（人民币分），Plan 与 Price 解耦，客户端不得硬编码价格。 |
+| BIZ-013 | Value-triggered Trial & Founder Cohort | ⬜ | 新用户不注册即试用。满足价值条件（基线：记录≥10 / 连续使用≥3天 / 有效照片≥5）后可触发 14 天 PERSONAL 体验；服务端记录开始/结束，防卸载重领。Founder 使用 `pricing_cohort`/eligibility，不新增 PlanCode；基线前 5000 名个人付费会员 ¥99/年，续费锁价策略必须可运营修改。 |
+| BIZ-014 | Membership Expiration & Safe Downgrade | ⬜ | PERSONAL/FAMILY 到期降为 FREE，但不得删除/锁定已有记忆、照片、语音或已有 AI 结果；超 FREE 存储时已有媒体继续可读/可删，只禁止新增超额媒体；新的高成本 AI/付费 capability 按 FREE authority/quota 判定；续费后恢复写入。 |
+| BIZ-015 | Commercial Admin Simulation & Metrics | 🟠 | ADMIN-001 已包含 Entitlement & Quota 管理基础；商业化阶段需能由 SUPER_ADMIN 正确模拟 FREE→PERSONAL→FAMILY→expiry→downgrade，并记录 revision/audit。后台预留 FREE/PERSONAL/FAMILY/Trial 数量、转化、续费、平均存储/AI、AI/storage cost per paid user、ARPU 等指标；这些是运营指标，不是业务 hard rule。 |
+| BIZ-016 | Consumer Membership Surfaces V1 | ⬜ | Flutter/Mini 消费者页面只展示 FREE / PERSONAL / FAMILY 三档；不展示 PREMIUM、LEGACY_FULL、内部 quota/provider token。展示当前权益、使用量、价格 Catalog、Trial/Founder eligibility、到期/降级说明；不得将价格和 quota 写死在客户端。 |
+| BIZ-017 | Payment & Subscription Integration | ⬜ | 支付供应商单独任务。架构保持 Product → Price → Purchase/Subscription → Entitlement/Grant；Plan 不等于微信订单或 Apple SKU。未来接微信支付/App Store IAP 等；本任务完成前可由 Admin 模拟 entitlement 生命周期验证。 |
+| BIZ-018 | Invite Reward V1 | ⏸ | V1 可先保留数据模型/规则，不必首发开放。基线：邀请新用户并达到真实激活条件（如连续使用 7 天）后双方 +7 天 PERSONAL；需要账号唯一约束、设备/IP 风控、年度奖励上限、禁止自邀请与循环刷。 |
+
+
+## 9.1 V1 首发会员与定价设计基线（2026-09-30）
+
+> 本节是**首发产品/商业设计基线**，用于开发和验收，不是不可修改的永久价格表。价格、存储、AI quota、家庭人数、试用触发阈值、Founder eligibility 都必须通过 canonical server authority / Admin policy 可调整，严禁散落硬编码在 Flutter、Mini、Admin frontend 或业务 endpoint。
+
+### 首发消费者套餐
+
+```text
+FREE
+¥0 / 永久
+
+PERSONAL
+¥15 / 月
+¥129 / 年
+Founder baseline: ¥99 / 年
+
+FAMILY
+¥25 / 月
+¥239 / 年
+Launch baseline: ¥199 / 年
+最多 5 人（基线）
+共享存储 100GB（基线）
+
+PREMIUM
+V1 不展示、不销售
+
+LEGACY_FULL
+migration-only / compatibility-only
+```
+
+### FREE 产品原则
+
+FREE 不是 Demo，也不是 7/30 天后锁死的试用版。用户必须能长期完成：
+
+```text
+记录
+保存
+找到
+查看已有数据
+基础搜索
+数据导出
+```
+
+基础照片/语音/AI/OCR/Vision/Summary 可以提供体验额度，但不得无限。建议首发存储 500MB～1GB；AI/OCR/Vision/语音/总结初始额度由运营后台/服务端配置确定。
+
+禁止：
+
+```text
+免费期结束后禁止查看已有记忆
+付费后才能导出自己的数据
+广告补贴换取私人 Memory/Photo/Location/Family 画像
+```
+
+### PERSONAL 产品原则
+
+主推年费，年费显著优于月付：
+
+```text
+¥15 × 12 = ¥180
+标准年费 = ¥129
+Founder baseline = ¥99
+```
+
+基线能力：
+- FREE 全部能力；
+- 建议 20GB 存储；
+- 更高 Photo/Voice/OCR/Vision/ASR quota；
+- AI 回忆 / 找记忆 / 日月年总结；
+- 高级时间线 / 完整历史 / RAG / 高级整理；
+- 高级导出/备份能力；
+- 所有高成本能力仍受 server quota 控制。
+
+产品文案不得承诺“无限 AI / 无限 OCR / 无限 Vision”。
+
+### FAMILY 产品原则
+
+基线：
+
+```text
+¥25 / 月
+¥239 / 年
+首发推广 ¥199 / 年
+最多 5 人
+共享存储 100GB
+```
+
+包含 PERSONAL 主要能力 + 家庭成员/记忆/时间线/照片/权限/老人模式/帮我记一下/家庭回忆/家庭月报年报/关怀能力，以及更高共享 quota。
+
+**商业 entitlement 永远不能越过 Family Membership / Permission / Grant / Privacy Pause authority。**
+
+### PREMIUM 与 LEGACY_FULL
+
+- PREMIUM：代码可保留，V1 不营销、不售卖；后续根据 AI 成本和用户行为决定是否演化为 Pro/AI 高级版。
+- LEGACY_FULL：只用于历史兼容和 migration，不允许正常注册创建、不允许客户端购买/升级、不出现在消费者页面。
+
+### Value-triggered Trial
+
+不做“注册即开始 7/30 天会员”。
+
+触发基线：
+
+```text
+累计记录 >= 10
+OR 连续使用 >= 3 天
+OR 有效照片 >= 5
+→ 14 天 PERSONAL 体验
+```
+
+必须服务端持久化 eligibility / start / expires，不依赖客户端时间，卸载/重装不能重复领取。
+
+新手任务奖励可以后续配置：
+
+```text
+第一条记忆      +1 天
+第一次照片      +1 天
+第一次语音      +2 天
+连续记录 3 天   +3 天
+第一次 AI 回忆  +2 天
+创建家庭        +2 天
+邀请家庭成员    +3 天
+累计最多 14 天
+```
+
+奖励数值是运营策略，不是 hard rule。
+
+### Founder Cohort
+
+Founder 与 Plan 分离：
+
+```text
+plan_code = PERSONAL
+pricing_cohort = FOUNDER_2026
+```
+
+基线为前 5000 名个人付费会员 ¥99/年。是否“连续订阅永久保持 ¥99”必须由后续运营策略确认并可修改，禁止用 User.created_at 或 PlanCode 写死。
+
+### 到期 / 降级
+
+```text
+PERSONAL / FAMILY expires
+→ FREE
+```
+
+到期后：
+
+```text
+已有记忆      可读
+已有照片      可读
+已有语音      可读
+已有 AI 结果  可读
+基础搜索      可用
+数据导出      可用
+```
+
+若已有存储 > FREE quota：
+
+```text
+不删除
+不锁读取
+允许删除
+禁止新增超额媒体
+续费后恢复写入
+```
+
+新 AI/高成本操作按 FREE capability + quota 判定。
+
+### Quota authority
+
+现有维度继续作为 V1 canonical resource quota：
+
+```text
+STORAGE_BYTES
+AI_PROVIDER_REQUESTS
+AI_INPUT_TOKENS
+AI_OUTPUT_TOKENS
+```
+
+原则：
+
+```text
+Plan  → Capability
+Quota → high-cost resource amount
+
+client != quota authority
+```
+
+Provider 调用前必须：
+
+```text
+entitlement check
+→ quota reservation
+→ durable commit
+→ provider request
+```
+
+Provider 已开始后，即使 timeout/provider failure，可按既定政策计入 request quota，避免重试形成无界外部成本。
+
+### Pricing Catalog
+
+价格不得与 PlanCode 绑死。
+
+首发逻辑产品基线：
+
+```text
+JIYI_PERSONAL_MONTHLY       1500 fen
+JIYI_PERSONAL_YEARLY       12900 fen
+JIYI_PERSONAL_FOUNDER_YEARLY 9900 fen
+
+JIYI_FAMILY_MONTHLY        2500 fen
+JIYI_FAMILY_YEARLY         23900 fen
+JIYI_FAMILY_LAUNCH_YEARLY  19900 fen
+```
+
+金额必须使用 integer minor unit，禁止 float。
+
+商业层概念分离：
+
+```text
+Plan
+Price
+Trial
+Promotion
+Pricing Cohort
+Subscription
+Entitlement / Grant
+Quota
+```
+
+长期架构：
+
+```text
+Product
+→ Price
+→ Purchase / Subscription
+→ Entitlement / Grant
+→ UserEntitlement runtime authority
+```
+
+支付供应商订单/SKU 不得直接成为 Plan authority。
+
+### 邀请奖励
+
+推荐基线：
+
+```text
+老用户邀请新用户
+→ 新用户达到真实激活条件（例如连续使用 7 天）
+→ 双方 +7 天 PERSONAL
+```
+
+禁止“仅注册立即奖励”。需要账号级唯一约束、设备/IP 风控、最大年度奖励、禁止自邀请、禁止循环邀请刷奖励。V1 可以先设计模型和规则，不必首发开放。
+
+### 广告策略
+
+V1 不加入广告。长期也禁止使用以下私人内容做广告画像/定向：
+
+```text
+Memory
+照片内容
+位置足迹
+家庭关系
+```
+
+商业模式优先：
+
+```text
+个人会员
+家庭会员
+未来高级 AI
+```
+
+### 消费者页面
+
+V1 只展示：
+
+```text
+免费版      ¥0 / 永久
+
+个人会员    ¥129 / 年
+            Founder baseline ¥99 / 年
+
+家庭会员    ¥239 / 年
+            Launch baseline ¥199 / 年
+```
+
+不显示 PREMIUM、LEGACY_FULL、内部 quota 名称、provider/token 成本。
+
+### 运营指标（参考，不是服务端 hard rule）
+
+后台预留：
+
+```text
+FREE / PERSONAL / FAMILY / Trial 用户数
+Trial → Paid
+FREE → PERSONAL
+PERSONAL → FAMILY
+会员到期数
+续费率
+平均存储使用
+平均 AI 使用
+AI cost / paid user
+Storage cost / paid user
+ARPU
+```
+
+当前经营目标仅作为运营参考：
+
+```text
+FREE → PAID        5%～10%+
+CAC                尽量 < ¥30
+第一阶段续费率      >= 50%
+成熟续费率目标      65%～70%
+```
+
+这些目标不得进入业务逻辑或 entitlement hard rule。
+
+### V1 明确不做
+
+```text
+无限 AI
+终身会员
+一次买断
+广告
+PREMIUM 商业销售
+复杂优惠券体系
+积分商城
+企业多人套餐
+家庭人数动态计费
+按 token 向普通用户收费
+付费后才能导出自己的数据
+会员到期删除/锁定已有数据
+```
+
+### 商业化实施顺序
+
+```text
+1. BIZ-011 注册默认 LEGACY_FULL → FREE
+2. BIZ-012 Pricing Catalog
+3. Entitlement / Quota canonical runtime authority
+4. BIZ-013 Founder cohort
+5. BIZ-013 Value-triggered Trial
+6. BIZ-014 Expiration / safe downgrade
+7. ADMIN-001 Entitlement & Quota / Admin simulation
+8. BIZ-016 Flutter/Mini membership surfaces
+9. BIZ-017 WeChat Pay / App Store payment integration
+10. Commercial Launch
+```
+
+在支付系统接入前，Admin 必须能够安全模拟并验证：
+
+```text
+FREE
+→ PERSONAL
+→ FAMILY
+→ expiry
+→ downgrade
+```
+
+所有 Capability / Quota 行为必须以服务端 canonical authority 为准。
+
 
 ---
 
