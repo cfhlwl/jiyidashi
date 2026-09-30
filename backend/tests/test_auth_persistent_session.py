@@ -7,7 +7,7 @@ import jwt
 import pytest
 from sqlalchemy import select
 
-from app.auth_models import AuthIdentity, AuthSession
+from app.auth_models import AuthSession
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.security import decode_access_token_claims
