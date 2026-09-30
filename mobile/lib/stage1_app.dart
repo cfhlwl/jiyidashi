@@ -18,6 +18,8 @@ import 'onboarding_state.dart';
 import 'place_detail_page.dart';
 import 'reminder_page.dart';
 import 'today_footprint_page.dart';
+import 'timeline_models.dart';
+import 'ui/jiyi_format.dart';
 
 // [人工注释][S1-026] AppShell 只接线 Onboarding；首次自动触发仅来自注册成功，老账号不会因缺少本地状态被误判为新用户。
 import 'unified_capture_section.dart';
@@ -784,10 +786,154 @@ class TimelinePage extends StatefulWidget {
 }
 
 class _TimelinePageState extends State<TimelinePage> {
-  late Future<List<Map<String, dynamic>>> _places = widget.api.listPlaces();
+  final List<TimelineReadItem> _items = [];
+  String? _nextCursor;
+  String? _error;
+  bool _offline = false;
+  bool _loading = true;
+  bool _loadingMore = false;
+  int _requestEpoch = 0;
+  String? _timezone;
+  String? _day;
 
-  void _retryPlaces() {
-    setState(() => _places = widget.api.listPlaces());
+  @override
+  void initState() {
+    super.initState();
+    _loadInitial();
+  }
+
+  bool _requestCurrent(int epoch, int sessionVersion, String? ownerId) {
+    return mounted &&
+        epoch == _requestEpoch &&
+        widget.api.sessionVersion == sessionVersion &&
+        widget.api.authenticatedUserId == ownerId;
+  }
+
+  Future<void> _loadInitial() async {
+    final epoch = ++_requestEpoch;
+    final sessionVersion = widget.api.sessionVersion;
+    final ownerId = widget.api.authenticatedUserId;
+    setState(() {
+      _loading = true;
+      _offline = false;
+      _error = null;
+    });
+    try {
+      final raw = await widget.api.getTimelineEvents(limit: 30);
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      final page = TimelineReadPage.parse(raw);
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(page.items);
+        _nextCursor = page.nextCursor;
+        _timezone = page.timezone;
+        _day = page.day;
+        _loading = false;
+      });
+    } on TransportException {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loading = false;
+        _offline = true;
+      });
+    } on ProtocolException {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loading = false;
+        _error = '时间线数据暂时无法识别，可以重新加载。';
+      });
+    } on ApiException catch (exc) {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loading = false;
+        _error = exc.statusCode == 401
+            ? '登录状态已失效，请重新登录。'
+            : '时间线暂时无法读取，可以稍后重试。';
+      });
+    } catch (_) {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loading = false;
+        _error = '时间线暂时无法读取，可以稍后重试。';
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final cursor = _nextCursor;
+    if (cursor == null || _loadingMore) return;
+    final epoch = _requestEpoch;
+    final sessionVersion = widget.api.sessionVersion;
+    final ownerId = widget.api.authenticatedUserId;
+    setState(() {
+      _loadingMore = true;
+      _error = null;
+    });
+    try {
+      final raw = await widget.api.getTimelineEvents(
+        limit: 30,
+        cursor: cursor,
+      );
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      final page = TimelineReadPage.parse(raw);
+      if (page.timezone != _timezone || page.day != _day) {
+        throw ProtocolException('时间线分页范围发生变化');
+      }
+      final seen = _items.map((item) => '${item.kind}:${item.id}').toSet();
+      for (final item in page.items) {
+        if (!seen.add('${item.kind}:${item.id}')) {
+          throw ProtocolException('时间线分页包含重复记录');
+        }
+      }
+      setState(() {
+        _items.addAll(page.items);
+        _nextCursor = page.nextCursor;
+        _loadingMore = false;
+      });
+    } on ProtocolException {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loadingMore = false;
+        _error = '更多时间线记录暂时无法验证，请重新加载。';
+      });
+    } on TransportException {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loadingMore = false;
+        _error = '网络连接中断，可以稍后继续加载。';
+      });
+    } catch (_) {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      setState(() {
+        _loadingMore = false;
+        _error = '更多时间线记录暂时无法读取。';
+      });
+    }
+  }
+
+  void _openItem(TimelineReadItem item) {
+    if (item.isMemory) {
+      Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => MemoryDetailPage(
+            api: widget.api,
+            memoryId: item.id,
+          ),
+        ),
+      );
+      return;
+    }
+    final placeId = item.placeId;
+    if (placeId == null) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PlaceDetailPage(
+          api: widget.api,
+          placeId: placeId,
+        ),
+      ),
+    );
   }
 
   @override
@@ -798,105 +944,212 @@ class _TimelinePageState extends State<TimelinePage> {
       hero: const JiYiHeroHeader(
         eyebrow: '迹忆 · 记忆',
         title: '时间线',
-        subtitle: '把地点和已经形成的记录按时间串在一起。',
+        subtitle: '把你记录的事和已经形成的到访按时间串在一起。',
         icon: Icons.timeline_outlined,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!widget.elderMode) ...[
-            JiYiSectionCard(
-              leading: const Icon(Icons.hub_outlined),
-              title: '重要的人和人生故事',
-              subtitle: '查看你记录的重要的人、人生阶段和重要经历。',
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => V2HomePage(api: widget.api),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('打开记忆与人生'),
-              ),
+          if (_loading)
+            const JiYiLoadingState(message: '正在整理时间线…')
+          else if (_offline)
+            JiYiOfflineState(onRetry: _loadInitial)
+          else if (_error != null && _items.isEmpty)
+            JiYiErrorState(
+              title: '时间线暂时不可用',
+              message: _error!,
+              onRetry: _loadInitial,
+            )
+          else if (_items.isEmpty)
+            const JiYiEmptyState(
+              icon: Icons.timeline_outlined,
+              title: '还没有时间线记录',
+              message: '记下一件事或形成到访后，这里会按时间慢慢串起来。',
+            )
+          else ...[
+            const JiYiSectionHeader(
+              title: '最近的记录',
+              subtitle: '按时间从新到旧排列。',
             ),
             const SizedBox(height: JiYiSpacing.md),
+            for (var index = 0; index < _items.length; index++)
+              _TimelineEntry(
+                item: _items[index],
+                isLast: index == _items.length - 1,
+                onTap: () => _openItem(_items[index]),
+              ),
+            if (_error != null) ...[
+              const SizedBox(height: JiYiSpacing.sm),
+              JiYiStatusBanner(
+                kind: JiYiStatusKind.error,
+                message: _error!,
+              ),
+            ],
+            if (_nextCursor != null) ...[
+              const SizedBox(height: JiYiSpacing.md),
+              OutlinedButton.icon(
+                onPressed: _loadingMore ? null : _loadMore,
+                icon: _loadingMore
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.expand_more),
+                label: Text(_loadingMore ? '正在加载…' : '查看更多'),
+              ),
+            ],
           ],
-          JiYiSectionCard(
-            title: '地点',
-            subtitle: '查看已经形成的地点和到访记录。',
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: _places,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const JiYiLoadingState(message: '正在读取地点…');
-                }
-                if (snapshot.hasError) {
-                  final error = snapshot.error;
-                  if (error is TransportException) {
-                    return JiYiOfflineState(onRetry: _retryPlaces);
-                  }
-                  return JiYiErrorState(
-                    title: '地点暂时无法读取',
-                    message: error is ApiException
-                        ? error.message
-                        : '可以稍后重试。',
-                    onRetry: _retryPlaces,
-                  );
-                }
-                final places = snapshot.data ?? const <Map<String, dynamic>>[];
-                if (places.isEmpty) {
-                  return const JiYiEmptyState(
-                    icon: Icons.place_outlined,
-                    title: '还没有地点',
-                    message: '形成到访记录后，这里才会出现可查看的地点。',
-                  );
-                }
-                return Column(
-                  children: [
-                    for (var i = 0; i < places.length; i++) ...[
-                      // [人工注释][S2-013] JiYiSectionCard 使用 DecoratedBox；
-                      // ListTile 需要自己的透明 Material 承载 ink，不能让点击反馈被卡片背景遮住。
-                      Material(
-                        type: MaterialType.transparency,
-                        child: ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.place_outlined),
-                          title: Text(
-                            places[i]['name']?.toString() ?? '未命名地点',
-                          ),
-                          subtitle: Text(
-                            places[i]['address']?.toString() ?? '暂无地址信息',
-                          ),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () {
-                            final placeId = places[i]['id']?.toString() ?? '';
-                            if (placeId.isEmpty) return;
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => PlaceDetailPage(
-                                  api: widget.api,
-                                  placeId: placeId,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      if (i != places.length - 1)
-                        const Divider(height: JiYiSpacing.sm),
-                    ],
-                  ],
+          if (!widget.elderMode) ...[
+            const SizedBox(height: JiYiSpacing.lg),
+            JiYiActionCard(
+              icon: Icons.hub_outlined,
+              title: '重要的人和人生故事',
+              message: '查看你记录的重要的人、人生阶段和重要经历。',
+              onTap: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => V2HomePage(api: widget.api),
+                  ),
                 );
               },
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 }
+
+class _TimelineEntry extends StatelessWidget {
+  const _TimelineEntry({
+    required this.item,
+    required this.isLast,
+    required this.onTap,
+  });
+
+  final TimelineReadItem item;
+  final bool isLast;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final occurred = DateTime.parse(item.occurredAt).toLocal();
+    final day = '${occurred.month}月${occurred.day}日';
+    final time = jiyiDisplayTime(item.occurredAt);
+    final title = item.isMemory
+        ? (item.title ?? _timelineMemoryTypeLabel(item.memoryType))
+        : (item.placeName ?? '一次到访');
+    final message = item.isMemory
+        ? (item.content ?? '一段记忆')
+        : (item.visitFinalized == true ? '已形成足迹' : '到访仍在更新');
+    final icon = item.isMemory
+        ? _timelineMemoryIcon(item.memoryType)
+        : Icons.place_outlined;
+
+    return Semantics(
+      button: true,
+      label: '$day $time $title',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 70,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: JiYiSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        day,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: JiYiSpacing.xxs),
+                      Text(
+                        time,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: JiYiSpacing.sm),
+              SizedBox(
+                width: 20,
+                child: Column(
+                  children: [
+                    const SizedBox(height: JiYiSpacing.md),
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: theme.colorScheme.surface,
+                          width: 3,
+                        ),
+                      ),
+                    ),
+                    if (!isLast)
+                      Container(
+                        width: 2,
+                        height: 94,
+                        color: theme.colorScheme.outlineVariant,
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: JiYiSpacing.sm),
+              Expanded(
+                child: JiYiSectionCard(
+                  leading: Icon(icon),
+                  title: title,
+                  subtitle: item.placeName != null && item.isMemory
+                      ? item.placeName
+                      : null,
+                  child: Text(
+                    message,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _timelineMemoryTypeLabel(String? value) => switch (value) {
+      'NOTE' => '文字记忆',
+      'VOICE' => '语音记忆',
+      'PHOTO' => '照片记忆',
+      'PLACE' => '地点记忆',
+      'OBJECT_LOCATION' => '物品位置',
+      'REMINDER' => '提醒',
+      'EVENT' => '事件记录',
+      _ => '一段记忆',
+    };
+
+IconData _timelineMemoryIcon(String? value) => switch (value) {
+      'VOICE' => Icons.mic_none_outlined,
+      'PHOTO' => Icons.photo_outlined,
+      'PLACE' => Icons.place_outlined,
+      'OBJECT_LOCATION' => Icons.inventory_2_outlined,
+      _ => Icons.auto_stories_outlined,
+    };
 
 class CapturePage extends StatefulWidget {
   const CapturePage({

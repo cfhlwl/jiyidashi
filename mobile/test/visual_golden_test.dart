@@ -144,28 +144,72 @@ class _GoldenApi extends JiYiApiClient {
 
 class _GoldenTimelineApi extends _GoldenApi {
   @override
-  Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async => [
-        {
-          'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-          'name': '上海办公室',
-          'address': '上海市测试路 1 号',
-        },
-        {
-          'id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-          'name': '周末咖啡店',
-          'address': '上海市安静路 8 号',
-        },
-      ];
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async => {
+        'timezone': 'Asia/Shanghai',
+        'day': null,
+        'items': [
+          {
+            'kind': 'MEMORY',
+            'id': v2MemoryId,
+            'occurred_at': '2025-03-01T09:30:00Z',
+            'ended_at': null,
+            'place_id': v2PlaceId,
+            'place_name': '上海办公室',
+            'memory_type': 'NOTE',
+            'title': '第一次产品讨论',
+            'content': '把第一版产品方向写满了整块白板。',
+            'source_type': 'USER_TEXT',
+            'is_confirmed': true,
+            'confidence': 1.0,
+            'visit_source': null,
+            'visit_finalized': null,
+          },
+          {
+            'kind': 'VISIT',
+            'id': '33333333-3333-4333-8333-333333333333',
+            'occurred_at': '2025-02-28T05:20:00Z',
+            'ended_at': '2025-02-28T06:40:00Z',
+            'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            'place_name': '周末咖啡店',
+            'memory_type': null,
+            'title': null,
+            'content': null,
+            'source_type': null,
+            'is_confirmed': null,
+            'confidence': 0.96,
+            'visit_source': 'LOCATION_CLUSTER',
+            'visit_finalized': true,
+          },
+        ],
+        'next_cursor': null,
+      };
 }
 
 class _GoldenEmptyTimelineApi extends _GoldenApi {
   @override
-  Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async => const [];
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async => {
+        'timezone': 'Asia/Shanghai',
+        'day': null,
+        'items': const <Map<String, dynamic>>[],
+        'next_cursor': null,
+      };
 }
 
 class _GoldenOfflineTimelineApi extends _GoldenApi {
   @override
-  Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async {
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async {
     throw TransportException('网络连接失败');
   }
 }
@@ -451,10 +495,17 @@ void main() {
   });
 
   testWidgets('golden: timeline', (tester) async {
-    final key = await _pumpSurface(tester, TimelinePage(api: _GoldenTimelineApi()));
+    final key = await _pumpSurface(
+      tester,
+      TimelinePage(api: _GoldenTimelineApi()),
+    );
     expect(find.text('时间线'), findsWidgets);
-    expect(find.text('上海办公室'), findsOneWidget);
-    await expectLater(find.byKey(key), matchesGoldenFile('goldens/timeline.png'));
+    expect(find.text('第一次产品讨论'), findsOneWidget);
+    expect(find.text('周末咖啡店'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/timeline.png'),
+    );
   });
 
   testWidgets('golden: people', (tester) async {
@@ -481,9 +532,15 @@ void main() {
   });
 
   testWidgets('golden: empty timeline state', (tester) async {
-    final key = await _pumpSurface(tester, TimelinePage(api: _GoldenEmptyTimelineApi()));
-    expect(find.text('还没有地点'), findsOneWidget);
-    await expectLater(find.byKey(key), matchesGoldenFile('goldens/state_empty.png'));
+    final key = await _pumpSurface(
+      tester,
+      TimelinePage(api: _GoldenEmptyTimelineApi()),
+    );
+    expect(find.text('还没有时间线记录'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/state_empty.png'),
+    );
   });
 
   testWidgets('golden: offline timeline state', (tester) async {
