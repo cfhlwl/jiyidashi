@@ -215,4 +215,70 @@ void main() {
     expect(api.hasFreshAuthenticatedOwnerAuthority, isTrue);
   });
 
+
+  test('expired access token refreshes once and retries the authenticated request', () async {
+    final store = MemoryAuthSessionStore()..installationId = 'install-retry';
+    var call = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        call += 1;
+        if (call == 1) {
+          expect(request.url.path, '/v1/auth/login');
+          return http.Response(
+            jsonEncode(sessionPayload(access: 'expired-access')),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        if (call == 2) {
+          expect(request.url.path, '/v1/user');
+          expect(request.headers['authorization'], 'Bearer expired-access');
+          return http.Response(
+            jsonEncode({'detail': 'INVALID_ACCESS_TOKEN'}),
+            401,
+            headers: jsonHeaders,
+          );
+        }
+        if (call == 3) {
+          expect(request.url.path, '/v1/auth/refresh');
+          return http.Response(
+            jsonEncode(
+              sessionPayload(
+                access: 'fresh-access',
+                refresh: 'fresh-refresh-abcdefghijklmnopqrstuvwxyz',
+              ),
+            ),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        expect(call, 4);
+        expect(request.url.path, '/v1/user');
+        expect(request.headers['authorization'], 'Bearer fresh-access');
+        return http.Response(
+          jsonEncode({
+            'id': '11111111-1111-4111-8111-111111111111',
+            'nickname': 'Owner',
+            'timezone': 'Asia/Shanghai',
+            'locale': 'zh-CN',
+            'elder_mode_enabled': false,
+            'created_at': '2026-09-30T00:00:00Z',
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'owner@example.test', password: 'password-123456');
+    final profile = await api.getProfile();
+
+    expect(profile['nickname'], 'Owner');
+    expect(api.accessToken, 'fresh-access');
+    expect(store.session?.refreshToken, 'fresh-refresh-abcdefghijklmnopqrstuvwxyz');
+    expect(call, 4);
+  });
+
 }
