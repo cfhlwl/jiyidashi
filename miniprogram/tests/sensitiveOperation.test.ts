@@ -112,3 +112,84 @@ test('member and emergency mutations enter synchronous single-flight before conf
       emergencyBody.indexOf('confirmSensitiveOperation'),
   )
 })
+
+
+test('Family refresh binds the originating auth session before publishing payloads', () => {
+  const page = readFileSync(resolve(process.cwd(), 'src/pages/family/index.tsx'), 'utf8')
+  const refreshStart = page.indexOf('const refresh = async')
+  const refreshEnd = page.indexOf('useDidShow')
+  const refreshBody = page.slice(refreshStart, refreshEnd)
+
+  assert.match(refreshBody, /expectedSession\?: \{ owner: string \| null; epoch: number \}/)
+  assert.match(refreshBody, /const refreshSession = expectedSession \|\| captureMutationSession\(\)/)
+  assert.match(refreshBody, /const refreshCurrent = \(\) =>/)
+  assert.match(refreshBody, /const family = await getFamily\(\)[\s\S]*?if \(!refreshCurrent\(\)\) return false/)
+  assert.match(refreshBody, /const profile = await getProfile\(\)[\s\S]*?if \(!refreshCurrent\(\)\) return false/)
+  assert.match(refreshBody, /const permissions = await getFamilyPermissions\(\)[\s\S]*?if \(!refreshCurrent\(\)\) return false/)
+
+  const followup = refreshBody.indexOf('const [shares, reminders] = await Promise.all')
+  const finalFreshness = refreshBody.indexOf('if (!refreshCurrent()) return false', followup)
+  const publishShares = refreshBody.indexOf('setEmergencyShares(shares)', followup)
+  const publishPage = refreshBody.indexOf("setPageState({\n        phase: 'family-ready'", followup)
+  assert.ok(followup >= 0)
+  assert.ok(finalFreshness > followup)
+  assert.ok(publishShares > finalFreshness)
+  assert.ok(publishPage > finalFreshness)
+
+  const memberStart = page.indexOf('const mutateMember = async')
+  const permissionStart = page.indexOf('const updatePermission = async')
+  const memberBody = page.slice(memberStart, permissionStart)
+  assert.match(memberBody, /const refreshed = await refresh\(true, session\)/)
+  assert.match(memberBody, /if \(!refreshed \|\| !mutationSessionCurrent\(session\)\) return/)
+})
+
+test('Emergency follow-up reads validate stale session before publishing shares', () => {
+  const page = readFileSync(resolve(process.cwd(), 'src/pages/family/index.tsx'), 'utf8')
+  const emergencyStart = page.indexOf('const createEmergencyShare = async')
+  const emergencyRead = page.indexOf('const readEmergencyLocation = async')
+  const body = page.slice(emergencyStart, emergencyRead)
+
+  assert.doesNotMatch(body, /setEmergencyShares\(await getFamilyEmergencyShares/)
+  const guardedPublish = /const nextShares = await getFamilyEmergencyShares\(ownerUserId\)[\s\S]*?if \(!sensitiveMutationEpoch\.current\.isCurrent\(attempt\) \|\| !mutationSessionCurrent\(session\)\) \{[\s\S]*?return[\s\S]*?\}[\s\S]*?setEmergencyShares\(nextShares\)/g
+  const matches = body.match(guardedPublish) || []
+  assert.equal(matches.length, 2)
+})
+
+test('account switch during Family/Emergency refresh discards old payload before publish', async () => {
+  let currentOwner = 'account-a'
+  let currentEpoch = 7
+  const captured = { owner: currentOwner, epoch: currentEpoch }
+  const mutationEpoch = new SensitiveOperationEpoch()
+  const refreshAttempt = mutationEpoch.invalidate()
+
+  let resolvePayload!: (value: { family: string; shares: string[] }) => void
+  const pending = new Promise<{ family: string; shares: string[] }>((resolvePromise) => {
+    resolvePayload = resolvePromise
+  })
+
+  let familyState = 'new-session-family'
+  let emergencyState = ['new-session-share']
+  const sessionCurrent = () => (
+    mutationEpoch.isCurrent(refreshAttempt)
+    && captured.owner === currentOwner
+    && captured.epoch === currentEpoch
+  )
+
+  const completion = pending.then((payload) => {
+    if (!sessionCurrent()) return
+    emergencyState = payload.shares
+    familyState = payload.family
+  })
+
+  // The old account's follow-up GET is still pending when the user switches account.
+  currentOwner = 'account-b'
+  currentEpoch += 1
+  resolvePayload({
+    family: 'old-account-family',
+    shares: ['old-account-emergency-share'],
+  })
+  await completion
+
+  assert.equal(familyState, 'new-session-family')
+  assert.deepEqual(emergencyState, ['new-session-share'])
+})
