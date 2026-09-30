@@ -2,6 +2,128 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+class _UiCopyLeak {
+  const _UiCopyLeak(this.path, this.value, this.reason);
+
+  final String path;
+  final String value;
+  final String reason;
+
+  @override
+  String toString() => '$path: $reason -> "$value"';
+}
+
+List<File> _productionUiFiles() {
+  final files = Directory('lib')
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where((file) => file.path.endsWith('.dart'))
+      .where((file) {
+        final source = file.readAsStringSync();
+        final importsFlutterUi =
+            source.contains("package:flutter/material.dart") ||
+            source.contains("package:flutter/widgets.dart");
+        final rendersUi =
+            source.contains('Widget build(') ||
+            source.contains('showDialog<') ||
+            source.contains('showModalBottomSheet<');
+        return importsFlutterUi && rendersUi;
+      })
+      .toList()
+    ..sort((a, b) => a.path.compareTo(b.path));
+  return files;
+}
+
+List<String> _visibleUiLiterals(String source) {
+  final literals = <String>[];
+  final patterns = [
+    RegExp(
+      r'''Text(?:\.[A-Za-z]+)?\([^;]{0,360}?(?:'([^']*)'|"([^"]*)")''',
+      multiLine: true,
+    ),
+    RegExp(
+      r'''(?:title|subtitle|message|label|eyebrow|hintText|helperText|errorText|tooltip|semanticLabel|text)\s*:\s*[^;,\n]{0,240}?(?:'([^']*)'|"([^"]*)")''',
+      multiLine: true,
+    ),
+  ];
+
+  for (final pattern in patterns) {
+    for (final match in pattern.allMatches(source)) {
+      final groups = match.groups([1, 2]).whereType<String>().toList();
+      final value = groups.isEmpty ? null : groups.first;
+      if (value != null && value.trim().isNotEmpty) {
+        literals.add(value);
+      }
+    }
+  }
+  return literals;
+}
+
+List<_UiCopyLeak> _productionLanguageLeaks() {
+  final leaks = <_UiCopyLeak>[];
+  final forbiddenVocabulary = <MapEntry<RegExp, String>>[
+    MapEntry(RegExp(r'SEC-', caseSensitive: false), 'security/internal ticket token'),
+    MapEntry(RegExp(r'\bprovider\b', caseSensitive: false), 'provider implementation term'),
+    MapEntry(RegExp(r'\bprovenance\b', caseSensitive: false), 'provenance implementation term'),
+    MapEntry(RegExp(r'citation\s*slot', caseSensitive: false), 'citation-slot implementation term'),
+    MapEntry(RegExp(r'\bas_of\b', caseSensitive: false), 'raw as_of field'),
+    MapEntry(RegExp(r'\bMemory\b'), 'raw Memory model name'),
+    MapEntry(RegExp(r'\bEvidence\b'), 'raw Evidence model name'),
+    MapEntry(RegExp(r'\bVisit\b'), 'raw Visit model name'),
+    MapEntry(RegExp(r'\bGraph\b'), 'raw Graph model name'),
+    MapEntry(RegExp(r'\bLifeEvent\b'), 'raw LifeEvent model name'),
+    MapEntry(RegExp(r'\bLifeStage\b'), 'raw LifeStage model name'),
+  ];
+  final rawEnums = RegExp(
+    r'\b(?:UNKNOWN|CONFIRMED|INFERRED|UNAVAILABLE|READY|FAILED|ERROR|LOADING|ACTIVE|PAUSED|PENDING|DENIED|GRANTED|ALLOWED|BLOCKED|REVOKED|EXPIRED|STALE|NOTE|VOICE|PHOTO|PLACE|OBJECT_LOCATION|REMINDER|EVENT|VISIT|MEMORY|PERSON|LIFE_EVENT|LIFE_STAGE)\b',
+  );
+  final directRawUiExpression = RegExp(
+    r'''(?:Text(?:\.[A-Za-z]+)?\(|(?:title|subtitle|message|label|eyebrow|hintText|helperText|errorText|tooltip|semanticLabel|text)\s*:)\s*(?:[A-Za-z_]\w*\.)*(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)\b''',
+    multiLine: true,
+  );
+  final interpolatedRawUiValue = RegExp(
+    r'''(?:\$|\$\{)[^}\n]*(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)\b''',
+    caseSensitive: false,
+  );
+
+  for (final file in _productionUiFiles()) {
+    final source = file.readAsStringSync();
+    for (final literal in _visibleUiLiterals(source)) {
+      for (final forbidden in forbiddenVocabulary) {
+        if (forbidden.key.hasMatch(literal)) {
+          leaks.add(_UiCopyLeak(file.path, literal, forbidden.value));
+        }
+      }
+      final enumMatch = rawEnums.firstMatch(literal);
+      if (enumMatch != null) {
+        leaks.add(
+          _UiCopyLeak(
+            file.path,
+            literal,
+            'raw trust/status/domain enum ' + enumMatch.group(0)!,
+          ),
+        );
+      }
+      if (interpolatedRawUiValue.hasMatch(literal)) {
+        leaks.add(
+          _UiCopyLeak(file.path, literal, 'raw trust/status value interpolation'),
+        );
+      }
+    }
+
+    for (final match in directRawUiExpression.allMatches(source)) {
+      leaks.add(
+        _UiCopyLeak(
+          file.path,
+          match.group(0)!.replaceAll(RegExp(r'\s+'), ' ').trim(),
+          'raw trust/status expression passed directly to visible UI',
+        ),
+      );
+    }
+  }
+  return leaks;
+}
+
 void main() {
   test('Flutter Product Experience V2 uses human-facing People and Life language', () {
     final people = File('lib/v2/people_page.dart').readAsStringSync();
@@ -65,6 +187,26 @@ void main() {
     expect(today, contains('进入家庭后，只读取家人明确授权给你的内容。'));
     expect(today, isNot(contains('FamilyApi(widget.api).getFamily()')));
     expect(today, contains('MemoryDetailPage('));
+  });
+
+  test('Flutter Product Experience V2 production UI rejects developer language and raw enums', () {
+    final files = _productionUiFiles();
+    final visibleLiteralCount = files
+        .map((file) => _visibleUiLiterals(file.readAsStringSync()).length)
+        .fold<int>(0, (sum, count) => sum + count);
+
+    // Fail closed if the scanner silently stops covering the production UI.
+    expect(files.length, greaterThanOrEqualTo(10));
+    expect(visibleLiteralCount, greaterThanOrEqualTo(50));
+
+    final leaks = _productionLanguageLeaks();
+    expect(
+      leaks,
+      isEmpty,
+      reason: leaks.isEmpty
+          ? null
+          : 'Production-facing language leaks:\n' + leaks.join('\n'),
+    );
   });
 
   test('Flutter Product Experience V2 memoir is story-first and hides implementation language', () {
