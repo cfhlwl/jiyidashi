@@ -114,6 +114,25 @@ export async function confirmSensitiveOperation(
   return result.confirm === true
 }
 
+export class SensitiveOperationSingleFlight {
+  private readonly pending = new Set<string>()
+
+  begin(key: string): boolean {
+    const normalized = key.trim().toLowerCase()
+    if (!normalized || this.pending.has(normalized)) return false
+    this.pending.add(normalized)
+    return true
+  }
+
+  end(key: string): void {
+    this.pending.delete(key.trim().toLowerCase())
+  }
+
+  isPending(key: string): boolean {
+    return this.pending.has(key.trim().toLowerCase())
+  }
+}
+
 export class SensitiveOperationEpoch {
   private generation = 0
 
