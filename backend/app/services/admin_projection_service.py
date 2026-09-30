@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from urllib.parse import urlparse
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, inspect, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
@@ -41,7 +41,7 @@ from app.admin_schemas import (
 from app.analytics_models import ProductActiveDay, RetrievalAnalyticsAttempt, RetrievalOutcome
 from app.core.config import Settings, get_settings
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
-from app.entitlement_models import PlanCode, UserEntitlement
+from app.entitlement_models import AIQuotaPeriod, PlanCode, UserEntitlement
 from app.family_models import Family, FamilyMembership, FamilyPermissionGrant
 from app.media_models import MediaAsset, MediaStatus
 from app.models import Device, Memory, User
@@ -1292,11 +1292,51 @@ def system_health_projection(
         )
         or 0
     )
+
+    schema_version: str | None = None
+    if inspect(db.get_bind()).has_table("alembic_version"):
+        raw_schema_version = db.scalar(
+            text("SELECT version_num FROM alembic_version LIMIT 1")
+        )
+        if raw_schema_version is not None:
+            schema_version = str(raw_schema_version)
+
+    storage_alerts = int(
+        db.scalar(
+            select(func.count(SecurityAlert.id)).where(
+                SecurityAlert.rule_code.like("STORAGE_%"),
+                SecurityAlert.delivery_status
+                != SecurityAlertDeliveryStatus.DELIVERED.value,
+            )
+        )
+        or 0
+    )
+
+    observed = datetime.now(UTC)
+    month_start = datetime(observed.year, observed.month, 1, tzinfo=UTC)
+    if observed.month == 12:
+        month_end = datetime(observed.year + 1, 1, 1, tzinfo=UTC)
+    else:
+        month_end = datetime(observed.year, observed.month + 1, 1, tzinfo=UTC)
+    usage_row = db.execute(
+        select(
+            func.coalesce(func.sum(AIQuotaPeriod.provider_requests), 0),
+            func.coalesce(func.sum(AIQuotaPeriod.input_tokens), 0),
+            func.coalesce(func.sum(AIQuotaPeriod.output_tokens), 0),
+        ).where(
+            AIQuotaPeriod.period_start == month_start,
+            AIQuotaPeriod.period_end == month_end,
+        )
+    ).one()
+
     return AdminSystemHealthRead(
         environment=cfg.app_env,
         api_status="正常",
         database_status="正常",
+        database_schema_status="正常" if schema_version else "未记录",
+        database_schema_version=schema_version,
         storage_status="正常" if cfg.storage_backend == "s3" else "未启用",
+        storage_alerts_needing_attention=storage_alerts,
         ai_status="正常"
         if _service_configured(cfg.ai_provider, cfg.ai_api_key, cfg.ai_model)
         else "未启用",
@@ -1310,6 +1350,9 @@ def system_health_projection(
             cfg.embedding_model,
         )
         else "未启用",
+        ai_requests_current_month=int(usage_row[0] or 0),
+        ai_input_tokens_current_month=int(usage_row[1] or 0),
+        ai_output_tokens_current_month=int(usage_row[2] or 0),
         app_version=cfg.app_version,
         git_sha=cfg.app_git_sha.strip() or None,
         build_time=cfg.app_build_time.strip() or None,
