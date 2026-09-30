@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 import logging
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,12 +15,13 @@ import app.api.data_delete as data_delete_api
 import app.main as main_module
 from app.core.config import Settings
 from app.core.db import SessionLocal
+from app.core.security import AccessTokenClaims
 from app.core.observability import (
     configure_observability_log_level,
     emit_operational_event,
 )
 from app.data_deletion_models import DataDeletionStatus
-from app.deps import get_authenticated_user_id
+from app.deps import get_authenticated_claims, get_authenticated_user_id
 from app.main import app
 from app.models import User
 from app.services.account_deletion_service import (
