@@ -20,7 +20,7 @@ from app.person_models import Person, PersonAlias
 from app.person_relationship_models import PersonRelationship, PersonRelationshipKind
 from app.services import account_deletion_service
 from app.services.object_storage import ObjectStorageError, get_object_storage
-from tests.auth_test_helpers import register_verified_session
+from auth_test_helpers import register_verified_session
 
 
 class AccountDeleteStorage:
