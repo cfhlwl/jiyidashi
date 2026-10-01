@@ -674,6 +674,225 @@ class PrivacyStatusResponse(BaseModel):
     paused_until: datetime | None
 
 
+class RecordingHealthStatus(StrEnum):
+    HEALTHY = "HEALTHY"
+    DEGRADED = "DEGRADED"
+    PAUSED = "PAUSED"
+    BLOCKED = "BLOCKED"
+    RECOVERING = "RECOVERING"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingHealthReason(StrEnum):
+    RECENT_CAPTURE_AND_ACK = "RECENT_CAPTURE_AND_ACK"
+    PRIVACY_PAUSED = "PRIVACY_PAUSED"
+    PERMISSION_BLOCKED = "PERMISSION_BLOCKED"
+    LOCATION_SERVICES_OFF = "LOCATION_SERVICES_OFF"
+    AUTOMATIC_DISABLED = "AUTOMATIC_DISABLED"
+    PLATFORM_RESTRICTED = "PLATFORM_RESTRICTED"
+    QUEUE_BACKLOG = "QUEUE_BACKLOG"
+    QUEUE_CAPACITY_PRESSURE = "QUEUE_CAPACITY_PRESSURE"
+    DELIVERY_BACKLOG = "DELIVERY_BACKLOG"
+    DELIVERY_FAILURE = "DELIVERY_FAILURE"
+    RECOVERY_PENDING = "RECOVERY_PENDING"
+    PRODUCER_NOT_RUNNING = "PRODUCER_NOT_RUNNING"
+    NO_RECENT_FIX = "NO_RECENT_FIX"
+    NO_RECENT_ACK = "NO_RECENT_ACK"
+    RECORDED_GAP = "RECORDED_GAP"
+    NATIVE_STATE_UNAVAILABLE = "NATIVE_STATE_UNAVAILABLE"
+    CLIENT_STATE_STALE = "CLIENT_STATE_STALE"
+
+
+class RecordingPermissionState(StrEnum):
+    BACKGROUND = "BACKGROUND"
+    FOREGROUND = "FOREGROUND"
+    DENIED = "DENIED"
+    RESTRICTED = "RESTRICTED"
+    NOT_DETERMINED = "NOT_DETERMINED"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingLocationServicesState(StrEnum):
+    ON = "ON"
+    OFF = "OFF"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingBackgroundRuntimeState(StrEnum):
+    ELIGIBLE = "ELIGIBLE"
+    RESTRICTED = "RESTRICTED"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingBatteryOptimizationState(StrEnum):
+    EXEMPT = "EXEMPT"
+    OPTIMIZED = "OPTIMIZED"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingProducerState(StrEnum):
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+    STOPPED = "STOPPED"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingDeliveryErrorCode(StrEnum):
+    NETWORK_UNAVAILABLE = "NETWORK_UNAVAILABLE"
+    SERVER_RETRYABLE = "SERVER_RETRYABLE"
+    AUTHORITY_REJECTED = "AUTHORITY_REJECTED"
+    PRIVACY_REJECTED = "PRIVACY_REJECTED"
+    PROTOCOL_ERROR = "PROTOCOL_ERROR"
+    QUEUE_ERROR = "QUEUE_ERROR"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingGapReason(StrEnum):
+    PERMISSION_BLOCKED = "PERMISSION_BLOCKED"
+    LOCATION_SERVICES_OFF = "LOCATION_SERVICES_OFF"
+    PRIVACY_PAUSED = "PRIVACY_PAUSED"
+    PLATFORM_RESTRICTED = "PLATFORM_RESTRICTED"
+    QUEUE_CAPACITY_PRESSURE = "QUEUE_CAPACITY_PRESSURE"
+    DELIVERY_BACKLOG = "DELIVERY_BACKLOG"
+    PRODUCER_NOT_RUNNING = "PRODUCER_NOT_RUNNING"
+    NO_RECENT_FIX = "NO_RECENT_FIX"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingGapState(StrEnum):
+    NONE = "NONE"
+    KNOWN = "KNOWN"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingCoverageState(StrEnum):
+    HEALTHY = "HEALTHY"
+    PARTIAL = "PARTIAL"
+    GAPPED = "GAPPED"
+    UNKNOWN = "UNKNOWN"
+
+
+class RecordingClientState(BaseModel):
+    """Privacy-safe local diagnostics supplied by the authenticated Flutter owner.
+
+    This is evidence for one projection request, not a second producer and not a durable
+    route log. Raw coordinates, content and device identifiers are intentionally absent.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    observed_at: TimezoneAwareDateTime
+    platform: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=16),
+    ]
+    automatic_enabled: StrictBool
+    permission_state: RecordingPermissionState
+    location_services_state: RecordingLocationServicesState
+    background_runtime_state: RecordingBackgroundRuntimeState
+    battery_optimization_state: RecordingBatteryOptimizationState | None = None
+    native_producer_state: RecordingProducerState
+
+    native_queue_depth: int = Field(default=0, ge=0, le=100000)
+    native_queue_capacity: int = Field(default=0, ge=0, le=100000)
+    native_oldest_pending_at: TimezoneAwareDateTime | None = None
+    native_queue_corrupt: StrictBool = False
+    native_queue_storage_unavailable: StrictBool = False
+
+    sqlite_queue_depth: int = Field(default=0, ge=0, le=100000)
+    sqlite_oldest_pending_at: TimezoneAwareDateTime | None = None
+    capacity_pressure: StrictBool = False
+    dropped_sample_count: int = Field(default=0, ge=0, le=100000)
+
+    last_fix_at: TimezoneAwareDateTime | None = None
+    last_enqueue_at: TimezoneAwareDateTime | None = None
+    last_handoff_at: TimezoneAwareDateTime | None = None
+    last_upload_attempt_at: TimezoneAwareDateTime | None = None
+    last_server_ack_at: TimezoneAwareDateTime | None = None
+
+    delivery_failure_count: int = Field(default=0, ge=0, le=100000)
+    last_delivery_error_code: RecordingDeliveryErrorCode | None = None
+    recovery_pending: StrictBool = False
+
+
+class RecordingGapSummary(BaseModel):
+    reason: RecordingGapReason
+    started_at: datetime
+    ended_at: datetime
+    duration_seconds: int = Field(ge=0)
+
+
+class RecordingTodayCoverage(BaseModel):
+    local_day: date
+    timezone: TimezoneName
+    first_observed_at: datetime | None
+    last_observed_at: datetime | None
+    trusted_location_sample_count: int = Field(ge=0)
+    visit_count: int = Field(ge=0)
+    memory_count: int = Field(ge=0)
+    covered_duration_seconds: int = Field(ge=0)
+    known_gap_duration_seconds: int = Field(ge=0)
+    largest_known_gap_seconds: int = Field(ge=0)
+    coverage_state: RecordingCoverageState
+    has_capacity_pressure: bool
+    has_recorded_gap: bool
+    recent_gaps: list[RecordingGapSummary] = Field(default_factory=list, max_length=8)
+
+
+class RecordingHealthAggregates(BaseModel):
+    healthy_days_7d: int = Field(ge=0, le=7)
+    healthy_days_30d: int = Field(ge=0, le=30)
+    gap_hours_7d: float = Field(ge=0)
+    gap_hours_30d: float = Field(ge=0)
+    days_with_capacity_pressure: int | None = Field(default=None, ge=0, le=30)
+    days_with_permission_block: int | None = Field(default=None, ge=0, le=30)
+    current_capacity_pressure: bool | None = None
+    current_permission_block: bool | None = None
+
+
+class RecordingHealthSnapshot(BaseModel):
+    status: RecordingHealthStatus
+    status_reason: RecordingHealthReason
+    automatic_enabled: bool | None
+    privacy_paused: bool
+
+    permission_state: RecordingPermissionState | None
+    location_services_state: RecordingLocationServicesState | None
+    background_runtime_state: RecordingBackgroundRuntimeState | None
+    battery_optimization_state: RecordingBatteryOptimizationState | None
+
+    native_producer_state: RecordingProducerState | None
+    native_queue_depth: int = Field(ge=0)
+    native_queue_capacity: int = Field(ge=0)
+    native_oldest_pending_at: datetime | None
+    sqlite_queue_depth: int = Field(ge=0)
+    capacity_pressure: bool
+
+    last_fix_at: datetime | None
+    last_enqueue_at: datetime | None
+    last_handoff_at: datetime | None
+    last_upload_attempt_at: datetime | None
+    last_upload_success_at: datetime | None
+    last_server_ack_at: datetime | None
+    last_visit_at: datetime | None
+
+    delivery_failure_count: int = Field(ge=0)
+    last_delivery_error_code: RecordingDeliveryErrorCode | None
+    recovery_pending: bool
+    recording_gap_state: RecordingGapState
+    updated_at: datetime
+
+
+class RecordingHealthResponse(BaseModel):
+    health: RecordingHealthSnapshot
+    today: RecordingTodayCoverage
+    aggregates: RecordingHealthAggregates
+    recent_gaps: list[RecordingGapSummary] = Field(default_factory=list, max_length=8)
+    server_observed_at: datetime
+    native_state_observed: bool
+
+
 class DaySummaryResponse(BaseModel):
     date: str
     memory_count: int
