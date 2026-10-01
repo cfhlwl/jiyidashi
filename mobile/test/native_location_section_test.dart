@@ -110,6 +110,23 @@ class _FakeBridge implements NativeLocationBridge {
   }
 
   @override
+  Future<NativeLocationStatus> openLocationServicesSettings(
+    String ownerUserId,
+  ) async {
+    calls.add('openLocationServicesSettings');
+    current = NativeLocationStatus(
+      supported: true,
+      platform: current.platform,
+      permission: current.permission,
+      runtime: current.runtime,
+      automaticEnabled: current.automaticEnabled,
+      locationServicesEnabled: true,
+      reason: current.reason,
+    );
+    return current;
+  }
+
+  @override
   Future<NativeLocationStatus> disableAutomaticLocation(
     String ownerUserId,
   ) async {
@@ -119,6 +136,63 @@ class _FakeBridge implements NativeLocationBridge {
 }
 
 void main() {
+  testWidgets('services-off exposes only the exact system-location CTA', (tester) async {
+    final bridge = _FakeBridge()
+      ..current = const NativeLocationStatus(
+        supported: true,
+        platform: 'android',
+        permission: NativeLocationPermission.background,
+        runtime: NativeLocationRuntime.stopped,
+        automaticEnabled: true,
+        locationServicesEnabled: false,
+        reason: 'location_services_disabled',
+      );
+    final controller = NativeLocationController(
+      bridge: bridge,
+      ownerUserId: owner,
+    );
+    await controller.initialize();
+    controller.markPrivacyActive();
+    var authorityChecks = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: NativeLocationSection(
+              controller: controller,
+              revalidateAuthority: () async {
+                authorityChecks += 1;
+                controller.markPrivacyActive();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('location-open-services-settings')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('location-start')), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('location-open-services-settings')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('location-share-confirm-submit')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(authorityChecks, 1);
+    expect(bridge.calls, <String>['status', 'openLocationServicesSettings']);
+    controller.dispose();
+  });
+
   testWidgets('Android 11 background grant requires a second explicit settings action', (
     tester,
   ) async {
