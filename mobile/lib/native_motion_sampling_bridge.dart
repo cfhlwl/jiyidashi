@@ -165,6 +165,10 @@ abstract interface class NativeDeliveryDiagnosticsSink {
 
 abstract interface class NativePassiveRecoveryTriggerBridge {
   Stream<void> get passiveRecoveryRequests;
+
+  /// Wait until any competing headless recovery engine is idle before a UI engine
+  /// reads/rotates the same secure refresh credential.
+  Future<bool> awaitPassiveRecoveryIdle();
 }
 
 abstract interface class NativeMotionSamplingBridge {
@@ -251,6 +255,12 @@ class MethodChannelNativeMotionSamplingBridge
 
   @override
   Stream<void> get passiveRecoveryRequests => _passiveRecoveryEvents.stream;
+
+  @override
+  Future<bool> awaitPassiveRecoveryIdle() async {
+    final result = await _channel.invokeMethod<bool>('awaitPassiveRecoveryIdle');
+    return result == true;
+  }
 
   @override
   Future<List<NativeLocationSample>> drainSamples(
