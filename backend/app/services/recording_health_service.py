@@ -558,7 +558,9 @@ def _derive_status(
             RecordingGapState.KNOWN,
         )
 
-    last_ack = client.last_server_ack_at or server_last_ack
+    # ACK authority is server-owned. Client delivery state may describe attempts/backlog,
+    # but it cannot mint a successful server receipt for a different/stale owner.
+    last_ack = server_last_ack
     if last_ack is None:
         return (
             RecordingHealthStatus.UNKNOWN,
@@ -645,11 +647,7 @@ def get_recording_health(
         if client_state is not None and client_state.last_fix_at is not None
         else server_last_fix
     )
-    last_server_ack = (
-        client_state.last_server_ack_at
-        if client_state is not None and client_state.last_server_ack_at is not None
-        else server_last_ack
-    )
+    last_server_ack = server_last_ack
 
     snapshot = RecordingHealthSnapshot(
         status=status,
