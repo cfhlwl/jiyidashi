@@ -183,8 +183,7 @@ internal class NativeLocationStore(context: Context) {
         }
     }
 
-    @Synchronized
-    fun enqueueLocationSample(sample: NativeQueuedLocationSample): Boolean {
+    fun enqueueLocationSample(sample: NativeQueuedLocationSample): Boolean = synchronized(QUEUE_LOCK) {
         val samples = readPendingSamples().toMutableList()
         if (queueCorrupt) return false
         if (samples.any {
@@ -192,7 +191,7 @@ internal class NativeLocationStore(context: Context) {
                     it.clientUuid == sample.clientUuid
             }
         ) {
-            return true
+            return@synchronized true
         }
         if (!NativeOwnerQueueQuota.hasCapacity(
                 samples = samples,
@@ -201,7 +200,7 @@ internal class NativeLocationStore(context: Context) {
             )
         ) {
             recordCapacityDrop(sample.ownerUserId, "native_queue_capacity")
-            return false
+            return@synchronized false
         }
         val nextSequence = maxOf(
             prefs.getLong(KEY_NEXT_QUEUE_SEQUENCE, 1L),
@@ -215,7 +214,7 @@ internal class NativeLocationStore(context: Context) {
         samples.add(persisted)
         if (!writePendingSamples(samples)) {
             markQueueCorrupt("native_queue_persist_failed")
-            return false
+            return@synchronized false
         }
         prefs.edit()
             .putLong(KEY_NEXT_QUEUE_SEQUENCE, nextSequence + 1L)
@@ -224,20 +223,19 @@ internal class NativeLocationStore(context: Context) {
         return true
     }
 
-    @Synchronized
     fun pendingLocationSamples(
         ownerUserId: String,
         limit: Int,
-    ): List<NativeQueuedLocationSample> {
+    ): List<NativeQueuedLocationSample> = synchronized(QUEUE_LOCK) {
         val samples = readPendingSamples()
-        if (queueCorrupt) return emptyList()
+        if (queueCorrupt) return@synchronized emptyList()
         val selectedSequences = samples
             .asSequence()
             .filter { it.ownerUserId == ownerUserId }
             .take(limit.coerceIn(1, 500))
             .map { it.queueSequence }
             .toSet()
-        if (selectedSequences.isEmpty()) return emptyList()
+        if (selectedSequences.isEmpty()) return@synchronized emptyList()
         val updated = samples.map { sample ->
             if (selectedSequences.contains(sample.queueSequence)) {
                 sample.copy(handoffAttemptCount = sample.handoffAttemptCount + 1)
@@ -247,17 +245,16 @@ internal class NativeLocationStore(context: Context) {
         }
         if (!writePendingSamples(updated)) {
             markQueueCorrupt("native_queue_persist_failed")
-            return emptyList()
+            return@synchronized emptyList()
         }
         return updated.filter { selectedSequences.contains(it.queueSequence) }
     }
 
-    @Synchronized
     fun acknowledgeLocationSamples(
         ownerUserId: String,
         clientUuids: Set<String>,
-    ) {
-        if (clientUuids.isEmpty()) return
+    ) = synchronized(QUEUE_LOCK) {
+        if (clientUuids.isEmpty()) return@synchronized
         val retained = readPendingSamples().filterNot {
             it.ownerUserId == ownerUserId && clientUuids.contains(it.clientUuid)
         }
@@ -266,8 +263,7 @@ internal class NativeLocationStore(context: Context) {
         }
     }
 
-    @Synchronized
-    fun purgeLocationSamplingOwner(ownerUserId: String) {
+    fun purgeLocationSamplingOwner(ownerUserId: String) = synchronized(QUEUE_LOCK) {
         if (queueCorrupt) {
             // Account deletion is privacy-authoritative. A corrupt mixed-owner payload
             // cannot be safely filtered, so remove the entire raw queue rather than risk
@@ -363,7 +359,8 @@ internal class NativeLocationStore(context: Context) {
             .commit()
     }
 
-    fun queueDiagnostics(ownerUserId: String): Map<String, Any?> {
+    fun queueDiagnostics(ownerUserId: String): Map<String, Any?> =
+        synchronized(QUEUE_LOCK) {
         val samples = readPendingSamples().filter { it.ownerUserId == ownerUserId }
         val oldest = samples.minOfOrNull { it.enqueuedAtMillis }
         val lastEnqueueKey = ownerKey(KEY_LAST_ENQUEUE_AT, ownerUserId)
@@ -628,6 +625,8 @@ internal class NativeLocationStore(context: Context) {
         private const val KEY_CAPACITY_DROP_COUNT = "capacity_drop_count"
         private const val KEY_LAST_DROP_AT = "last_drop_at"
         private const val KEY_LAST_DROP_REASON = "last_drop_reason"
+        private val QUEUE_LOCK = Any()
+
         private const val NATIVE_QUEUE_SCHEMA_VERSION = 2
         private const val MAX_PENDING_SAMPLES_PER_OWNER = 1000
         private const val CAPACITY_PRESSURE_THRESHOLD = 800
