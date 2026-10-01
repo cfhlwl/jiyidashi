@@ -380,6 +380,8 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | --- | --- | --- | --- | --- |
 | AUTH-001 | P0 | Public Auth & Persistent Session Hardening | ✅ | Issue #182 / PR #183 已完成正式安全审查并合并；merge `d20617973499c2a04cede58016999f31d331bdfc`。durable server session、15 分钟短 JWT、opaque refresh rotation/replay revoke、logout/logout-all/revoke、邮箱验证/密码恢复、Keychain/Keystore secure persistence、cold-start server-authoritative restore、并发 refresh exactly-one-success 与 stale-refresh/logout/account-switch 竞态均已收口。 |
 | AUTH-002 | P0* | WeChat Mini Program Identity | ⬜ | 若微信小程序作为正式主入口，则在公开发布前加入 `WECHAT_MINIPROGRAM` AuthIdentity：`wx.login → code2session → stable provider subject → User`；微信 secret 仅服务端。若小程序不是首发主入口，可降为 P1。 |
+| AUTH-003 | P0* | Phone Number + SMS OTP Login | ⬜ | 当前只有邮箱+密码认证；`users.phone` 仅是资料字段，尚未接入手机号 AuthIdentity、短信验证码发送/校验、过期/重放/频率限制、阿里云 SMS 服务端凭证和 Flutter/小程序登录入口。若手机号是正式主登录方式，公开发布前必须完成；短信密钥只能放服务端。 |
+| AUTH-004 | P0* | Native WeChat Login for Flutter Android/iOS | ⏸ | 后期配置，当前不阻塞主线开发。届时需完成 Android/iOS SDK 注册、`wxlogin` 回调、服务端 `code → openid/unionid → AuthIdentity → session`，并配置 Android 包签名、iOS Universal Link、微信 AppID；微信 secret 仅服务端。 |
 | BIZ-011 | P0 | Production Registration Entitlement Default | ⬜ | 当前 `register_email_password()` 仍创建 `LEGACY_FULL`，而该计划拥有全部 capability 且 quota unlimited。正式注册必须切为 FREE（或另行正式定义的 trial），`LEGACY_FULL` 仅 migration/legacy compatibility；历史用户迁移语义不变。 |
 | OPS-002 | P0 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | PostgreSQL-backed durable job/lease 优先；服务端自动推进 deletion/maintenance，并逐步异步化长耗时 AI。客户端只能发起/查询状态，不再承担服务端任务推进责任。 |
 | SEC-016 | P0 | Authenticated API Abuse & Provider Concurrency Guard | ⬜ | 在现有 Auth rate limit 之外增加 authenticated user/IP/route-class 限流；高成本 OCR/Vision/Summary/RAG/Export 独立门禁；增加跨 Uvicorn worker 的 per-user/global provider concurrency；登录增加全局 Argon2 并发边界并与 edge/WAF + per-IP 组合，禁止通过降低 Argon2 安全参数解决。 |
@@ -408,6 +410,8 @@ ADMIN-001
 → CORE-004 real-device certification
 → UIUX-P0-002 Consumer Visual Fidelity V1
 → AUTH-002（若 Mini 为首发主入口）
+→ AUTH-003（若手机号为正式主登录入口）
+→ AUTH-004（后期配置，正式启用 Flutter 微信登录时再纳入）
 → BIZ-011
 → OPS-002
 → SEC-016
@@ -584,6 +588,17 @@ User Correction Rate
 | SEC-013 | AI 推断显式标记 | ✅ | Issue #166 / PR #174 已完成两轮正式极窄复审并合并；merge `7ae43003f817932e38c7d9ef07ea9ce2b67eeee5`；deterministic Query 明确不标 AI，四态 contract 用于 Trusted Summary 与后续真实 AI surfaces |
 | SEC-014 | 敏感操作二次确认 | ✅ | Issue #167 / PR #179 已完成两轮正式 security review 并合并；merge `2080174f0b0fed4181efe467897f3f64a62450f5`；Account Delete 全事务 session binding、Family/Emergency stale publish suppression、Location fresh privacy/native authority、跨端 second-confirm/single-flight/idempotency 已收口 |
 | SEC-015 | 安全事件与异常访问告警 | ✅ | Issue #165 / PR #171 已完成两轮正式极窄复审并合并；merge `75ec2f73084cd4b7d9f4035ae1beeca3f209cae7`；durable anomaly windows、elapsed cooldown、HMAC correlation、Auth/Family/Delete/Storage signals 与 bounded retry 已收口 |
+
+## 8.1 国内用户上线专项
+
+| ID | 功能 / 需求 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| CN-001 | APP / 小程序备案与主体资料 | ⬜ | 国内公开分发前核对 APP 备案、网站/接口备案、主体资质、应用商店开发者资料、隐私政策发布地址与客服投诉渠道；具体备案类别由运营主体和服务形态确认。 |
+| CN-002 | 中文隐私政策与权限/SDK清单 | ⬜ | 将定位、后台定位、照片、麦克风、语音、设备标识、短信/微信 SDK、对象存储、AI 第三方处理方逐项写明目的、频率、保存期限、共享方、用户撤回/导出/删除/注销路径，并做真机权限审计。 |
+| CN-003 | 国内 AI 内容安全与投诉处置 | ⬜ | 对用户输入、语音转写、OCR、AI 总结建立敏感内容识别、人工复核/申诉、违规内容处置、审计留存和 AI 生成标识策略；不能只依赖“无证据不回答”。 |
+| CN-004 | 国内推送与系统兼容 | ⬜ | Android 国内设备不能只依赖 FCM；需评估厂商推送（华为/小米/OPPO/vivo 等）或微信订阅消息，并与 REM-001 统一送达、撤回、失败重试和隐私授权。 |
+| CN-005 | 国内客服、注销与数据请求闭环 | ⬜ | 在 App/小程序内提供可达客服和隐私投诉入口，定义工单、身份核验、15 个工作日内处理目标、导出/更正/删除/注销结果通知和证据留存。 |
+| CN-006 | 国内网络与第三方服务实测 | ⬜ | 真实 HTTPS 域名、备案后 API、COS/OSS 合法域名、短信通道、微信回调、运营商网络、弱网/断网、国产 Android 机型和应用商店包需做生产预发布验收。 |
 
 ---
 
