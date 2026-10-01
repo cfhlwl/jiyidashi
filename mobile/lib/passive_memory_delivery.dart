@@ -12,6 +12,7 @@ enum PassiveMemoryRecoveryStatus {
   noWork,
   busy,
   noSession,
+  accountDeletionInProgress,
   serverUnavailable,
   authorityChanged,
   privacyPaused,
@@ -124,6 +125,35 @@ class PassiveMemoryDeliveryCoordinator {
     } on ApiException {
       return const PassiveMemoryRecoveryReport(
         status: PassiveMemoryRecoveryStatus.noSession,
+      );
+    } on ProtocolException {
+      return const PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.authorityChanged,
+      );
+    }
+
+    try {
+      // AUTH refresh proves the session, but account deletion is a separate owner
+      // publication authority. Reuse the same profile guard as normal cold-start recovery.
+      await _api.getProfile();
+    } on TransportException {
+      return const PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.serverUnavailable,
+      );
+    } on ApiException catch (error) {
+      if (error.statusCode == 423 &&
+          error.message == 'ACCOUNT_DELETION_IN_PROGRESS') {
+        return const PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.accountDeletionInProgress,
+        );
+      }
+      if (error.statusCode == 400 || error.statusCode == 401) {
+        return const PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.noSession,
+        );
+      }
+      return const PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.serverUnavailable,
       );
     } on ProtocolException {
       return const PassiveMemoryRecoveryReport(
