@@ -402,6 +402,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   resumeAccountDeletion: resumeAccountDeletionAfterAuth,
                   locationBridge: locationBridge,
                   motionSamplingBridge: motionSamplingBridge,
+                  passiveDelivery: passiveDelivery,
                   sync: sync,
                   onElderModeChanged: (enabled) {
                     if (mounted) setState(() => elderModeEnabled = enabled);
@@ -894,6 +895,7 @@ class AppShell extends StatefulWidget {
     this.resumeAccountDeletion = false,
     this.locationBridge,
     this.motionSamplingBridge,
+    required this.passiveDelivery,
     this.sync,
     this.onElderModeChanged,
     required this.onLogout,
@@ -906,6 +908,7 @@ class AppShell extends StatefulWidget {
   final bool resumeAccountDeletion;
   final NativeLocationBridge? locationBridge;
   final NativeMotionSamplingBridge? motionSamplingBridge;
+  final PassiveMemoryDeliveryCoordinator passiveDelivery;
   final OfflineSyncCoordinator? sync;
   final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
@@ -947,6 +950,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         locationController: location,
         nativeBridge:
             widget.motionSamplingBridge ?? MethodChannelNativeMotionSamplingBridge(),
+        deliveryCoordinator: widget.passiveDelivery,
         closeNativeBridgeOnDispose: widget.motionSamplingBridge == null,
       );
     }
