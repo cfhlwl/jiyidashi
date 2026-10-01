@@ -119,9 +119,15 @@ def _server_last_activity(
         ).where(LocationIngestReceipt.user_id == user_id)
     ).one()
     last_visit = db.scalar(
-        select(func.max(func.coalesce(Visit.left_at, Visit.arrived_at))).where(
-            Visit.user_id == user_id
-        )
+        select(
+            func.max(
+                func.coalesce(
+                    Visit.left_at,
+                    Visit.source_ended_at,
+                    Visit.arrived_at,
+                )
+            )
+        ).where(Visit.user_id == user_id)
     )
     return (
         None if last_fix is None else _utc(last_fix),
@@ -687,7 +693,7 @@ def _derive_status(
             RecordingGapState.KNOWN,
         )
 
-    if client.native_queue_schema_version < 2:
+    if client.native_queue_schema_version < 2 or client.native_queue_capacity <= 0:
         return (
             RecordingHealthStatus.UNKNOWN,
             RecordingHealthReason.NATIVE_STATE_UNAVAILABLE,
