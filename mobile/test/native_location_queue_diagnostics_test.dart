@@ -10,6 +10,8 @@ void main() {
       'runtime': 'stopped',
       'automatic_enabled': true,
       'location_services_enabled': true,
+      'background_runtime_state': 'restricted',
+      'battery_optimization_state': 'optimized',
       'restore_pending': true,
       'recovery_reason': 'boot_completed',
       'queue': <String, Object?>{
@@ -31,6 +33,8 @@ void main() {
       },
     });
 
+    expect(status.backgroundRuntimeState, NativeBackgroundRuntimeState.restricted);
+    expect(status.batteryOptimizationState, NativeBatteryOptimizationState.optimized);
     expect(status.restorePending, isTrue);
     expect(status.recoveryReason, 'boot_completed');
     expect(status.queue.schemaVersion, 2);
@@ -56,6 +60,8 @@ void main() {
       'location_services_enabled': true,
     });
 
+    expect(status.backgroundRuntimeState, NativeBackgroundRuntimeState.unknown);
+    expect(status.batteryOptimizationState, NativeBatteryOptimizationState.unknown);
     expect(status.queue.depth, 0);
     expect(status.queue.capacity, 0);
     expect(status.queue.capacityPressure, isFalse);
