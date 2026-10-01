@@ -93,23 +93,34 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _awaitPassiveRecoveryIdle() async {
+  Future<bool> _awaitPassiveRecoveryIdle() async {
     try {
       await const MethodChannel('cn.jiyidashi/native_location')
           .invokeMethod<bool>('awaitPassiveRecoveryIdle')
           .timeout(const Duration(seconds: 95));
+      return true;
     } on MissingPluginException {
       // Widget/unit tests and unsupported platforms have no competing headless engine.
+      return true;
     } on PlatformException {
-      // Native arbitration failure cannot be treated as authenticated authority.
+      // Native arbitration failure is not permission to race a rotating refresh token.
+      return false;
     } on TimeoutException {
-      // AUTH restore below remains server-authoritative; this only avoids an Android
-      // cross-engine refresh race when a WorkManager recovery is already in flight.
+      // Fail closed rather than allow a second engine to reuse the same refresh credential.
+      return false;
     }
   }
 
   Future<void> _restoreServerSession() async {
-    await _awaitPassiveRecoveryIdle();
+    if (!await _awaitPassiveRecoveryIdle()) {
+      if (!mounted) return;
+      setState(() {
+        authenticated = false;
+        restoringSession = false;
+        restoreMessage = '后台恢复尚未安全结束，请稍后重新打开应用。';
+      });
+      return;
+    }
     if (!mounted) return;
     final result = await api.restorePersistedSession();
     if (!mounted) return;
