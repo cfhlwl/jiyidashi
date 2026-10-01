@@ -365,6 +365,10 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
           prefix: Keys.metricUploadedSamples,
           delta: Int64(count.intValue)
         )
+        defaults.set(
+          Int64(Date().timeIntervalSince1970 * 1000),
+          forKey: ownerKey(Keys.lastDeliveryAt, ownerUserId)
+        )
       }
       result(nil)
     case "purgeLocationSamplingOwner":
@@ -544,7 +548,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     let retained = allPendingLocationSamples().filter {
       !($0.ownerUserId == ownerUserId && normalized.contains($0.clientUuid))
     }
-    savePendingLocationSamples(retained)
+    if !queueCorrupt && !savePendingLocationSamples(retained) {
+      markQueueCorrupt("native_queue_persist_failed")
+    }
   }
 
   private func applySamplingProfile(
@@ -593,37 +599,122 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     "\(prefix).\(ownerUserId)"
   }
 
+  private var queueCorrupt: Bool {
+    defaults.bool(forKey: Keys.queueCorrupt)
+  }
+
+  private func markQueueCorrupt(_ reason: String) {
+    defaults.set(true, forKey: Keys.queueCorrupt)
+    defaults.set(reason, forKey: Keys.queueCorruptReason)
+    defaults.set(
+      Int64(Date().timeIntervalSince1970 * 1000),
+      forKey: Keys.queueCorruptAt
+    )
+  }
+
   private func allPendingLocationSamples() -> [NativeQueuedLocationSample] {
-    guard
-      let data = defaults.data(forKey: Keys.pendingSamples),
-      let samples = try? JSONDecoder().decode(
-        [NativeQueuedLocationSample].self,
-        from: data
-      )
-    else {
+    if queueCorrupt { return [] }
+    guard let data = defaults.data(forKey: Keys.pendingSamples) else {
       return []
+    }
+    guard var samples = try? JSONDecoder().decode(
+      [NativeQueuedLocationSample].self,
+      from: data
+    ) else {
+      // Preserve the original raw Data. Never reinterpret corruption as an empty queue
+      // and overwrite precise-location evidence on the next enqueue.
+      markQueueCorrupt("native_queue_decode_failed")
+      return []
+    }
+    guard samples.allSatisfy({
+      !$0.ownerUserId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !$0.clientUuid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        $0.latitude.isFinite && (-90...90).contains($0.latitude) &&
+        $0.longitude.isFinite && (-180...180).contains($0.longitude)
+    }) else {
+      markQueueCorrupt("native_queue_validation_failed")
+      return []
+    }
+
+    let schema = defaults.integer(forKey: Keys.queueSchemaVersion)
+    if schema < 2 || samples.contains(where: { $0.queueSequence <= 0 }) {
+      var next: Int64 = 1
+      samples = samples.map { sample in
+        let sequence = sample.queueSequence > 0 ? sample.queueSequence : next
+        next = max(next, sequence + 1)
+        return NativeQueuedLocationSample(
+          ownerUserId: sample.ownerUserId,
+          clientUuid: sample.clientUuid,
+          latitude: sample.latitude,
+          longitude: sample.longitude,
+          accuracyMeters: sample.accuracyMeters,
+          speedMetersPerSecond: sample.speedMetersPerSecond,
+          recordedAtMillis: sample.recordedAtMillis,
+          queueSequence: sequence,
+          enqueuedAtMillis:
+            sample.enqueuedAtMillis > 0 ? sample.enqueuedAtMillis : sample.recordedAtMillis,
+          handoffAttemptCount: sample.handoffAttemptCount
+        )
+      }
+      guard savePendingLocationSamples(samples) else {
+        markQueueCorrupt("native_queue_migration_persist_failed")
+        return []
+      }
+      defaults.set(2, forKey: Keys.queueSchemaVersion)
+      defaults.set(next, forKey: Keys.nextQueueSequence)
     }
     return samples
   }
 
+  @discardableResult
   private func savePendingLocationSamples(
     _ samples: [NativeQueuedLocationSample]
-  ) {
-    if let data = try? JSONEncoder().encode(samples) {
-      defaults.set(data, forKey: Keys.pendingSamples)
-    }
+  ) -> Bool {
+    guard let data = try? JSONEncoder().encode(samples) else { return false }
+    defaults.set(data, forKey: Keys.pendingSamples)
+    defaults.set(2, forKey: Keys.queueSchemaVersion)
+    return true
   }
 
   private func pendingLocationSamples(
     ownerUserId: String
   ) -> [NativeQueuedLocationSample] {
-    allPendingLocationSamples().filter { $0.ownerUserId == ownerUserId }
+    let samples = allPendingLocationSamples()
+    if queueCorrupt { return [] }
+    let selectedSequences = Set(
+      samples
+        .filter { $0.ownerUserId == ownerUserId }
+        .prefix(500)
+        .map { $0.queueSequence }
+    )
+    if selectedSequences.isEmpty { return [] }
+    let updated = samples.map { sample -> NativeQueuedLocationSample in
+      guard selectedSequences.contains(sample.queueSequence) else { return sample }
+      return NativeQueuedLocationSample(
+        ownerUserId: sample.ownerUserId,
+        clientUuid: sample.clientUuid,
+        latitude: sample.latitude,
+        longitude: sample.longitude,
+        accuracyMeters: sample.accuracyMeters,
+        speedMetersPerSecond: sample.speedMetersPerSecond,
+        recordedAtMillis: sample.recordedAtMillis,
+        queueSequence: sample.queueSequence,
+        enqueuedAtMillis: sample.enqueuedAtMillis,
+        handoffAttemptCount: sample.handoffAttemptCount + 1
+      )
+    }
+    guard savePendingLocationSamples(updated) else {
+      markQueueCorrupt("native_queue_persist_failed")
+      return []
+    }
+    return updated.filter { selectedSequences.contains($0.queueSequence) }
   }
 
   private func enqueueLocationSample(
     _ sample: NativeQueuedLocationSample
   ) -> Bool {
     var samples = allPendingLocationSamples()
+    if queueCorrupt { return false }
     if samples.contains(where: {
       $0.ownerUserId == sample.ownerUserId &&
         $0.clientUuid == sample.clientUuid
@@ -635,10 +726,34 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       ownerUserId: sample.ownerUserId,
       maxPerOwner: 1000
     ) else {
+      recordCapacityDrop(ownerUserId: sample.ownerUserId, reason: "native_queue_capacity")
       return false
     }
-    samples.append(sample)
-    savePendingLocationSamples(samples)
+    let next = max(
+      Int64(defaults.integer(forKey: Keys.nextQueueSequence)),
+      (samples.map { $0.queueSequence }.max() ?? 0) + 1,
+      1
+    )
+    let now = Int64(Date().timeIntervalSince1970 * 1000)
+    let persisted = NativeQueuedLocationSample(
+      ownerUserId: sample.ownerUserId,
+      clientUuid: sample.clientUuid,
+      latitude: sample.latitude,
+      longitude: sample.longitude,
+      accuracyMeters: sample.accuracyMeters,
+      speedMetersPerSecond: sample.speedMetersPerSecond,
+      recordedAtMillis: sample.recordedAtMillis,
+      queueSequence: next,
+      enqueuedAtMillis: now,
+      handoffAttemptCount: 0
+    )
+    samples.append(persisted)
+    guard savePendingLocationSamples(samples) else {
+      markQueueCorrupt("native_queue_persist_failed")
+      return false
+    }
+    defaults.set(next + 1, forKey: Keys.nextQueueSequence)
+    defaults.set(now, forKey: ownerKey(Keys.lastEnqueueAt, sample.ownerUserId))
     return true
   }
 
@@ -677,6 +792,54 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     for prefix in prefixes {
       defaults.removeObject(forKey: ownerKey(prefix, ownerUserId))
     }
+  }
+
+  private func recordCapacityDrop(
+    ownerUserId: String,
+    reason: String,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+  ) {
+    incrementMetric(
+      ownerUserId: ownerUserId,
+      prefix: Keys.capacityDropCount,
+      delta: 1
+    )
+    defaults.set(nowMillis, forKey: ownerKey(Keys.lastDropAt, ownerUserId))
+    defaults.set(reason, forKey: ownerKey(Keys.lastDropReason, ownerUserId))
+  }
+
+  private func queueDiagnostics(ownerUserId: String) -> [String: Any] {
+    let samples = allPendingLocationSamples().filter { $0.ownerUserId == ownerUserId }
+    let depth = samples.count
+    func millis(_ key: String) -> Any {
+      let scoped = ownerKey(key, ownerUserId)
+      return defaults.object(forKey: scoped) == nil
+        ? NSNull()
+        : Int64(defaults.integer(forKey: scoped))
+    }
+    return [
+      "queue_schema_version": 2,
+      "queue_depth": depth,
+      "queue_capacity": 1000,
+      "oldest_pending_at_millis":
+        samples.map { $0.enqueuedAtMillis }.min() ?? NSNull(),
+      "last_enqueue_at_millis": millis(Keys.lastEnqueueAt),
+      "last_delivery_at_millis": millis(Keys.lastDeliveryAt),
+      "delivery_failure_count":
+        Int64(defaults.integer(forKey: ownerKey(Keys.deliveryFailureCount, ownerUserId))),
+      "last_delivery_failure_at_millis": millis(Keys.lastDeliveryFailureAt),
+      "last_delivery_failure_reason":
+        defaults.string(forKey: ownerKey(Keys.lastDeliveryFailureReason, ownerUserId))
+          ?? NSNull(),
+      "capacity_pressure": depth >= 800,
+      "dropped_sample_count":
+        Int64(defaults.integer(forKey: ownerKey(Keys.capacityDropCount, ownerUserId))),
+      "last_drop_at_millis": millis(Keys.lastDropAt),
+      "last_drop_reason":
+        defaults.string(forKey: ownerKey(Keys.lastDropReason, ownerUserId)) ?? NSNull(),
+      "queue_corrupt": queueCorrupt,
+      "queue_corrupt_reason": defaults.string(forKey: Keys.queueCorruptReason) ?? NSNull(),
+    ]
   }
 
   private func incrementMetric(
@@ -936,6 +1099,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       "location_services_enabled": servicesEnabled,
       "reason": reason ?? NSNull(),
       "restore_pending": ownerMatches && activeOwnerMatches && relaunchRestorePending,
+      "queue": queueDiagnostics(ownerUserId: ownerUserId),
     ]
 
     if ownerMatches {
@@ -1150,6 +1314,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     static let lastFixAt = "native_location.last_fix_at"
     static let lastAccuracyMeters = "native_location.last_accuracy_meters"
     static let pendingSamples = "native_location.pending_samples"
+    static let queueSchemaVersion = "native_location.pending_samples_schema_version"
+    static let nextQueueSequence = "native_location.pending_samples_next_sequence"
+    static let queueCorrupt = "native_location.pending_samples_corrupt"
+    static let queueCorruptReason = "native_location.pending_samples_corrupt_reason"
+    static let queueCorruptAt = "native_location.pending_samples_corrupt_at"
     static let samplingProfile = "native_location.sampling_profile"
     static let latestMotionObservation = "native_location.latest_motion_observation"
     static let metricWakeups = "native_location.metric_wakeups"
@@ -1160,6 +1329,14 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     static let metricActiveMs = "native_location.metric_active_tracking_ms"
     static let trackingStartedAt = "native_location.tracking_started_at"
     static let lastQueuedAt = "native_location.last_queued_at"
+    static let lastEnqueueAt = "native_location.last_enqueue_at"
+    static let lastDeliveryAt = "native_location.last_delivery_at"
+    static let deliveryFailureCount = "native_location.delivery_failure_count"
+    static let lastDeliveryFailureAt = "native_location.last_delivery_failure_at"
+    static let lastDeliveryFailureReason = "native_location.last_delivery_failure_reason"
+    static let capacityDropCount = "native_location.capacity_drop_count"
+    static let lastDropAt = "native_location.last_drop_at"
+    static let lastDropReason = "native_location.last_drop_reason"
   }
 }
 
