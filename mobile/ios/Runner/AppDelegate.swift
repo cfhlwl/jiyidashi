@@ -214,6 +214,16 @@ struct NativeLocationSampleAdmission {
 /// Pure permission/runtime policy kept free of CLLocationManager side effects so the
 /// privacy invariants can be exercised directly by RunnerTests.
 struct NativeLocationPolicy {
+  static func recordingHealthBackgroundRuntime(
+    authorization: NativeLocationAuthorization,
+    locationServicesEnabled: Bool
+  ) -> String {
+    guard authorization == .background && locationServicesEnabled else {
+      return "unknown"
+    }
+    return "eligible"
+  }
+
   static func canStart(
     ownerUserId: String,
     enabledOwnerUserId: String?,
@@ -1292,6 +1302,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       "runtime": reconciled.rawValue,
       "automatic_enabled": ownerMatches,
       "location_services_enabled": servicesEnabled,
+      "background_runtime_state": NativeLocationPolicy.recordingHealthBackgroundRuntime(
+        authorization: currentAuthorization,
+        locationServicesEnabled: servicesEnabled
+      ),
+      "battery_optimization_state": "not_applicable",
       "reason": reason ?? NSNull(),
       "restore_pending": ownerMatches && activeOwnerMatches && relaunchRestorePending,
       "recovery_reason":
