@@ -3,35 +3,91 @@ import 'package:jiyidashi/native_location_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/recording_health.dart';
 
+Map<String, dynamic> _protocolResponse({
+  String status = 'UNKNOWN',
+  String? reason,
+  bool automatic = true,
+  String? permission = 'BACKGROUND',
+  String? services = 'ON',
+  String? background = 'ELIGIBLE',
+  List<String> activeGaps = const <String>[],
+}) {
+  final resolvedReason = reason ??
+      switch (status) {
+        'HEALTHY' => 'RECENT_CAPTURE_AND_ACK',
+        'PAUSED' => 'PRIVACY_PAUSED',
+        _ => 'NATIVE_STATE_UNAVAILABLE',
+      };
+  return <String, dynamic>{
+    'health': <String, dynamic>{
+      'status': status,
+      'status_reason': resolvedReason,
+      'automatic_enabled': automatic,
+      'privacy_paused': status == 'PAUSED',
+      'permission_state': permission,
+      'location_services_state': services,
+      'background_runtime_state': background,
+      'battery_optimization_state': 'OPTIMIZED',
+      'native_producer_state': 'RUNNING',
+      'native_queue_depth': 0,
+      'native_queue_capacity': 1000,
+      'native_oldest_pending_at': null,
+      'sqlite_queue_depth': 0,
+      'capacity_pressure': false,
+      'last_fix_at': status == 'HEALTHY' ? '2026-10-01T10:00:00Z' : null,
+      'last_enqueue_at': null,
+      'last_handoff_at': null,
+      'last_upload_attempt_at': null,
+      'last_upload_success_at': null,
+      'last_server_ack_at':
+          status == 'HEALTHY' ? '2026-10-01T10:01:00Z' : null,
+      'last_visit_at': null,
+      'delivery_failure_count': 0,
+      'last_delivery_error_code': null,
+      'recovery_pending': status == 'RECOVERING',
+      'recording_gap_state': status == 'HEALTHY' ? 'NONE' : 'UNKNOWN',
+      'updated_at': '2026-10-01T10:02:00Z',
+    },
+    'today': <String, dynamic>{
+      'local_day': '2026-10-01',
+      'timezone': 'Asia/Shanghai',
+      'first_observed_at': null,
+      'last_observed_at': null,
+      'trusted_location_sample_count': 0,
+      'visit_count': 0,
+      'memory_count': 0,
+      'covered_duration_seconds': 0,
+      'known_gap_duration_seconds': 0,
+      'largest_known_gap_seconds': 0,
+      'coverage_state': 'UNKNOWN',
+      'has_capacity_pressure': false,
+      'has_recorded_gap': false,
+      'has_unexplained_gap': false,
+      'recent_gaps': <Object?>[],
+    },
+    'aggregates': <String, dynamic>{
+      'healthy_days_7d': 0,
+      'healthy_days_30d': 0,
+      'evidence_days_7d': 0,
+      'evidence_days_30d': 0,
+      'gap_hours_7d': null,
+      'gap_hours_30d': null,
+      'bounded_gap_hours_7d': 0.0,
+      'bounded_gap_hours_30d': 0.0,
+      'days_with_capacity_pressure': null,
+      'days_with_permission_block': null,
+      'current_capacity_pressure': false,
+      'current_permission_block': false,
+    },
+    'recent_gaps': <Object?>[],
+    'active_gap_reasons': activeGaps,
+    'server_observed_at': '2026-10-01T10:02:00Z',
+    'native_state_observed': true,
+  };
+}
+
 void main() {
   test('recording health parser covers all states and fails malformed closed', () {
-    Map<String, dynamic> response(String status) => <String, dynamic>{
-          'health': <String, dynamic>{
-            'status': status,
-            'status_reason': status == 'HEALTHY'
-                ? 'RECENT_CAPTURE_AND_ACK'
-                : 'NATIVE_STATE_UNAVAILABLE',
-            'privacy_paused': status == 'PAUSED',
-            'native_queue_depth': 0,
-            'sqlite_queue_depth': 0,
-            'capacity_pressure': false,
-            'delivery_failure_count': 0,
-            'recovery_pending': status == 'RECOVERING',
-            'last_fix_at': null,
-            'last_server_ack_at': null,
-          },
-          'today': <String, dynamic>{
-            'local_day': '2026-10-01',
-            'timezone': 'Asia/Shanghai',
-            'covered_duration_seconds': 0,
-            'known_gap_duration_seconds': 0,
-            'has_recorded_gap': false,
-            'coverage_state': 'UNKNOWN',
-          },
-          'recent_gaps': <Object?>[],
-          'native_state_observed': true,
-        };
-
     final expected = <String, RecordingHealthStatus>{
       'HEALTHY': RecordingHealthStatus.healthy,
       'DEGRADED': RecordingHealthStatus.degraded,
@@ -41,16 +97,26 @@ void main() {
       'UNKNOWN': RecordingHealthStatus.unknown,
     };
     for (final entry in expected.entries) {
-      final parsed = RecordingHealthView.fromJson(response(entry.key));
+      final parsed = RecordingHealthView.fromJson(
+        _protocolResponse(status: entry.key),
+      );
       expect(parsed.status, entry.value);
       expect(parsed.malformed, isFalse);
     }
 
-    final malformed = RecordingHealthView.fromJson(<String, dynamic>{
-      'health': <String, dynamic>{'status': 'HEALTHY'},
-    });
-    expect(malformed.status, RecordingHealthStatus.unknown);
-    expect(malformed.malformed, isTrue);
+    final missingRequired = _protocolResponse(status: 'HEALTHY');
+    (missingRequired['health'] as Map<String, dynamic>)
+        .remove('native_queue_depth');
+    final missingParsed = RecordingHealthView.fromJson(missingRequired);
+    expect(missingParsed.status, RecordingHealthStatus.unknown);
+    expect(missingParsed.malformed, isTrue);
+
+    final invalidRequired = _protocolResponse(status: 'HEALTHY');
+    (invalidRequired['health'] as Map<String, dynamic>)['capacity_pressure'] =
+        'false';
+    final invalidParsed = RecordingHealthView.fromJson(invalidRequired);
+    expect(invalidParsed.status, RecordingHealthStatus.unknown);
+    expect(invalidParsed.malformed, isTrue);
   });
 
   test('reason-specific CTA is derived only from proven authority', () {
@@ -62,35 +128,17 @@ void main() {
       String? background = 'ELIGIBLE',
       List<String> activeGaps = const <String>[],
     }) {
-      return RecordingHealthView.fromJson(<String, dynamic>{
-        'health': <String, dynamic>{
-          'status': reason == 'PRIVACY_PAUSED' ? 'PAUSED' : 'BLOCKED',
-          'status_reason': reason,
-          'automatic_enabled': automatic,
-          'privacy_paused': reason == 'PRIVACY_PAUSED',
-          'permission_state': permission,
-          'location_services_state': services,
-          'background_runtime_state': background,
-          'native_queue_depth': 0,
-          'sqlite_queue_depth': 0,
-          'capacity_pressure': false,
-          'delivery_failure_count': 0,
-          'recovery_pending': false,
-          'last_fix_at': null,
-          'last_server_ack_at': null,
-        },
-        'today': <String, dynamic>{
-          'local_day': '2026-10-01',
-          'timezone': 'Asia/Shanghai',
-          'covered_duration_seconds': 0,
-          'known_gap_duration_seconds': 0,
-          'has_recorded_gap': false,
-          'coverage_state': 'UNKNOWN',
-        },
-        'recent_gaps': <Object?>[],
-        'active_gap_reasons': activeGaps,
-        'native_state_observed': true,
-      });
+      return RecordingHealthView.fromJson(
+        _protocolResponse(
+          status: reason == 'PRIVACY_PAUSED' ? 'PAUSED' : 'BLOCKED',
+          reason: reason,
+          automatic: automatic,
+          permission: permission,
+          services: services,
+          background: background,
+          activeGaps: activeGaps,
+        ),
+      );
     }
 
     expect(
