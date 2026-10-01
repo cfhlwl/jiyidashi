@@ -332,6 +332,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     channel = nextChannel
   }
 
+  func sealAutomaticProductionForAuthorityLoss() {
+    guard let owner = enabledOwnerUserId ?? activeOwnerUserId else { return }
+    _ = disableAutomaticLocation(ownerUserId: owner)
+  }
+
   @discardableResult
   func requestPassiveRecoveryWakeup() -> Bool {
     guard passiveRecoveryListenerReady, let channel else { return false }
@@ -442,7 +447,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
         if #available(iOS 13.0, *) {
           let remaining =
             allPendingLocationSamples().contains { $0.ownerUserId == ownerUserId }
-          if remaining {
+          if queueStorageUnavailable || remaining {
             PassiveMemoryBackgroundRecovery.schedule()
           } else {
             PassiveMemoryBackgroundRecovery.cancel()
@@ -1592,6 +1597,12 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       }
       let arguments = call.arguments as? [String: Any]
       let retry = arguments?["retry"] as? Bool ?? true
+      let status = arguments?["status"] as? String ?? "unknown"
+      if status == "noSession" ||
+          status == "accountDeletionInProgress" ||
+          status == "authorityChanged" {
+        self?.nativeLocationBridge?.sealAutomaticProductionForAuthorityLoss()
+      }
       self?.finishPassiveRecoveryTask(success: !retry, retry: retry)
       result(nil)
     }
