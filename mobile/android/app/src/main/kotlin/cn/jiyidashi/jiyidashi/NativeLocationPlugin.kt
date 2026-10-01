@@ -104,6 +104,8 @@ class NativeLocationPlugin :
                 enableAutomaticLocation(ownerUserId, result)
             "openBackgroundLocationSettings" ->
                 openBackgroundLocationSettings(ownerUserId, result)
+            "openLocationServicesSettings" ->
+                openLocationServicesSettings(ownerUserId, result)
             "disableAutomaticLocation" ->
                 result.success(disableAutomaticLocation(ownerUserId))
             "start" -> result.success(start(ownerUserId))
@@ -391,6 +393,28 @@ class NativeLocationPlugin :
         result.success(
             status(ownerUserId, forcedReason = "background_settings_required"),
         )
+    }
+
+    private fun openLocationServicesSettings(
+        ownerUserId: String,
+        result: MethodChannel.Result,
+    ) {
+        if (AndroidLocationPermissions.servicesEnabled(applicationContext)) {
+            result.success(status(ownerUserId))
+            return
+        }
+
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error(
+                "no_activity",
+                "Opening location services settings requires a foreground activity",
+                null,
+            )
+            return
+        }
+        currentActivity.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        result.success(status(ownerUserId))
     }
 
     private fun switchAutomaticOwner(ownerUserId: String) {
