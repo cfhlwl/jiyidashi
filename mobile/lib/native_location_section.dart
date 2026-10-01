@@ -149,7 +149,7 @@ class _NativeLocationSectionState extends State<NativeLocationSection> {
                 icon: const Icon(Icons.location_searching_outlined),
                 label: const Text('先允许使用时定位'),
               )
-            else if (!status.automaticEnabled &&
+            else if (status.permission != NativeLocationPermission.background &&
                 status.reason == 'background_settings_required')
               FilledButton.icon(
                 key: const ValueKey('location-open-background-settings'),
@@ -161,7 +161,8 @@ class _NativeLocationSectionState extends State<NativeLocationSection> {
                 icon: const Icon(Icons.settings_outlined),
                 label: const Text('前往系统设置允许始终定位'),
               )
-            else if (!status.automaticEnabled)
+            else if (status.permission != NativeLocationPermission.background ||
+                !status.automaticEnabled)
               FilledButton.icon(
                 key: const ValueKey('location-enable-automatic'),
                 onPressed: controller.busy || confirmingSensitiveLocation
@@ -170,7 +171,9 @@ class _NativeLocationSectionState extends State<NativeLocationSection> {
                           (current) => current.enableAutomaticLocation(),
                         ),
                 icon: const Icon(Icons.my_location_outlined),
-                label: const Text('启用自动位置记忆'),
+                label: Text(
+                  status.automaticEnabled ? '允许后台定位' : '启用自动位置记忆',
+                ),
               )
             else if (status.runtime != NativeLocationRuntime.running)
               FilledButton.icon(
