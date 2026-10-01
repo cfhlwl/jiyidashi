@@ -837,6 +837,7 @@ class RecordingTodayCoverage(BaseModel):
     coverage_state: RecordingCoverageState
     has_capacity_pressure: bool
     has_recorded_gap: bool
+    has_unexplained_gap: bool
     recent_gaps: list[RecordingGapSummary] = Field(default_factory=list, max_length=8)
 
 
@@ -896,6 +897,7 @@ class RecordingHealthResponse(BaseModel):
     today: RecordingTodayCoverage
     aggregates: RecordingHealthAggregates
     recent_gaps: list[RecordingGapSummary] = Field(default_factory=list, max_length=8)
+    active_gap_reasons: list[RecordingGapReason] = Field(default_factory=list, max_length=8)
     server_observed_at: datetime
     native_state_observed: bool
 
