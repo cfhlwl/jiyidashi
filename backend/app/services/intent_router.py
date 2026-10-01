@@ -248,6 +248,12 @@ def route_intent(
     if object_signal and place_signal:
         return _unknown(IntentRouteReason.AMBIGUOUS)
 
+    # CORE-002 only supports a day-wide self footprint or a day-wide event summary.
+    # Date-qualified Object/Place history needs a separate structured contract; answering
+    # with CURRENT object state or all-time place history would silently discard the date.
+    if date_result.matched and (object_signal or place_signal):
+        return _unknown(IntentRouteReason.AMBIGUOUS)
+
     if object_signal:
         return IntentRouteResult(
             intent=IntentKind.FIND_OBJECT,
