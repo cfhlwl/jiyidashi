@@ -17,12 +17,24 @@ enum RecordingCoverageState {
   unknown,
 }
 
+enum RecordingHealthAction {
+  requestForegroundPermission,
+  enableAutomaticLocation,
+  resumePrivacy,
+  startProducer,
+  recheckLocationServices,
+}
+
 class RecordingHealthView {
   const RecordingHealthView({
     required this.status,
     required this.reason,
     required this.privacyPaused,
     required this.nativeStateObserved,
+    required this.automaticEnabled,
+    required this.permissionState,
+    required this.locationServicesState,
+    required this.backgroundRuntimeState,
     required this.coverageState,
     required this.localDay,
     required this.timezone,
@@ -38,6 +50,7 @@ class RecordingHealthView {
     this.lastFixAt,
     this.lastServerAckAt,
     this.recentGapReasons = const <String>[],
+    this.activeGapReasons = const <String>[],
   });
 
   const RecordingHealthView.unknown({String reason = 'MALFORMED_RESPONSE'})
@@ -45,6 +58,10 @@ class RecordingHealthView {
         reason = reason,
         privacyPaused = false,
         nativeStateObserved = false,
+        automaticEnabled = null,
+        permissionState = null,
+        locationServicesState = null,
+        backgroundRuntimeState = null,
         coverageState = RecordingCoverageState.unknown,
         localDay = null,
         timezone = null,
@@ -59,12 +76,17 @@ class RecordingHealthView {
         malformed = true,
         lastFixAt = null,
         lastServerAckAt = null,
-        recentGapReasons = const <String>[];
+        recentGapReasons = const <String>[],
+        activeGapReasons = const <String>[];
 
   final RecordingHealthStatus status;
   final String reason;
   final bool privacyPaused;
   final bool nativeStateObserved;
+  final bool? automaticEnabled;
+  final String? permissionState;
+  final String? locationServicesState;
+  final String? backgroundRuntimeState;
   final RecordingCoverageState coverageState;
   final String? localDay;
   final String? timezone;
@@ -79,9 +101,38 @@ class RecordingHealthView {
   final DateTime? lastFixAt;
   final DateTime? lastServerAckAt;
   final List<String> recentGapReasons;
+  final List<String> activeGapReasons;
   final bool malformed;
 
   int get totalQueueDepth => nativeQueueDepth + sqliteQueueDepth;
+
+  RecordingHealthAction? get suggestedAction {
+    if (reason == 'PRIVACY_PAUSED') {
+      return RecordingHealthAction.resumePrivacy;
+    }
+    if (reason == 'AUTOMATIC_DISABLED') {
+      return RecordingHealthAction.enableAutomaticLocation;
+    }
+    if (reason == 'LOCATION_SERVICES_OFF') {
+      return RecordingHealthAction.recheckLocationServices;
+    }
+    if (reason == 'PERMISSION_BLOCKED') {
+      return switch (permissionState) {
+        'FOREGROUND' => RecordingHealthAction.enableAutomaticLocation,
+        'NOT_DETERMINED' || 'DENIED' =>
+          RecordingHealthAction.requestForegroundPermission,
+        _ => null,
+      };
+    }
+    if (reason == 'PRODUCER_NOT_RUNNING' &&
+        automaticEnabled == true &&
+        permissionState == 'BACKGROUND' &&
+        locationServicesState == 'ON' &&
+        backgroundRuntimeState == 'ELIGIBLE') {
+      return RecordingHealthAction.startProducer;
+    }
+    return null;
+  }
 
   factory RecordingHealthView.fromJson(Map<String, dynamic> raw) {
     try {
@@ -111,11 +162,26 @@ class RecordingHealthView {
         }
       }
 
+      final activeGaps = <String>[];
+      final rawActiveGaps = raw['active_gap_reasons'];
+      if (rawActiveGaps is List) {
+        for (final item in rawActiveGaps.take(8)) {
+          final reason = item?.toString();
+          if (reason != null && reason.isNotEmpty) activeGaps.add(reason);
+        }
+      }
+
       return RecordingHealthView(
         status: status,
         reason: health['status_reason']?.toString() ?? 'UNKNOWN',
         privacyPaused: health['privacy_paused'] == true,
         nativeStateObserved: raw['native_state_observed'] == true,
+        automaticEnabled: health['automatic_enabled'] is bool
+            ? health['automatic_enabled'] as bool
+            : null,
+        permissionState: health['permission_state']?.toString(),
+        locationServicesState: health['location_services_state']?.toString(),
+        backgroundRuntimeState: health['background_runtime_state']?.toString(),
         coverageState: coverage,
         localDay: localDay,
         timezone: timezone,
@@ -132,6 +198,7 @@ class RecordingHealthView {
         lastFixAt: _date(health['last_fix_at']),
         lastServerAckAt: _date(health['last_server_ack_at']),
         recentGapReasons: gaps,
+        activeGapReasons: activeGaps,
         malformed: false,
       );
     } catch (_) {
