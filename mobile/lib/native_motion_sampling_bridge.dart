@@ -12,6 +12,9 @@ class NativeLocationSample {
     required this.recordedAt,
     this.accuracyMeters,
     this.speedMetersPerSecond,
+    this.queueSequence,
+    this.enqueuedAt,
+    this.handoffAttemptCount = 0,
   });
 
   final String clientUuid;
@@ -20,6 +23,9 @@ class NativeLocationSample {
   final DateTime recordedAt;
   final double? accuracyMeters;
   final double? speedMetersPerSecond;
+  final int? queueSequence;
+  final DateTime? enqueuedAt;
+  final int handoffAttemptCount;
 
   factory NativeLocationSample.fromPlatform(Object? value) {
     if (value is! Map) {
@@ -48,12 +54,27 @@ class NativeLocationSample {
       recordedAt: recordedAt.toUtc(),
       accuracyMeters: _double(map['accuracy']),
       speedMetersPerSecond: _double(map['speed']),
+      queueSequence: _integer(map['queue_sequence']),
+      enqueuedAt: _millisTimestamp(map['enqueued_at_millis']),
+      handoffAttemptCount: _integer(map['handoff_attempt_count']) ?? 0,
     );
   }
 
   static double? _double(Object? value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '');
+  }
+
+  static int? _integer(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  static DateTime? _millisTimestamp(Object? value) {
+    final millis = _integer(value);
+    if (millis == null || millis <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
   }
 }
 
