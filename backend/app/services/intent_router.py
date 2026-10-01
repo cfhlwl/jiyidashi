@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -21,6 +22,7 @@ from app.intent_models import (
     IntentRouteResult,
 )
 from app.models import ObjectItem, Place
+from app.services.date_query_parser import DateParseStatus, resolve_user_date_expression
 
 _OBJECT_LOCATION_MARKERS = (
     "在哪",
@@ -35,6 +37,18 @@ _OBJECT_LOCATION_MARKERS = (
     "where is",
     "where's",
 )
+_DATE_FOOTPRINT_MARKERS = (
+    "去哪",
+    "去了哪里",
+    "去了哪些地方",
+    "去过哪些地方",
+    "哪些地方",
+    "足迹",
+    "在哪待过",
+    "where did i go",
+    "places did i visit",
+)
+
 _PLACE_HISTORY_MARKERS = (
     "去过",
     "到过",
@@ -55,6 +69,8 @@ _EVENT_MARKERS = (
     "哪一天",
     "发生了什么",
     "发生过什么",
+    "做了什么",
+    "干了什么",
     "哪次",
     "上次什么时候",
     "when did",
@@ -145,6 +161,7 @@ def route_intent(
     *,
     user_id: UUID,
     question: str,
+    reference_utc: datetime | None = None,
 ) -> IntentRouteResult:
     """Choose an existing trusted capability without inventing user facts.
 
@@ -167,6 +184,33 @@ def route_intent(
 
     object_match, object_ambiguous = _known_name_match(clean_question, object_names)
     place_match, place_ambiguous = _known_name_match(clean_question, place_names)
+
+    date_result = resolve_user_date_expression(
+        db,
+        user_id=user_id,
+        question=clean_question,
+        reference_utc=reference_utc,
+    )
+    if date_result.status == DateParseStatus.INVALID:
+        return _unknown(IntentRouteReason.INVALID_DATE)
+    if date_result.status == DateParseStatus.FUTURE:
+        return _unknown(IntentRouteReason.FUTURE_DATE)
+    if date_result.status == DateParseStatus.AMBIGUOUS:
+        return _unknown(IntentRouteReason.AMBIGUOUS)
+    if date_result.matched and _contains_marker(
+        clean_question,
+        _DATE_FOOTPRINT_MARKERS,
+    ):
+        # A known Object/Place name plus a day-wide whereabouts phrase spans multiple
+        # structured domains. CORE-002 does not guess whether the user means their own
+        # footprint or the named entity's history.
+        if object_match or object_ambiguous or place_match or place_ambiguous:
+            return _unknown(IntentRouteReason.AMBIGUOUS)
+        return IntentRouteResult(
+            intent=IntentKind.DATE_FOOTPRINT_QUERY,
+            capability=IntentCapability.DATE_FOOTPRINT_QUERY,
+            reason=IntentRouteReason.MATCHED,
+        )
 
     object_signal = object_match and _contains_marker(
         clean_question,
@@ -202,6 +246,12 @@ def route_intent(
     if object_signal and place_signal:
         return _unknown(IntentRouteReason.AMBIGUOUS)
 
+    # CORE-002 only supports a day-wide self footprint or a day-wide event summary.
+    # Date-qualified Object/Place history needs a separate structured contract; answering
+    # with CURRENT object state or all-time place history would silently discard the date.
+    if date_result.matched and (object_signal or place_signal):
+        return _unknown(IntentRouteReason.AMBIGUOUS)
+
     if object_signal:
         return IntentRouteResult(
             intent=IntentKind.FIND_OBJECT,
@@ -226,12 +276,16 @@ def route_intent(
         )
 
     if memory_signal:
+        if date_result.matched:
+            return _unknown(IntentRouteReason.UNSUPPORTED)
         return IntentRouteResult(
             intent=IntentKind.MEMORY_SEARCH,
             capability=IntentCapability.MEMORY_QUERY,
             reason=IntentRouteReason.MATCHED,
         )
 
-    # Free-form text is intentionally not treated as a generic memory query.
-    # Unsupported/weak input must remain UNKNOWN until a later explicit fallback exists.
+    # A valid date token alone does not make an otherwise unsupported domain a
+    # supported date query. Preserve the existing weak-input contract (e.g. weather)
+    # instead of reclassifying unrelated questions as an unsupported memory action.
+    # Date-qualified generic memory-search language remains explicitly unsupported above.
     return _unknown(IntentRouteReason.NO_SUPPORTED_RULE)

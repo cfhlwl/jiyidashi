@@ -84,6 +84,14 @@ jobs:
           test/location_sampling_coordinator_test.dart
           --reporter expanded
 
+      - name: Test CORE-002 historical day query
+        timeout-minutes: 5
+        run: >-
+          flutter test
+          test/api_client_test.dart
+          test/historical_day_query_test.dart
+          --reporter expanded
+
       # [人工注释][S1-026] Onboarding 先单独跑，失败时能直接定位；全量测试继续作为正式回归门禁。
       - name: Test onboarding
         timeout-minutes: 5

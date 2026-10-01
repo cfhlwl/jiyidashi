@@ -174,14 +174,19 @@ def record_retrieval_and_activity_safe(
         if response is None:
             _emit_recording_failure()
             return
-        success = (
-            response.can_answer is True
-            and bool(response.memory_ids)
-            and bool(response.evidence)
+        footprint_count = (
+            len(response.day_footprint.visits)
+            if response.day_footprint is not None
+            else 0
+        )
+        memory_evidence_success = bool(response.memory_ids) and bool(response.evidence)
+        structured_footprint_success = footprint_count > 0
+        success = response.can_answer is True and (
+            memory_evidence_success or structured_footprint_success
         )
         outcome = RetrievalOutcome.SUCCESS if success else RetrievalOutcome.NO_EVIDENCE
-        result_count = len(response.memory_ids)
-        answerable_count = len(response.evidence)
+        result_count = len(response.memory_ids) + footprint_count
+        answerable_count = len(response.evidence) + footprint_count
 
     analytics = _isolated_guarded_session(source_db)
     if analytics is None:

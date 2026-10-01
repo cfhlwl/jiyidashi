@@ -2253,11 +2253,27 @@ String _queryCertaintyLabel(String value) => switch (value) {
 
 String _queryIntentLabel(String value) => switch (value) {
       'FIND_OBJECT' => '查找物品',
+      'FIND_EVENT' => '回忆当天发生的事',
       'RECALL_EVENT' => '回忆一件事',
       'FIND_PLACE' => '查找地点',
       'FIND_PERSON' => '查找人物',
+      'DATE_FOOTPRINT_QUERY' => '按日期看足迹',
       _ => '查找记忆',
     };
+
+String _queryFootprintClock(String serverLocalIso) {
+  final match = RegExp(r'T(\d{2}):(\d{2})').firstMatch(serverLocalIso);
+  if (match == null) return '时间未知';
+  return '${match.group(1)}:${match.group(2)}';
+}
+
+String _queryFootprintTimeRange(Map<String, dynamic> visit) {
+  final start = _queryFootprintClock(visit['arrived_at_local']?.toString() ?? '');
+  final endRaw = visit['left_at_local'];
+  if (endRaw == null) return '$start 起';
+  final end = _queryFootprintClock(endRaw.toString());
+  return '$start - $end';
+}
 
 String _queryEvidenceKindLabel(String value) => switch (value) {
       'OBJECT_LOCATION' => '物品位置',
@@ -2575,6 +2591,14 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     final answer = result?['answer']?.toString() ?? '';
     final certainty = result?['certainty']?.toString() ?? 'unknown';
     final intent = result?['intent']?.toString() ?? '';
+    final dayFootprintRaw = result?['day_footprint'];
+    final dayFootprint =
+        dayFootprintRaw is Map<String, dynamic> ? dayFootprintRaw : null;
+    final footprintVisits =
+        (dayFootprint?['visits'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<Map<String, dynamic>>()
+            .toList(growable: false);
+    final footprintDay = dayFootprint?['day']?.toString();
     final certaintyLabel = _queryCertaintyLabel(certainty);
     final intentLabel = _queryIntentLabel(intent);
     // FIND_OBJECT 的 backing Memory 受结构化 ObjectLocation 状态约束，
@@ -2682,13 +2706,16 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                     : theme.colorScheme.onSurfaceVariant,
               ),
               title: canAnswer
-                  ? (widget.elderMode ? '找到了可信记录' : '找到相关记忆')
+                  ? (intent == 'DATE_FOOTPRINT_QUERY' &&
+                          footprintVisits.isNotEmpty
+                      ? (widget.elderMode ? '找到了这天的足迹' : '这天的足迹')
+                      : (widget.elderMode ? '找到了可信记录' : '找到相关记忆'))
                   : (widget.elderMode ? '我还不知道它在哪里' : '没有足够依据'),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    canAnswer && answer.isNotEmpty
+                    answer.isNotEmpty
                         ? answer
                         : (widget.elderMode
                             ? '没有找到足够可靠的记录。你可以先用“帮我记一下”告诉我放在哪里。'
@@ -2722,6 +2749,45 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                 ],
               ),
             ),
+            if (footprintVisits.isNotEmpty) ...[
+              const SizedBox(height: JiYiSpacing.lg),
+              JiYiSectionCard(
+                leading: const Icon(Icons.place_outlined),
+                title: footprintDay == null ? '当天足迹' : '$footprintDay 足迹',
+                subtitle: '只显示服务端已形成的地点访问记录。',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: footprintVisits.map((visit) {
+                    final placeName = visit['place_name']?.toString() ?? '未命名地点';
+                    final range = _queryFootprintTimeRange(visit);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.location_on_outlined, size: 20),
+                          const SizedBox(width: JiYiSpacing.sm),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(placeName, style: theme.textTheme.titleSmall),
+                                Text(
+                                  range,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(growable: false),
+                ),
+              ),
+            ],
             if (evidence.isNotEmpty) ...[
               const SizedBox(height: JiYiSpacing.lg),
               Text('为什么这么回答', style: theme.textTheme.titleMedium),
@@ -2755,7 +2821,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   ),
                 );
               }),
-            ] else if (canAnswer) ...[
+            ] else if (canAnswer && footprintVisits.isEmpty) ...[
               const SizedBox(height: JiYiSpacing.md),
               // 若服务端声称可回答却没有可展示 Evidence，UI 明确暴露该异常事实，不用美化层隐藏。
               const JiYiStatusBanner(

@@ -12,6 +12,7 @@ import { isDisplayableEvidence } from '../src/services/memoryFeedback'
 
 const queryPage = readFileSync(resolve(process.cwd(), 'src/pages/query/index.tsx'), 'utf8')
 const api = readFileSync(resolve(process.cwd(), 'src/services/api.ts'), 'utf8')
+const memoryQuery = readFileSync(resolve(process.cwd(), 'src/services/memoryQuery.ts'), 'utf8')
 
 test('elder find things is presentation over existing queryMemory seam', () => {
   assert.match(queryPage, /title=\{elderMode \? '我想找东西' : '记忆'\}/)
@@ -30,12 +31,14 @@ test('elder no-answer presentation is explicit no-guess state', () => {
 })
 
 test('query response parser is runtime strict without inventing AI origin', () => {
-  assert.match(api, /function parseMemoryQueryResult\(raw: unknown\)/)
-  assert.match(api, /typeof canAnswer !== 'boolean'/)
-  assert.match(api, /!Array\.isArray\(evidence\)/)
-  assert.match(api, /certainty === 'confirmed' \|\| certainty === 'evidence'/)
-  assert.match(api, /canonicalNoEvidence/)
-  assert.doesNotMatch(api, /isCanonicalQueryTrustShape/)
+  assert.match(api, /parseMemoryQueryResult,/)
+  assert.match(api, /from '\.\/memoryQuery'/)
+  assert.match(memoryQuery, /function parseMemoryQueryResult\(raw: unknown\)/)
+  assert.match(memoryQuery, /typeof canAnswer !== 'boolean'/)
+  assert.match(memoryQuery, /!Array\.isArray\(evidence\)/)
+  assert.match(memoryQuery, /certainty === 'confirmed' \|\| certainty === 'evidence'/)
+  assert.match(memoryQuery, /canonicalNoEvidence/)
+  assert.doesNotMatch(memoryQuery, /isCanonicalQueryTrustShape/)
   assert.match(api, /request<unknown>\('POST', '\/memory\/query'/)
 })
 

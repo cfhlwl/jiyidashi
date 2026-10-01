@@ -1,10 +1,11 @@
 import re
-from datetime import datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import desc, exists, or_, select
 from sqlalchemy.orm import Session
 
+from app.intent_models import IntentKind, IntentRouteReason
 from app.media_models import MediaEvidenceLink
 from app.models import (
     Memory,
@@ -17,6 +18,10 @@ from app.models import (
     SourceType,
 )
 from app.schemas import Evidence, EvidenceProvenance, MemoryQueryResponse
+from app.services.date_query_parser import DateParseStatus, resolve_user_date_expression
+from app.services.day_footprint_service import get_day_footprint
+from app.services.intent_router import route_intent
+from app.services.time_service import user_day_bounds_utc
 
 OBJECT_LOCATION_MARKERS = (
     "在哪",
@@ -175,6 +180,78 @@ def query_memory(
 ) -> MemoryQueryResponse:
     clean_question = question.strip()
 
+    # CORE-002 date authority runs before generic Object/Memory matching. A dated
+    # whereabouts question must never degrade into fuzzy text retrieval.
+    # One request owns one reference instant. Date parsing and routing must not
+    # observe different local days if the request crosses the owner's midnight.
+    reference_utc = datetime.now(UTC)
+    date_result = resolve_user_date_expression(
+        db,
+        user_id=user_id,
+        question=clean_question,
+        reference_utc=reference_utc,
+    )
+    route = route_intent(
+        db,
+        user_id=user_id,
+        question=clean_question,
+        reference_utc=reference_utc,
+    )
+
+    if route.reason == IntentRouteReason.INVALID_DATE:
+        return _date_error("INVALID_DATE")
+    if route.reason == IntentRouteReason.FUTURE_DATE:
+        return _date_error("FUTURE_DATE")
+    if (
+        date_result.status == DateParseStatus.AMBIGUOUS
+        and route.reason == IntentRouteReason.AMBIGUOUS
+    ):
+        return MemoryQueryResponse(
+            answer=None,
+            can_answer=False,
+            certainty="unknown",
+            reason="AMBIGUOUS",
+            intent="UNKNOWN",
+            evidence=[],
+            memory_ids=[],
+        )
+
+    if (
+        date_result.status == DateParseStatus.MATCHED
+        and date_result.day is not None
+        and route.intent == IntentKind.DATE_FOOTPRINT_QUERY
+    ):
+        return _query_date_footprint(
+            db,
+            user_id=user_id,
+            day=date_result.day,
+        )
+
+    if (
+        date_result.status == DateParseStatus.MATCHED
+        and date_result.day is not None
+        and route.intent == IntentKind.FIND_EVENT
+    ):
+        return _query_day_event(
+            db,
+            user_id=user_id,
+            day=date_result.day,
+        )
+
+    if (
+        date_result.status == DateParseStatus.MATCHED
+        and route.intent == IntentKind.UNKNOWN
+    ):
+        return MemoryQueryResponse(
+            answer=None,
+            can_answer=False,
+            certainty="unknown",
+            reason=route.reason.value,
+            intent="UNKNOWN",
+            evidence=[],
+            memory_ids=[],
+        )
+
     if _has_object_location_intent(clean_question):
         matched_object, is_ambiguous = _resolve_object(db, user_id, clean_question)
         if is_ambiguous:
@@ -186,6 +263,150 @@ def query_memory(
             return _find_object(db, user_id, matched_object)
 
     return _search_memories(db, user_id, clean_question)
+
+
+def _format_visit_interval(visit) -> str:
+    start = visit.arrived_at_local.strftime("%H:%M")
+    end = "持续中" if visit.left_at_local is None else visit.left_at_local.strftime("%H:%M")
+    return f"{start}–{end}  {visit.place_name}"
+
+
+def _query_date_footprint(
+    db: Session,
+    *,
+    user_id: UUID,
+    day: date,
+) -> MemoryQueryResponse:
+    footprint = get_day_footprint(db, user_id=user_id, day=day)
+    if footprint.empty:
+        return MemoryQueryResponse(
+            answer=f"{day.isoformat()} 没有找到可靠的足迹记录。",
+            can_answer=False,
+            certainty="unknown",
+            reason="NO_EVIDENCE",
+            intent="DATE_FOOTPRINT_QUERY",
+            evidence=[],
+            memory_ids=[],
+            day_footprint=footprint,
+        )
+
+    lines = [_format_visit_interval(visit) for visit in footprint.visits]
+    return MemoryQueryResponse(
+        answer=f"{day.isoformat()} 的可靠足迹：\n" + "\n".join(lines),
+        can_answer=True,
+        certainty="confirmed",
+        intent="DATE_FOOTPRINT_QUERY",
+        evidence=[],
+        memory_ids=[],
+        day_footprint=footprint,
+    )
+
+
+def _day_memory_evidence(
+    db: Session,
+    *,
+    user_id: UUID,
+    day: date,
+) -> tuple[list[Evidence], list[Memory]]:
+    start, end = user_day_bounds_utc(db, user_id, day)
+    candidates = db.scalars(
+        select(Memory)
+        .where(
+            Memory.user_id == user_id,
+            Memory.memory_type != MemoryType.OBJECT_LOCATION,
+            Memory.is_deleted.is_(False),
+            Memory.is_confirmed.is_(True),
+            Memory.source_type != SourceType.AI_INFERENCE,
+            Memory.confidence >= 0.6,
+            Memory.occurred_at >= start,
+            Memory.occurred_at < end,
+            _eligible_memory_exists(),
+        )
+        .order_by(Memory.occurred_at.asc(), Memory.id.asc())
+        .limit(100)
+    ).all()
+
+    evidence: list[Evidence] = []
+    answerable: list[Memory] = []
+    for item in candidates:
+        source = _best_memory_source(db, item.id)
+        if source is None:
+            continue
+        evidence.append(
+            Evidence(
+                kind="MEMORY",
+                id=item.id,
+                source_type=source.source_type,
+                memory_source_id=source.id,
+                provenance=_source_provenance(db, source.id),
+                occurred_at=item.occurred_at,
+                excerpt=item.content[:240],
+                confidence=source.confidence,
+                media_id=_media_id_for_source(db, source.id),
+            )
+        )
+        answerable.append(item)
+    return evidence, answerable
+
+
+def _query_day_event(
+    db: Session,
+    *,
+    user_id: UUID,
+    day: date,
+) -> MemoryQueryResponse:
+    # AI is intentionally optional in V1. This deterministic evidence summary remains
+    # useful when every provider is unavailable and cannot add facts absent from records.
+    footprint = get_day_footprint(db, user_id=user_id, day=day)
+    evidence, memories = _day_memory_evidence(db, user_id=user_id, day=day)
+
+    if footprint.empty and not evidence:
+        return MemoryQueryResponse(
+            answer=f"{day.isoformat()} 没有找到可靠的足迹或记忆记录。",
+            can_answer=False,
+            certainty="unknown",
+            reason="NO_EVIDENCE",
+            intent="FIND_EVENT",
+            evidence=[],
+            memory_ids=[],
+            day_footprint=footprint,
+        )
+
+    parts: list[str] = [f"{day.isoformat()} 的可靠记录："]
+    if footprint.visits:
+        parts.append(
+            "足迹：" + "；".join(_format_visit_interval(visit) for visit in footprint.visits)
+        )
+    if memories:
+        parts.append(
+            "记忆：" + "；".join(item.content[:80] for item in memories[:8])
+        )
+    return MemoryQueryResponse(
+        answer="\n".join(parts),
+        can_answer=True,
+        certainty="evidence",
+        intent="FIND_EVENT",
+        evidence=evidence,
+        memory_ids=[item.id for item in memories],
+        day_footprint=footprint,
+    )
+
+
+def _date_error(reason: str) -> MemoryQueryResponse:
+    answer = (
+        "这个日期无效，无法查询。"
+        if reason == "INVALID_DATE"
+        else "不能查询未来日期的个人足迹记录。"
+    )
+    return MemoryQueryResponse(
+        answer=answer,
+        can_answer=False,
+        certainty="unknown",
+        reason=reason,
+        intent="UNKNOWN",
+        evidence=[],
+        memory_ids=[],
+    )
 
 
 def _find_object(
