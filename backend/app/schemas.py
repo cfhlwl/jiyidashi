@@ -810,7 +810,6 @@ class RecordingClientState(BaseModel):
     last_enqueue_at: TimezoneAwareDateTime | None = None
     last_handoff_at: TimezoneAwareDateTime | None = None
     last_upload_attempt_at: TimezoneAwareDateTime | None = None
-    last_server_ack_at: TimezoneAwareDateTime | None = None
 
     delivery_failure_count: int = Field(default=0, ge=0, le=100000)
     last_delivery_error_code: RecordingDeliveryErrorCode | None = None
