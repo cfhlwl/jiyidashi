@@ -394,7 +394,7 @@ internal class NativeLocationStore(context: Context) {
             },
             "last_delivery_failure_reason" to
                 prefs.getString(ownerKey(KEY_LAST_DELIVERY_FAILURE_REASON, ownerUserId), null),
-            "capacity_pressure" to depth >= CAPACITY_PRESSURE_THRESHOLD,
+            "capacity_pressure" to (depth >= CAPACITY_PRESSURE_THRESHOLD),
             "dropped_sample_count" to metric(ownerUserId, KEY_CAPACITY_DROP_COUNT),
             "last_drop_at_millis" to if (prefs.contains(lastDropKey)) {
                 prefs.getLong(lastDropKey, 0L)
