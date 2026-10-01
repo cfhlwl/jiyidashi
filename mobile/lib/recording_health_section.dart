@@ -294,7 +294,8 @@ class _CoverageSummary extends StatelessWidget {
     };
     final covered = _durationText(view.coveredDurationSeconds);
     final gap = _durationText(view.knownGapDurationSeconds);
-    final pauseOnly = view.recentGapReasons.isNotEmpty &&
+    final pauseOnly = !view.hasUnexplainedGap &&
+        view.recentGapReasons.isNotEmpty &&
         view.recentGapReasons.every((reason) => reason == 'PRIVACY_PAUSED');
 
     final details = <String>[
