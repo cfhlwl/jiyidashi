@@ -243,7 +243,7 @@ JiYiStatusKind _kind(RecordingHealthStatus status) {
 
 String _title(RecordingHealthStatus status) {
   return switch (status) {
-    RecordingHealthStatus.healthy => '今天记录状态正常',
+    RecordingHealthStatus.healthy => '当前自动记录正常',
     RecordingHealthStatus.degraded => '记录质量受限',
     RecordingHealthStatus.paused => '自动记录已暂停',
     RecordingHealthStatus.blocked => '自动记录当前受阻',
