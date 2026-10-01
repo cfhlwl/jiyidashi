@@ -649,13 +649,14 @@ class NativeLocationPlugin :
         @Volatile
         private var sampleChannel: MethodChannel? = null
 
-        fun notifySamplesAvailable() {
-            val current = sampleChannel ?: return
+        fun notifySamplesAvailable(): Boolean {
+            val current = sampleChannel ?: return false
             Handler(Looper.getMainLooper()).post {
                 if (sampleChannel === current) {
                     current.invokeMethod("samplesAvailable", null)
                 }
             }
+            return true
         }
     }
 }
