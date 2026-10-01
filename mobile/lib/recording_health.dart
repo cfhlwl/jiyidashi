@@ -22,7 +22,8 @@ enum RecordingHealthAction {
   enableAutomaticLocation,
   resumePrivacy,
   startProducer,
-  recheckLocationServices,
+  openLocationServicesSettings,
+  openBackgroundLocationSettings,
 }
 
 class RecordingHealthView {
@@ -114,7 +115,7 @@ class RecordingHealthView {
       return RecordingHealthAction.enableAutomaticLocation;
     }
     if (reason == 'LOCATION_SERVICES_OFF') {
-      return RecordingHealthAction.recheckLocationServices;
+      return RecordingHealthAction.openLocationServicesSettings;
     }
     if (reason == 'PERMISSION_BLOCKED') {
       return switch (permissionState) {
