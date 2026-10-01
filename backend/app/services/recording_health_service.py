@@ -616,6 +616,46 @@ def _historical_aggregates(
     )
 
 
+def _client_diagnostic_timestamps_coherent(client: RecordingClientState) -> bool:
+    """Validate one native diagnostic snapshot against its own observation clock.
+
+    Diagnostic timestamps are evidence only when they could have existed at observed_at.
+    Queue age is additionally unprovable when a non-empty queue has no oldest-pending
+    timestamp, so such snapshots fail closed instead of being eligible for HEALTHY.
+    """
+
+    observed_at = _utc(client.observed_at)
+    diagnostic_times = (
+        client.last_fix_at,
+        client.last_enqueue_at,
+        client.last_handoff_at,
+        client.last_upload_attempt_at,
+        client.native_oldest_pending_at,
+        client.sqlite_oldest_pending_at,
+    )
+    for value in diagnostic_times:
+        if value is not None and _utc(value) > observed_at + FUTURE_CLOCK_SKEW:
+            return False
+
+    queue_pairs = (
+        (client.native_queue_depth, client.native_oldest_pending_at),
+        (client.sqlite_queue_depth, client.sqlite_oldest_pending_at),
+    )
+    for depth, oldest_pending in queue_pairs:
+        if depth == 0 and oldest_pending is not None:
+            return False
+        if depth > 0 and oldest_pending is None:
+            return False
+        if (
+            oldest_pending is not None
+            and client.last_enqueue_at is not None
+            and _utc(oldest_pending) > _utc(client.last_enqueue_at) + FUTURE_CLOCK_SKEW
+        ):
+            return False
+
+    return True
+
+
 def _derive_status(
     *,
     now: datetime,
@@ -640,7 +680,11 @@ def _derive_status(
         )
 
     observed_at = _utc(client.observed_at)
-    if observed_at > now + FUTURE_CLOCK_SKEW or now - observed_at > CLIENT_STATE_MAX_AGE:
+    if (
+        observed_at > now + FUTURE_CLOCK_SKEW
+        or now - observed_at > CLIENT_STATE_MAX_AGE
+        or not _client_diagnostic_timestamps_coherent(client)
+    ):
         return (
             RecordingHealthStatus.UNKNOWN,
             RecordingHealthReason.CLIENT_STATE_STALE,
@@ -746,8 +790,16 @@ def _derive_status(
             RecordingGapState.KNOWN,
         )
 
-    oldest_pending = client.native_oldest_pending_at or client.sqlite_oldest_pending_at
-    if oldest_pending is not None and now - _utc(oldest_pending) > QUEUE_OLD_MAX_AGE:
+    pending_times = [
+        _utc(value)
+        for value in (
+            client.native_oldest_pending_at,
+            client.sqlite_oldest_pending_at,
+        )
+        if value is not None
+    ]
+    oldest_pending = min(pending_times, default=None)
+    if oldest_pending is not None and now - oldest_pending > QUEUE_OLD_MAX_AGE:
         return (
             RecordingHealthStatus.DEGRADED,
             RecordingHealthReason.DELIVERY_BACKLOG,
