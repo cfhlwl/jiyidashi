@@ -463,12 +463,17 @@ class NativeLocationPlugin :
     private fun pause(ownerUserId: String): Map<String, Any?> {
         if (store.activeOwnerUserId == ownerUserId || store.enabledOwnerUserId == ownerUserId) {
             store.finishTracking(ownerUserId)
-            store.clearRecoveryPending(ownerUserId)
             store.runtime = NativeLocationRuntimeState.PAUSED
             store.activeOwnerUserId = null
             applicationContext.stopService(
                 Intent(applicationContext, NativeLocationTrackingService::class.java),
             )
+            if (store.enabledOwnerUserId == ownerUserId) {
+                // Privacy pause/unknown is a quarantine, not a permanent producer opt-out.
+                // Only a later fresh server Privacy PASS may consume this recovery hint.
+                store.markRecoveryPending(ownerUserId, "privacy_quarantine")
+                PassiveMemoryRecoveryScheduler.ensurePeriodic(applicationContext)
+            }
         }
         return status(ownerUserId)
     }
