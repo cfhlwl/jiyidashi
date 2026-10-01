@@ -7,9 +7,11 @@ import android.os.Handler
 import android.os.Looper
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
@@ -30,6 +32,38 @@ import java.util.concurrent.TimeUnit
  */
 object PassiveMemoryRecoveryScheduler {
     private const val UNIQUE_WORK = "jiyidashi-passive-memory-recovery"
+    private const val PERIODIC_WORK = "jiyidashi-passive-memory-watchdog"
+
+    fun ensurePeriodic(context: Context) {
+        val appContext = context.applicationContext
+        val store = NativeLocationStore(appContext)
+        if (store.enabledOwnerUserId.isNullOrBlank()) return
+
+        val request = PeriodicWorkRequestBuilder<PassiveMemoryRecoveryWorker>(
+            15,
+            TimeUnit.MINUTES,
+        )
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build(),
+            )
+            .setInputData(
+                workDataOf(PassiveMemoryRecoveryWorker.KEY_REASON to "periodic_watchdog"),
+            )
+            .build()
+
+        WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+            PERIODIC_WORK,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    fun cancelPeriodic(context: Context) {
+        WorkManager.getInstance(context.applicationContext)
+            .cancelUniqueWork(PERIODIC_WORK)
+    }
 
     fun schedule(
         context: Context,
@@ -92,6 +126,7 @@ class PassiveMemoryRecoveryReceiver : BroadcastReceiver() {
         // cannot prove a live producer. Force truthful stopped state before scheduling.
         store.activeOwnerUserId = null
         store.runtime = NativeLocationRuntimeState.STOPPED
+        PassiveMemoryRecoveryScheduler.ensurePeriodic(context)
         PassiveMemoryRecoveryScheduler.schedule(
             context,
             reason,
@@ -109,8 +144,22 @@ class PassiveMemoryRecoveryWorker(
 ) : Worker(appContext, params) {
     override fun doWork(): Result {
         val store = NativeLocationStore(applicationContext)
-        if (store.enabledOwnerUserId.isNullOrBlank()) {
+        val enabledOwner = store.enabledOwnerUserId?.trim().orEmpty()
+        if (enabledOwner.isEmpty()) {
+            PassiveMemoryRecoveryScheduler.cancelPeriodic(applicationContext)
             return Result.success(workDataOf("status" to "automatic_disabled"))
+        }
+
+        // Android can kill the whole process without Service.onDestroy(). Persisted
+        // RUNNING + matching active owner + no live service means only "eligible to recover",
+        // never permission to restart. Dart still has to refresh AUTH-001 and server Privacy.
+        if (store.runtime == NativeLocationRuntimeState.RUNNING &&
+            store.activeOwnerUserId == enabledOwner &&
+            !NativeLocationTrackingService.isActive
+        ) {
+            store.markRecoveryPending(enabledOwner, "process_recreated")
+            store.activeOwnerUserId = null
+            store.runtime = NativeLocationRuntimeState.STOPPED
         }
 
         val completion = CountDownLatch(1)
