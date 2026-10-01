@@ -362,4 +362,278 @@ void main() {
     expect(store.session, isNull);
   });
 
+
+  test('expired access logout refreshes only to revoke the server session', () async {
+    final store = MemoryAuthSessionStore()..installationId = 'install-expired-logout';
+    var call = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        call += 1;
+        if (call == 1) {
+          return http.Response(
+            jsonEncode(sessionPayload(access: 'expired-access')),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        if (call == 2) {
+          expect(request.url.path, '/v1/auth/logout');
+          expect(request.headers['authorization'], 'Bearer expired-access');
+          return http.Response(
+            jsonEncode({'detail': 'INVALID_ACCESS_TOKEN'}),
+            401,
+            headers: jsonHeaders,
+          );
+        }
+        if (call == 3) {
+          expect(request.url.path, '/v1/auth/refresh');
+          expect(request.headers.containsKey('authorization'), isFalse);
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['refresh_token'], 'refresh-v1-abcdefghijklmnopqrstuvwxyz');
+          return http.Response(
+            jsonEncode(
+              sessionPayload(
+                access: 'revoke-only-access',
+                refresh: 'revoke-only-refresh-abcdefghijklmnopqrstuvwxyz',
+              ),
+            ),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        expect(call, 4);
+        expect(request.url.path, '/v1/auth/logout');
+        expect(request.headers['authorization'], 'Bearer revoke-only-access');
+        return http.Response(
+          jsonEncode({'accepted': true}),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'owner@example.test', password: 'password-123456');
+    await api.logout();
+
+    expect(call, 4);
+    expect(api.authenticatedUserId, isNull);
+    expect(api.accessToken, isNull);
+    expect(store.session, isNull);
+  });
+
+  test('expired access logout-all refreshes and revokes with fresh authority', () async {
+    final store = MemoryAuthSessionStore()..installationId = 'install-expired-logout-all';
+    var call = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        call += 1;
+        if (call == 1) {
+          return http.Response(
+            jsonEncode(sessionPayload(access: 'expired-access')),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        if (call == 2) {
+          expect(request.url.path, '/v1/auth/logout-all');
+          expect(request.headers['authorization'], 'Bearer expired-access');
+          return http.Response(
+            jsonEncode({'detail': 'INVALID_ACCESS_TOKEN'}),
+            401,
+            headers: jsonHeaders,
+          );
+        }
+        if (call == 3) {
+          expect(request.url.path, '/v1/auth/refresh');
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['refresh_token'], 'refresh-v1-abcdefghijklmnopqrstuvwxyz');
+          return http.Response(
+            jsonEncode(
+              sessionPayload(
+                access: 'logout-all-access',
+                refresh: 'logout-all-refresh-abcdefghijklmnopqrstuvwxyz',
+              ),
+            ),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        expect(call, 4);
+        expect(request.url.path, '/v1/auth/logout-all');
+        expect(request.headers['authorization'], 'Bearer logout-all-access');
+        return http.Response(
+          jsonEncode({'accepted': true}),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'owner@example.test', password: 'password-123456');
+    await api.logoutAll();
+
+    expect(call, 4);
+    expect(api.authenticatedUserId, isNull);
+    expect(api.accessToken, isNull);
+    expect(store.session, isNull);
+  });
+
+  test('late refresh response cannot restore a session after logout', () async {
+    final store = MemoryAuthSessionStore()..installationId = 'install-late-logout';
+    final lateRefresh = Completer<http.Response>();
+    var call = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        call += 1;
+        if (call == 1) {
+          return http.Response(
+            jsonEncode(sessionPayload()),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        if (call == 2) {
+          expect(request.url.path, '/v1/auth/refresh');
+          return lateRefresh.future;
+        }
+        expect(call, 3);
+        expect(request.url.path, '/v1/auth/logout');
+        return http.Response(
+          jsonEncode({'accepted': true}),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'owner@example.test', password: 'password-123456');
+    final staleRefresh = api.revalidateAuthenticatedOwnerAuthority();
+    final staleExpectation = expectLater(
+      staleRefresh,
+      throwsA(isA<ProtocolException>()),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    await api.logout();
+    expect(store.session, isNull);
+    expect(api.authenticatedUserId, isNull);
+
+    lateRefresh.complete(
+      http.Response(
+        jsonEncode(
+          sessionPayload(
+            access: 'late-access',
+            refresh: 'late-refresh-abcdefghijklmnopqrstuvwxyz',
+          ),
+        ),
+        200,
+        headers: jsonHeaders,
+      ),
+    );
+    await staleExpectation;
+
+    expect(store.session, isNull);
+    expect(api.authenticatedUserId, isNull);
+    expect(api.accessToken, isNull);
+  });
+
+  test('late account A refresh cannot overwrite account B after switch', () async {
+    const userA = '11111111-1111-4111-8111-111111111111';
+    const userB = '22222222-2222-4222-8222-222222222222';
+    const sessionA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const sessionB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    final store = MemoryAuthSessionStore()..installationId = 'install-switch';
+    final lateRefresh = Completer<http.Response>();
+    var call = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        call += 1;
+        if (call == 1) {
+          return http.Response(
+            jsonEncode(
+              sessionPayload(
+                access: 'access-a',
+                refresh: 'refresh-a-abcdefghijklmnopqrstuvwxyz',
+                session: sessionA,
+                user: userA,
+              ),
+            ),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        if (call == 2) {
+          expect(request.url.path, '/v1/auth/refresh');
+          return lateRefresh.future;
+        }
+        if (call == 3) {
+          expect(request.url.path, '/v1/auth/logout');
+          return http.Response(
+            jsonEncode({'accepted': true}),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        expect(call, 4);
+        expect(request.url.path, '/v1/auth/login');
+        return http.Response(
+          jsonEncode(
+            sessionPayload(
+              access: 'access-b',
+              refresh: 'refresh-b-abcdefghijklmnopqrstuvwxyz',
+              session: sessionB,
+              user: userB,
+            ),
+          ),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'a@example.test', password: 'password-123456');
+    final staleRefresh = api.revalidateAuthenticatedOwnerAuthority();
+    final staleExpectation = expectLater(
+      staleRefresh,
+      throwsA(isA<ProtocolException>()),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    await api.logout();
+    await api.login(email: 'b@example.test', password: 'password-123456');
+    expect(api.authenticatedUserId, userB);
+    expect(store.session?.sessionId, sessionB);
+    expect(store.session?.refreshToken, 'refresh-b-abcdefghijklmnopqrstuvwxyz');
+
+    lateRefresh.complete(
+      http.Response(
+        jsonEncode(
+          sessionPayload(
+            access: 'late-access-a',
+            refresh: 'late-refresh-a-abcdefghijklmnopqrstuvwxyz',
+            session: sessionA,
+            user: userA,
+          ),
+        ),
+        200,
+        headers: jsonHeaders,
+      ),
+    );
+    await staleExpectation;
+
+    expect(api.authenticatedUserId, userB);
+    expect(api.authenticatedSessionId, sessionB);
+    expect(api.accessToken, 'access-b');
+    expect(store.session?.sessionId, sessionB);
+    expect(store.session?.refreshToken, 'refresh-b-abcdefghijklmnopqrstuvwxyz');
+  });
+
 }
