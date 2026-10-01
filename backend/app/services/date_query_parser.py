@@ -15,6 +15,7 @@ class DateParseStatus(StrEnum):
     MATCHED = "MATCHED"
     INVALID = "INVALID"
     FUTURE = "FUTURE"
+    AMBIGUOUS = "AMBIGUOUS"
     NO_MATCH = "NO_MATCH"
 
 
@@ -67,6 +68,29 @@ def _invalid(matched_text: str) -> DateParseResult:
     )
 
 
+def _date_expression_spans(value: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    for token in ("前天", "昨天", "今天"):
+        spans.extend((match.start(), match.end()) for match in re.finditer(token, value))
+    for pattern in (_ISO_DATE, _CHINESE_YMD, _MONTH_DAY, _DAY_ONLY, _WEEKDAY):
+        spans.extend((match.start(), match.end()) for match in pattern.finditer(value))
+
+    if not spans:
+        return []
+
+    # A specific expression can also contain a less-specific expression
+    # (e.g. 2026年9月25日 contains 9月25日). Merge overlapping spans so that one
+    # date is not misclassified as multiple dates.
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if not merged or start >= merged[-1][1]:
+            merged.append((start, end))
+            continue
+        previous_start, previous_end = merged[-1]
+        merged[-1] = (previous_start, max(previous_end, end))
+    return merged
+
+
 def _safe_date(year: int, month: int, day: int) -> date | None:
     try:
         return date(year, month, day)
@@ -108,6 +132,13 @@ def parse_date_expression(
     clean = question.strip()
     if not clean:
         return DateParseResult(status=DateParseStatus.NO_MATCH)
+
+    spans = _date_expression_spans(clean)
+    if len(spans) > 1:
+        return DateParseResult(
+            status=DateParseStatus.AMBIGUOUS,
+            matched_text=" | ".join(clean[start:end] for start, end in spans),
+        )
 
     # Relative expressions are exact and take precedence over incidental digits.
     if "前天" in clean:
