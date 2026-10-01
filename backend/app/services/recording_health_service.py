@@ -620,8 +620,8 @@ def _client_diagnostic_timestamps_coherent(client: RecordingClientState) -> bool
     """Validate one native diagnostic snapshot against its own observation clock.
 
     Diagnostic timestamps are evidence only when they could have existed at observed_at.
-    Queue age is additionally unprovable when a non-empty queue has no oldest-pending
-    timestamp, so such snapshots fail closed instead of being eligible for HEALTHY.
+    Queue timestamps, when present, must also preserve basic oldest-pending/enqueue
+    ordering. Missing optional queue-age evidence is handled by the normal health rules.
     """
 
     observed_at = _utc(client.observed_at)
@@ -637,15 +637,10 @@ def _client_diagnostic_timestamps_coherent(client: RecordingClientState) -> bool
         if value is not None and _utc(value) > observed_at + FUTURE_CLOCK_SKEW:
             return False
 
-    queue_pairs = (
-        (client.native_queue_depth, client.native_oldest_pending_at),
-        (client.sqlite_queue_depth, client.sqlite_oldest_pending_at),
-    )
-    for depth, oldest_pending in queue_pairs:
-        if depth == 0 and oldest_pending is not None:
-            return False
-        if depth > 0 and oldest_pending is None:
-            return False
+    for oldest_pending in (
+        client.native_oldest_pending_at,
+        client.sqlite_oldest_pending_at,
+    ):
         if (
             oldest_pending is not None
             and client.last_enqueue_at is not None
