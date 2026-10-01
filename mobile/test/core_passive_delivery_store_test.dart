@@ -130,6 +130,73 @@ void main() {
     await raw.close();
   });
 
+  test('bounded SQLite location queue rejects overflow without losing stable replay',
+      () async {
+    final bounded = OfflineQueueStore(
+      factory: factory,
+      databasePathProvider: () async => databasePath,
+      locationQueueCapacityPerOwner: 2,
+    );
+    final captured = DateTime.utc(2026, 10, 1, 3);
+    const firstUuid = '11111111-1111-4111-8111-111111111111';
+    const secondUuid = '22222222-2222-4222-8222-222222222222';
+    const overflowUuid = '33333333-3333-4333-8333-333333333333';
+
+    await bounded.enqueueLocationSample(
+      ownerUserId: owner,
+      clientUuid: firstUuid,
+      latitude: 3.139,
+      longitude: 101.6869,
+      recordedAt: captured,
+    );
+    await bounded.enqueueLocationSample(
+      ownerUserId: owner,
+      clientUuid: secondUuid,
+      latitude: 3.14,
+      longitude: 101.687,
+      recordedAt: captured.add(const Duration(seconds: 1)),
+    );
+
+    expect(
+      () => bounded.enqueueLocationSample(
+        ownerUserId: owner,
+        clientUuid: overflowUuid,
+        latitude: 3.141,
+        longitude: 101.688,
+        recordedAt: captured.add(const Duration(seconds: 2)),
+      ),
+      throwsA(
+        isA<LocationQueueCapacityException>().having(
+          (error) => error.capacity,
+          'capacity',
+          2,
+        ),
+      ),
+    );
+
+    // Retrying an already durable UUID remains idempotent even while the queue is full.
+    final replay = await bounded.enqueueLocationSample(
+      ownerUserId: owner,
+      clientUuid: firstUuid,
+      latitude: 3.139,
+      longitude: 101.6869,
+      recordedAt: captured,
+    );
+    expect(replay.clientUuid, firstUuid);
+
+    final diagnostics = await bounded.locationQueueDiagnostics(owner);
+    expect(diagnostics.queueDepth, 2);
+    expect(diagnostics.queueCapacity, 2);
+    expect(diagnostics.capacityPressure, isTrue);
+    expect(
+      (await bounded.listLocationSamples(owner))
+          .map((item) => item.clientUuid)
+          .toList(),
+      <String>[firstUuid, secondUuid],
+    );
+    await bounded.close();
+  });
+
   test('delivery lease is owner-scoped across coordinator instances', () async {
     final first = OfflineQueueStore(
       factory: factory,
