@@ -243,18 +243,6 @@ def _day_coverage(
     merged_evidence = _merge_intervals(evidence_intervals)
     covered_seconds = sum(item.seconds for item in merged_evidence)
 
-    unknown_gaps: list[_Interval] = []
-    for previous, current in zip(merged_evidence, merged_evidence[1:]):
-        gap = current.start - previous.end
-        if gap >= RECORDED_GAP_MIN_DURATION:
-            unknown_gaps.append(
-                _Interval(
-                    previous.end,
-                    current.start,
-                    RecordingGapReason.UNKNOWN,
-                )
-            )
-
     privacy_gaps = _privacy_intervals(
         db,
         user_id=user_id,
@@ -262,6 +250,52 @@ def _day_coverage(
         end_utc=effective_end,
         now=now,
     )
+
+    # A long interval between two real observations is evidence of missing coverage, but
+    # its cause stays UNKNOWN unless another authority proves it. Subtract intervals already
+    # proven by Visit/sample continuity and explicit Privacy Pause so a deliberate pause is
+    # never relabelled as an accidental failure.
+    def subtract_masks(candidate: _Interval, masks: list[_Interval]) -> list[_Interval]:
+        segments = [candidate]
+        for mask in _merge_intervals(masks):
+            next_segments: list[_Interval] = []
+            for segment in segments:
+                if mask.end <= segment.start or mask.start >= segment.end:
+                    next_segments.append(segment)
+                    continue
+                if mask.start > segment.start:
+                    next_segments.append(
+                        _Interval(
+                            segment.start,
+                            min(mask.start, segment.end),
+                            segment.reason,
+                        )
+                    )
+                if mask.end < segment.end:
+                    next_segments.append(
+                        _Interval(
+                            max(mask.end, segment.start),
+                            segment.end,
+                            segment.reason,
+                        )
+                    )
+            segments = next_segments
+            if not segments:
+                break
+        return [segment for segment in segments if segment.seconds > 0]
+
+    unknown_gaps: list[_Interval] = []
+    ordered_observations = sorted(set(observed_instants))
+    for previous, current in zip(ordered_observations, ordered_observations[1:]):
+        if current - previous < RECORDED_GAP_MIN_DURATION:
+            continue
+        candidate = _Interval(previous, current, RecordingGapReason.UNKNOWN)
+        for uncovered in subtract_masks(
+            candidate,
+            [*merged_evidence, *privacy_gaps],
+        ):
+            if uncovered.seconds >= int(RECORDED_GAP_MIN_DURATION.total_seconds()):
+                unknown_gaps.append(uncovered)
     all_gaps = sorted(
         [*privacy_gaps, *unknown_gaps],
         key=lambda item: (item.start, item.end),
