@@ -569,12 +569,16 @@ class PlaceRead(ORMModel):
     is_user_named: bool
 
 
-class TodayFootprintVisit(BaseModel):
-    # [人工注释][S2-012] Today Footprint 是 Timeline/Visit 的只读产品投影；
-    # 不复制坐标、不新建事实，只保留用户可解释的 Place + Visit 时间/状态。
+class DayFootprintVisit(BaseModel):
+    # [人工注释][CORE-002] Day Footprint 是 Visit + Place 的 canonical 只读投影。
+    # 不暴露 raw LocationPoint/route；地点元数据只来自当前 owner 的 trusted Place。
     id: UUID
     place_id: UUID
     place_name: str
+    place_latitude: float | None = None
+    place_longitude: float | None = None
+    place_address: str | None = None
+    place_category: str | None = None
     arrived_at: datetime
     left_at: datetime | None = None
     arrived_at_local: datetime
@@ -584,9 +588,18 @@ class TodayFootprintVisit(BaseModel):
     visit_finalized: bool
 
 
-class TodayFootprintResponse(BaseModel):
+class DayFootprintResponse(BaseModel):
     timezone: str
     day: date
+    empty: bool
+    visits: list[DayFootprintVisit] = Field(default_factory=list)
+
+
+class TodayFootprintVisit(DayFootprintVisit):
+    pass
+
+
+class TodayFootprintResponse(DayFootprintResponse):
     visits: list[TodayFootprintVisit] = Field(default_factory=list)
 
 
