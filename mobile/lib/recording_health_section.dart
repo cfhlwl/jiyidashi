@@ -142,15 +142,19 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
           if (controller != null) {
             await controller.resumeAfterPrivacy();
           }
+          break;
         case RecordingHealthAction.requestForegroundPermission:
           if (controller == null) return;
           await controller.requestForegroundPermission();
+          break;
         case RecordingHealthAction.enableAutomaticLocation:
           if (controller == null) return;
           await controller.enableAutomaticLocation();
+          break;
         case RecordingHealthAction.startProducer:
           if (controller == null) return;
           await controller.start();
+          break;
         case RecordingHealthAction.recheckLocationServices:
           break;
       }
@@ -179,6 +183,7 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
   @override
   Widget build(BuildContext context) {
     final view = _view;
+    final action = view?.suggestedAction;
     return JiYiSectionCard(
       leading: Icon(
         Icons.health_and_safety_outlined,
@@ -233,8 +238,7 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
                     ),
               ),
             ],
-            if (view.suggestedAction case final action?
-                when _canRenderAction(action)) ...[
+            if (action != null && _canRenderAction(action)) ...[
               const SizedBox(height: JiYiSpacing.sm),
               FilledButton.icon(
                 key: const ValueKey('recording-health-action'),
