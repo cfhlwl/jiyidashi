@@ -128,6 +128,54 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
     }
   }
 
+  Future<void> _runHealthAction(RecordingHealthAction action) async {
+    if (_loading) return;
+    final controller = widget.nativeLocationController;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      switch (action) {
+        case RecordingHealthAction.resumePrivacy:
+          await widget.api.resumeMemory();
+          if (controller != null) {
+            await controller.resumeAfterPrivacy();
+          }
+        case RecordingHealthAction.requestForegroundPermission:
+          if (controller == null) return;
+          await controller.requestForegroundPermission();
+        case RecordingHealthAction.enableAutomaticLocation:
+          if (controller == null) return;
+          await controller.enableAutomaticLocation();
+        case RecordingHealthAction.startProducer:
+          if (controller == null) return;
+          await controller.start();
+        case RecordingHealthAction.recheckLocationServices:
+          break;
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _error = '操作未完成，请按系统提示处理后重新确认。';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+        await _refresh();
+      }
+    }
+  }
+
+  bool _canRenderAction(RecordingHealthAction action) {
+    if (action == RecordingHealthAction.resumePrivacy) return true;
+    if (action == RecordingHealthAction.recheckLocationServices) return true;
+    return widget.nativeLocationController != null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final view = _view;
@@ -155,6 +203,16 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
             ),
             const SizedBox(height: JiYiSpacing.sm),
             _CoverageSummary(view: view),
+            if (view.activeGapReasons.isNotEmpty) ...[
+              const SizedBox(height: JiYiSpacing.sm),
+              Text(
+                _activeGapMessage(view.activeGapReasons),
+                key: const ValueKey('recording-health-gap-reason'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
             if (_showQueue(view)) ...[
               const SizedBox(height: JiYiSpacing.sm),
               Text(
@@ -173,6 +231,16 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
+              ),
+            ],
+            if (view.suggestedAction case final action?
+                when _canRenderAction(action)) ...[
+              const SizedBox(height: JiYiSpacing.sm),
+              FilledButton.icon(
+                key: const ValueKey('recording-health-action'),
+                onPressed: _loading ? null : () => _runHealthAction(action),
+                icon: Icon(_actionIcon(action)),
+                label: Text(_actionLabel(action)),
               ),
             ],
           ],
@@ -273,6 +341,46 @@ String _message(RecordingHealthView view) {
         ? '本机状态不可用，无法确认后台记录是否正常。'
         : '服务器能展示已接收的记录，但无法从这里确认这台手机当前的后台状态。',
     _ => '当前证据不足，无法确认自动记录是否正常。',
+  };
+}
+
+String _activeGapMessage(List<String> reasons) {
+  final labels = <String>[];
+  for (final reason in reasons) {
+    final label = switch (reason) {
+      'PERMISSION_BLOCKED' => '定位权限阻断',
+      'LOCATION_SERVICES_OFF' => '系统定位服务关闭',
+      'PRIVACY_PAUSED' => '主动隐私暂停',
+      'PLATFORM_RESTRICTED' => '系统后台限制',
+      'QUEUE_CAPACITY_PRESSURE' => '本机队列容量压力',
+      'DELIVERY_BACKLOG' => '同步积压',
+      'PRODUCER_NOT_RUNNING' => '后台采集未运行',
+      'NO_RECENT_FIX' => '缺少近期采集',
+      'UNKNOWN' => '未解释的记录空档',
+      _ => null,
+    };
+    if (label != null && !labels.contains(label)) labels.add(label);
+  }
+  return labels.isEmpty ? '当前存在记录空档。' : '当前诊断：${labels.join('、')}';
+}
+
+String _actionLabel(RecordingHealthAction action) {
+  return switch (action) {
+    RecordingHealthAction.requestForegroundPermission => '开启定位权限',
+    RecordingHealthAction.enableAutomaticLocation => '允许后台定位',
+    RecordingHealthAction.resumePrivacy => '恢复自动记录',
+    RecordingHealthAction.startProducer => '重新启动自动记录',
+    RecordingHealthAction.recheckLocationServices => '已开启后重新检查',
+  };
+}
+
+IconData _actionIcon(RecordingHealthAction action) {
+  return switch (action) {
+    RecordingHealthAction.requestForegroundPermission => Icons.location_on_outlined,
+    RecordingHealthAction.enableAutomaticLocation => Icons.my_location_outlined,
+    RecordingHealthAction.resumePrivacy => Icons.play_arrow_rounded,
+    RecordingHealthAction.startProducer => Icons.restart_alt_rounded,
+    RecordingHealthAction.recheckLocationServices => Icons.refresh,
   };
 }
 
