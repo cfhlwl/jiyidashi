@@ -81,5 +81,11 @@ class Core004CertificationTests(unittest.TestCase):
             mod.privacy_guard_json(data, {"serial"}, Path("evidence.json"))
 
 
+    def test_privacy_guard_rejects_email_string(self) -> None:
+        data = {"notes": "contact field-test@example.com"}
+        with self.assertRaisesRegex(mod.ValidationError, "email-like value"):
+            mod.privacy_guard_json(data, set(), Path("evidence.json"))
+
+
 if __name__ == "__main__":
     unittest.main()
