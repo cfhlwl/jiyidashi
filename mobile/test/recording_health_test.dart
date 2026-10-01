@@ -53,6 +53,82 @@ void main() {
     expect(malformed.malformed, isTrue);
   });
 
+  test('reason-specific CTA is derived only from proven authority', () {
+    RecordingHealthView parse({
+      required String reason,
+      bool automatic = true,
+      String? permission = 'BACKGROUND',
+      String? services = 'ON',
+      String? background = 'ELIGIBLE',
+      List<String> activeGaps = const <String>[],
+    }) {
+      return RecordingHealthView.fromJson(<String, dynamic>{
+        'health': <String, dynamic>{
+          'status': reason == 'PRIVACY_PAUSED' ? 'PAUSED' : 'BLOCKED',
+          'status_reason': reason,
+          'automatic_enabled': automatic,
+          'privacy_paused': reason == 'PRIVACY_PAUSED',
+          'permission_state': permission,
+          'location_services_state': services,
+          'background_runtime_state': background,
+          'native_queue_depth': 0,
+          'sqlite_queue_depth': 0,
+          'capacity_pressure': false,
+          'delivery_failure_count': 0,
+          'recovery_pending': false,
+          'last_fix_at': null,
+          'last_server_ack_at': null,
+        },
+        'today': <String, dynamic>{
+          'local_day': '2026-10-01',
+          'timezone': 'Asia/Shanghai',
+          'covered_duration_seconds': 0,
+          'known_gap_duration_seconds': 0,
+          'has_recorded_gap': false,
+          'coverage_state': 'UNKNOWN',
+        },
+        'recent_gaps': <Object?>[],
+        'active_gap_reasons': activeGaps,
+        'native_state_observed': true,
+      });
+    }
+
+    expect(
+      parse(reason: 'PERMISSION_BLOCKED', permission: 'NOT_DETERMINED')
+          .suggestedAction,
+      RecordingHealthAction.requestForegroundPermission,
+    );
+    expect(
+      parse(reason: 'PERMISSION_BLOCKED', permission: 'FOREGROUND')
+          .suggestedAction,
+      RecordingHealthAction.enableAutomaticLocation,
+    );
+    expect(
+      parse(reason: 'PERMISSION_BLOCKED', permission: 'RESTRICTED')
+          .suggestedAction,
+      isNull,
+    );
+    expect(
+      parse(reason: 'PRIVACY_PAUSED').suggestedAction,
+      RecordingHealthAction.resumePrivacy,
+    );
+    expect(
+      parse(reason: 'LOCATION_SERVICES_OFF', services: 'OFF').suggestedAction,
+      RecordingHealthAction.recheckLocationServices,
+    );
+    expect(
+      parse(reason: 'PLATFORM_RESTRICTED', background: 'RESTRICTED')
+          .suggestedAction,
+      isNull,
+    );
+    final capacity = parse(
+      reason: 'QUEUE_CAPACITY_PRESSURE',
+      activeGaps: const <String>['QUEUE_CAPACITY_PRESSURE'],
+    );
+    expect(capacity.suggestedAction, isNull);
+    expect(capacity.activeGapReasons, const <String>['QUEUE_CAPACITY_PRESSURE']);
+  });
+
   test('client projection is privacy-safe and bounds raw failures', () {
     final native = NativeLocationStatus(
       supported: true,
