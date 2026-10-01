@@ -280,6 +280,45 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('revoked background permission never offers a false start CTA', (tester) async {
+    final bridge = _FakeBridge()
+      ..current = const NativeLocationStatus(
+        supported: true,
+        platform: 'ios',
+        permission: NativeLocationPermission.foreground,
+        runtime: NativeLocationRuntime.stopped,
+        automaticEnabled: true,
+        locationServicesEnabled: true,
+        reason: 'background_permission_required',
+      );
+    final controller = NativeLocationController(
+      bridge: bridge,
+      ownerUserId: owner,
+    );
+    await controller.initialize();
+    controller.markPrivacyActive();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: Scaffold(
+          body: NativeLocationSection(
+            controller: controller,
+            revalidateAuthority: () async => controller.markPrivacyActive(),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('location-start')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('location-open-background-settings')),
+      findsOneWidget,
+    );
+    controller.dispose();
+  });
+
   testWidgets('permission flow is progressive and every request is user-driven', (
     tester,
   ) async {
