@@ -6,6 +6,8 @@ Create Date: 2026-09-30
 """
 
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import sqlalchemy as sa
 from alembic import op
@@ -57,29 +59,43 @@ def upgrade() -> None:
         "auth_sessions",
         ["user_id", "expires_at"],
     )
-    # Pre-0029 access JWTs contain only sub/iat/exp.  Their user UUID is the
+    # Pre-0029 access JWTs contain only sub/iat/exp. Their user UUID is the
     # deterministic compatibility session ID; the JWT's original exp still
     # bounds access, while this row preserves the new durable-session check.
-    op.execute(
-        """
-        INSERT INTO auth_sessions (
-            id, user_id, device_id, refresh_digest, rotation_revision,
-            client_platform, device_name, created_at, last_used_at, expires_at
-        )
-        SELECT
-            id,
-            id,
-            'legacy-access-token',
-            replace(id::text, '-', '') || replace(id::text, '-', ''),
-            0,
-            'legacy',
-            'Pre-session access token',
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP + INTERVAL '30 days'
-        FROM users
-        """
+    user_table = sa.table("users", sa.column("id", sa.Uuid()))
+    session_table = sa.table(
+        "auth_sessions",
+        sa.column("id", sa.Uuid()),
+        sa.column("user_id", sa.Uuid()),
+        sa.column("device_id", sa.String(length=120)),
+        sa.column("refresh_digest", sa.String(length=64)),
+        sa.column("rotation_revision", sa.Integer()),
+        sa.column("client_platform", sa.String(length=32)),
+        sa.column("device_name", sa.String(length=120)),
+        sa.column("created_at", sa.DateTime(timezone=True)),
+        sa.column("last_used_at", sa.DateTime(timezone=True)),
+        sa.column("expires_at", sa.DateTime(timezone=True)),
     )
+    now = datetime.now(UTC)
+    compatibility_sessions = []
+    for raw_user_id in op.get_bind().execute(sa.select(user_table.c.id)).scalars():
+        user_id = raw_user_id if isinstance(raw_user_id, UUID) else UUID(str(raw_user_id))
+        compatibility_sessions.append(
+            {
+                "id": user_id,
+                "user_id": user_id,
+                "device_id": "legacy-access-token",
+                "refresh_digest": user_id.hex * 2,
+                "rotation_revision": 0,
+                "client_platform": "legacy",
+                "device_name": "Pre-session access token",
+                "created_at": now,
+                "last_used_at": now,
+                "expires_at": now + timedelta(days=30),
+            }
+        )
+    if compatibility_sessions:
+        op.bulk_insert(session_table, compatibility_sessions)
 
     op.create_table(
         "auth_refresh_token_receipts",
