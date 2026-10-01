@@ -333,9 +333,21 @@ export function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
     && (certainty === 'confirmed' || certainty === 'evidence')
     && hasStructuredFootprint
   )
+  const structuredNoEvidenceExplanation = (
+    Boolean(parsedDayFootprint)
+    || reason === 'INVALID_DATE'
+    || reason === 'FUTURE_DATE'
+  )
   const canonicalNoEvidence = (
     canAnswer === false
-    && (answer === null || (typeof answer === 'string' && answer.trim().length > 0))
+    && (
+      answer === null
+      || (
+        structuredNoEvidenceExplanation
+        && typeof answer === 'string'
+        && answer.trim().length > 0
+      )
+    )
     && certainty === 'unknown'
     && parsedEvidence.length === 0
     && parsedMemoryIds.length === 0
