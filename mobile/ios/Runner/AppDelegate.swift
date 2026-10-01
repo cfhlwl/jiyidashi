@@ -258,6 +258,27 @@ struct NativeLocationPolicy {
 final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   private let manager = CLLocationManager()
   private let defaults = UserDefaults.standard
+  private lazy var queueFileURL: URL? = {
+    let manager = FileManager.default
+    guard let base = manager.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first else {
+      return nil
+    }
+    do {
+      try manager.createDirectory(
+        at: base,
+        withIntermediateDirectories: true
+      )
+      return base.appendingPathComponent(
+        "native_location_queue_v2.json",
+        isDirectory: false
+      )
+    } catch {
+      return nil
+    }
+  }()
   private var channel: FlutterMethodChannel?
   private var nativeProducerActive = false
   private var standardUpdatesActive = false
@@ -639,15 +660,30 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
 
   private func allPendingLocationSamples() -> [NativeQueuedLocationSample] {
     if queueCorrupt { return [] }
-    guard let data = defaults.data(forKey: Keys.pendingSamples) else {
+
+    var cameFromLegacyDefaults = false
+    let data: Data
+    if let url = queueFileURL,
+       FileManager.default.fileExists(atPath: url.path) {
+      do {
+        data = try Data(contentsOf: url)
+      } catch {
+        markQueueCorrupt("native_queue_read_failed")
+        return []
+      }
+    } else if let legacy = defaults.data(forKey: Keys.pendingSamples) {
+      data = legacy
+      cameFromLegacyDefaults = true
+    } else {
       return []
     }
+
     guard var samples = try? JSONDecoder().decode(
       [NativeQueuedLocationSample].self,
       from: data
     ) else {
-      // Preserve the original raw Data. Never reinterpret corruption as an empty queue
-      // and overwrite precise-location evidence on the next enqueue.
+      // Preserve the original durable payload. Never reinterpret corruption as an empty
+      // queue and overwrite precise-location evidence on the next enqueue.
       markQueueCorrupt("native_queue_decode_failed")
       return []
     }
@@ -662,7 +698,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     }
 
     let schema = defaults.integer(forKey: Keys.queueSchemaVersion)
-    if schema < 2 || samples.contains(where: { $0.queueSequence <= 0 }) {
+    if cameFromLegacyDefaults ||
+        schema < 2 ||
+        samples.contains(where: { $0.queueSequence <= 0 }) {
       var next: Int64 = 1
       samples = samples.map { sample in
         let sequence = sample.queueSequence > 0 ? sample.queueSequence : next
@@ -687,6 +725,10 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       }
       defaults.set(2, forKey: Keys.queueSchemaVersion)
       defaults.set(next, forKey: Keys.nextQueueSequence)
+      if cameFromLegacyDefaults {
+        // Delete the legacy blob only after the V2 atomic file is durable.
+        defaults.removeObject(forKey: Keys.pendingSamples)
+      }
     }
     return samples
   }
@@ -695,10 +737,21 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   private func savePendingLocationSamples(
     _ samples: [NativeQueuedLocationSample]
   ) -> Bool {
-    guard let data = try? JSONEncoder().encode(samples) else { return false }
-    defaults.set(data, forKey: Keys.pendingSamples)
-    defaults.set(2, forKey: Keys.queueSchemaVersion)
-    return true
+    guard
+      let url = queueFileURL,
+      let data = try? JSONEncoder().encode(samples)
+    else {
+      return false
+    }
+    do {
+      // Atomic replace gives crash-safe file-level durability without requiring CoreData
+      // or a second SQLite authority beside the Flutter outbox.
+      try data.write(to: url, options: .atomic)
+      defaults.set(2, forKey: Keys.queueSchemaVersion)
+      return true
+    } catch {
+      return false
+    }
   }
 
   private func pendingLocationSamples(
@@ -806,6 +859,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       // Account deletion is privacy-authoritative. A corrupt mixed-owner payload
       // cannot be filtered safely, so erase the complete raw queue rather than retain
       // precise locations for the owner being deleted.
+      if let url = queueFileURL {
+        try? FileManager.default.removeItem(at: url)
+      }
       defaults.removeObject(forKey: Keys.pendingSamples)
       defaults.removeObject(forKey: Keys.queueCorrupt)
       defaults.removeObject(forKey: Keys.queueCorruptReason)
