@@ -843,8 +843,15 @@ class RecordingTodayCoverage(BaseModel):
 class RecordingHealthAggregates(BaseModel):
     healthy_days_7d: int = Field(ge=0, le=7)
     healthy_days_30d: int = Field(ge=0, le=30)
-    gap_hours_7d: float = Field(ge=0)
-    gap_hours_30d: float = Field(ge=0)
+    evidence_days_7d: int = Field(ge=0, le=7)
+    evidence_days_30d: int = Field(ge=0, le=30)
+    # Total gap hours cannot be reconstructed truthfully from CORE-001 because V1 does not
+    # persist historical producer/permission expectation at every day edge. Keep the total
+    # unavailable and expose only the bounded gaps proven between retained observations.
+    gap_hours_7d: float | None = Field(default=None, ge=0)
+    gap_hours_30d: float | None = Field(default=None, ge=0)
+    bounded_gap_hours_7d: float = Field(ge=0)
+    bounded_gap_hours_30d: float = Field(ge=0)
     days_with_capacity_pressure: int | None = Field(default=None, ge=0, le=30)
     days_with_permission_block: int | None = Field(default=None, ge=0, le=30)
     current_capacity_pressure: bool | None = None
