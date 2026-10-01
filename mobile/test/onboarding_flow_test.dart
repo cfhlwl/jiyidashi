@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/motion_sampling_policy.dart';
+import 'package:jiyidashi/native_motion_sampling_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/onboarding_state.dart';
@@ -220,6 +222,61 @@ class _ZeroQueue extends OfflineQueueStore {
   Future<void> close() async {}
 }
 
+class _IdleMotionBridge implements NativeMotionSamplingBridge {
+  final StreamController<void> _events = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get samplesAvailable => _events.stream;
+
+  @override
+  Future<List<NativeLocationSample>> drainSamples(
+    String ownerUserId, {
+    int limit = 100,
+  }) async =>
+      const <NativeLocationSample>[];
+
+  @override
+  Future<NativeMotionObservation?> takeObservation(String ownerUserId) async =>
+      null;
+
+  @override
+  Future<void> acknowledgeSamples(
+    String ownerUserId,
+    List<String> clientUuids,
+  ) async {}
+
+  @override
+  Future<void> applyProfile(
+    String ownerUserId,
+    AdaptiveSamplingProfile profile,
+  ) async {}
+
+  @override
+  Future<LocationProducerMetrics> metrics(String ownerUserId) async =>
+      const LocationProducerMetrics(
+        wakeups: 0,
+        samplesAccepted: 0,
+        samplesDropped: 0,
+        uploadBatches: 0,
+        uploadedSamples: 0,
+        activeTrackingDuration: Duration.zero,
+      );
+
+  @override
+  Future<void> recordUploadBatch(
+    String ownerUserId, {
+    required int sampleCount,
+  }) async {}
+
+  @override
+  Future<void> purgeOwner(String ownerUserId) async {}
+
+  @override
+  Future<void> close() async {
+    await _events.close();
+  }
+}
+
 class _AuthenticationApi extends JiYiApiClient {
   _AuthenticationApi() : super(baseUrl: 'https://auth-onboarding.invalid/v1');
 
@@ -410,6 +467,7 @@ void main() {
         api: authApi,
         offlineQueue: _ZeroQueue(),
         onboardingStore: store,
+        motionSamplingBridge: _IdleMotionBridge(),
       ),
     );
     await _pumpUntil(
