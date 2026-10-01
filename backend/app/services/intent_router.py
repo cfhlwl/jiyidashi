@@ -191,13 +191,9 @@ def route_intent(
         question=clean_question,
         reference_utc=reference_utc,
     )
-    date_sensitive = _contains_marker(
-        clean_question,
-        _DATE_FOOTPRINT_MARKERS + _EVENT_MARKERS,
-    )
-    if date_sensitive and date_result.status == DateParseStatus.INVALID:
+    if date_result.status == DateParseStatus.INVALID:
         return _unknown(IntentRouteReason.INVALID_DATE)
-    if date_sensitive and date_result.status == DateParseStatus.FUTURE:
+    if date_result.status == DateParseStatus.FUTURE:
         return _unknown(IntentRouteReason.FUTURE_DATE)
     if date_result.matched and _contains_marker(
         clean_question,
@@ -278,11 +274,16 @@ def route_intent(
         )
 
     if memory_signal:
+        if date_result.matched:
+            return _unknown(IntentRouteReason.UNSUPPORTED)
         return IntentRouteResult(
             intent=IntentKind.MEMORY_SEARCH,
             capability=IntentCapability.MEMORY_QUERY,
             reason=IntentRouteReason.MATCHED,
         )
+
+    if date_result.matched:
+        return _unknown(IntentRouteReason.UNSUPPORTED)
 
     # Free-form text is intentionally not treated as a generic memory query.
     # Unsupported/weak input must remain UNKNOWN until a later explicit fallback exists.
