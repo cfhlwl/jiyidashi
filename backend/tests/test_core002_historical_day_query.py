@@ -86,6 +86,14 @@ def test_core002_date_parser_matrix():
     future = parse_date_expression("2026-10-02去哪了", today=today)
     assert future.status == DateParseStatus.FUTURE
     assert parse_date_expression("哪天去过公司", today=today).status == DateParseStatus.NO_MATCH
+    assert parse_date_expression(
+        "昨天和前天去哪了",
+        today=today,
+    ).status == DateParseStatus.AMBIGUOUS
+    assert parse_date_expression(
+        "9月25日和26日去了哪里",
+        today=today,
+    ).status == DateParseStatus.AMBIGUOUS
 
 
 async def test_core002_date_parser_uses_owner_timezone_near_utc_boundary(client):
@@ -675,6 +683,39 @@ async def test_core002_parsed_date_is_never_silently_dropped(
     assert body["can_answer"] is False
     assert body["answer"] is None
     assert body["reason"] == "UNSUPPORTED"
+
+
+async def test_core002_multiple_date_query_fails_closed(
+    client,
+    monkeypatch,
+):
+    headers, _ = await _new_user(client, "core002-multi-date")
+    _freeze_local_day(monkeypatch, date(2026, 10, 1))
+
+    routed = await client.post(
+        "/v1/intent/route",
+        headers=headers,
+        json={"question": "昨天和前天去哪了？"},
+    )
+    assert routed.status_code == 200
+    assert routed.json() == {
+        "intent": "UNKNOWN",
+        "capability": None,
+        "reason": "AMBIGUOUS",
+    }
+
+    query = await client.post(
+        "/v1/memory/query",
+        headers=headers,
+        json={"question": "9月25日和26日去了哪里？"},
+    )
+    assert query.status_code == 200
+    body = query.json()
+    assert body["can_answer"] is False
+    assert body["answer"] is None
+    assert body["reason"] == "AMBIGUOUS"
+    assert body["intent"] == "UNKNOWN"
+    assert body["day_footprint"] is None
 
 
 async def test_core002_invalid_and_future_date_queries_fail_closed(
