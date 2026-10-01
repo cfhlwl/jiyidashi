@@ -158,12 +158,14 @@ class LocationSamplingCoordinator extends ChangeNotifier {
     // loss or quarantines native production, refresh the controller's read-only status so
     // foreground UI/motion state cannot keep believing the producer is still running.
     switch (report.status) {
-      case PassiveMemoryRecoveryStatus.noSession:
-      case PassiveMemoryRecoveryStatus.accountDeletionInProgress:
+      case PassiveMemoryRecoveryStatus.privacyPaused:
+        await _locationController.pauseForPrivacy();
       case PassiveMemoryRecoveryStatus.authorityChanged:
       case PassiveMemoryRecoveryStatus.serverUnavailable:
-      case PassiveMemoryRecoveryStatus.privacyPaused:
       case PassiveMemoryRecoveryStatus.privacyUnavailable:
+        await _locationController.privacyStatusUnknown();
+      case PassiveMemoryRecoveryStatus.noSession:
+      case PassiveMemoryRecoveryStatus.accountDeletionInProgress:
       case PassiveMemoryRecoveryStatus.nativeUnavailable:
       case PassiveMemoryRecoveryStatus.nativeNotEligible:
         try {
