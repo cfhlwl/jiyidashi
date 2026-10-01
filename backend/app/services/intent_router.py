@@ -282,9 +282,8 @@ def route_intent(
             reason=IntentRouteReason.MATCHED,
         )
 
-    if date_result.matched:
-        return _unknown(IntentRouteReason.UNSUPPORTED)
-
-    # Free-form text is intentionally not treated as a generic memory query.
-    # Unsupported/weak input must remain UNKNOWN until a later explicit fallback exists.
+    # A valid date token alone does not make an otherwise unsupported domain a
+    # supported date query. Preserve the existing weak-input contract (e.g. weather)
+    # instead of reclassifying unrelated questions as an unsupported memory action.
+    # Date-qualified generic memory-search language remains explicitly unsupported above.
     return _unknown(IntentRouteReason.NO_SUPPORTED_RULE)
