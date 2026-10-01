@@ -46,6 +46,21 @@ test('Mini query parser accepts structured day footprint without memory evidence
   assert.equal(parsed.day_footprint?.visits[0]?.place_name, '万达广场')
 })
 
+test('Mini generic no-evidence cannot smuggle a non-null answer', () => {
+  assert.throws(
+    () => parseMemoryQueryResult({
+      answer: '不应展示',
+      can_answer: false,
+      certainty: 'unknown',
+      reason: 'NO_EVIDENCE',
+      intent: 'MEMORY_SEARCH',
+      evidence: [],
+      memory_ids: [],
+    }),
+    /服务端查询响应格式不正确/,
+  )
+})
+
 test('Mini query parser rejects day footprint empty/visit mismatch', () => {
   const raw = structuredFootprint() as Record<string, unknown>
   const footprint = raw.day_footprint as Record<string, unknown>
