@@ -146,6 +146,9 @@ class NativeLocationPlugin :
                 "accuracy" to sample.accuracyMeters,
                 "speed" to sample.speedMetersPerSecond,
                 "recorded_at" to isoTimestamp(sample.recordedAtMillis),
+                "queue_sequence" to sample.queueSequence,
+                "enqueued_at_millis" to sample.enqueuedAtMillis,
+                "handoff_attempt_count" to sample.handoffAttemptCount,
             )
         }
     }
@@ -557,6 +560,7 @@ class NativeLocationPlugin :
                 null
             },
             "last_accuracy_meters" to if (ownerMatches) store.lastAccuracyMeters else null,
+            "queue" to store.queueDiagnostics(ownerUserId),
         )
     }
 
