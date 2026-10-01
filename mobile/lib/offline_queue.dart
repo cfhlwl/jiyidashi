@@ -101,11 +101,17 @@ class LocationSampleQueueItem {
     required this.longitude,
     required this.recordedAt,
     required this.createdAt,
+    required this.attemptCount,
+    required this.updatedAt,
     this.accuracyMeters,
     this.speedMetersPerSecond,
     this.blockedError,
+    this.lastAttemptAt,
+    this.lastError,
   });
 
+  /// SQLite id is also the durable local queue sequence. It is never regenerated
+  /// when a process restarts or the same client UUID is replayed.
   final int id;
   final String ownerUserId;
   final String clientUuid;
@@ -115,7 +121,13 @@ class LocationSampleQueueItem {
   final double? speedMetersPerSecond;
   final DateTime recordedAt;
   final DateTime createdAt;
+  final int attemptCount;
+  final DateTime updatedAt;
+  final DateTime? lastAttemptAt;
+  final String? lastError;
   final String? blockedError;
+
+  bool get isBlocked => blockedError != null;
 
   factory LocationSampleQueueItem.fromRow(Map<String, Object?> row) {
     double? nullableDouble(Object? value) =>
@@ -130,13 +142,44 @@ class LocationSampleQueueItem {
       speedMetersPerSecond: nullableDouble(row['speed']),
       recordedAt: DateTime.parse(row['recorded_at']! as String).toUtc(),
       createdAt: DateTime.parse(row['created_at']! as String).toUtc(),
+      attemptCount: (row['attempt_count'] as int?) ?? 0,
+      updatedAt: DateTime.parse(
+        (row['updated_at'] as String?) ?? row['created_at']! as String,
+      ).toUtc(),
+      lastAttemptAt: row['last_attempt_at'] == null
+          ? null
+          : DateTime.parse(row['last_attempt_at']! as String).toUtc(),
+      lastError: row['last_error'] as String?,
       blockedError: row['blocked_error'] as String?,
     );
   }
 }
 
-// SQLite 继续只允许增量 migration；v3 新增独立 location outbox，
-// 不改变 Stage 1 Memory/Object outbox 的资源 ID 完成语义。
+class LocationQueueDiagnostics {
+  const LocationQueueDiagnostics({
+    required this.queueDepth,
+    required this.blockedCount,
+    required this.deliveryFailureCount,
+    this.oldestPendingAt,
+    this.lastEnqueueAt,
+    this.lastDeliveryAt,
+    this.lastFailureAt,
+    this.lastFailureReason,
+  });
+
+  final int queueDepth;
+  final int blockedCount;
+  final int deliveryFailureCount;
+  final DateTime? oldestPendingAt;
+  final DateTime? lastEnqueueAt;
+  final DateTime? lastDeliveryAt;
+  final DateTime? lastFailureAt;
+  final String? lastFailureReason;
+}
+
+// SQLite 继续只允许增量 migration；v3 新增独立 location outbox。
+// CORE-001 v4 只增加 durable delivery lease/attempt/diagnostic metadata，保留所有
+// 已存在 location UUID 与 SQLite id(sequence)，不通过清库重建改变 Stage 1/2 语义。
 class OfflineQueueStore {
   OfflineQueueStore({
     DatabaseFactory? factory,
@@ -148,7 +191,7 @@ class OfflineQueueStore {
         _clientUuidFactory = clientUuidFactory ?? _newClientUuid,
         _now = now ?? DateTime.now;
 
-  static const int schemaVersion = 3;
+  static const int schemaVersion = 4;
   static const String databaseFileName = 'jiyidashi_stage1.sqlite3';
   static const String textMemoryOperation = 'text_memory';
   static const String objectLocationOperation = 'object_location';
@@ -302,6 +345,49 @@ class OfflineQueueStore {
           await db.execute('''
             CREATE INDEX idx_location_sample_owner_created
             ON location_sample_queue(owner_user_id, created_at, id)
+          ''');
+        case 4:
+          // CORE-001 keeps rows present until authoritative server ACK. Delivery state is
+          // metadata only; a process death never needs to "undo" a destructive dequeue.
+          await db.execute('''
+            ALTER TABLE location_sample_queue
+            ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0
+            CHECK (attempt_count >= 0)
+          ''');
+          await db.execute('''
+            ALTER TABLE location_sample_queue
+            ADD COLUMN last_attempt_at TEXT
+          ''');
+          await db.execute('''
+            ALTER TABLE location_sample_queue
+            ADD COLUMN last_error TEXT
+          ''');
+          await db.execute('''
+            ALTER TABLE location_sample_queue
+            ADD COLUMN updated_at TEXT
+          ''');
+          await db.execute('''
+            UPDATE location_sample_queue
+            SET updated_at = created_at
+            WHERE updated_at IS NULL
+          ''');
+          await db.execute('''
+            CREATE TABLE location_delivery_lease (
+              owner_user_id TEXT PRIMARY KEY,
+              lease_token TEXT NOT NULL,
+              acquired_at TEXT NOT NULL,
+              expires_at TEXT NOT NULL
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE location_delivery_state (
+              owner_user_id TEXT PRIMARY KEY,
+              last_delivery_at TEXT,
+              delivery_failure_count INTEGER NOT NULL DEFAULT 0
+                CHECK (delivery_failure_count >= 0),
+              last_failure_at TEXT,
+              last_failure_reason TEXT
+            )
           ''');
       }
     }
@@ -521,6 +607,10 @@ class OfflineQueueStore {
           'recorded_at': stableRecordedAt.toIso8601String(),
           'blocked_error': null,
           'created_at': createdAt,
+          'attempt_count': 0,
+          'last_attempt_at': null,
+          'last_error': null,
+          'updated_at': createdAt,
         });
         final rows = await txn.query(
           'location_sample_queue',
@@ -565,6 +655,123 @@ class OfflineQueueStore {
     return (rows.single['total'] as int?) ?? 0;
   }
 
+  Future<String?> tryAcquireLocationDeliveryLease(
+    String ownerUserId, {
+    Duration ttl = const Duration(minutes: 2),
+  }) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    if (ttl <= Duration.zero) {
+      throw ArgumentError.value(ttl, 'ttl', 'lease ttl must be positive');
+    }
+    final db = await _database();
+    return db.transaction((txn) async {
+      final now = _utcNow();
+      final rows = await txn.query(
+        'location_delivery_lease',
+        where: 'owner_user_id = ?',
+        whereArgs: [owner],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        final expiry = DateTime.tryParse(rows.single['expires_at']! as String);
+        if (expiry != null && expiry.toUtc().isAfter(now)) {
+          return null;
+        }
+      }
+      final token = _newClientUuid();
+      await txn.insert(
+        'location_delivery_lease',
+        {
+          'owner_user_id': owner,
+          'lease_token': token,
+          'acquired_at': now.toIso8601String(),
+          'expires_at': now.add(ttl).toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return token;
+    });
+  }
+
+  Future<bool> releaseLocationDeliveryLease(
+    String ownerUserId,
+    String leaseToken,
+  ) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final token = leaseToken.trim();
+    if (token.isEmpty) return false;
+    final db = await _database();
+    return await db.delete(
+          'location_delivery_lease',
+          where: 'owner_user_id = ? AND lease_token = ?',
+          whereArgs: [owner, token],
+        ) >
+        0;
+  }
+
+  Future<void> recordLocationDeliveryAttempt(
+    String ownerUserId,
+    List<String> clientUuids,
+  ) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final ids = clientUuids.map((value) => value.trim()).where((value) => value.isNotEmpty).toSet();
+    if (ids.isEmpty) return;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final now = _utcNow().toIso8601String();
+    final db = await _database();
+    await db.rawUpdate(
+      '''
+        UPDATE location_sample_queue
+        SET attempt_count = attempt_count + 1,
+            last_attempt_at = ?,
+            last_error = NULL,
+            updated_at = ?
+        WHERE owner_user_id = ?
+          AND blocked_error IS NULL
+          AND client_uuid IN ($placeholders)
+      ''',
+      [now, now, owner, ...ids],
+    );
+  }
+
+  Future<void> recordLocationDeliveryFailure(
+    String ownerUserId,
+    List<String> clientUuids,
+    String reason,
+  ) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final ids = clientUuids.map((value) => value.trim()).where((value) => value.isNotEmpty).toSet();
+    final normalizedReason = reason.trim().isEmpty ? 'location delivery failed' : reason.trim();
+    final now = _utcNow().toIso8601String();
+    final db = await _database();
+    await db.transaction((txn) async {
+      if (ids.isNotEmpty) {
+        final placeholders = List.filled(ids.length, '?').join(',');
+        await txn.rawUpdate(
+          '''
+            UPDATE location_sample_queue
+            SET last_error = ?, updated_at = ?
+            WHERE owner_user_id = ?
+              AND client_uuid IN ($placeholders)
+          ''',
+          [normalizedReason, now, owner, ...ids],
+        );
+      }
+      await txn.rawInsert(
+        '''
+          INSERT INTO location_delivery_state (
+            owner_user_id, delivery_failure_count, last_failure_at, last_failure_reason
+          ) VALUES (?, 1, ?, ?)
+          ON CONFLICT(owner_user_id) DO UPDATE SET
+            delivery_failure_count = delivery_failure_count + 1,
+            last_failure_at = excluded.last_failure_at,
+            last_failure_reason = excluded.last_failure_reason
+        ''',
+        [owner, now, normalizedReason],
+      );
+    });
+  }
+
   Future<int> deleteLocationSamples(
     String ownerUserId,
     List<String> clientUuids,
@@ -574,11 +781,27 @@ class OfflineQueueStore {
     final normalized = clientUuids.map((value) => value.trim()).toSet().toList();
     final placeholders = List.filled(normalized.length, '?').join(',');
     final db = await _database();
-    return db.delete(
-      'location_sample_queue',
-      where: 'owner_user_id = ? AND client_uuid IN ($placeholders)',
-      whereArgs: [owner, ...normalized],
-    );
+    return db.transaction((txn) async {
+      final deleted = await txn.delete(
+        'location_sample_queue',
+        where: 'owner_user_id = ? AND client_uuid IN ($placeholders)',
+        whereArgs: [owner, ...normalized],
+      );
+      if (deleted > 0) {
+        final now = _utcNow().toIso8601String();
+        await txn.rawInsert(
+          '''
+            INSERT INTO location_delivery_state (
+              owner_user_id, last_delivery_at, delivery_failure_count
+            ) VALUES (?, ?, 0)
+            ON CONFLICT(owner_user_id) DO UPDATE SET
+              last_delivery_at = excluded.last_delivery_at
+          ''',
+          [owner, now],
+        );
+      }
+      return deleted;
+    });
   }
 
   Future<int> blockLocationSamples(
@@ -591,11 +814,57 @@ class OfflineQueueStore {
     final normalized = clientUuids.map((value) => value.trim()).toSet().toList();
     final placeholders = List.filled(normalized.length, '?').join(',');
     final db = await _database();
+    final normalizedError =
+        error.trim().isEmpty ? 'location upload blocked' : error.trim();
     return db.update(
       'location_sample_queue',
-      {'blocked_error': error.trim().isEmpty ? 'location upload blocked' : error.trim()},
+      {
+        'blocked_error': normalizedError,
+        'last_error': normalizedError,
+        'updated_at': _utcNow().toIso8601String(),
+      },
       where: 'owner_user_id = ? AND client_uuid IN ($placeholders)',
       whereArgs: [owner, ...normalized],
+    );
+  }
+
+  Future<LocationQueueDiagnostics> locationQueueDiagnostics(
+    String ownerUserId,
+  ) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final db = await _database();
+    final rows = await db.rawQuery(
+      '''
+        SELECT
+          COUNT(*) AS queue_depth,
+          SUM(CASE WHEN blocked_error IS NOT NULL THEN 1 ELSE 0 END) AS blocked_count,
+          MIN(CASE WHEN blocked_error IS NULL THEN recorded_at END) AS oldest_pending_at,
+          MAX(created_at) AS last_enqueue_at
+        FROM location_sample_queue
+        WHERE owner_user_id = ?
+      ''',
+      [owner],
+    );
+    final state = await db.query(
+      'location_delivery_state',
+      where: 'owner_user_id = ?',
+      whereArgs: [owner],
+      limit: 1,
+    );
+    DateTime? parse(Object? value) =>
+        value is String ? DateTime.tryParse(value)?.toUtc() : null;
+    final row = rows.single;
+    final stateRow = state.isEmpty ? const <String, Object?>{} : state.single;
+    return LocationQueueDiagnostics(
+      queueDepth: (row['queue_depth'] as int?) ?? 0,
+      blockedCount: (row['blocked_count'] as int?) ?? 0,
+      oldestPendingAt: parse(row['oldest_pending_at']),
+      lastEnqueueAt: parse(row['last_enqueue_at']),
+      lastDeliveryAt: parse(stateRow['last_delivery_at']),
+      deliveryFailureCount:
+          (stateRow['delivery_failure_count'] as int?) ?? 0,
+      lastFailureAt: parse(stateRow['last_failure_at']),
+      lastFailureReason: stateRow['last_failure_reason'] as String?,
     );
   }
 
@@ -671,6 +940,16 @@ class OfflineQueueStore {
       );
       final location = await txn.delete(
         'location_sample_queue',
+        where: 'owner_user_id = ?',
+        whereArgs: [owner],
+      );
+      await txn.delete(
+        'location_delivery_lease',
+        where: 'owner_user_id = ?',
+        whereArgs: [owner],
+      );
+      await txn.delete(
+        'location_delivery_state',
         where: 'owner_user_id = ?',
         whereArgs: [owner],
       );
