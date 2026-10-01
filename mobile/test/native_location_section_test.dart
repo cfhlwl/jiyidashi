@@ -312,10 +312,17 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('location-start')), findsNothing);
+    // iOS foreground-only recovery must go back through the explicit Always-permission
+    // request path. Android 11+ alone uses the separate Settings handoff.
     expect(
-      find.byKey(const ValueKey('location-open-background-settings')),
+      find.byKey(const ValueKey('location-enable-automatic')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('location-open-background-settings')),
+      findsNothing,
+    );
+    expect(find.text('允许后台定位'), findsOneWidget);
     controller.dispose();
   });
 
