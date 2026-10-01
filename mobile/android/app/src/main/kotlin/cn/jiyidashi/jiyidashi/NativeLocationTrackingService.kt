@@ -72,6 +72,7 @@ class NativeLocationTrackingService : Service(), LocationListener {
 
             store.activeOwnerUserId = ownerUserId
             store.runtime = NativeLocationRuntimeState.RUNNING
+            store.clearRecoveryPending(ownerUserId)
             store.beginTracking(ownerUserId)
             isActive = true
             requestAdaptiveUpdates(store.samplingProfile(ownerUserId))
@@ -169,11 +170,21 @@ class NativeLocationTrackingService : Service(), LocationListener {
             store.setLastQueuedAtMillis(ownerUserId, recordedAtMillis)
             store.recordSampleAccepted(ownerUserId)
         } else {
-            // A full durable native queue is a measurable backpressure drop, never an
+            // A full/corrupt durable native queue is measurable backpressure, never an
             // invitation to overwrite older unsent points.
             store.recordSampleDropped(ownerUserId)
         }
-        NativeLocationPlugin.notifySamplesAvailable()
+        val flutterListenerPresent = NativeLocationPlugin.notifySamplesAvailable()
+        if (!flutterListenerPresent) {
+            // No Flutter UI/engine is alive. Schedule one bounded, network-constrained
+            // batch wake-up instead of starting an isolate per GPS point.
+            PassiveMemoryRecoveryScheduler.schedule(
+                this,
+                reason = if (queued) "native_backlog" else "native_backpressure",
+                markProducerRecovery = false,
+                initialDelayMinutes = if (queued) 15 else 0,
+            )
+        }
     }
 
     override fun onProviderDisabled(provider: String) {
@@ -184,6 +195,23 @@ class NativeLocationTrackingService : Service(), LocationListener {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val owner = store.activeOwnerUserId
+        if (owner != null &&
+            store.enabledOwnerUserId == owner &&
+            store.runtime == NativeLocationRuntimeState.RUNNING
+        ) {
+            // The FGS may continue after the task is swiped. Schedule delivery only; do not
+            // claim producer recovery while a real native producer is still active.
+            PassiveMemoryRecoveryScheduler.schedule(
+                this,
+                reason = "task_removed",
+                markProducerRecovery = false,
+            )
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         try {
             locationManager.removeUpdates(this)
@@ -191,6 +219,10 @@ class NativeLocationTrackingService : Service(), LocationListener {
             // Permission revocation may race service teardown; removing updates is best-effort.
         }
         val ownerUserId = store.activeOwnerUserId
+        val unexpectedStop =
+            ownerUserId != null &&
+                store.enabledOwnerUserId == ownerUserId &&
+                store.runtime == NativeLocationRuntimeState.RUNNING
         if (ownerUserId != null) {
             store.finishTracking(ownerUserId)
         }
@@ -198,6 +230,13 @@ class NativeLocationTrackingService : Service(), LocationListener {
         store.activeOwnerUserId = null
         if (store.runtime == NativeLocationRuntimeState.RUNNING) {
             store.runtime = NativeLocationRuntimeState.STOPPED
+        }
+        if (unexpectedStop) {
+            PassiveMemoryRecoveryScheduler.schedule(
+                this,
+                reason = "service_destroyed",
+                markProducerRecovery = true,
+            )
         }
         super.onDestroy()
     }
