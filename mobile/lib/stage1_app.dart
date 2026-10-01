@@ -18,6 +18,7 @@ import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
 import 'place_detail_page.dart';
+import 'recording_health_section.dart';
 import 'reminder_page.dart';
 import 'today_footprint_page.dart';
 import 'timeline_models.dart';
@@ -1259,6 +1260,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         onAccountDeleted: () async => _stopLocationAndLogout(),
         resumeAccountDeletion: _accountDeletionIntentActive,
         nativeLocationController: _nativeLocation,
+        offlineQueue: widget.offlineQueue,
         onRevalidateLocationAuthority: _revalidateNativeLocationAuthority,
         onStartOnboarding: onboarding == null
             ? null
@@ -2910,6 +2912,7 @@ class ProfilePage extends StatelessWidget {
     required this.onAccountDeleted,
     this.resumeAccountDeletion = false,
     this.nativeLocationController,
+    this.offlineQueue,
     this.onRevalidateLocationAuthority,
     this.onStartOnboarding,
   });
@@ -2921,6 +2924,7 @@ class ProfilePage extends StatelessWidget {
   final Future<void> Function() onAccountDeleted;
   final bool resumeAccountDeletion;
   final NativeLocationController? nativeLocationController;
+  final OfflineQueueStore? offlineQueue;
   final Future<void> Function()? onRevalidateLocationAuthority;
   final VoidCallback? onStartOnboarding;
 
@@ -3045,6 +3049,14 @@ class ProfilePage extends StatelessWidget {
                 api: api,
                 nativeLocationController: nativeLocationController,
               ),
+              if (offlineQueue != null) ...[
+                const SizedBox(height: JiYiSpacing.md),
+                RecordingHealthSection(
+                  api: api,
+                  store: offlineQueue!,
+                  nativeLocationController: nativeLocationController,
+                ),
+              ],
               if (nativeLocationController != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 NativeLocationSection(
