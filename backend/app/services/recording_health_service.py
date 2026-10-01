@@ -315,8 +315,12 @@ def _day_coverage(
         )
     )
     observed_instants = [
-        value for value in observed_instants if start_utc <= value < end_utc
+        value for value in observed_instants if start_utc <= value <= effective_end
     ]
+    # A finalized Visit crossing a local-day boundary is itself retained evidence for the
+    # clipped day interval. Include those proven boundaries without exposing coordinates.
+    for interval in merged_evidence:
+        observed_instants.extend((interval.start, interval.end))
     first_observed = min(observed_instants, default=None)
     last_observed = max(observed_instants, default=None)
 
