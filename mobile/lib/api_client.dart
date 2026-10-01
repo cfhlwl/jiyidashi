@@ -498,9 +498,17 @@ class JiYiApiClient {
     return completer.future;
   }
 
-  void _assertSessionGeneration(int? expectedSessionVersion) {
-    if (expectedSessionVersion != null &&
-        _sessionVersion != expectedSessionVersion) {
+  void _assertSessionGeneration(
+    int? expectedSessionVersion, {
+    String? expectedLocalSessionId,
+    String? expectedLocalRefreshToken,
+  }) {
+    if ((expectedSessionVersion != null &&
+            _sessionVersion != expectedSessionVersion) ||
+        (expectedLocalSessionId != null &&
+            _sessionId != expectedLocalSessionId) ||
+        (expectedLocalRefreshToken != null &&
+            _refreshToken != expectedLocalRefreshToken)) {
       throw ProtocolException('登录状态已变化，请重试');
     }
   }
@@ -509,6 +517,8 @@ class JiYiApiClient {
     Map<String, dynamic> data, {
     String? expectedSessionId,
     int? expectedSessionVersion,
+    String? expectedLocalSessionId,
+    String? expectedLocalRefreshToken,
   }) async {
     final token = data['access_token'];
     final refresh = data['refresh_token'];
@@ -530,9 +540,17 @@ class JiYiApiClient {
     // A refresh response is authoritative only for the local generation that
     // started it. Logout/account-switch must make any late response incapable
     // of writing refresh material back into Keychain/Keystore.
-    _assertSessionGeneration(expectedSessionVersion);
+    _assertSessionGeneration(
+      expectedSessionVersion,
+      expectedLocalSessionId: expectedLocalSessionId,
+      expectedLocalRefreshToken: expectedLocalRefreshToken,
+    );
     await _runSessionStoreMutation(() async {
-      _assertSessionGeneration(expectedSessionVersion);
+      _assertSessionGeneration(
+        expectedSessionVersion,
+        expectedLocalSessionId: expectedLocalSessionId,
+        expectedLocalRefreshToken: expectedLocalRefreshToken,
+      );
       await _sessionStore.writeSession(
         PersistedAuthSession(
           refreshToken: refresh,
@@ -540,7 +558,11 @@ class JiYiApiClient {
         ),
       );
     });
-    _assertSessionGeneration(expectedSessionVersion);
+    _assertSessionGeneration(
+      expectedSessionVersion,
+      expectedLocalSessionId: expectedLocalSessionId,
+      expectedLocalRefreshToken: expectedLocalRefreshToken,
+    );
 
     final sameOwnerSession =
         authenticatedUserId == userId && _sessionId == sessionId;
@@ -558,6 +580,8 @@ class JiYiApiClient {
     String refreshToken, {
     String? expectedSessionId,
     int? expectedSessionVersion,
+    String? expectedLocalSessionId,
+    String? expectedLocalRefreshToken,
   }) async {
     final data = await _jsonRequest(
       'POST',
@@ -569,6 +593,8 @@ class JiYiApiClient {
       data,
       expectedSessionId: expectedSessionId,
       expectedSessionVersion: expectedSessionVersion,
+      expectedLocalSessionId: expectedLocalSessionId,
+      expectedLocalRefreshToken: expectedLocalRefreshToken,
     );
     return data;
   }
@@ -594,12 +620,15 @@ class JiYiApiClient {
         refresh,
         expectedSessionId: sessionId,
         expectedSessionVersion: refreshVersion,
+        expectedLocalSessionId: sessionId,
+        expectedLocalRefreshToken: refresh,
       );
       completer.complete();
     } on ApiException catch (error, stack) {
       if ((error.statusCode == 400 || error.statusCode == 401) &&
           _sessionVersion == refreshVersion &&
-          _sessionId == sessionId) {
+          _sessionId == sessionId &&
+          _refreshToken == refresh) {
         await _clearLocalSession();
       }
       completer.completeError(error, stack);
