@@ -280,6 +280,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     }
   }()
   private var channel: FlutterMethodChannel?
+  private var queueStorageUnavailable = false
   private var nativeProducerActive = false
   private var standardUpdatesActive = false
 
@@ -660,6 +661,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
 
   private func allPendingLocationSamples() -> [NativeQueuedLocationSample] {
     if queueCorrupt { return [] }
+    queueStorageUnavailable = false
 
     var cameFromLegacyDefaults = false
     let data: Data
@@ -668,7 +670,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       do {
         data = try Data(contentsOf: url)
       } catch {
-        markQueueCorrupt("native_queue_read_failed")
+        // File protection / transient I/O unavailability is not corruption. Keep the
+        // existing file untouched and refuse drain/enqueue until a later read succeeds.
+        queueStorageUnavailable = true
         return []
       }
     } else if let legacy = defaults.data(forKey: Keys.pendingSamples) {
@@ -746,7 +750,10 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     do {
       // Atomic replace gives crash-safe file-level durability without requiring CoreData
       // or a second SQLite authority beside the Flutter outbox.
-      try data.write(to: url, options: .atomic)
+      try data.write(
+        to: url,
+        options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+      )
       defaults.set(2, forKey: Keys.queueSchemaVersion)
       return true
     } catch {
@@ -759,7 +766,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     limit: Int
   ) -> [NativeQueuedLocationSample] {
     let samples = allPendingLocationSamples()
-    if queueCorrupt { return [] }
+    if queueCorrupt || queueStorageUnavailable { return [] }
     let selectedSequences = Set(
       samples
         .filter { $0.ownerUserId == ownerUserId }
@@ -793,7 +800,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     _ sample: NativeQueuedLocationSample
   ) -> Bool {
     var samples = allPendingLocationSamples()
-    if queueCorrupt { return false }
+    if queueCorrupt || queueStorageUnavailable { return false }
     if samples.contains(where: {
       $0.ownerUserId == sample.ownerUserId &&
         $0.clientUuid == sample.clientUuid
@@ -946,6 +953,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       "last_drop_reason": text(Keys.lastDropReason),
       "queue_corrupt": queueCorrupt,
       "queue_corrupt_reason": corruptReason,
+      "queue_storage_unavailable": queueStorageUnavailable,
     ]
   }
 
