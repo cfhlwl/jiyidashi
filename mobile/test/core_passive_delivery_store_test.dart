@@ -157,8 +157,8 @@ void main() {
       recordedAt: captured.add(const Duration(seconds: 1)),
     );
 
-    expect(
-      () => bounded.enqueueLocationSample(
+    await expectLater(
+      bounded.enqueueLocationSample(
         ownerUserId: owner,
         clientUuid: overflowUuid,
         latitude: 3.141,
