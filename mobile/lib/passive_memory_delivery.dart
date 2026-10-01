@@ -147,6 +147,7 @@ class PassiveMemoryDeliveryCoordinator {
       // publication authority. Reuse the same profile guard as normal cold-start recovery.
       await _api.getProfile();
     } on TransportException {
+      await _pauseNativeFailClosed(preflightOwner);
       return const PassiveMemoryRecoveryReport(
         status: PassiveMemoryRecoveryStatus.serverUnavailable,
       );
@@ -219,12 +220,22 @@ class PassiveMemoryDeliveryCoordinator {
     try {
       privacy = await _api.getPrivacyStatus();
     } on TransportException {
+      await _pauseNativeFailClosed(owner);
       return PassiveMemoryRecoveryReport(
         status: PassiveMemoryRecoveryStatus.privacyUnavailable,
         ownerUserId: owner,
         sessionRestored: restored,
       );
-    } on ApiException {
+    } on ApiException catch (error) {
+      if (error.statusCode == 400 || error.statusCode == 401) {
+        await _disableNativeFailClosed(owner);
+        return PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.noSession,
+          ownerUserId: owner,
+          sessionRestored: restored,
+        );
+      }
+      await _pauseNativeFailClosed(owner);
       return PassiveMemoryRecoveryReport(
         status: PassiveMemoryRecoveryStatus.privacyUnavailable,
         ownerUserId: owner,
@@ -508,12 +519,20 @@ class PassiveMemoryDeliveryCoordinator {
     }
   }
 
-  PassiveMemoryRecoveryReport _stale(String owner, bool restored) =>
-      PassiveMemoryRecoveryReport(
-        status: PassiveMemoryRecoveryStatus.authorityChanged,
-        ownerUserId: owner,
-        sessionRestored: restored,
-      );
+  Future<PassiveMemoryRecoveryReport> _stale(
+    String owner,
+    bool restored,
+  ) async {
+    // A stale generation/session can be an account switch or logout racing an async
+    // response. Stop production for the old owner, but preserve the user's explicit
+    // automatic-enable preference as a quarantine unless terminal auth loss was proven.
+    await _pauseNativeFailClosed(owner);
+    return PassiveMemoryRecoveryReport(
+      status: PassiveMemoryRecoveryStatus.authorityChanged,
+      ownerUserId: owner,
+      sessionRestored: restored,
+    );
+  }
 
   Future<void> _recordNativeDeliveryFailure(
     String owner,
