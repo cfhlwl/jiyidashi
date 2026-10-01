@@ -171,15 +171,21 @@ class LocationSamplingCoordinator extends ChangeNotifier {
 
     final ackIds = <String>[];
     for (final sample in nativeSamples) {
-      await _store.enqueueLocationSample(
-        ownerUserId: owner,
-        clientUuid: sample.clientUuid,
-        latitude: sample.latitude,
-        longitude: sample.longitude,
-        accuracyMeters: sample.accuracyMeters,
-        speedMetersPerSecond: sample.speedMetersPerSecond,
-        recordedAt: sample.recordedAt,
-      );
+      try {
+        await _store.enqueueLocationSample(
+          ownerUserId: owner,
+          clientUuid: sample.clientUuid,
+          latitude: sample.latitude,
+          longitude: sample.longitude,
+          accuracyMeters: sample.accuracyMeters,
+          speedMetersPerSecond: sample.speedMetersPerSecond,
+          recordedAt: sample.recordedAt,
+        );
+      } on LocationQueueCapacityException {
+        // Keep the current and remaining samples in the bounded native queue. ACKing only
+        // the rows already committed to SQLite gives deterministic backpressure without loss.
+        break;
+      }
       // Ack only after SQLite commit. If the process dies before this call, the same native
       // UUID is delivered again and enqueueLocationSample returns the existing identical row.
       ackIds.add(sample.clientUuid);
