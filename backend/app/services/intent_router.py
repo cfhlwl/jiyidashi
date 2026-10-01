@@ -177,6 +177,14 @@ def route_intent(
         # Reminder creation and mutations are explicitly outside this foundation.
         return _unknown(IntentRouteReason.UNSUPPORTED)
 
+    object_names = db.scalars(
+        select(ObjectItem.name).where(ObjectItem.user_id == user_id)
+    ).all()
+    place_names = db.scalars(select(Place.name).where(Place.user_id == user_id)).all()
+
+    object_match, object_ambiguous = _known_name_match(clean_question, object_names)
+    place_match, place_ambiguous = _known_name_match(clean_question, place_names)
+
     date_result = resolve_user_date_expression(
         db,
         user_id=user_id,
@@ -195,19 +203,16 @@ def route_intent(
         clean_question,
         _DATE_FOOTPRINT_MARKERS,
     ):
+        # A known Object/Place name plus a day-wide whereabouts phrase spans multiple
+        # structured domains. CORE-002 does not guess whether the user means their own
+        # footprint or the named entity's history.
+        if object_match or object_ambiguous or place_match or place_ambiguous:
+            return _unknown(IntentRouteReason.AMBIGUOUS)
         return IntentRouteResult(
             intent=IntentKind.DATE_FOOTPRINT_QUERY,
             capability=IntentCapability.DATE_FOOTPRINT_QUERY,
             reason=IntentRouteReason.MATCHED,
         )
-
-    object_names = db.scalars(
-        select(ObjectItem.name).where(ObjectItem.user_id == user_id)
-    ).all()
-    place_names = db.scalars(select(Place.name).where(Place.user_id == user_id)).all()
-
-    object_match, object_ambiguous = _known_name_match(clean_question, object_names)
-    place_match, place_ambiguous = _known_name_match(clean_question, place_names)
 
     object_signal = object_match and _contains_marker(
         clean_question,
