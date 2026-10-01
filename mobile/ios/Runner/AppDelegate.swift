@@ -730,9 +730,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       return false
     }
     let next = max(
-      Int64(defaults.integer(forKey: Keys.nextQueueSequence)),
-      (samples.map { $0.queueSequence }.max() ?? 0) + 1,
-      1
+      1,
+      max(
+        Int64(defaults.integer(forKey: Keys.nextQueueSequence)),
+        (samples.map { $0.queueSequence }.max() ?? 0) + 1
+      )
     )
     let now = Int64(Date().timeIntervalSince1970 * 1000)
     let persisted = NativeQueuedLocationSample(
@@ -774,9 +776,20 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     if activeOwnerUserId == ownerUserId {
       stopProduction(runtimeAfterStop: .stopped)
     }
-    savePendingLocationSamples(
-      allPendingLocationSamples().filter { $0.ownerUserId != ownerUserId }
-    )
+    if queueCorrupt {
+      // Account deletion is privacy-authoritative. A corrupt mixed-owner payload
+      // cannot be filtered safely, so erase the complete raw queue rather than retain
+      // precise locations for the owner being deleted.
+      defaults.removeObject(forKey: Keys.pendingSamples)
+      defaults.removeObject(forKey: Keys.queueCorrupt)
+      defaults.removeObject(forKey: Keys.queueCorruptReason)
+      defaults.removeObject(forKey: Keys.queueCorruptAt)
+      defaults.set(2, forKey: Keys.queueSchemaVersion)
+    } else {
+      _ = savePendingLocationSamples(
+        allPendingLocationSamples().filter { $0.ownerUserId != ownerUserId }
+      )
+    }
     let prefixes = [
       Keys.samplingProfile,
       Keys.latestMotionObservation,
@@ -788,6 +801,14 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       Keys.metricActiveMs,
       Keys.trackingStartedAt,
       Keys.lastQueuedAt,
+      Keys.lastEnqueueAt,
+      Keys.lastDeliveryAt,
+      Keys.deliveryFailureCount,
+      Keys.lastDeliveryFailureAt,
+      Keys.lastDeliveryFailureReason,
+      Keys.capacityDropCount,
+      Keys.lastDropAt,
+      Keys.lastDropReason,
     ]
     for prefix in prefixes {
       defaults.removeObject(forKey: ownerKey(prefix, ownerUserId))
@@ -817,28 +838,32 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
         ? NSNull()
         : Int64(defaults.integer(forKey: scoped))
     }
+    func text(_ key: String) -> Any {
+      defaults.string(forKey: ownerKey(key, ownerUserId)).map { $0 as Any }
+        ?? NSNull()
+    }
+    let oldest: Any =
+      samples.map { $0.enqueuedAtMillis }.min().map { $0 as Any } ?? NSNull()
+    let corruptReason: Any =
+      defaults.string(forKey: Keys.queueCorruptReason).map { $0 as Any } ?? NSNull()
     return [
       "queue_schema_version": 2,
       "queue_depth": depth,
       "queue_capacity": 1000,
-      "oldest_pending_at_millis":
-        samples.map { $0.enqueuedAtMillis }.min() ?? NSNull(),
+      "oldest_pending_at_millis": oldest,
       "last_enqueue_at_millis": millis(Keys.lastEnqueueAt),
       "last_delivery_at_millis": millis(Keys.lastDeliveryAt),
       "delivery_failure_count":
         Int64(defaults.integer(forKey: ownerKey(Keys.deliveryFailureCount, ownerUserId))),
       "last_delivery_failure_at_millis": millis(Keys.lastDeliveryFailureAt),
-      "last_delivery_failure_reason":
-        defaults.string(forKey: ownerKey(Keys.lastDeliveryFailureReason, ownerUserId))
-          ?? NSNull(),
+      "last_delivery_failure_reason": text(Keys.lastDeliveryFailureReason),
       "capacity_pressure": depth >= 800,
       "dropped_sample_count":
         Int64(defaults.integer(forKey: ownerKey(Keys.capacityDropCount, ownerUserId))),
       "last_drop_at_millis": millis(Keys.lastDropAt),
-      "last_drop_reason":
-        defaults.string(forKey: ownerKey(Keys.lastDropReason, ownerUserId)) ?? NSNull(),
+      "last_drop_reason": text(Keys.lastDropReason),
       "queue_corrupt": queueCorrupt,
-      "queue_corrupt_reason": defaults.string(forKey: Keys.queueCorruptReason) ?? NSNull(),
+      "queue_corrupt_reason": corruptReason,
     ]
   }
 
