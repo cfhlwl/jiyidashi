@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
+from zoneinfo import ZoneInfo
 
 from app.models import (
     LocationIngestReceipt,
@@ -132,6 +133,16 @@ def _server_last_activity(
     )
 
 
+def _day_bounds_for_timezone(
+    timezone: str,
+    day: date,
+) -> tuple[datetime, datetime]:
+    zone = ZoneInfo(timezone)
+    start_local = datetime.combine(day, time.min, tzinfo=zone)
+    end_local = datetime.combine(day + timedelta(days=1), time.min, tzinfo=zone)
+    return start_local.astimezone(UTC), end_local.astimezone(UTC)
+
+
 def _privacy_intervals(
     db: Session,
     *,
@@ -139,24 +150,30 @@ def _privacy_intervals(
     start_utc: datetime,
     end_utc: datetime,
     now: datetime,
+    rows_override: list[tuple[datetime, datetime | None]] | None = None,
 ) -> list[_Interval]:
-    rows = db.execute(
-        select(PrivacyPauseInterval.started_at, PrivacyPauseInterval.ended_at)
-        .where(
-            PrivacyPauseInterval.user_id == user_id,
-            PrivacyPauseInterval.started_at < end_utc,
-            or_(
-                PrivacyPauseInterval.ended_at.is_(None),
-                PrivacyPauseInterval.ended_at > start_utc,
-            ),
-        )
-        .order_by(PrivacyPauseInterval.started_at.asc())
-    ).all()
+    if rows_override is None:
+        rows = db.execute(
+            select(PrivacyPauseInterval.started_at, PrivacyPauseInterval.ended_at)
+            .where(
+                PrivacyPauseInterval.user_id == user_id,
+                PrivacyPauseInterval.started_at < end_utc,
+                or_(
+                    PrivacyPauseInterval.ended_at.is_(None),
+                    PrivacyPauseInterval.ended_at > start_utc,
+                ),
+            )
+            .order_by(PrivacyPauseInterval.started_at.asc())
+        ).all()
+    else:
+        rows = rows_override
+
     intervals: list[_Interval] = []
     for started_at, ended_at in rows:
+        started = _utc(started_at)
         end = now if ended_at is None else _utc(ended_at)
         clipped = _clip_interval(
-            _utc(started_at),
+            started,
             end,
             lower=start_utc,
             upper=end_utc,
@@ -167,43 +184,80 @@ def _privacy_intervals(
     return intervals
 
 
+def _visit_overlaps(start_utc: datetime, end_utc: datetime, row: tuple) -> bool:
+    arrived_at, left_at, source_ended_at = row
+    arrived = _utc(arrived_at)
+    proven_end = left_at or source_ended_at
+    return arrived < end_utc and (
+        proven_end is None or _utc(proven_end) >= start_utc
+    )
+
+
 def _day_coverage(
     db: Session,
     *,
     user_id: UUID,
     day: date,
     now: datetime,
+    timezone_override: str | None = None,
+    receipt_times_override: list[datetime] | None = None,
+    visit_rows_override: list[tuple] | None = None,
+    privacy_rows_override: list[tuple[datetime, datetime | None]] | None = None,
+    memory_count_override: int | None = None,
 ) -> _DayCoverageInternal:
-    timezone = user_timezone_name(db, user_id)
-    start_utc, end_utc = user_day_bounds_utc(db, user_id, day)
+    timezone = timezone_override or user_timezone_name(db, user_id)
+    start_utc, end_utc = _day_bounds_for_timezone(timezone, day)
     effective_end = min(end_utc, now)
 
-    receipt_times = [
-        _utc(value)
-        for value in db.scalars(
-            select(LocationIngestReceipt.recorded_at)
-            .where(
-                LocationIngestReceipt.user_id == user_id,
-                LocationIngestReceipt.recorded_at >= start_utc,
-                LocationIngestReceipt.recorded_at < end_utc,
+    if receipt_times_override is None:
+        receipt_times = [
+            _utc(value)
+            for value in db.scalars(
+                select(LocationIngestReceipt.recorded_at)
+                .where(
+                    LocationIngestReceipt.user_id == user_id,
+                    LocationIngestReceipt.recorded_at >= start_utc,
+                    LocationIngestReceipt.recorded_at < end_utc,
+                )
+                .order_by(LocationIngestReceipt.recorded_at.asc())
             )
-            .order_by(LocationIngestReceipt.recorded_at.asc())
+        ]
+    else:
+        receipt_times = sorted(
+            _utc(value)
+            for value in receipt_times_override
+            if start_utc <= _utc(value) < end_utc
         )
-    ]
 
-    visit_rows = db.execute(
-        select(
-            Visit.arrived_at,
-            Visit.left_at,
-            Visit.source_ended_at,
-        )
-        .where(
-            Visit.user_id == user_id,
-            Visit.arrived_at < end_utc,
-            or_(Visit.left_at.is_(None), Visit.left_at >= start_utc),
-        )
-        .order_by(Visit.arrived_at.asc())
-    ).all()
+    if visit_rows_override is None:
+        visit_rows = db.execute(
+            select(
+                Visit.arrived_at,
+                Visit.left_at,
+                Visit.source_ended_at,
+            )
+            .where(
+                Visit.user_id == user_id,
+                Visit.arrived_at < end_utc,
+                or_(
+                    Visit.left_at >= start_utc,
+                    and_(
+                        Visit.left_at.is_(None),
+                        or_(
+                            Visit.source_ended_at.is_(None),
+                            Visit.source_ended_at >= start_utc,
+                        ),
+                    ),
+                ),
+            )
+            .order_by(Visit.arrived_at.asc())
+        ).all()
+    else:
+        visit_rows = [
+            row
+            for row in visit_rows_override
+            if _visit_overlaps(start_utc, end_utc, row)
+        ]
 
     evidence_intervals: list[_Interval] = []
     observed_instants: list[datetime] = list(receipt_times)
@@ -249,6 +303,7 @@ def _day_coverage(
         start_utc=start_utc,
         end_utc=effective_end,
         now=now,
+        rows_override=privacy_rows_override,
     )
 
     # A long interval between two real observations is evidence of missing coverage, but
@@ -296,6 +351,7 @@ def _day_coverage(
         ):
             if uncovered.seconds >= int(RECORDED_GAP_MIN_DURATION.total_seconds()):
                 unknown_gaps.append(uncovered)
+
     all_gaps = sorted(
         [*privacy_gaps, *unknown_gaps],
         key=lambda item: (item.start, item.end),
@@ -307,13 +363,18 @@ def _day_coverage(
         default=0,
     )
 
-    memory_count = db.scalar(
-        select(func.count(Memory.id)).where(
-            Memory.user_id == user_id,
-            Memory.occurred_at >= start_utc,
-            Memory.occurred_at < end_utc,
+    if memory_count_override is None:
+        memory_count = db.scalar(
+            select(func.count(Memory.id)).where(
+                Memory.user_id == user_id,
+                Memory.occurred_at >= start_utc,
+                Memory.occurred_at < end_utc,
+            )
         )
-    )
+        memory_count_value = int(memory_count or 0)
+    else:
+        memory_count_value = memory_count_override
+
     observed_instants = [
         value for value in observed_instants if start_utc <= value <= effective_end
     ]
@@ -368,7 +429,7 @@ def _day_coverage(
             last_observed_at=last_observed,
             trusted_location_sample_count=len(receipt_times),
             visit_count=visit_count,
-            memory_count=int(memory_count or 0),
+            memory_count=memory_count_value,
             covered_duration_seconds=covered_seconds,
             known_gap_duration_seconds=known_gap_seconds,
             largest_known_gap_seconds=largest_known_gap_seconds,
@@ -390,31 +451,114 @@ def _historical_aggregates(
     current_capacity_pressure: bool | None,
     current_permission_block: bool | None,
 ) -> RecordingHealthAggregates:
-    # Aggregates intentionally use completed owner-local days. Today is shown separately
-    # and is never silently counted as an unhealthy full day just because it is still in progress.
-    coverages: dict[int, list[_DayCoverageInternal]] = {}
-    for window in (7, 30):
-        items: list[_DayCoverageInternal] = []
-        for offset in range(1, window + 1):
-            items.append(
-                _day_coverage(
-                    db,
-                    user_id=user_id,
-                    day=today - timedelta(days=offset),
-                    now=now,
-                )
+    # One bounded 30-day evidence window avoids per-day SQL amplification.
+    timezone = user_timezone_name(db, user_id)
+    history_start, _ = _day_bounds_for_timezone(
+        timezone,
+        today - timedelta(days=30),
+    )
+    history_end, _ = _day_bounds_for_timezone(timezone, today)
+
+    receipt_times = [
+        _utc(value)
+        for value in db.scalars(
+            select(LocationIngestReceipt.recorded_at)
+            .where(
+                LocationIngestReceipt.user_id == user_id,
+                LocationIngestReceipt.recorded_at >= history_start,
+                LocationIngestReceipt.recorded_at < history_end,
             )
-        coverages[window] = items
+            .order_by(LocationIngestReceipt.recorded_at.asc())
+        )
+    ]
+    visit_rows = [
+        (_utc(arrived), None if left is None else _utc(left), None if source_end is None else _utc(source_end))
+        for arrived, left, source_end in db.execute(
+            select(Visit.arrived_at, Visit.left_at, Visit.source_ended_at)
+            .where(
+                Visit.user_id == user_id,
+                Visit.arrived_at < history_end,
+                or_(
+                    Visit.left_at >= history_start,
+                    and_(
+                        Visit.left_at.is_(None),
+                        or_(
+                            Visit.source_ended_at.is_(None),
+                            Visit.source_ended_at >= history_start,
+                        ),
+                    ),
+                ),
+            )
+            .order_by(Visit.arrived_at.asc())
+        ).all()
+    ]
+    privacy_rows = [
+        (_utc(started), None if ended is None else _utc(ended))
+        for started, ended in db.execute(
+            select(PrivacyPauseInterval.started_at, PrivacyPauseInterval.ended_at)
+            .where(
+                PrivacyPauseInterval.user_id == user_id,
+                PrivacyPauseInterval.started_at < history_end,
+                or_(
+                    PrivacyPauseInterval.ended_at.is_(None),
+                    PrivacyPauseInterval.ended_at > history_start,
+                ),
+            )
+            .order_by(PrivacyPauseInterval.started_at.asc())
+        ).all()
+    ]
+    memory_times = [
+        _utc(value)
+        for value in db.scalars(
+            select(Memory.occurred_at).where(
+                Memory.user_id == user_id,
+                Memory.occurred_at >= history_start,
+                Memory.occurred_at < history_end,
+            )
+        )
+    ]
+
+    days: list[_DayCoverageInternal] = []
+    for offset in range(1, 31):
+        day = today - timedelta(days=offset)
+        start_utc, end_utc = _day_bounds_for_timezone(timezone, day)
+        day_receipts = [
+            value for value in receipt_times if start_utc <= value < end_utc
+        ]
+        day_visits = [
+            row for row in visit_rows if _visit_overlaps(start_utc, end_utc, row)
+        ]
+        day_privacy = [
+            row
+            for row in privacy_rows
+            if row[0] < end_utc and (row[1] is None or row[1] > start_utc)
+        ]
+        day_memory_count = sum(
+            1 for value in memory_times if start_utc <= value < end_utc
+        )
+        days.append(
+            _day_coverage(
+                db,
+                user_id=user_id,
+                day=day,
+                now=now,
+                timezone_override=timezone,
+                receipt_times_override=day_receipts,
+                visit_rows_override=day_visits,
+                privacy_rows_override=day_privacy,
+                memory_count_override=day_memory_count,
+            )
+        )
 
     def healthy_count(window: int) -> int:
         return sum(
             1
-            for item in coverages[window]
+            for item in days[:window]
             if item.response.coverage_state == RecordingCoverageState.HEALTHY
         )
 
     def gap_hours(window: int) -> float:
-        seconds = sum(item.all_gap_seconds for item in coverages[window])
+        seconds = sum(item.all_gap_seconds for item in days[:window])
         return round(seconds / 3600.0, 2)
 
     # Capacity/permission history is not persisted in CORE-001. Exposing a made-up zero
