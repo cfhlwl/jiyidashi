@@ -81,12 +81,27 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   bool elderModeEnabled = false;
   String? restoreMessage;
   Timer? _authorityRefreshTimer;
+  StreamSubscription<void>? _passiveRecoveryRequests;
+  final Completer<void> _initialRestoreFinished = Completer<void>();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_restoreServerSession());
+    final recoveryBridge = motionSamplingBridge;
+    if (recoveryBridge is NativePassiveRecoveryTriggerBridge) {
+      _passiveRecoveryRequests =
+          recoveryBridge.passiveRecoveryRequests.listen((_) {
+        unawaited(_handleNativePassiveRecoveryRequest());
+      });
+    }
+    unawaited(
+      _restoreServerSession().whenComplete(() {
+        if (!_initialRestoreFinished.isCompleted) {
+          _initialRestoreFinished.complete();
+        }
+      }),
+    );
     _authorityRefreshTimer = Timer.periodic(
       const Duration(minutes: 5),
       (_) => unawaited(_refreshServerAuthority()),
@@ -195,6 +210,73 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _handleNativePassiveRecoveryRequest() async {
+    await _initialRestoreFinished.future;
+    if (!mounted) return;
+
+    var retry = false;
+    var status = 'unexpected_failure';
+    try {
+      final report = await passiveDelivery.recoverAndDeliver(
+        restoreSessionIfNeeded: !authenticated,
+        allowProducerResume: true,
+      );
+      status = report.status.name;
+      retry = switch (report.status) {
+        PassiveMemoryRecoveryStatus.serverUnavailable ||
+        PassiveMemoryRecoveryStatus.privacyUnavailable ||
+        PassiveMemoryRecoveryStatus.retryableFailure ||
+        PassiveMemoryRecoveryStatus.nativeUnavailable => true,
+        _ => false,
+      };
+
+      if (report.status ==
+          PassiveMemoryRecoveryStatus.accountDeletionInProgress) {
+        if (mounted) {
+          setState(() {
+            authenticated = true;
+            restoringSession = false;
+            startOnboardingAfterAuth = false;
+            resumeAccountDeletionAfterAuth = true;
+            elderModeEnabled = false;
+            restoreMessage = null;
+          });
+        }
+      } else if (report.sessionRestored &&
+          report.ownerUserId != null &&
+          report.status != PassiveMemoryRecoveryStatus.noSession &&
+          report.status != PassiveMemoryRecoveryStatus.authorityChanged) {
+        // The coordinator already received a valid server profile before reaching this
+        // point. Publish only the authenticated shell; AppShell refreshes elder preference.
+        if (mounted) {
+          setState(() {
+            authenticated = true;
+            restoringSession = false;
+            resumeAccountDeletionAfterAuth = false;
+            restoreMessage = null;
+          });
+        }
+      }
+    } catch (_) {
+      retry = true;
+    } finally {
+      try {
+        await const MethodChannel('cn.jiyidashi/passive_recovery')
+            .invokeMethod<void>(
+          'complete',
+          <String, Object?>{
+            'status': status,
+            'retry': retry,
+          },
+        );
+      } on MissingPluginException {
+        // Android uses the separate headless entrypoint; tests may have no native task.
+      } on PlatformException {
+        // iOS task expiration/rescheduling is the native fallback.
+      }
+    }
+  }
+
   Future<void> _refreshServerAuthority() async {
     if (!authenticated) return;
     final owner = api.authenticatedUserId?.trim();
@@ -277,6 +359,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _authorityRefreshTimer?.cancel();
+    unawaited(_passiveRecoveryRequests?.cancel());
     if (widget.offlineQueue == null) {
       unawaited(offlineQueue.close());
     }
