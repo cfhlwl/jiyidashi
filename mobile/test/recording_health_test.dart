@@ -114,7 +114,7 @@ void main() {
     );
     expect(
       parse(reason: 'LOCATION_SERVICES_OFF', services: 'OFF').suggestedAction,
-      RecordingHealthAction.recheckLocationServices,
+      RecordingHealthAction.openLocationServicesSettings,
     );
     expect(
       parse(reason: 'PLATFORM_RESTRICTED', background: 'RESTRICTED')
