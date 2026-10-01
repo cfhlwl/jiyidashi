@@ -101,6 +101,7 @@ Map<String, dynamic> _healthResponse({
       'current_permission_block': null,
     },
     'recent_gaps': <Object?>[],
+    'active_gap_reasons': <String>[],
     'server_observed_at': '2026-10-01T10:02:00Z',
     'native_state_observed': status != 'UNKNOWN',
   };
@@ -471,6 +472,15 @@ void main() {
               'status': 'HEALTHY',
               'status_reason': 'RECENT_CAPTURE_AND_ACK',
             },
+            'today': <String, dynamic>{
+              'local_day': '2026-10-01',
+              'timezone': 'Asia/Shanghai',
+              'coverage_state': 'HEALTHY',
+            },
+            'recent_gaps': <Object?>[],
+            'active_gap_reasons': <String>[],
+            'server_observed_at': '2026-10-01T10:02:00Z',
+            'native_state_observed': true,
           }),
           200,
           headers: _headers,
