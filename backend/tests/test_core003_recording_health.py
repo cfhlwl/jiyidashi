@@ -389,6 +389,12 @@ async def test_core003_owner_local_day_and_dst_bounds(client):
     assert spring.today.timezone == "America/New_York"
     assert spring.today.coverage_state == "UNKNOWN"
     assert spring.today.covered_duration_seconds == 0
+    assert spring.aggregates.evidence_days_7d == 0
+    assert spring.aggregates.evidence_days_30d == 0
+    assert spring.aggregates.gap_hours_7d is None
+    assert spring.aggregates.gap_hours_30d is None
+    assert spring.aggregates.bounded_gap_hours_7d == 0
+    assert spring.aggregates.bounded_gap_hours_30d == 0
 
 
 async def test_core003_api_is_owner_scoped_server_observed_and_rejects_raw_location(client):
