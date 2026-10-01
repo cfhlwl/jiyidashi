@@ -156,6 +156,13 @@ class LocationProducerMetrics {
   }
 }
 
+abstract interface class NativeDeliveryDiagnosticsSink {
+  Future<void> recordDeliveryFailure(
+    String ownerUserId, {
+    required String reason,
+  });
+}
+
 abstract interface class NativeMotionSamplingBridge {
   Stream<void> get samplesAvailable;
 
@@ -192,7 +199,7 @@ abstract interface class NativeMotionSamplingBridge {
 /// authority is introduced. Native code may only notify that durable samples exist; Flutter
 /// still decides whether privacy is active before draining or uploading them.
 class MethodChannelNativeMotionSamplingBridge
-    implements NativeMotionSamplingBridge {
+    implements NativeMotionSamplingBridge, NativeDeliveryDiagnosticsSink {
   MethodChannelNativeMotionSamplingBridge({
     MethodChannel channel = const MethodChannel('cn.jiyidashi/native_location'),
   }) : _channel = channel {
@@ -296,6 +303,18 @@ class MethodChannelNativeMotionSamplingBridge
     if (sampleCount <= 0) return;
     final args = _ownerArgs(ownerUserId)..['sample_count'] = sampleCount;
     await _channel.invokeMethod<void>('recordLocationUploadBatch', args);
+  }
+
+  @override
+  Future<void> recordDeliveryFailure(
+    String ownerUserId, {
+    required String reason,
+  }) async {
+    final normalized = reason.trim();
+    final args = _ownerArgs(ownerUserId)
+      ..['reason'] =
+          normalized.isEmpty ? 'location_delivery_failed' : normalized;
+    await _channel.invokeMethod<void>('recordLocationDeliveryFailure', args);
   }
 
   @override
