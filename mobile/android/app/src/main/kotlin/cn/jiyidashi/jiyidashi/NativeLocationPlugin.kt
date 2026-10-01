@@ -510,6 +510,15 @@ class NativeLocationPlugin :
         val servicesEnabled = AndroidLocationPermissions.locationServicesEnabled(applicationContext)
         val ownerMatches = store.enabledOwnerUserId == ownerUserId
         val activeOwnerMatches = store.activeOwnerUserId == ownerUserId
+        if (store.recoveryPendingOwnerUserId == ownerUserId &&
+            (!ownerMatches ||
+                permission != NativeLocationPermissionLevel.BACKGROUND ||
+                !servicesEnabled)
+        ) {
+            // A recovery hint is not durable authority. Permission/service/owner loss
+            // invalidates it exactly like iOS relaunch quarantine.
+            store.clearRecoveryPending(ownerUserId)
+        }
         val producerActive =
             activeOwnerMatches &&
                 (NativeLocationTrackingService.isActive || assumeProducerActive)
