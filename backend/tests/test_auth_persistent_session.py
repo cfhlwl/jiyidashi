@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.auth_models import AuthOneTimePurpose, AuthOneTimeToken, AuthSession
 from app.core.config import get_settings
 from app.core.db import SessionLocal
-from app.core.security import decode_access_token_claims
+from app.core.security import decode_access_token_claims, legacy_access_session_id
 from app.models import User
 from app.services import auth_rate_limit
 from app.services.auth_delivery import (
@@ -261,6 +261,42 @@ async def test_access_jwt_has_issuer_audience_jti_and_session_binding(
     )
     assert session_denied.status_code == 401
     assert session_denied.json()["detail"] == "AUTH_SESSION_INVALID"
+
+
+async def test_pre_session_access_jwt_uses_backfilled_compatibility_session(client):
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        user = User(nickname="Pre-session JWT")
+        db.add(user)
+        db.flush()
+        user_id = user.id
+        db.add(
+            AuthSession(
+                id=legacy_access_session_id(user_id),
+                user_id=user_id,
+                device_id="legacy-access-token",
+                refresh_digest=str(user_id).replace("-", "") * 2,
+                rotation_revision=0,
+                client_platform="legacy",
+                device_name="Pre-session access token",
+                created_at=now,
+                last_used_at=now,
+                expires_at=now + timedelta(days=1),
+            )
+        )
+        db.commit()
+
+    token = jwt.encode(
+        {
+            "sub": str(user_id),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+        },
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    response = await client.get("/v1/user", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
 
 
 async def test_refresh_rotates_and_old_token_replay_revokes_session(

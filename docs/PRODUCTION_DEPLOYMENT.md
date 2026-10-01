@@ -74,10 +74,11 @@ Provider keys are server-only. They are never copied into Mini Program or Flutte
 
 ## Build and immutable release images
 
-Deployment tags the backend image with the full git SHA:
+Deployment tags the backend and Admin edge images with the full git SHA:
 
 ```text
 jiyidashi-backend:<40-char-git-sha>
+jiyidashi-edge:<40-char-git-sha>
 ```
 
 The production Dockerfile:
@@ -113,6 +114,7 @@ export SMOKE_PASSWORD="..."
 
 TARGET_SHA="$(git rev-parse HEAD)" \
 IMAGE_REPOSITORY="registry.example.com/jiyidashi/backend" \
+EDGE_IMAGE_REPOSITORY="registry.example.com/jiyidashi/edge" \
 bash ops/deploy.sh
 ```
 
@@ -120,12 +122,12 @@ The script performs:
 
 1. verify exact full git SHA and reject **tracked or untracked** release-source changes;
 2. validate the actual production env and production Compose;
-3. export the exact reviewed `backend/` Git tree with `git archive`, build/tag only from that clean tree, embed the SHA as the OCI revision label, and record/verify its `sha256` image ID;
+3. export the exact reviewed `backend/` Git tree and `admin/` + `ops/` edge tree with `git archive`, build/tag only from those clean trees, embed the SHA as the OCI revision label, and record/verify their `sha256` image IDs;
 4. start PostgreSQL even if its container was stopped;
 5. wait for PostgreSQL health and **always create the pre-migration backup** from the existing volume/data;
 6. execute `alembic upgrade head` once only after that backup succeeds;
 7. start API without re-running migration dependency and wait for internal `/health/ready` database readiness;
-8. start Caddy and run the external HTTPS/auth acceptance smoke.
+8. start Caddy with the built Admin Console at `/admin/` and run the external HTTPS/auth acceptance smoke.
 
 A stopped PostgreSQL container is never treated as proof of a first deployment. Existing volumes
 are brought up and backed up before migration.
@@ -147,7 +149,7 @@ Do not reuse mutable `latest` as a release or rollback identity.
 
 ## HTTPS / reverse proxy
 
-`ops/Caddyfile` uses `API_DOMAIN` and `ACME_EMAIL` from runtime environment. Caddy redirects HTTP to HTTPS and reverse-proxies to `api:8000`.
+`ops/Caddyfile` uses `API_DOMAIN` and `ACME_EMAIL` from runtime environment. Caddy redirects HTTP to HTTPS, serves the built Admin Console at `/admin/`, routes `/admin/api/*` to `api:8000`, and reverse-proxies the public API to `api:8000`.
 
 Caddy preserves standard forwarded headers. Uvicorn accepts those headers because direct public access to API port 8000 is absent. Do not publish port 8000 later without revisiting this trust boundary.
 

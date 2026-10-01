@@ -4,14 +4,24 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_REF="${1:-}"
 EXPECTED_SHA="${2:-}"
+COMPONENT="${3:-backend}"
 STATE_DIR="${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}"
 
 if [[ -z "$IMAGE_REF" || ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "usage: $0 <image-ref> <full-40-char-git-sha>" >&2
+  echo "usage: $0 <image-ref> <full-40-char-git-sha> [backend|edge]" >&2
   exit 2
 fi
 
-manifest="$STATE_DIR/$EXPECTED_SHA.image-id"
+case "$COMPONENT" in
+  backend) record_suffix="" ;;
+  edge) record_suffix=".edge" ;;
+  *)
+    echo "unsupported release component: $COMPONENT" >&2
+    exit 2
+    ;;
+esac
+
+manifest="$STATE_DIR/$EXPECTED_SHA$record_suffix.image-id"
 if [[ ! -f "$manifest" ]]; then
   echo "missing immutable release image record: $manifest" >&2
   exit 4

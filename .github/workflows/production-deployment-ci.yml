@@ -21,7 +21,9 @@ on:
       - "backend/requirements.production.lock"
       - "backend/app/core/config.py"
       - "backend/migrations/**"
+      - "admin/**"
       - "docker-compose.prod.yml"
+      - "ops/Dockerfile"
       - "ops/**"
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - ".github/workflows/production-deployment-ci.yml"
@@ -47,7 +49,9 @@ on:
       - "backend/requirements.production.lock"
       - "backend/app/core/config.py"
       - "backend/migrations/**"
+      - "admin/**"
       - "docker-compose.prod.yml"
+      - "ops/Dockerfile"
       - "ops/**"
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - ".github/workflows/production-deployment-ci.yml"
@@ -72,6 +76,7 @@ jobs:
           echo "actual checkout SHA:   $actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
           echo "BACKEND_IMAGE=jiyidashi-backend:$EXPECTED_SHA" >> "$GITHUB_ENV"
+          echo "EDGE_IMAGE=jiyidashi-edge:$EXPECTED_SHA" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -292,6 +297,17 @@ jobs:
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Prepare immutable Admin edge image from exact Git tree
+        shell: bash
+        run: |
+          export RELEASE_IMAGE_STATE_DIR="$RUNNER_TEMP/release-images"
+          bash ops/prepare-release-image.sh "$EDGE_IMAGE" "$EXPECTED_SHA" edge
+          bash ops/verify-recorded-release-image.sh "$EDGE_IMAGE" "$EXPECTED_SHA" edge
+          docker run --rm --entrypoint sh "$EDGE_IMAGE" -ceu \
+            'test -s /srv/admin/index.html; test -n "$(find /srv/admin/assets -type f -print -quit)"'
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
       - name: Reject untracked release build context
         shell: bash
         env:
@@ -310,7 +326,11 @@ jobs:
 
       - name: Validate Caddy configuration
         run: |
-          docker run --rm             -e API_DOMAIN=api.example.test             -e ACME_EMAIL=ops@example.test             -v "$PWD/ops/Caddyfile:/etc/caddy/Caddyfile:ro"             caddy:2.8.4-alpine             caddy validate --config /etc/caddy/Caddyfile
+          docker run --rm \
+            -e API_DOMAIN=api.example.test \
+            -e ACME_EMAIL=ops@example.test \
+            "$EDGE_IMAGE" \
+            caddy validate --config /etc/caddy/Caddyfile
 
       - name: Seed existing PostgreSQL volume then stop database
         shell: bash

@@ -17,6 +17,26 @@ http://{$API_DOMAIN} {
 https://{$API_DOMAIN} {
     encode zstd gzip
 
+    redir /admin /admin/ permanent
+
+    handle /admin/api/* {
+        reverse_proxy api:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            transport http {
+                dial_timeout 5s
+                response_header_timeout 60s
+                keepalive 30s
+            }
+        }
+    }
+
+    handle_path /admin/* {
+        root * /srv/admin
+        try_files {path} /index.html
+        file_server
+    }
+
     reverse_proxy api:8000 {
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-Proto {scheme}

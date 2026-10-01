@@ -19,6 +19,14 @@ x-backend-env: &backend-env
     AUTH_RATE_LIMIT_ENABLED: "true"
     AUTO_CREATE_SCHEMA: "false"
 
+x-edge-image: &edge-image
+  image: ${EDGE_IMAGE:-jiyidashi-edge:local}
+  build:
+    context: .
+    dockerfile: ops/Dockerfile
+    args:
+      RELEASE_SHA: ${RELEASE_SHA:-unknown}
+
 services:
   postgres:
     image: pgvector/pgvector:0.8.6-pg16-bookworm
@@ -86,12 +94,11 @@ services:
       - no-new-privileges:true
 
   reverse-proxy:
-    image: caddy:2.8.4-alpine
+    <<: *edge-image
     environment:
       API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required}
       ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
     volumes:
-      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     ports:

@@ -4,16 +4,36 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_REF="${1:-}"
 EXPECTED_SHA="${2:-}"
+COMPONENT="${3:-backend}"
 STATE_DIR="${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}"
 
 if [[ -z "$IMAGE_REF" || "$IMAGE_REF" == *@* || ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "usage: $0 <tagged-image-ref> <full-40-char-git-sha>" >&2
+  echo "usage: $0 <tagged-image-ref> <full-40-char-git-sha> [backend|edge]" >&2
   exit 2
 fi
 
+case "$COMPONENT" in
+  backend)
+    archive_paths=(backend)
+    dockerfile="backend/Dockerfile"
+    build_context="backend"
+    record_suffix=""
+    ;;
+  edge)
+    archive_paths=(admin ops)
+    dockerfile="ops/Dockerfile"
+    build_context="."
+    record_suffix=".edge"
+    ;;
+  *)
+    echo "unsupported release component: $COMPONENT" >&2
+    exit 2
+    ;;
+esac
+
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
-manifest="$STATE_DIR/$EXPECTED_SHA.image-id"
+manifest="$STATE_DIR/$EXPECTED_SHA$record_suffix.image-id"
 lock_dir="$STATE_DIR/$EXPECTED_SHA.lock"
 candidate="${IMAGE_REF}-candidate-${BASHPID}"
 build_root=""
@@ -37,17 +57,16 @@ build_candidate() {
 
   # Build only from the reviewed Git object tree. Workstation files that are
   # untracked or ignored by Git never enter the Docker build context.
-  git -C "$ROOT_DIR" archive --format=tar "$EXPECTED_SHA" backend \
+  git -C "$ROOT_DIR" archive --format=tar "$EXPECTED_SHA" "${archive_paths[@]}" \
     | tar -xf - -C "$build_root"
 
-  test -f "$build_root/backend/Dockerfile"
-  test -f "$build_root/backend/requirements.production.lock"
+  test -f "$build_root/$dockerfile"
 
   docker build \
-    --file "$build_root/backend/Dockerfile" \
+    --file "$build_root/$dockerfile" \
     --build-arg "RELEASE_SHA=$EXPECTED_SHA" \
     --tag "$candidate" \
-    "$build_root/backend"
+    "$build_root/$build_context"
 
   rm -rf "$build_root"
   build_root=""

@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/backend/.env.production}"
 COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.prod.yml}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-jiyidashi-backend}"
+EDGE_IMAGE_REPOSITORY="${EDGE_IMAGE_REPOSITORY:-jiyidashi-edge}"
 ROLLBACK_SHA="${1:-}"
 API_BASE_URL="${API_BASE_URL:-}"
 
@@ -28,6 +29,7 @@ fi
 export ENV_FILE
 export RELEASE_SHA="$ROLLBACK_SHA"
 export BACKEND_IMAGE="$IMAGE_REPOSITORY:$ROLLBACK_SHA"
+export EDGE_IMAGE="$EDGE_IMAGE_REPOSITORY:$ROLLBACK_SHA"
 python3 "$ROOT_DIR/ops/validate-production-runtime.py" "$ENV_FILE"
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
@@ -37,6 +39,8 @@ compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 # the reviewed image for the same Git SHA.
 RELEASE_IMAGE_STATE_DIR="${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}" \
   bash "$ROOT_DIR/ops/verify-recorded-release-image.sh" "$BACKEND_IMAGE" "$ROLLBACK_SHA"
+RELEASE_IMAGE_STATE_DIR="${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}" \
+  bash "$ROOT_DIR/ops/verify-recorded-release-image.sh" "$EDGE_IMAGE" "$ROLLBACK_SHA" edge
 
 "${compose[@]}" up -d --no-deps api
 
@@ -47,7 +51,9 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 
+"${compose[@]}" up -d --no-deps reverse-proxy
+
 API_BASE_URL="$API_BASE_URL" SMOKE_ACCESS_TOKEN="${SMOKE_ACCESS_TOKEN:-}" SMOKE_EMAIL="${SMOKE_EMAIL:-}" SMOKE_PASSWORD="${SMOKE_PASSWORD:-}"   bash "$ROOT_DIR/ops/smoke-production.sh"
 
-echo "application rollback accepted: $BACKEND_IMAGE"
+echo "application rollback accepted: $BACKEND_IMAGE and $EDGE_IMAGE"
 echo "database schema was NOT downgraded or restored"

@@ -57,6 +57,29 @@ def upgrade() -> None:
         "auth_sessions",
         ["user_id", "expires_at"],
     )
+    # Pre-0029 access JWTs contain only sub/iat/exp.  Their user UUID is the
+    # deterministic compatibility session ID; the JWT's original exp still
+    # bounds access, while this row preserves the new durable-session check.
+    op.execute(
+        """
+        INSERT INTO auth_sessions (
+            id, user_id, device_id, refresh_digest, rotation_revision,
+            client_platform, device_name, created_at, last_used_at, expires_at
+        )
+        SELECT
+            id,
+            id,
+            'legacy-access-token',
+            replace(id::text, '-', '') || replace(id::text, '-', ''),
+            0,
+            'legacy',
+            'Pre-session access token',
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP + INTERVAL '30 days'
+        FROM users
+        """
+    )
 
     op.create_table(
         "auth_refresh_token_receipts",

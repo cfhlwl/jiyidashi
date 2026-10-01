@@ -21,6 +21,12 @@ class AccessTokenClaims:
     expires_at: datetime
 
 
+def legacy_access_session_id(user_id: UUID) -> UUID:
+    """Return the migration-only durable session ID for a pre-session JWT."""
+
+    return user_id
+
+
 def create_access_token(user_id: UUID, session_id: UUID) -> str:
     """Create a short-lived public access JWT bound to a durable session."""
 
@@ -51,6 +57,36 @@ def decode_access_token_claims(token: str) -> AccessTokenClaims:
             token,
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
+            options={
+                "require": ["sub", "iat", "exp"],
+                "verify_aud": False,
+                "verify_iss": False,
+            },
+        )
+        user_id = UUID(str(payload["sub"]))
+        issued_at = datetime.fromtimestamp(int(payload["iat"]), tz=UTC)
+        expires_at = datetime.fromtimestamp(int(payload["exp"]), tz=UTC)
+        if expires_at <= issued_at:
+            raise ValueError("invalid lifetime")
+
+        if set(payload) == {"sub", "iat", "exp"}:
+            # 0029 backfills this deterministic session for each pre-session user.
+            # No new token is ever issued in this shape, and its original exp still
+            # bounds the compatibility window.
+            return AccessTokenClaims(
+                user_id=user_id,
+                session_id=legacy_access_session_id(user_id),
+                jti=legacy_access_session_id(user_id),
+                issued_at=issued_at,
+                expires_at=expires_at,
+            )
+
+        if not {"iss", "aud", "jti", "session_id"}.issubset(payload):
+            raise ValueError("incomplete modern access token")
+        jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
             audience=settings.jwt_audience,
             issuer=settings.jwt_issuer,
             options={
@@ -65,17 +101,10 @@ def decode_access_token_claims(token: str) -> AccessTokenClaims:
                 ]
             },
         )
-        user_id = UUID(str(payload["sub"]))
-        session_id = UUID(str(payload["session_id"]))
-        jti = UUID(str(payload["jti"]))
-        issued_at = datetime.fromtimestamp(int(payload["iat"]), tz=UTC)
-        expires_at = datetime.fromtimestamp(int(payload["exp"]), tz=UTC)
-        if expires_at <= issued_at:
-            raise ValueError("invalid lifetime")
         return AccessTokenClaims(
             user_id=user_id,
-            session_id=session_id,
-            jti=jti,
+            session_id=UUID(str(payload["session_id"])),
+            jti=UUID(str(payload["jti"])),
             issued_at=issued_at,
             expires_at=expires_at,
         )
