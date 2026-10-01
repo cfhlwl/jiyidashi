@@ -79,6 +79,11 @@ class NativeLocationPlugin :
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (call.method == "awaitPassiveRecoveryIdle") {
+            PassiveMemoryRecoveryProcessGate.awaitIdle(result)
+            return
+        }
+
         val ownerUserId = ownerFrom(call)
         if (ownerUserId == null) {
             result.error("invalid_owner", "Authenticated user id is required", null)
@@ -671,6 +676,8 @@ class NativeLocationPlugin :
         private const val REQUEST_BACKGROUND_LOCATION = 2402
 
         private val sampleChannels = CopyOnWriteArraySet<MethodChannel>()
+
+        fun hasAttachedFlutterEngine(): Boolean = sampleChannels.isNotEmpty()
 
         fun notifySamplesAvailable(): Boolean {
             val current = sampleChannels.toList()
