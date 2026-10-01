@@ -1143,6 +1143,10 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       "location_services_enabled": servicesEnabled,
       "reason": reason ?? NSNull(),
       "restore_pending": ownerMatches && activeOwnerMatches && relaunchRestorePending,
+      "recovery_reason":
+        (ownerMatches && activeOwnerMatches && relaunchRestorePending)
+          ? "ios_location_relaunch"
+          : NSNull(),
       "queue": queueDiagnostics(ownerUserId: ownerUserId),
     ]
 
