@@ -15,6 +15,7 @@ import {
   submitMemoryFeedback,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
+import { toTodayFootprintRow } from '../../services/todayFootprint'
 import { FloatingCaptureAction, ProductHeroHeader } from '../../components/product/ProductUi'
 import {
   ElderFindQueryEpoch,
@@ -37,6 +38,18 @@ import {
   type MemoryRead,
 } from '../../services/memoryFeedback'
 import './index.scss'
+
+function queryIntentLabel(intent: string): string {
+  const labels: Record<string, string> = {
+    FIND_OBJECT: '查找物品',
+    FIND_EVENT: '回忆当天发生的事',
+    FIND_PLACE: '查找地点',
+    FIND_PERSON: '查找人物',
+    DATE_FOOTPRINT_QUERY: '按日期看足迹',
+    MEMORY_SEARCH: '查找记忆',
+  }
+  return labels[intent] || '查找记忆'
+}
 
 function sourceLabel(sourceType: string): string {
   const labels: Record<string, string> = {
@@ -488,6 +501,9 @@ export default function Page() {
   const visibleEvidence = result
     ? result.evidence.filter((evidence) => isDisplayableEvidence(evidence.source_type))
     : []
+  const footprintRows = result?.day_footprint
+    ? result.day_footprint.visits.map(toTodayFootprintRow)
+    : []
 
   return (
     <View className={elderClassName(elderMode)}>
@@ -520,9 +536,10 @@ export default function Page() {
         <View className='card'>
           <View className='answer-row'>
             <View className='card-title answer-title'>
-              {result.can_answer
-                ? result.answer || '找到相关记录，但答案暂不可显示。'
-                : (elderMode ? '我还不知道它在哪里。' : '没有找到足够记录回答这个问题。')}
+              {result.answer
+                || (result.can_answer
+                  ? '找到相关记录，但答案暂不可显示。'
+                  : (elderMode ? '还没有可靠记录。' : '没有找到足够记录回答这个问题。'))}
             </View>
             <View className={`trust-badge trust-${trust.tone}`}>{trust.label}</View>
           </View>
@@ -531,7 +548,15 @@ export default function Page() {
             <View className='muted'>没有找到足够可靠的记录。你可以先用“帮我记一下”告诉我放在哪里。</View>
           )}
           {submittedQuestion && <View className='muted'>本次查找：{submittedQuestion}</View>}
-          <View className='muted'>查询类型：{result.intent}</View>
+          <View className='muted'>查询类型：{queryIntentLabel(result.intent)}</View>
+
+          {footprintRows.map((row) => (
+            <View className='evidence' key={row.id}>
+              <Text>{row.placeName}</Text>
+              <View className='muted'>时间：{row.timeRange}</View>
+              <View className='muted'>状态：{row.stateLabel}</View>
+            </View>
+          ))}
 
           {visibleEvidence.map((evidence) => {
             const provenance = provenanceLabel(evidence.provenance)
