@@ -27,6 +27,7 @@ void main() {
         'last_drop_at_millis': 1790820200000,
         'last_drop_reason': 'native_queue_capacity',
         'queue_corrupt': false,
+        'queue_storage_unavailable': true,
       },
     });
 
@@ -42,6 +43,7 @@ void main() {
     expect(status.queue.lastDropReason, 'native_queue_capacity');
     expect(status.queue.oldestPendingAt, isNotNull);
     expect(status.queue.corrupt, isFalse);
+    expect(status.queue.storageUnavailable, isTrue);
   });
 
   test('missing V2 diagnostics fail closed to an empty typed queue', () {
@@ -58,6 +60,7 @@ void main() {
     expect(status.queue.capacity, 0);
     expect(status.queue.capacityPressure, isFalse);
     expect(status.queue.corrupt, isFalse);
+    expect(status.queue.storageUnavailable, isFalse);
     expect(status.restorePending, isFalse);
   });
 }
