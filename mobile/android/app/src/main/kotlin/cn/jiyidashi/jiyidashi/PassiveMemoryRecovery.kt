@@ -105,6 +105,59 @@ object PassiveMemoryRecoveryScheduler {
 }
 
 /**
+ * Process-local arbitration between the normal Flutter engine and the headless worker.
+ *
+ * AUTH-001 refresh tokens rotate exactly once. Two Dart engines must therefore never
+ * refresh the same persisted credential concurrently. Existing UI/background engines win;
+ * if the worker wins first, a later normal app startup waits here before restoring session.
+ */
+object PassiveMemoryRecoveryProcessGate {
+    private val lock = Any()
+    private var headlessActive = false
+    private val waiters = mutableListOf<MethodChannel.Result>()
+
+    fun tryBeginHeadless(): Boolean = synchronized(lock) {
+        if (headlessActive || NativeLocationPlugin.hasAttachedFlutterEngine()) {
+            false
+        } else {
+            headlessActive = true
+            true
+        }
+    }
+
+    fun awaitIdle(result: MethodChannel.Result) {
+        val completeNow = synchronized(lock) {
+            if (!headlessActive) {
+                true
+            } else {
+                waiters.add(result)
+                false
+            }
+        }
+        if (completeNow) {
+            result.success(true)
+        }
+    }
+
+    fun finishHeadless() {
+        val pending = synchronized(lock) {
+            headlessActive = false
+            waiters.toList().also { waiters.clear() }
+        }
+        if (pending.isEmpty()) return
+        Handler(Looper.getMainLooper()).post {
+            pending.forEach { waiter ->
+                try {
+                    waiter.success(true)
+                } catch (_: RuntimeException) {
+                    // A waiting engine may have detached; no auth authority is granted here.
+                }
+            }
+        }
+    }
+}
+
+/**
  * Boot/package replacement are wake-up opportunities, not authorization events.
  *
  * We deliberately do not call startForegroundService() here. The receiver only persists a
@@ -150,6 +203,24 @@ class PassiveMemoryRecoveryWorker(
             return Result.success(workDataOf("status" to "automatic_disabled"))
         }
 
+        if (!PassiveMemoryRecoveryProcessGate.tryBeginHeadless()) {
+            // A normal Flutter engine is already responsible for AUTH/session rotation and
+            // native sample notifications. Starting a second isolate would create a refresh
+            // replay race, so this watchdog run is intentionally a no-op.
+            return Result.success(workDataOf("status" to "flutter_engine_active"))
+        }
+
+        return try {
+            runClaimedHeadless(store, enabledOwner)
+        } finally {
+            PassiveMemoryRecoveryProcessGate.finishHeadless()
+        }
+    }
+
+    private fun runClaimedHeadless(
+        store: NativeLocationStore,
+        enabledOwner: String,
+    ): Result {
         // Android can kill the whole process without Service.onDestroy(). Persisted
         // RUNNING + matching active owner + no live service means only "eligible to recover",
         // never permission to restart. Dart still has to refresh AUTH-001 and server Privacy.
