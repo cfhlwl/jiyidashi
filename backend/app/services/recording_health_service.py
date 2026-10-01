@@ -1,0 +1,700 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from uuid import UUID
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session
+
+from app.models import (
+    LocationIngestReceipt,
+    Memory,
+    PrivacyPauseInterval,
+    Visit,
+)
+from app.schemas import (
+    RecordingClientState,
+    RecordingCoverageState,
+    RecordingGapReason,
+    RecordingGapState,
+    RecordingGapSummary,
+    RecordingHealthAggregates,
+    RecordingHealthReason,
+    RecordingHealthResponse,
+    RecordingHealthSnapshot,
+    RecordingHealthStatus,
+    RecordingTodayCoverage,
+)
+from app.services import privacy_service
+from app.services.time_service import (
+    local_today,
+    user_day_bounds_utc,
+    user_timezone_name,
+)
+
+# CORE-003 V1 deterministic thresholds. These are product policy, not heuristics generated
+# by the UI or an LLM. A green state requires fresh capture + fresh server ACK + a running
+# eligible producer + drained bounded queues.
+CLIENT_STATE_MAX_AGE = timedelta(minutes=5)
+FUTURE_CLOCK_SKEW = timedelta(minutes=2)
+RECENT_FIX_MAX_AGE = timedelta(minutes=45)
+RECENT_ACK_MAX_AGE = timedelta(minutes=45)
+QUEUE_OLD_MAX_AGE = timedelta(minutes=20)
+QUEUE_PRESSURE_RATIO = 0.80
+DELIVERY_FAILURE_DEGRADED_AT = 3
+
+# Coverage is deliberately conservative. We only bridge adjacent retained receipt timestamps
+# when they are within the reviewed cadence window. Sparse points never imply a continuous route.
+SAMPLE_CONTINUITY_MAX_GAP = timedelta(minutes=20)
+RECORDED_GAP_MIN_DURATION = timedelta(minutes=20)
+HEALTHY_DAY_MIN_COVERED = timedelta(hours=8)
+HEALTHY_DAY_MIN_OBSERVED_SPAN = timedelta(hours=12)
+HEALTHY_DAY_MAX_GAP = timedelta(hours=2)
+RECENT_GAP_LIMIT = 8
+
+
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+@dataclass(frozen=True)
+class _Interval:
+    start: datetime
+    end: datetime
+    reason: RecordingGapReason | None = None
+
+    @property
+    def seconds(self) -> int:
+        return max(0, int((self.end - self.start).total_seconds()))
+
+
+@dataclass(frozen=True)
+class _DayCoverageInternal:
+    response: RecordingTodayCoverage
+    all_gap_seconds: int
+
+
+def _clip_interval(
+    start: datetime,
+    end: datetime,
+    *,
+    lower: datetime,
+    upper: datetime,
+    reason: RecordingGapReason | None = None,
+) -> _Interval | None:
+    left = max(_utc(start), lower)
+    right = min(_utc(end), upper)
+    if right <= left:
+        return None
+    return _Interval(left, right, reason)
+
+
+def _merge_intervals(intervals: list[_Interval]) -> list[_Interval]:
+    if not intervals:
+        return []
+    ordered = sorted(intervals, key=lambda item: (item.start, item.end))
+    merged: list[_Interval] = []
+    for current in ordered:
+        if not merged or current.start > merged[-1].end:
+            merged.append(_Interval(current.start, current.end))
+            continue
+        previous = merged[-1]
+        merged[-1] = _Interval(previous.start, max(previous.end, current.end))
+    return merged
+
+
+def _union_seconds(intervals: list[_Interval]) -> int:
+    return sum(item.seconds for item in _merge_intervals(intervals))
+
+
+def _server_last_activity(
+    db: Session,
+    *,
+    user_id: UUID,
+) -> tuple[datetime | None, datetime | None, datetime | None]:
+    last_fix, last_ack = db.execute(
+        select(
+            func.max(LocationIngestReceipt.recorded_at),
+            func.max(LocationIngestReceipt.created_at),
+        ).where(LocationIngestReceipt.user_id == user_id)
+    ).one()
+    last_visit = db.scalar(
+        select(func.max(func.coalesce(Visit.left_at, Visit.arrived_at))).where(
+            Visit.user_id == user_id
+        )
+    )
+    return (
+        None if last_fix is None else _utc(last_fix),
+        None if last_ack is None else _utc(last_ack),
+        None if last_visit is None else _utc(last_visit),
+    )
+
+
+def _privacy_intervals(
+    db: Session,
+    *,
+    user_id: UUID,
+    start_utc: datetime,
+    end_utc: datetime,
+    now: datetime,
+) -> list[_Interval]:
+    rows = db.execute(
+        select(PrivacyPauseInterval.started_at, PrivacyPauseInterval.ended_at)
+        .where(
+            PrivacyPauseInterval.user_id == user_id,
+            PrivacyPauseInterval.started_at < end_utc,
+            or_(
+                PrivacyPauseInterval.ended_at.is_(None),
+                PrivacyPauseInterval.ended_at > start_utc,
+            ),
+        )
+        .order_by(PrivacyPauseInterval.started_at.asc())
+    ).all()
+    intervals: list[_Interval] = []
+    for started_at, ended_at in rows:
+        end = now if ended_at is None else _utc(ended_at)
+        clipped = _clip_interval(
+            _utc(started_at),
+            end,
+            lower=start_utc,
+            upper=end_utc,
+            reason=RecordingGapReason.PRIVACY_PAUSED,
+        )
+        if clipped is not None:
+            intervals.append(clipped)
+    return intervals
+
+
+def _day_coverage(
+    db: Session,
+    *,
+    user_id: UUID,
+    day: date,
+    now: datetime,
+) -> _DayCoverageInternal:
+    timezone = user_timezone_name(db, user_id)
+    zone = ZoneInfo(timezone)
+    start_utc, end_utc = user_day_bounds_utc(db, user_id, day)
+    effective_end = min(end_utc, now)
+
+    receipt_times = [
+        _utc(value)
+        for value in db.scalars(
+            select(LocationIngestReceipt.recorded_at)
+            .where(
+                LocationIngestReceipt.user_id == user_id,
+                LocationIngestReceipt.recorded_at >= start_utc,
+                LocationIngestReceipt.recorded_at < end_utc,
+            )
+            .order_by(LocationIngestReceipt.recorded_at.asc())
+        )
+    ]
+
+    visit_rows = db.execute(
+        select(
+            Visit.arrived_at,
+            Visit.left_at,
+            Visit.source_ended_at,
+            Visit.finalized_at,
+        )
+        .where(
+            Visit.user_id == user_id,
+            Visit.arrived_at < end_utc,
+            or_(Visit.left_at.is_(None), Visit.left_at >= start_utc),
+        )
+        .order_by(Visit.arrived_at.asc())
+    ).all()
+
+    evidence_intervals: list[_Interval] = []
+    observed_instants: list[datetime] = list(receipt_times)
+    visit_count = 0
+    for arrived_at, left_at, source_ended_at, finalized_at in visit_rows:
+        visit_count += 1
+        arrived = _utc(arrived_at)
+        observed_instants.append(arrived)
+        # Open/mutable visits do not prove continued presence up to "now". Only a real
+        # left/source_ended boundary is eligible for covered-duration accounting.
+        proven_end = left_at or source_ended_at
+        if proven_end is not None:
+            ended = _utc(proven_end)
+            observed_instants.append(ended)
+            clipped = _clip_interval(
+                arrived,
+                ended,
+                lower=start_utc,
+                upper=effective_end,
+            )
+            if clipped is not None:
+                evidence_intervals.append(clipped)
+
+    for previous, current in zip(receipt_times, receipt_times[1:]):
+        if current <= previous:
+            continue
+        if current - previous <= SAMPLE_CONTINUITY_MAX_GAP:
+            clipped = _clip_interval(
+                previous,
+                current,
+                lower=start_utc,
+                upper=effective_end,
+            )
+            if clipped is not None:
+                evidence_intervals.append(clipped)
+
+    merged_evidence = _merge_intervals(evidence_intervals)
+    covered_seconds = sum(item.seconds for item in merged_evidence)
+
+    unknown_gaps: list[_Interval] = []
+    for previous, current in zip(merged_evidence, merged_evidence[1:]):
+        gap = current.start - previous.end
+        if gap >= RECORDED_GAP_MIN_DURATION:
+            unknown_gaps.append(
+                _Interval(
+                    previous.end,
+                    current.start,
+                    RecordingGapReason.UNKNOWN,
+                )
+            )
+
+    privacy_gaps = _privacy_intervals(
+        db,
+        user_id=user_id,
+        start_utc=start_utc,
+        end_utc=effective_end,
+        now=now,
+    )
+    all_gaps = sorted(
+        [*privacy_gaps, *unknown_gaps],
+        key=lambda item: (item.start, item.end),
+    )
+    known_gap_seconds = _union_seconds(privacy_gaps)
+    all_gap_seconds = _union_seconds(all_gaps)
+    largest_known_gap_seconds = max(
+        (item.seconds for item in privacy_gaps),
+        default=0,
+    )
+
+    memory_count = db.scalar(
+        select(func.count(Memory.id)).where(
+            Memory.user_id == user_id,
+            Memory.occurred_at >= start_utc,
+            Memory.occurred_at < end_utc,
+        )
+    )
+    observed_instants = [
+        value for value in observed_instants if start_utc <= value < end_utc
+    ]
+    first_observed = min(observed_instants, default=None)
+    last_observed = max(observed_instants, default=None)
+
+    day_elapsed = max(timedelta(0), effective_end - start_utc)
+    observed_span = (
+        timedelta(0)
+        if first_observed is None or last_observed is None
+        else last_observed - first_observed
+    )
+    largest_policy_gap = max((item.seconds for item in all_gaps), default=0)
+    healthy_threshold = min(HEALTHY_DAY_MIN_COVERED, day_elapsed)
+    healthy = (
+        bool(observed_instants)
+        and day_elapsed >= timedelta(hours=12)
+        and covered_seconds >= int(healthy_threshold.total_seconds())
+        and observed_span >= HEALTHY_DAY_MIN_OBSERVED_SPAN
+        and largest_policy_gap <= int(HEALTHY_DAY_MAX_GAP.total_seconds())
+        and not privacy_gaps
+    )
+
+    if not observed_instants:
+        coverage_state = RecordingCoverageState.UNKNOWN
+    elif all_gaps:
+        coverage_state = RecordingCoverageState.GAPPED
+    elif healthy:
+        coverage_state = RecordingCoverageState.HEALTHY
+    else:
+        coverage_state = RecordingCoverageState.PARTIAL
+
+    recent_gaps = [
+        RecordingGapSummary(
+            reason=item.reason or RecordingGapReason.UNKNOWN,
+            started_at=item.start,
+            ended_at=item.end,
+            duration_seconds=item.seconds,
+        )
+        for item in all_gaps[-RECENT_GAP_LIMIT:]
+    ]
+
+    return _DayCoverageInternal(
+        response=RecordingTodayCoverage(
+            local_day=day,
+            timezone=timezone,
+            first_observed_at=first_observed,
+            last_observed_at=last_observed,
+            trusted_location_sample_count=len(receipt_times),
+            visit_count=visit_count,
+            memory_count=int(memory_count or 0),
+            covered_duration_seconds=covered_seconds,
+            known_gap_duration_seconds=known_gap_seconds,
+            largest_known_gap_seconds=largest_known_gap_seconds,
+            coverage_state=coverage_state,
+            has_capacity_pressure=False,
+            has_recorded_gap=bool(all_gaps),
+            recent_gaps=recent_gaps,
+        ),
+        all_gap_seconds=all_gap_seconds,
+    )
+
+
+def _historical_aggregates(
+    db: Session,
+    *,
+    user_id: UUID,
+    today: date,
+    now: datetime,
+    current_capacity_pressure: bool | None,
+    current_permission_block: bool | None,
+) -> RecordingHealthAggregates:
+    # Aggregates intentionally use completed owner-local days. Today is shown separately
+    # and is never silently counted as an unhealthy full day just because it is still in progress.
+    coverages: dict[int, list[_DayCoverageInternal]] = {}
+    for window in (7, 30):
+        items: list[_DayCoverageInternal] = []
+        for offset in range(1, window + 1):
+            items.append(
+                _day_coverage(
+                    db,
+                    user_id=user_id,
+                    day=today - timedelta(days=offset),
+                    now=now,
+                )
+            )
+        coverages[window] = items
+
+    def healthy_count(window: int) -> int:
+        return sum(
+            1
+            for item in coverages[window]
+            if item.response.coverage_state == RecordingCoverageState.HEALTHY
+        )
+
+    def gap_hours(window: int) -> float:
+        seconds = sum(item.all_gap_seconds for item in coverages[window])
+        return round(seconds / 3600.0, 2)
+
+    # Capacity/permission history is not persisted in CORE-001. Exposing a made-up zero
+    # would be false precision, so V1 keeps those historical counters unavailable.
+    return RecordingHealthAggregates(
+        healthy_days_7d=healthy_count(7),
+        healthy_days_30d=healthy_count(30),
+        gap_hours_7d=gap_hours(7),
+        gap_hours_30d=gap_hours(30),
+        days_with_capacity_pressure=None,
+        days_with_permission_block=None,
+        current_capacity_pressure=current_capacity_pressure,
+        current_permission_block=current_permission_block,
+    )
+
+
+def _derive_status(
+    *,
+    now: datetime,
+    privacy_paused: bool,
+    client: RecordingClientState | None,
+    server_last_fix: datetime | None,
+    server_last_ack: datetime | None,
+    today_coverage: RecordingTodayCoverage,
+) -> tuple[RecordingHealthStatus, RecordingHealthReason, RecordingGapState]:
+    if privacy_paused:
+        return (
+            RecordingHealthStatus.PAUSED,
+            RecordingHealthReason.PRIVACY_PAUSED,
+            RecordingGapState.KNOWN,
+        )
+
+    if client is None:
+        return (
+            RecordingHealthStatus.UNKNOWN,
+            RecordingHealthReason.NATIVE_STATE_UNAVAILABLE,
+            RecordingGapState.UNKNOWN,
+        )
+
+    observed_at = _utc(client.observed_at)
+    if observed_at > now + FUTURE_CLOCK_SKEW or now - observed_at > CLIENT_STATE_MAX_AGE:
+        return (
+            RecordingHealthStatus.UNKNOWN,
+            RecordingHealthReason.CLIENT_STATE_STALE,
+            RecordingGapState.UNKNOWN,
+        )
+
+    if client.automatic_enabled is False:
+        return (
+            RecordingHealthStatus.BLOCKED,
+            RecordingHealthReason.AUTOMATIC_DISABLED,
+            RecordingGapState.KNOWN,
+        )
+
+    if client.location_services_state == "OFF":
+        return (
+            RecordingHealthStatus.BLOCKED,
+            RecordingHealthReason.LOCATION_SERVICES_OFF,
+            RecordingGapState.KNOWN,
+        )
+
+    if client.permission_state in {
+        "DENIED",
+        "RESTRICTED",
+        "NOT_DETERMINED",
+        "FOREGROUND",
+    }:
+        return (
+            RecordingHealthStatus.BLOCKED,
+            RecordingHealthReason.PERMISSION_BLOCKED,
+            RecordingGapState.KNOWN,
+        )
+
+    if client.background_runtime_state == "RESTRICTED":
+        return (
+            RecordingHealthStatus.BLOCKED,
+            RecordingHealthReason.PLATFORM_RESTRICTED,
+            RecordingGapState.KNOWN,
+        )
+
+    if client.recovery_pending:
+        return (
+            RecordingHealthStatus.RECOVERING,
+            RecordingHealthReason.RECOVERY_PENDING,
+            RecordingGapState.KNOWN,
+        )
+
+    if (
+        client.capacity_pressure
+        or client.native_queue_corrupt
+        or client.native_queue_storage_unavailable
+        or client.dropped_sample_count > 0
+    ):
+        return (
+            RecordingHealthStatus.DEGRADED,
+            RecordingHealthReason.QUEUE_CAPACITY_PRESSURE,
+            RecordingGapState.KNOWN,
+        )
+
+    if client.native_producer_state != "RUNNING":
+        return (
+            RecordingHealthStatus.DEGRADED,
+            RecordingHealthReason.PRODUCER_NOT_RUNNING,
+            RecordingGapState.KNOWN,
+        )
+
+    total_depth = client.native_queue_depth + client.sqlite_queue_depth
+    capacity = client.native_queue_capacity
+    if capacity > 0 and client.native_queue_depth / capacity >= QUEUE_PRESSURE_RATIO:
+        return (
+            RecordingHealthStatus.DEGRADED,
+            RecordingHealthReason.QUEUE_BACKLOG,
+            RecordingGapState.KNOWN,
+        )
+
+    oldest_pending = client.native_oldest_pending_at or client.sqlite_oldest_pending_at
+    if oldest_pending is not None and now - _utc(oldest_pending) > QUEUE_OLD_MAX_AGE:
+        return (
+            RecordingHealthStatus.DEGRADED,
+            RecordingHealthReason.DELIVERY_BACKLOG,
+            RecordingGapState.KNOWN,
+        )
+
+    if (
+        total_depth > 0
+        and client.delivery_failure_count >= DELIVERY_FAILURE_DEGRADED_AT
+    ):
+        return (
+            RecordingHealthStatus.DEGRADED,
+            RecordingHealthReason.DELIVERY_FAILURE,
+            RecordingGapState.KNOWN,
+        )
+
+    last_fix = client.last_fix_at or server_last_fix
+    if last_fix is None:
+        return (
+            RecordingHealthStatus.UNKNOWN,
+            RecordingHealthReason.NO_RECENT_FIX,
+            RecordingGapState.UNKNOWN,
+        )
+    if now - _utc(last_fix) > RECENT_FIX_MAX_AGE:
+        return (
+            RecordingHealthStatus.DEGRADED,
+            RecordingHealthReason.NO_RECENT_FIX,
+            RecordingGapState.KNOWN,
+        )
+
+    last_ack = client.last_server_ack_at or server_last_ack
+    if last_ack is None:
+        return (
+            RecordingHealthStatus.UNKNOWN,
+            RecordingHealthReason.NO_RECENT_ACK,
+            RecordingGapState.UNKNOWN,
+        )
+    if now - _utc(last_ack) > RECENT_ACK_MAX_AGE:
+        return (
+            RecordingHealthStatus.DEGRADED,
+            RecordingHealthReason.DELIVERY_BACKLOG,
+            RecordingGapState.KNOWN,
+        )
+
+    if today_coverage.has_recorded_gap:
+        return (
+            RecordingHealthStatus.DEGRADED,
+            RecordingHealthReason.RECORDED_GAP,
+            RecordingGapState.KNOWN,
+        )
+
+    return (
+        RecordingHealthStatus.HEALTHY,
+        RecordingHealthReason.RECENT_CAPTURE_AND_ACK,
+        RecordingGapState.NONE,
+    )
+
+
+def get_recording_health(
+    db: Session,
+    *,
+    user_id: UUID,
+    client_state: RecordingClientState | None = None,
+    reference_utc: datetime | None = None,
+) -> RecordingHealthResponse:
+    now = _utc(reference_utc or datetime.now(UTC))
+    today = local_today(db, user_id, reference_utc=now)
+    coverage_internal = _day_coverage(
+        db,
+        user_id=user_id,
+        day=today,
+        now=now,
+    )
+    coverage = coverage_internal.response
+
+    privacy = privacy_service.get_privacy_state(db, user_id)
+    privacy_paused = privacy_service.is_pause_active(
+        privacy.recording_paused_until,
+        now=now,
+    )
+    server_last_fix, server_last_ack, last_visit = _server_last_activity(
+        db,
+        user_id=user_id,
+    )
+
+    status, reason, gap_state = _derive_status(
+        now=now,
+        privacy_paused=privacy_paused,
+        client=client_state,
+        server_last_fix=server_last_fix,
+        server_last_ack=server_last_ack,
+        today_coverage=coverage,
+    )
+
+    if client_state is not None:
+        coverage = coverage.model_copy(
+            update={
+                "has_capacity_pressure": client_state.capacity_pressure,
+                "has_recorded_gap": (
+                    coverage.has_recorded_gap
+                    or client_state.dropped_sample_count > 0
+                    or client_state.capacity_pressure
+                ),
+            }
+        )
+
+    last_fix = (
+        client_state.last_fix_at
+        if client_state is not None and client_state.last_fix_at is not None
+        else server_last_fix
+    )
+    last_server_ack = (
+        client_state.last_server_ack_at
+        if client_state is not None and client_state.last_server_ack_at is not None
+        else server_last_ack
+    )
+
+    snapshot = RecordingHealthSnapshot(
+        status=status,
+        status_reason=reason,
+        automatic_enabled=None if client_state is None else client_state.automatic_enabled,
+        privacy_paused=privacy_paused,
+        permission_state=None if client_state is None else client_state.permission_state,
+        location_services_state=(
+            None if client_state is None else client_state.location_services_state
+        ),
+        background_runtime_state=(
+            None if client_state is None else client_state.background_runtime_state
+        ),
+        battery_optimization_state=(
+            None if client_state is None else client_state.battery_optimization_state
+        ),
+        native_producer_state=(
+            None if client_state is None else client_state.native_producer_state
+        ),
+        native_queue_depth=0 if client_state is None else client_state.native_queue_depth,
+        native_queue_capacity=(
+            0 if client_state is None else client_state.native_queue_capacity
+        ),
+        native_oldest_pending_at=(
+            None if client_state is None else client_state.native_oldest_pending_at
+        ),
+        sqlite_queue_depth=0 if client_state is None else client_state.sqlite_queue_depth,
+        capacity_pressure=(
+            False if client_state is None else client_state.capacity_pressure
+        ),
+        last_fix_at=None if last_fix is None else _utc(last_fix),
+        last_enqueue_at=(
+            None if client_state is None else client_state.last_enqueue_at
+        ),
+        last_handoff_at=(
+            None if client_state is None else client_state.last_handoff_at
+        ),
+        last_upload_attempt_at=(
+            None if client_state is None else client_state.last_upload_attempt_at
+        ),
+        last_upload_success_at=last_server_ack,
+        last_server_ack_at=last_server_ack,
+        last_visit_at=last_visit,
+        delivery_failure_count=(
+            0 if client_state is None else client_state.delivery_failure_count
+        ),
+        last_delivery_error_code=(
+            None if client_state is None else client_state.last_delivery_error_code
+        ),
+        recovery_pending=(
+            False if client_state is None else client_state.recovery_pending
+        ),
+        recording_gap_state=gap_state,
+        updated_at=now,
+    )
+
+    current_permission_block = None
+    if client_state is not None:
+        current_permission_block = client_state.permission_state in {
+            "DENIED",
+            "RESTRICTED",
+            "NOT_DETERMINED",
+            "FOREGROUND",
+        } or client_state.location_services_state == "OFF"
+
+    aggregates = _historical_aggregates(
+        db,
+        user_id=user_id,
+        today=today,
+        now=now,
+        current_capacity_pressure=(
+            None if client_state is None else client_state.capacity_pressure
+        ),
+        current_permission_block=current_permission_block,
+    )
+
+    return RecordingHealthResponse(
+        health=snapshot,
+        today=coverage,
+        aggregates=aggregates,
+        recent_gaps=coverage.recent_gaps[-RECENT_GAP_LIMIT:],
+        server_observed_at=now,
+        native_state_observed=client_state is not None,
+    )
