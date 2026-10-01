@@ -74,6 +74,16 @@ jobs:
           test/offline_identity_test.dart
           --reporter expanded
 
+      - name: Test CORE-001 passive reliability
+        timeout-minutes: 7
+        run: >-
+          flutter test
+          test/core_passive_delivery_store_test.dart
+          test/native_location_queue_diagnostics_test.dart
+          test/passive_memory_delivery_test.dart
+          test/location_sampling_coordinator_test.dart
+          --reporter expanded
+
       # [人工注释][S1-026] Onboarding 先单独跑，失败时能直接定位；全量测试继续作为正式回归门禁。
       - name: Test onboarding
         timeout-minutes: 5
@@ -93,6 +103,8 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' android/app/src/main/AndroidManifest.xml
+          grep -q 'PassiveMemoryRecoveryReceiver' android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.ACCESS_COARSE_LOCATION' android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.ACCESS_FINE_LOCATION' android/app/src/main/AndroidManifest.xml
