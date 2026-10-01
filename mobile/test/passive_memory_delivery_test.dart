@@ -31,6 +31,18 @@ class _PassiveApi extends JiYiApiClient {
   final List<List<String>> uploadedUuids = <List<String>>[];
 
   @override
+  String? get authenticatedSessionId =>
+      authenticatedUserId == ownerA
+          ? 'session-a'
+          : authenticatedUserId == ownerB
+              ? 'session-b'
+              : null;
+
+  @override
+  Future<bool> currentSessionMatchesSecureStorage() async =>
+      authenticatedUserId == ownerA;
+
+  @override
   Future<void> revalidateAuthenticatedOwnerAuthority() async {
     refreshCalls += 1;
     if (authenticatedUserId == null) {
