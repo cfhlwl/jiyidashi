@@ -162,7 +162,9 @@ jobs:
         run: git diff --exit-code -- pubspec.lock
 
       - name: Test iOS native location policy
-        timeout-minutes: 10
+        # AUTH-001 adds flutter_secure_storage native compilation; keep the exact
+        # RunnerTests gate, but do not mistake a cold CocoaPods/Xcode build for failure.
+        timeout-minutes: 20
         shell: bash
         run: |
           set -euo pipefail
