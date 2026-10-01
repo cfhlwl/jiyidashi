@@ -221,7 +221,7 @@ void main() {
     expect(find.text('自动记录当前受阻'), findsOneWidget);
     expect(find.textContaining('系统定位权限不足'), findsOneWidget);
     expect(find.text('PERMISSION_BLOCKED'), findsNothing);
-    expect(find.text('今天记录状态正常'), findsNothing);
+    expect(find.text('当前自动记录正常'), findsNothing);
   });
 
   testWidgets('unknown server-observed health is visibly fail-closed', (tester) async {
@@ -259,6 +259,6 @@ void main() {
 
     expect(find.text('当前记录状态未知'), findsOneWidget);
     expect(find.textContaining('无法从这里确认这台手机当前的后台状态'), findsOneWidget);
-    expect(find.text('今天记录状态正常'), findsNothing);
+    expect(find.text('当前自动记录正常'), findsNothing);
   });
 }
