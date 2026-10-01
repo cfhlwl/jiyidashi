@@ -116,14 +116,11 @@ async def test_core003_client_cannot_mint_server_ack_or_cross_owner_state(client
         created_at=now - timedelta(minutes=1),
     )
 
-    client_claim = _client(now).model_copy(
-        update={"last_server_ack_at": now - timedelta(seconds=10)}
-    )
     with SessionLocal() as db:
         result = get_recording_health(
             db,
             user_id=owner_a,
-            client_state=client_claim,
+            client_state=_client(now),
             reference_utc=now,
         )
 
@@ -417,6 +414,7 @@ async def test_core003_api_is_owner_scoped_server_observed_and_rejects_raw_locat
             "background_runtime_state": "ELIGIBLE",
             "native_producer_state": "RUNNING",
             "latitude": 31.2304,
+            "last_server_ack_at": datetime.now(UTC).isoformat(),
         },
     )
     assert malformed.status_code == 422
