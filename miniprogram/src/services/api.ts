@@ -214,6 +214,7 @@ export type MemoryQueryResult = {
   intent: string
   evidence: Evidence[]
   memory_ids: string[]
+  day_footprint?: TodayFootprintResponse & { empty: boolean }
 }
 
 function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
@@ -228,6 +229,7 @@ function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
   const intent = value.intent
   const evidence = value.evidence
   const memoryIds = value.memory_ids
+  const dayFootprintRaw = value.day_footprint
 
   if (
     !(answer === null || typeof answer === 'string')
@@ -280,6 +282,28 @@ function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
     return item
   })
 
+  let parsedDayFootprint: (TodayFootprintResponse & { empty: boolean }) | undefined
+  if (dayFootprintRaw !== undefined && dayFootprintRaw !== null) {
+    if (
+      typeof dayFootprintRaw !== 'object'
+      || Array.isArray(dayFootprintRaw)
+    ) {
+      throw new Error('服务端查询响应格式不正确')
+    }
+    const parsedFootprint = parseTodayFootprintResponse(dayFootprintRaw)
+    const empty = (dayFootprintRaw as Record<string, unknown>).empty
+    if (
+      typeof empty !== 'boolean'
+      || empty !== (parsedFootprint.visits.length === 0)
+    ) {
+      throw new Error('服务端查询响应格式不正确')
+    }
+    parsedDayFootprint = {
+      ...parsedFootprint,
+      empty,
+    }
+  }
+
   const parsed: MemoryQueryResult = {
     answer,
     can_answer: canAnswer,
@@ -288,9 +312,13 @@ function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
     intent,
     evidence: parsedEvidence,
     memory_ids: parsedMemoryIds,
+    ...(parsedDayFootprint ? { day_footprint: parsedDayFootprint } : {}),
   }
 
-  const canonicalAnswer = (
+  const hasStructuredFootprint = Boolean(
+    parsedDayFootprint && parsedDayFootprint.visits.length > 0,
+  )
+  const canonicalEvidenceAnswer = (
     canAnswer === true
     && typeof answer === 'string'
     && answer.trim().length > 0
@@ -298,14 +326,22 @@ function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
     && parsedEvidence.length > 0
     && parsedMemoryIds.length > 0
   )
+  const canonicalStructuredAnswer = (
+    canAnswer === true
+    && typeof answer === 'string'
+    && answer.trim().length > 0
+    && (certainty === 'confirmed' || certainty === 'evidence')
+    && hasStructuredFootprint
+  )
   const canonicalNoEvidence = (
     canAnswer === false
-    && answer === null
+    && (answer === null || (typeof answer === 'string' && answer.trim().length > 0))
     && certainty === 'unknown'
     && parsedEvidence.length === 0
     && parsedMemoryIds.length === 0
+    && (!parsedDayFootprint || parsedDayFootprint.visits.length === 0)
   )
-  if (!canonicalAnswer && !canonicalNoEvidence) {
+  if (!canonicalEvidenceAnswer && !canonicalStructuredAnswer && !canonicalNoEvidence) {
     throw new Error('服务端查询响应格式不正确')
   }
   return parsed
