@@ -610,6 +610,43 @@ async def test_core002_dated_object_query_does_not_fall_back_to_current_location
     assert "书房抽屉" not in str(body)
 
 
+async def test_core002_parsed_date_is_never_silently_dropped(
+    client,
+    monkeypatch,
+):
+    headers, _ = await _new_user(client, "core002-date-not-dropped")
+    _freeze_local_day(monkeypatch, date(2026, 10, 1))
+
+    invalid_object = await client.post(
+        "/v1/intent/route",
+        headers=headers,
+        json={"question": "2026-02-30 护照在哪里？"},
+    )
+    assert invalid_object.status_code == 200
+    assert invalid_object.json()["intent"] == "UNKNOWN"
+    assert invalid_object.json()["reason"] == "INVALID_DATE"
+
+    unsupported = await client.post(
+        "/v1/intent/route",
+        headers=headers,
+        json={"question": "25号帮我查记录"},
+    )
+    assert unsupported.status_code == 200
+    assert unsupported.json()["intent"] == "UNKNOWN"
+    assert unsupported.json()["reason"] == "UNSUPPORTED"
+
+    query = await client.post(
+        "/v1/memory/query",
+        headers=headers,
+        json={"question": "25号帮我查记录"},
+    )
+    assert query.status_code == 200
+    body = query.json()
+    assert body["can_answer"] is False
+    assert body["answer"] is None
+    assert body["reason"] == "UNSUPPORTED"
+
+
 async def test_core002_invalid_and_future_date_queries_fail_closed(
     client,
     monkeypatch,
