@@ -757,18 +757,34 @@ class OfflineQueueStore {
           [normalizedReason, now, owner, ...ids],
         );
       }
-      await txn.rawInsert(
-        '''
-          INSERT INTO location_delivery_state (
-            owner_user_id, delivery_failure_count, last_failure_at, last_failure_reason
-          ) VALUES (?, 1, ?, ?)
-          ON CONFLICT(owner_user_id) DO UPDATE SET
-            delivery_failure_count = delivery_failure_count + 1,
-            last_failure_at = excluded.last_failure_at,
-            last_failure_reason = excluded.last_failure_reason
-        ''',
-        [owner, now, normalizedReason],
+      final stateRows = await txn.query(
+        'location_delivery_state',
+        where: 'owner_user_id = ?',
+        whereArgs: [owner],
+        limit: 1,
       );
+      if (stateRows.isEmpty) {
+        await txn.insert('location_delivery_state', {
+          'owner_user_id': owner,
+          'last_delivery_at': null,
+          'delivery_failure_count': 1,
+          'last_failure_at': now,
+          'last_failure_reason': normalizedReason,
+        });
+      } else {
+        final failures =
+            (stateRows.single['delivery_failure_count'] as int?) ?? 0;
+        await txn.update(
+          'location_delivery_state',
+          {
+            'delivery_failure_count': failures + 1,
+            'last_failure_at': now,
+            'last_failure_reason': normalizedReason,
+          },
+          where: 'owner_user_id = ?',
+          whereArgs: [owner],
+        );
+      }
     });
   }
 
@@ -789,16 +805,26 @@ class OfflineQueueStore {
       );
       if (deleted > 0) {
         final now = _utcNow().toIso8601String();
-        await txn.rawInsert(
-          '''
-            INSERT INTO location_delivery_state (
-              owner_user_id, last_delivery_at, delivery_failure_count
-            ) VALUES (?, ?, 0)
-            ON CONFLICT(owner_user_id) DO UPDATE SET
-              last_delivery_at = excluded.last_delivery_at
-          ''',
-          [owner, now],
+        final stateRows = await txn.query(
+          'location_delivery_state',
+          where: 'owner_user_id = ?',
+          whereArgs: [owner],
+          limit: 1,
         );
+        if (stateRows.isEmpty) {
+          await txn.insert('location_delivery_state', {
+            'owner_user_id': owner,
+            'last_delivery_at': now,
+            'delivery_failure_count': 0,
+          });
+        } else {
+          await txn.update(
+            'location_delivery_state',
+            {'last_delivery_at': now},
+            where: 'owner_user_id = ?',
+            whereArgs: [owner],
+          );
+        }
       }
       return deleted;
     });
