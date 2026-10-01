@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 import logging
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -18,8 +19,9 @@ from app.core.observability import (
     configure_observability_log_level,
     emit_operational_event,
 )
+from app.core.security import AccessTokenClaims
 from app.data_deletion_models import DataDeletionStatus
-from app.deps import get_authenticated_user_id
+from app.deps import get_authenticated_claims, get_authenticated_user_id
 from app.main import app
 from app.models import User
 from app.services.account_deletion_service import (
@@ -509,9 +511,19 @@ def test_storage_failure_event_is_safe_and_not_found_is_not_noisy(caplog):
 @pytest.fixture
 def deletion_api_overrides():
     user_id = uuid4()
+    now = datetime.now(UTC)
+    claims = AccessTokenClaims(
+        user_id=user_id,
+        session_id=uuid4(),
+        jti=uuid4(),
+        issued_at=now,
+        expires_at=now + timedelta(minutes=15),
+    )
+    app.dependency_overrides[get_authenticated_claims] = lambda: claims
     app.dependency_overrides[get_authenticated_user_id] = lambda: user_id
     app.dependency_overrides[get_object_storage] = lambda: object()
     yield user_id
+    app.dependency_overrides.pop(get_authenticated_claims, None)
     app.dependency_overrides.pop(get_authenticated_user_id, None)
     app.dependency_overrides.pop(get_object_storage, None)
 

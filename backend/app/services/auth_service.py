@@ -31,6 +31,19 @@ def normalize_email(value: str) -> str:
     return value.strip().casefold()
 
 
+def hash_password(password: str) -> str:
+    return _password_hasher.hash(password)
+
+
+def verify_password(secret_hash: str | None, password: str) -> bool:
+    if not secret_hash:
+        return False
+    try:
+        return bool(_password_hasher.verify(secret_hash, password))
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return False
+
+
 def register_email_password(
     db: Session,
     payload: RegisterRequest,
@@ -68,7 +81,7 @@ def register_email_password(
             user_id=user.id,
             provider=AuthProvider.EMAIL_PASSWORD,
             subject=subject,
-            secret_hash=_password_hasher.hash(payload.password),
+            secret_hash=hash_password(payload.password),
         )
         db.add(identity)
         create_legacy_full_entitlement(db, user_id=user.id)
@@ -161,11 +174,7 @@ def authenticate_email_password(
         if identity is not None and identity.secret_hash
         else _DUMMY_ARGON2_HASH
     )
-    verified = False
-    try:
-        verified = bool(_password_hasher.verify(verification_hash, payload.password))
-    except (VerifyMismatchError, VerificationError, InvalidHashError):
-        verified = False
+    verified = verify_password(verification_hash, payload.password)
 
     # [人工注释][S1-001][S1-FIX-004] HTTP 语义与 Argon2 成本路径都不区分账号不存在和密码错误。
     if identity is None or not identity.secret_hash or not verified:
@@ -178,10 +187,16 @@ def authenticate_email_password(
 
     clear_login_account_penalty(db, client_ip, subject)
 
+    if identity.verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="EMAIL_VERIFICATION_REQUIRED",
+        )
+
     user = _lock_login_user_for_authentication(db, identity.user_id)
 
     if _password_hasher.check_needs_rehash(identity.secret_hash):
-        identity.secret_hash = _password_hasher.hash(payload.password)
+        identity.secret_hash = hash_password(payload.password)
     identity.last_login_at = datetime.now(UTC)
     db.commit()
     return user

@@ -1,6 +1,7 @@
 from httpx import AsyncClient
 
 from app.services import auth_service
+from app.services.auth_delivery import MemoryAuthEmailDelivery
 
 
 async def _register(
@@ -23,6 +24,40 @@ async def _register(
     )
 
 
+async def _register_verified(
+    client: AsyncClient,
+    delivery: MemoryAuthEmailDelivery,
+    *,
+    email: str,
+    password: str = "correct-horse-battery-staple",
+    nickname: str = "Stage1 User",
+    timezone: str = "Asia/Shanghai",
+):
+    register = await _register(
+        client,
+        email=email,
+        password=password,
+        nickname=nickname,
+        timezone=timezone,
+    )
+    assert register.status_code == 201
+    assert delivery.verification_tokens
+    delivered_email, token = delivery.verification_tokens[-1]
+    assert delivered_email == email.strip().casefold()
+    verified = await client.post(
+        "/v1/auth/verify-email",
+        json={
+            "token": token,
+            "device_id": "stage1-test-device",
+            "client_platform": "test",
+        },
+    )
+    assert verified.status_code == 200
+    session = verified.json()["session"]
+    assert session is not None
+    return register, session
+
+
 async def _elder_dev_user(client: AsyncClient, nickname: str):
     response = await client.post(
         "/v1/auth/dev-token",
@@ -32,12 +67,17 @@ async def _elder_dev_user(client: AsyncClient, nickname: str):
     return response
 
 
-async def test_register_login_and_update_profile(client: AsyncClient):
-    # [人工注释][S1-001] 正式注册必须直接得到可访问本人资源的 Token。
-    register = await _register(client, email="stage1-auth@example.com")
-    assert register.status_code == 201
+async def test_register_login_and_update_profile(
+    client: AsyncClient,
+    auth_email_delivery: MemoryAuthEmailDelivery,
+):
+    register, session = await _register_verified(
+        client,
+        auth_email_delivery,
+        email="stage1-auth@example.com",
+    )
     body = register.json()
-    headers = {"Authorization": f"Bearer {body['access_token']}"}
+    headers = {"Authorization": f"Bearer {session['access_token']}"}
 
     me = await client.get("/v1/user", headers=headers)
     assert me.status_code == 200
@@ -167,10 +207,16 @@ async def test_register_rejects_client_owned_user_id_and_invalid_timezone(client
     assert bad_timezone.status_code == 422
 
 
-async def test_profile_rejects_invalid_timezone(client: AsyncClient):
-    register = await _register(client, email="stage1-profile-timezone@example.com")
-    assert register.status_code == 201
-    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+async def test_profile_rejects_invalid_timezone(
+    client: AsyncClient,
+    auth_email_delivery: MemoryAuthEmailDelivery,
+):
+    _, session = await _register_verified(
+        client,
+        auth_email_delivery,
+        email="stage1-profile-timezone@example.com",
+    )
+    headers = {"Authorization": f"Bearer {session['access_token']}"}
 
     response = await client.patch(
         "/v1/user",
@@ -184,7 +230,10 @@ async def test_profile_rejects_invalid_timezone(client: AsyncClient):
     assert current.json()["timezone"] == "Asia/Shanghai"
 
 
-async def test_profile_and_registration_reject_whitespace_only_text(client: AsyncClient):
+async def test_profile_and_registration_reject_whitespace_only_text(
+    client: AsyncClient,
+    auth_email_delivery: MemoryAuthEmailDelivery,
+):
     bad_register = await _register(
         client,
         email="stage1-whitespace-register@example.com",
@@ -192,9 +241,12 @@ async def test_profile_and_registration_reject_whitespace_only_text(client: Asyn
     )
     assert bad_register.status_code == 422
 
-    register = await _register(client, email="stage1-whitespace-profile@example.com")
-    assert register.status_code == 201
-    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+    _, session = await _register_verified(
+        client,
+        auth_email_delivery,
+        email="stage1-whitespace-profile@example.com",
+    )
+    headers = {"Authorization": f"Bearer {session['access_token']}"}
 
     # [人工注释][S1-FIX-005] nickname / locale 必须在 strip 后再校验，禁止把纯空白持久化为空字符串。
     nickname = await client.patch(

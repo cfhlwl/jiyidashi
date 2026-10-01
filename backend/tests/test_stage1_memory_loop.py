@@ -1,19 +1,14 @@
+from auth_test_helpers import register_verified_session
 from httpx import AsyncClient
 
 
 async def _stage1_headers(client: AsyncClient, email: str) -> dict[str, str]:
-    response = await client.post(
-        "/v1/auth/register",
-        json={
-            "email": email,
-            "password": "correct-horse-battery-staple",
-            "nickname": "闭环用户",
-            "timezone": "Asia/Shanghai",
-            "locale": "zh-CN",
-        },
+    headers, _, _ = await register_verified_session(
+        client,
+        email=email,
+        nickname="闭环用户",
     )
-    assert response.status_code == 201
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+    return headers
 
 
 async def test_formal_user_can_record_and_retrieve_text_memory(client: AsyncClient):

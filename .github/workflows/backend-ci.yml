@@ -66,6 +66,15 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      - name: AUTH-001 focused public auth regression
+        timeout-minutes: 5
+        run: >-
+          pytest -q
+          tests/test_auth.py
+          tests/test_auth_persistent_session.py
+          tests/test_stage1_auth.py
+          tests/test_account_delete.py
+
       - name: SQLite migration baseline
         env:
           DATABASE_URL: sqlite:///./ci-migration.db
@@ -332,6 +341,15 @@ jobs:
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_admin_console_integration.py
+
+      - name: PostgreSQL Public Auth session authority
+        # [AUTH-001] Real PostgreSQL proves opaque refresh storage, concurrent
+        # refresh exactly-one-success, replay-family revocation and revoked JWT denial.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_auth_session_integration.py
 
       - name: PostgreSQL Retrieval & Retention Analytics
         # [P1][#169] Real PostgreSQL proves retrieval/active-day dedupe,

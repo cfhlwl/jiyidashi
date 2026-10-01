@@ -12,22 +12,41 @@ from app.core.db import (
     UserDataAdmission,
     get_db,
 )
-from app.core.security import decode_access_token
+from app.core.security import AccessTokenClaims, decode_access_token_claims
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.models import User
+from app.services.auth_session_service import PublicAuthError, authenticate_access_session
 
 bearer = HTTPBearer()
 BearerCredentials = Annotated[HTTPAuthorizationCredentials, Depends(bearer)]
+DbSession = Annotated[Session, Depends(get_db)]
 
 
-def get_authenticated_user_id(credentials: BearerCredentials) -> UUID:
-    """Authenticate an account without applying application-data lifecycle gates."""
+def get_authenticated_claims(
+    credentials: BearerCredentials,
+    db: DbSession,
+) -> AccessTokenClaims:
+    """Authenticate against JWT signature *and* current durable session authority."""
 
-    return decode_access_token(credentials.credentials)
+    claims = decode_access_token_claims(credentials.credentials)
+    try:
+        authenticate_access_session(db, claims)
+    except PublicAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=exc.code,
+        ) from exc
+    return claims
+
+
+AuthenticatedClaims = Annotated[AccessTokenClaims, Depends(get_authenticated_claims)]
+
+
+def get_authenticated_user_id(claims: AuthenticatedClaims) -> UUID:
+    return claims.user_id
 
 
 AuthenticatedUser = Annotated[UUID, Depends(get_authenticated_user_id)]
-DbSession = Annotated[Session, Depends(get_db)]
 
 
 def get_current_user_id(user_id: AuthenticatedUser, db: DbSession) -> UUID:

@@ -16,8 +16,12 @@ const _jsonHeaders = {'content-type': 'application/json; charset=utf-8'};
 http.Response _loginResponse(String owner) => http.Response(
       jsonEncode({
         'access_token': 'token-$owner',
+        'refresh_token': 'refresh-$owner-abcdefghijklmnopqrstuvwxyz',
+        'session_id': owner,
         'token_type': 'bearer',
         'user_id': owner,
+        'access_expires_at': '2030-09-30T00:15:00Z',
+        'refresh_expires_at': '2030-10-30T00:00:00Z',
       }),
       200,
       headers: _jsonHeaders,
@@ -119,7 +123,15 @@ void main() {
         calls += 1;
         if (calls == 1) return _loginResponse(_ownerA);
         if (calls == 2) return oldProfile.future;
-        if (calls == 3) return _loginResponse(_ownerB);
+        if (calls == 3) {
+          expect(request.url.path, '/v1/auth/logout');
+          return http.Response(
+            jsonEncode({'accepted': true}),
+            200,
+            headers: _jsonHeaders,
+          );
+        }
+        if (calls == 4) return _loginResponse(_ownerB);
         return http.Response(
           jsonEncode(_profile(_ownerB, false)),
           200,
@@ -130,7 +142,7 @@ void main() {
 
     await api.login(email: 'a@example.com', password: 'password-123');
     final stale = api.getProfile();
-    api.logout();
+    await api.logout();
     await api.login(email: 'b@example.com', password: 'password-123');
     oldProfile.complete(
       http.Response(

@@ -13,6 +13,7 @@ from app.core.db import lock_user_data_destructive_handoff
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.entitlement_models import AIQuotaPeriod, AIUsageEvent, UserEntitlement
 from app.models import User
+from app.services.auth_session_service import revoke_all_sessions_in_transaction
 from app.services.data_deletion_service import (
     DataDeletionError,
     DataDeletionResult,
@@ -68,6 +69,7 @@ def _begin_or_load_account_deletion(
     *,
     user_id: UUID,
     request_id: UUID,
+    continuation_session_id: UUID | None = None,
 ) -> AccountDeletionOperation | None:
     lock_user_data_destructive_handoff(db, user_id=user_id)
     user = db.scalar(select(User).where(User.id == user_id).with_for_update())
@@ -81,8 +83,15 @@ def _begin_or_load_account_deletion(
         )
     )
     if existing is not None:
-        # [人工注释][S1-022] 不要求客户端永久记住首次 request_id。只要账号 gate 已存在，
-        # 新 request_id 也 join 同一不可逆注销流程，并返回 canonical request_id。
+        # Any recovery login may create a new narrowly useful session while deletion is
+        # in progress. Re-entering the deletion gate revokes all active sessions again
+        # before the request proceeds, so old bearer JWTs cannot outlive the destructive intent.
+        revoke_all_sessions_in_transaction(
+            db,
+            user_id=user_id,
+            reason="ACCOUNT_DELETION",
+            except_session_id=continuation_session_id,
+        )
         db.commit()
         return existing
 
@@ -106,6 +115,12 @@ def _begin_or_load_account_deletion(
         data_deletion_request_id=data_request_id,
     )
     db.add(operation)
+    revoke_all_sessions_in_transaction(
+        db,
+        user_id=user_id,
+        reason="ACCOUNT_DELETION",
+        except_session_id=continuation_session_id,
+    )
     try:
         db.commit()
         return operation
@@ -218,6 +233,7 @@ def delete_current_account(
     request_id: UUID,
     storage: ObjectStorage,
     local_cleanup_ready: bool,
+    continuation_session_id: UUID | None = None,
 ) -> AccountDeletionResult:
     """Converge account deletion through the existing S1-021 durable data erasure path."""
 
@@ -225,6 +241,7 @@ def delete_current_account(
         db,
         user_id=user_id,
         request_id=request_id,
+        continuation_session_id=continuation_session_id,
     )
     if operation is None:
         return _already_deleted(request_id)

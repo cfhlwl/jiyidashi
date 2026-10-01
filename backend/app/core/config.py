@@ -20,7 +20,20 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./jiyi.db"
     jwt_secret: str = "change-this-in-real-environments"
     jwt_algorithm: str = "HS256"
-    access_token_minutes: int = 60 * 24 * 7
+    jwt_issuer: str = "jiyidashi-api"
+    jwt_audience: str = "jiyidashi-public"
+    access_token_minutes: int = Field(default=15, ge=5, le=120)
+    refresh_token_days: int = Field(default=30, ge=1, le=180)
+    email_verification_minutes: int = Field(default=30, ge=5, le=1440)
+    password_reset_minutes: int = Field(default=30, ge=5, le=240)
+    auth_email_delivery_mode: str = "disabled"
+    auth_public_base_url: str = ""
+    auth_smtp_host: str = ""
+    auth_smtp_port: int = Field(default=587, ge=1, le=65535)
+    auth_smtp_username: str = ""
+    auth_smtp_password: str = ""
+    auth_smtp_from: str = ""
+    auth_smtp_starttls: bool = True
 
     # ADMIN-001: privileged browser auth is an independent opaque session domain.
     # No Admin bearer token is issued to browser JavaScript.
@@ -111,6 +124,15 @@ class Settings(BaseSettings):
     auth_login_window_seconds: int = 900
     auth_login_backoff_after_failures: int = 3
     auth_login_backoff_max_seconds: int = 60
+    auth_refresh_session_limit: int = Field(default=30, ge=5, le=300)
+    auth_refresh_window_seconds: int = Field(default=900, ge=60, le=86400)
+    auth_verify_resend_ip_limit: int = Field(default=10, ge=1, le=100)
+    auth_verify_resend_account_limit: int = Field(default=5, ge=1, le=50)
+    auth_verify_resend_window_seconds: int = Field(default=3600, ge=60, le=86400)
+    auth_password_reset_ip_limit: int = Field(default=10, ge=1, le=100)
+    auth_password_reset_account_limit: int = Field(default=5, ge=1, le=50)
+    auth_password_reset_confirm_limit: int = Field(default=10, ge=1, le=50)
+    auth_password_reset_window_seconds: int = Field(default=3600, ge=60, le=86400)
 
     # ADMIN-001 review hardening: privileged login has a separate, stricter
     # namespace/policy so ordinary-user traffic cannot consume or reset Admin buckets.
@@ -215,6 +237,22 @@ class Settings(BaseSettings):
 
         if self.is_production and not self.auth_rate_limit_enabled:
             raise ValueError("AUTH_RATE_LIMIT_ENABLED must be true in production")
+
+        if self.auth_email_delivery_mode not in {"disabled", "smtp"}:
+            raise ValueError("AUTH_EMAIL_DELIVERY_MODE must be disabled or smtp")
+        if self.is_production and self.auth_email_delivery_mode != "smtp":
+            raise ValueError("AUTH_EMAIL_DELIVERY_MODE must be smtp in production")
+        if self.auth_email_delivery_mode == "smtp":
+            if not self.auth_smtp_host.strip() or not self.auth_smtp_from.strip():
+                raise ValueError(
+                    "AUTH_SMTP_HOST and AUTH_SMTP_FROM are required when email delivery is smtp"
+                )
+            public_base = self.auth_public_base_url.strip()
+            parsed_auth_base = urlparse(public_base)
+            if not parsed_auth_base.scheme or not parsed_auth_base.netloc:
+                raise ValueError("AUTH_PUBLIC_BASE_URL must be an absolute URL")
+            if self.is_production and parsed_auth_base.scheme.lower() != "https":
+                raise ValueError("AUTH_PUBLIC_BASE_URL must use HTTPS in production")
 
         if self.is_production and (
             self.jwt_secret == "change-this-in-real-environments"

@@ -21,7 +21,13 @@ on:
       - "backend/requirements.production.lock"
       - "backend/app/core/config.py"
       - "backend/migrations/**"
+      - "backend/app/admin_*.py"
+      - "backend/app/api/admin_*.py"
+      - "backend/app/services/admin_*.py"
+      - "backend/app/maintenance/**"
+      - "admin/**"
       - "docker-compose.prod.yml"
+      - "ops/Dockerfile"
       - "ops/**"
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - ".github/workflows/production-deployment-ci.yml"
@@ -47,7 +53,13 @@ on:
       - "backend/requirements.production.lock"
       - "backend/app/core/config.py"
       - "backend/migrations/**"
+      - "backend/app/admin_*.py"
+      - "backend/app/api/admin_*.py"
+      - "backend/app/services/admin_*.py"
+      - "backend/app/maintenance/**"
+      - "admin/**"
       - "docker-compose.prod.yml"
+      - "ops/Dockerfile"
       - "ops/**"
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - ".github/workflows/production-deployment-ci.yml"
@@ -72,6 +84,7 @@ jobs:
           echo "actual checkout SHA:   $actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
           echo "BACKEND_IMAGE=jiyidashi-backend:$EXPECTED_SHA" >> "$GITHUB_ENV"
+          echo "EDGE_IMAGE=jiyidashi-edge:$EXPECTED_SHA" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -93,7 +106,12 @@ jobs:
           DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/jiyi_prod_ci
           JWT_SECRET=ci-only-jwt-secret-that-is-longer-than-thirty-two-bytes
           JWT_ALGORITHM=HS256
-          ACCESS_TOKEN_MINUTES=60
+          ACCESS_TOKEN_MINUTES=15
+          JWT_ISSUER=jiyidashi-api
+          JWT_AUDIENCE=jiyidashi-public
+          REFRESH_TOKEN_DAYS=30
+          EMAIL_VERIFICATION_MINUTES=30
+          PASSWORD_RESET_MINUTES=30
           ENABLE_DEV_AUTH=false
           AUTO_CREATE_SCHEMA=false
           CORS_ORIGINS=[]
@@ -116,6 +134,24 @@ jobs:
           AUTH_LOGIN_WINDOW_SECONDS=900
           AUTH_LOGIN_BACKOFF_AFTER_FAILURES=3
           AUTH_LOGIN_BACKOFF_MAX_SECONDS=60
+          AUTH_REFRESH_SESSION_LIMIT=30
+          AUTH_REFRESH_WINDOW_SECONDS=900
+          AUTH_VERIFY_RESEND_IP_LIMIT=10
+          AUTH_VERIFY_RESEND_ACCOUNT_LIMIT=5
+          AUTH_VERIFY_RESEND_WINDOW_SECONDS=3600
+          AUTH_PASSWORD_RESET_IP_LIMIT=10
+          AUTH_PASSWORD_RESET_ACCOUNT_LIMIT=5
+          AUTH_PASSWORD_RESET_CONFIRM_LIMIT=10
+          AUTH_PASSWORD_RESET_WINDOW_SECONDS=3600
+
+          AUTH_EMAIL_DELIVERY_MODE=smtp
+          AUTH_PUBLIC_BASE_URL=https://app.example.test/auth
+          AUTH_SMTP_HOST=smtp.example.invalid
+          AUTH_SMTP_PORT=587
+          AUTH_SMTP_USERNAME=ci-smtp-user
+          AUTH_SMTP_PASSWORD=ci-smtp-password
+          AUTH_SMTP_FROM=accounts@example.test
+          AUTH_SMTP_STARTTLS=true
 
           STORAGE_BACKEND=disabled
           STORAGE_BUCKET=
@@ -169,7 +205,7 @@ jobs:
       - name: Reject unsafe actual production environments
         shell: bash
         run: |
-          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'JWT_SECRET=short'; do
+          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'; do
             bad_env="$RUNNER_TEMP/bad-production.env"
             cp "$ENV_FILE" "$bad_env"
             key="${mutation%%=*}"
@@ -269,6 +305,17 @@ jobs:
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Prepare immutable Admin edge image from exact Git tree
+        shell: bash
+        run: |
+          export RELEASE_IMAGE_STATE_DIR="$RUNNER_TEMP/release-images"
+          bash ops/prepare-release-image.sh "$EDGE_IMAGE" "$EXPECTED_SHA" edge
+          bash ops/verify-recorded-release-image.sh "$EDGE_IMAGE" "$EXPECTED_SHA" edge
+          docker run --rm --entrypoint sh "$EDGE_IMAGE" -ceu \
+            'test -s /srv/admin/index.html; test -n "$(find /srv/admin/assets -type f -print -quit)"'
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
       - name: Reject untracked release build context
         shell: bash
         env:
@@ -287,7 +334,11 @@ jobs:
 
       - name: Validate Caddy configuration
         run: |
-          docker run --rm             -e API_DOMAIN=api.example.test             -e ACME_EMAIL=ops@example.test             -v "$PWD/ops/Caddyfile:/etc/caddy/Caddyfile:ro"             caddy:2.8.4-alpine             caddy validate --config /etc/caddy/Caddyfile
+          docker run --rm \
+            -e API_DOMAIN=api.example.test \
+            -e ACME_EMAIL=ops@example.test \
+            "$EDGE_IMAGE" \
+            caddy validate --config /etc/caddy/Caddyfile
 
       - name: Seed existing PostgreSQL volume then stop database
         shell: bash

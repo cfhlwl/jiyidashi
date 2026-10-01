@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.observability import emit_operational_event
 from app.data_deletion_models import DataDeletionStatus
-from app.deps import get_authenticated_user_id
+from app.deps import AuthenticatedClaims
 from app.security_models import SecuritySignalCode
 from app.services.account_deletion_service import (
     AccountDeletionError,
@@ -21,7 +21,6 @@ from app.services.object_storage import ObjectStorage, get_object_storage
 from app.services.security_alerting import SecurityScope, record_security_signal
 
 router = APIRouter(prefix="/account", tags=["account"])
-AuthenticatedUser = Annotated[UUID, Depends(get_authenticated_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
 Storage = Annotated[ObjectStorage, Depends(get_object_storage)]
 
@@ -50,19 +49,21 @@ class AccountDeleteResponse(BaseModel):
 def delete_account(
     payload: AccountDeleteRequest,
     response: Response,
-    user_id: AuthenticatedUser,
+    claims: AuthenticatedClaims,
     db: DbSession,
     storage: Storage,
 ) -> AccountDeleteResponse:
-    # [人工注释][S1-022] 此端点只做 JWT 认证，不经过普通 user-data gate，
-    # 否则已经进入 Account/Delete gate 的账号将无法继续恢复对象存储或 DB 删除。
+    # This endpoint authenticates the exact durable session but intentionally skips
+    # the ordinary user-data gate: the account-deletion gate blocks normal data APIs
+    # while this one continuation session finishes PREPARE -> local purge -> COMMIT.
     try:
         result = delete_current_account(
             db,
-            user_id=user_id,
+            user_id=claims.user_id,
             request_id=payload.request_id,
             storage=storage,
             local_cleanup_ready=payload.local_cleanup_ready,
+            continuation_session_id=claims.session_id,
         )
     except (AccountDeletionError, DataDeletionError) as exc:
         retryable = exc.status_code >= 500 or exc.status_code in {409, 423, 429}

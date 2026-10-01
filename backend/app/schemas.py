@@ -135,6 +135,44 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
+    device_id: str = Field(default="legacy-client", min_length=1, max_length=120)
+    client_platform: str | None = Field(default=None, max_length=32)
+    device_name: str | None = Field(default=None, max_length=120)
+
+
+class RefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    refresh_token: str = Field(min_length=32, max_length=512)
+
+
+class EmailVerificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=16, max_length=512)
+    device_id: str = Field(default="legacy-client", min_length=1, max_length=120)
+    client_platform: str | None = Field(default=None, max_length=32)
+    device_name: str | None = Field(default=None, max_length=120)
+
+
+class EmailResendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+
+
+class ForgotPasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=16, max_length=512)
+    new_password: str = Field(min_length=10, max_length=128)
+
+
+class ChangePasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=10, max_length=128)
 
 
 class DevTokenRequest(BaseModel):
@@ -142,13 +180,43 @@ class DevTokenRequest(BaseModel):
     nickname: str = Field(default="测试用户", min_length=1, max_length=80)
 
 
+class RegistrationResponse(BaseModel):
+    user_id: UUID
+    verification_required: bool = True
+    verification_delivery_pending: bool = False
+
+
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
+    session_id: UUID
     token_type: str = "bearer"
     user_id: UUID
-    # [人工注释][S1-022-FIX-001] 这是恢复导航提示，不是授权位；
-    # 账号删除中的所有普通 API 仍必须经过服务端 gate 返回 423。
+    access_expires_at: datetime
+    refresh_expires_at: datetime
+    # 注销恢复导航提示，不是授权位。
     account_deletion_in_progress: bool = False
+
+
+class EmailVerificationResponse(BaseModel):
+    verified: bool = True
+    already_verified: bool = False
+    session: TokenResponse | None = None
+
+
+class AuthSessionRead(BaseModel):
+    id: UUID
+    device_id: str
+    client_platform: str | None
+    device_name: str | None
+    created_at: datetime
+    last_used_at: datetime
+    expires_at: datetime
+    current: bool = False
+
+
+class AuthAcceptedResponse(BaseModel):
+    accepted: bool = True
 
 
 class UserRead(ORMModel):

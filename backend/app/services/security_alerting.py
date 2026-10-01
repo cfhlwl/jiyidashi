@@ -31,6 +31,12 @@ class SecurityScope(StrEnum):
     AUTH_REGISTER_IP = "AUTH_REGISTER_IP"
     AUTH_LOGIN_IP = "AUTH_LOGIN_IP"
     AUTH_LOGIN_ACCOUNT_IP = "AUTH_LOGIN_ACCOUNT_IP"
+    AUTH_REFRESH_SESSION = "AUTH_REFRESH_SESSION"
+    AUTH_VERIFY_IP = "AUTH_VERIFY_IP"
+    AUTH_VERIFY_ACCOUNT = "AUTH_VERIFY_ACCOUNT"
+    AUTH_PASSWORD_RESET_IP = "AUTH_PASSWORD_RESET_IP"
+    AUTH_PASSWORD_RESET_ACCOUNT = "AUTH_PASSWORD_RESET_ACCOUNT"
+    AUTH_PASSWORD_RESET_CONFIRM = "AUTH_PASSWORD_RESET_CONFIRM"
     ADMIN_LOGIN_IP = "ADMIN_LOGIN_IP"
     ADMIN_LOGIN_ACCOUNT_IP = "ADMIN_LOGIN_ACCOUNT_IP"
     FAMILY_CURRENT_LOCATION = "FAMILY_CURRENT_LOCATION"
@@ -67,6 +73,12 @@ RULES: dict[SecuritySignalCode, SecurityRulePolicy] = {
                 SecurityScope.AUTH_REGISTER_IP,
                 SecurityScope.AUTH_LOGIN_IP,
                 SecurityScope.AUTH_LOGIN_ACCOUNT_IP,
+                SecurityScope.AUTH_REFRESH_SESSION,
+                SecurityScope.AUTH_VERIFY_IP,
+                SecurityScope.AUTH_VERIFY_ACCOUNT,
+                SecurityScope.AUTH_PASSWORD_RESET_IP,
+                SecurityScope.AUTH_PASSWORD_RESET_ACCOUNT,
+                SecurityScope.AUTH_PASSWORD_RESET_CONFIRM,
                 SecurityScope.ADMIN_LOGIN_IP,
                 SecurityScope.ADMIN_LOGIN_ACCOUNT_IP,
             }
@@ -83,6 +95,13 @@ RULES: dict[SecuritySignalCode, SecurityRulePolicy] = {
                 SecurityScope.ADMIN_LOGIN_ACCOUNT_IP,
             }
         ),
+    ),
+    SecuritySignalCode.AUTH_REFRESH_REPLAY: SecurityRulePolicy(
+        window_seconds=3600,
+        threshold=1,
+        cooldown_seconds=3600,
+        severity=SecuritySeverity.HIGH,
+        allowed_scopes=frozenset({SecurityScope.AUTH_REFRESH_SESSION}),
     ),
     SecuritySignalCode.FAMILY_SENSITIVE_READ_DENIED: SecurityRulePolicy(
         window_seconds=600,

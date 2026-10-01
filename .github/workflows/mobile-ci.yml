@@ -49,8 +49,30 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify dependency lock
+        id: android-lock
+        shell: bash
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Upload resolved dependency lock
+        if: failure() && steps.android-lock.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: auth001-pubspec-lock-${{ github.event.pull_request.head.sha || github.sha }}
+          path: mobile/pubspec.lock
+          retention-days: 3
+
       - name: Analyze
         run: flutter analyze
+
+      - name: Test AUTH-001 secure session
+        timeout-minutes: 5
+        run: >-
+          flutter test
+          test/auth_session_restore_test.dart
+          test/api_client_test.dart
+          test/offline_identity_test.dart
+          --reporter expanded
 
       # [人工注释][S1-026] Onboarding 先单独跑，失败时能直接定位；全量测试继续作为正式回归门禁。
       - name: Test onboarding
@@ -77,6 +99,8 @@ jobs:
           grep -q 'android.permission.ACCESS_BACKGROUND_LOCATION' android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' android/app/src/main/AndroidManifest.xml
           grep -q 'android:foregroundServiceType="location"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:allowBackup="false"' android/app/src/main/AndroidManifest.xml
+          grep -q 'minSdk = 24' android/app/build.gradle.kts
 
       - name: Build Android debug APK
         # Debug 继续覆盖开发安装包；production dart-define 禁止静默回退 localhost。
@@ -133,8 +157,14 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify dependency lock
+        shell: bash
+        run: git diff --exit-code -- pubspec.lock
+
       - name: Test iOS native location policy
-        timeout-minutes: 10
+        # AUTH-001 adds flutter_secure_storage native compilation; keep the exact
+        # RunnerTests gate, but do not mistake a cold CocoaPods/Xcode build for failure.
+        timeout-minutes: 20
         shell: bash
         run: |
           set -euo pipefail
@@ -157,6 +187,10 @@ jobs:
           grep -q 'NSLocationWhenInUseUsageDescription' ios/Runner/Info.plist
           grep -q 'NSLocationAlwaysAndWhenInUseUsageDescription' ios/Runner/Info.plist
           grep -q '<string>location</string>' ios/Runner/Info.plist
+          grep -q '<key>keychain-access-groups</key>' ios/Runner/DebugProfile.entitlements
+          grep -q '<key>keychain-access-groups</key>' ios/Runner/Release.entitlements
+          grep -q 'CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;' ios/Runner.xcodeproj/project.pbxproj
+          grep -q 'CODE_SIGN_ENTITLEMENTS = Runner/Release.entitlements;' ios/Runner.xcodeproj/project.pbxproj
 
       - name: Build iOS without codesigning
         # [人工注释][S1-FIX-007] iOS 同样以 production dart-define 验证 build-time endpoint 契约。

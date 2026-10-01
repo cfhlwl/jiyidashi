@@ -223,6 +223,10 @@ class _ZeroQueue extends OfflineQueueStore {
 class _AuthenticationApi extends JiYiApiClient {
   _AuthenticationApi() : super(baseUrl: 'https://auth-onboarding.invalid/v1');
 
+  @override
+  Future<AuthRestoreStatus> restorePersistedSession() async =>
+      AuthRestoreStatus.noPersistedSession;
+
   void _authenticate() {
     accessToken = 'auth-onboarding-token';
     authenticatedUserId = owner;
@@ -236,11 +240,27 @@ class _AuthenticationApi extends JiYiApiClient {
     String timezone = 'Asia/Shanghai',
     String locale = 'zh-CN',
   }) async {
+    return <String, dynamic>{
+      'user_id': owner,
+      'verification_required': true,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> verifyEmail(String token) async {
     _authenticate();
     return <String, dynamic>{
-      'access_token': accessToken,
-      'token_type': 'bearer',
-      'user_id': owner,
+      'verified': true,
+      'already_verified': false,
+      'session': <String, dynamic>{
+        'access_token': accessToken,
+        'refresh_token': 'onboarding-refresh-abcdefghijklmnopqrstuvwxyz',
+        'session_id': owner,
+        'token_type': 'bearer',
+        'user_id': owner,
+        'access_expires_at': '2030-09-30T00:15:00Z',
+        'refresh_expires_at': '2030-10-30T00:00:00Z',
+      },
     };
   }
 
@@ -392,6 +412,11 @@ void main() {
         onboardingStore: store,
       ),
     );
+    await _pumpUntil(
+      tester,
+      () => find.text('第一次使用？创建账号').evaluate().isNotEmpty,
+      reason: 'auth page after cold-start restore',
+    );
 
     await tester.tap(find.text('第一次使用？创建账号'));
     await tester.pump();
@@ -403,8 +428,18 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '创建账号'));
     await _pumpUntil(
       tester,
+      () => find.text('验证邮箱').evaluate().isNotEmpty,
+      reason: 'registration verification screen',
+    );
+
+    final verificationFields = find.byType(TextField);
+    expect(verificationFields, findsNWidgets(2));
+    await tester.enterText(verificationFields.at(1), 'test-verification-token');
+    await tester.tap(find.widgetWithText(FilledButton, '完成验证'));
+    await _pumpUntil(
+      tester,
       () => find.byKey(const ValueKey('onboarding-intro')).evaluate().isNotEmpty,
-      reason: 'registration-triggered onboarding intro',
+      reason: 'verified-registration onboarding intro',
     );
 
     expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
@@ -422,6 +457,11 @@ void main() {
         offlineQueue: _ZeroQueue(),
         onboardingStore: store,
       ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.byType(TextField).evaluate().length == 2,
+      reason: 'login page after cold-start restore',
     );
 
     final fields = find.byType(TextField);

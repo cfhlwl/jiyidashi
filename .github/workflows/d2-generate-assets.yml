@@ -73,9 +73,12 @@ jobs:
           echo "generated font sha:  $generated_font_sha"
           cp test/fonts/JiYiGoldenCJK-Regular.ttf /tmp/JiYiGoldenCJK-Regular.ttf
 
-          # The committed deterministic test font must be byte-for-byte
-          # reproducible from the pinned source, corpus and toolchain.
-          test "$committed_font_sha" = "$generated_font_sha"
+          # AUTH-001 final gate: committed deterministic subset must already match
+          # this exact pinned source/corpus/toolchain. CI never writes it back.
+          if [ "$committed_font_sha" != "$generated_font_sha" ]; then
+            echo "Committed CJK golden font is stale."
+            exit 1
+          fi
 
       - name: Analyze
         run: flutter analyze
