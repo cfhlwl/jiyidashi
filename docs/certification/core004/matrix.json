@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "issue": 190,
+  "certification_state": "ACTIVE",
+  "base_sha": "b8d5a01c8b2329bdadd9ea63df59bc705d834add",
+  "entries": [
+    {
+      "scenario_id": "C1",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C1",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C2",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C2",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C3",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C3",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C4",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C4",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C5",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C5",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C6",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C6",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C7",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C7",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C8",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C8",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C9",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C9",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C10",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "C10",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "OWNER_SESSION",
+      "platform": "ANDROID",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    },
+    {
+      "scenario_id": "OWNER_SESSION",
+      "platform": "IOS",
+      "result": "BLOCKED",
+      "evidence": [],
+      "blocker_code": "PHYSICAL_RUN_NOT_EXECUTED",
+      "blocker": "Mandatory real-device run has not been executed yet."
+    }
+  ]
+}
