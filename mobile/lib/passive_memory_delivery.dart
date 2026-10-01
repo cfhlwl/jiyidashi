@@ -9,6 +9,7 @@ import 'offline_queue.dart';
 
 enum PassiveMemoryRecoveryStatus {
   delivered,
+  deferred,
   noWork,
   busy,
   noSession,
@@ -68,6 +69,10 @@ class PassiveMemoryDeliveryCoordinator {
   Future<PassiveMemoryRecoveryReport> recoverAndDeliver({
     bool restoreSessionIfNeeded = false,
     bool allowProducerResume = true,
+    bool forceDelivery = true,
+    int minimumBatchSize = 1,
+    Duration maxBatchAge = Duration.zero,
+    void Function(List<NativeLocationSample>)? onNativeSamples,
   }) {
     final active = _activeRecovery;
     if (active != null) return active;
@@ -76,6 +81,10 @@ class PassiveMemoryDeliveryCoordinator {
     tracked = _recoverAndDeliverOnce(
       restoreSessionIfNeeded: restoreSessionIfNeeded,
       allowProducerResume: allowProducerResume,
+      forceDelivery: forceDelivery,
+      minimumBatchSize: minimumBatchSize,
+      maxBatchAge: maxBatchAge,
+      onNativeSamples: onNativeSamples,
     ).whenComplete(() {
       if (identical(_activeRecovery, tracked)) {
         _activeRecovery = null;
@@ -88,7 +97,25 @@ class PassiveMemoryDeliveryCoordinator {
   Future<PassiveMemoryRecoveryReport> _recoverAndDeliverOnce({
     required bool restoreSessionIfNeeded,
     required bool allowProducerResume,
+    required bool forceDelivery,
+    required int minimumBatchSize,
+    required Duration maxBatchAge,
+    required void Function(List<NativeLocationSample>)? onNativeSamples,
   }) async {
+    if (minimumBatchSize <= 0) {
+      throw ArgumentError.value(
+        minimumBatchSize,
+        'minimumBatchSize',
+        'must be positive',
+      );
+    }
+    if (maxBatchAge.isNegative) {
+      throw ArgumentError.value(
+        maxBatchAge,
+        'maxBatchAge',
+        'must not be negative',
+      );
+    }
     var restored = false;
     if (_api.authenticatedUserId == null && restoreSessionIfNeeded) {
       final result = await _api.restorePersistedSession();
@@ -296,7 +323,12 @@ class PassiveMemoryDeliveryCoordinator {
         return await _stale(owner, restored);
       }
 
-      handedOff = await _handoffNative(owner, generation, sessionId);
+      handedOff = await _handoffNative(
+        owner,
+        generation,
+        sessionId,
+        onNativeSamples: onNativeSamples,
+      );
       if (!await _authorityStillPersisted(owner, generation, sessionId)) {
         return await _stale(owner, restored);
       }
@@ -311,6 +343,18 @@ class PassiveMemoryDeliveryCoordinator {
           nativeHandedOff: handedOff,
           sessionRestored: restored,
         );
+      }
+      if (!forceDelivery) {
+        final oldestAge =
+            DateTime.now().toUtc().difference(queued.first.recordedAt);
+        if (queued.length < minimumBatchSize && oldestAge < maxBatchAge) {
+          return PassiveMemoryRecoveryReport(
+            status: PassiveMemoryRecoveryStatus.deferred,
+            ownerUserId: owner,
+            nativeHandedOff: handedOff,
+            sessionRestored: restored,
+          );
+        }
       }
       final ids = queued.map((item) => item.clientUuid).toList(growable: false);
       final points = queued
@@ -408,8 +452,20 @@ class PassiveMemoryDeliveryCoordinator {
             sessionRestored: restored,
           );
         }
-        final retryable = error.statusCode == 401 ||
-            error.statusCode == 403 ||
+        if (error.statusCode == 401) {
+          final failureReason = 'HTTP 401: ${error.message}';
+          await _store.recordLocationDeliveryFailure(owner, ids, failureReason);
+          await _recordNativeDeliveryFailure(owner, failureReason);
+          await _disableNativeFailClosed(owner);
+          return PassiveMemoryRecoveryReport(
+            status: PassiveMemoryRecoveryStatus.noSession,
+            ownerUserId: owner,
+            nativeHandedOff: handedOff,
+            deliveryAttempted: points.length,
+            sessionRestored: restored,
+          );
+        }
+        final retryable = error.statusCode == 403 ||
             error.statusCode == 408 ||
             error.statusCode == 429 ||
             error.statusCode >= 500 ||
@@ -455,8 +511,9 @@ class PassiveMemoryDeliveryCoordinator {
   Future<int> _handoffNative(
     String owner,
     int generation,
-    String sessionId,
-  ) async {
+    String sessionId, {
+    required void Function(List<NativeLocationSample>)? onNativeSamples,
+  }) async {
     List<NativeLocationSample> samples;
     try {
       samples = await _samplingBridge.drainSamples(owner, limit: 100);
@@ -466,6 +523,14 @@ class PassiveMemoryDeliveryCoordinator {
       return 0;
     }
     if (!await _authorityStillPersisted(owner, generation, sessionId)) return 0;
+
+    if (onNativeSamples != null && samples.isNotEmpty) {
+      try {
+        onNativeSamples(List<NativeLocationSample>.unmodifiable(samples));
+      } catch (_) {
+        // Motion/adaptive observers are advisory and must never block durable handoff.
+      }
+    }
 
     final acknowledged = <String>[];
     var sqliteCapacityBlocked = false;
