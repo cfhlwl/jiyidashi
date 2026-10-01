@@ -190,6 +190,97 @@ class LocationBatchResult {
   }
 }
 
+bool _strictDateOnly(String value) {
+  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
+  if (match == null) return false;
+  final year = int.parse(match.group(1)!);
+  final month = int.parse(match.group(2)!);
+  final day = int.parse(match.group(3)!);
+  final parsed = DateTime.utc(year, month, day);
+  return parsed.year == year && parsed.month == month && parsed.day == day;
+}
+
+bool _strictIsoDateTime(String value) {
+  final match = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$',
+  ).firstMatch(value);
+  if (match == null || !_strictDateOnly(value.substring(0, 10))) return false;
+  final hour = int.parse(match.group(4)!);
+  final minute = int.parse(match.group(5)!);
+  final second = int.parse(match.group(6)!);
+  return hour <= 23 &&
+      minute <= 59 &&
+      second <= 59 &&
+      DateTime.tryParse(value) != null;
+}
+
+Map<String, dynamic>? _parseQueryDayFootprint(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! Map<String, dynamic>) {
+    throw ProtocolException('服务端查询响应格式不正确');
+  }
+  final timezone = raw['timezone'];
+  final day = raw['day'];
+  final empty = raw['empty'];
+  final visits = raw['visits'];
+  if (timezone is! String ||
+      timezone.trim().isEmpty ||
+      day is! String ||
+      !_strictDateOnly(day) ||
+      empty is! bool ||
+      visits is! List<dynamic>) {
+    throw ProtocolException('服务端查询响应格式不正确');
+  }
+
+  final parsedVisits = <Map<String, dynamic>>[];
+  for (final item in visits) {
+    if (item is! Map<String, dynamic>) {
+      throw ProtocolException('服务端查询响应格式不正确');
+    }
+    final id = item['id'];
+    final placeId = item['place_id'];
+    final placeName = item['place_name'];
+    final arrivedAt = item['arrived_at'];
+    final leftAt = item['left_at'];
+    final arrivedAtLocal = item['arrived_at_local'];
+    final leftAtLocal = item['left_at_local'];
+    final confidence = item['confidence'];
+    final visitSource = item['visit_source'];
+    final finalized = item['visit_finalized'];
+    if (id is! String ||
+        id.trim().isEmpty ||
+        placeId is! String ||
+        placeId.trim().isEmpty ||
+        placeName is! String ||
+        placeName.trim().isEmpty ||
+        arrivedAt is! String ||
+        !_strictIsoDateTime(arrivedAt) ||
+        (leftAt != null &&
+            (leftAt is! String || !_strictIsoDateTime(leftAt))) ||
+        arrivedAtLocal is! String ||
+        !_strictIsoDateTime(arrivedAtLocal) ||
+        (leftAtLocal != null &&
+            (leftAtLocal is! String || !_strictIsoDateTime(leftAtLocal))) ||
+        confidence is! num ||
+        !confidence.isFinite ||
+        visitSource is! String ||
+        visitSource.trim().isEmpty ||
+        finalized is! bool) {
+      throw ProtocolException('服务端查询响应格式不正确');
+    }
+    parsedVisits.add(Map<String, dynamic>.unmodifiable(item));
+  }
+  if (empty != parsedVisits.isEmpty) {
+    throw ProtocolException('服务端查询响应格式不正确');
+  }
+  return Map<String, dynamic>.unmodifiable({
+    'timezone': timezone,
+    'day': day,
+    'empty': empty,
+    'visits': List<Map<String, dynamic>>.unmodifiable(parsedVisits),
+  });
+}
+
 Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
   final answer = data['answer'];
   final canAnswer = data['can_answer'];
@@ -198,6 +289,7 @@ Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
   final intent = data['intent'];
   final evidence = data['evidence'];
   final memoryIds = data['memory_ids'];
+  final parsedDayFootprint = _parseQueryDayFootprint(data['day_footprint']);
   if ((answer != null && answer is! String) ||
       canAnswer is! bool ||
       certainty is! String ||
@@ -252,22 +344,36 @@ Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
     'intent': intent,
     'evidence': List<Map<String, dynamic>>.unmodifiable(parsedEvidence),
     'memory_ids': List<String>.unmodifiable(parsedIds),
+    if (parsedDayFootprint != null) 'day_footprint': parsedDayFootprint,
   });
 
-  final canonicalAnswer =
+  final hasStructuredFootprint =
+      parsedDayFootprint != null &&
+      (parsedDayFootprint['visits'] as List<dynamic>).isNotEmpty;
+  final canonicalEvidenceAnswer =
       canAnswer == true &&
       answer is String &&
       answer.trim().isNotEmpty &&
       (certainty == 'confirmed' || certainty == 'evidence') &&
       parsedEvidence.isNotEmpty &&
       parsedIds.isNotEmpty;
+  final canonicalStructuredAnswer =
+      canAnswer == true &&
+      answer is String &&
+      answer.trim().isNotEmpty &&
+      (certainty == 'confirmed' || certainty == 'evidence') &&
+      hasStructuredFootprint;
   final canonicalNoEvidence =
       canAnswer == false &&
-      answer == null &&
+      (answer == null || (answer is String && answer.trim().isNotEmpty)) &&
       certainty == 'unknown' &&
       parsedEvidence.isEmpty &&
-      parsedIds.isEmpty;
-  if (!canonicalAnswer && !canonicalNoEvidence) {
+      parsedIds.isEmpty &&
+      (parsedDayFootprint == null ||
+          (parsedDayFootprint['visits'] as List<dynamic>).isEmpty);
+  if (!canonicalEvidenceAnswer &&
+      !canonicalStructuredAnswer &&
+      !canonicalNoEvidence) {
     throw ProtocolException('服务端查询响应格式不正确');
   }
   return parsed;
