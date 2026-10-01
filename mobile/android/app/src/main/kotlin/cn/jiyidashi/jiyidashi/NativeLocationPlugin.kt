@@ -410,6 +410,7 @@ class NativeLocationPlugin :
             applicationContext.stopService(
                 Intent(applicationContext, NativeLocationTrackingService::class.java),
             )
+            PassiveMemoryRecoveryScheduler.cancelPeriodic(applicationContext)
         }
         return status(ownerUserId)
     }
@@ -452,6 +453,7 @@ class NativeLocationPlugin :
             store.activeOwnerUserId = null
             return status(ownerUserId, forcedReason = "native_start_failed")
         }
+        PassiveMemoryRecoveryScheduler.ensurePeriodic(applicationContext)
         // startForegroundService() schedules service creation asynchronously. This one return
         // may trust the permission/owner gate that was just checked; every later status()
         // requires the service's real isActive flag and will fail closed if startup failed.
@@ -479,6 +481,7 @@ class NativeLocationPlugin :
             applicationContext.stopService(
                 Intent(applicationContext, NativeLocationTrackingService::class.java),
             )
+            PassiveMemoryRecoveryScheduler.cancelPeriodic(applicationContext)
         }
         return status(ownerUserId)
     }
