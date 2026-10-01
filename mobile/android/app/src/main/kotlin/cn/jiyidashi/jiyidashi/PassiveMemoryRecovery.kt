@@ -35,6 +35,7 @@ object PassiveMemoryRecoveryScheduler {
         context: Context,
         reason: String,
         markProducerRecovery: Boolean = true,
+        initialDelayMinutes: Long = 0,
     ) {
         val appContext = context.applicationContext
         val store = NativeLocationStore(appContext)
@@ -48,7 +49,7 @@ object PassiveMemoryRecoveryScheduler {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        val request = OneTimeWorkRequestBuilder<PassiveMemoryRecoveryWorker>()
+        val requestBuilder = OneTimeWorkRequestBuilder<PassiveMemoryRecoveryWorker>()
             .setConstraints(constraints)
             .setInputData(workDataOf(PassiveMemoryRecoveryWorker.KEY_REASON to reason))
             .setBackoffCriteria(
@@ -56,7 +57,10 @@ object PassiveMemoryRecoveryScheduler {
                 15,
                 TimeUnit.MINUTES,
             )
-            .build()
+        if (initialDelayMinutes > 0) {
+            requestBuilder.setInitialDelay(initialDelayMinutes, TimeUnit.MINUTES)
+        }
+        val request = requestBuilder.build()
 
         WorkManager.getInstance(appContext).enqueueUniqueWork(
             UNIQUE_WORK,
