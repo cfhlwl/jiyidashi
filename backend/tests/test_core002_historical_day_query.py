@@ -12,6 +12,7 @@ from app.services.date_query_parser import (
     parse_date_expression,
     resolve_user_date_expression,
 )
+from app.services.query_service import query_memory
 from app.services.time_service import user_day_bounds_utc
 
 
@@ -118,6 +119,35 @@ async def test_core002_date_parser_uses_owner_timezone_near_utc_boundary(client)
     assert east_today.day == date(2026, 10, 2)
     assert west_today.day == date(2026, 10, 1)
     assert east_yesterday.day == date(2026, 10, 1)
+
+
+async def test_core002_memory_query_uses_one_reference_clock_across_midnight(
+    client,
+    monkeypatch,
+):
+    _, user_id = await _new_user(client, "core002-one-clock")
+    _set_timezone(user_id, "Asia/Shanghai")
+
+    class CountingDateTime(datetime):
+        calls = 0
+
+        @classmethod
+        def now(cls, tz=None):
+            cls.calls += 1
+            # A second read would cross Asia/Shanghai local midnight.
+            if cls.calls == 1:
+                return datetime(2026, 10, 1, 15, 59, 59, 900000, tzinfo=UTC)
+            return datetime(2026, 10, 1, 16, 0, 0, 100000, tzinfo=UTC)
+
+    monkeypatch.setattr("app.services.query_service.datetime", CountingDateTime)
+
+    with SessionLocal() as db:
+        result = query_memory(db, user_id, "今天去哪了？")
+
+    assert CountingDateTime.calls == 1
+    assert result.intent == "DATE_FOOTPRINT_QUERY"
+    assert result.day_footprint is not None
+    assert result.day_footprint.day == date(2026, 10, 1)
 
 
 async def test_core002_day_footprint_overlap_owner_order_and_typed_endpoint(
