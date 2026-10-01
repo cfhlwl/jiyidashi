@@ -198,6 +198,9 @@ jobs:
           set -euo pipefail
           grep -q 'NSLocationWhenInUseUsageDescription' ios/Runner/Info.plist
           grep -q 'NSLocationAlwaysAndWhenInUseUsageDescription' ios/Runner/Info.plist
+          grep -q 'BGTaskSchedulerPermittedIdentifiers' ios/Runner/Info.plist
+          grep -q 'cn.jiyidashi.jiyidashi.passive-recovery' ios/Runner/Info.plist
+          grep -q '<string>fetch</string>' ios/Runner/Info.plist
           grep -q '<string>location</string>' ios/Runner/Info.plist
           grep -q '<key>keychain-access-groups</key>' ios/Runner/DebugProfile.entitlements
           grep -q '<key>keychain-access-groups</key>' ios/Runner/Release.entitlements
