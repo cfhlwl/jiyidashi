@@ -516,6 +516,7 @@ void main() {
         api: authApi,
         offlineQueue: _ZeroQueue(),
         onboardingStore: store,
+        motionSamplingBridge: _IdleMotionBridge(),
       ),
     );
     await _pumpUntil(
