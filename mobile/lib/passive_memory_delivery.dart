@@ -322,7 +322,7 @@ class PassiveMemoryDeliveryCoordinator {
           sessionRestored: restored,
         );
       } on TransportException catch (error) {
-        if (_authorityCurrent(owner, generation)) {
+        if (await _authorityStillPersisted(owner, generation, sessionId)) {
           await _store.recordLocationDeliveryFailure(owner, ids, error.message);
           await _recordNativeDeliveryFailure(owner, error.message);
         }
@@ -334,7 +334,7 @@ class PassiveMemoryDeliveryCoordinator {
           sessionRestored: restored,
         );
       } on ApiException catch (error) {
-        if (!_authorityCurrent(owner, generation)) {
+        if (!await _authorityStillPersisted(owner, generation, sessionId)) {
           return _stale(owner, restored);
         }
         if (error.statusCode == 409 && error.message == 'RECORDING_PAUSED') {
@@ -380,7 +380,7 @@ class PassiveMemoryDeliveryCoordinator {
           sessionRestored: restored,
         );
       } on ProtocolException catch (error) {
-        if (_authorityCurrent(owner, generation)) {
+        if (await _authorityStillPersisted(owner, generation, sessionId)) {
           await _store.recordLocationDeliveryFailure(owner, ids, error.message);
           await _recordNativeDeliveryFailure(owner, error.message);
         }
