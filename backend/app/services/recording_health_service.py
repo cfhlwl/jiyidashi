@@ -453,6 +453,7 @@ def _day_coverage(
             coverage_state=coverage_state,
             has_capacity_pressure=False,
             has_recorded_gap=bool(all_gaps),
+            has_unexplained_gap=bool(unknown_gaps),
             recent_gaps=recent_gaps,
         ),
         all_gap_seconds=all_gap_seconds,
@@ -789,11 +790,7 @@ def _derive_status(
             RecordingGapState.KNOWN,
         )
 
-    non_privacy_gap = any(
-        gap.reason != RecordingGapReason.PRIVACY_PAUSED
-        for gap in today_coverage.recent_gaps
-    )
-    if non_privacy_gap:
+    if today_coverage.has_unexplained_gap:
         return (
             RecordingHealthStatus.DEGRADED,
             RecordingHealthReason.RECORDED_GAP,
@@ -939,11 +936,25 @@ def get_recording_health(
         current_permission_block=current_permission_block,
     )
 
+    active_gap_reason = {
+        RecordingHealthReason.PRIVACY_PAUSED: RecordingGapReason.PRIVACY_PAUSED,
+        RecordingHealthReason.PERMISSION_BLOCKED: RecordingGapReason.PERMISSION_BLOCKED,
+        RecordingHealthReason.LOCATION_SERVICES_OFF: RecordingGapReason.LOCATION_SERVICES_OFF,
+        RecordingHealthReason.PLATFORM_RESTRICTED: RecordingGapReason.PLATFORM_RESTRICTED,
+        RecordingHealthReason.QUEUE_CAPACITY_PRESSURE: RecordingGapReason.QUEUE_CAPACITY_PRESSURE,
+        RecordingHealthReason.QUEUE_BACKLOG: RecordingGapReason.DELIVERY_BACKLOG,
+        RecordingHealthReason.DELIVERY_BACKLOG: RecordingGapReason.DELIVERY_BACKLOG,
+        RecordingHealthReason.PRODUCER_NOT_RUNNING: RecordingGapReason.PRODUCER_NOT_RUNNING,
+        RecordingHealthReason.NO_RECENT_FIX: RecordingGapReason.NO_RECENT_FIX,
+        RecordingHealthReason.RECORDED_GAP: RecordingGapReason.UNKNOWN,
+    }.get(reason)
+
     return RecordingHealthResponse(
         health=snapshot,
         today=coverage,
         aggregates=aggregates,
         recent_gaps=coverage.recent_gaps[-RECENT_GAP_LIMIT:],
+        active_gap_reasons=[] if active_gap_reason is None else [active_gap_reason],
         server_observed_at=now,
         native_state_observed=client_state is not None,
     )
