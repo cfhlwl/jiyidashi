@@ -237,9 +237,12 @@ class PassiveMemoryRecoveryWorker(
         // Android can kill the whole process without Service.onDestroy(). Persisted
         // RUNNING + matching active owner + no live service means only "eligible to recover",
         // never permission to restart. Dart still has to refresh AUTH-001 and server Privacy.
-        if (store.runtime == NativeLocationRuntimeState.RUNNING &&
-            store.activeOwnerUserId == enabledOwner &&
-            !NativeLocationTrackingService.isActive
+        if (NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = store.enabledOwnerUserId,
+                activeOwnerUserId = store.activeOwnerUserId,
+                runtime = store.runtime,
+                nativeProducerActive = NativeLocationTrackingService.isActive,
+            )
         ) {
             store.markRecoveryPending(enabledOwner, "process_recreated")
             store.activeOwnerUserId = null
