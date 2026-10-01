@@ -415,6 +415,12 @@ class _GoldenLocationBridge implements NativeLocationBridge {
       _status();
 
   @override
+  Future<NativeLocationStatus> openLocationServicesSettings(
+    String ownerUserId,
+  ) async =>
+      _status();
+
+  @override
   Future<NativeLocationStatus> disableAutomaticLocation(
     String ownerUserId,
   ) async =>
