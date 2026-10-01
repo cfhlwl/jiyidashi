@@ -94,6 +94,7 @@ class PassiveMemoryDeliveryCoordinator {
       switch (result) {
         case AuthRestoreStatus.restored:
           restored = true;
+          break;
         case AuthRestoreStatus.noPersistedSession:
         case AuthRestoreStatus.invalidSession:
           return const PassiveMemoryRecoveryReport(
