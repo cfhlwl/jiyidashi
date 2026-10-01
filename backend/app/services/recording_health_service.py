@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -177,7 +175,6 @@ def _day_coverage(
     now: datetime,
 ) -> _DayCoverageInternal:
     timezone = user_timezone_name(db, user_id)
-    zone = ZoneInfo(timezone)
     start_utc, end_utc = user_day_bounds_utc(db, user_id, day)
     effective_end = min(end_utc, now)
 
@@ -199,7 +196,6 @@ def _day_coverage(
             Visit.arrived_at,
             Visit.left_at,
             Visit.source_ended_at,
-            Visit.finalized_at,
         )
         .where(
             Visit.user_id == user_id,
@@ -212,7 +208,7 @@ def _day_coverage(
     evidence_intervals: list[_Interval] = []
     observed_instants: list[datetime] = list(receipt_times)
     visit_count = 0
-    for arrived_at, left_at, source_ended_at, finalized_at in visit_rows:
+    for arrived_at, left_at, source_ended_at in visit_rows:
         visit_count += 1
         arrived = _utc(arrived_at)
         observed_instants.append(arrived)
@@ -542,7 +538,11 @@ def _derive_status(
             RecordingGapState.KNOWN,
         )
 
-    if today_coverage.has_recorded_gap:
+    non_privacy_gap = any(
+        gap.reason != RecordingGapReason.PRIVACY_PAUSED
+        for gap in today_coverage.recent_gaps
+    )
+    if non_privacy_gap:
         return (
             RecordingHealthStatus.DEGRADED,
             RecordingHealthReason.RECORDED_GAP,
@@ -574,9 +574,11 @@ def get_recording_health(
     coverage = coverage_internal.response
 
     privacy = privacy_service.get_privacy_state(db, user_id)
-    privacy_paused = privacy_service.is_pause_active(
-        privacy.recording_paused_until,
-        now=now,
+    # Use the same request clock as local-day coverage so a request crossing local
+    # midnight cannot derive privacy and coverage from two different instants.
+    privacy_paused = (
+        privacy.recording_paused_until is not None
+        and _utc(privacy.recording_paused_until) > now
     )
     server_last_fix, server_last_ack, last_visit = _server_last_activity(
         db,
