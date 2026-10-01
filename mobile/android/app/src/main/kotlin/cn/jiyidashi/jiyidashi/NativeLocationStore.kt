@@ -38,6 +38,39 @@ internal class NativeLocationStore(context: Context) {
             }.apply()
         }
 
+    var recoveryPendingOwnerUserId: String?
+        get() = prefs.getString(KEY_RECOVERY_PENDING_OWNER, null)
+        private set(value) {
+            prefs.edit().apply {
+                if (value == null) remove(KEY_RECOVERY_PENDING_OWNER)
+                else putString(KEY_RECOVERY_PENDING_OWNER, value)
+            }.commit()
+        }
+
+    fun markRecoveryPending(ownerUserId: String, reason: String) {
+        recoveryPendingOwnerUserId = ownerUserId
+        prefs.edit()
+            .putString(KEY_RECOVERY_PENDING_REASON, reason)
+            .putLong(KEY_RECOVERY_PENDING_AT, System.currentTimeMillis())
+            .commit()
+    }
+
+    fun clearRecoveryPending(ownerUserId: String) {
+        if (recoveryPendingOwnerUserId != ownerUserId) return
+        prefs.edit()
+            .remove(KEY_RECOVERY_PENDING_OWNER)
+            .remove(KEY_RECOVERY_PENDING_REASON)
+            .remove(KEY_RECOVERY_PENDING_AT)
+            .commit()
+    }
+
+    fun recoveryReason(ownerUserId: String): String? =
+        if (recoveryPendingOwnerUserId == ownerUserId) {
+            prefs.getString(KEY_RECOVERY_PENDING_REASON, null)
+        } else {
+            null
+        }
+
     var runtime: NativeLocationRuntimeState
         get() = when (prefs.getString(KEY_RUNTIME, null)) {
             "running" -> NativeLocationRuntimeState.RUNNING
@@ -563,6 +596,9 @@ internal class NativeLocationStore(context: Context) {
         private const val KEY_ENABLED_OWNER = "enabled_owner_user_id"
         private const val KEY_ACTIVE_OWNER = "active_owner_user_id"
         private const val KEY_PENDING_ENABLE_OWNER = "pending_enable_owner_user_id"
+        private const val KEY_RECOVERY_PENDING_OWNER = "recovery_pending_owner_user_id"
+        private const val KEY_RECOVERY_PENDING_REASON = "recovery_pending_reason"
+        private const val KEY_RECOVERY_PENDING_AT = "recovery_pending_at"
         private const val KEY_RUNTIME = "runtime"
         private const val KEY_FOREGROUND_ASKED = "foreground_permission_requested"
         private const val KEY_BACKGROUND_ASKED = "background_permission_requested"
