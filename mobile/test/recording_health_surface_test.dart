@@ -45,7 +45,11 @@ Map<String, dynamic> _healthResponse({
       'status_reason': reason,
       'automatic_enabled': status == 'HEALTHY',
       'privacy_paused': status == 'PAUSED',
-      'permission_state': status == 'BLOCKED' ? 'DENIED' : null,
+      'permission_state': status == 'HEALTHY'
+          ? 'BACKGROUND'
+          : status == 'BLOCKED'
+              ? 'DENIED'
+              : null,
       'location_services_state': 'ON',
       'background_runtime_state': 'ELIGIBLE',
       'battery_optimization_state': 'OPTIMIZED',
