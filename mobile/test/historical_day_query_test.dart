@@ -6,10 +6,10 @@ import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/stage1_app.dart';
 
 Map<String, dynamic> footprintResult({
-  String placeName = '万达广场',
+  String placeName = '公司',
 }) =>
     <String, dynamic>{
-      'answer': '2026-09-25 的可靠足迹：\n18:16–19:05  $placeName',
+      'answer': '2026-09-25 的可靠足迹：\n18:16-19:05  $placeName',
       'can_answer': true,
       'certainty': 'confirmed',
       'reason': null,
@@ -79,7 +79,7 @@ void main() {
     await _submitHistoricalQuery(tester, api);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('万达广场'), findsWidgets);
+    expect(find.textContaining('公司'), findsWidgets);
     expect(find.text('18:16 - 19:05'), findsOneWidget);
     expect(find.text('按日期看足迹'), findsOneWidget);
     expect(find.text('DATE_FOOTPRINT_QUERY'), findsNothing);
