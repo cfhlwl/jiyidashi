@@ -686,7 +686,7 @@ void main() {
         if (calls == 1) return loginResponse();
         return http.Response(
           jsonEncode({
-            'answer': '2026-09-25 的可靠足迹：\\n18:16–19:05  万达广场',
+            'answer': '2026-09-25 的可靠足迹：\\n18:16-19:05  公司',
             'can_answer': true,
             'certainty': 'confirmed',
             'reason': null,
@@ -701,7 +701,7 @@ void main() {
                 {
                   'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
                   'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-                  'place_name': '万达广场',
+                  'place_name': '公司',
                   'place_latitude': 31.2,
                   'place_longitude': 121.4,
                   'place_address': '测试地址',
@@ -731,7 +731,7 @@ void main() {
     expect(result['memory_ids'], isEmpty);
     final footprint = result['day_footprint'] as Map<String, dynamic>;
     expect(footprint['day'], '2026-09-25');
-    expect((footprint['visits'] as List<dynamic>).single['place_name'], '万达广场');
+    expect((footprint['visits'] as List<dynamic>).single['place_name'], '公司');
   });
 
   test('day footprint empty flag mismatch fails closed', () async {
