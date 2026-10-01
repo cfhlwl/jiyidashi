@@ -122,7 +122,26 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       return;
     }
     if (!mounted) return;
-    final result = await api.restorePersistedSession();
+    late final AuthRestoreStatus result;
+    try {
+      result = await api.restorePersistedSession();
+    } on PlatformException {
+      if (!mounted) return;
+      setState(() {
+        authenticated = false;
+        restoringSession = false;
+        restoreMessage = '暂时无法读取安全登录状态，请稍后重新打开应用。';
+      });
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        authenticated = false;
+        restoringSession = false;
+        restoreMessage = '暂时无法恢复登录状态，请稍后重试。';
+      });
+      return;
+    }
     if (!mounted) return;
     if (result == AuthRestoreStatus.restored) {
       try {
