@@ -2710,7 +2710,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                           footprintVisits.isNotEmpty
                       ? (widget.elderMode ? '找到了这天的足迹' : '这天的足迹')
                       : (widget.elderMode ? '找到了可信记录' : '找到相关记忆'))
-                  : (widget.elderMode ? '还没有可靠记录' : '没有足够依据'),
+                  : (widget.elderMode ? '我还不知道它在哪里' : '没有足够依据'),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -2718,7 +2718,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                     answer.isNotEmpty
                         ? answer
                         : (widget.elderMode
-                            ? '没有找到足够可靠的记录。你可以先用“帮我记一下”补充信息。'
+                            ? '没有找到足够可靠的记录。你可以先用“帮我记一下”告诉我放在哪里。'
                             : '我没有找到能够支持答案的相关记录。'),
                     style: theme.textTheme.titleMedium,
                   ),
