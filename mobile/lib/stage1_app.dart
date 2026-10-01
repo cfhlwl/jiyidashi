@@ -895,7 +895,7 @@ class AppShell extends StatefulWidget {
     this.resumeAccountDeletion = false,
     this.locationBridge,
     this.motionSamplingBridge,
-    required this.passiveDelivery,
+    this.passiveDelivery,
     this.sync,
     this.onElderModeChanged,
     required this.onLogout,
@@ -908,7 +908,7 @@ class AppShell extends StatefulWidget {
   final bool resumeAccountDeletion;
   final NativeLocationBridge? locationBridge;
   final NativeMotionSamplingBridge? motionSamplingBridge;
-  final PassiveMemoryDeliveryCoordinator passiveDelivery;
+  final PassiveMemoryDeliveryCoordinator? passiveDelivery;
   final OfflineSyncCoordinator? sync;
   final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
@@ -939,18 +939,28 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final store = widget.onboardingStore;
     final owner = widget.api.authenticatedUserId?.trim();
     if (owner != null && owner.isNotEmpty) {
+      final locationBridge =
+          widget.locationBridge ?? MethodChannelNativeLocationBridge();
+      final motionBridge =
+          widget.motionSamplingBridge ?? MethodChannelNativeMotionSamplingBridge();
       final location = NativeLocationController(
-        bridge: widget.locationBridge ?? MethodChannelNativeLocationBridge(),
+        bridge: locationBridge,
         ownerUserId: owner,
       );
       _nativeLocation = location;
+      final delivery = widget.passiveDelivery ??
+          PassiveMemoryDeliveryCoordinator(
+            api: widget.api,
+            store: widget.offlineQueue,
+            locationBridge: locationBridge,
+            samplingBridge: motionBridge,
+          );
       _locationSampling = LocationSamplingCoordinator(
         api: widget.api,
         store: widget.offlineQueue,
         locationController: location,
-        nativeBridge:
-            widget.motionSamplingBridge ?? MethodChannelNativeMotionSamplingBridge(),
-        deliveryCoordinator: widget.passiveDelivery,
+        nativeBridge: motionBridge,
+        deliveryCoordinator: delivery,
         closeNativeBridgeOnDispose: widget.motionSamplingBridge == null,
       );
     }
