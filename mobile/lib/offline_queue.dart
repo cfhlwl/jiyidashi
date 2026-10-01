@@ -155,11 +155,23 @@ class LocationSampleQueueItem {
   }
 }
 
+class LocationQueueCapacityException implements Exception {
+  const LocationQueueCapacityException(this.capacity);
+
+  final int capacity;
+
+  @override
+  String toString() =>
+      'Location queue is at its bounded capacity of $capacity samples';
+}
+
 class LocationQueueDiagnostics {
   const LocationQueueDiagnostics({
     required this.queueDepth,
     required this.blockedCount,
     required this.deliveryFailureCount,
+    this.queueCapacity = 0,
+    this.capacityPressure = false,
     this.oldestPendingAt,
     this.lastEnqueueAt,
     this.lastDeliveryAt,
@@ -170,6 +182,8 @@ class LocationQueueDiagnostics {
   final int queueDepth;
   final int blockedCount;
   final int deliveryFailureCount;
+  final int queueCapacity;
+  final bool capacityPressure;
   final DateTime? oldestPendingAt;
   final DateTime? lastEnqueueAt;
   final DateTime? lastDeliveryAt;
@@ -186,12 +200,17 @@ class OfflineQueueStore {
     Future<String> Function()? databasePathProvider,
     String Function()? clientUuidFactory,
     DateTime Function()? now,
-  })  : _factory = factory,
+    int locationQueueCapacityPerOwner =
+        defaultLocationQueueCapacityPerOwner,
+  })  : assert(locationQueueCapacityPerOwner > 0),
+        _factory = factory,
         _databasePathProvider = databasePathProvider ?? _defaultDatabasePath,
         _clientUuidFactory = clientUuidFactory ?? _newClientUuid,
-        _now = now ?? DateTime.now;
+        _now = now ?? DateTime.now,
+        _locationQueueCapacityPerOwner = locationQueueCapacityPerOwner;
 
   static const int schemaVersion = 4;
+  static const int defaultLocationQueueCapacityPerOwner = 1000;
   static const String databaseFileName = 'jiyidashi_stage1.sqlite3';
   static const String textMemoryOperation = 'text_memory';
   static const String objectLocationOperation = 'object_location';
@@ -200,6 +219,7 @@ class OfflineQueueStore {
   final Future<String> Function() _databasePathProvider;
   final String Function() _clientUuidFactory;
   final DateTime Function() _now;
+  final int _locationQueueCapacityPerOwner;
   Future<Database>? _databaseFuture;
   final Set<String> _accountDeletionQuiescedOwners = <String>{};
   final Map<String, int> _activeEnqueueCounts = <String, int>{};
@@ -596,6 +616,21 @@ class OfflineQueueStore {
           return existing;
         }
 
+        final countRows = await txn.rawQuery(
+          '''
+            SELECT COUNT(*) AS total
+            FROM location_sample_queue
+            WHERE owner_user_id = ?
+          ''',
+          [owner],
+        );
+        final ownerDepth = (countRows.single['total'] as int?) ?? 0;
+        if (ownerDepth >= _locationQueueCapacityPerOwner) {
+          throw LocationQueueCapacityException(
+            _locationQueueCapacityPerOwner,
+          );
+        }
+
         final createdAt = _utcNow().toIso8601String();
         final id = await txn.insert('location_sample_queue', {
           'owner_user_id': owner,
@@ -881,9 +916,13 @@ class OfflineQueueStore {
         value is String ? DateTime.tryParse(value)?.toUtc() : null;
     final row = rows.single;
     final stateRow = state.isEmpty ? const <String, Object?>{} : state.single;
+    final queueDepth = (row['queue_depth'] as int?) ?? 0;
     return LocationQueueDiagnostics(
-      queueDepth: (row['queue_depth'] as int?) ?? 0,
+      queueDepth: queueDepth,
       blockedCount: (row['blocked_count'] as int?) ?? 0,
+      queueCapacity: _locationQueueCapacityPerOwner,
+      capacityPressure:
+          queueDepth >= (_locationQueueCapacityPerOwner * 4 ~/ 5),
       oldestPendingAt: parse(row['oldest_pending_at']),
       lastEnqueueAt: parse(row['last_enqueue_at']),
       lastDeliveryAt: parse(stateRow['last_delivery_at']),
