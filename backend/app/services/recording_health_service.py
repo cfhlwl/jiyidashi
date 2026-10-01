@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
-from zoneinfo import ZoneInfo
 
 from app.models import (
     LocationIngestReceipt,
@@ -27,11 +28,7 @@ from app.schemas import (
     RecordingTodayCoverage,
 )
 from app.services import privacy_service
-from app.services.time_service import (
-    local_today,
-    user_day_bounds_utc,
-    user_timezone_name,
-)
+from app.services.time_service import local_today, user_timezone_name
 
 # CORE-003 V1 deterministic thresholds. These are product policy, not heuristics generated
 # by the UI or an LLM. A green state requires fresh capture + fresh server ACK + a running
@@ -283,7 +280,7 @@ def _day_coverage(
             if clipped is not None:
                 evidence_intervals.append(clipped)
 
-    for previous, current in zip(receipt_times, receipt_times[1:]):
+    for previous, current in zip(receipt_times, receipt_times[1:], strict=False):
         if current <= previous:
             continue
         if current - previous <= SAMPLE_CONTINUITY_MAX_GAP:
@@ -343,7 +340,11 @@ def _day_coverage(
 
     unknown_gaps: list[_Interval] = []
     ordered_observations = sorted(set(observed_instants))
-    for previous, current in zip(ordered_observations, ordered_observations[1:]):
+    for previous, current in zip(
+        ordered_observations,
+        ordered_observations[1:],
+        strict=False,
+    ):
         if current - previous < RECORDED_GAP_MIN_DURATION:
             continue
         candidate = _clip_interval(
