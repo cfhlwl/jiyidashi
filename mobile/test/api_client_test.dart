@@ -498,6 +498,36 @@ void main() {
     expect(result['certainty'], 'unknown');
   });
 
+  test('generic no-evidence cannot smuggle a non-null answer', () async {
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        return http.Response(
+          jsonEncode({
+            'answer': '这不是结构化日期查询，不应展示',
+            'can_answer': false,
+            'certainty': 'unknown',
+            'reason': 'NO_EVIDENCE',
+            'intent': 'MEMORY_SEARCH',
+            'evidence': [],
+            'memory_ids': [],
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    await expectLater(
+      api.queryMemory('普通问题'),
+      throwsA(isA<ProtocolException>()),
+    );
+  });
+
   test('memory query unknown certainty fails closed', () async {
     var calls = 0;
     final api = JiYiApiClient(
