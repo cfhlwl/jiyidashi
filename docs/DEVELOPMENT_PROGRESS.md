@@ -39,13 +39,13 @@
 <!-- Stage 3S：Annual Summary / Issue #91 / PR #93 已完成 complete-year snapshot、512+1/256+1 bounded inventory、all-raw S3-013 authority、strict Y-slot provider boundary、provider 前后完整重验与 PostgreSQL Annual Gate，并合并 main=dd558913；S3-017 转 ✅，Stage 3 S3-001~S3-019 正式收口。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-09-30  
+> 最后更新：2026-10-01  
 > Stage 1「记得住」：✅ complete  
 > Stage 2「自动记」：✅ complete  
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**CORE-001 / Passive Memory Reliability V1**。AUTH-001 已通过 PR #183 合并 `main=d20617973499c2a04cede58016999f31d331bdfc`；CORE-001 正在完成后台恢复、durable queue V2、owner/privacy-aware delivery 与 Android/iOS platform-compliant recovery。其后依次为 CORE-002 → CORE-003 → CORE-004，再继续 BIZ/OPS/SEC Production Launch Hardening、OPS-005 Capacity Acceptance，最后进入 **#136 real-env Production Acceptance → public/commercial rollout**；V3-001+ 未开始。
+> 当前阶段：**CORE-001 / Passive Memory Reliability V1（Issue #184 / PR #185）**。AUTH-001 已合并；CORE-001 正在收口 UI-independent delivery、Native Durable Queue V2/backpressure、Android WorkManager process/reboot/package-replace recovery、iOS relaunch/privacy quarantine recovery、stable UUID replay 与 exact owner/auth/privacy fail-closed。后续按 **CORE-002 → CORE-003 → CORE-004 → UIUX-P0-002 Consumer Visual Fidelity** 推进，再进入其余 Production Launch Hardening。
 
 ## 状态规则
 
@@ -299,7 +299,7 @@
 | V2-P0-OBS | Production Observability Foundation V1 | ✅ | Issue #161 / PR #170 已正式审查并合并；merge `91e2c8b044912bb61ecada7d679c9054db64df7c`；request correlation、structured JSON telemetry、AI/storage/delete operational events、bounded DB readiness 与 production healthcheck 已收口 |
 | V2-P1-MINI | Mini Program advanced V2 surfaces | ✅ | Issue #162 / PR #175 已完成三轮正式极窄复审并合并；merge `7c4ba02b64de67f3627980c3978d1ad2d68fedef`；LifeEvent/LifeStage、Known Duration、Long-term Reasoning、Cross-year History、Annual/Life Memoir 与 strict parser/stale-race 边界已收口 |
 | V2-P1-FLUTTER | Flutter Personal Memory Graph parity | ✅ | Issue #163 / PR #176 已完成两轮正式极窄复审并合并；merge `ce0f1578ad3217cb08d5ae7ae7a81d94f33d2d57`；11 条 V2 flow、strict parser、SEC-013、stale authority、single-flight、opaque cursor、signed media、offline boundary 与 Flutter visual gates 已收口 |
-| UIUX-P0-001 | JiYi Product Experience V2 | ✅ | Issue #177 / PR #178 已完成最终 extremely narrow review 并合并；merge `84e68c44c08ecea209d34b53b35569cce781ffdb`；Flutter + Mini 五域 IA、Design System V2、用户文案、旗舰视觉、small-screen/large-font/Elder/accessibility、Flutter Golden、Mini 33 张真视觉 artifact 与 production-language regression 已收口 |
+| UIUX-P0-001 | JiYi Product Experience V2 | ✅ | Issue #177 / PR #178 已完成最终 extremely narrow review 并合并；merge `84e68c44c08ecea209d34b53b35569cce781ffdb`；Flutter + Mini 五域 IA、Design System V2、用户文案、small-screen/large-font/Elder/accessibility、Golden/visual regression 与 production-language regression 已收口。**此项完成不等于 2026-09-29 用户确认的 8 张高保真参考图已完成视觉还原；该视觉 fidelity 缺口由 UIUX-P0-002 单独收口。** |
 
 ---
 
@@ -308,7 +308,7 @@
 
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| ADMIN-001 | JiYi Production Admin Console V1 | 🔵 | 当前主线：独立 Admin 身份/角色、Dashboard、用户/家庭/会员与额度、删除/注销、安全告警、AI/ASR/检索/存储/系统健康、审计日志、受控设置中心；要求企业级管理后台视觉、无开发语言泄漏、私密内容默认不可见、危险操作二次确认与 Admin visual regression；完成后进入 AUTH-001 + Core Product Closure |
+| ADMIN-001 | JiYi Production Admin Console V1 | ✅ | Issue #180 / PR #181 已完成正式产品/安全审查并合并；merge `97d6a3559a9ab5726acf3e8e8cc27c4c96095869`。独立 Admin 身份/RBAC、Dashboard、用户/家庭/会员与额度、删除/注销、安全中心、AI/ASR/检索/存储/系统健康、审计、受控设置、Admin visual regression 已收口。 |
 | OPS-002 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | **P0 public-launch blocker**。首版优先 PostgreSQL-backed durable jobs + claim/lease worker，不强制 Redis；先接管 Data Delete progression、Account Delete 在 `local_cleanup_ready=true` 后的服务端 progression、stale PENDING media cleanup、Security Alert retry、analytics/location retention 等不能依赖客户端/人工触发的任务；第二阶段再迁移 Annual/Life Memoir、Monthly/Annual Summary、Embedding refresh 等长耗时 AI。Redis 仅作为后续 wake-up/scale 层，PostgreSQL 始终是 Job authority。 |
 | OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：Docker/Compose/Caddy、production env fail-closed、migration、immutable image、backup/restore/rollback 与 CI 已合并；真实 public-server acceptance 继续作为**最终上线 Gate**，顺延到 Production Launch Hardening + OPS-005 capacity acceptance 全部完成后，以最终生产拓扑验收 DNS/TLS/private storage/client domains/backup/restore/rollback/容量。 |
 ### OPS-002 架构决策（2026-09-30，production-launch audit 修订）
@@ -378,7 +378,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 
 | ID | 优先级 | 功能 / 风险 | 状态 | 冻结结论 |
 | --- | --- | --- | --- | --- |
-| AUTH-001 | P0 | Public Auth & Persistent Session Hardening | ✅ | Issue #182 / PR #183 已完成 durable AuthSession、rotating refresh/replay defense、secure Flutter persistence/cold-start restore、Admin production path 与 exact-head 全绿；merge `d20617973499c2a04cede58016999f31d331bdfc`。 |
+| AUTH-001 | P0 | Public Auth & Persistent Session Hardening | ✅ | Issue #182 / PR #183 已完成正式安全审查并合并；merge `d20617973499c2a04cede58016999f31d331bdfc`。durable server session、15 分钟短 JWT、opaque refresh rotation/replay revoke、logout/logout-all/revoke、邮箱验证/密码恢复、Keychain/Keystore secure persistence、cold-start server-authoritative restore、并发 refresh exactly-one-success 与 stale-refresh/logout/account-switch 竞态均已收口。 |
 | AUTH-002 | P0* | WeChat Mini Program Identity | ⬜ | 若微信小程序作为正式主入口，则在公开发布前加入 `WECHAT_MINIPROGRAM` AuthIdentity：`wx.login → code2session → stable provider subject → User`；微信 secret 仅服务端。若小程序不是首发主入口，可降为 P1。 |
 | BIZ-011 | P0 | Production Registration Entitlement Default | ⬜ | 当前 `register_email_password()` 仍创建 `LEGACY_FULL`，而该计划拥有全部 capability 且 quota unlimited。正式注册必须切为 FREE（或另行正式定义的 trial），`LEGACY_FULL` 仅 migration/legacy compatibility；历史用户迁移语义不变。 |
 | OPS-002 | P0 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | PostgreSQL-backed durable job/lease 优先；服务端自动推进 deletion/maintenance，并逐步异步化长耗时 AI。客户端只能发起/查询状态，不再承担服务端任务推进责任。 |
@@ -390,10 +390,11 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | REM-001 | P1/P0* | Reminder Delivery / Product Promise Gate | ⬜ | 当前 Reminder 有 PENDING/DONE/CANCELLED/remind_at，但未形成到点扫描→Push/微信订阅/APNs/FCM 的正式 delivery。若正式 UI 承诺“到点提醒”，则升级为 P0 并在上线前实现；否则首发必须明确降级/隐藏通知承诺。 |
 | OPS-004 | P1 | Production Runtime Guardrails | ⬜ | Compose 增加日志 rotation；SQLAlchemy 显式 `DB_POOL_SIZE/DB_MAX_OVERFLOW/POOL_TIMEOUT/RECYCLE`；Caddy 增 HSTS、X-Content-Type-Options、Referrer-Policy 与合理 API body ceiling。Provider process-lifetime HTTP client pooling 记为 P2 性能优化，可后续完成。 |
 | OPS-005 | P0 Gate | Production Capacity Acceptance | ⬜ | #136 前在真实目标规格（当前计划 2C2G3M）执行可重复的容量测试；至少 50/100/200 concurrent mixed workload，记录 CPU/RAM/Swap/Postgres connections/DB latency/API P50/P95/P99/5xx/429/provider latency/OOM/network，得到实测安全容量，不用 DAU 估算替代。 |
-| CORE-001 | P0 | Passive Memory Reliability V1 | 🔵 | Issue #184 / branch `feat/core-passive-memory-reliability-v1-20261001` 已从 AUTH-001 merge main `d20617973499c2a04cede58016999f31d331bdfc` 启动。范围锁定：UI-independent authority-aware delivery coordinator、Native Durable Queue V2/backpressure、Android process/reboot/package-replace recovery decision、iOS relaunch quarantine、stable UUID replay、owner/auth/privacy fail-closed；CORE-002/003/004 不提前进入。 |
+| CORE-001 | P0 | Passive Memory Reliability V1 | 🔵 | **当前主线 / Issue #184 / PR #185**。已实现 UI-independent authority-aware delivery、SQLite durable delivery lease/attempt diagnostics、Native Queue V2/backpressure、Android WorkManager watchdog + boot/package-replace/process-death recovery、iOS relaunch/privacy quarantine recovery、stable UUID replay 与 cross-engine secure-session owner binding；继续以 exact-head mobile gates 收口，CORE-002/003/004 不提前进入。 |
 | CORE-002 | P0 | Historical Day Footprint & Natural-language Date Query V1 | ⬜ | 当前 `TodayFootprintService` 已正确按用户 IANA timezone + Visit overlap-day 语义查询，但只暴露“今天”；Intent Router 已能返回 `PLACE_HISTORY_QUERY`，`/memory/query` executor 却仍只做 Object location + Memory text search。新增 first-class `DayFootprintService(user_id, day)` + typed historical endpoint + deterministic date parser / `DATE_FOOTPRINT_QUERY`：用户问“我25号去哪了？”必须直接查询 Visit+Place、0 次 LLM；“25号发生了什么？”先组合 DayFootprint + Memory + Photo/Voice evidence，再允许 AI 总结。 |
 | CORE-003 | P0 | Automatic Recording Health & Coverage V1 | ⬜ | 当前已有 automatic_enabled/location_services/last_fix 与 native counters，但没有完整“记录是否真的健康”的产品状态。建立 owner-scoped Recording Health：last_fix_at、last_upload_at、native_queue_depth、sqlite_queue_depth、producer/runtime、background permission、location services、Android battery-optimization state、drop/backlog 状态；用户界面提供“今天记录正常 / 最后记录 / 今日覆盖”等可信提示；增加 privacy-safe Memory/Location/Visit coverage、Healthy Days、Location Gap Hours 等指标，避免只看 DAU/打开时长。 |
 | CORE-004 | P0 Gate | Passive Recording Real-device Certification | ⬜ | CORE-001/002/003 合并后必须做 Android+iOS 真机长时验收：授权后 24h 不主动打开 UI 仍形成 Visit；72h 步行/驾车/静止连续性与耗电；断网 12h 后自动补传且 UUID 不重不丢；系统进程终止后的平台允许恢复；手机重启后的真实行为；Privacy Pause 立即停产且迟到点 server reject；“我25号去哪了？”纯结构化查询 PASS；“25号发生了什么？”先 Evidence 后 AI。不得用模拟器结论替代。 |
+| UIUX-P0-002 | P0 Product Gate | JiYi Consumer Visual Fidelity V1 | ⬜ | **新增视觉收口任务。** 2026-09-29 用户确认的 8 张高保真参考图（Today / Timeline / Memory Detail / Family / Memory Query / Unified Capture / Summary / Profile）作为 Consumer Visual Design Authority。保留 UIUX-P0-001 已完成的 `今天 / 记忆 / 人生 / 家庭 / 我的` IA、现有业务 authority 与隐私边界；仅对没有真实 authority 的步数/天气/情绪统计/收藏/回收站等字段做删除或真实降级，**不得因此把山水品牌氛围、photo-first 叙事、足迹地图主视觉、卡片层次和消费者质感简化成工具型白卡 UI**。Flutter 为首要视觉还原，Mini 同步同一视觉语言；Golden 必须改为验证新 Design Authority，而不是继续锁定当前简化版。 |
 | PROD-001 | P1 | Core Product Positioning & Promise Refresh | ⬜ | 当前 README 仍写“个人 AI 第二记忆”，与最新定位不完全一致。改为“自动记录生活、需要时帮助找回过去”的个人/家庭长期记忆产品；继续强化“结构化检索优先于 LLM / 无证据不生成个人事实 / AI 是辅助不是事实来源”。对外不得承诺“100% 不用打开”，改为“完成授权后尽可能自动记录”，并以 Recording Health 告知真实覆盖状态。 |
 
 ### Public launch 顺序
@@ -405,6 +406,7 @@ ADMIN-001
 → CORE-002 Historical Day Footprint / Date Query
 → CORE-003 Recording Health
 → CORE-004 real-device certification
+→ UIUX-P0-002 Consumer Visual Fidelity V1
 → AUTH-002（若 Mini 为首发主入口）
 → BIZ-011
 → OPS-002
@@ -417,6 +419,35 @@ ADMIN-001
 → V3
 ```
 
+### UIUX-P0-002 Consumer Visual Authority
+
+本任务的视觉基准不是当前简化版 Flutter Golden，而是 **2026-09-29 用户确认的 8 张高保真消费者 APP 参考图**：
+
+```text
+Today / 今天
+Timeline / 时间线
+Memory Detail / 记忆详情
+Family / 家庭
+Memory Query / 问记忆
+Unified Capture / 帮我记一下
+Summary / 回忆总结
+Profile / 我的
+```
+
+冻结原则：
+
+```text
+业务 authority / AUTH / Privacy / Family grant 不改
+UIUX-P0-001 五域 IA 不推翻
+没有真实数据 authority 的字段可以删/降级
+但整体视觉构图、品牌氛围、photo-first 叙事、足迹地图主视觉与卡片层次必须忠实恢复
+
+Visual CI PASS
+!=
+符合 Design Authority
+
+新的 Golden / visual artifact 必须以 UIUX-P0-002 完成后的视觉为基准
+```
 ### 非阻断 P2
 
 ```text
