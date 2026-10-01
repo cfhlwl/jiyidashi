@@ -198,39 +198,26 @@ class PassiveMemoryDeliveryCoordinator {
     // delivered while the producer is stopped; starting production additionally requires
     // the native explicit-enable + permission + location-services gate and a persisted
     // recovery hint (iOS relaunch / Android scheduled recovery).
+    var producerRecoveryBlocked = false;
     if (allowProducerResume && nativeStatus.restorePending) {
       if (!nativeStatus.canStart) {
-        return PassiveMemoryRecoveryReport(
-          status: PassiveMemoryRecoveryStatus.nativeNotEligible,
-          ownerUserId: owner,
-          sessionRestored: restored,
-        );
-      }
-      try {
-        nativeStatus = await _locationBridge.start(owner);
-      } on MissingPluginException {
-        return PassiveMemoryRecoveryReport(
-          status: PassiveMemoryRecoveryStatus.nativeUnavailable,
-          ownerUserId: owner,
-          sessionRestored: restored,
-        );
-      } on PlatformException {
-        return PassiveMemoryRecoveryReport(
-          status: PassiveMemoryRecoveryStatus.nativeUnavailable,
-          ownerUserId: owner,
-          sessionRestored: restored,
-        );
-      }
-      if (!_authorityCurrent(owner, generation)) {
-        await _pauseNativeFailClosed(owner);
-        return _stale(owner, restored);
-      }
-      if (nativeStatus.runtime != NativeLocationRuntime.running) {
-        return PassiveMemoryRecoveryReport(
-          status: PassiveMemoryRecoveryStatus.nativeNotEligible,
-          ownerUserId: owner,
-          sessionRestored: restored,
-        );
+        producerRecoveryBlocked = true;
+      } else {
+        try {
+          nativeStatus = await _locationBridge.start(owner);
+          producerRecoveryBlocked =
+              nativeStatus.runtime != NativeLocationRuntime.running;
+        } on MissingPluginException {
+          producerRecoveryBlocked = true;
+        } on PlatformException {
+          // Android may legally deny a background FGS start even after WorkManager wakes.
+          // Do not bypass that platform decision; durable backlog delivery remains allowed.
+          producerRecoveryBlocked = true;
+        }
+        if (!_authorityCurrent(owner, generation)) {
+          await _pauseNativeFailClosed(owner);
+          return _stale(owner, restored);
+        }
       }
     }
 
@@ -257,7 +244,9 @@ class PassiveMemoryDeliveryCoordinator {
       final queued = await _store.listLocationSamples(owner, limit: 100);
       if (queued.isEmpty) {
         return PassiveMemoryRecoveryReport(
-          status: PassiveMemoryRecoveryStatus.noWork,
+          status: producerRecoveryBlocked
+              ? PassiveMemoryRecoveryStatus.nativeNotEligible
+              : PassiveMemoryRecoveryStatus.noWork,
           ownerUserId: owner,
           nativeHandedOff: handedOff,
           sessionRestored: restored,
