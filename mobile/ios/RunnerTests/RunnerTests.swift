@@ -6,6 +6,30 @@ import XCTest
 class RunnerTests: XCTestCase {
   private let owner = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
+  func testRecordingHealthRuntimeProjectionIsTruthful() {
+    XCTAssertEqual(
+      NativeLocationPolicy.recordingHealthBackgroundRuntime(
+        authorization: .background,
+        locationServicesEnabled: true
+      ),
+      "eligible"
+    )
+    XCTAssertEqual(
+      NativeLocationPolicy.recordingHealthBackgroundRuntime(
+        authorization: .foreground,
+        locationServicesEnabled: true
+      ),
+      "unknown"
+    )
+    XCTAssertEqual(
+      NativeLocationPolicy.recordingHealthBackgroundRuntime(
+        authorization: .background,
+        locationServicesEnabled: false
+      ),
+      "unknown"
+    )
+  }
+
   func testLocationStartRequiresAlwaysPermissionAndMatchingOwner() {
     XCTAssertTrue(
       NativeLocationPolicy.canStart(
