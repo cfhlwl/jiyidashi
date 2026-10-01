@@ -846,9 +846,9 @@ class RecordingHealthAggregates(BaseModel):
     healthy_days_30d: int = Field(ge=0, le=30)
     evidence_days_7d: int = Field(ge=0, le=7)
     evidence_days_30d: int = Field(ge=0, le=30)
-    # Total gap hours cannot be reconstructed truthfully from CORE-001 because V1 does not
-    # persist historical producer/permission expectation at every day edge. Keep the total
-    # unavailable and expose only the bounded gaps proven between retained observations.
+    # Location Gap Hours V1 counts only evidence-bounded intervals produced by the reviewed
+    # gap policy. Day edges without authority are excluded rather than invented. When an
+    # entire window has no evidence, the metric is unavailable (null), not a fabricated 0.
     gap_hours_7d: float | None = Field(default=None, ge=0)
     gap_hours_30d: float | None = Field(default=None, ge=0)
     bounded_gap_hours_7d: float = Field(ge=0)
