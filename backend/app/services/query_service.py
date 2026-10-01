@@ -1,5 +1,5 @@
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import desc, exists, or_, select
@@ -182,15 +182,20 @@ def query_memory(
 
     # CORE-002 date authority runs before generic Object/Memory matching. A dated
     # whereabouts question must never degrade into fuzzy text retrieval.
+    # One request owns one reference instant. Date parsing and routing must not
+    # observe different local days if the request crosses the owner's midnight.
+    reference_utc = datetime.now(UTC)
     date_result = resolve_user_date_expression(
         db,
         user_id=user_id,
         question=clean_question,
+        reference_utc=reference_utc,
     )
     route = route_intent(
         db,
         user_id=user_id,
         question=clean_question,
+        reference_utc=reference_utc,
     )
 
     if route.reason == IntentRouteReason.INVALID_DATE:
