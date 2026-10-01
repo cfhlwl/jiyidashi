@@ -126,6 +126,21 @@ jobs:
           git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
 
+      - name: Commit reviewed AUTH-001 login Golden
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/product-v2-goldens/candidate/auth_login.png test/goldens/auth_login.png
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test/goldens/auth_login.png
+          if git diff --cached --quiet; then
+            echo "AUTH-001 login Golden already current."
+          else
+            git commit -m "test(auth): refresh reviewed login Golden"
+            git push origin "HEAD:${{ github.head_ref }}"
+          fi
+
       - name: Run Flutter tests including committed goldens
         timeout-minutes: 10
         run: flutter test --reporter expanded
