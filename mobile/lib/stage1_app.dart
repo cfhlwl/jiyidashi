@@ -2706,7 +2706,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                     : theme.colorScheme.onSurfaceVariant,
               ),
               title: canAnswer
-                  ? (footprintVisits.isNotEmpty
+                  ? (intent == 'DATE_FOOTPRINT_QUERY' &&
+                          footprintVisits.isNotEmpty
                       ? (widget.elderMode ? '找到了这天的足迹' : '这天的足迹')
                       : (widget.elderMode ? '找到了可信记录' : '找到相关记忆'))
                   : (widget.elderMode ? '还没有可靠记录' : '没有足够依据'),
