@@ -73,6 +73,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: CORE-002 historical day query regression
+        run: |
+          npx tsc -p tsconfig.test.json
+          node --test .test-dist/tests/core002HistoricalQuery.test.js
+
       - name: Mini Program unit tests
         # 图片/语音工作流与 Place Detail 严格协议解析都必须在生产构建前先过自动回归。
         run: npm test
