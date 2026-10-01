@@ -135,6 +135,7 @@ async def test_core002_day_footprint_overlap_owner_order_and_typed_endpoint(
     foreign = uuid4()
     cross_id = uuid4()
     office_id = uuid4()
+    office_late_id = uuid4()
     next_day_id = uuid4()
 
     with SessionLocal() as db:
@@ -182,6 +183,16 @@ async def test_core002_day_footprint_overlap_owner_order_and_typed_endpoint(
                     left_at=datetime(2026, 9, 25, 4, 0, tzinfo=UTC),
                     finalized_at=datetime(2026, 9, 25, 4, 5, tzinfo=UTC),
                 ),
+                # Same Place repeated; local 9/25 23:30 -> 9/26 00:30 must still
+                # belong to the requested day and remain a separate Visit.
+                Visit(
+                    id=office_late_id,
+                    user_id=user_a,
+                    place_id=office,
+                    arrived_at=datetime(2026, 9, 25, 15, 30, tzinfo=UTC),
+                    left_at=datetime(2026, 9, 25, 16, 30, tzinfo=UTC),
+                    finalized_at=datetime(2026, 9, 25, 16, 35, tzinfo=UTC),
+                ),
                 # Local 9/26 only: must not appear.
                 Visit(
                     id=next_day_id,
@@ -212,11 +223,15 @@ async def test_core002_day_footprint_overlap_owner_order_and_typed_endpoint(
     assert [item["id"] for item in body["visits"]] == [
         str(cross_id),
         str(office_id),
+        str(office_late_id),
     ]
     assert body["visits"][0]["arrived_at_local"].startswith("2026-09-24T23:30:00")
     assert body["visits"][0]["left_at_local"].startswith("2026-09-25T01:15:00")
     assert body["visits"][1]["place_name"] == "公司"
     assert body["visits"][1]["place_category"] == "WORK"
+    assert body["visits"][2]["place_name"] == "公司"
+    assert body["visits"][2]["arrived_at_local"].startswith("2026-09-25T23:30:00")
+    assert body["visits"][2]["left_at_local"].startswith("2026-09-26T00:30:00")
     assert "B 私密地点" not in str(body)
     assert str(next_day_id) not in str(body)
 
@@ -226,6 +241,15 @@ async def test_core002_day_footprint_overlap_owner_order_and_typed_endpoint(
     )
     assert future.status_code == 422
     assert future.json()["detail"] == "FUTURE_FOOTPRINT_DATE"
+
+    empty = await client.get(
+        "/v1/footprint/day?date=2026-09-23",
+        headers=headers_a,
+    )
+    assert empty.status_code == 200
+    assert empty.json()["day"] == "2026-09-23"
+    assert empty.json()["empty"] is True
+    assert empty.json()["visits"] == []
 
     invalid = await client.get(
         "/v1/footprint/day?date=2026-02-30",
