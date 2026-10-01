@@ -34,12 +34,12 @@ esac
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 manifest="$STATE_DIR/$EXPECTED_SHA$record_suffix.image-id"
-lock_dir="$STATE_DIR/$EXPECTED_SHA.lock"
+lock_dir="$STATE_DIR/$EXPECTED_SHA$record_suffix.lock"
 candidate="${IMAGE_REF}-candidate-${BASHPID}"
 build_root=""
 
 if ! mkdir "$lock_dir" 2>/dev/null; then
-  echo "release image preparation already in progress for $EXPECTED_SHA" >&2
+  echo "release image preparation already in progress for $EXPECTED_SHA component=$COMPONENT" >&2
   exit 6
 fi
 
@@ -81,7 +81,7 @@ if [[ -f "$manifest" ]]; then
 
   if docker image inspect "$IMAGE_REF" >/dev/null 2>&1; then
     RELEASE_IMAGE_STATE_DIR="$STATE_DIR" \
-      bash "$ROOT_DIR/ops/verify-recorded-release-image.sh" "$IMAGE_REF" "$EXPECTED_SHA"
+      bash "$ROOT_DIR/ops/verify-recorded-release-image.sh" "$IMAGE_REF" "$EXPECTED_SHA" "$COMPONENT"
     echo "immutable SHA image already exists; reusing without rebuild: $IMAGE_REF"
     exit 0
   fi
@@ -92,7 +92,7 @@ if [[ -f "$manifest" ]]; then
     bash "$ROOT_DIR/ops/verify-image-identity.sh" "$candidate" "$EXPECTED_SHA"
   docker tag "$candidate" "$IMAGE_REF"
   RELEASE_IMAGE_STATE_DIR="$STATE_DIR" \
-    bash "$ROOT_DIR/ops/verify-recorded-release-image.sh" "$IMAGE_REF" "$EXPECTED_SHA"
+    bash "$ROOT_DIR/ops/verify-recorded-release-image.sh" "$IMAGE_REF" "$EXPECTED_SHA" "$COMPONENT"
   echo "immutable release image recovered: $IMAGE_REF"
   exit 0
 fi
@@ -118,7 +118,7 @@ mv "$tmp_manifest" "$manifest"
 
 docker tag "$candidate" "$IMAGE_REF"
 RELEASE_IMAGE_STATE_DIR="$STATE_DIR" \
-  bash "$ROOT_DIR/ops/verify-recorded-release-image.sh" "$IMAGE_REF" "$EXPECTED_SHA"
+  bash "$ROOT_DIR/ops/verify-recorded-release-image.sh" "$IMAGE_REF" "$EXPECTED_SHA" "$COMPONENT"
 
 echo "immutable release image prepared: $IMAGE_REF"
 echo "RELEASE_IMAGE_RECORD=$manifest"
