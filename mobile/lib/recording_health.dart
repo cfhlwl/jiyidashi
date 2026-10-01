@@ -42,6 +42,7 @@ class RecordingHealthView {
     required this.coveredDurationSeconds,
     required this.knownGapDurationSeconds,
     required this.hasRecordedGap,
+    required this.hasUnexplainedGap,
     required this.nativeQueueDepth,
     required this.sqliteQueueDepth,
     required this.capacityPressure,
@@ -69,6 +70,7 @@ class RecordingHealthView {
         coveredDurationSeconds = 0,
         knownGapDurationSeconds = 0,
         hasRecordedGap = false,
+        hasUnexplainedGap = false,
         nativeQueueDepth = 0,
         sqliteQueueDepth = 0,
         capacityPressure = false,
@@ -94,6 +96,7 @@ class RecordingHealthView {
   final int coveredDurationSeconds;
   final int knownGapDurationSeconds;
   final bool hasRecordedGap;
+  final bool hasUnexplainedGap;
   final int nativeQueueDepth;
   final int sqliteQueueDepth;
   final bool capacityPressure;
@@ -190,6 +193,7 @@ class RecordingHealthView {
         knownGapDurationSeconds:
             _nonNegativeInt(today['known_gap_duration_seconds']),
         hasRecordedGap: today['has_recorded_gap'] == true,
+        hasUnexplainedGap: today['has_unexplained_gap'] == true,
         nativeQueueDepth: _nonNegativeInt(health['native_queue_depth']),
         sqliteQueueDepth: _nonNegativeInt(health['sqlite_queue_depth']),
         capacityPressure: health['capacity_pressure'] == true,
