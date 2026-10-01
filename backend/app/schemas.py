@@ -484,6 +484,9 @@ class MemoryQueryResponse(BaseModel):
     intent: str
     evidence: list[Evidence] = Field(default_factory=list)
     memory_ids: list[UUID] = Field(default_factory=list)
+    # CORE-002 structured historical authority. Clients render this directly for
+    # whereabouts queries instead of parsing natural-language answer text.
+    day_footprint: DayFootprintResponse | None = None
 
 
 class LocationPointCreate(BaseModel):
