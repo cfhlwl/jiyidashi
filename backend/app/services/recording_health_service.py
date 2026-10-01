@@ -373,10 +373,13 @@ def _day_coverage(
         [*privacy_gaps, *unknown_gaps],
         key=lambda item: (item.start, item.end),
     )
-    known_gap_seconds = _union_seconds(privacy_gaps)
+    # "Known gap" means the interval itself is evidence-bounded; its cause may still be
+    # UNKNOWN. Privacy Pause is a known cause, while sparse retained observations can prove
+    # an interval exists without proving why it happened.
     all_gap_seconds = _union_seconds(all_gaps)
+    known_gap_seconds = all_gap_seconds
     largest_known_gap_seconds = max(
-        (item.seconds for item in privacy_gaps),
+        (item.seconds for item in all_gaps),
         default=0,
     )
 
