@@ -496,8 +496,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     let limit = min(max((arguments?["limit"] as? NSNumber)?.intValue ?? 100, 1), 500)
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return pendingLocationSamples(ownerUserId: ownerUserId)
-      .prefix(limit)
+    return pendingLocationSamples(ownerUserId: ownerUserId, limit: limit)
       .map { sample in
         var payload: [String: Any] = [
           "client_uuid": sample.clientUuid,
@@ -677,14 +676,15 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   }
 
   private func pendingLocationSamples(
-    ownerUserId: String
+    ownerUserId: String,
+    limit: Int
   ) -> [NativeQueuedLocationSample] {
     let samples = allPendingLocationSamples()
     if queueCorrupt { return [] }
     let selectedSequences = Set(
       samples
         .filter { $0.ownerUserId == ownerUserId }
-        .prefix(500)
+        .prefix(min(max(limit, 1), 500))
         .map { $0.queueSequence }
     )
     if selectedSequences.isEmpty { return [] }
