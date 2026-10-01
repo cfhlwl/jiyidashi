@@ -224,75 +224,115 @@ class LocationSamplingCoordinator extends ChangeNotifier {
       return;
     }
 
-    if (!await _verifyAuthoritativePrivacy(owner)) return;
-
-    final points = queued
-        .map(
-          (item) => LocationUploadPoint(
-            clientUuid: item.clientUuid,
-            latitude: item.latitude,
-            longitude: item.longitude,
-            accuracyMeters: item.accuracyMeters,
-            speedMetersPerSecond: item.speedMetersPerSecond,
-            recordedAt: item.recordedAt,
-          ),
-        )
-        .toList(growable: false);
-    final ids = queued.map((item) => item.clientUuid).toList(growable: false);
+    final generation = _api.sessionVersion;
+    if (!_authorityCurrent(owner, generation)) return;
+    final lease = await _store.tryAcquireLocationDeliveryLease(owner);
+    if (lease == null) return;
 
     try {
-      final result = await _api.uploadLocationBatch(points);
-      if (result.terminalCount != points.length) {
-        throw ProtocolException(
-          '服务端位置批量响应未覆盖全部提交点',
+      if (!await _verifyAuthoritativePrivacy(owner, generation)) return;
+      if (!_authorityCurrent(owner, generation)) return;
+
+      final points = queued
+          .map(
+            (item) => LocationUploadPoint(
+              clientUuid: item.clientUuid,
+              latitude: item.latitude,
+              longitude: item.longitude,
+              accuracyMeters: item.accuracyMeters,
+              speedMetersPerSecond: item.speedMetersPerSecond,
+              recordedAt: item.recordedAt,
+            ),
+          )
+          .toList(growable: false);
+      final ids = queued.map((item) => item.clientUuid).toList(growable: false);
+      await _store.recordLocationDeliveryAttempt(owner, ids);
+      if (!_authorityCurrent(owner, generation)) return;
+
+      try {
+        final result = await _api.uploadLocationBatch(points);
+        // A response may arrive after logout/account switch. The server UUID receipt makes
+        // replay harmless, so stale authority must keep the local proof instead of deleting it.
+        if (!_authorityCurrent(owner, generation)) return;
+        if (result.terminalCount != points.length) {
+          await _store.recordLocationDeliveryFailure(
+            owner,
+            ids,
+            'incomplete_location_batch_receipt',
+          );
+          throw ProtocolException(
+            '服务端位置批量响应未覆盖全部提交点',
+          );
+        }
+        await _store.deleteLocationSamples(owner, ids);
+        await _nativeBridge.recordUploadBatch(
+          owner,
+          sampleCount: points.length,
         );
-      }
-      await _store.deleteLocationSamples(owner, ids);
-      await _nativeBridge.recordUploadBatch(
-        owner,
-        sampleCount: points.length,
-      );
-    } on TransportException {
-      // Unknown commit is intentionally left in SQLite. The next attempt reuses the exact
-      // same client_uuid values and relies on S2-006 durable receipts for deduplication.
-    } on ApiException catch (exc) {
-      if (exc.statusCode == 409 && exc.message == 'RECORDING_PAUSED') {
-        // Privacy may change in the race between the preflight check and POST. Keep the
-        // durable UUIDs untouched and converge native production to paused immediately.
-        await _locationController.pauseForPrivacy();
-        return;
-      }
-      // [人工注释][S2-005] FUTURE is time-dependent, not a permanent integrity failure.
-      // Keep the same durable UUID deliverable so wall-clock convergence can retry it.
-      final futureTimestampMayRetry = exc.statusCode == 422 &&
-          exc.message == 'LOCATION_RECORDED_AT_IN_FUTURE';
-      final retryable = futureTimestampMayRetry ||
-          exc.statusCode == 401 ||
-          exc.statusCode == 403 ||
-          exc.statusCode == 408 ||
-          exc.statusCode == 429 ||
-          (exc.statusCode >= 500 && exc.statusCode <= 599);
-      if (!retryable) {
-        await _store.blockLocationSamples(
+      } on TransportException catch (exc) {
+        if (_authorityCurrent(owner, generation)) {
+          await _store.recordLocationDeliveryFailure(owner, ids, exc.message);
+        }
+        // Unknown commit is intentionally left in SQLite. The next attempt reuses the exact
+        // same client_uuid values and relies on S2-006 durable receipts for deduplication.
+      } on ApiException catch (exc) {
+        if (!_authorityCurrent(owner, generation)) return;
+        if (exc.statusCode == 409 && exc.message == 'RECORDING_PAUSED') {
+          await _store.recordLocationDeliveryFailure(
+            owner,
+            ids,
+            'RECORDING_PAUSED',
+          );
+          // Privacy may change in the race between the preflight check and POST. Keep the
+          // durable UUIDs untouched and converge native production to paused immediately.
+          await _locationController.pauseForPrivacy();
+          return;
+        }
+        // [人工注释][S2-005] FUTURE is time-dependent, not a permanent integrity failure.
+        // Keep the same durable UUID deliverable so wall-clock convergence can retry it.
+        final futureTimestampMayRetry = exc.statusCode == 422 &&
+            exc.message == 'LOCATION_RECORDED_AT_IN_FUTURE';
+        final retryable = futureTimestampMayRetry ||
+            exc.statusCode == 401 ||
+            exc.statusCode == 403 ||
+            exc.statusCode == 408 ||
+            exc.statusCode == 429 ||
+            (exc.statusCode >= 500 && exc.statusCode <= 599);
+        await _store.recordLocationDeliveryFailure(
           owner,
           ids,
           'HTTP ${exc.statusCode}: ${exc.message}',
         );
+        if (!retryable) {
+          await _store.blockLocationSamples(
+            owner,
+            ids,
+            'HTTP ${exc.statusCode}: ${exc.message}',
+          );
+        }
+      } on ProtocolException catch (exc) {
+        if (_authorityCurrent(owner, generation)) {
+          await _store.recordLocationDeliveryFailure(owner, ids, exc.message);
+        }
+        // A malformed 2xx response is not proof of durable terminal handling. Keep the rows
+        // so a later retry can obtain an authoritative aggregate receipt.
       }
-    } on ProtocolException {
-      // A malformed 2xx response is not proof of durable terminal handling. Keep the rows
-      // so a later retry can obtain an authoritative aggregate receipt.
+    } finally {
+      await _store.releaseLocationDeliveryLease(owner, lease);
     }
   }
 
-  Future<bool> _verifyAuthoritativePrivacy(String owner) async {
-    if (_ownerOrNull() != owner ||
+  Future<bool> _verifyAuthoritativePrivacy(
+    String owner,
+    int generation,
+  ) async {
+    if (!_authorityCurrent(owner, generation) ||
         !_locationController.privacyAllowsProduction) {
       return false;
     }
     try {
       final privacy = await _api.getPrivacyStatus();
-      if (_ownerOrNull() != owner) return false;
+      if (!_authorityCurrent(owner, generation)) return false;
       if (privacy['recording_paused'] == true) {
         await _locationController.pauseForPrivacy();
         return false;
@@ -305,6 +345,9 @@ class LocationSamplingCoordinator extends ChangeNotifier {
       return false;
     }
   }
+
+  bool _authorityCurrent(String owner, int generation) =>
+      _ownerOrNull() == owner && _api.sessionVersion == generation;
 
   String? _ownerOrNull() {
     final owner = _api.authenticatedUserId?.trim();
