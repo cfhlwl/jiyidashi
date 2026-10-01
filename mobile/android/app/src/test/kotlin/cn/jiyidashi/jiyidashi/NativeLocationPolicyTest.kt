@@ -19,6 +19,10 @@ class NativeLocationPolicyTest {
             NativeLocationPolicy.recordingBackgroundRuntimeState(backgroundRestricted = true),
         )
         assertEquals(
+            "unknown",
+            NativeLocationPolicy.recordingBackgroundRuntimeState(backgroundRestricted = null),
+        )
+        assertEquals(
             "not_applicable",
             NativeLocationPolicy.recordingBatteryOptimizationState(
                 sdkInt = 22,
@@ -37,6 +41,13 @@ class NativeLocationPolicyTest {
             NativeLocationPolicy.recordingBatteryOptimizationState(
                 sdkInt = 35,
                 ignoringBatteryOptimizations = true,
+            ),
+        )
+        assertEquals(
+            "unknown",
+            NativeLocationPolicy.recordingBatteryOptimizationState(
+                sdkInt = 35,
+                ignoringBatteryOptimizations = null,
             ),
         )
     }
