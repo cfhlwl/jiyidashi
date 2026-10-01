@@ -574,17 +574,30 @@ def _historical_aggregates(
             if item.response.coverage_state == RecordingCoverageState.HEALTHY
         )
 
-    def gap_hours(window: int) -> float:
+    def evidence_count(window: int) -> int:
+        return sum(
+            1
+            for item in days[:window]
+            if item.response.coverage_state != RecordingCoverageState.UNKNOWN
+        )
+
+    def bounded_gap_hours(window: int) -> float:
         seconds = sum(item.all_gap_seconds for item in days[:window])
         return round(seconds / 3600.0, 2)
 
-    # Capacity/permission history is not persisted in CORE-001. Exposing a made-up zero
-    # would be false precision, so V1 keeps those historical counters unavailable.
+    # CORE-001 does not persist historical "recording was expected here" authority at
+    # local-day edges. Therefore an exact total Location Gap Hours value would turn unknown
+    # time into a fabricated zero. V1 exposes the bounded, evidence-proven lower bound and
+    # leaves the exact total unavailable.
     return RecordingHealthAggregates(
         healthy_days_7d=healthy_count(7),
         healthy_days_30d=healthy_count(30),
-        gap_hours_7d=gap_hours(7),
-        gap_hours_30d=gap_hours(30),
+        evidence_days_7d=evidence_count(7),
+        evidence_days_30d=evidence_count(30),
+        gap_hours_7d=None,
+        gap_hours_30d=None,
+        bounded_gap_hours_7d=bounded_gap_hours(7),
+        bounded_gap_hours_30d=bounded_gap_hours(30),
         days_with_capacity_pressure=None,
         days_with_permission_block=None,
         current_capacity_pressure=current_capacity_pressure,
