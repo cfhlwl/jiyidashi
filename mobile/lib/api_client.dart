@@ -303,6 +303,8 @@ class JiYiApiClient {
   int _sessionVersion = 0;
   Future<void>? _refreshInFlight;
   int? _refreshInFlightVersion;
+  String? _refreshInFlightSessionId;
+  String? _refreshInFlightCredential;
   Future<void> _sessionStoreTail = Future<void>.value();
 
   // 登录、注册和退出都会推进会话版本；后台同步用它检测账号切换。
@@ -599,49 +601,63 @@ class JiYiApiClient {
     return data;
   }
 
-  Future<void> refreshCurrentSession() async {
+  Future<void> _performBoundRefresh({
+    required String refreshToken,
+    required String sessionId,
+    required int sessionVersion,
+  }) async {
+    try {
+      await _refreshWith(
+        refreshToken,
+        expectedSessionId: sessionId,
+        expectedSessionVersion: sessionVersion,
+        expectedLocalSessionId: sessionId,
+        expectedLocalRefreshToken: refreshToken,
+      );
+    } on ApiException catch (error) {
+      if ((error.statusCode == 400 || error.statusCode == 401) &&
+          _sessionVersion == sessionVersion &&
+          _sessionId == sessionId &&
+          _refreshToken == refreshToken) {
+        await _clearLocalSession();
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> refreshCurrentSession() {
     final refresh = _refreshToken;
     final sessionId = _sessionId;
     final refreshVersion = _sessionVersion;
     if (refresh == null || sessionId == null) {
-      throw ApiException(401, '请先登录');
+      return Future<void>.error(ApiException(401, '请先登录'));
     }
     final existing = _refreshInFlight;
-    if (existing != null && _refreshInFlightVersion == refreshVersion) {
+    if (existing != null &&
+        _refreshInFlightVersion == refreshVersion &&
+        _refreshInFlightSessionId == sessionId &&
+        _refreshInFlightCredential == refresh) {
       return existing;
     }
 
-    final completer = Completer<void>();
-    final refreshFuture = completer.future;
-    _refreshInFlight = refreshFuture;
-    _refreshInFlightVersion = refreshVersion;
-    try {
-      await _refreshWith(
-        refresh,
-        expectedSessionId: sessionId,
-        expectedSessionVersion: refreshVersion,
-        expectedLocalSessionId: sessionId,
-        expectedLocalRefreshToken: refresh,
-      );
-      completer.complete();
-    } on ApiException catch (error, stack) {
-      if ((error.statusCode == 400 || error.statusCode == 401) &&
-          _sessionVersion == refreshVersion &&
-          _sessionId == sessionId &&
-          _refreshToken == refresh) {
-        await _clearLocalSession();
-      }
-      completer.completeError(error, stack);
-      rethrow;
-    } catch (error, stack) {
-      completer.completeError(error, stack);
-      rethrow;
-    } finally {
+    late final Future<void> refreshFuture;
+    refreshFuture = _performBoundRefresh(
+      refreshToken: refresh,
+      sessionId: sessionId,
+      sessionVersion: refreshVersion,
+    ).whenComplete(() {
       if (identical(_refreshInFlight, refreshFuture)) {
         _refreshInFlight = null;
         _refreshInFlightVersion = null;
+        _refreshInFlightSessionId = null;
+        _refreshInFlightCredential = null;
       }
-    }
+    });
+    _refreshInFlight = refreshFuture;
+    _refreshInFlightVersion = refreshVersion;
+    _refreshInFlightSessionId = sessionId;
+    _refreshInFlightCredential = refresh;
+    return refreshFuture;
   }
 
   Future<void> ensureFreshServerAuthority() async {
