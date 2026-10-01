@@ -57,7 +57,7 @@ class _HistoricalQueryApi extends JiYiApiClient {
       pending?.future ?? immediate;
 }
 
-Future<void> submitHistoricalQuery(
+Future<void> _submitHistoricalQuery(
   WidgetTester tester,
   _HistoricalQueryApi api,
 ) async {
@@ -76,7 +76,7 @@ void main() {
       (tester) async {
     final api = _HistoricalQueryApi();
 
-    await submitHistoricalQuery(tester, api);
+    await _submitHistoricalQuery(tester, api);
     await tester.pumpAndSettle();
 
     expect(find.textContaining('万达广场'), findsWidgets);
@@ -91,7 +91,7 @@ void main() {
     final pending = Completer<Map<String, dynamic>>();
     final api = _HistoricalQueryApi(pending: pending);
 
-    await submitHistoricalQuery(tester, api);
+    await _submitHistoricalQuery(tester, api);
 
     api.authenticatedUserId = _HistoricalQueryApi.ownerB;
     await tester.pumpWidget(
