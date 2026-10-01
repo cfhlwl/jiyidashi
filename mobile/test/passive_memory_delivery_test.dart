@@ -22,6 +22,7 @@ class _PassiveApi extends JiYiApiClient {
 
   bool privacyPaused = false;
   bool privacyUnavailable = false;
+  bool accountDeletionInProgress = false;
   bool transportFails = false;
   int refreshCalls = 0;
   int privacyCalls = 0;
@@ -48,6 +49,17 @@ class _PassiveApi extends JiYiApiClient {
     if (authenticatedUserId == null) {
       throw ApiException(401, 'INVALID_ACCESS_TOKEN');
     }
+  }
+
+  @override
+  Future<Map<String, dynamic>> getProfile() async {
+    if (accountDeletionInProgress) {
+      throw ApiException(423, 'ACCOUNT_DELETION_IN_PROGRESS');
+    }
+    return <String, dynamic>{
+      'id': authenticatedUserId,
+      'elder_mode_enabled': false,
+    };
   }
 
   @override
@@ -257,6 +269,30 @@ void main() {
     if (await tempDirectory.exists()) {
       await tempDirectory.delete(recursive: true);
     }
+  });
+
+  test('account deletion authority blocks native drain and upload', () async {
+    final api = _PassiveApi()..accountDeletionInProgress = true;
+    final location = _LocationBridge();
+    final sampling = _SamplingBridge()..samples.add(sample());
+    final coordinator = PassiveMemoryDeliveryCoordinator(
+      api: api,
+      store: store,
+      locationBridge: location,
+      samplingBridge: sampling,
+    );
+
+    final report = await coordinator.recoverAndDeliver();
+
+    expect(
+      report.status,
+      PassiveMemoryRecoveryStatus.accountDeletionInProgress,
+    );
+    expect(location.statusCalls, 0);
+    expect(sampling.drainCalls, 0);
+    expect(api.uploadCalls, 0);
+    expect(await store.countLocationSamples(ownerA), 0);
+    await sampling.close();
   });
 
   test('fresh durable auth and privacy are required before native drain', () async {
