@@ -24,6 +24,7 @@ class NativeLocationQueueDiagnostics {
     required this.capacityPressure,
     required this.droppedSampleCount,
     required this.corrupt,
+    required this.storageUnavailable,
     this.oldestPendingAt,
     this.lastEnqueueAt,
     this.lastDeliveryAt,
@@ -42,6 +43,7 @@ class NativeLocationQueueDiagnostics {
         capacityPressure = false,
         droppedSampleCount = 0,
         corrupt = false,
+        storageUnavailable = false,
         oldestPendingAt = null,
         lastEnqueueAt = null,
         lastDeliveryAt = null,
@@ -58,6 +60,7 @@ class NativeLocationQueueDiagnostics {
   final bool capacityPressure;
   final int droppedSampleCount;
   final bool corrupt;
+  final bool storageUnavailable;
   final DateTime? oldestPendingAt;
   final DateTime? lastEnqueueAt;
   final DateTime? lastDeliveryAt;
@@ -93,6 +96,7 @@ class NativeLocationQueueDiagnostics {
       capacityPressure: value['capacity_pressure'] == true,
       droppedSampleCount: integer('dropped_sample_count'),
       corrupt: value['queue_corrupt'] == true,
+      storageUnavailable: value['queue_storage_unavailable'] == true,
       oldestPendingAt: timestamp('oldest_pending_at_millis'),
       lastEnqueueAt: timestamp('last_enqueue_at_millis'),
       lastDeliveryAt: timestamp('last_delivery_at_millis'),
