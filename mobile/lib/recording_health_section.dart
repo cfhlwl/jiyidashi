@@ -49,7 +49,7 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
         setState(() {
           _view = const RecordingHealthView.unknown(reason: 'NO_SESSION');
           _loading = false;
-          _error = '当前登录状态无法确认记录健康状态。';
+          _error = '当前登录状态无法确认记录状态。';
         });
       }
       return;
@@ -327,7 +327,7 @@ JiYiStatusKind _kind(RecordingHealthStatus status) {
 String _title(RecordingHealthStatus status) {
   return switch (status) {
     RecordingHealthStatus.healthy => '当前自动记录正常',
-    RecordingHealthStatus.degraded => '记录质量受限',
+    RecordingHealthStatus.degraded => '记录受限',
     RecordingHealthStatus.paused => '自动记录已暂停',
     RecordingHealthStatus.blocked => '自动记录当前受阻',
     RecordingHealthStatus.recovering => '正在恢复自动记录',
@@ -337,8 +337,8 @@ String _title(RecordingHealthStatus status) {
 
 String _message(RecordingHealthView view) {
   return switch (view.reason) {
-    'RECENT_CAPTURE_AND_ACK' => '最近的位置采集和服务器接收都已确认，当前没有明显积压。',
-    'PRIVACY_PAUSED' => '这是你主动设置的隐私暂停，不会被当作意外记录故障。',
+    'RECENT_CAPTURE_AND_ACK' => '最近的位置采集和服务器接收都已确认，当前没有明显待处理记录。',
+    'PRIVACY_PAUSED' => '这是你主动设置的隐私暂停，不会被当作意外记录问题。',
     'PERMISSION_BLOCKED' => '系统定位权限不足。请在下方“自动位置记忆”中按当前权限状态处理。',
     'LOCATION_SERVICES_OFF' => '系统定位服务已关闭；开启后再重新确认记录状态。',
     'AUTOMATIC_DISABLED' => '自动位置记忆当前关闭；只有你明确启用后才会开始后台记录。',
@@ -347,7 +347,7 @@ String _message(RecordingHealthView view) {
     'QUEUE_BACKLOG' || 'DELIVERY_BACKLOG' => '本机存在较久的待同步记录，当前不能视为完全正常。',
     'DELIVERY_FAILURE' => '最近同步连续失败，记录仍保留在本机队列等待恢复。',
     'RECOVERY_PENDING' => '系统正在等待恢复后台记录，恢复完成前不会显示为正常。',
-    'PRODUCER_NOT_RUNNING' => '自动记录虽已配置，但本机后台采集当前没有运行。',
+    'PRODUCER_NOT_RUNNING' => '自动记录已配置，但本机后台采集当前没有运行。',
     'NO_RECENT_FIX' => '最近没有足够新的定位采集证据，无法确认持续记录正常。',
     'NO_RECENT_ACK' => '服务器最近没有确认收到位置记录，无法确认同步正常。',
     'RECORDED_GAP' => '今天的可靠证据之间存在未解释的记录间隔。',
@@ -367,8 +367,8 @@ String _activeGapMessage(List<String> reasons) {
       'LOCATION_SERVICES_OFF' => '系统定位服务关闭',
       'PRIVACY_PAUSED' => '主动隐私暂停',
       'PLATFORM_RESTRICTED' => '系统后台限制',
-      'QUEUE_CAPACITY_PRESSURE' => '本机队列容量压力',
-      'DELIVERY_BACKLOG' => '同步积压',
+      'QUEUE_CAPACITY_PRESSURE' => '本机队列接近容量上限',
+      'DELIVERY_BACKLOG' => '同步待处理',
       'PRODUCER_NOT_RUNNING' => '后台采集未运行',
       'NO_RECENT_FIX' => '缺少近期采集',
       'UNKNOWN' => '未解释的记录空档',
@@ -376,7 +376,7 @@ String _activeGapMessage(List<String> reasons) {
     };
     if (label != null && !labels.contains(label)) labels.add(label);
   }
-  return labels.isEmpty ? '当前存在记录空档。' : '当前诊断：${labels.join('、')}';
+  return labels.isEmpty ? '当前存在记录空档。' : '当前提示：${labels.join('、')}';
 }
 
 String _actionLabel(RecordingHealthAction action) {
@@ -410,7 +410,7 @@ bool _showQueue(RecordingHealthView view) {
 String _queueMessage(RecordingHealthView view) {
   final parts = <String>[
     if (view.totalQueueDepth > 0) '待同步 ${view.totalQueueDepth} 条',
-    if (view.capacityPressure) '队列容量压力较高',
+    if (view.capacityPressure) '队列接近容量上限',
     if (view.deliveryFailureCount > 0)
       '近期同步失败 ${view.deliveryFailureCount} 次',
   ];
