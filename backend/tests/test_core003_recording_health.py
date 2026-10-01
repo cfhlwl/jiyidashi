@@ -287,6 +287,41 @@ async def test_core003_unavailable_or_stale_authority_never_turns_healthy(client
     assert stale.health.status == "UNKNOWN"
     assert stale.health.status_reason == "CLIENT_STATE_STALE"
 
+    with SessionLocal() as db:
+        unknown_permission = get_recording_health(
+            db,
+            user_id=user_id,
+            client_state=_client(now, permission_state="UNKNOWN"),
+            reference_utc=now,
+        )
+        unknown_runtime = get_recording_health(
+            db,
+            user_id=user_id,
+            client_state=_client(now, background_runtime_state="UNKNOWN"),
+            reference_utc=now,
+        )
+        legacy_queue = get_recording_health(
+            db,
+            user_id=user_id,
+            client_state=_client(now, native_queue_schema_version=0),
+            reference_utc=now,
+        )
+        missing_capacity = get_recording_health(
+            db,
+            user_id=user_id,
+            client_state=_client(now, native_queue_capacity=0),
+            reference_utc=now,
+        )
+
+    for result in (
+        unknown_permission,
+        unknown_runtime,
+        legacy_queue,
+        missing_capacity,
+    ):
+        assert result.health.status == "UNKNOWN"
+        assert result.health.status_reason == "NATIVE_STATE_UNAVAILABLE"
+
 
 async def test_core003_sparse_observations_create_unknown_gap_without_route_fabrication(client):
     _, user_id = await _new_user(client, "core003-gaps")
