@@ -302,6 +302,8 @@ class JiYiApiClient {
   String? authenticatedUserId;
   int _sessionVersion = 0;
   Future<void>? _refreshInFlight;
+  int? _refreshInFlightVersion;
+  Future<void> _sessionStoreTail = Future<void>.value();
 
   // 登录、注册和退出都会推进会话版本；后台同步用它检测账号切换。
   int get sessionVersion => _sessionVersion;
@@ -481,9 +483,32 @@ class JiYiApiClient {
     return parsed;
   }
 
+  Future<T> _runSessionStoreMutation<T>(
+    Future<T> Function() operation,
+  ) {
+    final completer = Completer<T>();
+    final previous = _sessionStoreTail;
+    _sessionStoreTail = previous.then((_) async {
+      try {
+        completer.complete(await operation());
+      } catch (error, stack) {
+        completer.completeError(error, stack);
+      }
+    });
+    return completer.future;
+  }
+
+  void _assertSessionGeneration(int? expectedSessionVersion) {
+    if (expectedSessionVersion != null &&
+        _sessionVersion != expectedSessionVersion) {
+      throw ProtocolException('登录状态已变化，请重试');
+    }
+  }
+
   Future<void> _establishAuthenticatedSession(
     Map<String, dynamic> data, {
     String? expectedSessionId,
+    int? expectedSessionVersion,
   }) async {
     final token = data['access_token'];
     final refresh = data['refresh_token'];
@@ -502,13 +527,21 @@ class JiYiApiClient {
     }
     final accessExpiresAt = _requiredServerDateTime(data, 'access_expires_at');
 
-    // Secure persistence succeeds before in-memory owner authority is published.
-    await _sessionStore.writeSession(
-      PersistedAuthSession(
-        refreshToken: refresh,
-        sessionId: sessionId,
-      ),
-    );
+    // A refresh response is authoritative only for the local generation that
+    // started it. Logout/account-switch must make any late response incapable
+    // of writing refresh material back into Keychain/Keystore.
+    _assertSessionGeneration(expectedSessionVersion);
+    await _runSessionStoreMutation(() async {
+      _assertSessionGeneration(expectedSessionVersion);
+      await _sessionStore.writeSession(
+        PersistedAuthSession(
+          refreshToken: refresh,
+          sessionId: sessionId,
+        ),
+      );
+    });
+    _assertSessionGeneration(expectedSessionVersion);
+
     final sameOwnerSession =
         authenticatedUserId == userId && _sessionId == sessionId;
     accessToken = token;
@@ -524,6 +557,7 @@ class JiYiApiClient {
   Future<Map<String, dynamic>> _refreshWith(
     String refreshToken, {
     String? expectedSessionId,
+    int? expectedSessionVersion,
   }) async {
     final data = await _jsonRequest(
       'POST',
@@ -534,6 +568,7 @@ class JiYiApiClient {
     await _establishAuthenticatedSession(
       data,
       expectedSessionId: expectedSessionId,
+      expectedSessionVersion: expectedSessionVersion,
     );
     return data;
   }
@@ -541,19 +576,30 @@ class JiYiApiClient {
   Future<void> refreshCurrentSession() async {
     final refresh = _refreshToken;
     final sessionId = _sessionId;
+    final refreshVersion = _sessionVersion;
     if (refresh == null || sessionId == null) {
       throw ApiException(401, '请先登录');
     }
     final existing = _refreshInFlight;
-    if (existing != null) return existing;
+    if (existing != null && _refreshInFlightVersion == refreshVersion) {
+      return existing;
+    }
 
     final completer = Completer<void>();
-    _refreshInFlight = completer.future;
+    final refreshFuture = completer.future;
+    _refreshInFlight = refreshFuture;
+    _refreshInFlightVersion = refreshVersion;
     try {
-      await _refreshWith(refresh, expectedSessionId: sessionId);
+      await _refreshWith(
+        refresh,
+        expectedSessionId: sessionId,
+        expectedSessionVersion: refreshVersion,
+      );
       completer.complete();
     } on ApiException catch (error, stack) {
-      if (error.statusCode == 400 || error.statusCode == 401) {
+      if ((error.statusCode == 400 || error.statusCode == 401) &&
+          _sessionVersion == refreshVersion &&
+          _sessionId == sessionId) {
         await _clearLocalSession();
       }
       completer.completeError(error, stack);
@@ -562,7 +608,10 @@ class JiYiApiClient {
       completer.completeError(error, stack);
       rethrow;
     } finally {
-      _refreshInFlight = null;
+      if (identical(_refreshInFlight, refreshFuture)) {
+        _refreshInFlight = null;
+        _refreshInFlightVersion = null;
+      }
     }
   }
 
@@ -579,6 +628,7 @@ class JiYiApiClient {
   Future<AuthRestoreStatus> restorePersistedSession() async {
     final persisted = await _sessionStore.readSession();
     if (persisted == null) return AuthRestoreStatus.noPersistedSession;
+    final restoreVersion = _sessionVersion;
 
     // Never publish locally cached owner identity. The server refresh response is the
     // only source allowed to reconstruct user_id/access authority after cold start.
@@ -586,18 +636,23 @@ class JiYiApiClient {
       await _refreshWith(
         persisted.refreshToken,
         expectedSessionId: persisted.sessionId,
+        expectedSessionVersion: restoreVersion,
       );
       return AuthRestoreStatus.restored;
     } on TransportException {
       return AuthRestoreStatus.serverUnavailable;
     } on ApiException catch (exc) {
       if (exc.statusCode == 400 || exc.statusCode == 401) {
-        await _clearLocalSession();
+        if (_sessionVersion == restoreVersion) {
+          await _clearLocalSession();
+        }
         return AuthRestoreStatus.invalidSession;
       }
       return AuthRestoreStatus.serverUnavailable;
     } on ProtocolException {
-      await _clearLocalSession();
+      if (_sessionVersion == restoreVersion) {
+        await _clearLocalSession();
+      }
       return AuthRestoreStatus.invalidSession;
     }
   }
@@ -609,7 +664,7 @@ class JiYiApiClient {
     _accessExpiresAt = null;
     authenticatedUserId = null;
     _sessionVersion += 1;
-    await _sessionStore.clearSession();
+    await _runSessionStoreMutation(_sessionStore.clearSession);
   }
 
   Map<String, dynamic> _canonicalProfile(
@@ -1084,30 +1139,94 @@ class JiYiApiClient {
     return _parseMemoryQueryResult(raw);
   }
 
+  Future<_AuthenticatedSessionSnapshot> _refreshForRevocation(
+    String refreshToken,
+    _AuthenticatedSessionSnapshot original,
+  ) async {
+    final decoded = _decodeResponse(
+      await _sendRequestOnce(
+        'POST',
+        '/auth/refresh',
+        body: {'refresh_token': refreshToken},
+        authenticated: false,
+      ),
+    );
+    if (decoded is! Map<String, dynamic>) {
+      throw ProtocolException('认证服务返回格式不正确');
+    }
+    final token = decoded['access_token'];
+    final sessionId = decoded['session_id'];
+    final userId = decoded['user_id'];
+    if (token is! String ||
+        token.trim().isEmpty ||
+        sessionId is! String ||
+        sessionId != original.sessionId ||
+        userId is! String ||
+        userId != original.userId) {
+      throw ProtocolException('认证服务返回格式不正确');
+    }
+    // Never persist or publish this rotated credential. It exists only long enough
+    // to complete the explicit revoke requested by the user.
+    return _AuthenticatedSessionSnapshot(
+      accessToken: token,
+      userId: userId,
+      sessionId: sessionId,
+      sessionVersion: original.sessionVersion,
+    );
+  }
+
+  Future<void> _revokeAfterLocalLogout(
+    String path, {
+    required _AuthenticatedSessionSnapshot snapshot,
+    required String? refreshToken,
+  }) async {
+    var revokeSnapshot = snapshot;
+    var response = await _sendRequestOnce(
+      'POST',
+      path,
+      authenticated: true,
+      authSnapshot: revokeSnapshot,
+    );
+    if (response.statusCode == 401 &&
+        _responseErrorDetail(response) == 'INVALID_ACCESS_TOKEN' &&
+        refreshToken != null &&
+        refreshToken.trim().isNotEmpty) {
+      revokeSnapshot = await _refreshForRevocation(refreshToken, snapshot);
+      response = await _sendRequestOnce(
+        'POST',
+        path,
+        authenticated: true,
+        authSnapshot: revokeSnapshot,
+      );
+    }
+    _decodeResponse(response);
+  }
+
   Future<void> logout() async {
     final snapshot = accessToken != null &&
             authenticatedUserId != null &&
             _sessionId != null
         ? _captureAuthenticatedSession()
         : null;
+    final refreshForRevocation = _refreshToken;
     // _clearLocalSession mutates memory before its first await. This preserves the
-    // existing synchronous stale-session boundary for callers that intentionally
-    // fire-and-forget logout during long operations.
+    // synchronous stale-session boundary while keeping the captured refresh secret
+    // only on this stack for an expired-access revoke fallback.
     final clearFuture = _clearLocalSession();
     try {
       if (snapshot != null) {
-        await _jsonRequest(
-          'POST',
+        await _revokeAfterLocalLogout(
           '/auth/logout',
-          authSnapshot: snapshot,
+          snapshot: snapshot,
+          refreshToken: refreshForRevocation,
         );
       }
     } on TransportException {
-      // Local logout remains authoritative for the device. The short-lived JWT
-      // expires quickly; a later explicit login creates a fresh server session.
-    } on ApiException {
-      // A rejected/expired remote session is already unusable for this device.
-      // Do not resurrect local authority after explicit logout intent.
+      // Local authority remains fail-closed when the server is unreachable.
+    } on ApiException catch (error) {
+      if (error.statusCode >= 500) rethrow;
+      // 4xx here means the captured server session/refresh authority is no longer
+      // usable; never resurrect local state after explicit logout intent.
     } finally {
       await clearFuture;
     }
@@ -1115,12 +1234,13 @@ class JiYiApiClient {
 
   Future<void> logoutAll() async {
     final snapshot = _captureAuthenticatedSession();
+    final refreshForRevocation = _refreshToken;
     final clearFuture = _clearLocalSession();
     try {
-      await _jsonRequest(
-        'POST',
+      await _revokeAfterLocalLogout(
         '/auth/logout-all',
-        authSnapshot: snapshot,
+        snapshot: snapshot,
+        refreshToken: refreshForRevocation,
       );
     } on TransportException {
       // Fail local state closed even when the network is unavailable.
