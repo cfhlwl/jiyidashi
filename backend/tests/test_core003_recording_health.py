@@ -60,6 +60,7 @@ def _client(now: datetime, **overrides) -> RecordingClientState:
         "background_runtime_state": "ELIGIBLE",
         "battery_optimization_state": "OPTIMIZED",
         "native_producer_state": "RUNNING",
+        "native_queue_schema_version": 2,
         "native_queue_depth": 0,
         "native_queue_capacity": 1000,
         "native_queue_corrupt": False,
