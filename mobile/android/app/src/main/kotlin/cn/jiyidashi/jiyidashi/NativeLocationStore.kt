@@ -228,17 +228,32 @@ internal class NativeLocationStore(context: Context) {
         val retained = readPendingSamples().filterNot {
             it.ownerUserId == ownerUserId && clientUuids.contains(it.clientUuid)
         }
-        if (!queueCorrupt) {
-            writePendingSamples(retained)
+        if (!queueCorrupt && !writePendingSamples(retained)) {
+            markQueueCorrupt("native_queue_persist_failed")
         }
     }
 
     @Synchronized
     fun purgeLocationSamplingOwner(ownerUserId: String) {
-        val retained = readPendingSamples().filterNot {
-            it.ownerUserId == ownerUserId
+        if (queueCorrupt) {
+            // Account deletion is privacy-authoritative. A corrupt mixed-owner payload
+            // cannot be safely filtered, so remove the entire raw queue rather than risk
+            // retaining the deleting owner's precise locations.
+            prefs.edit()
+                .remove(KEY_PENDING_SAMPLES)
+                .remove(KEY_QUEUE_CORRUPT)
+                .remove(KEY_QUEUE_CORRUPT_REASON)
+                .remove(KEY_QUEUE_CORRUPT_AT)
+                .putInt(KEY_QUEUE_SCHEMA_VERSION, NATIVE_QUEUE_SCHEMA_VERSION)
+                .commit()
+        } else {
+            val retained = readPendingSamples().filterNot {
+                it.ownerUserId == ownerUserId
+            }
+            if (!writePendingSamples(retained)) {
+                markQueueCorrupt("native_queue_persist_failed")
+            }
         }
-        writePendingSamples(retained)
         prefs.edit()
             .remove(ownerKey(KEY_SAMPLING_PROFILE, ownerUserId))
             .remove(ownerKey(KEY_LATEST_MOTION_OBSERVATION, ownerUserId))
@@ -250,6 +265,14 @@ internal class NativeLocationStore(context: Context) {
             .remove(ownerKey(KEY_METRIC_ACTIVE_MS, ownerUserId))
             .remove(ownerKey(KEY_TRACKING_STARTED_AT, ownerUserId))
             .remove(ownerKey(KEY_LAST_QUEUED_AT, ownerUserId))
+            .remove(ownerKey(KEY_LAST_ENQUEUE_AT, ownerUserId))
+            .remove(ownerKey(KEY_LAST_DELIVERY_AT, ownerUserId))
+            .remove(ownerKey(KEY_DELIVERY_FAILURE_COUNT, ownerUserId))
+            .remove(ownerKey(KEY_LAST_DELIVERY_FAILURE_AT, ownerUserId))
+            .remove(ownerKey(KEY_LAST_DELIVERY_FAILURE_REASON, ownerUserId))
+            .remove(ownerKey(KEY_CAPACITY_DROP_COUNT, ownerUserId))
+            .remove(ownerKey(KEY_LAST_DROP_AT, ownerUserId))
+            .remove(ownerKey(KEY_LAST_DROP_REASON, ownerUserId))
             .apply()
     }
 
