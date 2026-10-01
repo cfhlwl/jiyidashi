@@ -82,6 +82,8 @@ test('Mini historical query UI hides developer enums and binds stale results to 
   assert.match(page, /DATE_FOOTPRINT_QUERY:\s*'按日期看足迹'/)
   assert.match(page, /queryIntentLabel\(result\.intent\)/)
   assert.doesNotMatch(page, /查询类型：\{result\.intent\}/)
+  assert.match(page, /label: '有记录支持'/)
+  assert.match(page, /这个答案来自已形成的地点访问记录。/)
 
   assert.match(page, /const capturedQueryEpoch = queryEpoch\.current\.capture\(\)/)
   assert.match(page, /const capturedOwner = authOwnerRef\.current/)
