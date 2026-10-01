@@ -74,6 +74,66 @@ struct NativeQueuedLocationSample: Codable {
   let accuracyMeters: Double?
   let speedMetersPerSecond: Double?
   let recordedAtMillis: Int64
+  let queueSequence: Int64
+  let enqueuedAtMillis: Int64
+  let handoffAttemptCount: Int
+
+  init(
+    ownerUserId: String,
+    clientUuid: String,
+    latitude: Double,
+    longitude: Double,
+    accuracyMeters: Double?,
+    speedMetersPerSecond: Double?,
+    recordedAtMillis: Int64,
+    queueSequence: Int64 = 0,
+    enqueuedAtMillis: Int64? = nil,
+    handoffAttemptCount: Int = 0
+  ) {
+    self.ownerUserId = ownerUserId
+    self.clientUuid = clientUuid
+    self.latitude = latitude
+    self.longitude = longitude
+    self.accuracyMeters = accuracyMeters
+    self.speedMetersPerSecond = speedMetersPerSecond
+    self.recordedAtMillis = recordedAtMillis
+    self.queueSequence = queueSequence
+    self.enqueuedAtMillis = enqueuedAtMillis ?? recordedAtMillis
+    self.handoffAttemptCount = max(handoffAttemptCount, 0)
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case ownerUserId
+    case clientUuid
+    case latitude
+    case longitude
+    case accuracyMeters
+    case speedMetersPerSecond
+    case recordedAtMillis
+    case queueSequence
+    case enqueuedAtMillis
+    case handoffAttemptCount
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let recordedAt = try container.decode(Int64.self, forKey: .recordedAtMillis)
+    self.init(
+      ownerUserId: try container.decode(String.self, forKey: .ownerUserId),
+      clientUuid: try container.decode(String.self, forKey: .clientUuid),
+      latitude: try container.decode(Double.self, forKey: .latitude),
+      longitude: try container.decode(Double.self, forKey: .longitude),
+      accuracyMeters: try container.decodeIfPresent(Double.self, forKey: .accuracyMeters),
+      speedMetersPerSecond:
+        try container.decodeIfPresent(Double.self, forKey: .speedMetersPerSecond),
+      recordedAtMillis: recordedAt,
+      queueSequence: try container.decodeIfPresent(Int64.self, forKey: .queueSequence) ?? 0,
+      enqueuedAtMillis:
+        try container.decodeIfPresent(Int64.self, forKey: .enqueuedAtMillis) ?? recordedAt,
+      handoffAttemptCount:
+        try container.decodeIfPresent(Int.self, forKey: .handoffAttemptCount) ?? 0
+    )
+  }
 }
 
 struct NativeMotionObservation: Codable {
