@@ -101,6 +101,7 @@ void main() {
     expect(payload['background_runtime_state'], 'ELIGIBLE');
     expect(payload['battery_optimization_state'], 'OPTIMIZED');
     expect(payload['native_producer_state'], 'RUNNING');
+    expect(payload['native_queue_schema_version'], 2);
     expect(payload['last_delivery_error_code'], 'NETWORK_UNAVAILABLE');
     expect(payload['delivery_failure_count'], 3);
     expect(payload['last_upload_attempt_at'], '2026-10-01T10:04:00.000Z');
