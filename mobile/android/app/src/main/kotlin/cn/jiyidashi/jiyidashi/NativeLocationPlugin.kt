@@ -112,6 +112,14 @@ class NativeLocationPlugin :
                 if (count > 0) store.recordUploadBatch(ownerUserId, count)
                 result.success(null)
             }
+            "recordLocationDeliveryFailure" -> {
+                val reason = call.argument<String>("reason")?.trim().orEmpty()
+                store.recordDeliveryFailure(
+                    ownerUserId,
+                    reason.ifEmpty { "location_delivery_failed" },
+                )
+                result.success(null)
+            }
             "purgeLocationSamplingOwner" -> {
                 if (store.activeOwnerUserId == ownerUserId) {
                     store.finishTracking(ownerUserId)
