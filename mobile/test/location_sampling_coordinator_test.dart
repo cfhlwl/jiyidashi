@@ -543,7 +543,8 @@ void main() {
     await coordinator.start();
 
     expect(api.uploadCalls, 0);
-    expect(await store.countLocationSamples(owner), 1);
+    expect(await store.countLocationSamples(owner), 0);
+    expect(native.samples.map((item) => item.clientUuid), <String>[uuid]);
     expect(controller.privacyGate, NativeLocationPrivacyGate.paused);
     expect(locationBridge.calls, contains('pause'));
     coordinator.dispose();
@@ -605,7 +606,8 @@ void main() {
     await coordinator.start();
 
     expect(api.uploadCalls, 0);
-    expect(await store.countLocationSamples(owner), 1);
+    expect(await store.countLocationSamples(owner), 0);
+    expect(native.samples.map((item) => item.clientUuid), <String>[uuid]);
     expect(controller.privacyGate, NativeLocationPrivacyGate.unknown);
     expect(locationBridge.calls, contains('pause'));
     coordinator.dispose();
