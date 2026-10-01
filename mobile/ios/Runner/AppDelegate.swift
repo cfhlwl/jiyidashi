@@ -310,6 +310,13 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   }
 
   private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "awaitPassiveRecoveryIdle" {
+      // iOS uses the single implicit Flutter engine for CoreLocation relaunch recovery.
+      // Keep the cross-platform startup seam explicit while returning immediately here.
+      result(true)
+      return
+    }
+
     guard let ownerUserId = owner(from: call) else {
       result(FlutterError(
         code: "invalid_owner",
