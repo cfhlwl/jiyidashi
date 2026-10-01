@@ -569,20 +569,24 @@ class NativeLocationPlugin :
             store.runtime = reconciled
         }
 
-        val backgroundRestricted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val activityManager =
-                applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            activityManager.isBackgroundRestricted
-        } else {
-            false
-        }
+        val backgroundRestricted: Boolean? =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val activityManager =
+                    applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                activityManager?.isBackgroundRestricted
+            } else {
+                false
+            }
         val backgroundRuntimeState =
             NativeLocationPolicy.recordingBackgroundRuntimeState(backgroundRestricted)
         val powerManager =
-            applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val ignoringBatteryOptimizations =
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-                powerManager.isIgnoringBatteryOptimizations(applicationContext.packageName)
+            applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val ignoringBatteryOptimizations: Boolean? =
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                true
+            } else {
+                powerManager?.isIgnoringBatteryOptimizations(applicationContext.packageName)
+            }
         val batteryOptimizationState =
             NativeLocationPolicy.recordingBatteryOptimizationState(
                 sdkInt = Build.VERSION.SDK_INT,
