@@ -439,6 +439,15 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
           Int64(Date().timeIntervalSince1970 * 1000),
           forKey: ownerKey(Keys.lastDeliveryAt, ownerUserId)
         )
+        if #available(iOS 13.0, *) {
+          let remaining =
+            allPendingLocationSamples().contains { $0.ownerUserId == ownerUserId }
+          if remaining {
+            PassiveMemoryBackgroundRecovery.schedule()
+          } else {
+            PassiveMemoryBackgroundRecovery.cancel()
+          }
+        }
       }
       result(nil)
     case "recordLocationDeliveryFailure":
@@ -848,6 +857,8 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     }) {
       return true
     }
+    let ownerQueueWasEmpty =
+      !samples.contains(where: { $0.ownerUserId == sample.ownerUserId })
     guard NativeOwnerQueueQuota.hasCapacity(
       samples: samples,
       ownerUserId: sample.ownerUserId,
@@ -883,6 +894,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     }
     defaults.set(next + 1, forKey: Keys.nextQueueSequence)
     defaults.set(now, forKey: ownerKey(Keys.lastEnqueueAt, sample.ownerUserId))
+    if ownerQueueWasEmpty, #available(iOS 13.0, *) {
+      // A first durable native sample creates a recovery obligation even if the app is
+      // suspended/killed before Dart receives samplesAvailable.
+      PassiveMemoryBackgroundRecovery.schedule()
+    }
     return true
   }
 
@@ -1521,12 +1537,35 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var nativeLocationBridge: NativeLocationBridge?
+  @available(iOS 13.0, *)
+  private var activePassiveRecoveryTask: BGAppRefreshTask? {
+    get { _activePassiveRecoveryTask as? BGAppRefreshTask }
+    set { _activePassiveRecoveryTask = newValue }
+  }
+  private var _activePassiveRecoveryTask: BGTask?
+  private var passiveRecoveryCompletionChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    if #available(iOS 13.0, *) {
+      BGTaskScheduler.shared.register(
+        forTaskWithIdentifier: PassiveMemoryBackgroundRecovery.identifier,
+        using: nil
+      ) { [weak self] task in
+        guard let refreshTask = task as? BGAppRefreshTask else {
+          task.setTaskCompleted(success: false)
+          return
+        }
+        self?.handlePassiveRecoveryTask(refreshTask)
+      }
+    }
+
     let bridge = NativeLocationBridge()
+    bridge.onPassiveRecoveryReady = { [weak self] in
+      self?.dispatchPassiveRecoveryIfReady()
+    }
     nativeLocationBridge = bridge
     if launchOptions?[.location] != nil {
       // iOS can relaunch a terminated app before Flutter can verify authoritative privacy.
@@ -1541,7 +1580,69 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let bridge = nativeLocationBridge ?? NativeLocationBridge()
+    bridge.onPassiveRecoveryReady = { [weak self] in
+      self?.dispatchPassiveRecoveryIfReady()
+    }
     bridge.attach(messenger: engineBridge.applicationRegistrar.messenger())
     nativeLocationBridge = bridge
+
+    let completionChannel = FlutterMethodChannel(
+      name: "cn.jiyidashi/passive_recovery",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    completionChannel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "complete" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let arguments = call.arguments as? [String: Any]
+      let retry = arguments?["retry"] as? Bool ?? true
+      self?.finishPassiveRecoveryTask(success: !retry, retry: retry)
+      result(nil)
+    }
+    passiveRecoveryCompletionChannel = completionChannel
+  }
+
+  @available(iOS 13.0, *)
+  private func handlePassiveRecoveryTask(_ task: BGAppRefreshTask) {
+    if activePassiveRecoveryTask != nil {
+      PassiveMemoryBackgroundRecovery.schedule()
+      task.setTaskCompleted(success: false)
+      return
+    }
+    activePassiveRecoveryTask = task
+    task.expirationHandler = { [weak self] in
+      self?.finishPassiveRecoveryTask(success: false, retry: true)
+    }
+    dispatchPassiveRecoveryIfReady()
+  }
+
+  private func dispatchPassiveRecoveryIfReady() {
+    guard #available(iOS 13.0, *),
+          activePassiveRecoveryTask != nil
+    else {
+      return
+    }
+    // The bridge returns false until Dart has installed its MethodChannel handler.
+    // Keep the BG task alive until that handshake or expiration; never treat "not ready"
+    // as permission to skip the AUTH/Privacy recovery check.
+    _ = nativeLocationBridge?.requestPassiveRecoveryWakeup()
+  }
+
+  private func finishPassiveRecoveryTask(
+    success: Bool,
+    retry: Bool
+  ) {
+    guard #available(iOS 13.0, *),
+          let task = activePassiveRecoveryTask
+    else {
+      return
+    }
+    activePassiveRecoveryTask = nil
+    task.expirationHandler = nil
+    if retry {
+      PassiveMemoryBackgroundRecovery.schedule()
+    }
+    task.setTaskCompleted(success: success)
   }
 }
