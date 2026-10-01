@@ -63,6 +63,19 @@ object NativeLocationPolicy {
             activeOwnerUserId != currentOwnerUserId
     }
 
+    fun shouldRecoverAfterProcessDeath(
+        enabledOwnerUserId: String?,
+        activeOwnerUserId: String?,
+        runtime: NativeLocationRuntimeState,
+        nativeProducerActive: Boolean,
+    ): Boolean {
+        val enabled = enabledOwnerUserId?.trim().orEmpty()
+        return enabled.isNotEmpty() &&
+            activeOwnerUserId == enabled &&
+            runtime == NativeLocationRuntimeState.RUNNING &&
+            !nativeProducerActive
+    }
+
     fun reconcileRuntime(
         ownerUserId: String,
         enabledOwnerUserId: String?,
