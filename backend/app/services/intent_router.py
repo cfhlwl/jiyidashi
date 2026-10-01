@@ -195,6 +195,8 @@ def route_intent(
         return _unknown(IntentRouteReason.INVALID_DATE)
     if date_result.status == DateParseStatus.FUTURE:
         return _unknown(IntentRouteReason.FUTURE_DATE)
+    if date_result.status == DateParseStatus.AMBIGUOUS:
+        return _unknown(IntentRouteReason.AMBIGUOUS)
     if date_result.matched and _contains_marker(
         clean_question,
         _DATE_FOOTPRINT_MARKERS,
