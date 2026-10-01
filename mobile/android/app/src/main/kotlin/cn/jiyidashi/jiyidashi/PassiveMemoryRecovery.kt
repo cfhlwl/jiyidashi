@@ -7,15 +7,15 @@ import android.os.Handler
 import android.os.Looper
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
+import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.OneTimeWorkRequest
+import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import androidx.work.workDataOf
 import io.flutter.FlutterInjector
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.dart.DartExecutor
@@ -39,7 +39,8 @@ object PassiveMemoryRecoveryScheduler {
         val store = NativeLocationStore(appContext)
         if (store.enabledOwnerUserId.isNullOrBlank()) return
 
-        val request = PeriodicWorkRequestBuilder<PassiveMemoryRecoveryWorker>(
+        val request = PeriodicWorkRequest.Builder(
+            PassiveMemoryRecoveryWorker::class.java,
             15,
             TimeUnit.MINUTES,
         )
@@ -49,7 +50,9 @@ object PassiveMemoryRecoveryScheduler {
                     .build(),
             )
             .setInputData(
-                workDataOf(PassiveMemoryRecoveryWorker.KEY_REASON to "periodic_watchdog"),
+                Data.Builder()
+                    .putString(PassiveMemoryRecoveryWorker.KEY_REASON, "periodic_watchdog")
+                    .build(),
             )
             .build()
 
@@ -83,9 +86,15 @@ object PassiveMemoryRecoveryScheduler {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        val requestBuilder = OneTimeWorkRequestBuilder<PassiveMemoryRecoveryWorker>()
+        val requestBuilder = OneTimeWorkRequest.Builder(
+            PassiveMemoryRecoveryWorker::class.java,
+        )
             .setConstraints(constraints)
-            .setInputData(workDataOf(PassiveMemoryRecoveryWorker.KEY_REASON to reason))
+            .setInputData(
+                Data.Builder()
+                    .putString(PassiveMemoryRecoveryWorker.KEY_REASON, reason)
+                    .build(),
+            )
             .setBackoffCriteria(
                 BackoffPolicy.EXPONENTIAL,
                 15,
@@ -200,14 +209,18 @@ class PassiveMemoryRecoveryWorker(
         val enabledOwner = store.enabledOwnerUserId?.trim().orEmpty()
         if (enabledOwner.isEmpty()) {
             PassiveMemoryRecoveryScheduler.cancelPeriodic(applicationContext)
-            return Result.success(workDataOf("status" to "automatic_disabled"))
+            return Result.success(
+                Data.Builder().putString("status", "automatic_disabled").build(),
+            )
         }
 
         if (!PassiveMemoryRecoveryProcessGate.tryBeginHeadless()) {
             // A normal Flutter engine is already responsible for AUTH/session rotation and
             // native sample notifications. Starting a second isolate would create a refresh
             // replay race, so this watchdog run is intentionally a no-op.
-            return Result.success(workDataOf("status" to "flutter_engine_active"))
+            return Result.success(
+                Data.Builder().putString("status", "flutter_engine_active").build(),
+            )
         }
 
         return try {
@@ -299,10 +312,10 @@ class PassiveMemoryRecoveryWorker(
             Result.retry()
         } else {
             Result.success(
-                workDataOf(
-                    "status" to status,
-                    "reason" to (inputData.getString(KEY_REASON) ?: "unknown"),
-                ),
+                Data.Builder()
+                    .putString("status", status)
+                    .putString("reason", inputData.getString(KEY_REASON) ?: "unknown")
+                    .build(),
             )
         }
     }
