@@ -188,9 +188,9 @@ def _visit_overlaps(start_utc: datetime, end_utc: datetime, row: tuple) -> bool:
     arrived_at, left_at, source_ended_at = row
     arrived = _utc(arrived_at)
     proven_end = left_at or source_ended_at
-    return arrived < end_utc and (
-        proven_end is None or _utc(proven_end) >= start_utc
-    )
+    if proven_end is None:
+        return start_utc <= arrived < end_utc
+    return arrived < end_utc and _utc(proven_end) >= start_utc
 
 
 def _day_coverage(
@@ -243,10 +243,12 @@ def _day_coverage(
                     Visit.left_at >= start_utc,
                     and_(
                         Visit.left_at.is_(None),
-                        or_(
-                            Visit.source_ended_at.is_(None),
-                            Visit.source_ended_at >= start_utc,
-                        ),
+                        Visit.source_ended_at >= start_utc,
+                    ),
+                    and_(
+                        Visit.left_at.is_(None),
+                        Visit.source_ended_at.is_(None),
+                        Visit.arrived_at >= start_utc,
                     ),
                 ),
             )
@@ -344,7 +346,15 @@ def _day_coverage(
     for previous, current in zip(ordered_observations, ordered_observations[1:]):
         if current - previous < RECORDED_GAP_MIN_DURATION:
             continue
-        candidate = _Interval(previous, current, RecordingGapReason.UNKNOWN)
+        candidate = _clip_interval(
+            previous,
+            current,
+            lower=start_utc,
+            upper=effective_end,
+            reason=RecordingGapReason.UNKNOWN,
+        )
+        if candidate is None:
+            continue
         for uncovered in subtract_masks(
             candidate,
             [*merged_evidence, *privacy_gaps],
@@ -472,7 +482,11 @@ def _historical_aggregates(
         )
     ]
     visit_rows = [
-        (_utc(arrived), None if left is None else _utc(left), None if source_end is None else _utc(source_end))
+        (
+            _utc(arrived),
+            None if left is None else _utc(left),
+            None if source_end is None else _utc(source_end),
+        )
         for arrived, left, source_end in db.execute(
             select(Visit.arrived_at, Visit.left_at, Visit.source_ended_at)
             .where(
@@ -482,10 +496,12 @@ def _historical_aggregates(
                     Visit.left_at >= history_start,
                     and_(
                         Visit.left_at.is_(None),
-                        or_(
-                            Visit.source_ended_at.is_(None),
-                            Visit.source_ended_at >= history_start,
-                        ),
+                        Visit.source_ended_at >= history_start,
+                    ),
+                    and_(
+                        Visit.left_at.is_(None),
+                        Visit.source_ended_at.is_(None),
+                        Visit.arrived_at >= history_start,
                     ),
                 ),
             )
