@@ -250,6 +250,7 @@ async def test_core003_backlog_capacity_and_recovery_are_deterministic(client):
     assert capacity.health.status_reason == "QUEUE_CAPACITY_PRESSURE"
     assert capacity.today.has_capacity_pressure is True
     assert capacity.today.has_recorded_gap is True
+    assert capacity.active_gap_reasons == ["QUEUE_CAPACITY_PRESSURE"]
 
     assert backlog.health.status == "DEGRADED"
     assert backlog.health.status_reason == "DELIVERY_BACKLOG"
@@ -363,6 +364,7 @@ async def test_core003_sparse_observations_create_unknown_gap_without_route_fabr
     unknown = [gap for gap in result.recent_gaps if gap.reason == "UNKNOWN"]
     assert len(unknown) == 1
     assert unknown[0].duration_seconds == 3 * 3600 + 50 * 60
+    assert result.today.has_unexplained_gap is True
     assert result.today.coverage_state == "GAPPED"
 
 
