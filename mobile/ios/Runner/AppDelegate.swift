@@ -371,6 +371,25 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
         )
       }
       result(nil)
+    case "recordLocationDeliveryFailure":
+      let arguments = call.arguments as? [String: Any]
+      let reason =
+        (arguments?["reason"] as? String)?
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+      incrementMetric(
+        ownerUserId: ownerUserId,
+        prefix: Keys.deliveryFailureCount,
+        delta: 1
+      )
+      defaults.set(
+        Int64(Date().timeIntervalSince1970 * 1000),
+        forKey: ownerKey(Keys.lastDeliveryFailureAt, ownerUserId)
+      )
+      defaults.set(
+        (reason?.isEmpty == false ? reason! : "location_delivery_failed"),
+        forKey: ownerKey(Keys.lastDeliveryFailureReason, ownerUserId)
+      )
+      result(nil)
     case "purgeLocationSamplingOwner":
       purgeLocationSamplingOwner(ownerUserId)
       result(nil)
