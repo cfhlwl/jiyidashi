@@ -308,6 +308,17 @@ class PassiveMemoryRecoveryWorker(
         }
 
         if (!completed) return Result.retry()
+
+        if (status == "noSession" ||
+            status == "accountDeletionInProgress" ||
+            status == "authorityChanged"
+        ) {
+            // Loss of account/session publication authority is permission to STOP only.
+            // Do not purge queued coordinates here: account deletion/logout local cleanup
+            // owns deletion. But no stale native producer may continue collecting.
+            sealAutomaticProduction(store, enabledOwner)
+        }
+
         return if (retry) {
             Result.retry()
         } else {
@@ -318,6 +329,20 @@ class PassiveMemoryRecoveryWorker(
                     .build(),
             )
         }
+    }
+
+    private fun sealAutomaticProduction(
+        store: NativeLocationStore,
+        ownerUserId: String,
+    ) {
+        store.finishTracking(ownerUserId)
+        applicationContext.stopService(
+            Intent(applicationContext, NativeLocationTrackingService::class.java),
+        )
+        store.clearAutomaticOwner(ownerUserId)
+        store.clearRecoveryPending(ownerUserId)
+        store.runtime = NativeLocationRuntimeState.STOPPED
+        PassiveMemoryRecoveryScheduler.cancelPeriodic(applicationContext)
     }
 
     companion object {
