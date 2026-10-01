@@ -465,6 +465,12 @@ def _derive_status(
             RecordingGapState.KNOWN,
         )
 
+    if client.location_services_state == "UNKNOWN":
+        return (
+            RecordingHealthStatus.UNKNOWN,
+            RecordingHealthReason.NATIVE_STATE_UNAVAILABLE,
+            RecordingGapState.UNKNOWN,
+        )
     if client.location_services_state == "OFF":
         return (
             RecordingHealthStatus.BLOCKED,
@@ -472,6 +478,12 @@ def _derive_status(
             RecordingGapState.KNOWN,
         )
 
+    if client.permission_state == "UNKNOWN":
+        return (
+            RecordingHealthStatus.UNKNOWN,
+            RecordingHealthReason.NATIVE_STATE_UNAVAILABLE,
+            RecordingGapState.UNKNOWN,
+        )
     if client.permission_state in {
         "DENIED",
         "RESTRICTED",
@@ -484,11 +496,24 @@ def _derive_status(
             RecordingGapState.KNOWN,
         )
 
+    if client.background_runtime_state == "UNKNOWN":
+        return (
+            RecordingHealthStatus.UNKNOWN,
+            RecordingHealthReason.NATIVE_STATE_UNAVAILABLE,
+            RecordingGapState.UNKNOWN,
+        )
     if client.background_runtime_state == "RESTRICTED":
         return (
             RecordingHealthStatus.BLOCKED,
             RecordingHealthReason.PLATFORM_RESTRICTED,
             RecordingGapState.KNOWN,
+        )
+
+    if client.native_queue_schema_version < 2:
+        return (
+            RecordingHealthStatus.UNKNOWN,
+            RecordingHealthReason.NATIVE_STATE_UNAVAILABLE,
+            RecordingGapState.UNKNOWN,
         )
 
     if client.recovery_pending:
@@ -510,6 +535,12 @@ def _derive_status(
             RecordingGapState.KNOWN,
         )
 
+    if client.native_producer_state == "UNKNOWN":
+        return (
+            RecordingHealthStatus.UNKNOWN,
+            RecordingHealthReason.NATIVE_STATE_UNAVAILABLE,
+            RecordingGapState.UNKNOWN,
+        )
     if client.native_producer_state != "RUNNING":
         return (
             RecordingHealthStatus.DEGRADED,
