@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import desc, exists, or_, select
 from sqlalchemy.orm import Session
 
+from app.intent_models import IntentKind, IntentRouteReason
 from app.media_models import MediaEvidenceLink
 from app.models import (
     Memory,
@@ -16,7 +17,6 @@ from app.models import (
     ObjectLocationStatus,
     SourceType,
 )
-from app.intent_models import IntentKind, IntentRouteReason
 from app.schemas import Evidence, EvidenceProvenance, MemoryQueryResponse
 from app.services.date_query_parser import DateParseStatus, resolve_user_date_expression
 from app.services.day_footprint_service import get_day_footprint
