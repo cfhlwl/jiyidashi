@@ -1,0 +1,63 @@
+name: core004-certification
+
+on:
+  pull_request:
+    paths:
+      - "docs/certification/core004/**"
+      - "docs/DEVELOPMENT_PROGRESS.md"
+      - "scripts/core004_certification.py"
+      - "scripts/test_core004_certification.py"
+      - ".github/workflows/core004-certification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core004-certification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: CORE-004 contract unit tests
+        run: python scripts/test_core004_certification.py
+
+      - name: CORE-004 evidence validation
+        run: python scripts/core004_certification.py validate
+
+      - name: CORE-004 evidence-PR scope guard
+        run: python scripts/core004_certification.py scope
+
+      - name: CORE-004 current matrix
+        run: python scripts/core004_certification.py summary
+
+      - name: Explicit physical-device boundary
+        shell: bash
+        run: |
+          cat <<'EOF'
+          CI validates only the CORE-004 harness/evidence contract.
+          CI does NOT certify Android/iOS physical behavior and must never be cited
+          as a substitute for the mandatory 24h/72h/12h real-device evidence.
+          EOF
