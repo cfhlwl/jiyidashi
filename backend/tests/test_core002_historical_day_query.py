@@ -500,6 +500,48 @@ async def test_core002_day_event_preserves_verified_photo_and_voice_evidence(
     ]
 
 
+async def test_core002_dated_object_query_does_not_fall_back_to_current_location(
+    client,
+    monkeypatch,
+):
+    headers, _ = await _new_user(client, "core002-dated-object")
+    _freeze_local_day(monkeypatch, date(2026, 10, 1))
+
+    created = await client.post(
+        "/v1/objects",
+        headers=headers,
+        json={"name": "护照"},
+    )
+    assert created.status_code == 201
+    location = await client.post(
+        f"/v1/objects/{created.json()['id']}/locations",
+        headers=headers,
+        json={"location_text": "书房抽屉"},
+    )
+    assert location.status_code == 201
+
+    routed = await client.post(
+        "/v1/intent/route",
+        headers=headers,
+        json={"question": "25号护照在哪里？"},
+    )
+    assert routed.status_code == 200
+    assert routed.json()["intent"] == "UNKNOWN"
+    assert routed.json()["reason"] == "AMBIGUOUS"
+
+    query = await client.post(
+        "/v1/memory/query",
+        headers=headers,
+        json={"question": "25号护照在哪里？"},
+    )
+    assert query.status_code == 200
+    body = query.json()
+    assert body["can_answer"] is False
+    assert body["answer"] is None
+    assert body["reason"] == "AMBIGUOUS"
+    assert "书房抽屉" not in str(body)
+
+
 async def test_core002_invalid_and_future_date_queries_fail_closed(
     client,
     monkeypatch,
