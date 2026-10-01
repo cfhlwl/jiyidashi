@@ -491,7 +491,15 @@ export default function Page() {
     }
   }
 
-  const trust = result ? trustPresentation(result) : null
+  const trust = result
+    ? (result.day_footprint && result.day_footprint.visits.length > 0
+      ? {
+        label: '有记录支持',
+        detail: '这个答案来自已形成的地点访问记录。',
+        tone: 'supported' as const,
+      }
+      : trustPresentation(result))
+    : null
   const elderState = elderFindState({
     loading,
     canAnswer: result ? result.can_answer : null,
@@ -539,7 +547,7 @@ export default function Page() {
               {result.answer
                 || (result.can_answer
                   ? '找到相关记录，但答案暂不可显示。'
-                  : (elderMode ? '还没有可靠记录。' : '没有找到足够记录回答这个问题。'))}
+                  : (elderMode ? '我还不知道它在哪里。' : '没有找到足够记录回答这个问题。'))}
             </View>
             <View className={`trust-badge trust-${trust.tone}`}>{trust.label}</View>
           </View>
