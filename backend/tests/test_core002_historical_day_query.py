@@ -10,6 +10,7 @@ from app.models import Memory, MemorySource, MemoryType, Place, SourceType, User
 from app.services.date_query_parser import (
     DateParseStatus,
     parse_date_expression,
+    resolve_user_date_expression,
 )
 from app.services.time_service import user_day_bounds_utc
 
@@ -84,6 +85,39 @@ def test_core002_date_parser_matrix():
     future = parse_date_expression("2026-10-02去哪了", today=today)
     assert future.status == DateParseStatus.FUTURE
     assert parse_date_expression("哪天去过公司", today=today).status == DateParseStatus.NO_MATCH
+
+
+async def test_core002_date_parser_uses_owner_timezone_near_utc_boundary(client):
+    _, east_user = await _new_user(client, "core002-date-east")
+    _, west_user = await _new_user(client, "core002-date-west")
+    _set_timezone(east_user, "Pacific/Kiritimati")
+    _set_timezone(west_user, "America/Los_Angeles")
+
+    # Same server-owned instant: +14 is already Oct 2 while -07 is still Oct 1.
+    reference = datetime(2026, 10, 1, 10, 30, tzinfo=UTC)
+    with SessionLocal() as db:
+        east_today = resolve_user_date_expression(
+            db,
+            user_id=east_user,
+            question="今天去哪了",
+            reference_utc=reference,
+        )
+        west_today = resolve_user_date_expression(
+            db,
+            user_id=west_user,
+            question="今天去哪了",
+            reference_utc=reference,
+        )
+        east_yesterday = resolve_user_date_expression(
+            db,
+            user_id=east_user,
+            question="昨天去哪了",
+            reference_utc=reference,
+        )
+
+    assert east_today.day == date(2026, 10, 2)
+    assert west_today.day == date(2026, 10, 1)
+    assert east_yesterday.day == date(2026, 10, 1)
 
 
 async def test_core002_day_footprint_overlap_owner_order_and_typed_endpoint(
