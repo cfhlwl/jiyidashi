@@ -12,6 +12,7 @@ import 'native_location_section.dart';
 import 'native_motion_sampling_bridge.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
+import 'passive_memory_delivery.dart';
 import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
@@ -62,6 +63,15 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       widget.onboardingStore ?? OnboardingStore();
   late final NativeLocationBridge locationBridge =
       widget.locationBridge ?? MethodChannelNativeLocationBridge();
+  late final NativeMotionSamplingBridge motionSamplingBridge =
+      widget.motionSamplingBridge ?? MethodChannelNativeMotionSamplingBridge();
+  late final PassiveMemoryDeliveryCoordinator passiveDelivery =
+      PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: offlineQueue,
+        locationBridge: locationBridge,
+        samplingBridge: motionSamplingBridge,
+      );
 
   bool authenticated = false;
   bool restoringSession = true;
@@ -95,6 +105,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           restoreMessage = null;
           elderModeEnabled = profile['elder_mode_enabled'] == true;
         });
+        unawaited(_recoverPassiveMemory());
         return;
       } on ApiException catch (exc) {
         if (exc.statusCode == 423 &&
@@ -152,6 +163,26 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _recoverPassiveMemory() async {
+    if (!authenticated || resumeAccountDeletionAfterAuth) return;
+    try {
+      await passiveDelivery.recoverAndDeliver(
+        restoreSessionIfNeeded: false,
+        allowProducerResume: true,
+      );
+    } catch (_) {
+      // CORE-001 recovery is durable/fail-closed. UI authentication must not be
+      // reinterpreted from a background delivery exception.
+    }
+  }
+
+  Future<void> _resumeAuthorityAndPassiveMemory() async {
+    await _refreshServerAuthority();
+    if (authenticated) {
+      await _recoverPassiveMemory();
+    }
+  }
+
   Future<void> _logout() async {
     try {
       await api.logout();
@@ -171,7 +202,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_refreshServerAuthority());
+      unawaited(_resumeAuthorityAndPassiveMemory());
     }
   }
 
@@ -184,6 +215,9 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     }
     if (widget.onboardingStore == null) {
       unawaited(onboardingStore.close());
+    }
+    if (widget.motionSamplingBridge == null) {
+      unawaited(motionSamplingBridge.close());
     }
     super.dispose();
   }
@@ -210,7 +244,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   startOnboarding: startOnboardingAfterAuth,
                   resumeAccountDeletion: resumeAccountDeletionAfterAuth,
                   locationBridge: locationBridge,
-                  motionSamplingBridge: widget.motionSamplingBridge,
+                  motionSamplingBridge: motionSamplingBridge,
                   sync: sync,
                   onElderModeChanged: (enabled) {
                     if (mounted) setState(() => elderModeEnabled = enabled);
@@ -234,6 +268,9 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                         authenticated = true;
                         restoreMessage = null;
                       });
+                      if (!resumeAccountDeletionAfterAuth) {
+                        unawaited(_recoverPassiveMemory());
+                      }
                     }
                   },
                 ),
@@ -753,6 +790,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         locationController: location,
         nativeBridge:
             widget.motionSamplingBridge ?? MethodChannelNativeMotionSamplingBridge(),
+        closeNativeBridgeOnDispose: widget.motionSamplingBridge == null,
       );
     }
     if (!_accountDeletionIntentActive &&
