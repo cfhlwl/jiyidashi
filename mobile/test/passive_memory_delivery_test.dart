@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/motion_sampling_policy.dart';
 import 'package:jiyidashi/native_location_bridge.dart';
 import 'package:jiyidashi/native_motion_sampling_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
@@ -176,7 +177,10 @@ class _SamplingBridge implements NativeMotionSamplingBridge {
   }
 
   @override
-  Future<void> applyProfile(String ownerUserId, dynamic profile) async {}
+  Future<void> applyProfile(
+    String ownerUserId,
+    AdaptiveSamplingProfile profile,
+  ) async {}
 
   @override
   Future<LocationProducerMetrics> metrics(String ownerUserId) async =>
