@@ -214,6 +214,16 @@ struct NativeLocationSampleAdmission {
 /// Pure permission/runtime policy kept free of CLLocationManager side effects so the
 /// privacy invariants can be exercised directly by RunnerTests.
 struct NativeLocationPolicy {
+  static func recordingHealthBackgroundRuntime(
+    authorization: NativeLocationAuthorization,
+    locationServicesEnabled: Bool
+  ) -> String {
+    guard authorization == .background && locationServicesEnabled else {
+      return "unknown"
+    }
+    return "eligible"
+  }
+
   static func canStart(
     ownerUserId: String,
     enabledOwnerUserId: String?,
@@ -404,6 +414,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     case "openBackgroundLocationSettings":
       // Android 11+ uses this cross-platform bridge method. iOS Always permission has its
       // own explicit CoreLocation flow, so this is intentionally status-only here.
+      result(status(ownerUserId: ownerUserId))
+    case "openLocationServicesSettings":
+      if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+        UIApplication.shared.open(settingsURL, options: [:], completionHandler: nil)
+      }
       result(status(ownerUserId: ownerUserId))
     case "disableAutomaticLocation":
       result(disableAutomaticLocation(ownerUserId: ownerUserId))
@@ -1292,6 +1307,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       "runtime": reconciled.rawValue,
       "automatic_enabled": ownerMatches,
       "location_services_enabled": servicesEnabled,
+      "background_runtime_state": NativeLocationPolicy.recordingHealthBackgroundRuntime(
+        authorization: currentAuthorization,
+        locationServicesEnabled: servicesEnabled
+      ),
+      "battery_optimization_state": "not_applicable",
       "reason": reason ?? NSNull(),
       "restore_pending": ownerMatches && activeOwnerMatches && relaunchRestorePending,
       "recovery_reason":

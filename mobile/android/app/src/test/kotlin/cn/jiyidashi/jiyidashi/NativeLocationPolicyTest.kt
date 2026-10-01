@@ -9,6 +9,50 @@ class NativeLocationPolicyTest {
     private val owner = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
     @Test
+    fun recordingHealthRuntimeAndBatteryProjectionAreDeterministic() {
+        assertEquals(
+            "eligible",
+            NativeLocationPolicy.recordingBackgroundRuntimeState(backgroundRestricted = false),
+        )
+        assertEquals(
+            "restricted",
+            NativeLocationPolicy.recordingBackgroundRuntimeState(backgroundRestricted = true),
+        )
+        assertEquals(
+            "unknown",
+            NativeLocationPolicy.recordingBackgroundRuntimeState(backgroundRestricted = null),
+        )
+        assertEquals(
+            "not_applicable",
+            NativeLocationPolicy.recordingBatteryOptimizationState(
+                sdkInt = 22,
+                ignoringBatteryOptimizations = false,
+            ),
+        )
+        assertEquals(
+            "optimized",
+            NativeLocationPolicy.recordingBatteryOptimizationState(
+                sdkInt = 35,
+                ignoringBatteryOptimizations = false,
+            ),
+        )
+        assertEquals(
+            "exempt",
+            NativeLocationPolicy.recordingBatteryOptimizationState(
+                sdkInt = 35,
+                ignoringBatteryOptimizations = true,
+            ),
+        )
+        assertEquals(
+            "unknown",
+            NativeLocationPolicy.recordingBatteryOptimizationState(
+                sdkInt = 35,
+                ignoringBatteryOptimizations = null,
+            ),
+        )
+    }
+
+    @Test
     fun startRequiresBackgroundPermissionAndMatchingOwner() {
         assertTrue(
             NativeLocationPolicy.canStart(

@@ -15,6 +15,19 @@ enum NativeLocationRuntime {
   running,
 }
 
+enum NativeBackgroundRuntimeState {
+  eligible,
+  restricted,
+  unknown,
+}
+
+enum NativeBatteryOptimizationState {
+  exempt,
+  optimized,
+  notApplicable,
+  unknown,
+}
+
 class NativeLocationQueueDiagnostics {
   const NativeLocationQueueDiagnostics({
     required this.schemaVersion,
@@ -118,6 +131,8 @@ class NativeLocationStatus {
     required this.runtime,
     required this.automaticEnabled,
     required this.locationServicesEnabled,
+    this.backgroundRuntimeState = NativeBackgroundRuntimeState.unknown,
+    this.batteryOptimizationState = NativeBatteryOptimizationState.unknown,
     this.reason,
     this.lastFixAt,
     this.lastAccuracyMeters,
@@ -133,6 +148,8 @@ class NativeLocationStatus {
         runtime = NativeLocationRuntime.stopped,
         automaticEnabled = false,
         locationServicesEnabled = false,
+        backgroundRuntimeState = NativeBackgroundRuntimeState.unknown,
+        batteryOptimizationState = NativeBatteryOptimizationState.unknown,
         lastFixAt = null,
         lastAccuracyMeters = null,
         restorePending = false,
@@ -145,6 +162,8 @@ class NativeLocationStatus {
   final NativeLocationRuntime runtime;
   final bool automaticEnabled;
   final bool locationServicesEnabled;
+  final NativeBackgroundRuntimeState backgroundRuntimeState;
+  final NativeBatteryOptimizationState batteryOptimizationState;
   final String? reason;
   final DateTime? lastFixAt;
   final double? lastAccuracyMeters;
@@ -184,6 +203,10 @@ class NativeLocationStatus {
       runtime: _parseRuntime(map['runtime']?.toString()),
       automaticEnabled: map['automatic_enabled'] == true,
       locationServicesEnabled: map['location_services_enabled'] == true,
+      backgroundRuntimeState:
+          _parseBackgroundRuntime(map['background_runtime_state']?.toString()),
+      batteryOptimizationState:
+          _parseBatteryOptimization(map['battery_optimization_state']?.toString()),
       reason: map['reason']?.toString(),
       lastFixAt: _parseTimestamp(map['last_fix_at']),
       lastAccuracyMeters: _parseDouble(map['last_accuracy_meters']),
@@ -212,6 +235,23 @@ class NativeLocationStatus {
     };
   }
 
+  static NativeBackgroundRuntimeState _parseBackgroundRuntime(String? value) {
+    return switch (value) {
+      'eligible' => NativeBackgroundRuntimeState.eligible,
+      'restricted' => NativeBackgroundRuntimeState.restricted,
+      _ => NativeBackgroundRuntimeState.unknown,
+    };
+  }
+
+  static NativeBatteryOptimizationState _parseBatteryOptimization(String? value) {
+    return switch (value) {
+      'exempt' => NativeBatteryOptimizationState.exempt,
+      'optimized' => NativeBatteryOptimizationState.optimized,
+      'not_applicable' => NativeBatteryOptimizationState.notApplicable,
+      _ => NativeBatteryOptimizationState.unknown,
+    };
+  }
+
   static DateTime? _parseTimestamp(Object? value) {
     if (value == null) return null;
     return DateTime.tryParse(value.toString())?.toUtc();
@@ -231,6 +271,10 @@ abstract interface class NativeLocationBridge {
   Future<NativeLocationStatus> enableAutomaticLocation(String ownerUserId);
 
   Future<NativeLocationStatus> openBackgroundLocationSettings(
+    String ownerUserId,
+  );
+
+  Future<NativeLocationStatus> openLocationServicesSettings(
     String ownerUserId,
   );
 
@@ -297,6 +341,12 @@ class MethodChannelNativeLocationBridge implements NativeLocationBridge {
     String ownerUserId,
   ) =>
       _invoke('openBackgroundLocationSettings', ownerUserId);
+
+  @override
+  Future<NativeLocationStatus> openLocationServicesSettings(
+    String ownerUserId,
+  ) =>
+      _invoke('openLocationServicesSettings', ownerUserId);
 
   @override
   Future<NativeLocationStatus> disableAutomaticLocation(String ownerUserId) =>

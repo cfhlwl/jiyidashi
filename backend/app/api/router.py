@@ -23,6 +23,7 @@ from app.api import (
     objects,
     people,
     privacy,
+    recording_health,
     reminders,
     today_footprint,
     users,
@@ -71,6 +72,8 @@ api_router.include_router(objects.router)
 api_router.include_router(people.router)
 api_router.include_router(location.router)
 api_router.include_router(privacy.router)
+# CORE-003 is the single owner-scoped Recording Health projection.
+api_router.include_router(recording_health.router)
 # [人工注释][S1-005][S1-006] A 工作线统一挂载媒体协议；Mini/Flutter 后续只消费
 # 这一套 /v1/media 契约，不各自发明上传字段。
 api_router.include_router(media.router)

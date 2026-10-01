@@ -1274,6 +1274,22 @@ class JiYiApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> getRecordingHealth({
+    Map<String, dynamic>? clientState,
+  }) async {
+    // CORE-003 reads are bound to the exact authenticated session that started the request.
+    // A late owner-A response after login as owner B must never repopulate the health surface.
+    final snapshot = _captureAuthenticatedSession();
+    final data = await _jsonRequest(
+      clientState == null ? 'GET' : 'POST',
+      '/recording/health',
+      body: clientState,
+      authSnapshot: snapshot,
+    );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return data;
+  }
+
   Future<Map<String, dynamic>> getPrivacyStatus() {
     return _jsonRequest('GET', '/privacy/status');
   }

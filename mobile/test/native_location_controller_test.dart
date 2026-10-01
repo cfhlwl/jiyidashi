@@ -69,6 +69,14 @@ class _FakeBridge implements NativeLocationBridge {
   }
 
   @override
+  Future<NativeLocationStatus> openLocationServicesSettings(
+    String ownerUserId,
+  ) async {
+    calls.add('openLocationServicesSettings');
+    return current;
+  }
+
+  @override
   Future<NativeLocationStatus> disableAutomaticLocation(
     String ownerUserId,
   ) async {

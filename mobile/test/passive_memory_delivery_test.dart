@@ -163,6 +163,10 @@ class _LocationBridge implements NativeLocationBridge {
       current;
 
   @override
+  Future<NativeLocationStatus> openLocationServicesSettings(String ownerUserId) async =>
+      current;
+
+  @override
   Future<NativeLocationStatus> disableAutomaticLocation(String ownerUserId) async {
     current = NativeLocationStatus(
       supported: current.supported,

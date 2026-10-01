@@ -2,12 +2,14 @@ package cn.jiyidashi.jiyidashi
 
 import android.Manifest
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -102,6 +104,8 @@ class NativeLocationPlugin :
                 enableAutomaticLocation(ownerUserId, result)
             "openBackgroundLocationSettings" ->
                 openBackgroundLocationSettings(ownerUserId, result)
+            "openLocationServicesSettings" ->
+                openLocationServicesSettings(ownerUserId, result)
             "disableAutomaticLocation" ->
                 result.success(disableAutomaticLocation(ownerUserId))
             "start" -> result.success(start(ownerUserId))
@@ -391,6 +395,28 @@ class NativeLocationPlugin :
         )
     }
 
+    private fun openLocationServicesSettings(
+        ownerUserId: String,
+        result: MethodChannel.Result,
+    ) {
+        if (AndroidLocationPermissions.locationServicesEnabled(applicationContext)) {
+            result.success(status(ownerUserId))
+            return
+        }
+
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error(
+                "no_activity",
+                "Opening location services settings requires a foreground activity",
+                null,
+            )
+            return
+        }
+        currentActivity.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        result.success(status(ownerUserId))
+    }
+
     private fun switchAutomaticOwner(ownerUserId: String) {
         // Automatic enable is account-scoped. Switching accounts must stop any old producer
         // before the new owner preference becomes authoritative.
@@ -567,6 +593,30 @@ class NativeLocationPlugin :
             store.runtime = reconciled
         }
 
+        val backgroundRestricted: Boolean? =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val activityManager =
+                    applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                activityManager?.isBackgroundRestricted
+            } else {
+                false
+            }
+        val backgroundRuntimeState =
+            NativeLocationPolicy.recordingBackgroundRuntimeState(backgroundRestricted)
+        val powerManager =
+            applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val ignoringBatteryOptimizations: Boolean? =
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                true
+            } else {
+                powerManager?.isIgnoringBatteryOptimizations(applicationContext.packageName)
+            }
+        val batteryOptimizationState =
+            NativeLocationPolicy.recordingBatteryOptimizationState(
+                sdkInt = Build.VERSION.SDK_INT,
+                ignoringBatteryOptimizations = ignoringBatteryOptimizations,
+            )
+
         val reason = forcedReason ?: when {
             !servicesEnabled -> "location_services_disabled"
             permission == NativeLocationPermissionLevel.DENIED -> "permission_denied"
@@ -589,6 +639,8 @@ class NativeLocationPlugin :
             "runtime" to runtimeValue(reconciled),
             "automatic_enabled" to ownerMatches,
             "location_services_enabled" to servicesEnabled,
+            "background_runtime_state" to backgroundRuntimeState,
+            "battery_optimization_state" to batteryOptimizationState,
             "reason" to reason,
             "last_fix_at" to if (ownerMatches) {
                 store.lastFixAtMillis?.let { isoTimestamp(it) }

@@ -92,6 +92,14 @@ class _SpyBridge implements NativeLocationBridge {
   }
 
   @override
+  Future<NativeLocationStatus> openLocationServicesSettings(
+    String ownerUserId,
+  ) async {
+    calls.add('openLocationServicesSettings');
+    return _status();
+  }
+
+  @override
   Future<NativeLocationStatus> disableAutomaticLocation(
     String ownerUserId,
   ) async {

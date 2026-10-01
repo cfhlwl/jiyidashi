@@ -26,6 +26,26 @@ enum class BackgroundPermissionAction {
  * grant/enabled preference must never authorize a new account on the same device.
  */
 object NativeLocationPolicy {
+    fun recordingBackgroundRuntimeState(backgroundRestricted: Boolean?): String {
+        return when (backgroundRestricted) {
+            true -> "restricted"
+            false -> "eligible"
+            null -> "unknown"
+        }
+    }
+
+    fun recordingBatteryOptimizationState(
+        sdkInt: Int,
+        ignoringBatteryOptimizations: Boolean?,
+    ): String {
+        if (sdkInt < 23) return "not_applicable"
+        return when (ignoringBatteryOptimizations) {
+            true -> "exempt"
+            false -> "optimized"
+            null -> "unknown"
+        }
+    }
+
     fun canStart(
         ownerUserId: String,
         enabledOwnerUserId: String?,
