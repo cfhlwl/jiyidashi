@@ -169,6 +169,11 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           return;
         }
         if (exc.statusCode == 401) {
+          final owner = api.authenticatedUserId?.trim();
+          if (owner != null && owner.isNotEmpty) {
+            await _disableNativeForTerminalAuthLoss(owner);
+          }
+          if (!mounted) return;
           setState(() {
             authenticated = false;
             restoringSession = false;
@@ -192,11 +197,15 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
 
   Future<void> _refreshServerAuthority() async {
     if (!authenticated) return;
+    final owner = api.authenticatedUserId?.trim();
     try {
       await api.ensureFreshServerAuthority();
     } on ApiException catch (exc) {
-      if (!mounted) return;
       if (exc.statusCode == 400 || exc.statusCode == 401) {
+        if (owner != null && owner.isNotEmpty) {
+          await _disableNativeForTerminalAuthLoss(owner);
+        }
+        if (!mounted) return;
         setState(() {
           authenticated = false;
           startOnboardingAfterAuth = false;
@@ -208,6 +217,16 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     } on TransportException {
       // Keep the server-issued session material for a later retry, but never mint
       // local authority or silently replace it with cached user identity.
+    }
+  }
+
+  Future<void> _disableNativeForTerminalAuthLoss(String owner) async {
+    try {
+      await locationBridge.disableAutomaticLocation(owner);
+    } on MissingPluginException {
+      // Auth state still fails closed even when this platform has no native bridge.
+    } on PlatformException {
+      // Do not restore authenticated UI merely because native shutdown could not report.
     }
   }
 
