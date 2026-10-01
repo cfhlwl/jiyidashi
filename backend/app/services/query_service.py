@@ -220,6 +220,20 @@ def query_memory(
             day=date_result.day,
         )
 
+    if (
+        date_result.status == DateParseStatus.MATCHED
+        and route.intent == IntentKind.UNKNOWN
+    ):
+        return MemoryQueryResponse(
+            answer=None,
+            can_answer=False,
+            certainty="unknown",
+            reason=route.reason.value,
+            intent="UNKNOWN",
+            evidence=[],
+            memory_ids=[],
+        )
+
     if _has_object_location_intent(clean_question):
         matched_object, is_ambiguous = _resolve_object(db, user_id, clean_question)
         if is_ambiguous:
