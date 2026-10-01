@@ -34,7 +34,6 @@ class LocationSamplingCoordinator extends ChangeNotifier {
     required PassiveMemoryDeliveryCoordinator deliveryCoordinator,
     AdaptiveSamplingPolicy policy = const AdaptiveSamplingPolicy(),
     MotionStateMachine? motionStateMachine,
-    DateTime Function()? now,
     bool closeNativeBridgeOnDispose = true,
   })  : _api = api,
         _store = store,
@@ -43,7 +42,6 @@ class LocationSamplingCoordinator extends ChangeNotifier {
         _deliveryCoordinator = deliveryCoordinator,
         _policy = policy,
         _motionStateMachine = motionStateMachine ?? MotionStateMachine(),
-        _now = now ?? DateTime.now,
         _closeNativeBridgeOnDispose = closeNativeBridgeOnDispose,
         _profile = policy.profileFor(motionState: MotionState.unknown);
 
@@ -54,7 +52,6 @@ class LocationSamplingCoordinator extends ChangeNotifier {
   final PassiveMemoryDeliveryCoordinator _deliveryCoordinator;
   final AdaptiveSamplingPolicy _policy;
   final MotionStateMachine _motionStateMachine;
-  final DateTime Function() _now;
   final bool _closeNativeBridgeOnDispose;
 
   AdaptiveSamplingProfile _profile;
@@ -154,9 +151,8 @@ class LocationSamplingCoordinator extends ChangeNotifier {
       },
     );
 
-    // Shared delivery owns all AUTH / Privacy / upload decisions. When it proves auth
-    // loss or quarantines native production, refresh the controller's read-only status so
-    // foreground UI/motion state cannot keep believing the producer is still running.
+    // Shared delivery owns all AUTH / Privacy / upload decisions. Foreground only mirrors
+    // that result into its controller gate/status; it never performs a second server check.
     switch (report.status) {
       case PassiveMemoryRecoveryStatus.privacyPaused:
         await _locationController.pauseForPrivacy();
