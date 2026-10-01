@@ -4,7 +4,8 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 from app.core.db import SessionLocal
-from app.models import Place, User, Visit
+from app.media_models import MediaAsset, MediaEvidenceLink, MediaKind, MediaStatus
+from app.models import Memory, MemorySource, MemoryType, Place, SourceType, User, Visit
 from app.services.date_query_parser import (
     DateParseStatus,
     parse_date_expression,
@@ -351,6 +352,152 @@ async def test_core002_broad_day_query_is_evidence_first_and_provider_optional(
     assert empty_body["reason"] == "NO_EVIDENCE"
     assert "没有找到可靠" in empty_body["answer"]
     assert provider_calls == 0
+
+
+async def test_core002_dated_activity_phrase_routes_to_day_evidence(
+    client,
+    monkeypatch,
+):
+    headers, _ = await _new_user(client, "core002-activity-route")
+    _freeze_local_day(monkeypatch, date(2026, 10, 1))
+
+    routed = await client.post(
+        "/v1/intent/route",
+        headers=headers,
+        json={"question": "昨天我做了什么？"},
+    )
+    assert routed.status_code == 200
+    assert routed.json() == {
+        "intent": "FIND_EVENT",
+        "capability": "MEMORY_QUERY",
+        "reason": "MATCHED",
+    }
+
+
+async def test_core002_day_event_preserves_verified_photo_and_voice_evidence(
+    client,
+    monkeypatch,
+):
+    headers, user_id = await _new_user(client, "core002-media-evidence")
+    _set_timezone(user_id, "Asia/Shanghai")
+    _freeze_local_day(monkeypatch, date(2026, 10, 1))
+
+    photo_memory_id = uuid4()
+    voice_memory_id = uuid4()
+    photo_source_id = uuid4()
+    voice_source_id = uuid4()
+    photo_media_id = uuid4()
+    voice_media_id = uuid4()
+    photo_occurred = datetime(2026, 9, 25, 2, 30, tzinfo=UTC)
+    voice_occurred = datetime(2026, 9, 25, 6, 45, tzinfo=UTC)
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                Memory(
+                    id=photo_memory_id,
+                    user_id=user_id,
+                    memory_type=MemoryType.PHOTO,
+                    content="上午拍下了项目白板",
+                    occurred_at=photo_occurred,
+                    source_type=SourceType.USER_PHOTO,
+                    confidence=1.0,
+                    is_confirmed=True,
+                ),
+                Memory(
+                    id=voice_memory_id,
+                    user_id=user_id,
+                    memory_type=MemoryType.VOICE,
+                    content="下午语音记录：确认周五交付",
+                    occurred_at=voice_occurred,
+                    source_type=SourceType.USER_VOICE,
+                    confidence=1.0,
+                    is_confirmed=True,
+                ),
+            ]
+        )
+        db.flush()
+        db.add_all(
+            [
+                MemorySource(
+                    id=photo_source_id,
+                    memory_id=photo_memory_id,
+                    source_type=SourceType.USER_PHOTO,
+                    confidence=1.0,
+                    raw_text="用户照片记录",
+                ),
+                MemorySource(
+                    id=voice_source_id,
+                    memory_id=voice_memory_id,
+                    source_type=SourceType.USER_VOICE,
+                    confidence=1.0,
+                    raw_text="服务端 ASR 可信转写",
+                ),
+                MediaAsset(
+                    id=photo_media_id,
+                    user_id=user_id,
+                    client_upload_id=uuid4(),
+                    kind=MediaKind.IMAGE,
+                    status=MediaStatus.READY,
+                    upload_object_key=f"staging/{user_id}/{photo_media_id}",
+                    object_key=f"media/{user_id}/{photo_media_id}",
+                    content_type="image/jpeg",
+                    size_bytes=1024,
+                    storage_etag="photo-etag",
+                    completed_at=photo_occurred,
+                ),
+                MediaAsset(
+                    id=voice_media_id,
+                    user_id=user_id,
+                    client_upload_id=uuid4(),
+                    kind=MediaKind.AUDIO,
+                    status=MediaStatus.READY,
+                    upload_object_key=f"staging/{user_id}/{voice_media_id}",
+                    object_key=f"media/{user_id}/{voice_media_id}",
+                    content_type="audio/mp4",
+                    size_bytes=2048,
+                    storage_etag="voice-etag",
+                    completed_at=voice_occurred,
+                ),
+            ]
+        )
+        db.flush()
+        db.add_all(
+            [
+                MediaEvidenceLink(
+                    media_id=photo_media_id,
+                    memory_source_id=photo_source_id,
+                ),
+                MediaEvidenceLink(
+                    media_id=voice_media_id,
+                    memory_source_id=voice_source_id,
+                ),
+            ]
+        )
+        db.commit()
+
+    query = await client.post(
+        "/v1/memory/query",
+        headers=headers,
+        json={"question": "25号发生了什么？"},
+    )
+    assert query.status_code == 200
+    body = query.json()
+    evidence_by_source = {
+        item["source_type"]: item for item in body["evidence"]
+    }
+    assert evidence_by_source["USER_PHOTO"]["media_id"] == str(photo_media_id)
+    assert evidence_by_source["USER_PHOTO"]["occurred_at"].startswith(
+        "2026-09-25T02:30:00"
+    )
+    assert evidence_by_source["USER_VOICE"]["media_id"] == str(voice_media_id)
+    assert evidence_by_source["USER_VOICE"]["occurred_at"].startswith(
+        "2026-09-25T06:45:00"
+    )
+    assert body["memory_ids"] == [
+        str(photo_memory_id),
+        str(voice_memory_id),
+    ]
 
 
 async def test_core002_invalid_and_future_date_queries_fail_closed(
