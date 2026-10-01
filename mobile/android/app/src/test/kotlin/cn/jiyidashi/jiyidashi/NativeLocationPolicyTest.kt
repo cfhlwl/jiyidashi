@@ -135,6 +135,50 @@ class NativeLocationPolicyTest {
         )
     }
     @Test
+    fun processDeathRecoveryRequiresSameEnabledOwnerAndMissingProducer() {
+        assertTrue(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = owner,
+                activeOwnerUserId = owner,
+                runtime = NativeLocationRuntimeState.RUNNING,
+                nativeProducerActive = false,
+            ),
+        )
+        assertFalse(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = owner,
+                activeOwnerUserId = owner,
+                runtime = NativeLocationRuntimeState.RUNNING,
+                nativeProducerActive = true,
+            ),
+        )
+        assertFalse(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = owner,
+                activeOwnerUserId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                runtime = NativeLocationRuntimeState.RUNNING,
+                nativeProducerActive = false,
+            ),
+        )
+        assertFalse(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = null,
+                activeOwnerUserId = owner,
+                runtime = NativeLocationRuntimeState.RUNNING,
+                nativeProducerActive = false,
+            ),
+        )
+        assertFalse(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = owner,
+                activeOwnerUserId = owner,
+                runtime = NativeLocationRuntimeState.PAUSED,
+                nativeProducerActive = false,
+            ),
+        )
+    }
+
+    @Test
     fun queuedSampleV2MetadataIsStableAndPublishedToFlutter() {
         val sample = NativeQueuedLocationSample(
             ownerUserId = owner,
