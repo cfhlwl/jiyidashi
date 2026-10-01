@@ -202,6 +202,19 @@ def query_memory(
         return _date_error("INVALID_DATE")
     if route.reason == IntentRouteReason.FUTURE_DATE:
         return _date_error("FUTURE_DATE")
+    if (
+        date_result.status == DateParseStatus.AMBIGUOUS
+        and route.reason == IntentRouteReason.AMBIGUOUS
+    ):
+        return MemoryQueryResponse(
+            answer=None,
+            can_answer=False,
+            certainty="unknown",
+            reason="AMBIGUOUS",
+            intent="UNKNOWN",
+            evidence=[],
+            memory_ids=[],
+        )
 
     if (
         date_result.status == DateParseStatus.MATCHED
