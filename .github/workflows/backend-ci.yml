@@ -75,6 +75,15 @@ jobs:
           tests/test_stage1_auth.py
           tests/test_account_delete.py
 
+      - name: CORE-002 historical day query regression
+        timeout-minutes: 5
+        run: >-
+          pytest -q
+          tests/test_core002_historical_day_query.py
+          tests/test_today_footprint.py
+          tests/test_intent_router.py
+          tests/test_memory_query.py
+
       - name: SQLite migration baseline
         env:
           DATABASE_URL: sqlite:///./ci-migration.db
