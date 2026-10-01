@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { parseMemoryQueryResult } from '../src/services/api'
+import { parseMemoryQueryResult } from '../src/services/memoryQuery'
 
 function structuredFootprint(overrides: Record<string, unknown> = {}): unknown {
   return {
