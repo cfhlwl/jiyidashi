@@ -1537,12 +1537,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var nativeLocationBridge: NativeLocationBridge?
-  @available(iOS 13.0, *)
-  private var activePassiveRecoveryTask: BGAppRefreshTask? {
-    get { _activePassiveRecoveryTask as? BGAppRefreshTask }
-    set { _activePassiveRecoveryTask = newValue }
-  }
-  private var _activePassiveRecoveryTask: BGTask?
+  private var activePassiveRecoveryTask: BGAppRefreshTask?
   private var passiveRecoveryCompletionChannel: FlutterMethodChannel?
 
   override func application(
