@@ -514,3 +514,43 @@ async def test_core003_api_is_owner_scoped_server_observed_and_rejects_raw_locat
         },
     )
     assert caller_owner.status_code == 422
+
+
+async def test_core003_incoherent_client_timestamps_fail_closed(client):
+    _, user_id = await _new_user(client, "core003-incoherent-time")
+    _set_timezone(user_id, "UTC")
+    now = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+    _add_receipt(
+        user_id,
+        client_uuid="incoherent-time-receipt",
+        recorded_at=now - timedelta(minutes=3),
+        created_at=now - timedelta(minutes=1),
+    )
+
+    with SessionLocal() as db:
+        future_fix = get_recording_health(
+            db,
+            user_id=user_id,
+            client_state=_client(
+                now,
+                last_fix_at=now + timedelta(days=1),
+            ),
+            reference_utc=now,
+        )
+        future_pending = get_recording_health(
+            db,
+            user_id=user_id,
+            client_state=_client(
+                now,
+                sqlite_queue_depth=1,
+                sqlite_oldest_pending_at=now + timedelta(days=1),
+                last_enqueue_at=now - timedelta(minutes=1),
+            ),
+            reference_utc=now,
+        )
+
+    assert future_fix.health.status == "UNKNOWN"
+    assert future_fix.health.status_reason == "CLIENT_STATE_STALE"
+    assert future_pending.health.status == "UNKNOWN"
+    assert future_pending.health.status_reason == "CLIENT_STATE_STALE"
+    assert future_pending.health.status != "HEALTHY"
