@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user_id
+from app.deps import get_current_user_id
 from app.core.db import get_db
 from app.schemas import (
     RecordingClientState,
