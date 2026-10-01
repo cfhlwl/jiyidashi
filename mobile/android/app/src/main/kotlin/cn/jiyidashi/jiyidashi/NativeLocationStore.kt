@@ -185,7 +185,7 @@ internal class NativeLocationStore(context: Context) {
 
     fun enqueueLocationSample(sample: NativeQueuedLocationSample): Boolean = synchronized(QUEUE_LOCK) {
         val samples = readPendingSamples().toMutableList()
-        if (queueCorrupt) return false
+        if (queueCorrupt) return@synchronized false
         if (samples.any {
                 it.ownerUserId == sample.ownerUserId &&
                     it.clientUuid == sample.clientUuid
@@ -220,7 +220,7 @@ internal class NativeLocationStore(context: Context) {
             .putLong(KEY_NEXT_QUEUE_SEQUENCE, nextSequence + 1L)
             .putLong(ownerKey(KEY_LAST_ENQUEUE_AT, sample.ownerUserId), persisted.enqueuedAtMillis)
             .commit()
-        return true
+        true
     }
 
     fun pendingLocationSamples(
@@ -247,7 +247,7 @@ internal class NativeLocationStore(context: Context) {
             markQueueCorrupt("native_queue_persist_failed")
             return@synchronized emptyList()
         }
-        return updated.filter { selectedSequences.contains(it.queueSequence) }
+        updated.filter { selectedSequences.contains(it.queueSequence) }
     }
 
     fun acknowledgeLocationSamples(
@@ -368,7 +368,7 @@ internal class NativeLocationStore(context: Context) {
         val lastDropKey = ownerKey(KEY_LAST_DROP_AT, ownerUserId)
         val lastFailureKey = ownerKey(KEY_LAST_DELIVERY_FAILURE_AT, ownerUserId)
         val depth = samples.size
-        return mapOf(
+        mapOf(
             "queue_schema_version" to NATIVE_QUEUE_SCHEMA_VERSION,
             "queue_depth" to depth,
             "queue_capacity" to MAX_PENDING_SAMPLES_PER_OWNER,
