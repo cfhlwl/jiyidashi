@@ -595,19 +595,20 @@ def _historical_aggregates(
         seconds = sum(item.all_gap_seconds for item in days[:window])
         return round(seconds / 3600.0, 2)
 
-    # CORE-001 does not persist historical "recording was expected here" authority at
-    # local-day edges. Therefore an exact total Location Gap Hours value would turn unknown
-    # time into a fabricated zero. V1 exposes the bounded, evidence-proven lower bound and
-    # leaves the exact total unavailable.
+    evidence_7d = evidence_count(7)
+    evidence_30d = evidence_count(30)
+    bounded_7d = bounded_gap_hours(7)
+    bounded_30d = bounded_gap_hours(30)
+
     return RecordingHealthAggregates(
         healthy_days_7d=healthy_count(7),
         healthy_days_30d=healthy_count(30),
-        evidence_days_7d=evidence_count(7),
-        evidence_days_30d=evidence_count(30),
-        gap_hours_7d=None,
-        gap_hours_30d=None,
-        bounded_gap_hours_7d=bounded_gap_hours(7),
-        bounded_gap_hours_30d=bounded_gap_hours(30),
+        evidence_days_7d=evidence_7d,
+        evidence_days_30d=evidence_30d,
+        gap_hours_7d=None if evidence_7d == 0 else bounded_7d,
+        gap_hours_30d=None if evidence_30d == 0 else bounded_30d,
+        bounded_gap_hours_7d=bounded_7d,
+        bounded_gap_hours_30d=bounded_30d,
         days_with_capacity_pressure=None,
         days_with_permission_block=None,
         current_capacity_pressure=current_capacity_pressure,
