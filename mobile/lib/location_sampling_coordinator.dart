@@ -160,10 +160,12 @@ class LocationSamplingCoordinator extends ChangeNotifier {
     switch (report.status) {
       case PassiveMemoryRecoveryStatus.privacyPaused:
         await _locationController.pauseForPrivacy();
+        break;
       case PassiveMemoryRecoveryStatus.authorityChanged:
       case PassiveMemoryRecoveryStatus.serverUnavailable:
       case PassiveMemoryRecoveryStatus.privacyUnavailable:
         await _locationController.privacyStatusUnknown();
+        break;
       case PassiveMemoryRecoveryStatus.noSession:
       case PassiveMemoryRecoveryStatus.accountDeletionInProgress:
       case PassiveMemoryRecoveryStatus.nativeUnavailable:
@@ -174,6 +176,7 @@ class LocationSamplingCoordinator extends ChangeNotifier {
           // The shared delivery boundary has already failed closed. UI status refresh is
           // observability only and cannot reopen producer/upload authority.
         }
+        break;
       case PassiveMemoryRecoveryStatus.delivered:
       case PassiveMemoryRecoveryStatus.deferred:
       case PassiveMemoryRecoveryStatus.noWork:
