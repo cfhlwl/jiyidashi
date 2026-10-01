@@ -19,6 +19,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.CopyOnWriteArraySet
 
 class NativeLocationPlugin :
     FlutterPlugin,
@@ -37,14 +38,12 @@ class NativeLocationPlugin :
         store = NativeLocationStore(applicationContext)
         channel = MethodChannel(binding.binaryMessenger, CHANNEL_NAME)
         channel.setMethodCallHandler(this)
-        sampleChannel = channel
+        sampleChannels.add(channel)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
-        if (sampleChannel === channel) {
-            sampleChannel = null
-        }
+        sampleChannels.remove(channel)
         pendingRequest?.result?.error("bridge_detached", "Location bridge detached", null)
         pendingRequest = null
     }
@@ -663,14 +662,16 @@ class NativeLocationPlugin :
         private const val REQUEST_FOREGROUND_LOCATION = 2401
         private const val REQUEST_BACKGROUND_LOCATION = 2402
 
-        @Volatile
-        private var sampleChannel: MethodChannel? = null
+        private val sampleChannels = CopyOnWriteArraySet<MethodChannel>()
 
         fun notifySamplesAvailable(): Boolean {
-            val current = sampleChannel ?: return false
+            val current = sampleChannels.toList()
+            if (current.isEmpty()) return false
             Handler(Looper.getMainLooper()).post {
-                if (sampleChannel === current) {
-                    current.invokeMethod("samplesAvailable", null)
+                current.forEach { channel ->
+                    if (sampleChannels.contains(channel)) {
+                        channel.invokeMethod("samplesAvailable", null)
+                    }
                 }
             }
             return true
