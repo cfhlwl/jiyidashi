@@ -163,6 +163,10 @@ abstract interface class NativeDeliveryDiagnosticsSink {
   });
 }
 
+abstract interface class NativePassiveRecoveryTriggerBridge {
+  Stream<void> get passiveRecoveryRequests;
+}
+
 abstract interface class NativeMotionSamplingBridge {
   Stream<void> get samplesAvailable;
 
@@ -199,7 +203,10 @@ abstract interface class NativeMotionSamplingBridge {
 /// authority is introduced. Native code may only notify that durable samples exist; Flutter
 /// still decides whether privacy is active before draining or uploading them.
 class MethodChannelNativeMotionSamplingBridge
-    implements NativeMotionSamplingBridge, NativeDeliveryDiagnosticsSink {
+    implements
+        NativeMotionSamplingBridge,
+        NativeDeliveryDiagnosticsSink,
+        NativePassiveRecoveryTriggerBridge {
   MethodChannelNativeMotionSamplingBridge({
     MethodChannel channel = const MethodChannel('cn.jiyidashi/native_location'),
   }) : _channel = channel {
@@ -208,6 +215,8 @@ class MethodChannelNativeMotionSamplingBridge
 
   final MethodChannel _channel;
   final StreamController<void> _sampleEvents =
+      StreamController<void>.broadcast();
+  final StreamController<void> _passiveRecoveryEvents =
       StreamController<void>.broadcast();
   bool _closed = false;
 
@@ -227,11 +236,16 @@ class MethodChannelNativeMotionSamplingBridge
     if (_closed) return;
     if (call.method == 'samplesAvailable') {
       _sampleEvents.add(null);
+    } else if (call.method == 'passiveRecoveryRequested') {
+      _passiveRecoveryEvents.add(null);
     }
   }
 
   @override
   Stream<void> get samplesAvailable => _sampleEvents.stream;
+
+  @override
+  Stream<void> get passiveRecoveryRequests => _passiveRecoveryEvents.stream;
 
   @override
   Future<List<NativeLocationSample>> drainSamples(
@@ -331,5 +345,6 @@ class MethodChannelNativeMotionSamplingBridge
     _closed = true;
     _channel.setMethodCallHandler(null);
     await _sampleEvents.close();
+    await _passiveRecoveryEvents.close();
   }
 }
