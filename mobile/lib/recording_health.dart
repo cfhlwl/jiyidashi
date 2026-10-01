@@ -301,9 +301,6 @@ Map<String, dynamic>? buildRecordingHealthClientState({
     ),
     'last_handoff_at': timestamp(status.queue.lastDeliveryAt),
     'last_upload_attempt_at': timestamp(sqliteQueue.lastAttemptAt),
-    // The server deliberately does not trust this field as ACK authority. It is sent only
-    // as bounded local observability and never contains response bodies or identifiers.
-    'last_server_ack_at': timestamp(sqliteQueue.lastDeliveryAt),
     'delivery_failure_count': failureCount,
     'last_delivery_error_code': boundedDeliveryError(),
     'recovery_pending': status.restorePending,
