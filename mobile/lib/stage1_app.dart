@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'account_delete_section.dart';
 import 'api_client.dart';
@@ -92,7 +93,24 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _awaitPassiveRecoveryIdle() async {
+    try {
+      await const MethodChannel('cn.jiyidashi/native_location')
+          .invokeMethod<bool>('awaitPassiveRecoveryIdle')
+          .timeout(const Duration(seconds: 95));
+    } on MissingPluginException {
+      // Widget/unit tests and unsupported platforms have no competing headless engine.
+    } on PlatformException {
+      // Native arbitration failure cannot be treated as authenticated authority.
+    } on TimeoutException {
+      // AUTH restore below remains server-authoritative; this only avoids an Android
+      // cross-engine refresh race when a WorkManager recovery is already in flight.
+    }
+  }
+
   Future<void> _restoreServerSession() async {
+    await _awaitPassiveRecoveryIdle();
+    if (!mounted) return;
     final result = await api.restorePersistedSession();
     if (!mounted) return;
     if (result == AuthRestoreStatus.restored) {
