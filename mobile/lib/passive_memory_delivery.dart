@@ -108,7 +108,8 @@ class PassiveMemoryDeliveryCoordinator {
       }
     }
 
-    if (_api.authenticatedUserId == null) {
+    final preflightOwner = _api.authenticatedUserId?.trim();
+    if (preflightOwner == null || preflightOwner.isEmpty) {
       return const PassiveMemoryRecoveryReport(
         status: PassiveMemoryRecoveryStatus.noSession,
       );
@@ -119,14 +120,23 @@ class PassiveMemoryDeliveryCoordinator {
       // before a background/recovery path is allowed to use it.
       await _api.revalidateAuthenticatedOwnerAuthority();
     } on TransportException {
+      await _pauseNativeFailClosed(preflightOwner);
       return const PassiveMemoryRecoveryReport(
         status: PassiveMemoryRecoveryStatus.serverUnavailable,
       );
-    } on ApiException {
+    } on ApiException catch (error) {
+      if (error.statusCode == 400 || error.statusCode == 401) {
+        await _disableNativeFailClosed(preflightOwner);
+        return const PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.noSession,
+        );
+      }
+      await _pauseNativeFailClosed(preflightOwner);
       return const PassiveMemoryRecoveryReport(
-        status: PassiveMemoryRecoveryStatus.noSession,
+        status: PassiveMemoryRecoveryStatus.serverUnavailable,
       );
     } on ProtocolException {
+      await _pauseNativeFailClosed(preflightOwner);
       return const PassiveMemoryRecoveryReport(
         status: PassiveMemoryRecoveryStatus.authorityChanged,
       );
@@ -143,19 +153,23 @@ class PassiveMemoryDeliveryCoordinator {
     } on ApiException catch (error) {
       if (error.statusCode == 423 &&
           error.message == 'ACCOUNT_DELETION_IN_PROGRESS') {
+        await _disableNativeFailClosed(preflightOwner);
         return const PassiveMemoryRecoveryReport(
           status: PassiveMemoryRecoveryStatus.accountDeletionInProgress,
         );
       }
       if (error.statusCode == 400 || error.statusCode == 401) {
+        await _disableNativeFailClosed(preflightOwner);
         return const PassiveMemoryRecoveryReport(
           status: PassiveMemoryRecoveryStatus.noSession,
         );
       }
+      await _pauseNativeFailClosed(preflightOwner);
       return const PassiveMemoryRecoveryReport(
         status: PassiveMemoryRecoveryStatus.serverUnavailable,
       );
     } on ProtocolException {
+      await _pauseNativeFailClosed(preflightOwner);
       return const PassiveMemoryRecoveryReport(
         status: PassiveMemoryRecoveryStatus.authorityChanged,
       );
@@ -513,6 +527,16 @@ class PassiveMemoryDeliveryCoordinator {
       // SQLite diagnostics remain authoritative for delivery retry state.
     } on PlatformException {
       // Native metrics are best-effort and never alter durable queue semantics.
+    }
+  }
+
+  Future<void> _disableNativeFailClosed(String owner) async {
+    try {
+      await _locationBridge.disableAutomaticLocation(owner);
+    } on MissingPluginException {
+      // Auth loss still blocks upload even when native control is unavailable.
+    } on PlatformException {
+      // Same fail-closed network/publication boundary.
     }
   }
 
