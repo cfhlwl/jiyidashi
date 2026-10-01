@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "issue": 190,
+  "run_id": "REPLACE_WITH_UNIQUE_RUN_ID",
+  "scenario_id": "C1",
+  "platform": "ANDROID",
+  "result": "BLOCKED",
+  "git_head": "0000000000000000000000000000000000000000",
+  "app_build": {
+    "version": "REPLACE",
+    "build_number": "REPLACE",
+    "artifact": "REPLACE",
+    "install_source": "REPLACE"
+  },
+  "device": {
+    "model": "REPLACE_WITH_NON_UNIQUE_MODEL",
+    "os_version": "REPLACE"
+  },
+  "environment": {
+    "timezone": "Asia/Singapore",
+    "battery_start_percent": null,
+    "battery_end_percent": null,
+    "permission_state": "REPLACE",
+    "background_state": "REPLACE"
+  },
+  "started_at_local": "2026-10-02T00:00:00+08:00",
+  "ended_at_local": "2026-10-02T00:00:00+08:00",
+  "started_at_utc": "2026-10-01T16:00:00Z",
+  "ended_at_utc": "2026-10-01T16:00:00Z",
+  "preconditions": [],
+  "actions": [],
+  "expected": [],
+  "observed": [],
+  "health_snapshots": [],
+  "day_footprint_evidence": [],
+  "queue_evidence": [],
+  "battery_evidence": [],
+  "attachments": [],
+  "checks": {},
+  "notes": "Template only. Copy outside templates/ into evidence/<run-id>.json before use."
+}
