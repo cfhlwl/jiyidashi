@@ -36,8 +36,13 @@
 	<string>迹忆仅在你主动开启位置能力时，先申请“使用 App 时”定位，用于建立自动位置记忆权限基础。</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>只有你明确启用“自动位置记忆”后，迹忆才会申请后台定位，用于系统低频位置更新。</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>cn.jiyidashi.jiyidashi.passive-recovery</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>fetch</string>
 		<string>location</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
