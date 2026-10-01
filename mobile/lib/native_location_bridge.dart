@@ -274,6 +274,10 @@ abstract interface class NativeLocationBridge {
     String ownerUserId,
   );
 
+  Future<NativeLocationStatus> openLocationServicesSettings(
+    String ownerUserId,
+  );
+
   Future<NativeLocationStatus> disableAutomaticLocation(String ownerUserId);
 
   Future<NativeLocationStatus> start(String ownerUserId);
@@ -337,6 +341,12 @@ class MethodChannelNativeLocationBridge implements NativeLocationBridge {
     String ownerUserId,
   ) =>
       _invoke('openBackgroundLocationSettings', ownerUserId);
+
+  @override
+  Future<NativeLocationStatus> openLocationServicesSettings(
+    String ownerUserId,
+  ) =>
+      _invoke('openLocationServicesSettings', ownerUserId);
 
   @override
   Future<NativeLocationStatus> disableAutomaticLocation(String ownerUserId) =>
