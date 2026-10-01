@@ -118,6 +118,7 @@ class NativeLocationStatus {
     this.lastFixAt,
     this.lastAccuracyMeters,
     this.restorePending = false,
+    this.recoveryReason,
     this.queue = const NativeLocationQueueDiagnostics.empty(),
   });
 
@@ -131,6 +132,7 @@ class NativeLocationStatus {
         lastFixAt = null,
         lastAccuracyMeters = null,
         restorePending = false,
+        recoveryReason = null,
         queue = const NativeLocationQueueDiagnostics.empty();
 
   final bool supported;
@@ -143,6 +145,7 @@ class NativeLocationStatus {
   final DateTime? lastFixAt;
   final double? lastAccuracyMeters;
   final bool restorePending;
+  final String? recoveryReason;
   final NativeLocationQueueDiagnostics queue;
 
   bool get hasForegroundPermission =>
@@ -181,6 +184,7 @@ class NativeLocationStatus {
       lastFixAt: _parseTimestamp(map['last_fix_at']),
       lastAccuracyMeters: _parseDouble(map['last_accuracy_meters']),
       restorePending: map['restore_pending'] == true,
+      recoveryReason: map['recovery_reason']?.toString(),
       queue: NativeLocationQueueDiagnostics.fromPlatform(map['queue']),
     );
   }
