@@ -1,0 +1,458 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
+
+import 'api_client.dart';
+import 'native_location_bridge.dart';
+import 'native_motion_sampling_bridge.dart';
+import 'offline_queue.dart';
+
+enum PassiveMemoryRecoveryStatus {
+  delivered,
+  noWork,
+  busy,
+  noSession,
+  serverUnavailable,
+  authorityChanged,
+  privacyPaused,
+  privacyUnavailable,
+  nativeUnavailable,
+  nativeNotEligible,
+  retryableFailure,
+  blockedFailure,
+}
+
+class PassiveMemoryRecoveryReport {
+  const PassiveMemoryRecoveryReport({
+    required this.status,
+    this.ownerUserId,
+    this.nativeHandedOff = 0,
+    this.deliveryAttempted = 0,
+    this.deliveryCompleted = 0,
+    this.sessionRestored = false,
+  });
+
+  final PassiveMemoryRecoveryStatus status;
+  final String? ownerUserId;
+  final int nativeHandedOff;
+  final int deliveryAttempted;
+  final int deliveryCompleted;
+  final bool sessionRestored;
+}
+
+/// UI-independent CORE-001 authority/delivery boundary.
+///
+/// This coordinator is safe to call from the normal Flutter shell and from a platform
+/// recovery entry point. It never treats native enabled/runtime state as account authority:
+/// a durable AUTH-001 session is refreshed first, then server Privacy is read fresh, and
+/// only then may native samples be handed off or uploaded.
+class PassiveMemoryDeliveryCoordinator {
+  PassiveMemoryDeliveryCoordinator({
+    required JiYiApiClient api,
+    required OfflineQueueStore store,
+    required NativeLocationBridge locationBridge,
+    required NativeMotionSamplingBridge samplingBridge,
+  })  : _api = api,
+        _store = store,
+        _locationBridge = locationBridge,
+        _samplingBridge = samplingBridge;
+
+  final JiYiApiClient _api;
+  final OfflineQueueStore _store;
+  final NativeLocationBridge _locationBridge;
+  final NativeMotionSamplingBridge _samplingBridge;
+
+  Future<PassiveMemoryRecoveryReport>? _activeRecovery;
+
+  Future<PassiveMemoryRecoveryReport> recoverAndDeliver({
+    bool restoreSessionIfNeeded = false,
+    bool allowProducerResume = true,
+  }) {
+    final active = _activeRecovery;
+    if (active != null) return active;
+
+    late final Future<PassiveMemoryRecoveryReport> tracked;
+    tracked = _recoverAndDeliverOnce(
+      restoreSessionIfNeeded: restoreSessionIfNeeded,
+      allowProducerResume: allowProducerResume,
+    ).whenComplete(() {
+      if (identical(_activeRecovery, tracked)) {
+        _activeRecovery = null;
+      }
+    });
+    _activeRecovery = tracked;
+    return tracked;
+  }
+
+  Future<PassiveMemoryRecoveryReport> _recoverAndDeliverOnce({
+    required bool restoreSessionIfNeeded,
+    required bool allowProducerResume,
+  }) async {
+    var restored = false;
+    if (_api.authenticatedUserId == null && restoreSessionIfNeeded) {
+      final result = await _api.restorePersistedSession();
+      switch (result) {
+        case AuthRestoreStatus.restored:
+          restored = true;
+        case AuthRestoreStatus.noPersistedSession:
+        case AuthRestoreStatus.invalidSession:
+          return const PassiveMemoryRecoveryReport(
+            status: PassiveMemoryRecoveryStatus.noSession,
+          );
+        case AuthRestoreStatus.serverUnavailable:
+          return const PassiveMemoryRecoveryReport(
+            status: PassiveMemoryRecoveryStatus.serverUnavailable,
+          );
+      }
+    }
+
+    if (_api.authenticatedUserId == null) {
+      return const PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.noSession,
+      );
+    }
+
+    try {
+      // A currently published owner still has to prove the server-side durable session
+      // before a background/recovery path is allowed to use it.
+      await _api.revalidateAuthenticatedOwnerAuthority();
+    } on TransportException {
+      return const PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.serverUnavailable,
+      );
+    } on ApiException {
+      return const PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.noSession,
+      );
+    } on ProtocolException {
+      return const PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.authorityChanged,
+      );
+    }
+
+    final owner = _api.authenticatedUserId?.trim();
+    if (owner == null || owner.isEmpty) {
+      return const PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.noSession,
+      );
+    }
+    final generation = _api.sessionVersion;
+
+    NativeLocationStatus nativeStatus;
+    try {
+      nativeStatus = await _locationBridge.status(owner);
+    } on MissingPluginException {
+      return PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.nativeUnavailable,
+        ownerUserId: owner,
+        sessionRestored: restored,
+      );
+    } on PlatformException {
+      return PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.nativeUnavailable,
+        ownerUserId: owner,
+        sessionRestored: restored,
+      );
+    }
+    if (!_authorityCurrent(owner, generation)) {
+      return _stale(owner, restored);
+    }
+    if (!nativeStatus.supported) {
+      return PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.nativeUnavailable,
+        ownerUserId: owner,
+        sessionRestored: restored,
+      );
+    }
+
+    Map<String, dynamic> privacy;
+    try {
+      privacy = await _api.getPrivacyStatus();
+    } on TransportException {
+      return PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.privacyUnavailable,
+        ownerUserId: owner,
+        sessionRestored: restored,
+      );
+    } on ApiException {
+      return PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.privacyUnavailable,
+        ownerUserId: owner,
+        sessionRestored: restored,
+      );
+    }
+    if (!_authorityCurrent(owner, generation)) {
+      return _stale(owner, restored);
+    }
+    if (privacy['recording_paused'] == true) {
+      await _pauseNativeFailClosed(owner);
+      return PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.privacyPaused,
+        ownerUserId: owner,
+        sessionRestored: restored,
+      );
+    }
+
+    // Restart is deliberately narrower than delivery. Existing durable samples may be
+    // delivered while the producer is stopped; starting production additionally requires
+    // the native explicit-enable + permission + location-services gate and a persisted
+    // recovery hint (iOS relaunch / Android scheduled recovery).
+    if (allowProducerResume && nativeStatus.restorePending) {
+      if (!nativeStatus.canStart) {
+        return PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.nativeNotEligible,
+          ownerUserId: owner,
+          sessionRestored: restored,
+        );
+      }
+      try {
+        nativeStatus = await _locationBridge.start(owner);
+      } on MissingPluginException {
+        return PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.nativeUnavailable,
+          ownerUserId: owner,
+          sessionRestored: restored,
+        );
+      } on PlatformException {
+        return PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.nativeUnavailable,
+          ownerUserId: owner,
+          sessionRestored: restored,
+        );
+      }
+      if (!_authorityCurrent(owner, generation)) {
+        await _pauseNativeFailClosed(owner);
+        return _stale(owner, restored);
+      }
+      if (nativeStatus.runtime != NativeLocationRuntime.running) {
+        return PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.nativeNotEligible,
+          ownerUserId: owner,
+          sessionRestored: restored,
+        );
+      }
+    }
+
+    final lease = await _store.tryAcquireLocationDeliveryLease(owner);
+    if (lease == null) {
+      return PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.busy,
+        ownerUserId: owner,
+        sessionRestored: restored,
+      );
+    }
+
+    var handedOff = 0;
+    try {
+      if (!_authorityCurrent(owner, generation)) {
+        return _stale(owner, restored);
+      }
+
+      handedOff = await _handoffNative(owner, generation);
+      if (!_authorityCurrent(owner, generation)) {
+        return _stale(owner, restored);
+      }
+
+      final queued = await _store.listLocationSamples(owner, limit: 100);
+      if (queued.isEmpty) {
+        return PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.noWork,
+          ownerUserId: owner,
+          nativeHandedOff: handedOff,
+          sessionRestored: restored,
+        );
+      }
+      final ids = queued.map((item) => item.clientUuid).toList(growable: false);
+      final points = queued
+          .map(
+            (item) => LocationUploadPoint(
+              clientUuid: item.clientUuid,
+              latitude: item.latitude,
+              longitude: item.longitude,
+              accuracyMeters: item.accuracyMeters,
+              speedMetersPerSecond: item.speedMetersPerSecond,
+              recordedAt: item.recordedAt,
+            ),
+          )
+          .toList(growable: false);
+
+      await _store.recordLocationDeliveryAttempt(owner, ids);
+      if (!_authorityCurrent(owner, generation)) {
+        return _stale(owner, restored);
+      }
+
+      try {
+        final result = await _api.uploadLocationBatch(points);
+        // A late success may have reached the server after logout/account switch. UUID
+        // idempotency makes replay safe; never delete owner A's local proof until the
+        // initiating AUTH-001 generation is still current.
+        if (!_authorityCurrent(owner, generation)) {
+          return _stale(owner, restored);
+        }
+        if (result.terminalCount != points.length) {
+          await _store.recordLocationDeliveryFailure(
+            owner,
+            ids,
+            'incomplete_location_batch_receipt',
+          );
+          return PassiveMemoryRecoveryReport(
+            status: PassiveMemoryRecoveryStatus.retryableFailure,
+            ownerUserId: owner,
+            nativeHandedOff: handedOff,
+            deliveryAttempted: points.length,
+            sessionRestored: restored,
+          );
+        }
+        await _store.deleteLocationSamples(owner, ids);
+        try {
+          await _samplingBridge.recordUploadBatch(
+            owner,
+            sampleCount: points.length,
+          );
+        } on MissingPluginException {
+          // Metrics are advisory; authoritative SQLite/server delivery is already complete.
+        } on PlatformException {
+          // Same: never recreate delivered rows because diagnostics failed.
+        }
+        return PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.delivered,
+          ownerUserId: owner,
+          nativeHandedOff: handedOff,
+          deliveryAttempted: points.length,
+          deliveryCompleted: points.length,
+          sessionRestored: restored,
+        );
+      } on TransportException catch (error) {
+        if (_authorityCurrent(owner, generation)) {
+          await _store.recordLocationDeliveryFailure(owner, ids, error.message);
+        }
+        return PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.retryableFailure,
+          ownerUserId: owner,
+          nativeHandedOff: handedOff,
+          deliveryAttempted: points.length,
+          sessionRestored: restored,
+        );
+      } on ApiException catch (error) {
+        if (!_authorityCurrent(owner, generation)) {
+          return _stale(owner, restored);
+        }
+        if (error.statusCode == 409 && error.message == 'RECORDING_PAUSED') {
+          await _store.recordLocationDeliveryFailure(
+            owner,
+            ids,
+            'RECORDING_PAUSED',
+          );
+          await _pauseNativeFailClosed(owner);
+          return PassiveMemoryRecoveryReport(
+            status: PassiveMemoryRecoveryStatus.privacyPaused,
+            ownerUserId: owner,
+            nativeHandedOff: handedOff,
+            deliveryAttempted: points.length,
+            sessionRestored: restored,
+          );
+        }
+        final retryable = error.statusCode == 401 ||
+            error.statusCode == 403 ||
+            error.statusCode == 408 ||
+            error.statusCode == 429 ||
+            error.statusCode >= 500 ||
+            (error.statusCode == 422 &&
+                error.message == 'LOCATION_RECORDED_AT_IN_FUTURE');
+        await _store.recordLocationDeliveryFailure(
+          owner,
+          ids,
+          'HTTP ${error.statusCode}: ${error.message}',
+        );
+        if (!retryable) {
+          await _store.blockLocationSamples(
+            owner,
+            ids,
+            'HTTP ${error.statusCode}: ${error.message}',
+          );
+        }
+        return PassiveMemoryRecoveryReport(
+          status: retryable
+              ? PassiveMemoryRecoveryStatus.retryableFailure
+              : PassiveMemoryRecoveryStatus.blockedFailure,
+          ownerUserId: owner,
+          nativeHandedOff: handedOff,
+          deliveryAttempted: points.length,
+          sessionRestored: restored,
+        );
+      } on ProtocolException catch (error) {
+        if (_authorityCurrent(owner, generation)) {
+          await _store.recordLocationDeliveryFailure(owner, ids, error.message);
+        }
+        return PassiveMemoryRecoveryReport(
+          status: PassiveMemoryRecoveryStatus.retryableFailure,
+          ownerUserId: owner,
+          nativeHandedOff: handedOff,
+          deliveryAttempted: points.length,
+          sessionRestored: restored,
+        );
+      }
+    } finally {
+      await _store.releaseLocationDeliveryLease(owner, lease);
+    }
+  }
+
+  Future<int> _handoffNative(String owner, int generation) async {
+    List<NativeLocationSample> samples;
+    try {
+      samples = await _samplingBridge.drainSamples(owner, limit: 100);
+    } on MissingPluginException {
+      return 0;
+    } on PlatformException {
+      return 0;
+    }
+    if (!_authorityCurrent(owner, generation)) return 0;
+
+    final acknowledged = <String>[];
+    for (final sample in samples) {
+      if (!_authorityCurrent(owner, generation)) break;
+      await _store.enqueueLocationSample(
+        ownerUserId: owner,
+        clientUuid: sample.clientUuid,
+        latitude: sample.latitude,
+        longitude: sample.longitude,
+        accuracyMeters: sample.accuracyMeters,
+        speedMetersPerSecond: sample.speedMetersPerSecond,
+        recordedAt: sample.recordedAt,
+      );
+      acknowledged.add(sample.clientUuid);
+    }
+
+    if (acknowledged.isNotEmpty && _authorityCurrent(owner, generation)) {
+      try {
+        // Native deletion occurs only after every acknowledged UUID has committed to SQLite.
+        await _samplingBridge.acknowledgeSamples(owner, acknowledged);
+      } on MissingPluginException {
+        // Safe replay: SQLite uniqueness preserves the same UUID on the next drain.
+      } on PlatformException {
+        // Same safe replay boundary.
+      }
+    }
+    return acknowledged.length;
+  }
+
+  bool _authorityCurrent(String owner, int generation) =>
+      _api.authenticatedUserId == owner && _api.sessionVersion == generation;
+
+  PassiveMemoryRecoveryReport _stale(String owner, bool restored) =>
+      PassiveMemoryRecoveryReport(
+        status: PassiveMemoryRecoveryStatus.authorityChanged,
+        ownerUserId: owner,
+        sessionRestored: restored,
+      );
+
+  Future<void> _pauseNativeFailClosed(String owner) async {
+    try {
+      await _locationBridge.pause(owner);
+    } on MissingPluginException {
+      // Native relaunch paths already default to stopped; this is best-effort convergence.
+    } on PlatformException {
+      // Same fail-closed semantics: no upload proceeds after this point.
+    }
+  }
+}
