@@ -1068,6 +1068,12 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   private func pause(ownerUserId: String) -> [String: Any] {
     if enabledOwnerUserId == ownerUserId || activeOwnerUserId == ownerUserId {
       stopProduction(runtimeAfterStop: .paused)
+      if enabledOwnerUserId == ownerUserId {
+        // Privacy pause/unknown is a quarantine. Keep only an owner-scoped recovery
+        // hint; CoreLocation remains fully stopped until fresh server Privacy passes.
+        activeOwnerUserId = ownerUserId
+        relaunchRestorePending = true
+      }
     }
     return status(ownerUserId: ownerUserId)
   }
