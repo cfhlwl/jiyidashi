@@ -284,6 +284,7 @@ Map<String, dynamic>? buildRecordingHealthClientState({
     'background_runtime_state': backgroundRuntime(),
     'battery_optimization_state': batteryOptimization(),
     'native_producer_state': runtime(),
+    'native_queue_schema_version': status.queue.schemaVersion,
     'native_queue_depth': status.queue.depth,
     'native_queue_capacity': status.queue.capacity,
     'native_oldest_pending_at': timestamp(status.queue.oldestPendingAt),
