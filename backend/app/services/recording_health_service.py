@@ -634,7 +634,7 @@ def _client_diagnostic_timestamps_coherent(client: RecordingClientState) -> bool
         client.sqlite_oldest_pending_at,
     )
     for value in diagnostic_times:
-        if value is not None and _utc(value) > observed_at + FUTURE_CLOCK_SKEW:
+        if value is not None and _utc(value) > observed_at:
             return False
 
     for oldest_pending in (
@@ -644,7 +644,7 @@ def _client_diagnostic_timestamps_coherent(client: RecordingClientState) -> bool
         if (
             oldest_pending is not None
             and client.last_enqueue_at is not None
-            and _utc(oldest_pending) > _utc(client.last_enqueue_at) + FUTURE_CLOCK_SKEW
+            and _utc(oldest_pending) > _utc(client.last_enqueue_at)
         ):
             return False
 
