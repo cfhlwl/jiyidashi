@@ -397,6 +397,7 @@ class NativeLocationPlugin :
         if (store.enabledOwnerUserId == ownerUserId || store.activeOwnerUserId == ownerUserId) {
             store.finishTracking(ownerUserId)
             store.clearAutomaticOwner(ownerUserId)
+            store.clearRecoveryPending(ownerUserId)
             store.clearDiagnostics()
             store.runtime = NativeLocationRuntimeState.STOPPED
             applicationContext.stopService(
@@ -423,6 +424,7 @@ class NativeLocationPlugin :
                 )
             }
             store.finishTracking(ownerUserId)
+            store.clearRecoveryPending(ownerUserId)
             store.runtime = NativeLocationRuntimeState.STOPPED
             store.activeOwnerUserId = null
             return status(ownerUserId, forcedReason = startFailureReason(permission, servicesEnabled))
@@ -452,6 +454,7 @@ class NativeLocationPlugin :
     private fun pause(ownerUserId: String): Map<String, Any?> {
         if (store.activeOwnerUserId == ownerUserId || store.enabledOwnerUserId == ownerUserId) {
             store.finishTracking(ownerUserId)
+            store.clearRecoveryPending(ownerUserId)
             store.runtime = NativeLocationRuntimeState.PAUSED
             store.activeOwnerUserId = null
             applicationContext.stopService(
@@ -560,6 +563,9 @@ class NativeLocationPlugin :
                 null
             },
             "last_accuracy_meters" to if (ownerMatches) store.lastAccuracyMeters else null,
+            "restore_pending" to
+                (ownerMatches && store.recoveryPendingOwnerUserId == ownerUserId),
+            "recovery_reason" to store.recoveryReason(ownerUserId),
             "queue" to store.queueDiagnostics(ownerUserId),
         )
     }
