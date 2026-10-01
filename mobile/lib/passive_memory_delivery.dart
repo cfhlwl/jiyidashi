@@ -186,7 +186,7 @@ class PassiveMemoryDeliveryCoordinator {
     final sessionId = _api.authenticatedSessionId;
     if (sessionId == null ||
         !await _authorityStillPersisted(owner, generation, sessionId)) {
-      return _stale(owner, restored);
+      return await _stale(owner, restored);
     }
 
     NativeLocationStatus nativeStatus;
@@ -206,7 +206,7 @@ class PassiveMemoryDeliveryCoordinator {
       );
     }
     if (!await _authorityStillPersisted(owner, generation, sessionId)) {
-      return _stale(owner, restored);
+      return await _stale(owner, restored);
     }
     if (!nativeStatus.supported) {
       return PassiveMemoryRecoveryReport(
@@ -243,7 +243,7 @@ class PassiveMemoryDeliveryCoordinator {
       );
     }
     if (!await _authorityStillPersisted(owner, generation, sessionId)) {
-      return _stale(owner, restored);
+      return await _stale(owner, restored);
     }
     if (privacy['recording_paused'] == true) {
       await _pauseNativeFailClosed(owner);
@@ -276,7 +276,7 @@ class PassiveMemoryDeliveryCoordinator {
         }
         if (!await _authorityStillPersisted(owner, generation, sessionId)) {
           await _pauseNativeFailClosed(owner);
-          return _stale(owner, restored);
+          return await _stale(owner, restored);
         }
       }
     }
@@ -293,12 +293,12 @@ class PassiveMemoryDeliveryCoordinator {
     var handedOff = 0;
     try {
       if (!await _authorityStillPersisted(owner, generation, sessionId)) {
-        return _stale(owner, restored);
+        return await _stale(owner, restored);
       }
 
       handedOff = await _handoffNative(owner, generation, sessionId);
       if (!await _authorityStillPersisted(owner, generation, sessionId)) {
-        return _stale(owner, restored);
+        return await _stale(owner, restored);
       }
 
       final queued = await _store.listLocationSamples(owner, limit: 100);
@@ -328,7 +328,7 @@ class PassiveMemoryDeliveryCoordinator {
 
       await _store.recordLocationDeliveryAttempt(owner, ids);
       if (!await _authorityStillPersisted(owner, generation, sessionId)) {
-        return _stale(owner, restored);
+        return await _stale(owner, restored);
       }
 
       try {
@@ -337,7 +337,7 @@ class PassiveMemoryDeliveryCoordinator {
         // idempotency makes replay safe; never delete owner A's local proof until the
         // initiating AUTH-001 generation is still current.
         if (!await _authorityStillPersisted(owner, generation, sessionId)) {
-          return _stale(owner, restored);
+          return await _stale(owner, restored);
         }
         if (result.terminalCount != points.length) {
           await _store.recordLocationDeliveryFailure(
@@ -390,7 +390,7 @@ class PassiveMemoryDeliveryCoordinator {
         );
       } on ApiException catch (error) {
         if (!await _authorityStillPersisted(owner, generation, sessionId)) {
-          return _stale(owner, restored);
+          return await _stale(owner, restored);
         }
         if (error.statusCode == 409 && error.message == 'RECORDING_PAUSED') {
           await _store.recordLocationDeliveryFailure(
