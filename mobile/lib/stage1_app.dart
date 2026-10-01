@@ -111,11 +111,15 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   }
 
   Future<bool> _awaitPassiveRecoveryIdle() async {
-    try {
-      await const MethodChannel('cn.jiyidashi/native_location')
-          .invokeMethod<bool>('awaitPassiveRecoveryIdle')
-          .timeout(const Duration(seconds: 95));
+    final recoveryBridge = motionSamplingBridge;
+    if (recoveryBridge is! NativePassiveRecoveryTriggerBridge) {
+      // Injected/test/unsupported bridges cannot host a competing native recovery engine.
       return true;
+    }
+    try {
+      return await recoveryBridge
+          .awaitPassiveRecoveryIdle()
+          .timeout(const Duration(seconds: 95));
     } on MissingPluginException {
       // Widget/unit tests and unsupported platforms have no competing headless engine.
       return true;
