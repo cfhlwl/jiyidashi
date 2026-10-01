@@ -217,7 +217,7 @@ export type MemoryQueryResult = {
   day_footprint?: TodayFootprintResponse & { empty: boolean }
 }
 
-function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
+export function parseMemoryQueryResult(raw: unknown): MemoryQueryResult {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new Error('服务端查询响应格式不正确')
   }
