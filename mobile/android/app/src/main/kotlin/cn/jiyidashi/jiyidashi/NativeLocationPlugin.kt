@@ -83,6 +83,10 @@ class NativeLocationPlugin :
             PassiveMemoryRecoveryProcessGate.awaitIdle(result)
             return
         }
+        if (call.method == "passiveRecoveryReady") {
+            result.success(true)
+            return
+        }
 
         val ownerUserId = ownerFrom(call)
         if (ownerUserId == null) {
