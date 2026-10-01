@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "issue": 190,
+  "title": "CORE-004 Passive Recording Real-device Certification V1",
+  "base_sha": "b8d5a01c8b2329bdadd9ea63df59bc705d834add",
+  "branch": "test/core-passive-recording-real-device-certification-v1-20261002",
+  "mandatory_platforms": [
+    "ANDROID",
+    "IOS"
+  ],
+  "mandatory_scenarios": [
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "C5",
+    "C6",
+    "C7",
+    "C8",
+    "C9",
+    "C10",
+    "OWNER_SESSION"
+  ],
+  "result_values": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "NOT_APPLICABLE"
+  ],
+  "frozen_v1_thresholds": {
+    "c1_min_duration_seconds": 86400,
+    "c2_min_duration_seconds": 259200,
+    "c3_min_offline_duration_seconds": 43200,
+    "unexplained_loss_fail_seconds_while_authority_healthy": 7200,
+    "battery": {
+      "universal_percentage_threshold": null,
+      "require_os_battery_evidence": true,
+      "fail_if_runaway_drain_observed": true,
+      "fail_if_thermal_or_continuous_location_abuse": true,
+      "fail_if_normal_use_impractical": true
+    }
+  },
+  "privacy": {
+    "forbidden_keys": [
+      "access_token",
+      "refresh_token",
+      "authorization",
+      "password",
+      "secret",
+      "latitude",
+      "longitude",
+      "lat",
+      "lng",
+      "imei",
+      "serial",
+      "device_id",
+      "advertising_id",
+      "ad_id",
+      "email",
+      "photo_base64",
+      "voice_content",
+      "memory_content"
+    ],
+    "forbidden_string_patterns": [
+      "Bearer <credential>",
+      "JWT",
+      "email address"
+    ]
+  }
+}
