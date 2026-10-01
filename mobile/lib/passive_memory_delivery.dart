@@ -138,6 +138,11 @@ class PassiveMemoryDeliveryCoordinator {
       );
     }
     final generation = _api.sessionVersion;
+    final sessionId = _api.authenticatedSessionId;
+    if (sessionId == null ||
+        !await _authorityStillPersisted(owner, generation, sessionId)) {
+      return _stale(owner, restored);
+    }
 
     NativeLocationStatus nativeStatus;
     try {
@@ -155,7 +160,7 @@ class PassiveMemoryDeliveryCoordinator {
         sessionRestored: restored,
       );
     }
-    if (!_authorityCurrent(owner, generation)) {
+    if (!await _authorityStillPersisted(owner, generation, sessionId)) {
       return _stale(owner, restored);
     }
     if (!nativeStatus.supported) {
@@ -182,7 +187,7 @@ class PassiveMemoryDeliveryCoordinator {
         sessionRestored: restored,
       );
     }
-    if (!_authorityCurrent(owner, generation)) {
+    if (!await _authorityStillPersisted(owner, generation, sessionId)) {
       return _stale(owner, restored);
     }
     if (privacy['recording_paused'] == true) {
@@ -214,7 +219,7 @@ class PassiveMemoryDeliveryCoordinator {
           // Do not bypass that platform decision; durable backlog delivery remains allowed.
           producerRecoveryBlocked = true;
         }
-        if (!_authorityCurrent(owner, generation)) {
+        if (!await _authorityStillPersisted(owner, generation, sessionId)) {
           await _pauseNativeFailClosed(owner);
           return _stale(owner, restored);
         }
@@ -232,12 +237,12 @@ class PassiveMemoryDeliveryCoordinator {
 
     var handedOff = 0;
     try {
-      if (!_authorityCurrent(owner, generation)) {
+      if (!await _authorityStillPersisted(owner, generation, sessionId)) {
         return _stale(owner, restored);
       }
 
-      handedOff = await _handoffNative(owner, generation);
-      if (!_authorityCurrent(owner, generation)) {
+      handedOff = await _handoffNative(owner, generation, sessionId);
+      if (!await _authorityStillPersisted(owner, generation, sessionId)) {
         return _stale(owner, restored);
       }
 
@@ -267,7 +272,7 @@ class PassiveMemoryDeliveryCoordinator {
           .toList(growable: false);
 
       await _store.recordLocationDeliveryAttempt(owner, ids);
-      if (!_authorityCurrent(owner, generation)) {
+      if (!await _authorityStillPersisted(owner, generation, sessionId)) {
         return _stale(owner, restored);
       }
 
@@ -276,7 +281,7 @@ class PassiveMemoryDeliveryCoordinator {
         // A late success may have reached the server after logout/account switch. UUID
         // idempotency makes replay safe; never delete owner A's local proof until the
         // initiating AUTH-001 generation is still current.
-        if (!_authorityCurrent(owner, generation)) {
+        if (!await _authorityStillPersisted(owner, generation, sessionId)) {
           return _stale(owner, restored);
         }
         if (result.terminalCount != points.length) {
@@ -392,7 +397,11 @@ class PassiveMemoryDeliveryCoordinator {
     }
   }
 
-  Future<int> _handoffNative(String owner, int generation) async {
+  Future<int> _handoffNative(
+    String owner,
+    int generation,
+    String sessionId,
+  ) async {
     List<NativeLocationSample> samples;
     try {
       samples = await _samplingBridge.drainSamples(owner, limit: 100);
@@ -401,7 +410,7 @@ class PassiveMemoryDeliveryCoordinator {
     } on PlatformException {
       return 0;
     }
-    if (!_authorityCurrent(owner, generation)) return 0;
+    if (!await _authorityStillPersisted(owner, generation, sessionId)) return 0;
 
     final acknowledged = <String>[];
     for (final sample in samples) {
@@ -418,7 +427,8 @@ class PassiveMemoryDeliveryCoordinator {
       acknowledged.add(sample.clientUuid);
     }
 
-    if (acknowledged.isNotEmpty && _authorityCurrent(owner, generation)) {
+    if (acknowledged.isNotEmpty &&
+        await _authorityStillPersisted(owner, generation, sessionId)) {
       try {
         // Native deletion occurs only after every acknowledged UUID has committed to SQLite.
         await _samplingBridge.acknowledgeSamples(owner, acknowledged);
@@ -433,6 +443,26 @@ class PassiveMemoryDeliveryCoordinator {
 
   bool _authorityCurrent(String owner, int generation) =>
       _api.authenticatedUserId == owner && _api.sessionVersion == generation;
+
+  Future<bool> _authorityStillPersisted(
+    String owner,
+    int generation,
+    String sessionId,
+  ) async {
+    if (!_authorityCurrent(owner, generation) ||
+        _api.authenticatedSessionId != sessionId) {
+      return false;
+    }
+    try {
+      final matches = await _api.currentSessionMatchesSecureStorage();
+      return matches &&
+          _authorityCurrent(owner, generation) &&
+          _api.authenticatedSessionId == sessionId;
+    } catch (_) {
+      // Secure-storage uncertainty is never permission to publish owner-bound data.
+      return false;
+    }
+  }
 
   PassiveMemoryRecoveryReport _stale(String owner, bool restored) =>
       PassiveMemoryRecoveryReport(
