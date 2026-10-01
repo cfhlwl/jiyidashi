@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -21,6 +22,7 @@ from app.intent_models import (
     IntentRouteResult,
 )
 from app.models import ObjectItem, Place
+from app.services.date_query_parser import DateParseStatus, resolve_user_date_expression
 
 _OBJECT_LOCATION_MARKERS = (
     "在哪",
@@ -35,6 +37,18 @@ _OBJECT_LOCATION_MARKERS = (
     "where is",
     "where's",
 )
+_DATE_FOOTPRINT_MARKERS = (
+    "去哪",
+    "去了哪里",
+    "去了哪些地方",
+    "去过哪些地方",
+    "哪些地方",
+    "足迹",
+    "在哪待过",
+    "where did i go",
+    "places did i visit",
+)
+
 _PLACE_HISTORY_MARKERS = (
     "去过",
     "到过",
@@ -145,6 +159,7 @@ def route_intent(
     *,
     user_id: UUID,
     question: str,
+    reference_utc: datetime | None = None,
 ) -> IntentRouteResult:
     """Choose an existing trusted capability without inventing user facts.
 
@@ -159,6 +174,30 @@ def route_intent(
     if _contains_marker(clean_question, _UNSUPPORTED_ACTION_MARKERS):
         # Reminder creation and mutations are explicitly outside this foundation.
         return _unknown(IntentRouteReason.UNSUPPORTED)
+
+    date_result = resolve_user_date_expression(
+        db,
+        user_id=user_id,
+        question=clean_question,
+        reference_utc=reference_utc,
+    )
+    date_sensitive = _contains_marker(
+        clean_question,
+        _DATE_FOOTPRINT_MARKERS + _EVENT_MARKERS,
+    )
+    if date_sensitive and date_result.status == DateParseStatus.INVALID:
+        return _unknown(IntentRouteReason.INVALID_DATE)
+    if date_sensitive and date_result.status == DateParseStatus.FUTURE:
+        return _unknown(IntentRouteReason.FUTURE_DATE)
+    if date_result.matched and _contains_marker(
+        clean_question,
+        _DATE_FOOTPRINT_MARKERS,
+    ):
+        return IntentRouteResult(
+            intent=IntentKind.DATE_FOOTPRINT_QUERY,
+            capability=IntentCapability.DATE_FOOTPRINT_QUERY,
+            reason=IntentRouteReason.MATCHED,
+        )
 
     object_names = db.scalars(
         select(ObjectItem.name).where(ObjectItem.user_id == user_id)
