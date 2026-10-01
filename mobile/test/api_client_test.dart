@@ -646,4 +646,192 @@ void main() {
     expect(api.authenticatedUserId, ownerB);
   });
 
+
+  test('structured day footprint is a canonical memory-query answer', () async {
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        return http.Response(
+          jsonEncode({
+            'answer': '2026-09-25 的可靠足迹：\\n18:16–19:05  万达广场',
+            'can_answer': true,
+            'certainty': 'confirmed',
+            'reason': null,
+            'intent': 'DATE_FOOTPRINT_QUERY',
+            'evidence': [],
+            'memory_ids': [],
+            'day_footprint': {
+              'timezone': 'Asia/Shanghai',
+              'day': '2026-09-25',
+              'empty': false,
+              'visits': [
+                {
+                  'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                  'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                  'place_name': '万达广场',
+                  'place_latitude': 31.2,
+                  'place_longitude': 121.4,
+                  'place_address': '测试地址',
+                  'place_category': 'SHOPPING',
+                  'arrived_at': '2026-09-25T10:16:00Z',
+                  'left_at': '2026-09-25T11:05:00Z',
+                  'arrived_at_local': '2026-09-25T18:16:00+08:00',
+                  'left_at_local': '2026-09-25T19:05:00+08:00',
+                  'confidence': 0.95,
+                  'visit_source': 'LOCATION_CLUSTER',
+                  'visit_finalized': true,
+                }
+              ],
+            },
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    final result = await api.queryMemory('我25号去哪了？');
+
+    expect(result['intent'], 'DATE_FOOTPRINT_QUERY');
+    expect(result['evidence'], isEmpty);
+    expect(result['memory_ids'], isEmpty);
+    final footprint = result['day_footprint'] as Map<String, dynamic>;
+    expect(footprint['day'], '2026-09-25');
+    expect((footprint['visits'] as List<dynamic>).single['place_name'], '万达广场');
+  });
+
+  test('day footprint empty flag mismatch fails closed', () async {
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) return loginResponse();
+        return http.Response(
+          jsonEncode({
+            'answer': '不应展示',
+            'can_answer': true,
+            'certainty': 'confirmed',
+            'reason': null,
+            'intent': 'DATE_FOOTPRINT_QUERY',
+            'evidence': [],
+            'memory_ids': [],
+            'day_footprint': {
+              'timezone': 'Asia/Shanghai',
+              'day': '2026-09-25',
+              'empty': true,
+              'visits': [
+                {
+                  'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                  'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                  'place_name': '公司',
+                  'arrived_at': '2026-09-25T01:00:00Z',
+                  'left_at': null,
+                  'arrived_at_local': '2026-09-25T09:00:00+08:00',
+                  'left_at_local': null,
+                  'confidence': 0.9,
+                  'visit_source': 'LOCATION_CLUSTER',
+                  'visit_finalized': false,
+                }
+              ],
+            },
+          }),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'user@example.test', password: 'example-password-123');
+    await expectLater(
+      api.queryMemory('我25号去哪了？'),
+      throwsA(isA<ProtocolException>()),
+    );
+  });
+
+  test('late historical footprint from owner A cannot overwrite owner B', () async {
+    var calls = 0;
+    final lateQuery = Completer<http.Response>();
+    const ownerA = '11111111-1111-1111-1111-111111111111';
+    const ownerB = '22222222-2222-2222-2222-222222222222';
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) {
+          return loginResponse(
+            accessToken: 'token-a',
+            refreshToken: 'refresh-a-abcdefghijklmnopqrstuvwxyz',
+            sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            userId: ownerA,
+          );
+        }
+        if (calls == 2) return lateQuery.future;
+        if (calls == 3) {
+          return http.Response(
+            jsonEncode({'accepted': true}),
+            200,
+            headers: jsonHeaders,
+          );
+        }
+        if (calls == 4) {
+          return loginResponse(
+            accessToken: 'token-b',
+            refreshToken: 'refresh-b-abcdefghijklmnopqrstuvwxyz',
+            sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            userId: ownerB,
+          );
+        }
+        throw StateError('unexpected request');
+      }),
+    );
+
+    await api.login(email: 'a@example.test', password: 'password-123');
+    final stale = api.queryMemory('我25号去哪了？');
+    await Future<void>.delayed(Duration.zero);
+    await api.logout();
+    await api.login(email: 'b@example.test', password: 'password-123');
+
+    lateQuery.complete(
+      http.Response(
+        jsonEncode({
+          'answer': 'A 的足迹',
+          'can_answer': true,
+          'certainty': 'confirmed',
+          'intent': 'DATE_FOOTPRINT_QUERY',
+          'evidence': [],
+          'memory_ids': [],
+          'day_footprint': {
+            'timezone': 'Asia/Shanghai',
+            'day': '2026-09-25',
+            'empty': false,
+            'visits': [
+              {
+                'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                'place_name': 'A 私密地点',
+                'arrived_at': '2026-09-25T01:00:00Z',
+                'left_at': null,
+                'arrived_at_local': '2026-09-25T09:00:00+08:00',
+                'left_at_local': null,
+                'confidence': 1.0,
+                'visit_source': 'LOCATION_CLUSTER',
+                'visit_finalized': false,
+              }
+            ],
+          },
+        }),
+        200,
+        headers: jsonHeaders,
+      ),
+    );
+
+    await expectLater(stale, throwsA(isA<ProtocolException>()));
+    expect(api.authenticatedUserId, ownerB);
+  });
+
 }
