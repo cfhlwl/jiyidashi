@@ -314,7 +314,7 @@ void main() {
   testWidgets('all six health states map to bounded user-facing titles', (tester) async {
     final cases = <(String, String, String)>[
       ('HEALTHY', 'RECENT_CAPTURE_AND_ACK', '当前自动记录正常'),
-      ('DEGRADED', 'DELIVERY_BACKLOG', '记录质量受限'),
+      ('DEGRADED', 'DELIVERY_BACKLOG', '记录受限'),
       ('PAUSED', 'PRIVACY_PAUSED', '自动记录已暂停'),
       ('BLOCKED', 'PERMISSION_BLOCKED', '自动记录当前受阻'),
       ('RECOVERING', 'RECOVERY_PENDING', '正在恢复自动记录'),
