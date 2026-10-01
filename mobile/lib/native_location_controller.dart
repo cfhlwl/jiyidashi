@@ -77,6 +77,15 @@ class NativeLocationController extends ChangeNotifier {
     await _run(() => bridge.openBackgroundLocationSettings(ownerUserId));
   }
 
+  Future<void> openLocationServicesSettings() async {
+    if (!privacyAllowsProduction) {
+      _error = '当前隐私状态不允许修改定位设置';
+      _notify();
+      return;
+    }
+    await _run(() => bridge.openLocationServicesSettings(ownerUserId));
+  }
+
   Future<void> start() async {
     if (!privacyAllowsProduction) {
       _error = '当前隐私状态不允许启动自动位置记忆';
