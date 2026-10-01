@@ -794,6 +794,7 @@ class RecordingClientState(BaseModel):
     battery_optimization_state: RecordingBatteryOptimizationState | None = None
     native_producer_state: RecordingProducerState
 
+    native_queue_schema_version: int = Field(default=0, ge=0, le=100)
     native_queue_depth: int = Field(default=0, ge=0, le=100000)
     native_queue_capacity: int = Field(default=0, ge=0, le=100000)
     native_oldest_pending_at: TimezoneAwareDateTime | None = None
