@@ -236,13 +236,20 @@ class _SamplingBridge implements NativeMotionSamplingBridge {
   }
 }
 
-NativeLocationSample sample() => NativeLocationSample(
-      clientUuid: sampleUuid,
-      latitude: 3.139,
-      longitude: 101.6869,
+NativeLocationSample sample() => sampleFor(sampleUuid);
+
+NativeLocationSample sampleFor(
+  String uuid, {
+  int offsetSeconds = 0,
+}) =>
+    NativeLocationSample(
+      clientUuid: uuid,
+      latitude: 3.139 + (offsetSeconds / 100000),
+      longitude: 101.6869 + (offsetSeconds / 100000),
       accuracyMeters: 18,
       speedMetersPerSecond: 1.2,
-      recordedAt: DateTime.utc(2026, 10, 1, 2),
+      recordedAt: DateTime.utc(2026, 10, 1, 2)
+          .add(Duration(seconds: offsetSeconds)),
     );
 
 void main() {
@@ -370,6 +377,44 @@ void main() {
       <String>[sampleUuid],
     ]);
     expect(await store.countLocationSamples(ownerA), 0);
+    await sampling.close();
+  });
+
+  test('SQLite capacity ACKs only committed native samples and leaves overflow durable',
+      () async {
+    await store.close();
+    store = OfflineQueueStore(
+      factory: factory,
+      databasePathProvider: () async => databasePath,
+      locationQueueCapacityPerOwner: 1,
+    );
+    const secondUuid = '22222222-2222-4222-8222-222222222222';
+    final api = _PassiveApi()..transportFails = true;
+    final location = _LocationBridge();
+    final sampling = _SamplingBridge()
+      ..samples.add(sample())
+      ..samples.add(sampleFor(secondUuid, offsetSeconds: 1));
+    final coordinator = PassiveMemoryDeliveryCoordinator(
+      api: api,
+      store: store,
+      locationBridge: location,
+      samplingBridge: sampling,
+    );
+
+    final report = await coordinator.recoverAndDeliver();
+
+    expect(report.status, PassiveMemoryRecoveryStatus.retryableFailure);
+    expect(report.nativeHandedOff, 1);
+    expect(sampling.acknowledgements, <List<String>>[
+      <String>[sampleUuid],
+    ]);
+    expect(sampling.samples.map((item) => item.clientUuid), <String>[secondUuid]);
+    final queued = await store.listLocationSamples(ownerA);
+    expect(queued.map((item) => item.clientUuid), <String>[sampleUuid]);
+    final diagnostics = await store.locationQueueDiagnostics(ownerA);
+    expect(diagnostics.queueDepth, 1);
+    expect(diagnostics.queueCapacity, 1);
+    expect(diagnostics.capacityPressure, isTrue);
     await sampling.close();
   });
 
