@@ -399,7 +399,7 @@ class NativeLocationPlugin :
         ownerUserId: String,
         result: MethodChannel.Result,
     ) {
-        if (AndroidLocationPermissions.servicesEnabled(applicationContext)) {
+        if (AndroidLocationPermissions.locationServicesEnabled(applicationContext)) {
             result.success(status(ownerUserId))
             return
         }
