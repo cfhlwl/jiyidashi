@@ -475,8 +475,8 @@ class PassiveMemoryDeliveryCoordinator {
     String owner,
     String reason,
   ) async {
-    final bridge = _samplingBridge;
-    if (bridge is! NativeDeliveryDiagnosticsSink) return;
+    if (_samplingBridge is! NativeDeliveryDiagnosticsSink) return;
+    final bridge = _samplingBridge as NativeDeliveryDiagnosticsSink;
     try {
       await bridge.recordDeliveryFailure(owner, reason: reason);
     } on MissingPluginException {
