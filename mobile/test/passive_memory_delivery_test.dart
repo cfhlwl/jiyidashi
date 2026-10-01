@@ -24,6 +24,7 @@ class _PassiveApi extends JiYiApiClient {
   bool privacyUnavailable = false;
   bool accountDeletionInProgress = false;
   bool transportFails = false;
+  bool uploadUnauthorized = false;
   int refreshCalls = 0;
   int privacyCalls = 0;
   int uploadCalls = 0;
@@ -82,6 +83,7 @@ class _PassiveApi extends JiYiApiClient {
       points.map((point) => point.clientUuid).toList(growable: false),
     );
     if (transportFails) throw TransportException('response lost');
+    if (uploadUnauthorized) throw ApiException(401, 'INVALID_ACCESS_TOKEN');
     final pending = uploadGate;
     if (pending != null) return pending.future;
     return LocationBatchResult(
@@ -350,6 +352,36 @@ void main() {
     expect(await store.countLocationSamples(ownerA), 0);
     final diagnostics = await store.locationQueueDiagnostics(ownerA);
     expect(diagnostics.lastDeliveryAt, isNotNull);
+    await sampling.close();
+  });
+
+  test('terminal upload 401 disables producer immediately and preserves replay proof',
+      () async {
+    final api = _PassiveApi()..uploadUnauthorized = true;
+    final location = _LocationBridge(
+      current: const NativeLocationStatus(
+        supported: true,
+        platform: 'test',
+        permission: NativeLocationPermission.background,
+        runtime: NativeLocationRuntime.running,
+        automaticEnabled: true,
+        locationServicesEnabled: true,
+      ),
+    );
+    final sampling = _SamplingBridge()..samples.add(sample());
+    final coordinator = PassiveMemoryDeliveryCoordinator(
+      api: api,
+      store: store,
+      locationBridge: location,
+      samplingBridge: sampling,
+    );
+
+    final report = await coordinator.recoverAndDeliver();
+
+    expect(report.status, PassiveMemoryRecoveryStatus.noSession);
+    expect(location.current.runtime, NativeLocationRuntime.stopped);
+    expect(location.current.automaticEnabled, isFalse);
+    expect((await store.listLocationSamples(ownerA)).single.clientUuid, sampleUuid);
     await sampling.close();
   });
 
