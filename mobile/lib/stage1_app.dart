@@ -111,11 +111,12 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   }
 
   Future<bool> _awaitPassiveRecoveryIdle() async {
-    final recoveryBridge = motionSamplingBridge;
-    if (recoveryBridge is! NativePassiveRecoveryTriggerBridge) {
+    if (motionSamplingBridge is! NativePassiveRecoveryTriggerBridge) {
       // Injected/test/unsupported bridges cannot host a competing native recovery engine.
       return true;
     }
+    final recoveryBridge =
+        motionSamplingBridge as NativePassiveRecoveryTriggerBridge;
     try {
       return await recoveryBridge
           .awaitPassiveRecoveryIdle()
