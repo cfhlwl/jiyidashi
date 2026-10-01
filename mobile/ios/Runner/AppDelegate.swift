@@ -1,6 +1,31 @@
+import BackgroundTasks
 import CoreLocation
 import Flutter
 import UIKit
+
+enum PassiveMemoryBackgroundRecovery {
+  static let identifier = "cn.jiyidashi.jiyidashi.passive-recovery"
+
+  @available(iOS 13.0, *)
+  static func schedule(
+    earliest: Date = Date().addingTimeInterval(15 * 60)
+  ) {
+    BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+    let request = BGAppRefreshTaskRequest(identifier: identifier)
+    request.earliestBeginDate = earliest
+    do {
+      try BGTaskScheduler.shared.submit(request)
+    } catch {
+      // Scheduling is best-effort. Privacy remains fail-closed because CoreLocation
+      // production is already stopped before this recovery request is submitted.
+    }
+  }
+
+  @available(iOS 13.0, *)
+  static func cancel() {
+    BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+  }
+}
 
 enum NativeLocationAuthorization {
   case notDetermined
@@ -280,6 +305,8 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     }
   }()
   private var channel: FlutterMethodChannel?
+  private var passiveRecoveryListenerReady = false
+  var onPassiveRecoveryReady: (() -> Void)?
   private var queueStorageUnavailable = false
   private var nativeProducerActive = false
   private var standardUpdatesActive = false
@@ -294,6 +321,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
 
   func attach(messenger: FlutterBinaryMessenger) {
     channel?.setMethodCallHandler(nil)
+    passiveRecoveryListenerReady = false
     let nextChannel = FlutterMethodChannel(
       name: "cn.jiyidashi/native_location",
       binaryMessenger: messenger
@@ -302,6 +330,13 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       self?.handle(call: call, result: result)
     }
     channel = nextChannel
+  }
+
+  @discardableResult
+  func requestPassiveRecoveryWakeup() -> Bool {
+    guard passiveRecoveryListenerReady, let channel else { return false }
+    channel.invokeMethod("passiveRecoveryRequested", arguments: nil)
+    return true
   }
 
   func markLocationRelaunchRestorePending() {
@@ -335,6 +370,12 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     if call.method == "awaitPassiveRecoveryIdle" {
       // iOS uses the single implicit Flutter engine for CoreLocation relaunch recovery.
       // Keep the cross-platform startup seam explicit while returning immediately here.
+      result(true)
+      return
+    }
+    if call.method == "passiveRecoveryReady" {
+      passiveRecoveryListenerReady = true
+      onPassiveRecoveryReady?()
       result(true)
       return
     }
@@ -1100,6 +1141,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
         pendingEnableOwnerUserId = nil
       }
     }
+    if #available(iOS 13.0, *) {
+      PassiveMemoryBackgroundRecovery.cancel()
+    }
     return status(ownerUserId: ownerUserId)
   }
 
@@ -1123,6 +1167,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       )
     }
 
+    if #available(iOS 13.0, *) {
+      PassiveMemoryBackgroundRecovery.cancel()
+    }
     // Significant-change monitoring remains the low-power recovery baseline. P may add
     // standard updates for moving states, but never removes this system relaunch foundation.
     manager.allowsBackgroundLocationUpdates = true
@@ -1144,6 +1191,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
         // hint; CoreLocation remains fully stopped until fresh server Privacy passes.
         activeOwnerUserId = ownerUserId
         relaunchRestorePending = true
+        if #available(iOS 13.0, *) {
+          PassiveMemoryBackgroundRecovery.schedule()
+        }
       }
     }
     return status(ownerUserId: ownerUserId)
@@ -1152,6 +1202,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   private func stop(ownerUserId: String) -> [String: Any] {
     if enabledOwnerUserId == ownerUserId || activeOwnerUserId == ownerUserId {
       stopProduction(runtimeAfterStop: .stopped)
+    }
+    if #available(iOS 13.0, *) {
+      PassiveMemoryBackgroundRecovery.cancel()
     }
     return status(ownerUserId: ownerUserId)
   }
