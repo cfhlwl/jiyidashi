@@ -33,6 +33,7 @@ class LocationSamplingCoordinator extends ChangeNotifier {
     AdaptiveSamplingPolicy policy = const AdaptiveSamplingPolicy(),
     MotionStateMachine? motionStateMachine,
     DateTime Function()? now,
+    bool closeNativeBridgeOnDispose = true,
   })  : _api = api,
         _store = store,
         _locationController = locationController,
@@ -40,6 +41,7 @@ class LocationSamplingCoordinator extends ChangeNotifier {
         _policy = policy,
         _motionStateMachine = motionStateMachine ?? MotionStateMachine(),
         _now = now ?? DateTime.now,
+        _closeNativeBridgeOnDispose = closeNativeBridgeOnDispose,
         _profile = policy.profileFor(motionState: MotionState.unknown);
 
   final JiYiApiClient _api;
@@ -49,6 +51,7 @@ class LocationSamplingCoordinator extends ChangeNotifier {
   final AdaptiveSamplingPolicy _policy;
   final MotionStateMachine _motionStateMachine;
   final DateTime Function() _now;
+  final bool _closeNativeBridgeOnDispose;
 
   AdaptiveSamplingProfile _profile;
   LocationProducerMetrics _metrics = const LocationProducerMetrics(
@@ -416,7 +419,9 @@ class LocationSamplingCoordinator extends ChangeNotifier {
     _disposed = true;
     _locationController.removeListener(_locationChanged);
     unawaited(_nativeSubscription?.cancel());
-    unawaited(_nativeBridge.close());
+    if (_closeNativeBridgeOnDispose) {
+      unawaited(_nativeBridge.close());
+    }
     super.dispose();
   }
 }
