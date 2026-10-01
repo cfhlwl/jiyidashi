@@ -40,6 +40,7 @@ class NativeLocationTrackingService : Service(), LocationListener {
         if (intent?.action == ACTION_UPDATE_SAMPLING) {
             if (isActive && store.activeOwnerUserId == ownerUserId) {
                 requestAdaptiveUpdates(store.samplingProfile(ownerUserId))
+                return START_STICKY
             }
             return START_NOT_STICKY
         }
