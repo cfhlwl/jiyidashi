@@ -409,6 +409,41 @@ async def test_core003_privacy_interval_is_not_mislabeled_unknown(client):
     assert result.today.known_gap_duration_seconds == 3 * 3600 + 50 * 60
 
 
+async def test_core003_historical_gap_hours_require_evidence_and_use_bounded_policy(client):
+    _, user_id = await _new_user(client, "core003-history-gap")
+    _set_timezone(user_id, "UTC")
+    now = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+
+    points = [
+        datetime(2026, 9, 30, 2, 0, tzinfo=UTC),
+        datetime(2026, 9, 30, 2, 10, tzinfo=UTC),
+        datetime(2026, 9, 30, 6, 0, tzinfo=UTC),
+        datetime(2026, 9, 30, 6, 10, tzinfo=UTC),
+    ]
+    for index, observed in enumerate(points):
+        _add_receipt(
+            user_id,
+            client_uuid=f"history-gap-{index}",
+            recorded_at=observed,
+            created_at=observed + timedelta(seconds=5),
+        )
+
+    with SessionLocal() as db:
+        result = get_recording_health(
+            db,
+            user_id=user_id,
+            reference_utc=now,
+        )
+
+    expected_hours = round((3 * 3600 + 50 * 60) / 3600, 2)
+    assert result.aggregates.evidence_days_7d == 1
+    assert result.aggregates.evidence_days_30d == 1
+    assert result.aggregates.gap_hours_7d == expected_hours
+    assert result.aggregates.gap_hours_30d == expected_hours
+    assert result.aggregates.bounded_gap_hours_7d == expected_hours
+    assert result.aggregates.bounded_gap_hours_30d == expected_hours
+
+
 async def test_core003_owner_local_day_and_dst_bounds(client):
     _, user_id = await _new_user(client, "core003-dst")
     _set_timezone(user_id, "America/New_York")
