@@ -415,6 +415,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       // Android 11+ uses this cross-platform bridge method. iOS Always permission has its
       // own explicit CoreLocation flow, so this is intentionally status-only here.
       result(status(ownerUserId: ownerUserId))
+    case "openLocationServicesSettings":
+      if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+        UIApplication.shared.open(settingsURL, options: [:], completionHandler: nil)
+      }
+      result(status(ownerUserId: ownerUserId))
     case "disableAutomaticLocation":
       result(disableAutomaticLocation(ownerUserId: ownerUserId))
     case "start":
