@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/auth_session_store.dart';
+import 'package:jiyidashi/native_location_bridge.dart';
+import 'package:jiyidashi/native_location_controller.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/recording_health_section.dart';
 
@@ -97,6 +99,91 @@ Map<String, dynamic> _healthResponse({
     'server_observed_at': '2026-10-01T10:02:00Z',
     'native_state_observed': status != 'UNKNOWN',
   };
+}
+
+class _HealthQueueStore extends OfflineQueueStore {
+  @override
+  Future<LocationQueueDiagnostics> locationQueueDiagnostics(
+    String ownerUserId,
+  ) async {
+    return const LocationQueueDiagnostics(
+      queueDepth: 0,
+      blockedCount: 0,
+      deliveryFailureCount: 0,
+      queueCapacity: 1000,
+    );
+  }
+}
+
+class _HealthBridge implements NativeLocationBridge {
+  _HealthBridge(this.current);
+
+  NativeLocationStatus current;
+  final List<String> calls = <String>[];
+
+  @override
+  Future<NativeLocationStatus> status(String ownerUserId) async {
+    calls.add('status');
+    return current;
+  }
+
+  @override
+  Future<NativeLocationStatus> requestForegroundPermission(
+    String ownerUserId,
+  ) async {
+    calls.add('requestForegroundPermission');
+    return current;
+  }
+
+  @override
+  Future<NativeLocationStatus> enableAutomaticLocation(
+    String ownerUserId,
+  ) async {
+    calls.add('enableAutomaticLocation');
+    return current;
+  }
+
+  @override
+  Future<NativeLocationStatus> openBackgroundLocationSettings(
+    String ownerUserId,
+  ) async {
+    calls.add('openBackgroundLocationSettings');
+    return current;
+  }
+
+  @override
+  Future<NativeLocationStatus> openLocationServicesSettings(
+    String ownerUserId,
+  ) async {
+    calls.add('openLocationServicesSettings');
+    return current;
+  }
+
+  @override
+  Future<NativeLocationStatus> disableAutomaticLocation(
+    String ownerUserId,
+  ) async {
+    calls.add('disableAutomaticLocation');
+    return current;
+  }
+
+  @override
+  Future<NativeLocationStatus> start(String ownerUserId) async {
+    calls.add('start');
+    return current;
+  }
+
+  @override
+  Future<NativeLocationStatus> pause(String ownerUserId) async {
+    calls.add('pause');
+    return current;
+  }
+
+  @override
+  Future<NativeLocationStatus> stop(String ownerUserId) async {
+    calls.add('stop');
+    return current;
+  }
 }
 
 void main() {
@@ -221,6 +308,186 @@ void main() {
     expect(find.text('自动记录当前受阻'), findsOneWidget);
     expect(find.textContaining('系统定位权限不足'), findsOneWidget);
     expect(find.text('PERMISSION_BLOCKED'), findsNothing);
+    expect(find.text('当前自动记录正常'), findsNothing);
+  });
+
+  testWidgets('all six health states map to bounded user-facing titles', (tester) async {
+    final cases = <(String, String, String)>[
+      ('HEALTHY', 'RECENT_CAPTURE_AND_ACK', '当前自动记录正常'),
+      ('DEGRADED', 'DELIVERY_BACKLOG', '记录质量受限'),
+      ('PAUSED', 'PRIVACY_PAUSED', '自动记录已暂停'),
+      ('BLOCKED', 'PERMISSION_BLOCKED', '自动记录当前受阻'),
+      ('RECOVERING', 'RECOVERY_PENDING', '正在恢复自动记录'),
+      ('UNKNOWN', 'NATIVE_STATE_UNAVAILABLE', '当前记录状态未知'),
+    ];
+
+    for (final item in cases) {
+      final api = JiYiApiClient(
+        baseUrl: 'https://example.test/v1',
+        sessionStore: MemoryAuthSessionStore(),
+        httpClient: MockClient((request) async {
+          if (request.url.path == '/v1/auth/login') {
+            return _loginResponse(
+              userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              sessionId: '11111111-1111-4111-8111-111111111111',
+              suffix: item.$1.toLowerCase(),
+            );
+          }
+          return http.Response(
+            jsonEncode(_healthResponse(status: item.$1, reason: item.$2)),
+            200,
+            headers: _headers,
+          );
+        }),
+      );
+      await api.login(email: 'a@example.test', password: 'password-a');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RecordingHealthSection(
+              api: api,
+              store: _HealthQueueStore(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(item.$3), findsOneWidget);
+      expect(find.text(item.$1), findsNothing);
+      expect(find.text(item.$2), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  testWidgets('health CTA follows exact native permission reason', (tester) async {
+    const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    final bridge = _HealthBridge(
+      const NativeLocationStatus(
+        supported: true,
+        platform: 'android',
+        permission: NativeLocationPermission.foreground,
+        runtime: NativeLocationRuntime.stopped,
+        automaticEnabled: true,
+        locationServicesEnabled: true,
+        backgroundRuntimeState: NativeBackgroundRuntimeState.eligible,
+        batteryOptimizationState: NativeBatteryOptimizationState.optimized,
+        reason: 'background_settings_required',
+        queue: NativeLocationQueueDiagnostics(
+          schemaVersion: 2,
+          depth: 0,
+          capacity: 1000,
+          deliveryFailureCount: 0,
+          capacityPressure: false,
+          droppedSampleCount: 0,
+          corrupt: false,
+          storageUnavailable: false,
+        ),
+      ),
+    );
+    final controller = NativeLocationController(
+      bridge: bridge,
+      ownerUserId: owner,
+    );
+    controller.markPrivacyActive();
+
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: MemoryAuthSessionStore(),
+      httpClient: MockClient((request) async {
+        if (request.url.path == '/v1/auth/login') {
+          return _loginResponse(
+            userId: owner,
+            sessionId: '11111111-1111-4111-8111-111111111111',
+            suffix: 'cta',
+          );
+        }
+        return http.Response(
+          jsonEncode(
+            <String, dynamic>{
+              ..._healthResponse(
+                status: 'BLOCKED',
+                reason: 'PERMISSION_BLOCKED',
+              ),
+              'health': <String, dynamic>{
+                ...(_healthResponse(
+                  status: 'BLOCKED',
+                  reason: 'PERMISSION_BLOCKED',
+                )['health'] as Map<String, dynamic>),
+                'automatic_enabled': true,
+                'permission_state': 'FOREGROUND',
+                'location_services_state': 'ON',
+                'background_runtime_state': 'ELIGIBLE',
+              },
+            },
+          ),
+          200,
+          headers: _headers,
+        );
+      }),
+    );
+    await api.login(email: 'a@example.test', password: 'password-a');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RecordingHealthSection(
+            api: api,
+            store: _HealthQueueStore(),
+            nativeLocationController: controller,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('前往系统设置允许始终定位'), findsOneWidget);
+    expect(find.text('开启系统定位服务'), findsNothing);
+    expect(find.text('重新启动自动记录'), findsNothing);
+    controller.dispose();
+  });
+
+  testWidgets('malformed health response remains visibly unknown', (tester) async {
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: MemoryAuthSessionStore(),
+      httpClient: MockClient((request) async {
+        if (request.url.path == '/v1/auth/login') {
+          return _loginResponse(
+            userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            sessionId: '11111111-1111-4111-8111-111111111111',
+            suffix: 'malformed',
+          );
+        }
+        return http.Response(
+          jsonEncode(<String, dynamic>{
+            'health': <String, dynamic>{
+              'status': 'HEALTHY',
+              'status_reason': 'RECENT_CAPTURE_AND_ACK',
+            },
+          }),
+          200,
+          headers: _headers,
+        );
+      }),
+    );
+    await api.login(email: 'a@example.test', password: 'password-a');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RecordingHealthSection(
+            api: api,
+            store: _HealthQueueStore(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('当前记录状态未知'), findsOneWidget);
+    expect(find.textContaining('已按未知状态处理'), findsOneWidget);
     expect(find.text('当前自动记录正常'), findsNothing);
   });
 
