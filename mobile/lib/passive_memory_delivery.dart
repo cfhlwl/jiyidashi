@@ -468,18 +468,30 @@ class PassiveMemoryDeliveryCoordinator {
     if (!await _authorityStillPersisted(owner, generation, sessionId)) return 0;
 
     final acknowledged = <String>[];
+    var sqliteCapacityBlocked = false;
     for (final sample in samples) {
       if (!_authorityCurrent(owner, generation)) break;
-      await _store.enqueueLocationSample(
-        ownerUserId: owner,
-        clientUuid: sample.clientUuid,
-        latitude: sample.latitude,
-        longitude: sample.longitude,
-        accuracyMeters: sample.accuracyMeters,
-        speedMetersPerSecond: sample.speedMetersPerSecond,
-        recordedAt: sample.recordedAt,
-      );
+      try {
+        await _store.enqueueLocationSample(
+          ownerUserId: owner,
+          clientUuid: sample.clientUuid,
+          latitude: sample.latitude,
+          longitude: sample.longitude,
+          accuracyMeters: sample.accuracyMeters,
+          speedMetersPerSecond: sample.speedMetersPerSecond,
+          recordedAt: sample.recordedAt,
+        );
+      } on LocationQueueCapacityException {
+        // Do not ACK the current or later native rows. The bounded native queue remains
+        // their durable authority until SQLite/server delivery makes space again.
+        sqliteCapacityBlocked = true;
+        break;
+      }
       acknowledged.add(sample.clientUuid);
+    }
+
+    if (sqliteCapacityBlocked) {
+      await _recordNativeDeliveryFailure(owner, 'sqlite_queue_capacity');
     }
 
     if (acknowledged.isNotEmpty &&
