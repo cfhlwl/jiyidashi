@@ -174,6 +174,7 @@ class LocationQueueDiagnostics {
     this.capacityPressure = false,
     this.oldestPendingAt,
     this.lastEnqueueAt,
+    this.lastAttemptAt,
     this.lastDeliveryAt,
     this.lastFailureAt,
     this.lastFailureReason,
@@ -186,6 +187,7 @@ class LocationQueueDiagnostics {
   final bool capacityPressure;
   final DateTime? oldestPendingAt;
   final DateTime? lastEnqueueAt;
+  final DateTime? lastAttemptAt;
   final DateTime? lastDeliveryAt;
   final DateTime? lastFailureAt;
   final String? lastFailureReason;
@@ -900,7 +902,8 @@ class OfflineQueueStore {
           COUNT(*) AS queue_depth,
           SUM(CASE WHEN blocked_error IS NOT NULL THEN 1 ELSE 0 END) AS blocked_count,
           MIN(CASE WHEN blocked_error IS NULL THEN recorded_at END) AS oldest_pending_at,
-          MAX(created_at) AS last_enqueue_at
+          MAX(created_at) AS last_enqueue_at,
+          MAX(last_attempt_at) AS last_attempt_at
         FROM location_sample_queue
         WHERE owner_user_id = ?
       ''',
@@ -925,6 +928,7 @@ class OfflineQueueStore {
           queueDepth >= (_locationQueueCapacityPerOwner * 4 ~/ 5),
       oldestPendingAt: parse(row['oldest_pending_at']),
       lastEnqueueAt: parse(row['last_enqueue_at']),
+      lastAttemptAt: parse(row['last_attempt_at']),
       lastDeliveryAt: parse(stateRow['last_delivery_at']),
       deliveryFailureCount:
           (stateRow['delivery_failure_count'] as int?) ?? 0,
