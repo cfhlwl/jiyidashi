@@ -364,6 +364,8 @@ async def test_core003_sparse_observations_create_unknown_gap_without_route_fabr
     unknown = [gap for gap in result.recent_gaps if gap.reason == "UNKNOWN"]
     assert len(unknown) == 1
     assert unknown[0].duration_seconds == 3 * 3600 + 50 * 60
+    assert result.today.known_gap_duration_seconds == 3 * 3600 + 50 * 60
+    assert result.today.largest_known_gap_seconds == 3 * 3600 + 50 * 60
     assert result.today.has_unexplained_gap is True
     assert result.today.coverage_state == "GAPPED"
 
