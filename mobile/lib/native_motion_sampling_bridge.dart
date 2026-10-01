@@ -211,6 +211,11 @@ class MethodChannelNativeMotionSamplingBridge
     MethodChannel channel = const MethodChannel('cn.jiyidashi/native_location'),
   }) : _channel = channel {
     _channel.setMethodCallHandler(_onNativeMethod);
+    unawaited(
+      _channel.invokeMethod<void>('passiveRecoveryReady').catchError((_) {
+        // Android/tests may not expose the optional iOS BGTask handshake.
+      }),
+    );
   }
 
   final MethodChannel _channel;
