@@ -114,6 +114,8 @@ class _LocationBridge implements NativeLocationBridge {
       runtime: NativeLocationRuntime.paused,
       automaticEnabled: current.automaticEnabled,
       locationServicesEnabled: current.locationServicesEnabled,
+      restorePending: current.restorePending,
+      queue: current.queue,
     );
     return current;
   }
@@ -128,6 +130,8 @@ class _LocationBridge implements NativeLocationBridge {
       runtime: NativeLocationRuntime.running,
       automaticEnabled: current.automaticEnabled,
       locationServicesEnabled: current.locationServicesEnabled,
+      restorePending: false,
+      queue: current.queue,
     );
     return current;
   }
@@ -431,6 +435,41 @@ void main() {
       (await firstPending).status,
       PassiveMemoryRecoveryStatus.delivered,
     );
+    await sampling.close();
+  });
+
+  test('privacy quarantine resumes producer only after a later fresh PASS',
+      () async {
+    final api = _PassiveApi()..privacyPaused = true;
+    final location = _LocationBridge(
+      current: const NativeLocationStatus(
+        supported: true,
+        platform: 'test',
+        permission: NativeLocationPermission.background,
+        runtime: NativeLocationRuntime.paused,
+        automaticEnabled: true,
+        locationServicesEnabled: true,
+        restorePending: true,
+      ),
+    );
+    final sampling = _SamplingBridge();
+    final coordinator = PassiveMemoryDeliveryCoordinator(
+      api: api,
+      store: store,
+      locationBridge: location,
+      samplingBridge: sampling,
+    );
+
+    final paused = await coordinator.recoverAndDeliver();
+    expect(paused.status, PassiveMemoryRecoveryStatus.privacyPaused);
+    expect(location.startCalls, 0);
+    expect(location.current.restorePending, isTrue);
+
+    api.privacyPaused = false;
+    final recovered = await coordinator.recoverAndDeliver();
+    expect(recovered.status, PassiveMemoryRecoveryStatus.noWork);
+    expect(location.startCalls, 1);
+    expect(location.current.runtime, NativeLocationRuntime.running);
     await sampling.close();
   });
 
