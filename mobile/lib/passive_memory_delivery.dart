@@ -285,6 +285,10 @@ class PassiveMemoryDeliveryCoordinator {
             ids,
             'incomplete_location_batch_receipt',
           );
+          await _recordNativeDeliveryFailure(
+            owner,
+            'incomplete_location_batch_receipt',
+          );
           return PassiveMemoryRecoveryReport(
             status: PassiveMemoryRecoveryStatus.retryableFailure,
             ownerUserId: owner,
@@ -315,6 +319,7 @@ class PassiveMemoryDeliveryCoordinator {
       } on TransportException catch (error) {
         if (_authorityCurrent(owner, generation)) {
           await _store.recordLocationDeliveryFailure(owner, ids, error.message);
+          await _recordNativeDeliveryFailure(owner, error.message);
         }
         return PassiveMemoryRecoveryReport(
           status: PassiveMemoryRecoveryStatus.retryableFailure,
@@ -333,6 +338,7 @@ class PassiveMemoryDeliveryCoordinator {
             ids,
             'RECORDING_PAUSED',
           );
+          await _recordNativeDeliveryFailure(owner, 'RECORDING_PAUSED');
           await _pauseNativeFailClosed(owner);
           return PassiveMemoryRecoveryReport(
             status: PassiveMemoryRecoveryStatus.privacyPaused,
@@ -349,11 +355,9 @@ class PassiveMemoryDeliveryCoordinator {
             error.statusCode >= 500 ||
             (error.statusCode == 422 &&
                 error.message == 'LOCATION_RECORDED_AT_IN_FUTURE');
-        await _store.recordLocationDeliveryFailure(
-          owner,
-          ids,
-          'HTTP ${error.statusCode}: ${error.message}',
-        );
+        final failureReason = 'HTTP ${error.statusCode}: ${error.message}';
+        await _store.recordLocationDeliveryFailure(owner, ids, failureReason);
+        await _recordNativeDeliveryFailure(owner, failureReason);
         if (!retryable) {
           await _store.blockLocationSamples(
             owner,
@@ -373,6 +377,7 @@ class PassiveMemoryDeliveryCoordinator {
       } on ProtocolException catch (error) {
         if (_authorityCurrent(owner, generation)) {
           await _store.recordLocationDeliveryFailure(owner, ids, error.message);
+          await _recordNativeDeliveryFailure(owner, error.message);
         }
         return PassiveMemoryRecoveryReport(
           status: PassiveMemoryRecoveryStatus.retryableFailure,
@@ -435,6 +440,21 @@ class PassiveMemoryDeliveryCoordinator {
         ownerUserId: owner,
         sessionRestored: restored,
       );
+
+  Future<void> _recordNativeDeliveryFailure(
+    String owner,
+    String reason,
+  ) async {
+    final bridge = _samplingBridge;
+    if (bridge is! NativeDeliveryDiagnosticsSink) return;
+    try {
+      await bridge.recordDeliveryFailure(owner, reason: reason);
+    } on MissingPluginException {
+      // SQLite diagnostics remain authoritative for delivery retry state.
+    } on PlatformException {
+      // Native metrics are best-effort and never alter durable queue semantics.
+    }
+  }
 
   Future<void> _pauseNativeFailClosed(String owner) async {
     try {
