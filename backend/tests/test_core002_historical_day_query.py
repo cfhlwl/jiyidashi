@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
+from app.analytics_models import RetrievalAnalyticsAttempt, RetrievalOutcome
 from app.core.db import SessionLocal
 from app.media_models import MediaAsset, MediaEvidenceLink, MediaKind, MediaStatus
 from app.models import Memory, MemorySource, MemoryType, Place, SourceType, User, Visit
@@ -298,6 +299,15 @@ async def test_core002_date_footprint_query_uses_visit_authority_and_zero_ai(
     assert "月球" not in body["answer"]
     assert body["memory_ids"] == []
     assert provider_calls == 0
+
+    with SessionLocal() as db:
+        analytics = db.query(RetrievalAnalyticsAttempt).filter(
+            RetrievalAnalyticsAttempt.user_id == user_id
+        ).order_by(RetrievalAnalyticsAttempt.occurred_at.desc()).first()
+        assert analytics is not None
+        assert analytics.outcome == RetrievalOutcome.SUCCESS
+        assert analytics.result_count == 1
+        assert analytics.answerable_count == 1
 
 
 async def test_core002_broad_day_query_is_evidence_first_and_provider_optional(
