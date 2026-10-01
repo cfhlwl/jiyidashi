@@ -363,9 +363,16 @@ Map<String, dynamic> _parseMemoryQueryResult(Map<String, dynamic> data) {
       answer.trim().isNotEmpty &&
       (certainty == 'confirmed' || certainty == 'evidence') &&
       hasStructuredFootprint;
+  final structuredNoEvidenceExplanation =
+      parsedDayFootprint != null ||
+      reason == 'INVALID_DATE' ||
+      reason == 'FUTURE_DATE';
   final canonicalNoEvidence =
       canAnswer == false &&
-      (answer == null || (answer is String && answer.trim().isNotEmpty)) &&
+      (answer == null ||
+          (structuredNoEvidenceExplanation &&
+              answer is String &&
+              answer.trim().isNotEmpty)) &&
       certainty == 'unknown' &&
       parsedEvidence.isEmpty &&
       parsedIds.isEmpty &&
