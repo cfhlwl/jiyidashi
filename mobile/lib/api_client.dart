@@ -328,6 +328,19 @@ class JiYiApiClient {
 
   bool get showDevelopmentEndpoint => _appEnv != 'production';
 
+  /// Cross-engine/process-safe local authority check for CORE-001 recovery.
+  ///
+  /// Background isolates never receive the refresh token from this method. They only learn
+  /// whether the currently published session id still matches secure storage. Logout,
+  /// logout-all, account switch and invalid-session cleanup remove/replace that binding.
+  Future<bool> currentSessionMatchesSecureStorage() async {
+    final sessionId = _sessionId;
+    final owner = authenticatedUserId;
+    if (sessionId == null || owner == null) return false;
+    final persisted = await _sessionStore.readSession();
+    return persisted != null && persisted.sessionId == sessionId;
+  }
+
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
         if (accessToken != null) 'Authorization': 'Bearer $accessToken',

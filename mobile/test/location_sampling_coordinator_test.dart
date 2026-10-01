@@ -9,6 +9,7 @@ import 'package:jiyidashi/native_location_bridge.dart';
 import 'package:jiyidashi/native_location_controller.dart';
 import 'package:jiyidashi/native_motion_sampling_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
+import 'package:jiyidashi/passive_memory_delivery.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -48,7 +49,10 @@ class _LocationBridge implements NativeLocationBridge {
     String ownerUserId,
   ) async {
     calls.add('disable');
-    current = _status(runtime: NativeLocationRuntime.stopped);
+    current = _status(
+      runtime: NativeLocationRuntime.stopped,
+      automaticEnabled: false,
+    );
     return current;
   }
 
@@ -75,13 +79,14 @@ class _LocationBridge implements NativeLocationBridge {
 
   static NativeLocationStatus _status({
     required NativeLocationRuntime runtime,
+    bool automaticEnabled = true,
   }) =>
       NativeLocationStatus(
         supported: true,
         platform: 'test',
         permission: NativeLocationPermission.background,
         runtime: runtime,
-        automaticEnabled: true,
+        automaticEnabled: automaticEnabled,
         locationServicesEnabled: true,
       );
 }
@@ -191,8 +196,28 @@ class _SamplingApi extends JiYiApiClient {
   int uploadCalls = 0;
   bool transportFails = false;
   bool pauseRace409 = false;
+  bool uploadUnauthorized = false;
   int future422Remaining = 0;
+  Completer<LocationBatchResult>? uploadGate;
+  int authorityRefreshCalls = 0;
   final List<List<String>> uploadedUuidBatches = <List<String>>[];
+
+  @override
+  String? get authenticatedSessionId => 'sampling-session';
+
+  @override
+  Future<bool> currentSessionMatchesSecureStorage() async => true;
+
+  @override
+  Future<void> revalidateAuthenticatedOwnerAuthority() async {
+    authorityRefreshCalls += 1;
+  }
+
+  @override
+  Future<Map<String, dynamic>> getProfile() async => <String, dynamic>{
+        'id': owner,
+        'elder_mode_enabled': false,
+      };
 
   @override
   Future<Map<String, dynamic>> getPrivacyStatus() async {
@@ -214,6 +239,9 @@ class _SamplingApi extends JiYiApiClient {
     );
     if (transportFails) throw TransportException('response lost');
     if (pauseRace409) throw ApiException(409, 'RECORDING_PAUSED');
+    if (uploadUnauthorized) throw ApiException(401, 'INVALID_ACCESS_TOKEN');
+    final pending = uploadGate;
+    if (pending != null) return pending.future;
     if (future422Remaining > 0) {
       future422Remaining -= 1;
       throw ApiException(422, 'LOCATION_RECORDED_AT_IN_FUTURE');
@@ -297,6 +325,12 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();
@@ -319,6 +353,12 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();
@@ -341,6 +381,12 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();
@@ -375,6 +421,12 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
       motionStateMachine: MotionStateMachine(
         initialState: MotionState.walking,
       ),
@@ -405,6 +457,12 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();
@@ -438,6 +496,12 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();
@@ -468,12 +532,19 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();
 
     expect(api.uploadCalls, 0);
-    expect(await store.countLocationSamples(owner), 1);
+    expect(await store.countLocationSamples(owner), 0);
+    expect(native.samples.map((item) => item.clientUuid), <String>[uuid]);
     expect(controller.privacyGate, NativeLocationPrivacyGate.paused);
     expect(locationBridge.calls, contains('pause'));
     coordinator.dispose();
@@ -491,6 +562,12 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();
@@ -518,15 +595,120 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();
 
     expect(api.uploadCalls, 0);
-    expect(await store.countLocationSamples(owner), 1);
+    expect(await store.countLocationSamples(owner), 0);
+    expect(native.samples.map((item) => item.clientUuid), <String>[uuid]);
     expect(controller.privacyGate, NativeLocationPrivacyGate.unknown);
     expect(locationBridge.calls, contains('pause'));
     coordinator.dispose();
+    controller.dispose();
+  });
+
+  test('final upload 401 disables native producer immediately and keeps replay proof',
+      () async {
+    final locationBridge = _LocationBridge(current: runningStatus());
+    final controller = await activeController(locationBridge);
+    const uuid = '29212121-2121-4212-8212-212121212121';
+    final native = _SamplingBridge()..samples.add(sample(uuid));
+    final api = _SamplingApi()..uploadUnauthorized = true;
+    final coordinator = LocationSamplingCoordinator(
+      api: api,
+      store: store,
+      locationController: controller,
+      nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
+    );
+
+    await coordinator.start();
+
+    expect(api.uploadCalls, 1);
+    expect(locationBridge.calls, contains('disable'));
+    expect(locationBridge.current.runtime, NativeLocationRuntime.stopped);
+    expect(locationBridge.current.automaticEnabled, isFalse);
+    expect(await store.countLocationSamples(owner), 1);
+    expect(
+      (await store.listLocationSamples(owner)).single.clientUuid,
+      uuid,
+      reason: 'terminal auth loss must stop production without deleting replay proof',
+    );
+    coordinator.dispose();
+    controller.dispose();
+  });
+
+  test('foreground sampling and background delivery contend on one durable lease',
+      () async {
+    final locationBridge = _LocationBridge(current: runningStatus());
+    final controller = await activeController(locationBridge);
+    const uuid = '30212121-2121-4212-8212-212121212121';
+    final native = _SamplingBridge()..samples.add(sample(uuid));
+
+    final backgroundGate = Completer<LocationBatchResult>();
+    final backgroundApi = _SamplingApi()..uploadGate = backgroundGate;
+    final backgroundDelivery = PassiveMemoryDeliveryCoordinator(
+      api: backgroundApi,
+      store: store,
+      locationBridge: locationBridge,
+      samplingBridge: native,
+    );
+
+    final foregroundApi = _SamplingApi();
+    final foregroundDelivery = PassiveMemoryDeliveryCoordinator(
+      api: foregroundApi,
+      store: store,
+      locationBridge: locationBridge,
+      samplingBridge: native,
+    );
+    final foreground = LocationSamplingCoordinator(
+      api: foregroundApi,
+      store: store,
+      locationController: controller,
+      nativeBridge: native,
+      deliveryCoordinator: foregroundDelivery,
+    );
+
+    final backgroundPending = backgroundDelivery.recoverAndDeliver();
+    while (backgroundApi.uploadCalls == 0) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    await foreground.start();
+
+    expect(
+      foregroundApi.uploadCalls,
+      0,
+      reason: 'foreground must not create a second upload authority while background owns lease',
+    );
+
+    backgroundGate.complete(
+      const LocationBatchResult(
+        accepted: 1,
+        duplicates: 0,
+        rejectedPrivacy: 0,
+        rejectedFinalized: 0,
+      ),
+    );
+    expect(
+      (await backgroundPending).status,
+      PassiveMemoryRecoveryStatus.delivered,
+    );
+    expect(await store.countLocationSamples(owner), 0);
+
+    foreground.dispose();
     controller.dispose();
   });
 
@@ -540,6 +722,12 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();
@@ -571,6 +759,12 @@ void main() {
       store: store,
       locationController: controller,
       nativeBridge: native,
+      deliveryCoordinator: PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: store,
+        locationBridge: locationBridge,
+        samplingBridge: native,
+      ),
     );
 
     await coordinator.start();

@@ -1,6 +1,31 @@
+import BackgroundTasks
 import CoreLocation
 import Flutter
 import UIKit
+
+enum PassiveMemoryBackgroundRecovery {
+  static let identifier = "cn.jiyidashi.jiyidashi.passive-recovery"
+
+  @available(iOS 13.0, *)
+  static func schedule(
+    earliest: Date = Date().addingTimeInterval(15 * 60)
+  ) {
+    BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+    let request = BGAppRefreshTaskRequest(identifier: identifier)
+    request.earliestBeginDate = earliest
+    do {
+      try BGTaskScheduler.shared.submit(request)
+    } catch {
+      // Scheduling is best-effort. Privacy remains fail-closed because CoreLocation
+      // production is already stopped before this recovery request is submitted.
+    }
+  }
+
+  @available(iOS 13.0, *)
+  static func cancel() {
+    BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+  }
+}
 
 enum NativeLocationAuthorization {
   case notDetermined
@@ -74,6 +99,66 @@ struct NativeQueuedLocationSample: Codable {
   let accuracyMeters: Double?
   let speedMetersPerSecond: Double?
   let recordedAtMillis: Int64
+  let queueSequence: Int64
+  let enqueuedAtMillis: Int64
+  let handoffAttemptCount: Int
+
+  init(
+    ownerUserId: String,
+    clientUuid: String,
+    latitude: Double,
+    longitude: Double,
+    accuracyMeters: Double?,
+    speedMetersPerSecond: Double?,
+    recordedAtMillis: Int64,
+    queueSequence: Int64 = 0,
+    enqueuedAtMillis: Int64? = nil,
+    handoffAttemptCount: Int = 0
+  ) {
+    self.ownerUserId = ownerUserId
+    self.clientUuid = clientUuid
+    self.latitude = latitude
+    self.longitude = longitude
+    self.accuracyMeters = accuracyMeters
+    self.speedMetersPerSecond = speedMetersPerSecond
+    self.recordedAtMillis = recordedAtMillis
+    self.queueSequence = queueSequence
+    self.enqueuedAtMillis = enqueuedAtMillis ?? recordedAtMillis
+    self.handoffAttemptCount = max(handoffAttemptCount, 0)
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case ownerUserId
+    case clientUuid
+    case latitude
+    case longitude
+    case accuracyMeters
+    case speedMetersPerSecond
+    case recordedAtMillis
+    case queueSequence
+    case enqueuedAtMillis
+    case handoffAttemptCount
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let recordedAt = try container.decode(Int64.self, forKey: .recordedAtMillis)
+    self.init(
+      ownerUserId: try container.decode(String.self, forKey: .ownerUserId),
+      clientUuid: try container.decode(String.self, forKey: .clientUuid),
+      latitude: try container.decode(Double.self, forKey: .latitude),
+      longitude: try container.decode(Double.self, forKey: .longitude),
+      accuracyMeters: try container.decodeIfPresent(Double.self, forKey: .accuracyMeters),
+      speedMetersPerSecond:
+        try container.decodeIfPresent(Double.self, forKey: .speedMetersPerSecond),
+      recordedAtMillis: recordedAt,
+      queueSequence: try container.decodeIfPresent(Int64.self, forKey: .queueSequence) ?? 0,
+      enqueuedAtMillis:
+        try container.decodeIfPresent(Int64.self, forKey: .enqueuedAtMillis) ?? recordedAt,
+      handoffAttemptCount:
+        try container.decodeIfPresent(Int.self, forKey: .handoffAttemptCount) ?? 0
+    )
+  }
 }
 
 struct NativeMotionObservation: Codable {
@@ -198,7 +283,31 @@ struct NativeLocationPolicy {
 final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   private let manager = CLLocationManager()
   private let defaults = UserDefaults.standard
+  private lazy var queueFileURL: URL? = {
+    let manager = FileManager.default
+    guard let base = manager.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first else {
+      return nil
+    }
+    do {
+      try manager.createDirectory(
+        at: base,
+        withIntermediateDirectories: true
+      )
+      return base.appendingPathComponent(
+        "native_location_queue_v2.json",
+        isDirectory: false
+      )
+    } catch {
+      return nil
+    }
+  }()
   private var channel: FlutterMethodChannel?
+  private var passiveRecoveryListenerReady = false
+  var onPassiveRecoveryReady: (() -> Void)?
+  private var queueStorageUnavailable = false
   private var nativeProducerActive = false
   private var standardUpdatesActive = false
 
@@ -212,6 +321,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
 
   func attach(messenger: FlutterBinaryMessenger) {
     channel?.setMethodCallHandler(nil)
+    passiveRecoveryListenerReady = false
     let nextChannel = FlutterMethodChannel(
       name: "cn.jiyidashi/native_location",
       binaryMessenger: messenger
@@ -220,6 +330,18 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       self?.handle(call: call, result: result)
     }
     channel = nextChannel
+  }
+
+  func sealAutomaticProductionForAuthorityLoss() {
+    guard let owner = enabledOwnerUserId ?? activeOwnerUserId else { return }
+    _ = disableAutomaticLocation(ownerUserId: owner)
+  }
+
+  @discardableResult
+  func requestPassiveRecoveryWakeup() -> Bool {
+    guard passiveRecoveryListenerReady, let channel else { return false }
+    channel.invokeMethod("passiveRecoveryRequested", arguments: nil)
+    return true
   }
 
   func markLocationRelaunchRestorePending() {
@@ -250,6 +372,19 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   }
 
   private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "awaitPassiveRecoveryIdle" {
+      // iOS uses the single implicit Flutter engine for CoreLocation relaunch recovery.
+      // Keep the cross-platform startup seam explicit while returning immediately here.
+      result(true)
+      return
+    }
+    if call.method == "passiveRecoveryReady" {
+      passiveRecoveryListenerReady = true
+      onPassiveRecoveryReady?()
+      result(true)
+      return
+    }
+
     guard let ownerUserId = owner(from: call) else {
       result(FlutterError(
         code: "invalid_owner",
@@ -305,7 +440,39 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
           prefix: Keys.metricUploadedSamples,
           delta: Int64(count.intValue)
         )
+        defaults.set(
+          Int64(Date().timeIntervalSince1970 * 1000),
+          forKey: ownerKey(Keys.lastDeliveryAt, ownerUserId)
+        )
+        if #available(iOS 13.0, *) {
+          let remaining =
+            allPendingLocationSamples().contains { $0.ownerUserId == ownerUserId }
+          if queueStorageUnavailable || remaining {
+            PassiveMemoryBackgroundRecovery.schedule()
+          } else {
+            PassiveMemoryBackgroundRecovery.cancel()
+          }
+        }
       }
+      result(nil)
+    case "recordLocationDeliveryFailure":
+      let arguments = call.arguments as? [String: Any]
+      let reason =
+        (arguments?["reason"] as? String)?
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+      incrementMetric(
+        ownerUserId: ownerUserId,
+        prefix: Keys.deliveryFailureCount,
+        delta: 1
+      )
+      defaults.set(
+        Int64(Date().timeIntervalSince1970 * 1000),
+        forKey: ownerKey(Keys.lastDeliveryFailureAt, ownerUserId)
+      )
+      defaults.set(
+        (reason?.isEmpty == false ? reason! : "location_delivery_failed"),
+        forKey: ownerKey(Keys.lastDeliveryFailureReason, ownerUserId)
+      )
       result(nil)
     case "purgeLocationSamplingOwner":
       purgeLocationSamplingOwner(ownerUserId)
@@ -432,8 +599,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     let limit = min(max((arguments?["limit"] as? NSNumber)?.intValue ?? 100, 1), 500)
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return pendingLocationSamples(ownerUserId: ownerUserId)
-      .prefix(limit)
+    return pendingLocationSamples(ownerUserId: ownerUserId, limit: limit)
       .map { sample in
         var payload: [String: Any] = [
           "client_uuid": sample.clientUuid,
@@ -484,7 +650,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     let retained = allPendingLocationSamples().filter {
       !($0.ownerUserId == ownerUserId && normalized.contains($0.clientUuid))
     }
-    savePendingLocationSamples(retained)
+    if !queueCorrupt && !savePendingLocationSamples(retained) {
+      markQueueCorrupt("native_queue_persist_failed")
+    }
   }
 
   private func applySamplingProfile(
@@ -533,52 +701,209 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     "\(prefix).\(ownerUserId)"
   }
 
+  private var queueCorrupt: Bool {
+    defaults.bool(forKey: Keys.queueCorrupt)
+  }
+
+  private func markQueueCorrupt(_ reason: String) {
+    defaults.set(true, forKey: Keys.queueCorrupt)
+    defaults.set(reason, forKey: Keys.queueCorruptReason)
+    defaults.set(
+      Int64(Date().timeIntervalSince1970 * 1000),
+      forKey: Keys.queueCorruptAt
+    )
+  }
+
   private func allPendingLocationSamples() -> [NativeQueuedLocationSample] {
-    guard
-      let data = defaults.data(forKey: Keys.pendingSamples),
-      let samples = try? JSONDecoder().decode(
-        [NativeQueuedLocationSample].self,
-        from: data
-      )
-    else {
+    if queueCorrupt { return [] }
+    queueStorageUnavailable = false
+
+    var cameFromLegacyDefaults = false
+    let data: Data
+    if let url = queueFileURL,
+       FileManager.default.fileExists(atPath: url.path) {
+      do {
+        data = try Data(contentsOf: url)
+      } catch {
+        // File protection / transient I/O unavailability is not corruption. Keep the
+        // existing file untouched and refuse drain/enqueue until a later read succeeds.
+        queueStorageUnavailable = true
+        return []
+      }
+    } else if let legacy = defaults.data(forKey: Keys.pendingSamples) {
+      data = legacy
+      cameFromLegacyDefaults = true
+    } else {
       return []
+    }
+
+    guard var samples = try? JSONDecoder().decode(
+      [NativeQueuedLocationSample].self,
+      from: data
+    ) else {
+      // Preserve the original durable payload. Never reinterpret corruption as an empty
+      // queue and overwrite precise-location evidence on the next enqueue.
+      markQueueCorrupt("native_queue_decode_failed")
+      return []
+    }
+    guard samples.allSatisfy({
+      !$0.ownerUserId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !$0.clientUuid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        $0.latitude.isFinite && (-90...90).contains($0.latitude) &&
+        $0.longitude.isFinite && (-180...180).contains($0.longitude)
+    }) else {
+      markQueueCorrupt("native_queue_validation_failed")
+      return []
+    }
+
+    let schema = defaults.integer(forKey: Keys.queueSchemaVersion)
+    if cameFromLegacyDefaults ||
+        schema < 2 ||
+        samples.contains(where: { $0.queueSequence <= 0 }) {
+      var next: Int64 = 1
+      samples = samples.map { sample in
+        let sequence = sample.queueSequence > 0 ? sample.queueSequence : next
+        next = max(next, sequence + 1)
+        return NativeQueuedLocationSample(
+          ownerUserId: sample.ownerUserId,
+          clientUuid: sample.clientUuid,
+          latitude: sample.latitude,
+          longitude: sample.longitude,
+          accuracyMeters: sample.accuracyMeters,
+          speedMetersPerSecond: sample.speedMetersPerSecond,
+          recordedAtMillis: sample.recordedAtMillis,
+          queueSequence: sequence,
+          enqueuedAtMillis:
+            sample.enqueuedAtMillis > 0 ? sample.enqueuedAtMillis : sample.recordedAtMillis,
+          handoffAttemptCount: sample.handoffAttemptCount
+        )
+      }
+      guard savePendingLocationSamples(samples) else {
+        markQueueCorrupt("native_queue_migration_persist_failed")
+        return []
+      }
+      defaults.set(2, forKey: Keys.queueSchemaVersion)
+      defaults.set(next, forKey: Keys.nextQueueSequence)
+      if cameFromLegacyDefaults {
+        // Delete the legacy blob only after the V2 atomic file is durable.
+        defaults.removeObject(forKey: Keys.pendingSamples)
+      }
     }
     return samples
   }
 
+  @discardableResult
   private func savePendingLocationSamples(
     _ samples: [NativeQueuedLocationSample]
-  ) {
-    if let data = try? JSONEncoder().encode(samples) {
-      defaults.set(data, forKey: Keys.pendingSamples)
+  ) -> Bool {
+    guard
+      let url = queueFileURL,
+      let data = try? JSONEncoder().encode(samples)
+    else {
+      return false
+    }
+    do {
+      // Atomic replace gives crash-safe file-level durability without requiring CoreData
+      // or a second SQLite authority beside the Flutter outbox.
+      try data.write(
+        to: url,
+        options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+      )
+      defaults.set(2, forKey: Keys.queueSchemaVersion)
+      return true
+    } catch {
+      return false
     }
   }
 
   private func pendingLocationSamples(
-    ownerUserId: String
+    ownerUserId: String,
+    limit: Int
   ) -> [NativeQueuedLocationSample] {
-    allPendingLocationSamples().filter { $0.ownerUserId == ownerUserId }
+    let samples = allPendingLocationSamples()
+    if queueCorrupt || queueStorageUnavailable { return [] }
+    let selectedSequences = Set(
+      samples
+        .filter { $0.ownerUserId == ownerUserId }
+        .prefix(min(max(limit, 1), 500))
+        .map { $0.queueSequence }
+    )
+    if selectedSequences.isEmpty { return [] }
+    let updated = samples.map { sample -> NativeQueuedLocationSample in
+      guard selectedSequences.contains(sample.queueSequence) else { return sample }
+      return NativeQueuedLocationSample(
+        ownerUserId: sample.ownerUserId,
+        clientUuid: sample.clientUuid,
+        latitude: sample.latitude,
+        longitude: sample.longitude,
+        accuracyMeters: sample.accuracyMeters,
+        speedMetersPerSecond: sample.speedMetersPerSecond,
+        recordedAtMillis: sample.recordedAtMillis,
+        queueSequence: sample.queueSequence,
+        enqueuedAtMillis: sample.enqueuedAtMillis,
+        handoffAttemptCount: sample.handoffAttemptCount + 1
+      )
+    }
+    guard savePendingLocationSamples(updated) else {
+      markQueueCorrupt("native_queue_persist_failed")
+      return []
+    }
+    return updated.filter { selectedSequences.contains($0.queueSequence) }
   }
 
   private func enqueueLocationSample(
     _ sample: NativeQueuedLocationSample
   ) -> Bool {
     var samples = allPendingLocationSamples()
+    if queueCorrupt || queueStorageUnavailable { return false }
     if samples.contains(where: {
       $0.ownerUserId == sample.ownerUserId &&
         $0.clientUuid == sample.clientUuid
     }) {
       return true
     }
+    let ownerQueueWasEmpty =
+      !samples.contains(where: { $0.ownerUserId == sample.ownerUserId })
     guard NativeOwnerQueueQuota.hasCapacity(
       samples: samples,
       ownerUserId: sample.ownerUserId,
       maxPerOwner: 1000
     ) else {
+      recordCapacityDrop(ownerUserId: sample.ownerUserId, reason: "native_queue_capacity")
       return false
     }
-    samples.append(sample)
-    savePendingLocationSamples(samples)
+    let next = max(
+      1,
+      max(
+        Int64(defaults.integer(forKey: Keys.nextQueueSequence)),
+        (samples.map { $0.queueSequence }.max() ?? 0) + 1
+      )
+    )
+    let now = Int64(Date().timeIntervalSince1970 * 1000)
+    let persisted = NativeQueuedLocationSample(
+      ownerUserId: sample.ownerUserId,
+      clientUuid: sample.clientUuid,
+      latitude: sample.latitude,
+      longitude: sample.longitude,
+      accuracyMeters: sample.accuracyMeters,
+      speedMetersPerSecond: sample.speedMetersPerSecond,
+      recordedAtMillis: sample.recordedAtMillis,
+      queueSequence: next,
+      enqueuedAtMillis: now,
+      handoffAttemptCount: 0
+    )
+    samples.append(persisted)
+    guard savePendingLocationSamples(samples) else {
+      markQueueCorrupt("native_queue_persist_failed")
+      return false
+    }
+    defaults.set(next + 1, forKey: Keys.nextQueueSequence)
+    defaults.set(now, forKey: ownerKey(Keys.lastEnqueueAt, sample.ownerUserId))
+    if ownerQueueWasEmpty, #available(iOS 13.0, *) {
+      // A first durable native sample creates a recovery obligation even if the app is
+      // suspended/killed before Dart receives samplesAvailable.
+      PassiveMemoryBackgroundRecovery.schedule()
+    }
     return true
   }
 
@@ -599,9 +924,23 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     if activeOwnerUserId == ownerUserId {
       stopProduction(runtimeAfterStop: .stopped)
     }
-    savePendingLocationSamples(
-      allPendingLocationSamples().filter { $0.ownerUserId != ownerUserId }
-    )
+    if queueCorrupt {
+      // Account deletion is privacy-authoritative. A corrupt mixed-owner payload
+      // cannot be filtered safely, so erase the complete raw queue rather than retain
+      // precise locations for the owner being deleted.
+      if let url = queueFileURL {
+        try? FileManager.default.removeItem(at: url)
+      }
+      defaults.removeObject(forKey: Keys.pendingSamples)
+      defaults.removeObject(forKey: Keys.queueCorrupt)
+      defaults.removeObject(forKey: Keys.queueCorruptReason)
+      defaults.removeObject(forKey: Keys.queueCorruptAt)
+      defaults.set(2, forKey: Keys.queueSchemaVersion)
+    } else {
+      _ = savePendingLocationSamples(
+        allPendingLocationSamples().filter { $0.ownerUserId != ownerUserId }
+      )
+    }
     let prefixes = [
       Keys.samplingProfile,
       Keys.latestMotionObservation,
@@ -613,10 +952,71 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       Keys.metricActiveMs,
       Keys.trackingStartedAt,
       Keys.lastQueuedAt,
+      Keys.lastEnqueueAt,
+      Keys.lastDeliveryAt,
+      Keys.deliveryFailureCount,
+      Keys.lastDeliveryFailureAt,
+      Keys.lastDeliveryFailureReason,
+      Keys.capacityDropCount,
+      Keys.lastDropAt,
+      Keys.lastDropReason,
     ]
     for prefix in prefixes {
       defaults.removeObject(forKey: ownerKey(prefix, ownerUserId))
     }
+  }
+
+  private func recordCapacityDrop(
+    ownerUserId: String,
+    reason: String,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+  ) {
+    incrementMetric(
+      ownerUserId: ownerUserId,
+      prefix: Keys.capacityDropCount,
+      delta: 1
+    )
+    defaults.set(nowMillis, forKey: ownerKey(Keys.lastDropAt, ownerUserId))
+    defaults.set(reason, forKey: ownerKey(Keys.lastDropReason, ownerUserId))
+  }
+
+  private func queueDiagnostics(ownerUserId: String) -> [String: Any] {
+    let samples = allPendingLocationSamples().filter { $0.ownerUserId == ownerUserId }
+    let depth = samples.count
+    func millis(_ key: String) -> Any {
+      let scoped = ownerKey(key, ownerUserId)
+      return defaults.object(forKey: scoped) == nil
+        ? NSNull()
+        : Int64(defaults.integer(forKey: scoped))
+    }
+    func text(_ key: String) -> Any {
+      defaults.string(forKey: ownerKey(key, ownerUserId)).map { $0 as Any }
+        ?? NSNull()
+    }
+    let oldest: Any =
+      samples.map { $0.enqueuedAtMillis }.min().map { $0 as Any } ?? NSNull()
+    let corruptReason: Any =
+      defaults.string(forKey: Keys.queueCorruptReason).map { $0 as Any } ?? NSNull()
+    return [
+      "queue_schema_version": 2,
+      "queue_depth": depth,
+      "queue_capacity": 1000,
+      "oldest_pending_at_millis": oldest,
+      "last_enqueue_at_millis": millis(Keys.lastEnqueueAt),
+      "last_delivery_at_millis": millis(Keys.lastDeliveryAt),
+      "delivery_failure_count":
+        Int64(defaults.integer(forKey: ownerKey(Keys.deliveryFailureCount, ownerUserId))),
+      "last_delivery_failure_at_millis": millis(Keys.lastDeliveryFailureAt),
+      "last_delivery_failure_reason": text(Keys.lastDeliveryFailureReason),
+      "capacity_pressure": depth >= 800,
+      "dropped_sample_count":
+        Int64(defaults.integer(forKey: ownerKey(Keys.capacityDropCount, ownerUserId))),
+      "last_drop_at_millis": millis(Keys.lastDropAt),
+      "last_drop_reason": text(Keys.lastDropReason),
+      "queue_corrupt": queueCorrupt,
+      "queue_corrupt_reason": corruptReason,
+      "queue_storage_unavailable": queueStorageUnavailable,
+    ]
   }
 
   private func incrementMetric(
@@ -762,6 +1162,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
         pendingEnableOwnerUserId = nil
       }
     }
+    if #available(iOS 13.0, *) {
+      PassiveMemoryBackgroundRecovery.cancel()
+    }
     return status(ownerUserId: ownerUserId)
   }
 
@@ -785,6 +1188,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       )
     }
 
+    if #available(iOS 13.0, *) {
+      PassiveMemoryBackgroundRecovery.cancel()
+    }
     // Significant-change monitoring remains the low-power recovery baseline. P may add
     // standard updates for moving states, but never removes this system relaunch foundation.
     manager.allowsBackgroundLocationUpdates = true
@@ -801,6 +1207,15 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   private func pause(ownerUserId: String) -> [String: Any] {
     if enabledOwnerUserId == ownerUserId || activeOwnerUserId == ownerUserId {
       stopProduction(runtimeAfterStop: .paused)
+      if enabledOwnerUserId == ownerUserId {
+        // Privacy pause/unknown is a quarantine. Keep only an owner-scoped recovery
+        // hint; CoreLocation remains fully stopped until fresh server Privacy passes.
+        activeOwnerUserId = ownerUserId
+        relaunchRestorePending = true
+        if #available(iOS 13.0, *) {
+          PassiveMemoryBackgroundRecovery.schedule()
+        }
+      }
     }
     return status(ownerUserId: ownerUserId)
   }
@@ -808,6 +1223,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   private func stop(ownerUserId: String) -> [String: Any] {
     if enabledOwnerUserId == ownerUserId || activeOwnerUserId == ownerUserId {
       stopProduction(runtimeAfterStop: .stopped)
+    }
+    if #available(iOS 13.0, *) {
+      PassiveMemoryBackgroundRecovery.cancel()
     }
     return status(ownerUserId: ownerUserId)
   }
@@ -876,6 +1294,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       "location_services_enabled": servicesEnabled,
       "reason": reason ?? NSNull(),
       "restore_pending": ownerMatches && activeOwnerMatches && relaunchRestorePending,
+      "recovery_reason":
+        (ownerMatches && activeOwnerMatches && relaunchRestorePending)
+          ? "ios_location_relaunch"
+          : NSNull(),
+      "queue": queueDiagnostics(ownerUserId: ownerUserId),
     ]
 
     if ownerMatches {
@@ -1090,6 +1513,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     static let lastFixAt = "native_location.last_fix_at"
     static let lastAccuracyMeters = "native_location.last_accuracy_meters"
     static let pendingSamples = "native_location.pending_samples"
+    static let queueSchemaVersion = "native_location.pending_samples_schema_version"
+    static let nextQueueSequence = "native_location.pending_samples_next_sequence"
+    static let queueCorrupt = "native_location.pending_samples_corrupt"
+    static let queueCorruptReason = "native_location.pending_samples_corrupt_reason"
+    static let queueCorruptAt = "native_location.pending_samples_corrupt_at"
     static let samplingProfile = "native_location.sampling_profile"
     static let latestMotionObservation = "native_location.latest_motion_observation"
     static let metricWakeups = "native_location.metric_wakeups"
@@ -1100,18 +1528,44 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     static let metricActiveMs = "native_location.metric_active_tracking_ms"
     static let trackingStartedAt = "native_location.tracking_started_at"
     static let lastQueuedAt = "native_location.last_queued_at"
+    static let lastEnqueueAt = "native_location.last_enqueue_at"
+    static let lastDeliveryAt = "native_location.last_delivery_at"
+    static let deliveryFailureCount = "native_location.delivery_failure_count"
+    static let lastDeliveryFailureAt = "native_location.last_delivery_failure_at"
+    static let lastDeliveryFailureReason = "native_location.last_delivery_failure_reason"
+    static let capacityDropCount = "native_location.capacity_drop_count"
+    static let lastDropAt = "native_location.last_drop_at"
+    static let lastDropReason = "native_location.last_drop_reason"
   }
 }
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var nativeLocationBridge: NativeLocationBridge?
+  private var activePassiveRecoveryTask: BGAppRefreshTask?
+  private var passiveRecoveryCompletionChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    if #available(iOS 13.0, *) {
+      BGTaskScheduler.shared.register(
+        forTaskWithIdentifier: PassiveMemoryBackgroundRecovery.identifier,
+        using: nil
+      ) { [weak self] task in
+        guard let refreshTask = task as? BGAppRefreshTask else {
+          task.setTaskCompleted(success: false)
+          return
+        }
+        self?.handlePassiveRecoveryTask(refreshTask)
+      }
+    }
+
     let bridge = NativeLocationBridge()
+    bridge.onPassiveRecoveryReady = { [weak self] in
+      self?.dispatchPassiveRecoveryIfReady()
+    }
     nativeLocationBridge = bridge
     if launchOptions?[.location] != nil {
       // iOS can relaunch a terminated app before Flutter can verify authoritative privacy.
@@ -1126,7 +1580,75 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let bridge = nativeLocationBridge ?? NativeLocationBridge()
+    bridge.onPassiveRecoveryReady = { [weak self] in
+      self?.dispatchPassiveRecoveryIfReady()
+    }
     bridge.attach(messenger: engineBridge.applicationRegistrar.messenger())
     nativeLocationBridge = bridge
+
+    let completionChannel = FlutterMethodChannel(
+      name: "cn.jiyidashi/passive_recovery",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    completionChannel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "complete" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let arguments = call.arguments as? [String: Any]
+      let retry = arguments?["retry"] as? Bool ?? true
+      let status = arguments?["status"] as? String ?? "unknown"
+      if status == "noSession" ||
+          status == "accountDeletionInProgress" ||
+          status == "authorityChanged" {
+        self?.nativeLocationBridge?.sealAutomaticProductionForAuthorityLoss()
+      }
+      self?.finishPassiveRecoveryTask(success: !retry, retry: retry)
+      result(nil)
+    }
+    passiveRecoveryCompletionChannel = completionChannel
+  }
+
+  @available(iOS 13.0, *)
+  private func handlePassiveRecoveryTask(_ task: BGAppRefreshTask) {
+    if activePassiveRecoveryTask != nil {
+      PassiveMemoryBackgroundRecovery.schedule()
+      task.setTaskCompleted(success: false)
+      return
+    }
+    activePassiveRecoveryTask = task
+    task.expirationHandler = { [weak self] in
+      self?.finishPassiveRecoveryTask(success: false, retry: true)
+    }
+    dispatchPassiveRecoveryIfReady()
+  }
+
+  private func dispatchPassiveRecoveryIfReady() {
+    guard #available(iOS 13.0, *),
+          activePassiveRecoveryTask != nil
+    else {
+      return
+    }
+    // The bridge returns false until Dart has installed its MethodChannel handler.
+    // Keep the BG task alive until that handshake or expiration; never treat "not ready"
+    // as permission to skip the AUTH/Privacy recovery check.
+    _ = nativeLocationBridge?.requestPassiveRecoveryWakeup()
+  }
+
+  private func finishPassiveRecoveryTask(
+    success: Bool,
+    retry: Bool
+  ) {
+    guard #available(iOS 13.0, *),
+          let task = activePassiveRecoveryTask
+    else {
+      return
+    }
+    activePassiveRecoveryTask = nil
+    task.expirationHandler = nil
+    if retry {
+      PassiveMemoryBackgroundRecovery.schedule()
+    }
+    task.setTaskCompleted(success: success)
   }
 }

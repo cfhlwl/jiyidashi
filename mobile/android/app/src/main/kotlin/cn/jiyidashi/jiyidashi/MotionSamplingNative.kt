@@ -58,6 +58,9 @@ data class NativeQueuedLocationSample(
     val accuracyMeters: Float?,
     val speedMetersPerSecond: Float?,
     val recordedAtMillis: Long,
+    val queueSequence: Long = 0L,
+    val enqueuedAtMillis: Long = recordedAtMillis,
+    val handoffAttemptCount: Int = 0,
 ) {
     fun toPlatformMap(): Map<String, Any?> =
         mapOf(
@@ -67,6 +70,9 @@ data class NativeQueuedLocationSample(
             "accuracy" to accuracyMeters,
             "speed" to speedMetersPerSecond,
             "recorded_at_millis" to recordedAtMillis,
+            "queue_sequence" to queueSequence,
+            "enqueued_at_millis" to enqueuedAtMillis,
+            "handoff_attempt_count" to handoffAttemptCount,
         )
 }
 

@@ -25,13 +25,22 @@ class NativeLocationTrackingService : Service(), LocationListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val ownerUserId = intent?.getStringExtra(EXTRA_OWNER_USER_ID)?.trim().orEmpty()
         if (ownerUserId.isEmpty()) {
-            stopProduction(NativeLocationRuntimeState.STOPPED)
-            return START_NOT_STICKY
+            // START_STICKY process recreation arrives without the original intent. The OS
+            // may recreate the foreground service, but that is not Privacy/Auth authority
+            // to collect a single coordinate. Keep a visible foreground quarantine only,
+            // persist recovery_pending, and let the headless coordinator prove AUTH+Privacy.
+            val enabledOwner = store.enabledOwnerUserId?.trim().orEmpty()
+            if (enabledOwner.isEmpty()) {
+                stopProduction(NativeLocationRuntimeState.STOPPED)
+                return START_NOT_STICKY
+            }
+            return startRecoveryQuarantine(enabledOwner)
         }
 
         if (intent?.action == ACTION_UPDATE_SAMPLING) {
             if (isActive && store.activeOwnerUserId == ownerUserId) {
                 requestAdaptiveUpdates(store.samplingProfile(ownerUserId))
+                return START_STICKY
             }
             return START_NOT_STICKY
         }
@@ -72,14 +81,58 @@ class NativeLocationTrackingService : Service(), LocationListener {
 
             store.activeOwnerUserId = ownerUserId
             store.runtime = NativeLocationRuntimeState.RUNNING
+            store.clearRecoveryPending(ownerUserId)
             store.beginTracking(ownerUserId)
             isActive = true
             requestAdaptiveUpdates(store.samplingProfile(ownerUserId))
-            START_NOT_STICKY
+            START_STICKY
         } catch (_: SecurityException) {
             stopProduction(NativeLocationRuntimeState.STOPPED)
             START_NOT_STICKY
         } catch (_: IllegalStateException) {
+            stopProduction(NativeLocationRuntimeState.STOPPED)
+            START_NOT_STICKY
+        }
+    }
+
+    private fun startRecoveryQuarantine(ownerUserId: String): Int {
+        return try {
+            createNotificationChannel()
+            val notificationBuilder =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+                } else {
+                    @Suppress("DEPRECATION")
+                    Notification.Builder(this)
+                }
+            startForeground(
+                NOTIFICATION_ID,
+                notificationBuilder
+                    .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                    .setContentTitle("迹忆自动位置记忆")
+                    .setContentText("正在安全恢复自动记录")
+                    .setOngoing(true)
+                    .build(),
+            )
+
+            try {
+                locationManager.removeUpdates(this)
+            } catch (_: SecurityException) {
+                // Quarantine remains non-producing even if permission changed.
+            }
+            isActive = false
+            store.finishTracking(ownerUserId)
+            store.activeOwnerUserId = null
+            store.runtime = NativeLocationRuntimeState.STOPPED
+            store.markRecoveryPending(ownerUserId, "service_recreated")
+            PassiveMemoryRecoveryScheduler.ensurePeriodic(this)
+            PassiveMemoryRecoveryScheduler.schedule(
+                this,
+                reason = "service_recreated",
+                markProducerRecovery = true,
+            )
+            START_STICKY
+        } catch (_: RuntimeException) {
             stopProduction(NativeLocationRuntimeState.STOPPED)
             START_NOT_STICKY
         }
@@ -169,11 +222,21 @@ class NativeLocationTrackingService : Service(), LocationListener {
             store.setLastQueuedAtMillis(ownerUserId, recordedAtMillis)
             store.recordSampleAccepted(ownerUserId)
         } else {
-            // A full durable native queue is a measurable backpressure drop, never an
+            // A full/corrupt durable native queue is measurable backpressure, never an
             // invitation to overwrite older unsent points.
             store.recordSampleDropped(ownerUserId)
         }
-        NativeLocationPlugin.notifySamplesAvailable()
+        val flutterListenerPresent = NativeLocationPlugin.notifySamplesAvailable()
+        if (!flutterListenerPresent) {
+            // No Flutter UI/engine is alive. Schedule one bounded, network-constrained
+            // batch wake-up instead of starting an isolate per GPS point.
+            PassiveMemoryRecoveryScheduler.schedule(
+                this,
+                reason = if (queued) "native_backlog" else "native_backpressure",
+                markProducerRecovery = false,
+                initialDelayMinutes = if (queued) 15 else 0,
+            )
+        }
     }
 
     override fun onProviderDisabled(provider: String) {
@@ -184,6 +247,23 @@ class NativeLocationTrackingService : Service(), LocationListener {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val owner = store.activeOwnerUserId
+        if (owner != null &&
+            store.enabledOwnerUserId == owner &&
+            store.runtime == NativeLocationRuntimeState.RUNNING
+        ) {
+            // The FGS may continue after the task is swiped. Schedule delivery only; do not
+            // claim producer recovery while a real native producer is still active.
+            PassiveMemoryRecoveryScheduler.schedule(
+                this,
+                reason = "task_removed",
+                markProducerRecovery = false,
+            )
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         try {
             locationManager.removeUpdates(this)
@@ -191,6 +271,10 @@ class NativeLocationTrackingService : Service(), LocationListener {
             // Permission revocation may race service teardown; removing updates is best-effort.
         }
         val ownerUserId = store.activeOwnerUserId
+        val unexpectedStop =
+            ownerUserId != null &&
+                store.enabledOwnerUserId == ownerUserId &&
+                store.runtime == NativeLocationRuntimeState.RUNNING
         if (ownerUserId != null) {
             store.finishTracking(ownerUserId)
         }
@@ -198,6 +282,13 @@ class NativeLocationTrackingService : Service(), LocationListener {
         store.activeOwnerUserId = null
         if (store.runtime == NativeLocationRuntimeState.RUNNING) {
             store.runtime = NativeLocationRuntimeState.STOPPED
+        }
+        if (unexpectedStop) {
+            PassiveMemoryRecoveryScheduler.schedule(
+                this,
+                reason = "service_destroyed",
+                markProducerRecovery = true,
+            )
         }
         super.onDestroy()
     }

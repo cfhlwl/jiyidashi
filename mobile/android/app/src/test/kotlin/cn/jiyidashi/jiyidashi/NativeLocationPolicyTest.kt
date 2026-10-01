@@ -134,4 +134,70 @@ class NativeLocationPolicyTest {
             ),
         )
     }
+    @Test
+    fun processDeathRecoveryRequiresSameEnabledOwnerAndMissingProducer() {
+        assertTrue(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = owner,
+                activeOwnerUserId = owner,
+                runtime = NativeLocationRuntimeState.RUNNING,
+                nativeProducerActive = false,
+            ),
+        )
+        assertFalse(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = owner,
+                activeOwnerUserId = owner,
+                runtime = NativeLocationRuntimeState.RUNNING,
+                nativeProducerActive = true,
+            ),
+        )
+        assertFalse(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = owner,
+                activeOwnerUserId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                runtime = NativeLocationRuntimeState.RUNNING,
+                nativeProducerActive = false,
+            ),
+        )
+        assertFalse(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = null,
+                activeOwnerUserId = owner,
+                runtime = NativeLocationRuntimeState.RUNNING,
+                nativeProducerActive = false,
+            ),
+        )
+        assertFalse(
+            NativeLocationPolicy.shouldRecoverAfterProcessDeath(
+                enabledOwnerUserId = owner,
+                activeOwnerUserId = owner,
+                runtime = NativeLocationRuntimeState.PAUSED,
+                nativeProducerActive = false,
+            ),
+        )
+    }
+
+    @Test
+    fun queuedSampleV2MetadataIsStableAndPublishedToFlutter() {
+        val sample = NativeQueuedLocationSample(
+            ownerUserId = owner,
+            clientUuid = "11111111-1111-4111-8111-111111111111",
+            latitude = 3.139,
+            longitude = 101.6869,
+            accuracyMeters = 18f,
+            speedMetersPerSecond = 1.5f,
+            recordedAtMillis = 1_790_820_000_000L,
+            queueSequence = 42L,
+            enqueuedAtMillis = 1_790_820_001_000L,
+            handoffAttemptCount = 3,
+        )
+
+        val platform = sample.toPlatformMap()
+        assertEquals(42L, platform["queue_sequence"])
+        assertEquals(1_790_820_001_000L, platform["enqueued_at_millis"])
+        assertEquals(3, platform["handoff_attempt_count"])
+        assertEquals("11111111-1111-4111-8111-111111111111", platform["client_uuid"])
+    }
+
 }

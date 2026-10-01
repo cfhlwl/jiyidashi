@@ -12,6 +12,9 @@ class NativeLocationSample {
     required this.recordedAt,
     this.accuracyMeters,
     this.speedMetersPerSecond,
+    this.queueSequence,
+    this.enqueuedAt,
+    this.handoffAttemptCount = 0,
   });
 
   final String clientUuid;
@@ -20,6 +23,9 @@ class NativeLocationSample {
   final DateTime recordedAt;
   final double? accuracyMeters;
   final double? speedMetersPerSecond;
+  final int? queueSequence;
+  final DateTime? enqueuedAt;
+  final int handoffAttemptCount;
 
   factory NativeLocationSample.fromPlatform(Object? value) {
     if (value is! Map) {
@@ -48,12 +54,27 @@ class NativeLocationSample {
       recordedAt: recordedAt.toUtc(),
       accuracyMeters: _double(map['accuracy']),
       speedMetersPerSecond: _double(map['speed']),
+      queueSequence: _integer(map['queue_sequence']),
+      enqueuedAt: _millisTimestamp(map['enqueued_at_millis']),
+      handoffAttemptCount: _integer(map['handoff_attempt_count']) ?? 0,
     );
   }
 
   static double? _double(Object? value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '');
+  }
+
+  static int? _integer(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  static DateTime? _millisTimestamp(Object? value) {
+    final millis = _integer(value);
+    if (millis == null || millis <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
   }
 }
 
@@ -135,6 +156,21 @@ class LocationProducerMetrics {
   }
 }
 
+abstract interface class NativeDeliveryDiagnosticsSink {
+  Future<void> recordDeliveryFailure(
+    String ownerUserId, {
+    required String reason,
+  });
+}
+
+abstract interface class NativePassiveRecoveryTriggerBridge {
+  Stream<void> get passiveRecoveryRequests;
+
+  /// Wait until any competing headless recovery engine is idle before a UI engine
+  /// reads/rotates the same secure refresh credential.
+  Future<bool> awaitPassiveRecoveryIdle();
+}
+
 abstract interface class NativeMotionSamplingBridge {
   Stream<void> get samplesAvailable;
 
@@ -171,15 +207,25 @@ abstract interface class NativeMotionSamplingBridge {
 /// authority is introduced. Native code may only notify that durable samples exist; Flutter
 /// still decides whether privacy is active before draining or uploading them.
 class MethodChannelNativeMotionSamplingBridge
-    implements NativeMotionSamplingBridge {
+    implements
+        NativeMotionSamplingBridge,
+        NativeDeliveryDiagnosticsSink,
+        NativePassiveRecoveryTriggerBridge {
   MethodChannelNativeMotionSamplingBridge({
     MethodChannel channel = const MethodChannel('cn.jiyidashi/native_location'),
   }) : _channel = channel {
     _channel.setMethodCallHandler(_onNativeMethod);
+    unawaited(
+      _channel.invokeMethod<void>('passiveRecoveryReady').catchError((_) {
+        // Android/tests may not expose the optional iOS BGTask handshake.
+      }),
+    );
   }
 
   final MethodChannel _channel;
   final StreamController<void> _sampleEvents =
+      StreamController<void>.broadcast();
+  final StreamController<void> _passiveRecoveryEvents =
       StreamController<void>.broadcast();
   bool _closed = false;
 
@@ -199,11 +245,22 @@ class MethodChannelNativeMotionSamplingBridge
     if (_closed) return;
     if (call.method == 'samplesAvailable') {
       _sampleEvents.add(null);
+    } else if (call.method == 'passiveRecoveryRequested') {
+      _passiveRecoveryEvents.add(null);
     }
   }
 
   @override
   Stream<void> get samplesAvailable => _sampleEvents.stream;
+
+  @override
+  Stream<void> get passiveRecoveryRequests => _passiveRecoveryEvents.stream;
+
+  @override
+  Future<bool> awaitPassiveRecoveryIdle() async {
+    final result = await _channel.invokeMethod<bool>('awaitPassiveRecoveryIdle');
+    return result == true;
+  }
 
   @override
   Future<List<NativeLocationSample>> drainSamples(
@@ -278,6 +335,18 @@ class MethodChannelNativeMotionSamplingBridge
   }
 
   @override
+  Future<void> recordDeliveryFailure(
+    String ownerUserId, {
+    required String reason,
+  }) async {
+    final normalized = reason.trim();
+    final args = _ownerArgs(ownerUserId)
+      ..['reason'] =
+          normalized.isEmpty ? 'location_delivery_failed' : normalized;
+    await _channel.invokeMethod<void>('recordLocationDeliveryFailure', args);
+  }
+
+  @override
   Future<void> purgeOwner(String ownerUserId) async {
     await _channel.invokeMethod<void>(
       'purgeLocationSamplingOwner',
@@ -291,5 +360,6 @@ class MethodChannelNativeMotionSamplingBridge
     _closed = true;
     _channel.setMethodCallHandler(null);
     await _sampleEvents.close();
+    await _passiveRecoveryEvents.close();
   }
 }

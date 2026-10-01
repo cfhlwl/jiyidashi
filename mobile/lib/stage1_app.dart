@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'account_delete_section.dart';
 import 'api_client.dart';
@@ -12,6 +13,7 @@ import 'native_location_section.dart';
 import 'native_motion_sampling_bridge.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
+import 'passive_memory_delivery.dart';
 import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
@@ -62,6 +64,15 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       widget.onboardingStore ?? OnboardingStore();
   late final NativeLocationBridge locationBridge =
       widget.locationBridge ?? MethodChannelNativeLocationBridge();
+  late final NativeMotionSamplingBridge motionSamplingBridge =
+      widget.motionSamplingBridge ?? MethodChannelNativeMotionSamplingBridge();
+  late final PassiveMemoryDeliveryCoordinator passiveDelivery =
+      PassiveMemoryDeliveryCoordinator(
+        api: api,
+        store: offlineQueue,
+        locationBridge: locationBridge,
+        samplingBridge: motionSamplingBridge,
+      );
 
   bool authenticated = false;
   bool restoringSession = true;
@@ -70,20 +81,89 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   bool elderModeEnabled = false;
   String? restoreMessage;
   Timer? _authorityRefreshTimer;
+  StreamSubscription<void>? _passiveRecoveryRequests;
+  final Completer<void> _initialRestoreFinished = Completer<void>();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_restoreServerSession());
+    final recoveryBridge = motionSamplingBridge;
+    if (recoveryBridge is NativePassiveRecoveryTriggerBridge) {
+      final triggerBridge =
+          recoveryBridge as NativePassiveRecoveryTriggerBridge;
+      _passiveRecoveryRequests =
+          triggerBridge.passiveRecoveryRequests.listen((_) {
+        unawaited(_handleNativePassiveRecoveryRequest());
+      });
+    }
+    unawaited(
+      _restoreServerSession().whenComplete(() {
+        if (!_initialRestoreFinished.isCompleted) {
+          _initialRestoreFinished.complete();
+        }
+      }),
+    );
     _authorityRefreshTimer = Timer.periodic(
       const Duration(minutes: 5),
       (_) => unawaited(_refreshServerAuthority()),
     );
   }
 
+  Future<bool> _awaitPassiveRecoveryIdle() async {
+    if (motionSamplingBridge is! NativePassiveRecoveryTriggerBridge) {
+      // Injected/test/unsupported bridges cannot host a competing native recovery engine.
+      return true;
+    }
+    final recoveryBridge =
+        motionSamplingBridge as NativePassiveRecoveryTriggerBridge;
+    try {
+      return await recoveryBridge
+          .awaitPassiveRecoveryIdle()
+          .timeout(const Duration(seconds: 95));
+    } on MissingPluginException {
+      // Widget/unit tests and unsupported platforms have no competing headless engine.
+      return true;
+    } on PlatformException {
+      // Native arbitration failure is not permission to race a rotating refresh token.
+      return false;
+    } on TimeoutException {
+      // Fail closed rather than allow a second engine to reuse the same refresh credential.
+      return false;
+    }
+  }
+
   Future<void> _restoreServerSession() async {
-    final result = await api.restorePersistedSession();
+    if (!await _awaitPassiveRecoveryIdle()) {
+      if (!mounted) return;
+      setState(() {
+        authenticated = false;
+        restoringSession = false;
+        restoreMessage = '后台恢复尚未安全结束，请稍后重新打开应用。';
+      });
+      return;
+    }
+    if (!mounted) return;
+    late final AuthRestoreStatus result;
+    try {
+      result = await api.restorePersistedSession();
+    } on PlatformException {
+      if (!mounted) return;
+      setState(() {
+        authenticated = false;
+        restoringSession = false;
+        restoreMessage = '暂时无法读取安全登录状态，请稍后重新打开应用。';
+      });
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        authenticated = false;
+        restoringSession = false;
+        restoreMessage = '暂时无法恢复登录状态，请稍后重试。';
+      });
+      return;
+    }
     if (!mounted) return;
     if (result == AuthRestoreStatus.restored) {
       try {
@@ -95,6 +175,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           restoreMessage = null;
           elderModeEnabled = profile['elder_mode_enabled'] == true;
         });
+        unawaited(_recoverPassiveMemory());
         return;
       } on ApiException catch (exc) {
         if (exc.statusCode == 423 &&
@@ -110,6 +191,11 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           return;
         }
         if (exc.statusCode == 401) {
+          final owner = api.authenticatedUserId?.trim();
+          if (owner != null && owner.isNotEmpty) {
+            await _disableNativeForTerminalAuthLoss(owner);
+          }
+          if (!mounted) return;
           setState(() {
             authenticated = false;
             restoringSession = false;
@@ -131,13 +217,84 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _handleNativePassiveRecoveryRequest() async {
+    await _initialRestoreFinished.future;
+    if (!mounted) return;
+
+    var retry = false;
+    var status = 'unexpected_failure';
+    try {
+      final report = await passiveDelivery.recoverAndDeliver(
+        restoreSessionIfNeeded: !authenticated,
+        allowProducerResume: true,
+      );
+      status = report.status.name;
+      retry = switch (report.status) {
+        PassiveMemoryRecoveryStatus.serverUnavailable ||
+        PassiveMemoryRecoveryStatus.privacyUnavailable ||
+        PassiveMemoryRecoveryStatus.retryableFailure ||
+        PassiveMemoryRecoveryStatus.nativeUnavailable => true,
+        _ => false,
+      };
+
+      if (report.status ==
+          PassiveMemoryRecoveryStatus.accountDeletionInProgress) {
+        if (mounted) {
+          setState(() {
+            authenticated = true;
+            restoringSession = false;
+            startOnboardingAfterAuth = false;
+            resumeAccountDeletionAfterAuth = true;
+            elderModeEnabled = false;
+            restoreMessage = null;
+          });
+        }
+      } else if (report.sessionRestored &&
+          report.ownerUserId != null &&
+          report.status != PassiveMemoryRecoveryStatus.noSession &&
+          report.status != PassiveMemoryRecoveryStatus.authorityChanged) {
+        // The coordinator already received a valid server profile before reaching this
+        // point. Publish only the authenticated shell; AppShell refreshes elder preference.
+        if (mounted) {
+          setState(() {
+            authenticated = true;
+            restoringSession = false;
+            resumeAccountDeletionAfterAuth = false;
+            restoreMessage = null;
+          });
+        }
+      }
+    } catch (_) {
+      retry = true;
+    } finally {
+      try {
+        await const MethodChannel('cn.jiyidashi/passive_recovery')
+            .invokeMethod<void>(
+          'complete',
+          <String, Object?>{
+            'status': status,
+            'retry': retry,
+          },
+        );
+      } on MissingPluginException {
+        // Android uses the separate headless entrypoint; tests may have no native task.
+      } on PlatformException {
+        // iOS task expiration/rescheduling is the native fallback.
+      }
+    }
+  }
+
   Future<void> _refreshServerAuthority() async {
     if (!authenticated) return;
+    final owner = api.authenticatedUserId?.trim();
     try {
       await api.ensureFreshServerAuthority();
     } on ApiException catch (exc) {
-      if (!mounted) return;
       if (exc.statusCode == 400 || exc.statusCode == 401) {
+        if (owner != null && owner.isNotEmpty) {
+          await _disableNativeForTerminalAuthLoss(owner);
+        }
+        if (!mounted) return;
         setState(() {
           authenticated = false;
           startOnboardingAfterAuth = false;
@@ -149,6 +306,36 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     } on TransportException {
       // Keep the server-issued session material for a later retry, but never mint
       // local authority or silently replace it with cached user identity.
+    }
+  }
+
+  Future<void> _disableNativeForTerminalAuthLoss(String owner) async {
+    try {
+      await locationBridge.disableAutomaticLocation(owner);
+    } on MissingPluginException {
+      // Auth state still fails closed even when this platform has no native bridge.
+    } on PlatformException {
+      // Do not restore authenticated UI merely because native shutdown could not report.
+    }
+  }
+
+  Future<void> _recoverPassiveMemory() async {
+    if (!authenticated || resumeAccountDeletionAfterAuth) return;
+    try {
+      await passiveDelivery.recoverAndDeliver(
+        restoreSessionIfNeeded: false,
+        allowProducerResume: true,
+      );
+    } catch (_) {
+      // CORE-001 recovery is durable/fail-closed. UI authentication must not be
+      // reinterpreted from a background delivery exception.
+    }
+  }
+
+  Future<void> _resumeAuthorityAndPassiveMemory() async {
+    await _refreshServerAuthority();
+    if (authenticated) {
+      await _recoverPassiveMemory();
     }
   }
 
@@ -171,7 +358,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_refreshServerAuthority());
+      unawaited(_resumeAuthorityAndPassiveMemory());
     }
   }
 
@@ -179,11 +366,15 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _authorityRefreshTimer?.cancel();
+    unawaited(_passiveRecoveryRequests?.cancel());
     if (widget.offlineQueue == null) {
       unawaited(offlineQueue.close());
     }
     if (widget.onboardingStore == null) {
       unawaited(onboardingStore.close());
+    }
+    if (widget.motionSamplingBridge == null) {
+      unawaited(motionSamplingBridge.close());
     }
     super.dispose();
   }
@@ -210,7 +401,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   startOnboarding: startOnboardingAfterAuth,
                   resumeAccountDeletion: resumeAccountDeletionAfterAuth,
                   locationBridge: locationBridge,
-                  motionSamplingBridge: widget.motionSamplingBridge,
+                  motionSamplingBridge: motionSamplingBridge,
+                  passiveDelivery: passiveDelivery,
                   sync: sync,
                   onElderModeChanged: (enabled) {
                     if (mounted) setState(() => elderModeEnabled = enabled);
@@ -234,6 +426,9 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                         authenticated = true;
                         restoreMessage = null;
                       });
+                      if (!resumeAccountDeletionAfterAuth) {
+                        unawaited(_recoverPassiveMemory());
+                      }
                     }
                   },
                 ),
@@ -700,6 +895,7 @@ class AppShell extends StatefulWidget {
     this.resumeAccountDeletion = false,
     this.locationBridge,
     this.motionSamplingBridge,
+    this.passiveDelivery,
     this.sync,
     this.onElderModeChanged,
     required this.onLogout,
@@ -712,6 +908,7 @@ class AppShell extends StatefulWidget {
   final bool resumeAccountDeletion;
   final NativeLocationBridge? locationBridge;
   final NativeMotionSamplingBridge? motionSamplingBridge;
+  final PassiveMemoryDeliveryCoordinator? passiveDelivery;
   final OfflineSyncCoordinator? sync;
   final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
@@ -742,17 +939,29 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final store = widget.onboardingStore;
     final owner = widget.api.authenticatedUserId?.trim();
     if (owner != null && owner.isNotEmpty) {
+      final locationBridge =
+          widget.locationBridge ?? MethodChannelNativeLocationBridge();
+      final motionBridge =
+          widget.motionSamplingBridge ?? MethodChannelNativeMotionSamplingBridge();
       final location = NativeLocationController(
-        bridge: widget.locationBridge ?? MethodChannelNativeLocationBridge(),
+        bridge: locationBridge,
         ownerUserId: owner,
       );
       _nativeLocation = location;
+      final delivery = widget.passiveDelivery ??
+          PassiveMemoryDeliveryCoordinator(
+            api: widget.api,
+            store: widget.offlineQueue,
+            locationBridge: locationBridge,
+            samplingBridge: motionBridge,
+          );
       _locationSampling = LocationSamplingCoordinator(
         api: widget.api,
         store: widget.offlineQueue,
         locationController: location,
-        nativeBridge:
-            widget.motionSamplingBridge ?? MethodChannelNativeMotionSamplingBridge(),
+        nativeBridge: motionBridge,
+        deliveryCoordinator: delivery,
+        closeNativeBridgeOnDispose: widget.motionSamplingBridge == null,
       );
     }
     if (!_accountDeletionIntentActive &&

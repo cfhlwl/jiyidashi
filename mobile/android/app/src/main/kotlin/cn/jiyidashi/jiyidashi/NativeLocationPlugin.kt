@@ -19,6 +19,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.CopyOnWriteArraySet
 
 class NativeLocationPlugin :
     FlutterPlugin,
@@ -37,14 +38,12 @@ class NativeLocationPlugin :
         store = NativeLocationStore(applicationContext)
         channel = MethodChannel(binding.binaryMessenger, CHANNEL_NAME)
         channel.setMethodCallHandler(this)
-        sampleChannel = channel
+        sampleChannels.add(channel)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
-        if (sampleChannel === channel) {
-            sampleChannel = null
-        }
+        sampleChannels.remove(channel)
         pendingRequest?.result?.error("bridge_detached", "Location bridge detached", null)
         pendingRequest = null
     }
@@ -80,6 +79,15 @@ class NativeLocationPlugin :
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (call.method == "awaitPassiveRecoveryIdle") {
+            PassiveMemoryRecoveryProcessGate.awaitIdle(result)
+            return
+        }
+        if (call.method == "passiveRecoveryReady") {
+            result.success(true)
+            return
+        }
+
         val ownerUserId = ownerFrom(call)
         if (ownerUserId == null) {
             result.error("invalid_owner", "Authenticated user id is required", null)
@@ -110,6 +118,14 @@ class NativeLocationPlugin :
             "recordLocationUploadBatch" -> {
                 val count = (call.argument<Number>("sample_count")?.toInt() ?: 0)
                 if (count > 0) store.recordUploadBatch(ownerUserId, count)
+                result.success(null)
+            }
+            "recordLocationDeliveryFailure" -> {
+                val reason = call.argument<String>("reason")?.trim().orEmpty()
+                store.recordDeliveryFailure(
+                    ownerUserId,
+                    reason.ifEmpty { "location_delivery_failed" },
+                )
                 result.success(null)
             }
             "purgeLocationSamplingOwner" -> {
@@ -146,6 +162,9 @@ class NativeLocationPlugin :
                 "accuracy" to sample.accuracyMeters,
                 "speed" to sample.speedMetersPerSecond,
                 "recorded_at" to isoTimestamp(sample.recordedAtMillis),
+                "queue_sequence" to sample.queueSequence,
+                "enqueued_at_millis" to sample.enqueuedAtMillis,
+                "handoff_attempt_count" to sample.handoffAttemptCount,
             )
         }
     }
@@ -394,11 +413,13 @@ class NativeLocationPlugin :
         if (store.enabledOwnerUserId == ownerUserId || store.activeOwnerUserId == ownerUserId) {
             store.finishTracking(ownerUserId)
             store.clearAutomaticOwner(ownerUserId)
+            store.clearRecoveryPending(ownerUserId)
             store.clearDiagnostics()
             store.runtime = NativeLocationRuntimeState.STOPPED
             applicationContext.stopService(
                 Intent(applicationContext, NativeLocationTrackingService::class.java),
             )
+            PassiveMemoryRecoveryScheduler.cancelPeriodic(applicationContext)
         }
         return status(ownerUserId)
     }
@@ -420,6 +441,7 @@ class NativeLocationPlugin :
                 )
             }
             store.finishTracking(ownerUserId)
+            store.clearRecoveryPending(ownerUserId)
             store.runtime = NativeLocationRuntimeState.STOPPED
             store.activeOwnerUserId = null
             return status(ownerUserId, forcedReason = startFailureReason(permission, servicesEnabled))
@@ -440,6 +462,7 @@ class NativeLocationPlugin :
             store.activeOwnerUserId = null
             return status(ownerUserId, forcedReason = "native_start_failed")
         }
+        PassiveMemoryRecoveryScheduler.ensurePeriodic(applicationContext)
         // startForegroundService() schedules service creation asynchronously. This one return
         // may trust the permission/owner gate that was just checked; every later status()
         // requires the service's real isActive flag and will fail closed if startup failed.
@@ -454,6 +477,12 @@ class NativeLocationPlugin :
             applicationContext.stopService(
                 Intent(applicationContext, NativeLocationTrackingService::class.java),
             )
+            if (store.enabledOwnerUserId == ownerUserId) {
+                // Privacy pause/unknown is a quarantine, not a permanent producer opt-out.
+                // Only a later fresh server Privacy PASS may consume this recovery hint.
+                store.markRecoveryPending(ownerUserId, "privacy_quarantine")
+                PassiveMemoryRecoveryScheduler.ensurePeriodic(applicationContext)
+            }
         }
         return status(ownerUserId)
     }
@@ -466,6 +495,7 @@ class NativeLocationPlugin :
             applicationContext.stopService(
                 Intent(applicationContext, NativeLocationTrackingService::class.java),
             )
+            PassiveMemoryRecoveryScheduler.cancelPeriodic(applicationContext)
         }
         return status(ownerUserId)
     }
@@ -504,6 +534,15 @@ class NativeLocationPlugin :
         val servicesEnabled = AndroidLocationPermissions.locationServicesEnabled(applicationContext)
         val ownerMatches = store.enabledOwnerUserId == ownerUserId
         val activeOwnerMatches = store.activeOwnerUserId == ownerUserId
+        if (store.recoveryPendingOwnerUserId == ownerUserId &&
+            (!ownerMatches ||
+                permission != NativeLocationPermissionLevel.BACKGROUND ||
+                !servicesEnabled)
+        ) {
+            // A recovery hint is not durable authority. Permission/service/owner loss
+            // invalidates it exactly like iOS relaunch quarantine.
+            store.clearRecoveryPending(ownerUserId)
+        }
         val producerActive =
             activeOwnerMatches &&
                 (NativeLocationTrackingService.isActive || assumeProducerActive)
@@ -557,6 +596,10 @@ class NativeLocationPlugin :
                 null
             },
             "last_accuracy_meters" to if (ownerMatches) store.lastAccuracyMeters else null,
+            "restore_pending" to
+                (ownerMatches && store.recoveryPendingOwnerUserId == ownerUserId),
+            "recovery_reason" to store.recoveryReason(ownerUserId),
+            "queue" to store.queueDiagnostics(ownerUserId),
         )
     }
 
@@ -636,16 +679,21 @@ class NativeLocationPlugin :
         private const val REQUEST_FOREGROUND_LOCATION = 2401
         private const val REQUEST_BACKGROUND_LOCATION = 2402
 
-        @Volatile
-        private var sampleChannel: MethodChannel? = null
+        private val sampleChannels = CopyOnWriteArraySet<MethodChannel>()
 
-        fun notifySamplesAvailable() {
-            val current = sampleChannel ?: return
+        fun hasAttachedFlutterEngine(): Boolean = sampleChannels.isNotEmpty()
+
+        fun notifySamplesAvailable(): Boolean {
+            val current = sampleChannels.toList()
+            if (current.isEmpty()) return false
             Handler(Looper.getMainLooper()).post {
-                if (sampleChannel === current) {
-                    current.invokeMethod("samplesAvailable", null)
+                current.forEach { channel ->
+                    if (sampleChannels.contains(channel)) {
+                        channel.invokeMethod("samplesAvailable", null)
+                    }
                 }
             }
+            return true
         }
     }
 }

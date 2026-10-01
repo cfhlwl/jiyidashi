@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 正式包需要主动声明网络能力；debug/profile manifest 不能替代 release 权限。 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <!-- 录音只在用户主动点击后开启；没有此权限时语音入口必须 fail closed。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- 定位权限按用户动作分阶段请求；声明权限不等于启动采集。 -->
@@ -41,6 +42,16 @@
             android:name=".NativeLocationTrackingService"
             android:exported="false"
             android:foregroundServiceType="location"/>
+
+        <receiver
+            android:name=".PassiveMemoryRecoveryReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

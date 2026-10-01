@@ -253,4 +253,53 @@ class RunnerTests: XCTestCase {
       .stopped
     )
   }
+
+  func testLegacyNativeQueueSampleDecodesIntoV2WithoutChangingCapturedIdentity() throws {
+    let legacy: [String: Any] = [
+      "ownerUserId": owner,
+      "clientUuid": "11111111-1111-4111-8111-111111111111",
+      "latitude": 3.139,
+      "longitude": 101.6869,
+      "accuracyMeters": 18.0,
+      "speedMetersPerSecond": 1.5,
+      "recordedAtMillis": 1_790_820_000_000 as Int64,
+    ]
+    let data = try JSONSerialization.data(withJSONObject: legacy)
+    let decoded = try JSONDecoder().decode(
+      NativeQueuedLocationSample.self,
+      from: data
+    )
+
+    XCTAssertEqual(decoded.ownerUserId, owner)
+    XCTAssertEqual(decoded.clientUuid, "11111111-1111-4111-8111-111111111111")
+    XCTAssertEqual(decoded.recordedAtMillis, 1_790_820_000_000)
+    XCTAssertEqual(decoded.queueSequence, 0)
+    XCTAssertEqual(decoded.enqueuedAtMillis, decoded.recordedAtMillis)
+    XCTAssertEqual(decoded.handoffAttemptCount, 0)
+  }
+
+  func testNativeQueueV2MetadataSurvivesRoundTrip() throws {
+    let sample = NativeQueuedLocationSample(
+      ownerUserId: owner,
+      clientUuid: "22222222-2222-4222-8222-222222222222",
+      latitude: 3.139,
+      longitude: 101.6869,
+      accuracyMeters: 18,
+      speedMetersPerSecond: 1.5,
+      recordedAtMillis: 1_790_820_000_000,
+      queueSequence: 42,
+      enqueuedAtMillis: 1_790_820_001_000,
+      handoffAttemptCount: 3
+    )
+
+    let decoded = try JSONDecoder().decode(
+      NativeQueuedLocationSample.self,
+      from: JSONEncoder().encode(sample)
+    )
+    XCTAssertEqual(decoded.queueSequence, 42)
+    XCTAssertEqual(decoded.enqueuedAtMillis, 1_790_820_001_000)
+    XCTAssertEqual(decoded.handoffAttemptCount, 3)
+    XCTAssertEqual(decoded.clientUuid, sample.clientUuid)
+  }
+
 }
