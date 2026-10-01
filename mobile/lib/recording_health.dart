@@ -55,9 +55,8 @@ class RecordingHealthView {
     this.activeGapReasons = const <String>[],
   });
 
-  const RecordingHealthView.unknown({String reason = 'MALFORMED_RESPONSE'})
+  const RecordingHealthView.unknown({this.reason = 'MALFORMED_RESPONSE'})
       : status = RecordingHealthStatus.unknown,
-        reason = reason,
         privacyPaused = false,
         nativeStateObserved = false,
         automaticEnabled = null,
