@@ -155,7 +155,13 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
           if (controller == null) return;
           await controller.start();
           break;
-        case RecordingHealthAction.recheckLocationServices:
+        case RecordingHealthAction.openLocationServicesSettings:
+          if (controller == null) return;
+          await controller.openLocationServicesSettings();
+          break;
+        case RecordingHealthAction.openBackgroundLocationSettings:
+          if (controller == null) return;
+          await controller.openBackgroundLocationSettings();
           break;
       }
     } catch (_) {
@@ -176,14 +182,18 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
 
   bool _canRenderAction(RecordingHealthAction action) {
     if (action == RecordingHealthAction.resumePrivacy) return true;
-    if (action == RecordingHealthAction.recheckLocationServices) return true;
     return widget.nativeLocationController != null;
   }
 
   @override
   Widget build(BuildContext context) {
     final view = _view;
-    final action = view?.suggestedAction;
+    final suggested = view?.suggestedAction;
+    final nativeReason = widget.nativeLocationController?.status?.reason;
+    final action = suggested == RecordingHealthAction.enableAutomaticLocation &&
+            nativeReason == 'background_settings_required'
+        ? RecordingHealthAction.openBackgroundLocationSettings
+        : suggested;
     return JiYiSectionCard(
       leading: Icon(
         Icons.health_and_safety_outlined,
@@ -374,7 +384,8 @@ String _actionLabel(RecordingHealthAction action) {
     RecordingHealthAction.enableAutomaticLocation => '允许后台定位',
     RecordingHealthAction.resumePrivacy => '恢复自动记录',
     RecordingHealthAction.startProducer => '重新启动自动记录',
-    RecordingHealthAction.recheckLocationServices => '已开启后重新检查',
+    RecordingHealthAction.openLocationServicesSettings => '开启系统定位服务',
+    RecordingHealthAction.openBackgroundLocationSettings => '前往系统设置允许始终定位',
   };
 }
 
@@ -384,7 +395,8 @@ IconData _actionIcon(RecordingHealthAction action) {
     RecordingHealthAction.enableAutomaticLocation => Icons.my_location_outlined,
     RecordingHealthAction.resumePrivacy => Icons.play_arrow_rounded,
     RecordingHealthAction.startProducer => Icons.restart_alt_rounded,
-    RecordingHealthAction.recheckLocationServices => Icons.refresh,
+    RecordingHealthAction.openLocationServicesSettings => Icons.location_searching_outlined,
+    RecordingHealthAction.openBackgroundLocationSettings => Icons.settings_outlined,
   };
 }
 
