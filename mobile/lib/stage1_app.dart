@@ -90,8 +90,10 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     final recoveryBridge = motionSamplingBridge;
     if (recoveryBridge is NativePassiveRecoveryTriggerBridge) {
+      final triggerBridge =
+          recoveryBridge as NativePassiveRecoveryTriggerBridge;
       _passiveRecoveryRequests =
-          recoveryBridge.passiveRecoveryRequests.listen((_) {
+          triggerBridge.passiveRecoveryRequests.listen((_) {
         unawaited(_handleNativePassiveRecoveryRequest());
       });
     }
