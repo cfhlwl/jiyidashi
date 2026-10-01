@@ -17,12 +17,12 @@ from pathlib import Path
 from typing import Any, Iterable
 
 HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
-EMAIL_RE = re.compile(r"(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b")
-BEARER_RE = re.compile(r"(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]{8,}")
-JWT_RE = re.compile(r"\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b")
+EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
+BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}")
+JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
 SENSITIVE_TEXT_KEY_RE = re.compile(
-    r"(?i)\\b(latitude|longitude|access[_ -]?token|refresh[_ -]?token|authorization|"
-    r"password|secret|imei|serial|device[_ -]?id|advertising[_ -]?id|ad[_ -]?id|email)\\b\\s*[:=]"
+    r"(?i)\b(latitude|longitude|access[_ -]?token|refresh[_ -]?token|authorization|"
+    r"password|secret|imei|serial|device[_ -]?id|advertising[_ -]?id|ad[_ -]?id|email)\b\s*[:=]"
 )
 
 HEALTH_STATES = {"HEALTHY", "DEGRADED", "PAUSED", "BLOCKED", "RECOVERING", "UNKNOWN"}
