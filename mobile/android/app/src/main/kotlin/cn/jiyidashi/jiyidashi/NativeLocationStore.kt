@@ -13,9 +13,12 @@ internal class NativeLocationStore(context: Context) {
     var enabledOwnerUserId: String?
         get() = prefs.getString(KEY_ENABLED_OWNER, null)
         set(value) {
+            // Automatic-enable ownership is a reboot/process-recovery hint. Commit
+            // synchronously so a process kill cannot expose an in-memory state that the
+            // next WorkManager/boot recovery cannot reconstruct.
             prefs.edit().apply {
                 if (value == null) remove(KEY_ENABLED_OWNER) else putString(KEY_ENABLED_OWNER, value)
-            }.apply()
+            }.commit()
         }
 
     var activeOwnerUserId: String?
@@ -23,7 +26,7 @@ internal class NativeLocationStore(context: Context) {
         set(value) {
             prefs.edit().apply {
                 if (value == null) remove(KEY_ACTIVE_OWNER) else putString(KEY_ACTIVE_OWNER, value)
-            }.apply()
+            }.commit()
         }
 
     var pendingEnableOwnerUserId: String?
@@ -35,7 +38,7 @@ internal class NativeLocationStore(context: Context) {
                 } else {
                     putString(KEY_PENDING_ENABLE_OWNER, value)
                 }
-            }.apply()
+            }.commit()
         }
 
     var recoveryPendingOwnerUserId: String?
@@ -83,7 +86,7 @@ internal class NativeLocationStore(context: Context) {
                 NativeLocationRuntimeState.PAUSED -> "paused"
                 NativeLocationRuntimeState.STOPPED -> "stopped"
             }
-            prefs.edit().putString(KEY_RUNTIME, raw).apply()
+            prefs.edit().putString(KEY_RUNTIME, raw).commit()
         }
 
     var foregroundPermissionRequested: Boolean
