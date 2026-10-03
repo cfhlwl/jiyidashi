@@ -41,10 +41,6 @@ from app.services.object_storage import (
     PresignedTransfer,
     StoredObject,
 )
-from app.services.provider_config_service import (
-    ProviderRuntimeConfigError,
-    get_runtime_provider_settings,
-)
 from app.services.security_alerting import SecurityScope, record_security_signal
 
 ALLOWED_IMAGE_CONTENT_TYPES = {
@@ -676,12 +672,12 @@ def _read_and_transcribe_voice(
     if not transcript:
         _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
         raise MediaError("ASR_EMPTY_RESULT", 422)
-    try:
-        runtime_settings = get_runtime_provider_settings()
-    except ProviderRuntimeConfigError as exc:
-        _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
-        raise MediaError("ASR_PROVIDER_UNAVAILABLE", 503) from exc
-    if result.confidence < runtime_settings.asr_min_confidence:
+    threshold = (
+        result.policy_min_confidence
+        if result.policy_min_confidence is not None
+        else get_settings().asr_min_confidence
+    )
+    if result.confidence < threshold:
         _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
         raise MediaError("ASR_LOW_CONFIDENCE", 422)
     return result, transcript
