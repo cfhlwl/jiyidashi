@@ -429,9 +429,13 @@ async def run_embedding_backfill_batch(
         # ADMIN-002: an explicit disable/rotate/update must fence the next paid call in
         # an already-running bounded batch. Re-check committed authority before each item;
         # never continue silently on the gateway/config snapshot captured before I/O.
-        current_provider = db.get(
-            ProviderConfiguration,
-            ProviderService.EMBEDDING.value,
+        current_provider = db.scalar(
+            select(ProviderConfiguration)
+            .where(
+                ProviderConfiguration.service
+                == ProviderService.EMBEDDING.value
+            )
+            .execution_options(populate_existing=True)
         )
         if provider_revision is None:
             if current_provider is not None:
