@@ -11,7 +11,13 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
-from app.admin_models import AdminAccount, AdminRole, ProviderConfiguration, ProviderService
+from app.admin_models import (
+    AdminAccount,
+    AdminAuditEvent,
+    AdminRole,
+    ProviderConfiguration,
+    ProviderService,
+)
 from app.admin_schemas import AdminEmbeddingBackfillRequest
 from app.core.config import Settings
 from app.core.db import (
