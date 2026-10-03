@@ -79,9 +79,19 @@ class NativeLocationTrackingService : Service(), LocationListener {
                     .build(),
             )
 
+            val recoveredFrom = store.recoveryReason(ownerUserId)
             store.activeOwnerUserId = ownerUserId
             store.runtime = NativeLocationRuntimeState.RUNNING
             store.clearRecoveryPending(ownerUserId)
+            if (recoveredFrom != null) {
+                store.recordLifecycleDiagnostic(
+                    ownerUserId = ownerUserId,
+                    event = "recovery_result",
+                    reason = recoveredFrom,
+                    result = "running",
+                    success = true,
+                )
+            }
             store.beginTracking(ownerUserId)
             isActive = true
             requestAdaptiveUpdates(store.samplingProfile(ownerUserId))

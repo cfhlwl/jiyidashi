@@ -220,9 +220,12 @@ class _NativeLocationStatusView extends StatelessWidget {
   Widget build(BuildContext context) {
     final running = status.runtime == NativeLocationRuntime.running;
     final paused = status.runtime == NativeLocationRuntime.paused;
+    final recovering = status.automaticEnabled &&
+        !running &&
+        (paused || status.restorePending);
     final kind = running
         ? JiYiStatusKind.success
-        : (paused ? JiYiStatusKind.warning : JiYiStatusKind.info);
+        : (recovering ? JiYiStatusKind.warning : JiYiStatusKind.info);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -231,8 +234,14 @@ class _NativeLocationStatusView extends StatelessWidget {
           kind: kind,
           title: running
               ? '自动位置记忆正在运行'
-              : (paused ? '原生位置采集已暂停' : '原生位置采集未运行'),
-          message: _reasonMessage(status.reason),
+              : (recovering
+                  ? '自动位置已启用，正在安全恢复'
+                  : (status.automaticEnabled
+                      ? '自动位置已启用，当前未运行'
+                      : '自动位置记忆已关闭')),
+          message: recovering
+              ? '已保留你的开启设置；认证、隐私或系统条件确认通过后会自动恢复。'
+              : _reasonMessage(status.reason),
         ),
         const SizedBox(height: JiYiSpacing.sm),
         Wrap(

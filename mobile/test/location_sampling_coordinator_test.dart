@@ -620,7 +620,7 @@ void main() {
     controller.dispose();
   });
 
-  test('final upload 401 disables native producer immediately and keeps replay proof',
+  test('final access 401 pauses producer, preserves enable consent and replay proof',
       () async {
     final locationBridge = _LocationBridge(current: runningStatus());
     final controller = await activeController(locationBridge);
@@ -643,14 +643,15 @@ void main() {
     await coordinator.start();
 
     expect(api.uploadCalls, 1);
-    expect(locationBridge.calls, contains('disable'));
-    expect(locationBridge.current.runtime, NativeLocationRuntime.stopped);
-    expect(locationBridge.current.automaticEnabled, isFalse);
+    expect(locationBridge.calls, contains('pause'));
+    expect(locationBridge.calls, isNot(contains('disable')));
+    expect(locationBridge.current.runtime, NativeLocationRuntime.paused);
+    expect(locationBridge.current.automaticEnabled, isTrue);
     expect(await store.countLocationSamples(owner), 1);
     expect(
       (await store.listLocationSamples(owner)).single.clientUuid,
       uuid,
-      reason: 'terminal auth loss must stop production without deleting replay proof',
+      reason: 'access-token uncertainty must stop production without erasing consent or replay proof',
     );
     coordinator.dispose();
     controller.dispose();

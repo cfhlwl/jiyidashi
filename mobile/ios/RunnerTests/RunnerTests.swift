@@ -114,7 +114,7 @@ class RunnerTests: XCTestCase {
       ),
       NativeLocationRelaunchState(
         restorePending: true,
-        runtime: .stopped
+        runtime: .paused
       )
     )
     XCTAssertEqual(

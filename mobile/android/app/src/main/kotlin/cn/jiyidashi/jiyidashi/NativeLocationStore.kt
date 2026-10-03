@@ -74,6 +74,90 @@ internal class NativeLocationStore(context: Context) {
             null
         }
 
+    fun recordLifecycleDiagnostic(
+        ownerUserId: String,
+        event: String,
+        reason: String,
+        result: String? = null,
+        success: Boolean? = null,
+        nowMillis: Long = System.currentTimeMillis(),
+    ) {
+        val normalizedReason = reason.trim().ifEmpty { "unknown" }
+        val editor = prefs.edit()
+        when (event) {
+            "pause" -> {
+                increment(ownerUserId, KEY_LIFECYCLE_PAUSE_COUNT, 1L)
+                editor
+                    .putLong(ownerKey(KEY_LIFECYCLE_LAST_PAUSE_AT, ownerUserId), nowMillis)
+                    .putString(ownerKey(KEY_LIFECYCLE_LAST_PAUSE_REASON, ownerUserId), normalizedReason)
+            }
+            "recovery_attempt" -> {
+                increment(ownerUserId, KEY_LIFECYCLE_RECOVERY_ATTEMPT_COUNT, 1L)
+                editor
+                    .putLong(ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_AT, ownerUserId), nowMillis)
+                    .putString(
+                        ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_REASON, ownerUserId),
+                        normalizedReason,
+                    )
+            }
+            "recovery_result" -> {
+                editor
+                    .putLong(ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_AT, ownerUserId), nowMillis)
+                    .putString(
+                        ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_REASON, ownerUserId),
+                        normalizedReason,
+                    )
+                    .putString(
+                        ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_RESULT, ownerUserId),
+                        result?.trim()?.ifEmpty { "unknown" } ?: "unknown",
+                    )
+                if (success == true) {
+                    editor.putLong(
+                        ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_SUCCESS_AT, ownerUserId),
+                        nowMillis,
+                    )
+                }
+            }
+            "disable" -> {
+                increment(ownerUserId, KEY_LIFECYCLE_DISABLE_COUNT, 1L)
+                editor
+                    .putLong(ownerKey(KEY_LIFECYCLE_LAST_DISABLE_AT, ownerUserId), nowMillis)
+                    .putString(
+                        ownerKey(KEY_LIFECYCLE_LAST_DISABLE_REASON, ownerUserId),
+                        normalizedReason,
+                    )
+            }
+            else -> return
+        }
+        editor.commit()
+    }
+
+    fun lifecycleDiagnostics(ownerUserId: String): Map<String, Any?> {
+        fun millis(prefix: String): Long? {
+            val key = ownerKey(prefix, ownerUserId)
+            return if (prefs.contains(key)) prefs.getLong(key, 0L) else null
+        }
+        return mapOf(
+            "pause_count" to metric(ownerUserId, KEY_LIFECYCLE_PAUSE_COUNT),
+            "last_pause_at_millis" to millis(KEY_LIFECYCLE_LAST_PAUSE_AT),
+            "last_pause_reason" to
+                prefs.getString(ownerKey(KEY_LIFECYCLE_LAST_PAUSE_REASON, ownerUserId), null),
+            "recovery_attempt_count" to
+                metric(ownerUserId, KEY_LIFECYCLE_RECOVERY_ATTEMPT_COUNT),
+            "last_recovery_at_millis" to millis(KEY_LIFECYCLE_LAST_RECOVERY_AT),
+            "last_recovery_reason" to
+                prefs.getString(ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_REASON, ownerUserId), null),
+            "last_recovery_result" to
+                prefs.getString(ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_RESULT, ownerUserId), null),
+            "last_recovery_success_at_millis" to
+                millis(KEY_LIFECYCLE_LAST_RECOVERY_SUCCESS_AT),
+            "disable_count" to metric(ownerUserId, KEY_LIFECYCLE_DISABLE_COUNT),
+            "last_disable_at_millis" to millis(KEY_LIFECYCLE_LAST_DISABLE_AT),
+            "last_disable_reason" to
+                prefs.getString(ownerKey(KEY_LIFECYCLE_LAST_DISABLE_REASON, ownerUserId), null),
+        )
+    }
+
     var runtime: NativeLocationRuntimeState
         get() = when (prefs.getString(KEY_RUNTIME, null)) {
             "running" -> NativeLocationRuntimeState.RUNNING
@@ -305,6 +389,17 @@ internal class NativeLocationStore(context: Context) {
             .remove(ownerKey(KEY_CAPACITY_DROP_COUNT, ownerUserId))
             .remove(ownerKey(KEY_LAST_DROP_AT, ownerUserId))
             .remove(ownerKey(KEY_LAST_DROP_REASON, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_PAUSE_COUNT, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_LAST_PAUSE_AT, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_LAST_PAUSE_REASON, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_RECOVERY_ATTEMPT_COUNT, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_AT, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_REASON, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_RESULT, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_LAST_RECOVERY_SUCCESS_AT, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_DISABLE_COUNT, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_LAST_DISABLE_AT, ownerUserId))
+            .remove(ownerKey(KEY_LIFECYCLE_LAST_DISABLE_REASON, ownerUserId))
             .apply()
     }
 
@@ -628,6 +723,18 @@ internal class NativeLocationStore(context: Context) {
         private const val KEY_CAPACITY_DROP_COUNT = "capacity_drop_count"
         private const val KEY_LAST_DROP_AT = "last_drop_at"
         private const val KEY_LAST_DROP_REASON = "last_drop_reason"
+        private const val KEY_LIFECYCLE_PAUSE_COUNT = "lifecycle_pause_count"
+        private const val KEY_LIFECYCLE_LAST_PAUSE_AT = "lifecycle_last_pause_at"
+        private const val KEY_LIFECYCLE_LAST_PAUSE_REASON = "lifecycle_last_pause_reason"
+        private const val KEY_LIFECYCLE_RECOVERY_ATTEMPT_COUNT = "lifecycle_recovery_attempt_count"
+        private const val KEY_LIFECYCLE_LAST_RECOVERY_AT = "lifecycle_last_recovery_at"
+        private const val KEY_LIFECYCLE_LAST_RECOVERY_REASON = "lifecycle_last_recovery_reason"
+        private const val KEY_LIFECYCLE_LAST_RECOVERY_RESULT = "lifecycle_last_recovery_result"
+        private const val KEY_LIFECYCLE_LAST_RECOVERY_SUCCESS_AT =
+            "lifecycle_last_recovery_success_at"
+        private const val KEY_LIFECYCLE_DISABLE_COUNT = "lifecycle_disable_count"
+        private const val KEY_LIFECYCLE_LAST_DISABLE_AT = "lifecycle_last_disable_at"
+        private const val KEY_LIFECYCLE_LAST_DISABLE_REASON = "lifecycle_last_disable_reason"
         private val QUEUE_LOCK = Any()
 
         private const val NATIVE_QUEUE_SCHEMA_VERSION = 2

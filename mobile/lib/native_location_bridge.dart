@@ -123,6 +123,83 @@ class NativeLocationQueueDiagnostics {
   }
 }
 
+class NativeLocationLifecycleDiagnostics {
+  const NativeLocationLifecycleDiagnostics({
+    required this.pauseCount,
+    required this.recoveryAttemptCount,
+    required this.disableCount,
+    this.lastPauseAt,
+    this.lastPauseReason,
+    this.lastRecoveryAt,
+    this.lastRecoveryReason,
+    this.lastRecoveryResult,
+    this.lastRecoverySuccessAt,
+    this.lastDisableAt,
+    this.lastDisableReason,
+  });
+
+  const NativeLocationLifecycleDiagnostics.empty()
+      : pauseCount = 0,
+        recoveryAttemptCount = 0,
+        disableCount = 0,
+        lastPauseAt = null,
+        lastPauseReason = null,
+        lastRecoveryAt = null,
+        lastRecoveryReason = null,
+        lastRecoveryResult = null,
+        lastRecoverySuccessAt = null,
+        lastDisableAt = null,
+        lastDisableReason = null;
+
+  final int pauseCount;
+  final int recoveryAttemptCount;
+  final int disableCount;
+  final DateTime? lastPauseAt;
+  final String? lastPauseReason;
+  final DateTime? lastRecoveryAt;
+  final String? lastRecoveryReason;
+  final String? lastRecoveryResult;
+  final DateTime? lastRecoverySuccessAt;
+  final DateTime? lastDisableAt;
+  final String? lastDisableReason;
+
+  factory NativeLocationLifecycleDiagnostics.fromPlatform(Object? value) {
+    if (value is! Map) {
+      return const NativeLocationLifecycleDiagnostics.empty();
+    }
+
+    int integer(String key) {
+      final raw = value[key];
+      if (raw is int) return raw;
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '') ?? 0;
+    }
+
+    DateTime? timestamp(String key) {
+      final raw = value[key];
+      if (raw == null) return null;
+      if (raw is num) {
+        return DateTime.fromMillisecondsSinceEpoch(raw.toInt(), isUtc: true);
+      }
+      return DateTime.tryParse(raw.toString())?.toUtc();
+    }
+
+    return NativeLocationLifecycleDiagnostics(
+      pauseCount: integer('pause_count'),
+      recoveryAttemptCount: integer('recovery_attempt_count'),
+      disableCount: integer('disable_count'),
+      lastPauseAt: timestamp('last_pause_at_millis'),
+      lastPauseReason: value['last_pause_reason']?.toString(),
+      lastRecoveryAt: timestamp('last_recovery_at_millis'),
+      lastRecoveryReason: value['last_recovery_reason']?.toString(),
+      lastRecoveryResult: value['last_recovery_result']?.toString(),
+      lastRecoverySuccessAt: timestamp('last_recovery_success_at_millis'),
+      lastDisableAt: timestamp('last_disable_at_millis'),
+      lastDisableReason: value['last_disable_reason']?.toString(),
+    );
+  }
+}
+
 class NativeLocationStatus {
   const NativeLocationStatus({
     required this.supported,
@@ -139,6 +216,7 @@ class NativeLocationStatus {
     this.restorePending = false,
     this.recoveryReason,
     this.queue = const NativeLocationQueueDiagnostics.empty(),
+    this.lifecycle = const NativeLocationLifecycleDiagnostics.empty(),
   });
 
   const NativeLocationStatus.unavailable({this.reason})
@@ -154,7 +232,8 @@ class NativeLocationStatus {
         lastAccuracyMeters = null,
         restorePending = false,
         recoveryReason = null,
-        queue = const NativeLocationQueueDiagnostics.empty();
+        queue = const NativeLocationQueueDiagnostics.empty(),
+        lifecycle = const NativeLocationLifecycleDiagnostics.empty();
 
   final bool supported;
   final String platform;
@@ -170,6 +249,7 @@ class NativeLocationStatus {
   final bool restorePending;
   final String? recoveryReason;
   final NativeLocationQueueDiagnostics queue;
+  final NativeLocationLifecycleDiagnostics lifecycle;
 
   bool get hasForegroundPermission =>
       permission == NativeLocationPermission.foreground ||
@@ -213,6 +293,8 @@ class NativeLocationStatus {
       restorePending: map['restore_pending'] == true,
       recoveryReason: map['recovery_reason']?.toString(),
       queue: NativeLocationQueueDiagnostics.fromPlatform(map['queue']),
+      lifecycle:
+          NativeLocationLifecycleDiagnostics.fromPlatform(map['lifecycle']),
     );
   }
 
@@ -263,6 +345,16 @@ class NativeLocationStatus {
   }
 }
 
+abstract interface class NativeLocationDiagnosticsBridge {
+  Future<void> recordLocationLifecycleDiagnostic(
+    String ownerUserId, {
+    required String event,
+    required String reason,
+    String? result,
+    bool? success,
+  });
+}
+
 abstract interface class NativeLocationBridge {
   Future<NativeLocationStatus> status(String ownerUserId);
 
@@ -290,7 +382,8 @@ abstract interface class NativeLocationBridge {
 /// Native status reads are deliberately separate from permission and start commands.
 /// Constructing this bridge, logging in, or opening onboarding can never request location
 /// permission or start production; only explicit command methods can cross that boundary.
-class MethodChannelNativeLocationBridge implements NativeLocationBridge {
+class MethodChannelNativeLocationBridge
+    implements NativeLocationBridge, NativeLocationDiagnosticsBridge {
   MethodChannelNativeLocationBridge({
     MethodChannel channel = const MethodChannel(
       'cn.jiyidashi/native_location',
@@ -320,6 +413,27 @@ class MethodChannelNativeLocationBridge implements NativeLocationBridge {
       _arguments(ownerUserId),
     );
     return NativeLocationStatus.fromPlatform(result);
+  }
+
+  @override
+  Future<void> recordLocationLifecycleDiagnostic(
+    String ownerUserId, {
+    required String event,
+    required String reason,
+    String? result,
+    bool? success,
+  }) async {
+    final arguments = _arguments(ownerUserId)
+      ..['event'] = event.trim()
+      ..['reason'] = reason.trim();
+    if (result != null && result.trim().isNotEmpty) {
+      arguments['result'] = result.trim();
+    }
+    if (success != null) arguments['success'] = success;
+    await _channel.invokeMethod<void>(
+      'recordLocationLifecycleDiagnostic',
+      arguments,
+    );
   }
 
   @override

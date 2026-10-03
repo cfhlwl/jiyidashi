@@ -137,6 +137,56 @@ void main() {
     expect(api.accessToken, isNull);
   });
 
+  test('nonterminal refresh HTTP failure preserves durable secure session', () async {
+    final store = MemoryAuthSessionStore()
+      ..session = const PersistedAuthSession(
+        refreshToken: 'retry-refresh-abcdefghijklmnopqrstuvwxyz',
+        sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      );
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        return http.Response(
+          jsonEncode({'detail': 'TEMPORARY_AUTH_VALIDATION_FAILURE'}),
+          400,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    final result = await api.restorePersistedSession();
+
+    expect(result, AuthRestoreStatus.serverUnavailable);
+    expect(store.session?.refreshToken, 'retry-refresh-abcdefghijklmnopqrstuvwxyz');
+    expect(api.authenticatedUserId, isNull);
+  });
+
+  test('refresh protocol uncertainty preserves durable secure session', () async {
+    final store = MemoryAuthSessionStore()
+      ..session = const PersistedAuthSession(
+        refreshToken: 'protocol-refresh-abcdefghijklmnopqrstuvwxyz',
+        sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      );
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        return http.Response(
+          jsonEncode({'access_token': 'partial-only'}),
+          200,
+          headers: jsonHeaders,
+        );
+      }),
+    );
+
+    final result = await api.restorePersistedSession();
+
+    expect(result, AuthRestoreStatus.serverUnavailable);
+    expect(store.session?.refreshToken, 'protocol-refresh-abcdefghijklmnopqrstuvwxyz');
+    expect(api.authenticatedUserId, isNull);
+  });
+
   test('logout revokes server session before removing secure refresh material', () async {
     final store = MemoryAuthSessionStore()..installationId = 'install-logout';
     var call = 0;

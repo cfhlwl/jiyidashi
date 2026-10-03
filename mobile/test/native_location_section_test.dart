@@ -136,6 +136,50 @@ class _FakeBridge implements NativeLocationBridge {
 }
 
 void main() {
+  testWidgets('enabled paused state is shown as recovering rather than disabled', (
+    tester,
+  ) async {
+    final bridge = _FakeBridge()
+      ..current = const NativeLocationStatus(
+        supported: true,
+        platform: 'ios',
+        permission: NativeLocationPermission.background,
+        runtime: NativeLocationRuntime.paused,
+        automaticEnabled: true,
+        locationServicesEnabled: true,
+        restorePending: true,
+        recoveryReason: 'ios_location_relaunch',
+        reason: 'paused',
+      );
+    final controller = NativeLocationController(
+      bridge: bridge,
+      ownerUserId: owner,
+    );
+    await controller.initialize();
+    controller.markPrivacyActive();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: Scaffold(
+          body: NativeLocationSection(
+            controller: controller,
+            revalidateAuthority: () async {
+              controller.markPrivacyActive();
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('自动位置已启用，正在安全恢复'), findsOneWidget);
+    expect(find.text('自动位置记忆已关闭'), findsNothing);
+    expect(find.text('自动位置：已启用'), findsOneWidget);
+    controller.dispose();
+  });
+
+
   testWidgets('services-off exposes only the exact system-location CTA', (tester) async {
     final bridge = _FakeBridge()
       ..current = const NativeLocationStatus(

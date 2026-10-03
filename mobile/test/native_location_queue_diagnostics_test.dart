@@ -14,6 +14,19 @@ void main() {
       'battery_optimization_state': 'optimized',
       'restore_pending': true,
       'recovery_reason': 'boot_completed',
+      'lifecycle': <String, Object?>{
+        'pause_count': 4,
+        'last_pause_at_millis': 1790820400000,
+        'last_pause_reason': 'auth_session_terminal',
+        'recovery_attempt_count': 6,
+        'last_recovery_at_millis': 1790820500000,
+        'last_recovery_reason': 'periodic_watchdog',
+        'last_recovery_result': 'delivered',
+        'last_recovery_success_at_millis': 1790820500000,
+        'disable_count': 1,
+        'last_disable_at_millis': 1790810000000,
+        'last_disable_reason': 'user_disabled',
+      },
       'queue': <String, Object?>{
         'queue_schema_version': 2,
         'queue_depth': 812,
@@ -37,6 +50,14 @@ void main() {
     expect(status.batteryOptimizationState, NativeBatteryOptimizationState.optimized);
     expect(status.restorePending, isTrue);
     expect(status.recoveryReason, 'boot_completed');
+    expect(status.lifecycle.pauseCount, 4);
+    expect(status.lifecycle.lastPauseReason, 'auth_session_terminal');
+    expect(status.lifecycle.recoveryAttemptCount, 6);
+    expect(status.lifecycle.lastRecoveryReason, 'periodic_watchdog');
+    expect(status.lifecycle.lastRecoveryResult, 'delivered');
+    expect(status.lifecycle.lastRecoverySuccessAt, isNotNull);
+    expect(status.lifecycle.disableCount, 1);
+    expect(status.lifecycle.lastDisableReason, 'user_disabled');
     expect(status.queue.schemaVersion, 2);
     expect(status.queue.depth, 812);
     expect(status.queue.capacity, 1000);
@@ -68,5 +89,8 @@ void main() {
     expect(status.queue.corrupt, isFalse);
     expect(status.queue.storageUnavailable, isFalse);
     expect(status.restorePending, isFalse);
+    expect(status.lifecycle.pauseCount, 0);
+    expect(status.lifecycle.recoveryAttemptCount, 0);
+    expect(status.lifecycle.disableCount, 0);
   });
 }

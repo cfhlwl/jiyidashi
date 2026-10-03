@@ -21,6 +21,11 @@ class MemoryDetailPage extends StatefulWidget {
 class _MemoryDetailPageState extends State<MemoryDetailPage> {
   _MemoryDetailView? memory;
   String? placeName;
+  MediaDownloadSession? photoDownload;
+  String? photoError;
+  bool photoRefreshing = false;
+  int _photoAutomaticRetryBudget = 1;
+  bool _photoRetryScheduled = false;
   bool loading = true;
   bool mutating = false;
   String? error;
@@ -56,6 +61,11 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
     setState(() {
       loading = true;
       error = null;
+      photoDownload = null;
+      photoError = null;
+      photoRefreshing = false;
+      _photoAutomaticRetryBudget = 1;
+      _photoRetryScheduled = false;
     });
     try {
       final raw = await widget.api.getMemory(widget.memoryId);
@@ -67,6 +77,8 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       );
 
       String? resolvedPlace;
+      MediaDownloadSession? resolvedPhoto;
+      String? resolvedPhotoError;
       final placeId = parsed.placeId;
       if (placeId != null) {
         try {
@@ -83,10 +95,29 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         }
       }
 
+      final mediaId = parsed.mediaId;
+      if (parsed.memoryType == 'PHOTO' && mediaId != null) {
+        try {
+          resolvedPhoto = await widget.api.createMediaDownload(mediaId);
+          if (!_sessionCurrent(version, owner)) return;
+        } on ApiException {
+          if (!_sessionCurrent(version, owner)) return;
+          resolvedPhotoError = '照片暂时无法读取，可以重试。';
+        } on TransportException {
+          if (!_sessionCurrent(version, owner)) return;
+          resolvedPhotoError = '网络暂时不可用，照片可以稍后重试。';
+        } on ProtocolException {
+          if (!_sessionCurrent(version, owner)) return;
+          resolvedPhotoError = '照片读取信息暂时不可用。';
+        }
+      }
+
       if (!_sessionCurrent(version, owner)) return;
       setState(() {
         memory = parsed;
         placeName = resolvedPlace;
+        photoDownload = resolvedPhoto;
+        photoError = resolvedPhotoError;
         loading = false;
       });
     } on ApiException catch (exc) {
@@ -110,6 +141,161 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         error = '这条记忆暂时无法打开，可以稍后重试';
       });
     }
+  }
+
+  Future<void> _refreshPhotoCapability({bool manual = false}) async {
+    final current = memory;
+    final mediaId = current?.mediaId;
+    final owner = widget.api.authenticatedUserId;
+    if (current == null ||
+        current.memoryType != 'PHOTO' ||
+        mediaId == null ||
+        owner == null ||
+        owner.trim().isEmpty ||
+        photoRefreshing) {
+      return;
+    }
+    final version = widget.api.sessionVersion;
+    if (manual) {
+      _photoAutomaticRetryBudget = 1;
+    }
+    setState(() {
+      photoRefreshing = true;
+      if (manual) photoError = null;
+    });
+    try {
+      final signed = await widget.api.createMediaDownload(mediaId);
+      if (!_sessionCurrent(version, owner) ||
+          memory?.id != current.id ||
+          memory?.mediaId != mediaId) {
+        return;
+      }
+      setState(() {
+        photoDownload = signed;
+        photoError = null;
+        photoRefreshing = false;
+      });
+    } on TransportException {
+      if (!_sessionCurrent(version, owner)) return;
+      setState(() {
+        photoRefreshing = false;
+        photoError = '网络暂时不可用，照片可以稍后重试。';
+      });
+    } on ApiException {
+      if (!_sessionCurrent(version, owner)) return;
+      setState(() {
+        photoRefreshing = false;
+        photoError = '照片暂时无法读取，可以重试。';
+      });
+    } on ProtocolException {
+      if (!_sessionCurrent(version, owner)) return;
+      setState(() {
+        photoRefreshing = false;
+        photoError = '照片读取信息暂时不可用。';
+      });
+    }
+  }
+
+  void _schedulePhotoResign() {
+    if (_photoAutomaticRetryBudget <= 0 ||
+        _photoRetryScheduled ||
+        photoRefreshing) {
+      return;
+    }
+    _photoAutomaticRetryBudget -= 1;
+    _photoRetryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _photoRetryScheduled = false;
+      if (mounted) {
+        _refreshPhotoCapability();
+      }
+    });
+  }
+
+  Widget _photoCard(_MemoryDetailView current) {
+    final signed = photoDownload?.download;
+    if (signed == null) {
+      return JiYiSectionCard(
+        title: '照片',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(photoError ?? '正在准备照片…'),
+            const SizedBox(height: JiYiSpacing.sm),
+            OutlinedButton.icon(
+              onPressed: photoRefreshing
+                  ? null
+                  : () => _refreshPhotoCapability(manual: true),
+              icon: photoRefreshing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              label: const Text('重新加载照片'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Never persist or convert this short-lived capability into memory metadata. If it is
+    // already expired before image resolution begins, immediately obtain a new capability.
+    if (!signed.expiresAt.isAfter(DateTime.now().toUtc())) {
+      _schedulePhotoResign();
+    }
+
+    return JiYiSectionCard(
+      title: '照片',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              signed.url.toString(),
+              key: ValueKey<String>(
+                'photo-${current.id}-${signed.url}-${signed.expiresAt.toIso8601String()}',
+              ),
+              headers: signed.headers,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                _schedulePhotoResign();
+                return Container(
+                  constraints: const BoxConstraints(minHeight: 160),
+                  alignment: Alignment.center,
+                  child: const Text('照片加载失败，正在尝试重新获取。'),
+                );
+              },
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return const SizedBox(
+                  height: 180,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              },
+            ),
+          ),
+          if (photoError != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            Text(photoError!),
+          ],
+          if (photoRefreshing) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            const LinearProgressIndicator(),
+          ],
+          const SizedBox(height: JiYiSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: photoRefreshing
+                ? null
+                : () => _refreshPhotoCapability(manual: true),
+            icon: const Icon(Icons.refresh),
+            label: const Text('重新加载照片'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _edit() async {
@@ -269,6 +455,10 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         if (status != null) ...[
           JiYiStatusBanner(kind: JiYiStatusKind.success, message: status!),
           const SizedBox(height: JiYiSpacing.sm),
+        ],
+        if (current.memoryType == 'PHOTO') ...[
+          _photoCard(current),
+          const SizedBox(height: JiYiSpacing.md),
         ],
         JiYiSectionCard(
           title: '记录',
@@ -436,6 +626,7 @@ class _MemoryDetailView {
     required this.content,
     required this.occurredAt,
     required this.placeId,
+    required this.mediaId,
     required this.editRevision,
   });
 
@@ -445,6 +636,7 @@ class _MemoryDetailView {
   final String content;
   final String occurredAt;
   final String? placeId;
+  final String? mediaId;
   final int editRevision;
 
   static final RegExp _uuid = RegExp(
@@ -478,6 +670,18 @@ class _MemoryDetailView {
     final revision = raw['edit_revision'];
     final title = raw['title'];
     final place = raw['place_id'];
+    final metadata = raw['metadata_json'];
+    String? mediaId;
+    if (metadata != null && metadata is! Map<String, dynamic>) {
+      throw ProtocolException('记忆数据格式不正确');
+    }
+    if (metadata is Map<String, dynamic> && metadata['media_id'] != null) {
+      final candidate = metadata['media_id'];
+      if (candidate is! String || !_uuid.hasMatch(candidate)) {
+        throw ProtocolException('记忆数据格式不正确');
+      }
+      mediaId = candidate;
+    }
     if (type is! String ||
         type.trim().isEmpty ||
         content is! String ||
@@ -487,7 +691,8 @@ class _MemoryDetailView {
         revision is! int ||
         revision < 0 ||
         (title != null && title is! String) ||
-        (place != null && (place is! String || !_uuid.hasMatch(place)))) {
+        (place != null && (place is! String || !_uuid.hasMatch(place))) ||
+        (type == 'PHOTO' && mediaId == null)) {
       throw ProtocolException('记忆数据格式不正确');
     }
 
@@ -498,6 +703,7 @@ class _MemoryDetailView {
       content: content.trim(),
       occurredAt: occurredAt,
       placeId: place as String?,
+      mediaId: mediaId,
       editRevision: revision,
     );
   }
