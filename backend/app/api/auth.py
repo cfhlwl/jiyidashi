@@ -47,7 +47,7 @@ from app.services.auth_session_service import (
     revoke_all_sessions,
     revoke_session,
 )
-from app.services.entitlement_service import create_legacy_full_entitlement
+from app.services.entitlement_service import create_dev_legacy_full_entitlement
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -322,7 +322,7 @@ def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
         user = User(id=user_id, nickname=payload.nickname)
         db.add(user)
         db.flush()
-        create_legacy_full_entitlement(db, user_id=user.id)
+        create_dev_legacy_full_entitlement(db, user_id=user.id)
         db.commit()
 
     try:

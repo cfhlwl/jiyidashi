@@ -97,16 +97,17 @@ def _as_utc(value: datetime) -> datetime:
 
 
 
-def create_legacy_full_entitlement(
+def _create_initial_entitlement(
     db: Session,
     *,
     user_id: UUID,
+    plan_code: PlanCode,
     now: datetime | None = None,
 ) -> UserEntitlement:
     observed_at = _as_utc(now or datetime.now(UTC))
     row = UserEntitlement(
         user_id=user_id,
-        plan_code=PlanCode.LEGACY_FULL.value,
+        plan_code=plan_code.value,
         revision=0,
         effective_at=observed_at,
         expires_at=None,
@@ -115,6 +116,49 @@ def create_legacy_full_entitlement(
     )
     db.add(row)
     return row
+
+
+def create_registration_default_entitlement(
+    db: Session,
+    *,
+    user_id: UUID,
+    now: datetime | None = None,
+) -> UserEntitlement:
+    """Create the server-owned entitlement for an ordinary new public account."""
+
+    return _create_initial_entitlement(
+        db,
+        user_id=user_id,
+        plan_code=PlanCode.FREE,
+        now=now,
+    )
+
+
+def create_legacy_full_entitlement(
+    db: Session,
+    *,
+    user_id: UUID,
+    now: datetime | None = None,
+) -> UserEntitlement:
+    """Create historical compatibility authority; never use for public registration."""
+
+    return _create_initial_entitlement(
+        db,
+        user_id=user_id,
+        plan_code=PlanCode.LEGACY_FULL,
+        now=now,
+    )
+
+
+def create_dev_legacy_full_entitlement(
+    db: Session,
+    *,
+    user_id: UUID,
+    now: datetime | None = None,
+) -> UserEntitlement:
+    """Development-only bootstrap authority used behind the fail-closed dev-token gate."""
+
+    return create_legacy_full_entitlement(db, user_id=user_id, now=now)
 
 
 def _resolve_plan(

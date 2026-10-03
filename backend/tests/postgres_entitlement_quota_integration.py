@@ -9,8 +9,10 @@ from datetime import UTC, datetime, timedelta
 from threading import Barrier, Lock, Thread
 from uuid import UUID, uuid4
 
+from fastapi import HTTPException
 from sqlalchemy import delete, func, select, text
 
+from app.auth_models import AuthIdentity, AuthProvider
 from app.core.config import Settings, get_settings
 from app.core.db import SessionLocal, engine
 from app.entitlement_models import (
@@ -22,8 +24,9 @@ from app.entitlement_models import (
 )
 from app.media_models import MediaAsset, MediaKind
 from app.models import User
-from app.schemas import MediaUploadCreate
+from app.schemas import MediaUploadCreate, RegisterRequest
 from app.services.account_deletion_service import delete_current_account
+from app.services.auth_service import register_email_password
 from app.services.ai_gateway import (
     AIEntitlementError,
     AIGateway,
@@ -134,6 +137,77 @@ def _prove_migration_backfill() -> None:
         assert row.plan_code == PlanCode.LEGACY_FULL.value
         assert row.revision == 0
         db.delete(db.get(User, legacy_user))
+        db.commit()
+
+
+def _prove_registration_default_free_concurrency() -> None:
+    email = f"biz011-register-{uuid4()}@example.com"
+    start = Barrier(2)
+    lock = Lock()
+    successes: list[UUID] = []
+    conflicts: list[str] = []
+    errors: list[BaseException] = []
+
+    def worker(index: int) -> None:
+        db = SessionLocal()
+        try:
+            start.wait(timeout=15)
+            user = register_email_password(
+                db,
+                RegisterRequest(
+                    email=email,
+                    password="correct-horse-battery-staple",
+                    nickname=f"BIZ011 concurrent {index}",
+                    timezone="Asia/Shanghai",
+                    locale="zh-CN",
+                ),
+                client_ip=f"198.51.100.{10 + index}",
+            )
+            with lock:
+                successes.append(user.id)
+        except HTTPException as exc:
+            if exc.status_code == 409 and exc.detail == "AUTH_IDENTITY_EXISTS":
+                with lock:
+                    conflicts.append(str(exc.detail))
+            else:
+                with lock:
+                    errors.append(exc)
+        except BaseException as exc:  # noqa: BLE001
+            db.rollback()
+            with lock:
+                errors.append(exc)
+        finally:
+            db.close()
+
+    first = Thread(target=worker, args=(1,), name="biz011-register-a")
+    second = Thread(target=worker, args=(2,), name="biz011-register-b")
+    first.start()
+    second.start()
+    first.join(timeout=30)
+    second.join(timeout=30)
+    assert not first.is_alive() and not second.is_alive()
+    if errors:
+        raise errors[0]
+    assert len(successes) == 1, successes
+    assert conflicts == ["AUTH_IDENTITY_EXISTS"], conflicts
+
+    with SessionLocal() as db:
+        users = list(db.scalars(select(User).where(User.email == email)))
+        assert len(users) == 1
+        user = users[0]
+        assert db.scalar(
+            select(func.count(AuthIdentity.id)).where(
+                AuthIdentity.user_id == user.id,
+                AuthIdentity.provider == AuthProvider.EMAIL_PASSWORD,
+                AuthIdentity.subject == email,
+            )
+        ) == 1
+        row = db.get(UserEntitlement, user.id)
+        assert row is not None
+        assert row.plan_code == PlanCode.FREE.value
+        assert row.revision == 0
+        assert row.expires_at is None
+        db.delete(user)
         db.commit()
 
 
@@ -400,6 +474,7 @@ def main() -> None:
         entitlement_quota_catalog=_quota_catalog(storage_limit=10, ai_limit=1),
     )
     try:
+        _prove_registration_default_free_concurrency()
         _prove_storage_race(global_settings)
         _prove_ai_last_slot_race(gateway_settings)
         _prove_provider_failure_remains_charged(gateway_settings)
