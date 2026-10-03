@@ -25,6 +25,7 @@ from app.admin_schemas import (
     AdminQuotaCatalogWrite,
     AdminQuotaPlanWrite,
 )
+from app.core.config import Settings
 from app.core.db import SessionLocal, engine
 from app.maintenance.admin_bootstrap import bootstrap_super_admin
 from app.services.admin_operations import write_quota_catalog
@@ -205,7 +206,7 @@ def _prove_provider_first_write_race(actor: AdminAccount) -> None:
     successes: list[int] = []
     stale: list[str] = []
     errors: list[BaseException] = []
-    settings = __import__("app.core.config", fromlist=["Settings"]).Settings(
+    settings = Settings(
         app_env="test",
         database_url=DATABASE_URL,
         provider_config_master_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
@@ -268,6 +269,8 @@ def _prove_provider_first_write_race(actor: AdminAccount) -> None:
         assert rows[0].revision == 0
         assert rows[0].credential_ciphertext
         assert "provider-first-write-secret" not in rows[0].credential_ciphertext
+        db.delete(rows[0])
+        db.commit()
 
 
 def _prove_audit_is_database_append_only(actor: AdminAccount) -> None:
