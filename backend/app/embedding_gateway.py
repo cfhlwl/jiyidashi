@@ -7,7 +7,7 @@ from typing import Protocol
 
 import httpx
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.services.provider_config_service import (
     ProviderRuntimeConfigError,
     get_runtime_provider_settings,
