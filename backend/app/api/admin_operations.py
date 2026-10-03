@@ -272,8 +272,14 @@ def audit(
 
 
 @router.get("/system/settings", response_model=AdminSystemSettingsRead)
-def settings(_: AnyAdminRead) -> AdminSystemSettingsRead:
-    return system_settings_projection()
+def settings(
+    db: DbSession,
+    _: AnyAdminRead,
+) -> AdminSystemSettingsRead:
+    try:
+        return system_settings_projection(db)
+    except AdminOperationError as exc:
+        _raise(exc)
 
 
 @router.get("/system/health", response_model=AdminSystemHealthRead)
