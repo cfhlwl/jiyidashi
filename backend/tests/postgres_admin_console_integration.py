@@ -17,11 +17,18 @@ from app.admin_models import (
     AdminRole,
     AdminSession,
     EntitlementQuotaPolicy,
+    ProviderConfiguration,
+    ProviderService,
 )
-from app.admin_schemas import AdminQuotaCatalogWrite, AdminQuotaPlanWrite
+from app.admin_schemas import (
+    AdminProviderConfigWrite,
+    AdminQuotaCatalogWrite,
+    AdminQuotaPlanWrite,
+)
 from app.core.db import SessionLocal, engine
 from app.maintenance.admin_bootstrap import bootstrap_super_admin
 from app.services.admin_operations import write_quota_catalog
+from app.services.admin_provider_service import update_provider_configuration
 from app.services.admin_security import AdminOperationError, hash_admin_password
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -76,6 +83,7 @@ def _prove_migration_roundtrip() -> None:
             "admin_sessions",
             "admin_audit_events",
             "entitlement_quota_policies",
+            "provider_configurations",
         ):
             exists = connection.scalar(
                 text("SELECT to_regclass(:name) IS NOT NULL"),
@@ -134,6 +142,7 @@ def _prove_bootstrap_singleton_race() -> AdminAccount:
 
 def _prove_quota_initialization_race(actor: AdminAccount) -> None:
     with SessionLocal() as db:
+        db.execute(delete(ProviderConfiguration))
         db.execute(delete(EntitlementQuotaPolicy))
         db.commit()
 
@@ -184,6 +193,81 @@ def _prove_quota_initialization_race(actor: AdminAccount) -> None:
         rows = list(db.scalars(select(EntitlementQuotaPolicy)))
         assert len(rows) == 4
         assert {row.revision for row in rows} == {0}
+
+
+def _prove_provider_first_write_race(actor: AdminAccount) -> None:
+    with SessionLocal() as db:
+        db.execute(delete(ProviderConfiguration))
+        db.commit()
+
+    barrier = Barrier(2)
+    lock = Lock()
+    successes: list[int] = []
+    stale: list[str] = []
+    errors: list[BaseException] = []
+    settings = __import__("app.core.config", fromlist=["Settings"]).Settings(
+        app_env="test",
+        database_url=DATABASE_URL,
+        provider_config_master_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    )
+
+    def worker(model: str) -> None:
+        db = SessionLocal()
+        try:
+            principal = db.get(AdminAccount, actor.id)
+            assert principal is not None
+            barrier.wait(timeout=15)
+            row = update_provider_configuration(
+                db,
+                actor=principal,
+                service=ProviderService.AI,
+                payload=AdminProviderConfigWrite(
+                    expected_revision=None,
+                    enabled=True,
+                    provider_type="openai",
+                    base_url="https://api.openai.test/v1",
+                    model=model,
+                    timeout_seconds=20,
+                    max_input_chars=2000,
+                    max_output_tokens=200,
+                    min_confidence=None,
+                    api_key="provider-first-write-secret",
+                ),
+                settings=settings,
+            )
+            with lock:
+                successes.append(row.revision)
+        except AdminOperationError as exc:
+            db.rollback()
+            with lock:
+                stale.append(exc.code)
+        except BaseException as exc:  # noqa: BLE001
+            db.rollback()
+            with lock:
+                errors.append(exc)
+        finally:
+            db.close()
+
+    first = Thread(target=worker, args=("first-write-a",), name="provider-init-a")
+    second = Thread(target=worker, args=("first-write-b",), name="provider-init-b")
+    first.start()
+    second.start()
+    first.join(timeout=30)
+    second.join(timeout=30)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert errors == []
+    assert successes == [0]
+    assert stale == ["ADMIN_STATE_STALE"]
+
+    with SessionLocal() as db:
+        rows = list(db.scalars(select(ProviderConfiguration)))
+        assert len(rows) == 1
+        assert rows[0].service == ProviderService.AI.value
+        assert rows[0].revision == 0
+        assert rows[0].credential_ciphertext
+        assert "provider-first-write-secret" not in rows[0].credential_ciphertext
 
 
 def _prove_audit_is_database_append_only(actor: AdminAccount) -> None:
@@ -345,6 +429,7 @@ def main() -> None:
     _prove_audit_is_database_append_only(actor)
     _prove_quota_initialization_race(actor)
     _prove_quota_revision_race(actor)
+    _prove_provider_first_write_race(actor)
     _prove_revision_snapshot_is_persisted(actor)
     print("PostgreSQL ADMIN-001 authority/concurrency PASS")
 
