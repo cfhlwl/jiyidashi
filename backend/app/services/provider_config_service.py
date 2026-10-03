@@ -202,6 +202,8 @@ def _validate_url(value: str, *, production: bool) -> str:
     parsed = urlparse(raw)
     if not parsed.scheme or not parsed.netloc:
         raise ProviderRuntimeConfigError("PROVIDER_BASE_URL_INVALID")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ProviderRuntimeConfigError("PROVIDER_BASE_URL_INVALID")
     if production and parsed.scheme.lower() != "https":
         raise ProviderRuntimeConfigError("PROVIDER_BASE_URL_HTTPS_REQUIRED")
     return raw.rstrip("/")
