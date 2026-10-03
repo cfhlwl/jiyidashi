@@ -24,6 +24,12 @@ import {
   StatusCard,
 } from '../components/AdminUi'
 import { formatDateTime, formatNumber } from '../productLanguage'
+import {
+  canMutateProviderConfiguration,
+  providerDraftFromConfig,
+  providerWritePayload,
+  type ProviderDraft,
+} from '../providerConfig'
 import { useAdminSession } from '../session'
 import type {
   EmbeddingBackfill,
@@ -35,17 +41,6 @@ import type {
 import { useAdminData } from '../useAdminData'
 
 const { Text } = Typography
-
-type ProviderDraft = {
-  enabled: boolean
-  provider_type: string
-  base_url: string
-  model: string
-  timeout_seconds: number
-  max_input_chars: number | null
-  max_output_tokens: number | null
-  min_confidence: number | null
-}
 
 const stateCopy: Record<ProviderConfig['state'], string> = {
   DISABLED: '未启用',
@@ -83,16 +78,7 @@ function ProviderEditor({
   readOnly: boolean
   onSaved: () => Promise<void>
 }) {
-  const [draft, setDraft] = useState<ProviderDraft>({
-    enabled: config.enabled,
-    provider_type: config.provider_type,
-    base_url: config.base_url,
-    model: config.model,
-    timeout_seconds: config.timeout_seconds,
-    max_input_chars: config.max_input_chars,
-    max_output_tokens: config.max_output_tokens,
-    min_confidence: config.min_confidence,
-  })
+  const [draft, setDraft] = useState<ProviderDraft>(() => providerDraftFromConfig(config))
   const [newKey, setNewKey] = useState('')
   const [clearKey, setClearKey] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -100,16 +86,7 @@ function ProviderEditor({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setDraft({
-      enabled: config.enabled,
-      provider_type: config.provider_type,
-      base_url: config.base_url,
-      model: config.model,
-      timeout_seconds: config.timeout_seconds,
-      max_input_chars: config.max_input_chars,
-      max_output_tokens: config.max_output_tokens,
-      min_confidence: config.min_confidence,
-    })
+    setDraft(providerDraftFromConfig(config))
     setNewKey('')
     setClearKey(false)
   }, [config])
@@ -123,12 +100,7 @@ function ProviderEditor({
     setError(null)
     setResult(null)
     try {
-      const payload: Record<string, unknown> = {
-        expected_revision: config.revision,
-        ...draft,
-        clear_api_key: clearKey,
-      }
-      if (newKey.trim()) payload.api_key = newKey.trim()
+      const payload = providerWritePayload(config, draft, newKey, clearKey)
       await putJson<ProviderConfig>(
         '/settings/providers/' + config.service.toLowerCase(),
         payload,
@@ -361,7 +333,7 @@ export function AiServicesPage() {
     )
   }
 
-  const readOnly = session?.role !== 'SUPER_ADMIN'
+  const readOnly = !canMutateProviderConfiguration(session?.role)
   const embedding = providers.data.services.find((item) => item.service === 'EMBEDDING')
   const refresh = async () => {
     await Promise.all([providers.reload(), health.reload(), backfill.reload()])
