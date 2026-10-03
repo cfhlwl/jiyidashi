@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import UTC, datetime
 from threading import Barrier, Thread
 from uuid import UUID, uuid4
 
@@ -27,7 +28,11 @@ from app.embedding_gateway import (
     EmbeddingRequest,
 )
 from app.embedding_models import MemoryEmbedding
-from app.embedding_policy import MEMORY_EMBEDDING_DIMENSIONS, MEMORY_EMBEDDING_MODEL
+from app.embedding_policy import (
+    MEMORY_EMBEDDING_DIMENSIONS,
+    MEMORY_EMBEDDING_MAX_INPUT_CHARS,
+    MEMORY_EMBEDDING_MODEL,
+)
 from app.models import Memory, User
 from app.schemas import MemoryUpdate
 from app.services.admin_provider_service import run_embedding_backfill_batch
@@ -452,7 +457,7 @@ def _assert_admin_backfill_is_bounded_resumable_and_owner_safe() -> None:
         content="second owner memory",
     )
     admin_id = uuid4()
-    now = __import__("datetime").datetime.now(__import__("datetime").UTC)
+    now = datetime.now(UTC)
     with SessionLocal() as db:
         db.add(
             AdminAccount(
@@ -474,7 +479,7 @@ def _assert_admin_backfill_is_bounded_resumable_and_owner_safe() -> None:
                 base_url="https://api.openai.test/v1",
                 model=MEMORY_EMBEDDING_MODEL,
                 timeout_seconds=5.0,
-                max_input_chars=12000,
+                max_input_chars=MEMORY_EMBEDDING_MAX_INPUT_CHARS,
                 max_output_tokens=None,
                 min_confidence=None,
                 credential_override=False,
