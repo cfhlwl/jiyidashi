@@ -550,8 +550,16 @@ class _AuthPageState extends State<AuthPage> {
       } else {
         setState(() => error = _authProductMessage(exc.message));
       }
-    } catch (_) {
+    } on TransportException {
       setState(() => error = '暂时无法连接服务器');
+    } on PlatformException {
+      setState(() => error = '暂时无法读取或保存安全登录状态，请重新打开应用后重试。');
+    } on MissingPluginException {
+      setState(() => error = '暂时无法读取或保存安全登录状态，请重新打开应用后重试。');
+    } on ProtocolException {
+      setState(() => error = '认证服务响应格式不正确，请稍后重试。');
+    } catch (_) {
+      setState(() => error = '暂时无法完成登录操作，请稍后重试。');
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -579,9 +587,17 @@ class _AuthPageState extends State<AuthPage> {
         });
       }
     } on ApiException catch (exc) {
-      setState(() => error = exc.message);
-    } catch (_) {
+      setState(() => error = _authProductMessage(exc.message));
+    } on TransportException {
       setState(() => error = '暂时无法连接服务器');
+    } on PlatformException {
+      setState(() => error = '暂时无法读取或保存安全登录状态，请重新打开应用后重试。');
+    } on MissingPluginException {
+      setState(() => error = '暂时无法读取或保存安全登录状态，请重新打开应用后重试。');
+    } on ProtocolException {
+      setState(() => error = '认证服务响应格式不正确，请稍后重试。');
+    } catch (_) {
+      setState(() => error = '暂时无法完成邮箱验证，请稍后重试。');
     } finally {
       if (mounted) setState(() => loading = false);
     }
