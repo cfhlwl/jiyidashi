@@ -26,7 +26,6 @@ from app.media_models import MediaAsset, MediaKind
 from app.models import User
 from app.schemas import MediaUploadCreate, RegisterRequest
 from app.services.account_deletion_service import delete_current_account
-from app.services.auth_service import register_email_password
 from app.services.ai_gateway import (
     AIEntitlementError,
     AIGateway,
@@ -34,6 +33,7 @@ from app.services.ai_gateway import (
     AIProviderError,
     DeterministicAIProvider,
 )
+from app.services.auth_service import register_email_password
 from app.services.data_deletion_service import delete_all_user_data
 from app.services.entitlement_service import EntitlementError
 from app.services.media_service import start_media_upload
