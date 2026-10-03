@@ -4,7 +4,6 @@ import asyncio
 import base64
 import re
 from dataclasses import dataclass, replace
-from functools import lru_cache
 from time import perf_counter
 from typing import Literal, Protocol
 from uuid import UUID, uuid4
@@ -18,6 +17,10 @@ from app.services.entitlement_service import (
     EntitlementError,
     finalize_ai_usage,
     reserve_ai_provider_request,
+)
+from app.services.provider_config_service import (
+    ProviderRuntimeConfigError,
+    get_runtime_provider_settings,
 )
 
 _PURPOSE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
@@ -702,6 +705,9 @@ def build_ai_gateway(
     return AIGateway(settings, provider)
 
 
-@lru_cache
 def get_ai_gateway() -> AIGateway:
-    return build_ai_gateway(get_settings())
+    try:
+        settings = get_runtime_provider_settings()
+    except ProviderRuntimeConfigError as exc:
+        raise AIProviderError("AI_PROVIDER_UNAVAILABLE") from exc
+    return build_ai_gateway(settings)
