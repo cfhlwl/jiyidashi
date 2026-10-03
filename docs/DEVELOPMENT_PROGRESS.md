@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**CORE-004 真机长期认证暂缓（Issue #190；PR #191 已关闭未合并）**。当前仍处于真机稳定化与短周期上线收口阶段，先完成剩余 Field Fix、服务端/Provider 配置及其他窄范围 P0/P1；条件稳定后基于当时最新 `main` 重新发起新的 CORE-004 certification PR，并从零开始 24h / 72h / 12h 真机验收。
+> 当前阶段：**BIZ-011 / Production Registration Entitlement Default（Issue #197）**。CORE-004 真机长期认证暂缓；当前先收口短周期 P0 上线 blocker：正式新注册用户必须默认 `FREE`，`LEGACY_FULL` 仅保留历史兼容/migration-only，禁止普通生产注册继续获得全 capability/unlimited legacy authority。
 
 ## 状态规则
 
@@ -382,7 +382,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | AUTH-002 | P0* | WeChat Mini Program Identity | ⬜ | 若微信小程序作为正式主入口，则在公开发布前加入 `WECHAT_MINIPROGRAM` AuthIdentity：`wx.login → code2session → stable provider subject → User`；微信 secret 仅服务端。若小程序不是首发主入口，可降为 P1。 |
 | AUTH-003 | P0* | Phone Number + SMS OTP Login | ⬜ | 当前只有邮箱+密码认证；`users.phone` 仅是资料字段，尚未接入手机号 AuthIdentity、短信验证码发送/校验、过期/重放/频率限制、阿里云 SMS 服务端凭证和 Flutter/小程序登录入口。若手机号是正式主登录方式，公开发布前必须完成；短信密钥只能放服务端。 |
 | AUTH-004 | P0* | Native WeChat Login for Flutter Android/iOS | ⏸ | 后期配置，当前不阻塞主线开发。届时需完成 Android/iOS SDK 注册、`wxlogin` 回调、服务端 `code → openid/unionid → AuthIdentity → session`，并配置 Android 包签名、iOS Universal Link、微信 AppID；微信 secret 仅服务端。 |
-| BIZ-011 | P0 | Production Registration Entitlement Default | ⬜ | 当前 `register_email_password()` 仍创建 `LEGACY_FULL`，而该计划拥有全部 capability 且 quota unlimited。正式注册必须切为 FREE（或另行正式定义的 trial），`LEGACY_FULL` 仅 migration/legacy compatibility；历史用户迁移语义不变。 |
+| BIZ-011 | P0 | Production Registration Entitlement Default | 🔵 | **当前主线 / Issue #197**。正式 `register_email_password()` 必须从 `LEGACY_FULL` 切为 canonical `FREE` initial entitlement；User + AuthIdentity + Entitlement 保持同事务原子提交。`LEGACY_FULL` 仅历史兼容/migration/dev-only 明确路径可用，现有历史用户不得被批量降级或登录时重写；不在本任务引入 Pricing/Trial/支付。 |
 | OPS-002 | P0 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | PostgreSQL-backed durable job/lease 优先；服务端自动推进 deletion/maintenance，并逐步异步化长耗时 AI。客户端只能发起/查询状态，不再承担服务端任务推进责任。 |
 | SEC-016 | P0 | Authenticated API Abuse & Provider Concurrency Guard | ⬜ | 在现有 Auth rate limit 之外增加 authenticated user/IP/route-class 限流；高成本 OCR/Vision/Summary/RAG/Export 独立门禁；增加跨 Uvicorn worker 的 per-user/global provider concurrency；登录增加全局 Argon2 并发边界并与 edge/WAF + per-IP 组合，禁止通过降低 Argon2 安全参数解决。 |
 | OPS-003 | P0 | Off-host Backup & Scheduled Operations | ⬜ | 当前 pg_dump 默认写本机目录。增加私有异地 COS/OSS backup bucket、保留策略、校验、自动上传与定期 restore drill；本机短期备份仅作为一层缓存，不能是唯一灾备。 |
@@ -616,7 +616,7 @@ User Correction Rate
 | BIZ-008 | D1 / D7 / D30 留存 | ✅ | Issue #169 / PR #173 已合并；UTC signup cohort、active-day authority、D1/D7/D30 eligible/retained/null-zero 口径已收口 |
 | BIZ-009 | Memory Retrieval Success | ✅ | Issue #169 / PR #173 已合并；accepted-attempt denominator、SUCCESS numerator 与 privacy-safe success-rate aggregation 已收口 |
 | BIZ-010 | False Memory Rate | ✅ | S3-019 / Issue #87 / PR #89 已完成首版显式用户反馈驱动的 revision 指标基础：counts + denominator + rate；DELETE-only 不误算 false，不做 AI 质量打分/看板；已正式审查并合并 main |
-| BIZ-011 | Production Registration Entitlement Default | ⬜ | **P0 public-launch blocker**：正常注册必须默认 FREE，不得再调用 `create_legacy_full_entitlement()`；`LEGACY_FULL` 仅历史兼容/migration-only，不出现在购买/营销/客户端升级入口；历史用户必须显式兼容迁移，禁止误批量降级。 |
+| BIZ-011 | Production Registration Entitlement Default | 🔵 | **Issue #197 / P0 public-launch blocker / 当前开发中**：正常生产注册默认 `FREE`，不得再从 public registration 调用 `create_legacy_full_entitlement()`；`LEGACY_FULL` 仅历史兼容/migration-only（以及明确 dev-only）使用，不出现在消费者购买/营销/升级入口；历史 entitlement 原样保留，不做批量迁移。 |
 | BIZ-012 | Pricing Catalog & Commercial Policy V1 | ⬜ | 建立独立 Product/Price Catalog 与 Commercial Policy。首发逻辑产品：PERSONAL_MONTHLY/ANNUAL、FAMILY_MONTHLY/ANNUAL，以及 Founder/Launch price entry；价格使用 integer minor unit（人民币分），Plan 与 Price 解耦，客户端不得硬编码价格。 |
 | BIZ-013 | Value-triggered Trial & Founder Cohort | ⬜ | 新用户不注册即试用。满足价值条件（基线：记录≥10 / 连续使用≥3天 / 有效照片≥5）后可触发 14 天 PERSONAL 体验；服务端记录开始/结束，防卸载重领。Founder 使用 `pricing_cohort`/eligibility，不新增 PlanCode；基线前 5000 名个人付费会员 ¥99/年，续费锁价策略必须可运营修改。 |
 | BIZ-014 | Membership Expiration & Safe Downgrade | ⬜ | PERSONAL/FAMILY 到期降为 FREE，但不得删除/锁定已有记忆、照片、语音或已有 AI 结果；超 FREE 存储时已有媒体继续可读/可删，只禁止新增超额媒体；新的高成本 AI/付费 capability 按 FREE authority/quota 判定；续费后恢复写入。 |
