@@ -410,11 +410,32 @@ async def run_embedding_backfill_batch(
     db.commit()
 
     gateway = gateway_override or build_embedding_gateway(runtime_settings)
+    provider_revision = None if row is None else row.revision
     processed = 0
     refreshed = 0
     failed = 0
     last_error: str | None = None
     for memory_id, user_id in candidates:
+        # ADMIN-002: an explicit disable/rotate/update must fence the next paid call in
+        # an already-running bounded batch. Re-check committed authority before each item;
+        # never continue silently on the gateway/config snapshot captured before I/O.
+        current_provider = db.get(
+            ProviderConfiguration,
+            ProviderService.EMBEDDING.value,
+        )
+        if provider_revision is None:
+            if current_provider is not None:
+                last_error = "PROVIDER_REVISION_CHANGED"
+                break
+        elif (
+            current_provider is None
+            or current_provider.revision != provider_revision
+            or not current_provider.enabled
+        ):
+            last_error = "PROVIDER_REVISION_CHANGED"
+            break
+        db.rollback()
+
         processed += 1
         try:
             result = await generate_or_refresh_memory_embedding(
@@ -447,7 +468,7 @@ async def run_embedding_backfill_batch(
             "refreshed": refreshed,
             "failed": failed,
             "error_code": last_error,
-            "provider_revision": None if row is None else row.revision,
+            "provider_revision": provider_revision,
         },
     )
     db.commit()
