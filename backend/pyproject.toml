@@ -25,6 +25,8 @@ dependencies = [
   "boto3>=1.35,<2.0",
   # [人工注释][S1-007] ASR provider 只在服务端通过 HTTP 调用，模型密钥不进入客户端。
   "httpx>=0.28,<1.0",
+  # ADMIN-002: encrypt provider credentials at rest with a deployment-only master key.
+  "cryptography>=44,<46",
 ]
 
 [project.optional-dependencies]
