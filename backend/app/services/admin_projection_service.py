@@ -39,7 +39,7 @@ from app.admin_schemas import (
     AdminUserPage,
 )
 from app.analytics_models import ProductActiveDay, RetrievalAnalyticsAttempt, RetrievalOutcome
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.embedding_models import MemoryEmbedding
 from app.entitlement_models import AIQuotaPeriod, AIUsageEvent, PlanCode, UserEntitlement
@@ -53,11 +53,11 @@ from app.security_models import (
     SecuritySignalCode,
 )
 from app.services.admin_security import AdminOperationError
+from app.services.entitlement_service import EntitlementError, entitlement_snapshot
 from app.services.provider_config_service import (
     ProviderRuntimeConfigError,
     runtime_provider_settings_from_db,
 )
-from app.services.entitlement_service import EntitlementError, entitlement_snapshot
 
 _MAX_PAGE_SIZE = 100
 
