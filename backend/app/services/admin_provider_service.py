@@ -302,9 +302,12 @@ def update_provider_configuration(
         db.flush()
     except IntegrityError as exc:
         # A first-write race has no row to lock. The service primary key is the final
-        # identity fence; the losing creator must observe stale state rather than a 500.
+        # identity fence; map only a confirmed concurrent winner to stale state.
         db.rollback()
-        raise AdminOperationError("ADMIN_STATE_STALE", 409) from exc
+        winner = db.get(ProviderConfiguration, service.value)
+        if winner is not None:
+            raise AdminOperationError("ADMIN_STATE_STALE", 409) from exc
+        raise AdminOperationError("ADMIN_PROVIDER_CONFIG_UNAVAILABLE", 503) from exc
     append_admin_audit(
         db,
         actor=actor,
