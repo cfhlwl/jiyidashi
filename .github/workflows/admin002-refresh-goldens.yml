@@ -44,16 +44,16 @@ jobs:
       - name: Prove snapshot-only delta
         shell: bash
         run: |
-          changed="$(git status --porcelain)"
+          changed="$(git status --porcelain --untracked-files=no)"
           test -n "$changed"
           echo "$changed"
           unexpected="$(
             echo "$changed" |
               awk '{print $2}' |
-              grep -v '^tests/visual/snapshots/' || true
+              grep -v '^admin/tests/visual/snapshots/' || true
           )"
           if [ -n "$unexpected" ]; then
-            echo "Unexpected Golden-refresh delta:" >&2
+            echo "Unexpected tracked Golden-refresh delta:" >&2
             echo "$unexpected" >&2
             exit 1
           fi
