@@ -1,0 +1,145 @@
+name: core004-ios-trollstore-fix
+
+on:
+  pull_request:
+    paths:
+      - "mobile/ios/Runner/DebugProfile.entitlements"
+      - "mobile/ios/Runner/Release.entitlements"
+      - "mobile/lib/stage1_app.dart"
+      - "mobile/test/ios_keychain_entitlements_test.dart"
+      - ".github/workflows/core004-ios-trollstore-fix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core004-ios-trollstore-fix-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-trollstore:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      API_BASE_URL: https://jiyi.ccwl.net.cn/v1
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify dependency lock
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Verify iOS Keychain entitlement contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in ios/Runner/DebugProfile.entitlements ios/Runner/Release.entitlements; do
+            plutil -lint "$file"
+            python3 - "$file" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], "rb") as handle:
+              data = plistlib.load(handle)
+          assert data.get("keychain-access-groups") == [], data.get("keychain-access-groups")
+          PY
+          done
+
+      - name: Focused auth and entitlement tests
+        timeout-minutes: 7
+        run: >-
+          flutter test
+          test/ios_keychain_entitlements_test.dart
+          test/auth_session_restore_test.dart
+          test/api_client_test.dart
+          --reporter expanded
+
+      - name: Probe JiYi test endpoint
+        id: endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS --connect-timeout 10 --max-time 20 https://jiyi.ccwl.net.cn/health)"
+          printf '%s\n' "$response"
+          echo "endpoint_status=reachable" >> "$GITHUB_OUTPUT"
+
+      - name: Build iOS release app without Apple codesigning
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build ios --release --no-codesign             --dart-define=APP_ENV=production             --dart-define=API_BASE_URL="$API_BASE_URL"
+          test -d build/ios/iphoneos/Runner.app
+          test -f build/ios/iphoneos/Runner.app/Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = "cn.jiyidashi.jiyidashi"
+
+      - name: Package TrollStore test IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/core004-ios-trollstore"
+          stage="$RUNNER_TEMP/core004-ios-payload"
+          rm -rf "$out" "$stage"
+          mkdir -p "$out" "$stage/Payload"
+
+          /usr/bin/ditto             build/ios/iphoneos/Runner.app             "$stage/Payload/Runner.app"
+
+          ipa_name="JiYi-core004-ios-trollstore-${EXPECTED_SHA:0:12}.ipa"
+          ipa_path="$out/$ipa_name"
+
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent             "$stage/Payload"             "$ipa_path"
+
+          /usr/bin/unzip -l "$ipa_path" | grep -q 'Payload/Runner.app/Info.plist'
+
+          version="$(awk '/^version:/ {print $2; exit}' pubspec.yaml)"
+          {
+            echo "platform=IOS"
+            echo "artifact=$ipa_name"
+            echo "git_head=$EXPECTED_SHA"
+            echo "app_version=$version"
+            echo "bundle_id=cn.jiyidashi.jiyidashi"
+            echo "app_env=production"
+            echo "api_base_url=$API_BASE_URL"
+            echo "health_url=https://jiyi.ccwl.net.cn/health"
+            echo "health_probe=${{ steps.endpoint.outputs.endpoint_status }}"
+            echo "signing=UNSIGNED_TROLLSTORE_TEST"
+            echo "distribution=TROLLSTORE_TEST_ONLY"
+            echo "apple_distribution_signed=NO"
+            echo "keychain_contract=DEFAULT_APP_KEYCHAIN_GROUP"
+            echo "physical_install=TROLLSTORE_ENVIRONMENT_REQUIRED"
+          } > "$out/build-manifest.txt"
+
+          (
+            cd "$out"
+            shasum -a 256 "$ipa_name" > SHA256SUMS.txt
+            shasum -a 256 -c SHA256SUMS.txt
+          )
+
+      - name: Upload TrollStore test IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: core004-ios-trollstore-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/core004-ios-trollstore/
+          if-no-files-found: error
+          retention-days: 14
