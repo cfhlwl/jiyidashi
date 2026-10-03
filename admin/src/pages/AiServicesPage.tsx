@@ -445,7 +445,7 @@ export function AiServicesPage() {
               处理下一批（最多 20 条）
             </Button>
             <Text type="secondary">
-              Provider 失败不会修改原始记忆；可重复执行直到“待补齐”为 0。
+              服务暂时失败不会修改原始记忆；可以稍后继续处理，直到“待补齐”为 0。
             </Text>
           </div>
         )}
