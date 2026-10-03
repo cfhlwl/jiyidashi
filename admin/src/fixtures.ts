@@ -47,7 +47,7 @@ export const fixtureDashboard: Dashboard = {
     { key: 'storage', label: '文件存储', status: 'NORMAL', detail: '正常（有真实近期运行证据）' },
     { key: 'ai', label: 'AI 整理', status: 'UNVERIFIED', detail: '已配置 / 未验证' },
     { key: 'asr', label: '语音识别', status: 'WARNING', detail: '需要关注' },
-    { key: 'embedding', label: '记忆检索', status: 'UNVERIFIED', detail: '已配置 / 未验证' },
+    { key: 'embedding', label: '语义记忆检索', status: 'UNVERIFIED', detail: '已配置 / 未验证' },
   ],
   trend: [
     { day: '2026-09-24', active_users: 3120, successful_retrievals: 3510 },
@@ -197,9 +197,9 @@ export const fixtureSettings: SettingsPayload = {
       key: 'ai',
       title: 'AI 服务',
       items: [
-        { key: 'ai_enabled', label: 'AI 整理服务', classification: '需要重新部署', value: true },
-        { key: 'ai_model', label: '当前模型', classification: '需要重新部署', value: 'gpt-5-mini' },
-        { key: 'ai_credential', label: '访问凭证', classification: '敏感配置', value: null, configured: true, help_text: '配置来源：服务器安全配置' },
+        { key: 'ai_enabled', label: 'AI 整理服务', classification: '在线配置', value: true },
+        { key: 'ai_model', label: '当前模型', classification: '在线配置', value: 'gpt-5-mini' },
+        { key: 'ai_credential', label: '访问凭证', classification: '敏感配置', value: null, configured: true, help_text: '凭证只显示配置状态；现有值不会返回浏览器' },
       ],
     },
     {
