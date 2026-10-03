@@ -468,7 +468,7 @@ async def run_embedding_backfill_batch(
         action="EMBEDDING_BACKFILL_BATCH",
         target_type="PROVIDER_SERVICE",
         target_id=ProviderService.EMBEDDING.value,
-        result="SUCCESS" if failed == 0 else "PARTIAL",
+        result="SUCCESS" if failed == 0 and last_error is None else "PARTIAL",
         metadata={
             "batch_size": payload.batch_size,
             "processed": processed,
