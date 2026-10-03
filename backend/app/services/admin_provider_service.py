@@ -372,6 +372,8 @@ async def run_embedding_backfill_batch(
     *,
     actor: AdminAccount,
     payload: AdminEmbeddingBackfillRequest,
+    settings: Settings | None = None,
+    gateway_override=None,
 ) -> AdminEmbeddingBackfillRead:
     _require_super_admin(actor)
     row = db.scalar(
@@ -389,7 +391,7 @@ async def run_embedding_backfill_batch(
         raise AdminOperationError("ADMIN_STATE_STALE", 409)
 
     try:
-        runtime_settings = runtime_provider_settings_from_db(db)
+        runtime_settings = runtime_provider_settings_from_db(db, settings=settings)
     except ProviderRuntimeConfigError as exc:
         raise _provider_error(exc) from exc
     if runtime_settings.embedding_provider == "disabled":
@@ -407,7 +409,7 @@ async def run_embedding_backfill_batch(
     actor_id = actor.id
     db.commit()
 
-    gateway = build_embedding_gateway(runtime_settings)
+    gateway = gateway_override or build_embedding_gateway(runtime_settings)
     processed = 0
     refreshed = 0
     failed = 0
