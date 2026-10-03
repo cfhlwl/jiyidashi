@@ -6,13 +6,13 @@ from uuid import uuid4
 import pytest
 from auth_test_helpers import register_verified_session
 from pydantic import ValidationError
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.admin_models import EntitlementQuotaPolicy
 from app.core.config import Settings
-from app.core.db import Base
+from app.core.db import Base, SessionLocal
 from app.entitlement_models import (
     AIQuotaPeriod,
     AIUsageEvent,
@@ -33,6 +33,7 @@ from app.services.ai_gateway import (
 )
 from app.services.entitlement_service import (
     EntitlementError,
+    create_registration_default_entitlement,
     entitlement_snapshot,
     finalize_ai_usage,
     require_capability,
@@ -101,6 +102,42 @@ def _seed_entitlement(
     )
     db.commit()
     return user
+
+
+def test_registration_default_entitlement_is_canonical_free() -> None:
+    engine = _engine()
+    observed = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
+    with Session(engine) as db:
+        user = User(id=uuid4(), nickname="registration-free")
+        db.add(user)
+        db.flush()
+        row = create_registration_default_entitlement(
+            db,
+            user_id=user.id,
+            now=observed,
+        )
+        db.flush()
+
+        assert row.plan_code == PlanCode.FREE.value
+        assert row.revision == 0
+        assert row.effective_at == observed
+        assert row.expires_at is None
+
+        resolved = resolve_entitlement(
+            db,
+            user_id=user.id,
+            settings=_settings(),
+            now=observed,
+        )
+        assert resolved.plan_code == PlanCode.FREE
+        assert resolved.capabilities == frozenset(
+            {
+                CapabilityCode.CORE_MEMORY,
+                CapabilityCode.BASIC_SEARCH,
+            }
+        )
+        assert resolved.quota_limits[QuotaDimension.STORAGE_BYTES] == 100
+        assert resolved.quota_limits[QuotaDimension.AI_PROVIDER_REQUESTS] == 2
 
 
 def test_plan_catalog_and_legacy_full_are_deterministic() -> None:
@@ -490,16 +527,107 @@ def test_ai_token_finalization_does_not_double_charge_request() -> None:
 
 
 @pytest.mark.asyncio
-async def test_formal_registration_creates_legacy_full_in_same_user_lifecycle(client) -> None:
-    email = f"entitlement-{uuid4()}@example.com"
-    headers, _, _ = await register_verified_session(
+async def test_formal_registration_resolves_canonical_free_entitlement(client) -> None:
+    # BIZ-011 changes only initial assignment. Quotas must still come from the existing
+    # canonical runtime policy table, never from registration request/client defaults.
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        db.execute(delete(EntitlementQuotaPolicy))
+        for index, plan_code in enumerate(
+            (PlanCode.FREE, PlanCode.PERSONAL, PlanCode.FAMILY, PlanCode.PREMIUM)
+        ):
+            db.add(
+                EntitlementQuotaPolicy(
+                    plan_code=plan_code.value,
+                    revision=0,
+                    storage_bytes=512 + index,
+                    ai_provider_requests=3 + index,
+                    ai_input_tokens=1000 + index,
+                    ai_output_tokens=500 + index,
+                    updated_by_admin_id=None,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        db.commit()
+
+    try:
+        email = f"entitlement-{uuid4()}@example.com"
+        headers, user_id, _ = await register_verified_session(
+            client,
+            email=email,
+            nickname="Entitlement Registration",
+        )
+        with SessionLocal() as db:
+            rows = list(
+                db.scalars(
+                    select(UserEntitlement).where(UserEntitlement.user_id == user_id)
+                )
+            )
+            assert len(rows) == 1
+            assert rows[0].plan_code == PlanCode.FREE.value
+            assert rows[0].revision == 0
+            assert rows[0].expires_at is None
+
+        entitlement = await client.get("/v1/entitlements/me", headers=headers)
+        assert entitlement.status_code == 200
+        body = entitlement.json()
+        assert body["plan_code"] == PlanCode.FREE.value
+        assert set(body["capabilities"]) == {
+            CapabilityCode.CORE_MEMORY.value,
+            CapabilityCode.BASIC_SEARCH.value,
+        }
+        assert body["storage"]["used"] == 0
+        assert body["storage"]["limit"] == 512
+        assert body["ai_requests"]["used"] == 0
+        assert body["ai_requests"]["limit"] == 3
+    finally:
+        with SessionLocal() as db:
+            db.execute(delete(EntitlementQuotaPolicy))
+            db.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "plan_code",
+    [
+        PlanCode.FREE,
+        PlanCode.PERSONAL,
+        PlanCode.FAMILY,
+        PlanCode.PREMIUM,
+        PlanCode.LEGACY_FULL,
+    ],
+)
+async def test_login_never_rewrites_existing_entitlement(client, plan_code: PlanCode) -> None:
+    email = f"entitlement-login-{plan_code.value.lower()}-{uuid4()}@example.com"
+    _, user_id, _ = await register_verified_session(
         client,
         email=email,
-        nickname="Entitlement Registration",
+        nickname=f"Existing {plan_code.value}",
     )
-    entitlement = await client.get("/v1/entitlements/me", headers=headers)
-    assert entitlement.status_code == 200
-    assert entitlement.json()["plan_code"] == "LEGACY_FULL"
+    with SessionLocal() as db:
+        row = db.get(UserEntitlement, user_id)
+        assert row is not None
+        row.plan_code = plan_code.value
+        row.revision = 7
+        db.commit()
+
+    login = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": email,
+            "password": "correct-horse-battery-staple",
+            "device_id": f"biz011-{uuid4()}",
+            "client_platform": "test",
+        },
+    )
+    assert login.status_code == 200
+
+    with SessionLocal() as db:
+        row = db.get(UserEntitlement, user_id)
+        assert row is not None
+        assert row.plan_code == plan_code.value
+        assert row.revision == 7
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,11 @@
+import pytest
 from httpx import AsyncClient
+from sqlalchemy import func, select
 
+from app.auth_models import AuthIdentity, AuthProvider
+from app.core.db import SessionLocal
+from app.entitlement_models import PlanCode, UserEntitlement
+from app.models import User
 from app.services import auth_service
 from app.services.auth_delivery import MemoryAuthEmailDelivery
 
@@ -67,6 +73,35 @@ async def _elder_dev_user(client: AsyncClient, nickname: str):
     return response
 
 
+def _registration_state(email: str) -> tuple[int, int, int, str | None]:
+    subject = email.strip().casefold()
+    with SessionLocal() as db:
+        users = list(db.scalars(select(User).where(User.email == subject)))
+        identities = int(
+            db.scalar(
+                select(func.count(AuthIdentity.id)).where(
+                    AuthIdentity.provider == AuthProvider.EMAIL_PASSWORD,
+                    AuthIdentity.subject == subject,
+                )
+            )
+            or 0
+        )
+        entitlements = 0
+        plan_code = None
+        if users:
+            entitlements = int(
+                db.scalar(
+                    select(func.count(UserEntitlement.user_id)).where(
+                        UserEntitlement.user_id == users[0].id
+                    )
+                )
+                or 0
+            )
+            row = db.get(UserEntitlement, users[0].id)
+            plan_code = None if row is None else row.plan_code
+        return len(users), identities, entitlements, plan_code
+
+
 async def test_register_login_and_update_profile(
     client: AsyncClient,
     auth_email_delivery: MemoryAuthEmailDelivery,
@@ -106,12 +141,15 @@ async def test_register_login_and_update_profile(
 
 
 async def test_duplicate_registration_and_wrong_password_are_safe(client: AsyncClient):
-    first = await _register(client, email="stage1-duplicate@example.com")
+    email = "stage1-duplicate@example.com"
+    first = await _register(client, email=email)
     assert first.status_code == 201
+    assert _registration_state(email) == (1, 1, 1, PlanCode.FREE.value)
 
     duplicate = await _register(client, email="STAGE1-DUPLICATE@example.com")
     assert duplicate.status_code == 409
     assert duplicate.json()["detail"] == "AUTH_IDENTITY_EXISTS"
+    assert _registration_state(email) == (1, 1, 1, PlanCode.FREE.value)
 
     wrong = await client.post(
         "/v1/auth/login",
@@ -131,6 +169,29 @@ async def test_duplicate_registration_and_wrong_password_are_safe(client: AsyncC
     assert missing.status_code == 401
     assert wrong.json()["detail"] == "INVALID_CREDENTIALS"
     assert missing.json()["detail"] == "INVALID_CREDENTIALS"
+
+
+async def test_registration_failure_rolls_back_user_identity_and_entitlement(
+    client: AsyncClient,
+    monkeypatch,
+):
+    email = "stage1-registration-rollback@example.com"
+    real_create = auth_service.create_registration_default_entitlement
+
+    def fail_after_entitlement_added(db, *, user_id, now=None):
+        real_create(db, user_id=user_id, now=now)
+        raise RuntimeError("BIZ011_TEST_REGISTRATION_FAILURE")
+
+    monkeypatch.setattr(
+        auth_service,
+        "create_registration_default_entitlement",
+        fail_after_entitlement_added,
+    )
+
+    with pytest.raises(RuntimeError, match="BIZ011_TEST_REGISTRATION_FAILURE"):
+        await _register(client, email=email)
+
+    assert _registration_state(email) == (0, 0, 0, None)
 
 
 async def test_missing_account_still_executes_dummy_argon2_verify(

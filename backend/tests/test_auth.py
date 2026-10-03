@@ -1,7 +1,11 @@
 import pytest
+from sqlalchemy import func, select
 
 from app.api import auth as auth_api
 from app.core.config import Settings
+from app.core.db import SessionLocal
+from app.entitlement_models import UserEntitlement
+from app.models import User
 
 _PROD_AUTH_EMAIL = {
     "auth_email_delivery_mode": "smtp",
@@ -82,6 +86,19 @@ async def test_dev_token_endpoint_still_rejects_bypassed_production_config(
     )
     monkeypatch.setattr(auth_api, "settings", unsafe_settings)
 
+    with SessionLocal() as db:
+        users_before = int(db.scalar(select(func.count(User.id))) or 0)
+        entitlements_before = int(
+            db.scalar(select(func.count(UserEntitlement.user_id))) or 0
+        )
+
     response = await client.post("/v1/auth/dev-token", json={"nickname": "Unsafe Prod"})
     assert response.status_code == 404
     assert response.json()["detail"] == "NOT_FOUND"
+
+    with SessionLocal() as db:
+        assert int(db.scalar(select(func.count(User.id))) or 0) == users_before
+        assert (
+            int(db.scalar(select(func.count(UserEntitlement.user_id))) or 0)
+            == entitlements_before
+        )
