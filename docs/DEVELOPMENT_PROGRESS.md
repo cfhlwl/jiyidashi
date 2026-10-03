@@ -39,13 +39,13 @@
 <!-- Stage 3S：Annual Summary / Issue #91 / PR #93 已完成 complete-year snapshot、512+1/256+1 bounded inventory、all-raw S3-013 authority、strict Y-slot provider boundary、provider 前后完整重验与 PostgreSQL Annual Gate，并合并 main=dd558913；S3-017 转 ✅，Stage 3 S3-001~S3-019 正式收口。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-10-01  
+> 最后更新：2026-10-03  
 > Stage 1「记得住」：✅ complete  
 > Stage 2「自动记」：✅ complete  
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**短周期并行收口**。主任务 **BIZ-011（Issue #197）** 已完成代码实现与 exact-head Backend CI，当前 🟠 待正式审查/合并；并行任务 **PROD-001（Issue #198）** 统一产品定位与对外承诺。CORE-004 真机长期认证继续暂缓，待短周期 P0/P1、Provider/服务端配置及真机稳定化完成后再基于最新 `main` 重新发起。
+> 当前阶段：**短周期并行收口**。**BIZ-011（Issue #197 / PR #199）已合并完成**；**PROD-001（Issue #198）** 已完成产品定位/承诺文档刷新与聚焦审计，当前 🟠 待正式审查/合并。CORE-004 真机长期认证继续暂缓，待短周期 P0/P1、Provider/服务端配置及真机稳定化完成后再基于最新 `main` 重新发起。
 
 ## 状态规则
 
@@ -382,7 +382,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | AUTH-002 | P0* | WeChat Mini Program Identity | ⬜ | 若微信小程序作为正式主入口，则在公开发布前加入 `WECHAT_MINIPROGRAM` AuthIdentity：`wx.login → code2session → stable provider subject → User`；微信 secret 仅服务端。若小程序不是首发主入口，可降为 P1。 |
 | AUTH-003 | P0* | Phone Number + SMS OTP Login | ⬜ | 当前只有邮箱+密码认证；`users.phone` 仅是资料字段，尚未接入手机号 AuthIdentity、短信验证码发送/校验、过期/重放/频率限制、阿里云 SMS 服务端凭证和 Flutter/小程序登录入口。若手机号是正式主登录方式，公开发布前必须完成；短信密钥只能放服务端。 |
 | AUTH-004 | P0* | Native WeChat Login for Flutter Android/iOS | ⏸ | 后期配置，当前不阻塞主线开发。届时需完成 Android/iOS SDK 注册、`wxlogin` 回调、服务端 `code → openid/unionid → AuthIdentity → session`，并配置 Android 包签名、iOS Universal Link、微信 AppID；微信 secret 仅服务端。 |
-| BIZ-011 | P0 | Production Registration Entitlement Default | 🟠 | **Issue #197 / PR #199 已完成实现与 exact-head Backend CI，待正式审查/合并**。正式 `register_email_password()` 已切为 canonical `FREE` initial entitlement；User + AuthIdentity + Entitlement 保持同事务原子提交。`LEGACY_FULL` 仅历史兼容/migration/dev-only 明确路径可用，现有历史用户不做批量降级或登录时重写；不在本任务引入 Pricing/Trial/支付。 |
+| BIZ-011 | P0 | Production Registration Entitlement Default | ✅ | **Issue #197 / PR #199 已正式审查并合并 `main=f805848ba16af786b3d15a6ae26d5dc3d399aa95`**。正式 `register_email_password()` 使用 canonical `FREE` initial entitlement；User + AuthIdentity + Entitlement 保持同事务原子提交。`LEGACY_FULL` 仅历史兼容/migration/dev-only 明确路径可用，现有历史用户不做批量降级或登录时重写。 |
 | OPS-002 | P0 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | PostgreSQL-backed durable job/lease 优先；服务端自动推进 deletion/maintenance，并逐步异步化长耗时 AI。客户端只能发起/查询状态，不再承担服务端任务推进责任。 |
 | SEC-016 | P0 | Authenticated API Abuse & Provider Concurrency Guard | ⬜ | 在现有 Auth rate limit 之外增加 authenticated user/IP/route-class 限流；高成本 OCR/Vision/Summary/RAG/Export 独立门禁；增加跨 Uvicorn worker 的 per-user/global provider concurrency；登录增加全局 Argon2 并发边界并与 edge/WAF + per-IP 组合，禁止通过降低 Argon2 安全参数解决。 |
 | OPS-003 | P0 | Off-host Backup & Scheduled Operations | ⬜ | 当前 pg_dump 默认写本机目录。增加私有异地 COS/OSS backup bucket、保留策略、校验、自动上传与定期 restore drill；本机短期备份仅作为一层缓存，不能是唯一灾备。 |
@@ -397,7 +397,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | CORE-003 | P0 | Automatic Recording Health & Coverage V1 | ✅ | **Issue #188 / PR #189 已完成并合并**。统一复用 CORE-001 producer/runtime、permission/location services、Privacy、native/SQLite queue、delivery/backpressure/recovery authority，建立 owner-scoped `RecordingHealthSnapshot`；确定性输出 HEALTHY/DEGRADED/PAUSED/BLOCKED/RECOVERING/UNKNOWN，UNKNOWN 不得伪装 healthy；增加 evidence-derived Today Coverage、gap reason、Healthy Days、Location Gap Hours 与 Flutter 记录状态 UI，Mini 只展示 server-observed authority。正式审查 P0/P1/P2 = 0/0/0。 |
 | CORE-004 | P0 Gate | Passive Recording Real-device Certification V1 | ⏸ | **Issue #190 保留为未来 P0 Gate；PR #191 已关闭且未合并。** 当前不启动正式 24h/72h/12h 长时认证，先完成真机暴露问题、Provider/服务端配置和其他短周期上线收口；待 Android+iOS 基础闭环与测试环境稳定后，从当时最新 `main` 新建干净 certification PR/构建，并重新执行完整物理设备矩阵。模拟器、mock、CI 仍不得替代真机认证证据。 |
 | UIUX-P0-002 | P0 Product Gate | JiYi Consumer Visual Fidelity V1 | ⬜ | **新增视觉收口任务。** 2026-09-29 用户确认的 8 张高保真参考图（Today / Timeline / Memory Detail / Family / Memory Query / Unified Capture / Summary / Profile）作为 Consumer Visual Design Authority。保留 UIUX-P0-001 已完成的 `今天 / 记忆 / 人生 / 家庭 / 我的` IA、现有业务 authority 与隐私边界；仅对没有真实 authority 的步数/天气/情绪统计/收藏/回收站等字段做删除或真实降级，**不得因此把山水品牌氛围、photo-first 叙事、足迹地图主视觉、卡片层次和消费者质感简化成工具型白卡 UI**。Flutter 为首要视觉还原，Mini 同步同一视觉语言；Golden 必须改为验证新 Design Authority，而不是继续锁定当前简化版。 |
-| PROD-001 | P1 | Core Product Positioning & Promise Refresh | 🔵 | **并行开发 / Issue #198**。将公开定位从“个人 AI 第二记忆”刷新为“自动记录生活、需要时帮助找回过去”的个人/家庭长期记忆产品；统一“结构化检索优先于 LLM / 无证据不生成个人事实 / AI 是辅助不是事实来源”，清理“100% 自动、完全不用打开、后台始终运行”等绝对承诺，并保持 CORE-004 尚未完成长期真机认证的真实状态。仅限 docs/copy，不改业务逻辑和 UI 结构。 |
+| PROD-001 | P1 | Core Product Positioning & Promise Refresh | 🟠 | **Issue #198 / docs+copy 已完成聚焦刷新，待正式审查/合并**。README/PRD/ROADMAP/Product Experience/Product Language 已统一为“自动记录生活、需要时帮助找回过去”的个人/家庭长期记忆产品；结构化事实/Evidence 是事实来源，AI 仅辅助搜索、整理、总结和表达；绝对自动记录承诺被明确禁止，并保持 CORE-004 尚未完成长期真机认证的真实状态。仅限 docs/copy，无业务逻辑和 UI 结构变更。 |
 
 ### Public launch 顺序
 
@@ -616,7 +616,7 @@ User Correction Rate
 | BIZ-008 | D1 / D7 / D30 留存 | ✅ | Issue #169 / PR #173 已合并；UTC signup cohort、active-day authority、D1/D7/D30 eligible/retained/null-zero 口径已收口 |
 | BIZ-009 | Memory Retrieval Success | ✅ | Issue #169 / PR #173 已合并；accepted-attempt denominator、SUCCESS numerator 与 privacy-safe success-rate aggregation 已收口 |
 | BIZ-010 | False Memory Rate | ✅ | S3-019 / Issue #87 / PR #89 已完成首版显式用户反馈驱动的 revision 指标基础：counts + denominator + rate；DELETE-only 不误算 false，不做 AI 质量打分/看板；已正式审查并合并 main |
-| BIZ-011 | Production Registration Entitlement Default | 🟠 | **Issue #197 / PR #199 / code + exact-head Backend CI PASS，待正式审查/合并**：正常生产注册默认 `FREE`，public registration 不再调用 `create_legacy_full_entitlement()`；`LEGACY_FULL` 仅历史兼容/migration-only（以及明确 dev-only）使用，不出现在消费者购买/营销/升级入口；历史 entitlement 原样保留，不做批量迁移。 |
+| BIZ-011 | Production Registration Entitlement Default | ✅ | **Issue #197 / PR #199 已合并 `main=f805848ba16af786b3d15a6ae26d5dc3d399aa95`**：正常生产注册默认 `FREE`，public registration 不再调用 `create_legacy_full_entitlement()`；`LEGACY_FULL` 仅历史兼容/migration-only（以及明确 dev-only）使用，不出现在消费者购买/营销/升级入口；历史 entitlement 原样保留，不做批量迁移。 |
 | BIZ-012 | Pricing Catalog & Commercial Policy V1 | ⬜ | 建立独立 Product/Price Catalog 与 Commercial Policy。首发逻辑产品：PERSONAL_MONTHLY/ANNUAL、FAMILY_MONTHLY/ANNUAL，以及 Founder/Launch price entry；价格使用 integer minor unit（人民币分），Plan 与 Price 解耦，客户端不得硬编码价格。 |
 | BIZ-013 | Value-triggered Trial & Founder Cohort | ⬜ | 新用户不注册即试用。满足价值条件（基线：记录≥10 / 连续使用≥3天 / 有效照片≥5）后可触发 14 天 PERSONAL 体验；服务端记录开始/结束，防卸载重领。Founder 使用 `pricing_cohort`/eligibility，不新增 PlanCode；基线前 5000 名个人付费会员 ¥99/年，续费锁价策略必须可运营修改。 |
 | BIZ-014 | Membership Expiration & Safe Downgrade | ⬜ | PERSONAL/FAMILY 到期降为 FREE，但不得删除/锁定已有记忆、照片、语音或已有 AI 结果；超 FREE 存储时已有媒体继续可读/可删，只禁止新增超额媒体；新的高成本 AI/付费 capability 按 FREE authority/quota 判定；续费后恢复写入。 |
