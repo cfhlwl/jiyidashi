@@ -378,3 +378,44 @@ def test_runtime_cache_converges_after_bounded_ttl(monkeypatch):
 
     clock[0] = 101.1
     assert get_runtime_provider_settings().ai_model == "revision-b"
+
+
+def test_same_process_invalidation_fences_inflight_cache_reload(monkeypatch):
+    import app.services.provider_config_service as provider_runtime
+
+    base = Settings(
+        app_env="test",
+        ai_provider="openai",
+        ai_api_key="bootstrap-secret",
+        ai_model="bootstrap-model",
+        provider_config_cache_ttl_seconds=10.0,
+    )
+    stale = base.model_copy(update={"ai_model": "stale-model"})
+    fresh = base.model_copy(update={"ai_model": "fresh-model"})
+    calls: list[str] = []
+
+    monkeypatch.setattr(provider_runtime, "get_settings", lambda: base)
+    monkeypatch.setattr(provider_runtime, "monotonic", lambda: 100.0)
+
+    def fake_reload(_db, *, settings):
+        assert settings is base
+        calls.append("reload")
+        if len(calls) == 1:
+            provider_runtime.invalidate_provider_runtime_cache()
+            return stale
+        return fresh
+
+    monkeypatch.setattr(
+        provider_runtime,
+        "runtime_provider_settings_from_db",
+        fake_reload,
+    )
+    provider_runtime.invalidate_provider_runtime_cache()
+
+    resolved = provider_runtime.get_runtime_provider_settings()
+    assert resolved.ai_model == "fresh-model"
+    assert calls == ["reload", "reload"]
+
+    # The fresh snapshot is now cached; the stale pre-invalidation read never won.
+    assert provider_runtime.get_runtime_provider_settings().ai_model == "fresh-model"
+    assert calls == ["reload", "reload"]
