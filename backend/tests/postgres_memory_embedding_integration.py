@@ -584,7 +584,8 @@ def _assert_admin_backfill_is_bounded_resumable_and_owner_safe() -> None:
         cleanup.delete(cleanup.get(User, first_user))
         cleanup.delete(cleanup.get(User, second_user))
         cleanup.delete(cleanup.get(ProviderConfiguration, ProviderService.EMBEDDING.value))
-        cleanup.delete(cleanup.get(AdminAccount, admin_id))
+        # Admin/audit rows are intentionally left in the disposable CI database:
+        # append-only audit history must never be rewritten merely for test cleanup.
         cleanup.commit()
 
 
@@ -698,7 +699,8 @@ def _assert_admin_backfill_stops_after_provider_revision_change() -> None:
         cleanup.delete(cleanup.get(User, first_user))
         cleanup.delete(cleanup.get(User, second_user))
         cleanup.delete(cleanup.get(ProviderConfiguration, ProviderService.EMBEDDING.value))
-        cleanup.delete(cleanup.get(AdminAccount, admin_id))
+        # Admin/audit rows are intentionally left in the disposable CI database:
+        # append-only audit history must never be rewritten merely for test cleanup.
         cleanup.commit()
 
 
