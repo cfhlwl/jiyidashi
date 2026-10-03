@@ -261,6 +261,34 @@ def test_production_provider_url_must_be_https():
         )
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://secret@example.com/v1",
+        "https://example.com/v1?api_key=secret",
+        "https://example.com/v1#secret",
+    ],
+)
+def test_provider_base_url_cannot_embed_credentials_or_secret_parameters(base_url: str):
+    with pytest.raises(
+        ProviderRuntimeConfigError,
+        match="PROVIDER_BASE_URL_INVALID",
+    ):
+        validate_provider_policy(
+            service=ProviderService.AI,
+            enabled=False,
+            provider_type="openai",
+            base_url=base_url,
+            model="gpt-test",
+            timeout_seconds=30,
+            max_input_chars=1000,
+            max_output_tokens=100,
+            min_confidence=None,
+            credential_configured=False,
+            settings=Settings(app_env="test"),
+        )
+
+
 def test_embedding_policy_cannot_change_model_or_input_limit():
     settings = Settings(app_env="test")
     with pytest.raises(
