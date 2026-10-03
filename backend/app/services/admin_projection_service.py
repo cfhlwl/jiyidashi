@@ -392,7 +392,7 @@ def dashboard_projection(
             ),
             AdminServiceStatus(
                 key="embedding",
-                label="记忆检索",
+                label="语义记忆检索",
                 status=runtime_services["embedding"][0],
                 detail=runtime_services["embedding"][1],
             ),
@@ -1156,11 +1156,11 @@ def system_settings_projection(
         ),
         AdminSettingSectionRead(
             key="embedding",
-            title="记忆检索",
+            title="语义记忆检索（Embedding / RAG）",
             items=[
                 AdminSettingRead(
                     key="embedding_enabled",
-                    label="记忆检索服务",
+                    label="语义记忆检索服务",
                     classification="在线配置",
                     value=cfg.embedding_provider != "disabled",
                 ),
