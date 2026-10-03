@@ -1,0 +1,68 @@
+name: admin002-refresh-reviewed-goldens
+
+on:
+  push:
+    branches:
+      - feat/admin002-provider-configuration-v1-20261003
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-reviewed-goldens:
+    if: startsWith(github.event.head_commit.message, 'ci(admin002): refresh reviewed Admin Goldens')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install from committed lockfile
+        run: npm ci
+
+      - name: Install deterministic Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Refresh reviewed visual Goldens
+        run: >
+          npx playwright test
+          tests/visual/flagship.spec.ts
+          tests/visual/matrix.spec.ts
+          tests/visual/accessibility.spec.ts
+          --update-snapshots
+
+      - name: Prove snapshot-only delta
+        shell: bash
+        run: |
+          changed="$(git status --porcelain)"
+          test -n "$changed"
+          echo "$changed"
+          unexpected="$(
+            echo "$changed" |
+              awk '{print $2}' |
+              grep -v '^tests/visual/snapshots/' || true
+          )"
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected Golden-refresh delta:" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+
+      - name: Commit reviewed Goldens
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/visual/snapshots
+          git commit -m "test(admin002): update reviewed Admin visual Goldens"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
