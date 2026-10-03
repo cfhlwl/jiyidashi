@@ -45,6 +45,7 @@ class ProviderConfigSnapshot:
 _cache_lock = Lock()
 _cache_deadline = 0.0
 _cache_settings: Settings | None = None
+_cache_generation = 0
 
 
 def _fernet(settings: Settings) -> Fernet:
@@ -274,8 +275,9 @@ def runtime_provider_settings_from_db(
 
 
 def invalidate_provider_runtime_cache() -> None:
-    global _cache_deadline, _cache_settings
+    global _cache_deadline, _cache_generation, _cache_settings
     with _cache_lock:
+        _cache_generation += 1
         _cache_deadline = 0.0
         _cache_settings = None
 
@@ -283,23 +285,30 @@ def invalidate_provider_runtime_cache() -> None:
 def get_runtime_provider_settings() -> Settings:
     global _cache_deadline, _cache_settings
     base = get_settings()
-    now = monotonic()
-    with _cache_lock:
-        if _cache_settings is not None and now < _cache_deadline:
-            return _cache_settings
 
-    try:
-        with SessionLocal() as db:
-            resolved = runtime_provider_settings_from_db(db, settings=base)
-    except ProviderRuntimeConfigError:
-        raise
-    except Exception as exc:
-        raise ProviderRuntimeConfigError("PROVIDER_CONFIG_UNAVAILABLE") from exc
+    while True:
+        now = monotonic()
+        with _cache_lock:
+            if _cache_settings is not None and now < _cache_deadline:
+                return _cache_settings
+            generation = _cache_generation
 
-    with _cache_lock:
-        _cache_settings = resolved
-        _cache_deadline = monotonic() + base.provider_config_cache_ttl_seconds
-    return resolved
+        try:
+            with SessionLocal() as db:
+                resolved = runtime_provider_settings_from_db(db, settings=base)
+        except ProviderRuntimeConfigError:
+            raise
+        except Exception as exc:
+            raise ProviderRuntimeConfigError("PROVIDER_CONFIG_UNAVAILABLE") from exc
+
+        with _cache_lock:
+            # A same-process Admin save can invalidate while this DB read is in flight.
+            # Never let that pre-invalidation snapshot repopulate the cache afterwards.
+            if generation != _cache_generation:
+                continue
+            _cache_settings = resolved
+            _cache_deadline = monotonic() + base.provider_config_cache_ttl_seconds
+            return resolved
 
 
 def validate_provider_policy(
