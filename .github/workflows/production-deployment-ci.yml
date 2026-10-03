@@ -166,6 +166,9 @@ jobs:
           MEDIA_MAX_IMAGE_BYTES=20971520
           MEDIA_MAX_AUDIO_BYTES=10485760
 
+          PROVIDER_CONFIG_MASTER_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          PROVIDER_CONFIG_CACHE_TTL_SECONDS=2
+
           ASR_PROVIDER=disabled
           ASR_BASE_URL=https://api.openai.com/v1
           ASR_API_KEY=
@@ -205,7 +208,7 @@ jobs:
       - name: Reject unsafe actual production environments
         shell: bash
         run: |
-          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'; do
+          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'; do
             bad_env="$RUNNER_TEMP/bad-production.env"
             cp "$ENV_FILE" "$bad_env"
             key="${mutation%%=*}"
