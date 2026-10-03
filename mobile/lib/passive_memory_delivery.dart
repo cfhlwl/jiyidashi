@@ -152,8 +152,10 @@ class PassiveMemoryDeliveryCoordinator {
         status: PassiveMemoryRecoveryStatus.serverUnavailable,
       );
     } on ApiException catch (error) {
-      if (error.statusCode == 400 || error.statusCode == 401) {
-        await _disableNativeFailClosed(preflightOwner);
+      if (isTerminalDurableSessionFailure(error)) {
+        // Session authority is gone, but that is not the same thing as the user turning
+        // automatic location off. Quarantine native production and preserve enable consent.
+        await _pauseNativeFailClosed(preflightOwner);
         return const PassiveMemoryRecoveryReport(
           status: PassiveMemoryRecoveryStatus.noSession,
         );
@@ -186,8 +188,8 @@ class PassiveMemoryDeliveryCoordinator {
           status: PassiveMemoryRecoveryStatus.accountDeletionInProgress,
         );
       }
-      if (error.statusCode == 400 || error.statusCode == 401) {
-        await _disableNativeFailClosed(preflightOwner);
+      if (isTerminalDurableSessionFailure(error)) {
+        await _pauseNativeFailClosed(preflightOwner);
         return const PassiveMemoryRecoveryReport(
           status: PassiveMemoryRecoveryStatus.noSession,
         );
@@ -254,8 +256,8 @@ class PassiveMemoryDeliveryCoordinator {
         sessionRestored: restored,
       );
     } on ApiException catch (error) {
-      if (error.statusCode == 400 || error.statusCode == 401) {
-        await _disableNativeFailClosed(owner);
+      if (isTerminalDurableSessionFailure(error)) {
+        await _pauseNativeFailClosed(owner);
         return PassiveMemoryRecoveryReport(
           status: PassiveMemoryRecoveryStatus.noSession,
           ownerUserId: owner,
@@ -287,19 +289,52 @@ class PassiveMemoryDeliveryCoordinator {
     // recovery hint (iOS relaunch / Android scheduled recovery).
     var producerRecoveryBlocked = false;
     if (allowProducerResume && nativeStatus.restorePending) {
+      final recoveryReason =
+          nativeStatus.recoveryReason?.trim().isNotEmpty == true
+              ? nativeStatus.recoveryReason!.trim()
+              : 'passive_recovery';
       if (!nativeStatus.canStart) {
         producerRecoveryBlocked = true;
+        await _recordLocationRecoveryResult(
+          owner,
+          recoveryReason,
+          result: 'native_not_eligible',
+          success: false,
+        );
       } else {
+        await _recordLocationLifecycle(
+          owner,
+          'recovery_attempt',
+          recoveryReason,
+        );
         try {
           nativeStatus = await _locationBridge.start(owner);
           producerRecoveryBlocked =
               nativeStatus.runtime != NativeLocationRuntime.running;
+          await _recordLocationRecoveryResult(
+            owner,
+            recoveryReason,
+            result: nativeStatus.runtime.name,
+            success: !producerRecoveryBlocked,
+          );
         } on MissingPluginException {
           producerRecoveryBlocked = true;
+          await _recordLocationRecoveryResult(
+            owner,
+            recoveryReason,
+            result: 'native_bridge_unavailable',
+            success: false,
+          );
         } on PlatformException {
           // Android may legally deny a background FGS start even after WorkManager wakes.
           // Do not bypass that platform decision; durable backlog delivery remains allowed.
           producerRecoveryBlocked = true;
+          await _recordLocationRecoveryResult(
+            owner,
+            recoveryReason,
+            result: 'native_start_blocked',
+            success: false,
+          );
         }
         if (!await _authorityStillPersisted(owner, generation, sessionId)) {
           await _pauseNativeFailClosed(owner);
@@ -456,9 +491,15 @@ class PassiveMemoryDeliveryCoordinator {
           final failureReason = 'HTTP 401: ${error.message}';
           await _store.recordLocationDeliveryFailure(owner, ids, failureReason);
           await _recordNativeDeliveryFailure(owner, failureReason);
-          await _disableNativeFailClosed(owner);
+          // A 401 on delivery is never user intent to turn automatic memory off. The
+          // shared API client has already attempted transparent access refresh; quarantine
+          // collection and distinguish an explicit durable-session terminal code from
+          // protocol/access uncertainty.
+          await _pauseNativeFailClosed(owner);
           return PassiveMemoryRecoveryReport(
-            status: PassiveMemoryRecoveryStatus.noSession,
+            status: isTerminalDurableSessionFailure(error)
+                ? PassiveMemoryRecoveryStatus.noSession
+                : PassiveMemoryRecoveryStatus.retryableFailure,
             ownerUserId: owner,
             nativeHandedOff: handedOff,
             deliveryAttempted: points.length,
@@ -627,6 +668,7 @@ class PassiveMemoryDeliveryCoordinator {
   }
 
   Future<void> _disableNativeFailClosed(String owner) async {
+    await _recordLocationLifecycle(owner, 'disable', 'account_deletion');
     try {
       await _locationBridge.disableAutomaticLocation(owner);
     } on MissingPluginException {
@@ -637,12 +679,60 @@ class PassiveMemoryDeliveryCoordinator {
   }
 
   Future<void> _pauseNativeFailClosed(String owner) async {
+    await _recordLocationLifecycle(owner, 'pause', 'recovery_quarantine');
     try {
       await _locationBridge.pause(owner);
     } on MissingPluginException {
       // Native relaunch paths already default to stopped; this is best-effort convergence.
     } on PlatformException {
       // Same fail-closed semantics: no upload proceeds after this point.
+    }
+  }
+
+  Future<void> _recordLocationLifecycle(
+    String owner,
+    String event,
+    String reason,
+  ) async {
+    final diagnosticBridge = _locationBridge;
+    if (diagnosticBridge is! NativeLocationDiagnosticsBridge) return;
+    final diagnostics =
+        diagnosticBridge as NativeLocationDiagnosticsBridge;
+    try {
+      await diagnostics.recordLocationLifecycleDiagnostic(
+        owner,
+        event: event,
+        reason: reason,
+      );
+    } on MissingPluginException {
+      // Recovery semantics do not depend on diagnostics availability.
+    } on PlatformException {
+      // Recovery semantics do not depend on diagnostics availability.
+    }
+  }
+
+  Future<void> _recordLocationRecoveryResult(
+    String owner,
+    String reason, {
+    required String result,
+    required bool success,
+  }) async {
+    final diagnosticBridge = _locationBridge;
+    if (diagnosticBridge is! NativeLocationDiagnosticsBridge) return;
+    final diagnostics =
+        diagnosticBridge as NativeLocationDiagnosticsBridge;
+    try {
+      await diagnostics.recordLocationLifecycleDiagnostic(
+        owner,
+        event: 'recovery_result',
+        reason: reason,
+        result: result,
+        success: success,
+      );
+    } on MissingPluginException {
+      // Diagnostics are best-effort and cannot alter recovery authority.
+    } on PlatformException {
+      // Diagnostics are best-effort and cannot alter recovery authority.
     }
   }
 }

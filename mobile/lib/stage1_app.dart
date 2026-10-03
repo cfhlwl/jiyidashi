@@ -191,7 +191,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           });
           return;
         }
-        if (exc.statusCode == 401) {
+        if (isTerminalDurableSessionFailure(exc)) {
           final owner = api.authenticatedUserId?.trim();
           if (owner != null && owner.isNotEmpty) {
             await _disableNativeForTerminalAuthLoss(owner);
@@ -291,7 +291,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     try {
       await api.ensureFreshServerAuthority();
     } on ApiException catch (exc) {
-      if (exc.statusCode == 400 || exc.statusCode == 401) {
+      if (isTerminalDurableSessionFailure(exc)) {
         if (owner != null && owner.isNotEmpty) {
           await _disableNativeForTerminalAuthLoss(owner);
         }
@@ -312,7 +312,20 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
 
   Future<void> _disableNativeForTerminalAuthLoss(String owner) async {
     try {
-      await locationBridge.disableAutomaticLocation(owner);
+      // Losing server/session authority must stop coordinate production immediately, but it
+      // is not user consent to turn the feature off. Keep the explicit enabled owner so a
+      // later authenticated recovery can resume after fresh Privacy verification.
+      await locationBridge.pause(owner);
+      final diagnosticBridge = locationBridge;
+      if (diagnosticBridge is NativeLocationDiagnosticsBridge) {
+        final diagnostics =
+            diagnosticBridge as NativeLocationDiagnosticsBridge;
+        await diagnostics.recordLocationLifecycleDiagnostic(
+          owner,
+          event: 'pause',
+          reason: 'auth_session_terminal',
+        );
+      }
     } on MissingPluginException {
       // Auth state still fails closed even when this platform has no native bridge.
     } on PlatformException {

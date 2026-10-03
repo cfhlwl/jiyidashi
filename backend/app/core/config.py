@@ -160,6 +160,17 @@ class Settings(BaseSettings):
     location_future_skew_seconds: int = Field(default=300, ge=0, le=86400)
     location_place_geohash_precision: int = Field(default=7, ge=5, le=9)
 
+    # CORE-004: reverse place naming is a server-only provider boundary. Mobile clients
+    # never receive the AMap key and never embed an AMap SDK for naming.
+    place_resolver_provider: str = "disabled"
+    amap_web_service_base_url: str = "https://restapi.amap.com/v3"
+    amap_web_service_key: str = ""
+    amap_timeout_seconds: float = Field(default=3.0, ge=0.5, le=15.0)
+    place_naming_cache_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
+    place_naming_failure_backoff_seconds: int = Field(default=300, ge=10, le=86400)
+    place_naming_cache_max_entries: int = Field(default=2048, ge=16, le=10000)
+    place_naming_backfill_batch_size: int = Field(default=20, ge=1, le=200)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -337,6 +348,19 @@ class Settings(BaseSettings):
                 raise ValueError("EMBEDDING_BASE_URL must be an absolute URL")
             if self.is_production and parsed_embedding.scheme.lower() != "https":
                 raise ValueError("EMBEDDING_BASE_URL must use HTTPS in production")
+
+        if self.place_resolver_provider not in {"disabled", "amap"}:
+            raise ValueError("PLACE_RESOLVER_PROVIDER must be disabled or amap")
+        if self.place_resolver_provider == "amap":
+            if not self.amap_web_service_key.strip():
+                raise ValueError(
+                    "AMAP_WEB_SERVICE_KEY is required when PLACE_RESOLVER_PROVIDER=amap"
+                )
+            parsed_amap = urlparse(self.amap_web_service_base_url.strip())
+            if not parsed_amap.scheme or not parsed_amap.netloc:
+                raise ValueError("AMAP_WEB_SERVICE_BASE_URL must be an absolute URL")
+            if self.is_production and parsed_amap.scheme.lower() != "https":
+                raise ValueError("AMAP_WEB_SERVICE_BASE_URL must use HTTPS in production")
         return self
 
 

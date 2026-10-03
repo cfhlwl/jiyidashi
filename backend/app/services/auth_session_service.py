@@ -159,6 +159,17 @@ def _record_refresh_replay(db: Session, session: AuthSession) -> None:
     )
 
 
+def _record_refresh_terminal(code: str, session_id: UUID | None = None) -> None:
+    emit_operational_event(
+        event="auth.refresh.terminal",
+        level="WARNING",
+        correlation_id=str(session_id) if session_id is not None else None,
+        operation="PUBLIC_AUTH_REFRESH",
+        operation_status=code,
+        error_code=code,
+    )
+
+
 def refresh_public_session(
     db: Session,
     *,
@@ -166,6 +177,7 @@ def refresh_public_session(
 ) -> PublicSessionTokens:
     digest = refresh_token_digest(refresh_token)
     if not digest:
+        _record_refresh_terminal("INVALID_REFRESH_TOKEN")
         raise PublicAuthError("INVALID_REFRESH_TOKEN")
 
     # Resolve a stable abuse-protection scope *before* the rotation transaction.
@@ -182,6 +194,7 @@ def refresh_public_session(
         receipt_scope = db.get(AuthRefreshTokenReceipt, digest)
         if receipt_scope is None:
             consume_refresh_attempt(db, f"unknown:{digest}")
+            _record_refresh_terminal("INVALID_REFRESH_TOKEN")
             raise PublicAuthError("INVALID_REFRESH_TOKEN")
         replay_scope = db.execute(
             select(AuthSession.user_id, AuthSession.id).where(
@@ -208,6 +221,7 @@ def refresh_public_session(
         if receipt is None:
             # The credential ceased to be current after the preflight lookup but no
             # consumed receipt exists. Fail closed without minting a successor.
+            _record_refresh_terminal("INVALID_REFRESH_TOKEN")
             raise PublicAuthError("INVALID_REFRESH_TOKEN")
 
         replay_session = db.scalar(
@@ -227,11 +241,13 @@ def refresh_public_session(
 
     if row.revoked_at is not None:
         db.rollback()
+        _record_refresh_terminal("AUTH_SESSION_REVOKED", row.id)
         raise PublicAuthError("AUTH_SESSION_REVOKED")
     if _as_utc(row.expires_at) <= now:
         row.revoked_at = now
         row.revoke_reason = "EXPIRED"
         db.commit()
+        _record_refresh_terminal("REFRESH_TOKEN_EXPIRED", row.id)
         raise PublicAuthError("REFRESH_TOKEN_EXPIRED")
 
     try:
@@ -240,6 +256,7 @@ def refresh_public_session(
         row.revoked_at = now
         row.revoke_reason = "ACCOUNT_UNAVAILABLE"
         db.commit()
+        _record_refresh_terminal("AUTH_ACCOUNT_UNAVAILABLE", row.id)
         raise
 
     old_revision = row.rotation_revision

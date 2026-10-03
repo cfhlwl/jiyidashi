@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,11 @@ from app.services.place_detail_service import (
     PlaceDetailError,
     get_place_detail,
 )
-from app.services.place_naming_service import PlaceNamingError, correct_place_name
+from app.services.place_naming_service import (
+    PlaceNamingError,
+    correct_place_name,
+    run_place_naming_background,
+)
 
 router = APIRouter(prefix="/location", tags=["location"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -32,6 +36,7 @@ DbSession = Annotated[Session, Depends(get_db)]
 @router.post("/batch", response_model=LocationBatchResponse)
 def upload_location_batch(
     payload: LocationBatchRequest,
+    background_tasks: BackgroundTasks,
     user_id: CurrentUser,
     db: DbSession,
 ) -> LocationBatchResponse:
@@ -40,6 +45,9 @@ def upload_location_batch(
     except LocationIngestError as exc:
         db.rollback()
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    # CORE-004 naming runs only after the canonical location transaction committed.
+    # It uses a new owner-scoped DB session and provider failure cannot reject this upload.
+    background_tasks.add_task(run_place_naming_background, user_id)
     return LocationBatchResponse(**result.__dict__)
 
 

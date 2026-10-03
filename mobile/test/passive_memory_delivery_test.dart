@@ -25,6 +25,7 @@ class _PassiveApi extends JiYiApiClient {
   bool accountDeletionInProgress = false;
   bool transportFails = false;
   bool uploadUnauthorized = false;
+  String uploadUnauthorizedCode = 'AUTH_SESSION_REVOKED';
   int refreshCalls = 0;
   int privacyCalls = 0;
   int uploadCalls = 0;
@@ -83,7 +84,7 @@ class _PassiveApi extends JiYiApiClient {
       points.map((point) => point.clientUuid).toList(growable: false),
     );
     if (transportFails) throw TransportException('response lost');
-    if (uploadUnauthorized) throw ApiException(401, 'INVALID_ACCESS_TOKEN');
+    if (uploadUnauthorized) throw ApiException(401, uploadUnauthorizedCode);
     final pending = uploadGate;
     if (pending != null) return pending.future;
     return LocationBatchResult(
@@ -370,7 +371,7 @@ void main() {
     await sampling.close();
   });
 
-  test('terminal upload 401 disables producer immediately and preserves replay proof',
+  test('terminal upload 401 pauses producer without clearing enabled preference',
       () async {
     final api = _PassiveApi()..uploadUnauthorized = true;
     final location = _LocationBridge(
@@ -394,8 +395,8 @@ void main() {
     final report = await coordinator.recoverAndDeliver();
 
     expect(report.status, PassiveMemoryRecoveryStatus.noSession);
-    expect(location.current.runtime, NativeLocationRuntime.stopped);
-    expect(location.current.automaticEnabled, isFalse);
+    expect(location.current.runtime, NativeLocationRuntime.paused);
+    expect(location.current.automaticEnabled, isTrue);
     expect((await store.listLocationSamples(ownerA)).single.clientUuid, sampleUuid);
     await sampling.close();
   });

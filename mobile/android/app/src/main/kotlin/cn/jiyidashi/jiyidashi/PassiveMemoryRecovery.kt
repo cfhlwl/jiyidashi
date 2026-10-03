@@ -121,38 +121,26 @@ object PassiveMemoryRecoveryScheduler {
  * if the worker wins first, a later normal app startup waits here before restoring session.
  */
 object PassiveMemoryRecoveryProcessGate {
-    private val lock = Any()
-    private var headlessActive = false
-    private val waiters = mutableListOf<MethodChannel.Result>()
+    private val arbiter = PassiveRecoveryArbiter<MethodChannel.Result>()
 
-    fun tryBeginHeadless(): Boolean = synchronized(lock) {
-        if (headlessActive || NativeLocationPlugin.hasAttachedFlutterEngine()) {
-            false
-        } else {
-            headlessActive = true
-            true
-        }
+    fun registerFlutterEngine() {
+        arbiter.attachEngine()
     }
 
+    fun unregisterFlutterEngine() {
+        arbiter.detachEngine()
+    }
+
+    fun tryBeginHeadless(): Boolean = arbiter.tryBeginHeadless()
+
     fun awaitIdle(result: MethodChannel.Result) {
-        val completeNow = synchronized(lock) {
-            if (!headlessActive) {
-                true
-            } else {
-                waiters.add(result)
-                false
-            }
-        }
-        if (completeNow) {
+        if (arbiter.awaitIdle(result)) {
             result.success(true)
         }
     }
 
     fun finishHeadless() {
-        val pending = synchronized(lock) {
-            headlessActive = false
-            waiters.toList().also { waiters.clear() }
-        }
+        val pending = arbiter.finishHeadless()
         if (pending.isEmpty()) return
         Handler(Looper.getMainLooper()).post {
             pending.forEach { waiter ->
@@ -312,13 +300,11 @@ class PassiveMemoryRecoveryWorker(
 
         if (!completed) return Result.retry()
 
-        if (status == "noSession" ||
-            status == "accountDeletionInProgress" ||
-            status == "authorityChanged"
-        ) {
-            // Loss of account/session publication authority is permission to STOP only.
-            // Do not purge queued coordinates here: account deletion/logout local cleanup
-            // owns deletion. But no stale native producer may continue collecting.
+        if (status == "accountDeletionInProgress") {
+            disableAutomaticProduction(store, enabledOwner)
+        } else if (status == "noSession" || status == "authorityChanged") {
+            // Loss/uncertainty of account publication authority is permission to STOP
+            // coordinate production, but not permission to rewrite explicit user consent.
             sealAutomaticProduction(store, enabledOwner)
         }
 
@@ -335,6 +321,20 @@ class PassiveMemoryRecoveryWorker(
     }
 
     private fun sealAutomaticProduction(
+        store: NativeLocationStore,
+        ownerUserId: String,
+    ) {
+        store.finishTracking(ownerUserId)
+        applicationContext.stopService(
+            Intent(applicationContext, NativeLocationTrackingService::class.java),
+        )
+        store.activeOwnerUserId = null
+        store.runtime = NativeLocationRuntimeState.PAUSED
+        store.markRecoveryPending(ownerUserId, "auth_authority_lost")
+        PassiveMemoryRecoveryScheduler.ensurePeriodic(applicationContext)
+    }
+
+    private fun disableAutomaticProduction(
         store: NativeLocationStore,
         ownerUserId: String,
     ) {

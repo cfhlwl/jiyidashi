@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:http/http.dart' as http;
 
@@ -83,6 +84,62 @@ class SignedUploadTarget {
   final String method;
   final Uri url;
   final Map<String, String> headers;
+}
+
+class SignedDownloadTarget {
+  const SignedDownloadTarget({
+    required this.method,
+    required this.url,
+    required this.headers,
+    required this.expiresAt,
+  });
+
+  final String method;
+  final Uri url;
+  final Map<String, String> headers;
+  final DateTime expiresAt;
+
+  factory SignedDownloadTarget.fromJson(Map<String, dynamic> data) {
+    final method = data['method'];
+    final rawUrl = data['url'];
+    final rawHeaders = data['headers'];
+    final rawExpiresAt = data['expires_at'];
+    final url = rawUrl is String ? Uri.tryParse(rawUrl) : null;
+    final expiresAt =
+        rawExpiresAt is String ? DateTime.tryParse(rawExpiresAt)?.toUtc() : null;
+    if (method is! String ||
+        method.toUpperCase() != 'GET' ||
+        url == null ||
+        !url.hasScheme ||
+        (url.scheme != 'https' && url.scheme != 'http') ||
+        rawHeaders is! Map<String, dynamic> ||
+        expiresAt == null) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    final headers = <String, String>{};
+    for (final entry in rawHeaders.entries) {
+      if (entry.value is! String) {
+        throw ProtocolException('服务端返回格式不正确');
+      }
+      headers[entry.key] = entry.value as String;
+    }
+    return SignedDownloadTarget(
+      method: method.toUpperCase(),
+      url: url,
+      headers: Map<String, String>.unmodifiable(headers),
+      expiresAt: expiresAt,
+    );
+  }
+}
+
+class MediaDownloadSession {
+  const MediaDownloadSession({
+    required this.mediaId,
+    required this.download,
+  });
+
+  final String mediaId;
+  final SignedDownloadTarget download;
 }
 
 class MediaUploadSession {
@@ -393,18 +450,59 @@ enum AuthRestoreStatus {
   invalidSession,
 }
 
+const Set<String> _terminalDurableSessionErrorCodes = <String>{
+  'INVALID_REFRESH_TOKEN',
+  'REFRESH_TOKEN_REUSED',
+  'AUTH_SESSION_REVOKED',
+  'REFRESH_TOKEN_EXPIRED',
+  'AUTH_ACCOUNT_UNAVAILABLE',
+  'AUTH_SESSION_INVALID',
+};
+
+bool isTerminalDurableSessionFailure(ApiException error) {
+  return (error.statusCode == 400 || error.statusCode == 401) &&
+      _terminalDurableSessionErrorCodes.contains(error.message);
+}
+
+enum AuthDiagnosticKind {
+  refreshSuccess,
+  refreshTransientFailure,
+  refreshTerminalFailure,
+  refreshReplayDetected,
+  authorityGenerationMismatch,
+}
+
+class AuthDiagnosticEvent {
+  const AuthDiagnosticEvent({
+    required this.kind,
+    required this.code,
+    required this.sessionVersion,
+    this.statusCode,
+  });
+
+  final AuthDiagnosticKind kind;
+  final String code;
+  final int sessionVersion;
+  final int? statusCode;
+}
+
+typedef AuthDiagnosticSink = void Function(AuthDiagnosticEvent event);
+
 
 class JiYiApiClient {
   JiYiApiClient({
     http.Client? httpClient,
     String? baseUrl,
     AuthSessionStore? sessionStore,
+    AuthDiagnosticSink? authDiagnosticSink,
   })  : _http = httpClient ?? http.Client(),
         _sessionStore = sessionStore ?? SecureAuthSessionStore(),
+        _authDiagnosticSink = authDiagnosticSink,
         baseUrl = _resolveApiBaseUrl(baseUrl);
 
   final http.Client _http;
   final AuthSessionStore _sessionStore;
+  final AuthDiagnosticSink? _authDiagnosticSink;
   final String baseUrl;
   String? accessToken;
   String? _refreshToken;
@@ -463,6 +561,10 @@ class JiYiApiClient {
     if (_sessionVersion != snapshot.sessionVersion ||
         authenticatedUserId != snapshot.userId ||
         _sessionId != snapshot.sessionId) {
+      _emitAuthDiagnostic(
+        AuthDiagnosticKind.authorityGenerationMismatch,
+        code: 'AUTHORITY_GENERATION_MISMATCH',
+      );
       throw ProtocolException('登录状态已变化，请重试');
     }
   }
@@ -637,8 +739,34 @@ class JiYiApiClient {
             _sessionId != expectedLocalSessionId) ||
         (expectedLocalRefreshToken != null &&
             _refreshToken != expectedLocalRefreshToken)) {
+      _emitAuthDiagnostic(
+        AuthDiagnosticKind.authorityGenerationMismatch,
+        code: 'AUTHORITY_GENERATION_MISMATCH',
+      );
       throw ProtocolException('登录状态已变化，请重试');
     }
+  }
+
+  void _emitAuthDiagnostic(
+    AuthDiagnosticKind kind, {
+    required String code,
+    int? statusCode,
+  }) {
+    final event = AuthDiagnosticEvent(
+      kind: kind,
+      code: code,
+      sessionVersion: _sessionVersion,
+      statusCode: statusCode,
+    );
+    try {
+      _authDiagnosticSink?.call(event);
+    } catch (_) {
+      // Diagnostic observers are never allowed to alter authentication semantics.
+    }
+    developer.log(
+      'kind=${kind.name} code=$code status=${statusCode ?? '-'} generation=$_sessionVersion',
+      name: 'jiyidashi.auth',
+    );
   }
 
   Future<void> _establishAuthenticatedSession(
@@ -740,13 +868,39 @@ class JiYiApiClient {
         expectedLocalSessionId: sessionId,
         expectedLocalRefreshToken: refreshToken,
       );
+      _emitAuthDiagnostic(
+        AuthDiagnosticKind.refreshSuccess,
+        code: 'REFRESH_ROTATED',
+      );
     } on ApiException catch (error) {
-      if ((error.statusCode == 400 || error.statusCode == 401) &&
+      final terminal = isTerminalDurableSessionFailure(error);
+      _emitAuthDiagnostic(
+        error.message == 'REFRESH_TOKEN_REUSED'
+            ? AuthDiagnosticKind.refreshReplayDetected
+            : (terminal
+                ? AuthDiagnosticKind.refreshTerminalFailure
+                : AuthDiagnosticKind.refreshTransientFailure),
+        code: error.message,
+        statusCode: error.statusCode,
+      );
+      if (terminal &&
           _sessionVersion == sessionVersion &&
           _sessionId == sessionId &&
           _refreshToken == refreshToken) {
         await _clearLocalSession();
       }
+      rethrow;
+    } on TransportException {
+      _emitAuthDiagnostic(
+        AuthDiagnosticKind.refreshTransientFailure,
+        code: 'REFRESH_TRANSPORT_FAILURE',
+      );
+      rethrow;
+    } on ProtocolException {
+      _emitAuthDiagnostic(
+        AuthDiagnosticKind.refreshTransientFailure,
+        code: 'REFRESH_PROTOCOL_UNCERTAIN',
+      );
       rethrow;
     }
   }
@@ -809,22 +963,46 @@ class JiYiApiClient {
         expectedSessionId: persisted.sessionId,
         expectedSessionVersion: restoreVersion,
       );
+      _emitAuthDiagnostic(
+        AuthDiagnosticKind.refreshSuccess,
+        code: 'RESTORE_REFRESH_ROTATED',
+      );
       return AuthRestoreStatus.restored;
     } on TransportException {
+      _emitAuthDiagnostic(
+        AuthDiagnosticKind.refreshTransientFailure,
+        code: 'RESTORE_TRANSPORT_FAILURE',
+      );
       return AuthRestoreStatus.serverUnavailable;
     } on ApiException catch (exc) {
-      if (exc.statusCode == 400 || exc.statusCode == 401) {
+      final terminal = isTerminalDurableSessionFailure(exc);
+      _emitAuthDiagnostic(
+        exc.message == 'REFRESH_TOKEN_REUSED'
+            ? AuthDiagnosticKind.refreshReplayDetected
+            : (terminal
+                ? AuthDiagnosticKind.refreshTerminalFailure
+                : AuthDiagnosticKind.refreshTransientFailure),
+        code: exc.message,
+        statusCode: exc.statusCode,
+      );
+      if (terminal) {
         if (_sessionVersion == restoreVersion) {
           await _clearLocalSession();
         }
         return AuthRestoreStatus.invalidSession;
       }
+      // HTTP errors without an explicit durable-session terminal code are retryable.
+      // In particular, validation/proxy/rate-limit uncertainty must never erase the
+      // single-use refresh credential from secure storage.
       return AuthRestoreStatus.serverUnavailable;
     } on ProtocolException {
-      if (_sessionVersion == restoreVersion) {
-        await _clearLocalSession();
-      }
-      return AuthRestoreStatus.invalidSession;
+      _emitAuthDiagnostic(
+        AuthDiagnosticKind.refreshTransientFailure,
+        code: 'RESTORE_PROTOCOL_UNCERTAIN',
+      );
+      // A malformed/partial success response is authority uncertainty, not proof that the
+      // durable server session is gone. Preserve Keychain/Keystore material for retry.
+      return AuthRestoreStatus.serverUnavailable;
     }
   }
 
@@ -1009,6 +1187,33 @@ class JiYiApiClient {
 
   Future<Map<String, dynamic>> completeMediaUpload(String mediaId) {
     return _jsonRequest('POST', '/media/$mediaId/complete');
+  }
+
+  Future<MediaDownloadSession> createMediaDownload(String mediaId) async {
+    final normalized = mediaId.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(mediaId, 'mediaId', 'media ID must not be empty');
+    }
+    // Signed object URLs are temporary capabilities. Bind signing to the exact authenticated
+    // session that started the request so an owner switch cannot publish a late owner-A URL.
+    final snapshot = _captureAuthenticatedSession();
+    final data = await _jsonRequest(
+      'POST',
+      '/media/$normalized/download',
+      authSnapshot: snapshot,
+    );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    final returnedId = data['media_id'];
+    final rawDownload = data['download'];
+    if (returnedId is! String ||
+        returnedId.toLowerCase() != normalized.toLowerCase() ||
+        rawDownload is! Map<String, dynamic>) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    return MediaDownloadSession(
+      mediaId: returnedId,
+      download: SignedDownloadTarget.fromJson(rawDownload),
+    );
   }
 
   Future<Map<String, dynamic>> createPhotoMemory({

@@ -264,10 +264,12 @@ struct NativeLocationPolicy {
       )
     }
     // A location relaunch proves only that the old native producer was eligible to resume.
-    // Server privacy is not known yet, so relaunch must remain stopped until Flutter verifies it.
+    // Server privacy is not known yet. PAUSED is the truthful product/runtime state here:
+    // every CLLocation producer is stopped, while explicit enable consent and recovery intent
+    // remain durable until Flutter verifies fresh AUTH + Privacy authority.
     return NativeLocationRelaunchState(
       restorePending: true,
-      runtime: .stopped
+      runtime: .paused
     )
   }
 
@@ -343,6 +345,14 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   }
 
   func sealAutomaticProductionForAuthorityLoss() {
+    guard let owner = enabledOwnerUserId ?? activeOwnerUserId else { return }
+    // Server/session authority loss is a quarantine, not an implicit user preference change.
+    // pause() stops every CoreLocation producer while retaining enabledOwnerUserId and a
+    // restore hint for a later fresh AUTH + Privacy verification.
+    _ = pause(ownerUserId: owner)
+  }
+
+  func disableAutomaticProductionForAccountDeletion() {
     guard let owner = enabledOwnerUserId ?? activeOwnerUserId else { return }
     _ = disableAutomaticLocation(ownerUserId: owner)
   }
@@ -487,6 +497,35 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       defaults.set(
         (reason?.isEmpty == false ? reason! : "location_delivery_failed"),
         forKey: ownerKey(Keys.lastDeliveryFailureReason, ownerUserId)
+      )
+      result(nil)
+    case "recordLocationLifecycleDiagnostic":
+      let arguments = call.arguments as? [String: Any]
+      let event =
+        (arguments?["event"] as? String)?
+          .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let reason =
+        (arguments?["reason"] as? String)?
+          .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard
+        ["pause", "recovery_attempt", "recovery_result", "disable"].contains(event),
+        !reason.isEmpty
+      else {
+        result(FlutterError(
+          code: "invalid_lifecycle_diagnostic",
+          message: "Lifecycle diagnostic event/reason is invalid",
+          details: nil
+        ))
+        return
+      }
+      recordLifecycleDiagnostic(
+        ownerUserId: ownerUserId,
+        event: event,
+        reason: reason,
+        result:
+          (arguments?["result"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+        success: arguments?["success"] as? Bool
       )
       result(nil)
     case "purgeLocationSamplingOwner":
@@ -975,6 +1014,17 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       Keys.capacityDropCount,
       Keys.lastDropAt,
       Keys.lastDropReason,
+      Keys.lifecyclePauseCount,
+      Keys.lifecycleLastPauseAt,
+      Keys.lifecycleLastPauseReason,
+      Keys.lifecycleRecoveryAttemptCount,
+      Keys.lifecycleLastRecoveryAt,
+      Keys.lifecycleLastRecoveryReason,
+      Keys.lifecycleLastRecoveryResult,
+      Keys.lifecycleLastRecoverySuccessAt,
+      Keys.lifecycleDisableCount,
+      Keys.lifecycleLastDisableAt,
+      Keys.lifecycleLastDisableReason,
     ]
     for prefix in prefixes {
       defaults.removeObject(forKey: ownerKey(prefix, ownerUserId))
@@ -993,6 +1043,98 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     )
     defaults.set(nowMillis, forKey: ownerKey(Keys.lastDropAt, ownerUserId))
     defaults.set(reason, forKey: ownerKey(Keys.lastDropReason, ownerUserId))
+  }
+
+  private func recordLifecycleDiagnostic(
+    ownerUserId: String,
+    event: String,
+    reason: String,
+    result: String? = nil,
+    success: Bool? = nil,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+  ) {
+    let normalizedReason =
+      reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ? "unknown"
+        : reason.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch event {
+    case "pause":
+      incrementMetric(ownerUserId: ownerUserId, prefix: Keys.lifecyclePauseCount, delta: 1)
+      defaults.set(nowMillis, forKey: ownerKey(Keys.lifecycleLastPauseAt, ownerUserId))
+      defaults.set(
+        normalizedReason,
+        forKey: ownerKey(Keys.lifecycleLastPauseReason, ownerUserId)
+      )
+    case "recovery_attempt":
+      incrementMetric(
+        ownerUserId: ownerUserId,
+        prefix: Keys.lifecycleRecoveryAttemptCount,
+        delta: 1
+      )
+      defaults.set(nowMillis, forKey: ownerKey(Keys.lifecycleLastRecoveryAt, ownerUserId))
+      defaults.set(
+        normalizedReason,
+        forKey: ownerKey(Keys.lifecycleLastRecoveryReason, ownerUserId)
+      )
+    case "recovery_result":
+      defaults.set(nowMillis, forKey: ownerKey(Keys.lifecycleLastRecoveryAt, ownerUserId))
+      defaults.set(
+        normalizedReason,
+        forKey: ownerKey(Keys.lifecycleLastRecoveryReason, ownerUserId)
+      )
+      defaults.set(
+        (result?.isEmpty == false ? result! : "unknown"),
+        forKey: ownerKey(Keys.lifecycleLastRecoveryResult, ownerUserId)
+      )
+      if success == true {
+        defaults.set(
+          nowMillis,
+          forKey: ownerKey(Keys.lifecycleLastRecoverySuccessAt, ownerUserId)
+        )
+      }
+    case "disable":
+      incrementMetric(ownerUserId: ownerUserId, prefix: Keys.lifecycleDisableCount, delta: 1)
+      defaults.set(nowMillis, forKey: ownerKey(Keys.lifecycleLastDisableAt, ownerUserId))
+      defaults.set(
+        normalizedReason,
+        forKey: ownerKey(Keys.lifecycleLastDisableReason, ownerUserId)
+      )
+    default:
+      return
+    }
+  }
+
+  private func lifecycleDiagnostics(ownerUserId: String) -> [String: Any] {
+    func millis(_ key: String) -> Any {
+      let scoped = ownerKey(key, ownerUserId)
+      return defaults.object(forKey: scoped) == nil
+        ? NSNull()
+        : Int64(defaults.integer(forKey: scoped))
+    }
+    func text(_ key: String) -> Any {
+      defaults.string(forKey: ownerKey(key, ownerUserId)).map { $0 as Any }
+        ?? NSNull()
+    }
+    return [
+      "pause_count":
+        Int64(defaults.integer(forKey: ownerKey(Keys.lifecyclePauseCount, ownerUserId))),
+      "last_pause_at_millis": millis(Keys.lifecycleLastPauseAt),
+      "last_pause_reason": text(Keys.lifecycleLastPauseReason),
+      "recovery_attempt_count":
+        Int64(
+          defaults.integer(
+            forKey: ownerKey(Keys.lifecycleRecoveryAttemptCount, ownerUserId)
+          )
+        ),
+      "last_recovery_at_millis": millis(Keys.lifecycleLastRecoveryAt),
+      "last_recovery_reason": text(Keys.lifecycleLastRecoveryReason),
+      "last_recovery_result": text(Keys.lifecycleLastRecoveryResult),
+      "last_recovery_success_at_millis": millis(Keys.lifecycleLastRecoverySuccessAt),
+      "disable_count":
+        Int64(defaults.integer(forKey: ownerKey(Keys.lifecycleDisableCount, ownerUserId))),
+      "last_disable_at_millis": millis(Keys.lifecycleLastDisableAt),
+      "last_disable_reason": text(Keys.lifecycleLastDisableReason),
+    ]
   }
 
   private func queueDiagnostics(ownerUserId: String) -> [String: Any] {
@@ -1210,10 +1352,23 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     // standard updates for moving states, but never removes this system relaunch foundation.
     manager.allowsBackgroundLocationUpdates = true
     manager.startMonitoringSignificantLocationChanges()
+    let recoveredFrom =
+      relaunchRestorePending
+        ? "ios_location_relaunch"
+        : nil
     nativeProducerActive = true
     relaunchRestorePending = false
     activeOwnerUserId = ownerUserId
     runtime = .running
+    if let recoveredFrom {
+      recordLifecycleDiagnostic(
+        ownerUserId: ownerUserId,
+        event: "recovery_result",
+        reason: recoveredFrom,
+        result: "running",
+        success: true
+      )
+    }
     beginTracking(ownerUserId: ownerUserId)
     configureSamplingProfile(ownerUserId: ownerUserId)
     return status(ownerUserId: ownerUserId)
@@ -1319,6 +1474,7 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
           ? "ios_location_relaunch"
           : NSNull(),
       "queue": queueDiagnostics(ownerUserId: ownerUserId),
+      "lifecycle": lifecycleDiagnostics(ownerUserId: ownerUserId),
     ]
 
     if ownerMatches {
@@ -1556,6 +1712,21 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     static let capacityDropCount = "native_location.capacity_drop_count"
     static let lastDropAt = "native_location.last_drop_at"
     static let lastDropReason = "native_location.last_drop_reason"
+    static let lifecyclePauseCount = "native_location.lifecycle_pause_count"
+    static let lifecycleLastPauseAt = "native_location.lifecycle_last_pause_at"
+    static let lifecycleLastPauseReason = "native_location.lifecycle_last_pause_reason"
+    static let lifecycleRecoveryAttemptCount =
+      "native_location.lifecycle_recovery_attempt_count"
+    static let lifecycleLastRecoveryAt = "native_location.lifecycle_last_recovery_at"
+    static let lifecycleLastRecoveryReason =
+      "native_location.lifecycle_last_recovery_reason"
+    static let lifecycleLastRecoveryResult =
+      "native_location.lifecycle_last_recovery_result"
+    static let lifecycleLastRecoverySuccessAt =
+      "native_location.lifecycle_last_recovery_success_at"
+    static let lifecycleDisableCount = "native_location.lifecycle_disable_count"
+    static let lifecycleLastDisableAt = "native_location.lifecycle_last_disable_at"
+    static let lifecycleLastDisableReason = "native_location.lifecycle_last_disable_reason"
   }
 }
 
@@ -1618,9 +1789,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       let arguments = call.arguments as? [String: Any]
       let retry = arguments?["retry"] as? Bool ?? true
       let status = arguments?["status"] as? String ?? "unknown"
-      if status == "noSession" ||
-          status == "accountDeletionInProgress" ||
-          status == "authorityChanged" {
+      if status == "accountDeletionInProgress" {
+        self?.nativeLocationBridge?.disableAutomaticProductionForAccountDeletion()
+      } else if status == "noSession" || status == "authorityChanged" {
         self?.nativeLocationBridge?.sealAutomaticProductionForAuthorityLoss()
       }
       self?.finishPassiveRecoveryTask(success: !retry, retry: retry)

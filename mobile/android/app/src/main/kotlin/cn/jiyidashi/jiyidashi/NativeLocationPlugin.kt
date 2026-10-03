@@ -38,6 +38,9 @@ class NativeLocationPlugin :
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         applicationContext = binding.applicationContext
         store = NativeLocationStore(applicationContext)
+        // Register before exposing the MethodChannel. The same process-wide monitor is used
+        // by WorkManager's headless claim, eliminating the previous check/attach race.
+        PassiveMemoryRecoveryProcessGate.registerFlutterEngine()
         channel = MethodChannel(binding.binaryMessenger, CHANNEL_NAME)
         channel.setMethodCallHandler(this)
         sampleChannels.add(channel)
@@ -46,6 +49,7 @@ class NativeLocationPlugin :
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
         sampleChannels.remove(channel)
+        PassiveMemoryRecoveryProcessGate.unregisterFlutterEngine()
         pendingRequest?.result?.error("bridge_detached", "Location bridge detached", null)
         pendingRequest = null
     }
@@ -129,6 +133,28 @@ class NativeLocationPlugin :
                 store.recordDeliveryFailure(
                     ownerUserId,
                     reason.ifEmpty { "location_delivery_failed" },
+                )
+                result.success(null)
+            }
+            "recordLocationLifecycleDiagnostic" -> {
+                val event = call.argument<String>("event")?.trim().orEmpty()
+                val reason = call.argument<String>("reason")?.trim().orEmpty()
+                if (event !in setOf("pause", "recovery_attempt", "recovery_result", "disable") ||
+                    reason.isEmpty()
+                ) {
+                    result.error(
+                        "invalid_lifecycle_diagnostic",
+                        "Lifecycle diagnostic event/reason is invalid",
+                        null,
+                    )
+                    return
+                }
+                store.recordLifecycleDiagnostic(
+                    ownerUserId = ownerUserId,
+                    event = event,
+                    reason = reason,
+                    result = call.argument<String>("result"),
+                    success = call.argument<Boolean>("success"),
                 )
                 result.success(null)
             }
@@ -652,6 +678,7 @@ class NativeLocationPlugin :
                 (ownerMatches && store.recoveryPendingOwnerUserId == ownerUserId),
             "recovery_reason" to store.recoveryReason(ownerUserId),
             "queue" to store.queueDiagnostics(ownerUserId),
+            "lifecycle" to store.lifecycleDiagnostics(ownerUserId),
         )
     }
 

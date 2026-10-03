@@ -96,6 +96,7 @@ class NativeLocationController extends ChangeNotifier {
   }
 
   Future<void> disableAutomaticLocation() async {
+    await _recordLifecycle('disable', 'user_disabled');
     await _run(() => bridge.disableAutomaticLocation(ownerUserId));
   }
 
@@ -120,6 +121,7 @@ class NativeLocationController extends ChangeNotifier {
         (current?.runtime == NativeLocationRuntime.running ||
             current?.restorePending == true);
     if (current?.runtime == NativeLocationRuntime.running) {
+      await _recordLifecycle('pause', 'privacy_verifying');
       await _run(() => bridge.pause(ownerUserId), exposeError: false);
     }
     return shouldRestore && !_disposed;
@@ -133,12 +135,15 @@ class NativeLocationController extends ChangeNotifier {
     if (current == null || !current.canStart) return;
     // This is a restore of a producer that was already running before privacy verification.
     // It never calls either permission method; revoked permission still fails closed natively.
+    await _recordLifecycle('recovery_attempt', 'privacy_verified');
     await _run(() => bridge.start(ownerUserId), exposeError: false);
+    await _recordRecoveryResult('privacy_verified');
   }
 
   Future<void> pauseForPrivacy() async {
     _privacyGate = NativeLocationPrivacyGate.paused;
     _notify();
+    await _recordLifecycle('pause', 'privacy_paused');
     await _run(() => bridge.pause(ownerUserId));
   }
 
@@ -148,13 +153,16 @@ class NativeLocationController extends ChangeNotifier {
   Future<void> resumeAfterPrivacy() async {
     _privacyGate = NativeLocationPrivacyGate.active;
     _notify();
+    await _recordLifecycle('recovery_attempt', 'privacy_resumed');
     await _run(() => bridge.start(ownerUserId));
+    await _recordRecoveryResult('privacy_resumed');
   }
 
   Future<void> privacyStatusUnknown() async {
     // Unknown server privacy state is not permission to keep producing location.
     _privacyGate = NativeLocationPrivacyGate.unknown;
     _notify();
+    await _recordLifecycle('pause', 'privacy_status_unknown');
     await _run(() => bridge.pause(ownerUserId));
   }
 
@@ -163,10 +171,46 @@ class NativeLocationController extends ChangeNotifier {
   }
 
   Future<void> disableForAccountDeletion() async {
+    await _recordLifecycle('disable', 'account_deletion');
     await _run(
       () => bridge.disableAutomaticLocation(ownerUserId),
       exposeError: false,
     );
+  }
+
+  Future<void> _recordRecoveryResult(String reason) async {
+    final current = _status;
+    await _recordLifecycle(
+      'recovery_result',
+      reason,
+      result: current?.runtime.name ?? 'unknown',
+      success: current?.runtime == NativeLocationRuntime.running,
+    );
+  }
+
+  Future<void> _recordLifecycle(
+    String event,
+    String reason, {
+    String? result,
+    bool? success,
+  }) async {
+    final diagnosticBridge = bridge;
+    if (diagnosticBridge is! NativeLocationDiagnosticsBridge) return;
+    final diagnostics =
+        diagnosticBridge as NativeLocationDiagnosticsBridge;
+    try {
+      await diagnostics.recordLocationLifecycleDiagnostic(
+        ownerUserId,
+        event: event,
+        reason: reason,
+        result: result,
+        success: success,
+      );
+    } on MissingPluginException {
+      // Diagnostics are best-effort; location authority remains unchanged.
+    } on PlatformException {
+      // Same: diagnostics cannot grant or revoke production authority.
+    }
   }
 
   Future<void> _run(

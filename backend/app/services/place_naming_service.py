@@ -7,11 +7,19 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
+from app.core.db import SessionLocal
+from app.core.observability import emit_operational_event
 from app.models import Place, PlaceNameCorrection
 from app.services.idempotency_service import (
     IdempotencyConflict,
     IdempotencyResourceGone,
     execute_idempotent_mutation,
+)
+from app.services.place_resolver import (
+    PlaceResolver,
+    PlaceResolverError,
+    get_place_resolver,
 )
 
 UNNAMED_PLACE = "未命名地点"
@@ -167,3 +175,130 @@ def correct_place_name(
         raise PlaceNamingError("PLACE_NAME_CORRECTION_CONFLICT", 409) from exc
     except IdempotencyResourceGone as exc:
         raise PlaceNamingError("PLACE_NAME_CORRECTION_TARGET_GONE", 409) from exc
+
+
+
+@dataclass(frozen=True)
+class PlaceNameBackfillResult:
+    attempted: int
+    resolved: int
+    provider_failures: int
+
+
+def backfill_automatic_place_names_for_user(
+    user_id: UUID,
+    *,
+    resolver: PlaceResolver | None = None,
+    settings: Settings | None = None,
+) -> PlaceNameBackfillResult:
+    """Resolve a bounded owner-scoped batch without holding DB locks across provider I/O."""
+
+    effective_settings = settings or get_settings()
+    if resolver is None and effective_settings.place_resolver_provider == "disabled":
+        return PlaceNameBackfillResult(attempted=0, resolved=0, provider_failures=0)
+    effective_resolver = resolver or get_place_resolver()
+
+    # Read only immutable identifiers/coordinates, then end this DB transaction before
+    # external provider I/O. This keeps AMap latency outside location ingestion and DB locks.
+    with SessionLocal() as db:
+        rows = list(
+            db.execute(
+                select(Place.id, Place.latitude, Place.longitude)
+                .where(
+                    Place.user_id == user_id,
+                    Place.user_name.is_(None),
+                    Place.automatic_name.is_(None),
+                    Place.latitude.is_not(None),
+                    Place.longitude.is_not(None),
+                )
+                .order_by(Place.created_at, Place.id)
+                .limit(effective_settings.place_naming_backfill_batch_size)
+            )
+        )
+        db.rollback()
+
+    resolved = 0
+    failures = 0
+    for place_id, latitude, longitude in rows:
+        if latitude is None or longitude is None:
+            continue
+        try:
+            candidate = effective_resolver.resolve(
+                latitude=float(latitude),
+                longitude=float(longitude),
+            )
+        except PlaceResolverError as exc:
+            failures += 1
+            emit_operational_event(
+                event="place.naming.provider_failed",
+                level="WARNING",
+                provider=effective_settings.place_resolver_provider,
+                error_code=exc.code,
+            )
+            continue
+        except Exception:
+            # Background enrichment must never become an availability dependency for
+            # location ingestion. Unexpected provider adapter failures stay bounded here.
+            failures += 1
+            emit_operational_event(
+                event="place.naming.provider_failed",
+                level="ERROR",
+                provider=effective_settings.place_resolver_provider,
+                error_code="PLACE_RESOLVER_UNEXPECTED_FAILURE",
+            )
+            continue
+
+        if candidate is None:
+            continue
+
+        try:
+            with SessionLocal() as db:
+                place = apply_automatic_place_label_candidate(
+                    db,
+                    user_id=user_id,
+                    place_id=place_id,
+                    label=candidate.label,
+                    source=candidate.source,
+                )
+                if candidate.address is not None:
+                    place.address = candidate.address
+                if candidate.category is not None:
+                    place.category = candidate.category[:80]
+                db.commit()
+                resolved += 1
+        except PlaceNamingError:
+            # Place may have been deleted by a concurrent location rebuild. That is a
+            # normal stale enrichment result and must not recreate or cross owners.
+            continue
+
+    result = PlaceNameBackfillResult(
+        attempted=len(rows),
+        resolved=resolved,
+        provider_failures=failures,
+    )
+    emit_operational_event(
+        event="place.naming.backfill_completed",
+        level="INFO",
+        provider=effective_settings.place_resolver_provider,
+        operation="PLACE_NAMING_BACKFILL",
+        operation_status=(
+            "COMPLETED_WITH_PROVIDER_FAILURES"
+            if result.provider_failures
+            else "COMPLETED"
+        ),
+        signal_count=result.resolved,
+    )
+    return result
+
+
+def run_place_naming_background(user_id: UUID) -> None:
+    """Best-effort BackgroundTasks entrypoint; never propagates into location upload."""
+
+    try:
+        backfill_automatic_place_names_for_user(user_id)
+    except Exception:
+        emit_operational_event(
+            event="place.naming.background_failed",
+            level="ERROR",
+            error_code="PLACE_NAMING_BACKGROUND_FAILED",
+        )
