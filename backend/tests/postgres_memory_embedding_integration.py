@@ -678,6 +678,15 @@ def _assert_admin_backfill_stops_after_provider_revision_change() -> None:
         assert result.last_error == "PROVIDER_REVISION_CHANGED"
         assert len(provider.requests) == 1
         assert _embedding_count(first_memory) + _embedding_count(second_memory) == 1
+        audit = db.scalar(
+            select(AdminAuditEvent)
+            .where(AdminAuditEvent.action == "EMBEDDING_BACKFILL_BATCH")
+            .order_by(AdminAuditEvent.created_at.desc())
+            .limit(1)
+        )
+        assert audit is not None
+        assert audit.result == "PARTIAL"
+        assert audit.metadata_json["error_code"] == "PROVIDER_REVISION_CHANGED"
 
     with SessionLocal() as cleanup:
         cleanup.delete(cleanup.get(User, first_user))
