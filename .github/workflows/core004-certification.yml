@@ -61,3 +61,180 @@ jobs:
           CI does NOT certify Android/iOS physical behavior and must never be cited
           as a substitute for the mandatory 24h/72h/12h real-device evidence.
           EOF
+
+
+  field-build-android:
+    name: field-build-android
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Probe CORE-004 test endpoint
+        id: endpoint
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+          response="$(curl -fsS --connect-timeout 10 --max-time 20 https://jiyi.ccwl.net.cn/health 2>&1)"
+          rc=$?
+          if [ "$rc" -eq 0 ]; then
+            echo "endpoint_status=reachable" >> "$GITHUB_OUTPUT"
+            echo "$response"
+          else
+            echo "endpoint_status=unreachable" >> "$GITHUB_OUTPUT"
+            echo "$response"
+          fi
+          exit 0
+
+      - name: Build Android CORE-004 release APK
+        run: >-
+          flutter build apk --release
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://jiyi.ccwl.net.cn/v1
+
+      - name: Prepare Android field artifact
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ENDPOINT_STATUS: ${{ steps.endpoint.outputs.endpoint_status }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/core004-android"
+          mkdir -p "$out"
+          cp build/app/outputs/flutter-apk/app-release.apk "$out/JiYi-core004-android.apk"
+          version="$(awk '/^version:/ {print $2; exit}' pubspec.yaml)"
+          {
+            echo "platform=ANDROID"
+            echo "artifact=JiYi-core004-android.apk"
+            echo "git_head=$EXACT_SHA"
+            echo "app_version=$version"
+            echo "app_env=production"
+            echo "api_base_url=https://jiyi.ccwl.net.cn/v1"
+            echo "health_url=https://jiyi.ccwl.net.cn/health"
+            echo "health_probe=$ENDPOINT_STATUS"
+            echo "signing=debug-key release build"
+            echo "physical_install=YES"
+          } > "$out/build-manifest.txt"
+          sha256sum "$out/JiYi-core004-android.apk" > "$out/SHA256SUMS.txt"
+
+      - name: Upload Android field build
+        uses: actions/upload-artifact@v4
+        with:
+          name: core004-android-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/core004-android/
+          if-no-files-found: error
+          retention-days: 14
+
+  field-build-ios:
+    name: field-build-ios
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected checkout SHA: $EXPECTED_SHA"
+          echo "actual checkout SHA:   $actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Probe CORE-004 test endpoint
+        id: endpoint
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+          response="$(curl -fsS --connect-timeout 10 --max-time 20 https://jiyi.ccwl.net.cn/health 2>&1)"
+          rc=$?
+          if [ "$rc" -eq 0 ]; then
+            echo "endpoint_status=reachable" >> "$GITHUB_OUTPUT"
+            echo "$response"
+          else
+            echo "endpoint_status=unreachable" >> "$GITHUB_OUTPUT"
+            echo "$response"
+          fi
+          exit 0
+
+      - name: Build iOS CORE-004 release app without codesigning
+        run: >-
+          flutter build ios --release --no-codesign
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://jiyi.ccwl.net.cn/v1
+
+      - name: Prepare iOS unsigned field artifact
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ENDPOINT_STATUS: ${{ steps.endpoint.outputs.endpoint_status }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/core004-ios"
+          mkdir -p "$out"
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app "$out/JiYi-core004-ios-unsigned.zip"
+          version="$(awk '/^version:/ {print $2; exit}' pubspec.yaml)"
+          {
+            echo "platform=IOS"
+            echo "artifact=JiYi-core004-ios-unsigned.zip"
+            echo "git_head=$EXACT_SHA"
+            echo "app_version=$version"
+            echo "bundle_id=cn.jiyidashi.jiyidashi"
+            echo "app_env=production"
+            echo "api_base_url=https://jiyi.ccwl.net.cn/v1"
+            echo "health_url=https://jiyi.ccwl.net.cn/health"
+            echo "health_probe=$ENDPOINT_STATUS"
+            echo "signing=UNSIGNED"
+            echo "physical_install=NO"
+            echo "blocker=APPLE_DEVELOPMENT_TEAM_AND_PROVISIONING_NOT_CONFIGURED"
+          } > "$out/build-manifest.txt"
+          shasum -a 256 "$out/JiYi-core004-ios-unsigned.zip" > "$out/SHA256SUMS.txt"
+
+      - name: Upload iOS unsigned field build
+        uses: actions/upload-artifact@v4
+        with:
+          name: core004-ios-unsigned-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/core004-ios/
+          if-no-files-found: error
+          retention-days: 14
