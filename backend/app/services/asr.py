@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Protocol
 
 import httpx
 
 from app.core.config import Settings, get_settings
+from app.services.provider_config_service import (
+    ProviderRuntimeConfigError,
+    get_runtime_provider_settings,
+)
 
 
 # [人工注释][S1-007] ASR provider 是纯服务端可替换边界。客户端不接触模型密钥，
@@ -137,9 +140,11 @@ class OpenAIASRProvider:
         )
 
 
-@lru_cache
 def get_asr_provider() -> ASRProvider:
-    settings = get_settings()
+    try:
+        settings = get_runtime_provider_settings()
+    except ProviderRuntimeConfigError as exc:
+        raise ASRProviderError("ASR_PROVIDER_UNAVAILABLE") from exc
     if settings.asr_provider == "disabled":
         return DisabledASRProvider()
     if settings.asr_provider == "openai":
