@@ -34,6 +34,10 @@ from app.services.memory_service import (
     create_trusted_memory,
     get_memory_for_user,
 )
+from app.services.provider_config_service import (
+    ProviderRuntimeConfigError,
+    get_runtime_provider_settings,
+)
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorage,
@@ -672,7 +676,12 @@ def _read_and_transcribe_voice(
     if not transcript:
         _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
         raise MediaError("ASR_EMPTY_RESULT", 422)
-    if result.confidence < settings.asr_min_confidence:
+    try:
+        runtime_settings = get_runtime_provider_settings()
+    except ProviderRuntimeConfigError as exc:
+        _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
+        raise MediaError("ASR_PROVIDER_UNAVAILABLE", 503) from exc
+    if result.confidence < runtime_settings.asr_min_confidence:
         _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
         raise MediaError("ASR_LOW_CONFIDENCE", 422)
     return result, transcript
