@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**BIZ-011 / Production Registration Entitlement Default（Issue #197）**。CORE-004 真机长期认证暂缓；当前先收口短周期 P0 上线 blocker：正式新注册用户必须默认 `FREE`，`LEGACY_FULL` 仅保留历史兼容/migration-only，禁止普通生产注册继续获得全 capability/unlimited legacy authority。
+> 当前阶段：**短周期并行收口**。主任务 **BIZ-011（Issue #197）** 正在修复正式注册默认 `FREE`；并行任务 **PROD-001（Issue #198）** 统一产品定位与对外承诺。CORE-004 真机长期认证继续暂缓，待短周期 P0/P1、Provider/服务端配置及真机稳定化完成后再基于最新 `main` 重新发起。
 
 ## 状态规则
 
@@ -397,7 +397,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | CORE-003 | P0 | Automatic Recording Health & Coverage V1 | ✅ | **Issue #188 / PR #189 已完成并合并**。统一复用 CORE-001 producer/runtime、permission/location services、Privacy、native/SQLite queue、delivery/backpressure/recovery authority，建立 owner-scoped `RecordingHealthSnapshot`；确定性输出 HEALTHY/DEGRADED/PAUSED/BLOCKED/RECOVERING/UNKNOWN，UNKNOWN 不得伪装 healthy；增加 evidence-derived Today Coverage、gap reason、Healthy Days、Location Gap Hours 与 Flutter 记录状态 UI，Mini 只展示 server-observed authority。正式审查 P0/P1/P2 = 0/0/0。 |
 | CORE-004 | P0 Gate | Passive Recording Real-device Certification V1 | ⏸ | **Issue #190 保留为未来 P0 Gate；PR #191 已关闭且未合并。** 当前不启动正式 24h/72h/12h 长时认证，先完成真机暴露问题、Provider/服务端配置和其他短周期上线收口；待 Android+iOS 基础闭环与测试环境稳定后，从当时最新 `main` 新建干净 certification PR/构建，并重新执行完整物理设备矩阵。模拟器、mock、CI 仍不得替代真机认证证据。 |
 | UIUX-P0-002 | P0 Product Gate | JiYi Consumer Visual Fidelity V1 | ⬜ | **新增视觉收口任务。** 2026-09-29 用户确认的 8 张高保真参考图（Today / Timeline / Memory Detail / Family / Memory Query / Unified Capture / Summary / Profile）作为 Consumer Visual Design Authority。保留 UIUX-P0-001 已完成的 `今天 / 记忆 / 人生 / 家庭 / 我的` IA、现有业务 authority 与隐私边界；仅对没有真实 authority 的步数/天气/情绪统计/收藏/回收站等字段做删除或真实降级，**不得因此把山水品牌氛围、photo-first 叙事、足迹地图主视觉、卡片层次和消费者质感简化成工具型白卡 UI**。Flutter 为首要视觉还原，Mini 同步同一视觉语言；Golden 必须改为验证新 Design Authority，而不是继续锁定当前简化版。 |
-| PROD-001 | P1 | Core Product Positioning & Promise Refresh | ⬜ | 当前 README 仍写“个人 AI 第二记忆”，与最新定位不完全一致。改为“自动记录生活、需要时帮助找回过去”的个人/家庭长期记忆产品；继续强化“结构化检索优先于 LLM / 无证据不生成个人事实 / AI 是辅助不是事实来源”。对外不得承诺“100% 不用打开”，改为“完成授权后尽可能自动记录”，并以 Recording Health 告知真实覆盖状态。 |
+| PROD-001 | P1 | Core Product Positioning & Promise Refresh | 🔵 | **并行开发 / Issue #198**。将公开定位从“个人 AI 第二记忆”刷新为“自动记录生活、需要时帮助找回过去”的个人/家庭长期记忆产品；统一“结构化检索优先于 LLM / 无证据不生成个人事实 / AI 是辅助不是事实来源”，清理“100% 自动、完全不用打开、后台始终运行”等绝对承诺，并保持 CORE-004 尚未完成长期真机认证的真实状态。仅限 docs/copy，不改业务逻辑和 UI 结构。 |
 
 ### Public launch 顺序
 
