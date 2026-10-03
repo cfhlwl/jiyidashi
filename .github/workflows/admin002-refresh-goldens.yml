@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   refresh-reviewed-goldens:
-    if: startsWith(github.event.head_commit.message, 'ci(admin002): refresh reviewed Admin Goldens')
+    if: "startsWith(github.event.head_commit.message, 'ci(admin002): refresh reviewed Admin Goldens')"
     runs-on: ubuntu-latest
     defaults:
       run:
