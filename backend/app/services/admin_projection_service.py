@@ -39,7 +39,7 @@ from app.admin_schemas import (
     AdminUserPage,
 )
 from app.analytics_models import ProductActiveDay, RetrievalAnalyticsAttempt, RetrievalOutcome
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.embedding_models import MemoryEmbedding
 from app.entitlement_models import AIQuotaPeriod, AIUsageEvent, PlanCode, UserEntitlement
@@ -54,6 +54,10 @@ from app.security_models import (
 )
 from app.services.admin_security import AdminOperationError
 from app.services.entitlement_service import EntitlementError, entitlement_snapshot
+from app.services.provider_config_service import (
+    ProviderRuntimeConfigError,
+    runtime_provider_settings_from_db,
+)
 
 _MAX_PAGE_SIZE = 100
 
@@ -239,7 +243,13 @@ def dashboard_projection(
     settings: Settings | None = None,
     now: datetime | None = None,
 ) -> AdminDashboardRead:
-    cfg = settings or get_settings()
+    if settings is not None:
+        cfg = settings
+    else:
+        try:
+            cfg = runtime_provider_settings_from_db(db)
+        except ProviderRuntimeConfigError as exc:
+            raise AdminOperationError("ADMIN_PROVIDER_CONFIG_UNAVAILABLE", 503) from exc
     observed = _as_utc(now or datetime.now(UTC))
     start = observed.replace(hour=0, minute=0, second=0, microsecond=0)
     today = observed.date()
@@ -382,7 +392,7 @@ def dashboard_projection(
             ),
             AdminServiceStatus(
                 key="embedding",
-                label="记忆检索",
+                label="语义记忆检索",
                 status=runtime_services["embedding"][0],
                 detail=runtime_services["embedding"][1],
             ),
@@ -1044,10 +1054,17 @@ def list_admin_audit(
 
 
 def system_settings_projection(
+    db: Session,
     *,
     settings: Settings | None = None,
 ) -> AdminSystemSettingsRead:
-    cfg = settings or get_settings()
+    if settings is not None:
+        cfg = settings
+    else:
+        try:
+            cfg = runtime_provider_settings_from_db(db)
+        except ProviderRuntimeConfigError as exc:
+            raise AdminOperationError("ADMIN_PROVIDER_CONFIG_UNAVAILABLE", 503) from exc
     sections = [
         AdminSettingSectionRead(
             key="ai",
@@ -1056,31 +1073,31 @@ def system_settings_projection(
                 AdminSettingRead(
                     key="ai_enabled",
                     label="AI 整理服务",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.ai_provider != "disabled",
                 ),
                 AdminSettingRead(
                     key="ai_model",
                     label="当前模型",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.ai_model or "未配置",
                 ),
                 AdminSettingRead(
                     key="ai_timeout",
                     label="请求超时",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.ai_timeout_seconds,
                 ),
                 AdminSettingRead(
                     key="ai_input_limit",
                     label="单次输入上限",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.ai_max_input_chars,
                 ),
                 AdminSettingRead(
                     key="ai_output_limit",
                     label="单次输出上限",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.ai_max_output_tokens,
                 ),
                 AdminSettingRead(
@@ -1095,7 +1112,7 @@ def system_settings_projection(
                     classification="敏感配置",
                     value=None,
                     configured=bool(cfg.ai_api_key.strip()),
-                    help_text="配置来源：服务器安全配置",
+                    help_text="凭证只显示配置状态；现有值不会返回浏览器",
                 ),
             ],
         ),
@@ -1106,25 +1123,25 @@ def system_settings_projection(
                 AdminSettingRead(
                     key="asr_enabled",
                     label="语音识别服务",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.asr_provider != "disabled",
                 ),
                 AdminSettingRead(
                     key="asr_model",
                     label="当前模型",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.asr_model,
                 ),
                 AdminSettingRead(
                     key="asr_timeout",
                     label="请求超时",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.asr_timeout_seconds,
                 ),
                 AdminSettingRead(
                     key="asr_confidence",
                     label="最低识别可信度",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.asr_min_confidence,
                 ),
                 AdminSettingRead(
@@ -1133,18 +1150,18 @@ def system_settings_projection(
                     classification="敏感配置",
                     value=None,
                     configured=bool(cfg.asr_api_key.strip()),
-                    help_text="配置来源：服务器安全配置",
+                    help_text="凭证只显示配置状态；现有值不会返回浏览器",
                 ),
             ],
         ),
         AdminSettingSectionRead(
             key="embedding",
-            title="记忆检索",
+            title="语义记忆检索（Embedding / RAG）",
             items=[
                 AdminSettingRead(
                     key="embedding_enabled",
-                    label="记忆检索服务",
-                    classification="需要重新部署",
+                    label="语义记忆检索服务",
+                    classification="在线配置",
                     value=cfg.embedding_provider != "disabled",
                 ),
                 AdminSettingRead(
@@ -1162,7 +1179,7 @@ def system_settings_projection(
                 AdminSettingRead(
                     key="embedding_timeout",
                     label="请求超时",
-                    classification="需要重新部署",
+                    classification="在线配置",
                     value=cfg.embedding_timeout_seconds,
                 ),
                 AdminSettingRead(
@@ -1183,7 +1200,7 @@ def system_settings_projection(
                     classification="敏感配置",
                     value=None,
                     configured=bool(cfg.embedding_api_key.strip()),
-                    help_text="配置来源：服务器安全配置",
+                    help_text="凭证只显示配置状态；现有值不会返回浏览器",
                 ),
             ],
         ),
@@ -1248,7 +1265,7 @@ def system_settings_projection(
                         cfg.storage_access_key_id.strip()
                         and cfg.storage_secret_access_key.strip()
                     ),
-                    help_text="配置来源：服务器安全配置",
+                    help_text="凭证只显示配置状态；现有值不会返回浏览器",
                 ),
             ],
         ),
@@ -1417,7 +1434,13 @@ def system_health_projection(
     *,
     settings: Settings | None = None,
 ) -> AdminSystemHealthRead:
-    cfg = settings or get_settings()
+    if settings is not None:
+        cfg = settings
+    else:
+        try:
+            cfg = runtime_provider_settings_from_db(db)
+        except ProviderRuntimeConfigError as exc:
+            raise AdminOperationError("ADMIN_PROVIDER_CONFIG_UNAVAILABLE", 503) from exc
     total_storage = int(
         db.scalar(
             select(func.coalesce(func.sum(MediaAsset.size_bytes), 0)).where(

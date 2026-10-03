@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     admin_session_minutes: int = Field(default=30, ge=5, le=480)
     admin_session_cookie_name: str = "jiyi_admin_session"
     admin_csrf_cookie_name: str = "jiyi_admin_csrf"
+    # ADMIN-002: provider credentials persisted by Admin are encrypted with this
+    # deployment-only Fernet key. The key itself never enters PostgreSQL or Admin UI.
+    provider_config_master_key: str = ""
+    provider_config_cache_ttl_seconds: float = Field(default=2.0, ge=0.25, le=30.0)
 
     enable_dev_auth: bool = False
     auto_create_schema: bool = False

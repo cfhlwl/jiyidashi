@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StrictInt, model_validator
 
-from app.admin_models import AdminRole
+from app.admin_models import AdminRole, ProviderService
 
 MAX_QUOTA_VALUE = 9_223_372_036_854_775_807
 
@@ -296,6 +296,73 @@ class AdminSecurityAlertItem(BaseModel):
 class AdminSecurityAlertPage(BaseModel):
     items: list[AdminSecurityAlertItem]
     next_cursor: str | None = None
+
+
+class AdminProviderConfigRead(BaseModel):
+    service: ProviderService
+    label: str
+    state: str
+    enabled: bool
+    provider_type: str
+    base_url: str
+    endpoint_host: str
+    model: str
+    timeout_seconds: float
+    max_input_chars: int | None = None
+    max_output_tokens: int | None = None
+    min_confidence: float | None = None
+    configured: bool
+    revision: int | None
+    updated_at: datetime | None
+    source: str
+    dimensions: int | None = None
+
+
+class AdminProviderConfigListRead(BaseModel):
+    services: list[AdminProviderConfigRead]
+
+
+class AdminProviderConfigWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int | None = Field(default=None, ge=0)
+    enabled: bool
+    provider_type: str = Field(min_length=1, max_length=32)
+    base_url: str = Field(min_length=1, max_length=512)
+    model: str = Field(max_length=255)
+    timeout_seconds: float = Field(ge=1.0, le=120.0)
+    max_input_chars: StrictInt | None = Field(default=None, ge=1, le=1_000_000)
+    max_output_tokens: StrictInt | None = Field(default=None, ge=1, le=65536)
+    min_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    api_key: str | None = Field(default=None, min_length=1, max_length=4096)
+    clear_api_key: bool = False
+
+    @model_validator(mode="after")
+    def validate_secret_action(self):
+        if self.api_key is not None and self.clear_api_key:
+            raise ValueError("api_key and clear_api_key are mutually exclusive")
+        return self
+
+
+class AdminEmbeddingBackfillRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_provider_revision: int | None = Field(default=None, ge=0)
+    batch_size: StrictInt = Field(default=20, ge=1, le=100)
+
+
+class AdminEmbeddingBackfillRead(BaseModel):
+    vector_database_capable: bool
+    policy_model: str
+    policy_dimensions: int
+    eligible_memories: int
+    vector_rows: int
+    remaining_memories: int
+    batch_size: int | None = None
+    processed: int = 0
+    refreshed: int = 0
+    failed: int = 0
+    last_error: str | None = None
 
 
 class AdminSettingRead(BaseModel):

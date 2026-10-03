@@ -36,3 +36,14 @@ test('@flagship 125 percent zoom keeps primary actions discoverable', async ({ p
   })
   await expect(page.getByRole('button', { name: '创建管理员' })).toBeVisible()
 })
+
+test('@flagship provider credentials are never prefilled in the browser', async ({ page }) => {
+  await page.goto('/ai-services')
+  await page.waitForLoadState('networkidle')
+  const passwordInputs = page.locator('input[type="password"]')
+  expect(await passwordInputs.count()).toBe(3)
+  for (let index = 0; index < 3; index += 1) {
+    await expect(passwordInputs.nth(index)).toHaveValue('')
+  }
+  await expect(page.getByRole('button', { name: '处理下一批（最多 20 条）' })).toBeVisible()
+})

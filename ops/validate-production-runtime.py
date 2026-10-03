@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import sys
 from pathlib import Path
 
@@ -27,6 +29,14 @@ def parse_env(path: Path) -> dict[str, str]:
     return values
 
 
+def valid_fernet_key(value: str) -> bool:
+    try:
+        decoded = base64.urlsafe_b64decode(value.encode("ascii"))
+    except (ValueError, UnicodeEncodeError, binascii.Error):
+        return False
+    return len(decoded) == 32
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("usage: validate-production-runtime.py /path/to/.env.production")
@@ -45,6 +55,10 @@ def main() -> None:
     jwt_secret = values.get("JWT_SECRET", "")
     if len(jwt_secret.encode("utf-8")) < 32 or jwt_secret == "change-this-in-real-environments":
         errors.append("JWT_SECRET must be non-default and at least 32 bytes")
+
+    provider_master_key = values.get("PROVIDER_CONFIG_MASTER_KEY", "")
+    if not valid_fernet_key(provider_master_key):
+        errors.append("PROVIDER_CONFIG_MASTER_KEY must be a valid 32-byte Fernet key")
 
     public_auth_base = values.get("AUTH_PUBLIC_BASE_URL", "")
     if not public_auth_base.startswith("https://"):
