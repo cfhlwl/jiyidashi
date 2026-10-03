@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 import httpx
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.core.observability import emit_operational_event
 from app.services.entitlement_service import (
     EntitlementError,
