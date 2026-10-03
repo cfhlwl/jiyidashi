@@ -21,6 +21,9 @@ class ASRResult:
     confidence: float
     provider: str
     model: str
+    # ADMIN-002: bind the acceptance threshold to the same runtime config snapshot
+    # that selected endpoint/model/key, preventing mixed revisions during one request.
+    policy_min_confidence: float | None = None
 
 
 class ASRProviderError(RuntimeError):
@@ -137,6 +140,7 @@ class OpenAIASRProvider:
             confidence=confidence,
             provider="openai",
             model=self._settings.asr_model,
+            policy_min_confidence=self._settings.asr_min_confidence,
         )
 
 
