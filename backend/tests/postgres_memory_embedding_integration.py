@@ -582,6 +582,111 @@ def _assert_admin_backfill_is_bounded_resumable_and_owner_safe() -> None:
         cleanup.commit()
 
 
+def _assert_admin_backfill_stops_after_provider_revision_change() -> None:
+    first_user, first_memory = _seed_user_memory(
+        title="backfill revision A",
+        content="first paid call may finish",
+    )
+    second_user, second_memory = _seed_user_memory(
+        title="backfill revision B",
+        content="second paid call must be fenced",
+    )
+    admin_id = uuid4()
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        db.add(
+            AdminAccount(
+                id=admin_id,
+                email=f"embedding-fence-{admin_id.hex[:8]}@example.com",
+                display_name="Embedding Fence Admin",
+                password_hash=hash_admin_password("Embedding-Fence-Test-123!"),
+                role=AdminRole.SUPER_ADMIN.value,
+                disabled=False,
+                revision=0,
+            )
+        )
+        db.flush()
+        db.add(
+            ProviderConfiguration(
+                service=ProviderService.EMBEDDING.value,
+                enabled=True,
+                provider_type="openai",
+                base_url="https://api.openai.test/v1",
+                model=MEMORY_EMBEDDING_MODEL,
+                timeout_seconds=5.0,
+                max_input_chars=MEMORY_EMBEDDING_MAX_INPUT_CHARS,
+                max_output_tokens=None,
+                min_confidence=None,
+                credential_override=False,
+                credential_ciphertext=None,
+                revision=0,
+                updated_by_admin_id=admin_id,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+
+    enabled_settings = Settings(
+        app_env="test",
+        database_url=DATABASE_URL,
+        embedding_provider="openai",
+        embedding_api_key="embedding-test-key",
+        embedding_base_url="https://api.openai.test/v1",
+        embedding_model=MEMORY_EMBEDDING_MODEL,
+        embedding_dimensions=MEMORY_EMBEDDING_DIMENSIONS,
+        embedding_timeout_seconds=5.0,
+    )
+
+    class RevisionChangingProvider(DeterministicEmbeddingProvider):
+        async def embed(self, request):
+            result = await super().embed(request)
+            if len(self.requests) == 1:
+                with SessionLocal() as concurrent:
+                    row = concurrent.get(
+                        ProviderConfiguration,
+                        ProviderService.EMBEDDING.value,
+                    )
+                    assert row is not None
+                    row.enabled = False
+                    row.revision += 1
+                    row.updated_at = datetime.now(UTC)
+                    concurrent.commit()
+            return result
+
+    provider = RevisionChangingProvider()
+    gateway = EmbeddingGateway(enabled_settings, provider)
+
+    with SessionLocal() as db:
+        actor = db.get(AdminAccount, admin_id)
+        assert actor is not None
+        result = asyncio.run(
+            run_embedding_backfill_batch(
+                db,
+                actor=actor,
+                payload=AdminEmbeddingBackfillRequest(
+                    expected_provider_revision=0,
+                    batch_size=2,
+                ),
+                settings=enabled_settings,
+                gateway_override=gateway,
+            )
+        )
+        assert result.processed == 1
+        assert result.refreshed == 1
+        assert result.failed == 0
+        assert result.last_error == "PROVIDER_REVISION_CHANGED"
+        assert len(provider.requests) == 1
+        assert _embedding_count(first_memory) + _embedding_count(second_memory) == 1
+
+    with SessionLocal() as cleanup:
+        cleanup.delete(cleanup.get(User, first_user))
+        cleanup.delete(cleanup.get(User, second_user))
+        cleanup.delete(cleanup.get(ProviderConfiguration, ProviderService.EMBEDDING.value))
+        cleanup.delete(cleanup.get(AdminAccount, admin_id))
+        cleanup.commit()
+
+
 def _assert_data_delete_clears_only_owner_embeddings() -> None:
     owner_id, owner_memory_id = _seed_user_memory(
         title="删除 owner",
@@ -637,6 +742,7 @@ def main() -> None:
     _assert_edit_and_soft_delete_invalidate()
     _assert_deletion_generation_blocks_stale_commit()
     _assert_admin_backfill_is_bounded_resumable_and_owner_safe()
+    _assert_admin_backfill_stops_after_provider_revision_change()
     _assert_data_delete_clears_only_owner_embeddings()
 
     print("PostgreSQL Memory embedding/index invariants PASS")
