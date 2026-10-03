@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.admin_models import (
@@ -297,7 +298,13 @@ def update_provider_configuration(
         row.updated_by_admin_id = actor.id
         row.updated_at = now
 
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        # A first-write race has no row to lock. The service primary key is the final
+        # identity fence; the losing creator must observe stale state rather than a 500.
+        db.rollback()
+        raise AdminOperationError("ADMIN_STATE_STALE", 409) from exc
     append_admin_audit(
         db,
         actor=actor,
