@@ -145,7 +145,10 @@ function ProviderEditor({
           <Switch
             checked={draft.enabled}
             disabled={readOnly}
-            onChange={(value) => set('enabled', value)}
+            onChange={(value) => {
+              set('enabled', value)
+              if (value) setClearKey(false)
+            }}
           />
         </label>
 
