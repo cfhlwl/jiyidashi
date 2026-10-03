@@ -352,11 +352,17 @@ export function AiServicesPage() {
           batch_size: 20,
         },
       )
-      setBackfillMessage(
-        result.processed === 0
-          ? '当前没有需要补齐的记忆向量。'
-          : `本批处理 ${result.processed} 条，更新 ${result.refreshed} 条。`,
-      )
+      if (result.last_error === 'PROVIDER_REVISION_CHANGED') {
+        setBackfillError('服务配置已变化，本批已安全停止；请按当前配置重新继续。')
+      } else if (result.last_error) {
+        setBackfillError('本批处理提前停止，请检查服务状态后重试。')
+      } else {
+        setBackfillMessage(
+          result.processed === 0
+            ? '当前没有需要补齐的记忆向量。'
+            : `本批处理 ${result.processed} 条，更新 ${result.refreshed} 条。`,
+        )
+      }
       await refresh()
     } catch (err) {
       setBackfillError(err instanceof Error ? err.message : '回填没有完成')
