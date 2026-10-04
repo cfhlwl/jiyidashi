@@ -685,16 +685,11 @@ class TrustedMediaCaptureService {
 
   String _cacheVersion(Map<String, dynamic> response) {
     final value = response['cache_version'];
-    if (value is! String ||
-        !RegExp(r'^[0-9a-f]{64}\    final memory = response['memory'];
-    final id = memory is Map<String, dynamic> ? memory['id'] : null;
-    if (id is! String || id.trim().isEmpty) {
-      throw ProtocolException('服务端返回格式不正确');
-    }
-    return id;
-  }
-}
-).hasMatch(value)) {
+    final valid = value is String &&
+        value.length == 64 &&
+        value.codeUnits.every((unit) =>
+            (unit >= 48 && unit <= 57) || (unit >= 97 && unit <= 102));
+    if (!valid) {
       throw ProtocolException('服务端返回格式不正确');
     }
     return value;
