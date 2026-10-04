@@ -28,9 +28,7 @@ from app.embedding_policy import (
     MEMORY_EMBEDDING_DIMENSIONS,
     MEMORY_EMBEDDING_MODEL,
 )
-from app.entitlement_models import AIUsageEvent
-from app.media_models import MediaASRClaim
-from app.models import Memory, MemorySource, SourceType
+from app.models import Memory
 from app.services.admin_security import AdminOperationError, append_admin_audit
 from app.services.embedding_service import (
     EmbeddingServiceError,
@@ -56,7 +54,6 @@ _PROVIDER_LABELS = {
     ProviderService.EMBEDDING: "语义记忆检索",
 }
 _EVIDENCE_WINDOW = timedelta(hours=24)
-_STALE_AI_RESERVATION_GRACE = timedelta(minutes=5)
 
 
 def _require_super_admin(actor: AdminAccount) -> None:
@@ -74,15 +71,6 @@ def _provider_error(exc: ProviderRuntimeConfigError) -> AdminOperationError:
 def _safe_host(value: str) -> str:
     parsed = urlparse(value.strip())
     return parsed.hostname or ""
-
-
-def _latest(db: Session, statement) -> datetime | None:
-    value = db.scalar(statement)
-    if value is None:
-        return None
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 def _runtime_state(
