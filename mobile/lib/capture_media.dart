@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 
 import 'api_client.dart';
+import 'media_presentation_cache.dart';
 
 class CaptureMediaException implements Exception {
   CaptureMediaException(this.message);
@@ -561,8 +562,13 @@ class PlatformCaptureMediaDevice implements CaptureMediaDevice {
 enum MediaSubmissionPhase { uploading, verifying, saving, transcribing }
 
 class TrustedMediaCaptureService {
-  TrustedMediaCaptureService(this.api);
+  TrustedMediaCaptureService(
+    this.api, {
+    this.localMediaCache,
+  });
+
   final JiYiApiClient api;
+  final LocalMediaCache? localMediaCache;
 
   ({int version, String owner}) _captureSession() {
     final owner = api.authenticatedUserId?.trim();
@@ -600,8 +606,9 @@ class TrustedMediaCaptureService {
     _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.verifying);
     _assertSameSession(session);
-    await api.completeMediaUpload(upload.mediaId);
+    final completed = await api.completeMediaUpload(upload.mediaId);
     _assertSameSession(session);
+    final cacheVersion = _cacheVersion(completed);
     onPhase?.call(MediaSubmissionPhase.saving);
     _assertSameSession(session);
     final response = await api.createPhotoMemory(
@@ -611,6 +618,18 @@ class TrustedMediaCaptureService {
       occurredAt: file.occurredAt,
     );
     _assertSameSession(session);
+
+    final cache = localMediaCache;
+    final localPath = file.localPath;
+    if (cache != null && localPath != null) {
+      await cache.seedFromFile(
+        ownerUserId: session.owner,
+        mediaId: upload.mediaId,
+        cacheVersion: cacheVersion,
+        source: File(localPath),
+      );
+      _assertSameSession(session);
+    }
     return _memoryId(response);
   }
 
@@ -662,6 +681,23 @@ class TrustedMediaCaptureService {
     _assertSameSession(session);
     await api.uploadSignedMedia(target, bytes);
     _assertSameSession(session);
+  }
+
+  String _cacheVersion(Map<String, dynamic> response) {
+    final value = response['cache_version'];
+    if (value is! String ||
+        !RegExp(r'^[0-9a-f]{64}\    final memory = response['memory'];
+    final id = memory is Map<String, dynamic> ? memory['id'] : null;
+    if (id is! String || id.trim().isEmpty) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    return id;
+  }
+}
+).hasMatch(value)) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    return value;
   }
 
   String _memoryId(Map<String, dynamic> response) {
