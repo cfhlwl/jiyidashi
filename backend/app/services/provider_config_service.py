@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
+import hashlib
+import json
 from threading import Lock
 from time import monotonic
 from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.admin_models import ProviderConfiguration, ProviderService
+from app.admin_models import ProviderConfiguration, ProviderRuntimeEvidence, ProviderService
 from app.core.config import Settings, get_settings
 from app.core.db import SessionLocal
 from app.embedding_policy import (
@@ -196,6 +201,105 @@ def read_provider_rows(db: Session) -> dict[ProviderService, ProviderConfigurati
             raise ProviderRuntimeConfigError("PROVIDER_CONFIG_INVALID") from exc
         result[service] = row
     return result
+
+
+def provider_destination_authority(provider_type: str, base_url: str) -> tuple[str, str, int | None]:
+    parsed = urlparse(base_url.strip())
+    if not parsed.scheme or not parsed.hostname:
+        raise ProviderRuntimeConfigError("PROVIDER_BASE_URL_INVALID")
+    scheme = parsed.scheme.lower()
+    host = parsed.hostname.lower()
+    port = parsed.port
+    if port is None:
+        if scheme == "https":
+            port = 443
+        elif scheme == "http":
+            port = 80
+    return provider_type.strip().lower(), f"{scheme}://{host}", port
+
+
+def provider_runtime_fingerprint(settings: Settings, service: ProviderService) -> str:
+    if service == ProviderService.AI:
+        payload = {
+            "service": service.value,
+            "provider": settings.ai_provider,
+            "base_url": settings.ai_base_url.rstrip("/"),
+            "model": settings.ai_model,
+            "timeout": settings.ai_timeout_seconds,
+            "max_input_chars": settings.ai_max_input_chars,
+            "max_output_tokens": settings.ai_max_output_tokens,
+            "credential": settings.ai_api_key,
+        }
+    elif service == ProviderService.ASR:
+        payload = {
+            "service": service.value,
+            "provider": settings.asr_provider,
+            "base_url": settings.asr_base_url.rstrip("/"),
+            "model": settings.asr_model,
+            "timeout": settings.asr_timeout_seconds,
+            "min_confidence": settings.asr_min_confidence,
+            "credential": settings.asr_api_key,
+        }
+    else:
+        payload = {
+            "service": service.value,
+            "provider": settings.embedding_provider,
+            "base_url": settings.embedding_base_url.rstrip("/"),
+            "model": settings.embedding_model,
+            "dimensions": settings.embedding_dimensions,
+            "timeout": settings.embedding_timeout_seconds,
+            "max_input_chars": settings.embedding_max_input_chars,
+            "credential": settings.embedding_api_key,
+        }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def record_provider_runtime_evidence(
+    bind: Engine,
+    *,
+    service: ProviderService,
+    config_fingerprint: str,
+    succeeded: bool,
+    now: datetime | None = None,
+) -> None:
+    observed_at = now or datetime.now(UTC)
+    for attempt in range(2):
+        with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
+            row = db.scalar(
+                select(ProviderRuntimeEvidence)
+                .where(
+                    ProviderRuntimeEvidence.service == service.value,
+                    ProviderRuntimeEvidence.config_fingerprint == config_fingerprint,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                row = ProviderRuntimeEvidence(
+                    service=service.value,
+                    config_fingerprint=config_fingerprint,
+                    last_success_at=observed_at if succeeded else None,
+                    last_failure_at=None if succeeded else observed_at,
+                    updated_at=observed_at,
+                )
+                db.add(row)
+            else:
+                if succeeded:
+                    row.last_success_at = observed_at
+                else:
+                    row.last_failure_at = observed_at
+                row.updated_at = observed_at
+            try:
+                db.commit()
+                return
+            except IntegrityError:
+                db.rollback()
+                if attempt == 0:
+                    continue
+                return
+            except Exception:
+                db.rollback()
+                return
 
 
 def _validate_url(value: str, *, production: bool) -> str:
