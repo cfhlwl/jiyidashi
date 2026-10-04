@@ -1049,6 +1049,11 @@ class _FamilyPhotoTileState extends State<_FamilyPhotoTile> {
               ),
             )
           : widget.renderer?.call(current) ??
+              LocalMediaPresentationScope.maybeOf(context)?.renderer(
+                context,
+                current,
+                BoxFit.cover,
+              ) ??
               Image.file(
                 current,
                 fit: BoxFit.cover,
