@@ -565,10 +565,12 @@ class TrustedMediaCaptureService {
   TrustedMediaCaptureService(
     this.api, {
     this.localMediaCache,
+    this.onLocalCacheSeedFailure,
   });
 
   final JiYiApiClient api;
   final LocalMediaCache? localMediaCache;
+  final void Function(Object error)? onLocalCacheSeedFailure;
 
   ({int version, String owner}) _captureSession() {
     final owner = api.authenticatedUserId?.trim();
@@ -621,16 +623,23 @@ class TrustedMediaCaptureService {
 
     final cache = localMediaCache;
     final localPath = file.localPath;
+    final memoryId = _memoryId(response);
     if (cache != null && localPath != null) {
-      await cache.seedFromFile(
-        ownerUserId: session.owner,
-        mediaId: upload.mediaId,
-        cacheVersion: cacheVersion,
-        source: File(localPath),
-      );
-      _assertSameSession(session);
+      try {
+        await cache.seedFromFile(
+          ownerUserId: session.owner,
+          mediaId: upload.mediaId,
+          cacheVersion: cacheVersion,
+          source: File(localPath),
+        );
+        _assertSameSession(session);
+      } catch (error) {
+        // Canonical server save already succeeded. Local presentation cache is
+        // only an optimization and must never turn success into a false failure.
+        onLocalCacheSeedFailure?.call(error);
+      }
     }
-    return _memoryId(response);
+    return memoryId;
   }
 
   Future<String> submitVoice(
