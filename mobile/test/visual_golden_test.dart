@@ -1067,9 +1067,17 @@ void main() {
   testWidgets(
     'preview: deterministic memory query trust label',
     (tester) async {
-      final key = await _pumpShell(tester);
-      await tester.tap(find.text('记忆'));
-      await tester.pumpAndSettle();
+      // This preview validates Memory Query trust labeling only. Keep it isolated
+      // from AppShell background sync/location lifecycles so the focused CI gate
+      // cannot be held open by unrelated shell work.
+      final key = await _pumpSurface(
+        tester,
+        Scaffold(
+          body: SafeArea(
+            child: MemoryQueryPage(api: _GoldenApi()),
+          ),
+        ),
+      );
       await tester.enterText(
         find.byKey(const ValueKey('memory-query-input')),
         '护照在哪里？',
