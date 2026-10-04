@@ -68,6 +68,13 @@ class _DeleteQueryApi extends JiYiApiClient {
   }
 }
 
+class _DeleteQueryProjectionFailureApi extends _DeleteQueryApi {
+  @override
+  Future<Map<String, dynamic>> getMemory(String memoryId) async {
+    throw TransportException('projection unavailable');
+  }
+}
+
 void main() {
   testWidgets('Memory Query delete invalidates the deleted photo cache',
       (tester) async {
@@ -114,4 +121,54 @@ void main() {
       isFalse,
     );
   });
+
+  testWidgets(
+      'Memory Query delete purges owner cache when deleted media projection is unavailable',
+      (tester) async {
+    final root =
+        await Directory.systemTemp.createTemp('jiyi-query-delete-fallback-');
+    addTearDown(() => root.delete(recursive: true));
+
+    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
+    final first = await cache.putBytes(
+      ownerUserId: _owner,
+      mediaId: _media,
+      cacheVersion: _version,
+      bytes: <int>[1, 2, 3],
+    );
+    final second = await cache.putBytes(
+      ownerUserId: _owner,
+      mediaId: '33333333-3333-4333-8333-333333333333',
+      cacheVersion:
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      bytes: <int>[4, 5, 6],
+    );
+    cache.markAuthorityValidated(ownerUserId: _owner, mediaId: _media);
+
+    final api = _DeleteQueryProjectionFailureApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MemoryQueryPage(api: api, mediaCache: cache),
+        ),
+      ),
+    );
+    await tester.enterText(find.byType(TextField).first, '找照片');
+    await tester.tap(find.text('从我的记录里找'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('删除最相关记忆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认删除'));
+    await tester.pumpAndSettle();
+
+    expect(api.deleteCalls, 1);
+    expect(await first.exists(), isFalse);
+    expect(await second.exists(), isFalse);
+    expect(
+      await cache.lookup(ownerUserId: _owner, mediaId: _media),
+      isNull,
+    );
+  });
+
 }
