@@ -106,7 +106,11 @@ def _bucket_key(scope: str, value: str) -> str:
     return hmac.new(settings.jwt_secret.encode(), message, hashlib.sha256).hexdigest()
 
 
-def _rate_limited(retry_after_seconds: int, *, detail: str = "AUTH_RATE_LIMITED") -> HTTPException:
+def _rate_limited(
+    retry_after_seconds: int,
+    *,
+    detail: str = "AUTH_RATE_LIMITED",
+) -> HTTPException:
     retry_after = max(1, retry_after_seconds)
     return HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -194,7 +198,11 @@ def _consume(
             )
             raise _rate_limited(
                 retry_after,
-                detail="API_RATE_LIMITED" if scope.startswith("api_") else "AUTH_RATE_LIMITED",
+                detail=(
+                    "API_RATE_LIMITED"
+                    if scope.startswith("api_")
+                    else "AUTH_RATE_LIMITED"
+                ),
             )
         bucket.blocked_until = None
 
@@ -214,7 +222,11 @@ def _consume(
         )
         raise _rate_limited(
             retry_after,
-            detail="API_RATE_LIMITED" if scope.startswith("api_") else "AUTH_RATE_LIMITED",
+            detail=(
+                "API_RATE_LIMITED"
+                if scope.startswith("api_")
+                else "AUTH_RATE_LIMITED"
+            ),
         )
 
     bucket.attempts += 1
