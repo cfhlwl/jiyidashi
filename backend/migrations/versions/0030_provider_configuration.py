@@ -71,5 +71,31 @@ def upgrade() -> None:
     )
 
 
+    op.create_table(
+        "provider_runtime_evidence",
+        sa.Column("service", sa.String(length=32), nullable=False),
+        sa.Column("config_fingerprint", sa.String(length=64), nullable=False),
+        sa.Column("last_success_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_failure_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "service IN ('AI','ASR','EMBEDDING')",
+            name="ck_provider_runtime_evidence_service",
+        ),
+        sa.PrimaryKeyConstraint("service", "config_fingerprint"),
+    )
+    op.create_index(
+        "ix_provider_runtime_evidence_service_updated",
+        "provider_runtime_evidence",
+        ["service", "updated_at"],
+        unique=False,
+    )
+
+
 def downgrade() -> None:
+    op.drop_index(
+        "ix_provider_runtime_evidence_service_updated",
+        table_name="provider_runtime_evidence",
+    )
+    op.drop_table("provider_runtime_evidence")
     op.drop_table("provider_configurations")
