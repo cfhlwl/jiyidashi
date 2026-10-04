@@ -125,8 +125,10 @@ def parse_env(path: Path) -> dict[str, str]:
 
 
 def assert_sensitive_placeholders(values: dict[str, str]) -> None:
-    assert_sensitive_placeholders(values)
-    _prove_fernet_master_key_guard()
+    for key in SENSITIVE_PLACEHOLDERS:
+        assert values.get(key, "").startswith("CHANGE_ME"), (
+            f"{key} must remain a placeholder in the committed template"
+        )
 
 
 def _prove_fernet_master_key_guard() -> None:
@@ -178,10 +180,8 @@ def main() -> None:
     assert "localhost" not in values["API_DOMAIN"]
     assert "127.0.0.1" not in values["API_DOMAIN"]
 
-    for key in SENSITIVE_PLACEHOLDERS:
-        assert values[key].startswith("CHANGE_ME"), (
-            f"{key} must remain a placeholder in the committed template"
-        )
+    assert_sensitive_placeholders(values)
+    _prove_fernet_master_key_guard()
 
     assert not subprocess.run(
         ["git", "-C", str(ROOT), "ls-files", "--error-unmatch", "backend/.env.production"],
