@@ -494,12 +494,12 @@ void main() {
       () async {
     final root = await Directory.systemTemp.createTemp('jiyi-capture-cache-');
     addTearDown(() => root.delete(recursive: true));
-    final source = File(root.path + Platform.pathSeparator + 'capture.jpg');
+    final source = File('${root.path}${Platform.pathSeparator}capture.jpg');
     await source.writeAsBytes(<int>[0xff, 0xd8, 0xff], flush: true);
 
     final api = _FakeMediaApi();
     final cache = LocalMediaCache(
-      rootDirectoryProvider: () async => Directory(root.path + '/cache'),
+      rootDirectoryProvider: () async => Directory('${root.path}/cache'),
     );
     final service = TrustedMediaCaptureService(
       api,
