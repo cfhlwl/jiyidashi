@@ -103,27 +103,27 @@ void main() {
 
   testWidgets('production build without platform SDK key fails closed',
       (tester) async {
-    await expectLater(
-      tester.pumpWidget(
-        MaterialApp(
-          home: JiYiFootprintMap(
-            visits: <FootprintVisit>[_visit()],
-            privacyAccepted: true,
-            selectedIndex: 0,
-            onSelected: (_) {},
-            config: const JiYiAmapConfig(
-              platformOverride: TargetPlatform.android,
-              appEnv: 'production',
-            ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: JiYiFootprintMap(
+          visits: <FootprintVisit>[_visit()],
+          privacyAccepted: true,
+          selectedIndex: 0,
+          onSelected: (_) {},
+          config: const JiYiAmapConfig(
+            platformOverride: TargetPlatform.android,
+            appEnv: 'production',
           ),
         ),
       ),
-      throwsA(
-        isA<StateError>().having(
-          (error) => error.message,
-          'message',
-          contains('Production AMap configuration'),
-        ),
+    );
+
+    expect(
+      tester.takeException(),
+      isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        contains('Production AMap configuration'),
       ),
     );
   });
