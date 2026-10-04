@@ -2656,11 +2656,36 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       return;
     }
 
+    final memoryId = ids.first.toString();
+    final owner = widget.api.authenticatedUserId;
+    String? mediaId;
     setState(() => loading = true);
     try {
+      // Resolve the server-owned media identity before deletion so every
+      // supported delete surface can revoke local presentation bytes too.
+      // Failure to read the optional media projection must not block deletion.
+      try {
+        final memory = await widget.api.getMemory(memoryId);
+        final metadata = memory['metadata_json'];
+        final candidate = metadata is Map<String, dynamic>
+            ? metadata['media_id']
+            : null;
+        if (candidate is String && candidate.trim().isNotEmpty) {
+          mediaId = candidate.trim();
+        }
+      } catch (_) {
+        mediaId = null;
+      }
+
       // [人工注释][S1-019] 只有服务端 DELETE 成功后才清空当前答案，
       // 这样“删除”才是真正影响后续检索的业务操作。
-      await widget.api.deleteMemory(ids.first.toString());
+      await widget.api.deleteMemory(memoryId);
+      if (owner != null && mediaId != null && widget.mediaCache != null) {
+        await widget.mediaCache!.invalidateMedia(
+          ownerUserId: owner,
+          mediaId: mediaId!,
+        );
+      }
       setState(() {
         result = null;
         actionMessage = '✓ 这条记忆已删除，后续查询不会再使用它';
