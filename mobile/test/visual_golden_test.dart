@@ -836,6 +836,20 @@ class _GoldenQueue extends OfflineQueueStore {
   Future<void> close() async {}
 }
 
+Future<void> _pumpVisualFrames(
+  WidgetTester tester, {
+  int maxFrames = 40,
+  Duration step = const Duration(milliseconds: 50),
+}) async {
+  // Golden fixtures use immediate fake APIs. Bound frame draining so an
+  // unrelated repeating ticker/animation can never hold the entire visual
+  // workflow open for WidgetTester's 10-minute pumpAndSettle timeout.
+  for (var frame = 0; frame < maxFrames; frame++) {
+    await tester.pump(step);
+    if (!tester.binding.hasScheduledFrame) return;
+  }
+}
+
 Future<Key> _pumpSurface(
   WidgetTester tester,
   Widget child, {
@@ -870,7 +884,7 @@ Future<Key> _pumpSurface(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  await _pumpVisualFrames(tester);
   return key;
 }
 
@@ -1127,7 +1141,7 @@ void main() {
     final voiceStart =
         find.byKey(const ValueKey<String>('capture-voice-start'));
     await tester.ensureVisible(voiceStart);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
 
     expect(
       find.byKey(const ValueKey<String>('capture-photo-camera')),
@@ -1171,7 +1185,7 @@ void main() {
         '护照在哪里？',
       );
       await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
-      await tester.pumpAndSettle();
+      await _pumpVisualFrames(tester);
 
       expect(find.text('AI 整理'), findsNothing);
       expect(find.text('明确记录'), findsOneWidget);
@@ -1331,11 +1345,11 @@ void main() {
     );
     final generate = find.text('生成回顾');
     await tester.ensureVisible(generate);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await tester.tap(generate);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await tester.ensureVisible(find.text('AI 整理'));
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     expect(find.textContaining('持续围绕产品开发'), findsOneWidget);
     await expectLater(
       find.byKey(key),
@@ -1353,12 +1367,12 @@ void main() {
     await tester.enterText(find.byType(TextField).first, '2025');
     final annual = find.text('开始回看');
     await tester.ensureVisible(annual);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await tester.tap(annual);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     final storyHero = find.byKey(const ValueKey('annual-story-hero'));
     await tester.ensureVisible(storyHero);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     expect(storyHero, findsOneWidget);
     expect(find.text('这一年的故事'), findsOneWidget);
     expect(find.textContaining('新的产品阶段'), findsOneWidget);
@@ -1379,16 +1393,16 @@ void main() {
       280,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await tester.tap(stage);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     final generate = find.text('生成这个阶段的故事');
     await tester.ensureVisible(generate);
     await tester.tap(generate);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     final narrative = find.textContaining('这一阶段以产品开发为主线');
     await tester.ensureVisible(narrative);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     expect(narrative, findsOneWidget);
     await expectLater(
       find.byKey(key),
@@ -1410,11 +1424,11 @@ void main() {
     );
     final generate = find.text('生成回顾');
     await tester.ensureVisible(generate);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await tester.tap(generate);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await tester.ensureVisible(find.text('暂时无法整理'));
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     expect(find.textContaining('持续围绕产品开发'), findsNothing);
     await expectLater(
       find.byKey(key),
@@ -1502,11 +1516,11 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await tester.tap(find.byKey(const ValueKey('family-read-photos')));
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await tester.tap(find.byKey(const ValueKey('family-read-location')));
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
 
     expect(find.byKey(const ValueKey('family-photo-grid')), findsOneWidget);
     expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
@@ -1516,7 +1530,7 @@ void main() {
       180,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_family.png'),
@@ -1543,14 +1557,14 @@ void main() {
       '我 9 月 20 日去了哪里？',
     );
     await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
 
     expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
     expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
     expect(find.text('为什么这么回答'), findsOneWidget);
     final map = find.byKey(const ValueKey('amap-real-surface'));
     await tester.ensureVisible(map);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_memory_query.png'),
@@ -1601,12 +1615,12 @@ void main() {
     final start = find.text('开始回看');
     await tester.ensureVisible(start);
     await tester.tap(start);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
 
     final photo = find.byKey(const ValueKey('annual-photo-$v2MediaId'));
     expect(photo, findsOneWidget);
     await tester.ensureVisible(photo);
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
     expect(find.text('这一年的照片'), findsOneWidget);
     await expectLater(
       find.byKey(key),
@@ -1626,7 +1640,7 @@ void main() {
       180,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.pumpAndSettle();
+    await _pumpVisualFrames(tester);
 
     expect(find.text('隐私与记录控制'), findsOneWidget);
     expect(find.byKey(const ValueKey('amap-privacy-revoke')), findsOneWidget);
