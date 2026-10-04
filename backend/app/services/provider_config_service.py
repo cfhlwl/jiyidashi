@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -262,7 +263,23 @@ def provider_runtime_fingerprint(settings: Settings, service: ProviderService) -
             "credential": settings.embedding_api_key,
         }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    # Persisted runtime evidence must not become an offline verifier for provider
+    # credentials. In production the Fernet master key is deployment-only and never
+    # stored in PostgreSQL; non-production/bootstrap-only paths fall back to the
+    # server-owned JWT secret so tests and disabled-provider development remain usable.
+    key_material = settings.provider_config_master_key.strip()
+    if not key_material:
+        if settings.is_production:
+            raise ProviderRuntimeConfigError("PROVIDER_CONFIG_MASTER_KEY_UNAVAILABLE")
+        key_material = settings.jwt_secret.strip()
+    if not key_material:
+        raise ProviderRuntimeConfigError("PROVIDER_FINGERPRINT_KEY_UNAVAILABLE")
+    domain = b"jiyidashi/provider-runtime-fingerprint/v1\0"
+    return hmac.new(
+        key_material.encode("utf-8"),
+        domain + raw.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def record_provider_runtime_evidence(
