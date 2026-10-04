@@ -152,15 +152,15 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf test/failures /tmp/golden-mismatch-proof
-          cp test/goldens/home_today.png /tmp/home_today.original.png
-          cp test/goldens/auth_login.png test/goldens/home_today.png
+          cp test/goldens/onboarding_intro.png /tmp/onboarding_intro.original.png
+          cp test/goldens/auth_login.png test/goldens/onboarding_intro.png
 
           set +e
-          flutter test test/visual_golden_test.dart --reporter expanded
+          flutter test test/visual_golden_test.dart --plain-name "golden: onboarding intro" --reporter expanded
           mismatch_status=$?
           set -e
 
-          mv /tmp/home_today.original.png test/goldens/home_today.png
+          mv /tmp/onboarding_intro.original.png test/goldens/onboarding_intro.png
           if [ "$mismatch_status" -eq 0 ]; then
             echo "Expected the intentional golden mismatch to fail."
             exit 1
