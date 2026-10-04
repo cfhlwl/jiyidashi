@@ -85,7 +85,10 @@ void main() {
           privacyAccepted: true,
           selectedIndex: 0,
           onSelected: (_) {},
-          config: const JiYiAmapConfig(platformOverride: TargetPlatform.android),
+          config: const JiYiAmapConfig(
+            platformOverride: TargetPlatform.android,
+            appEnv: 'development',
+          ),
           nativeBuilder: (context, config, visits, selected, onSelected, interactive) {
             nativeBuilds += 1;
             return const SizedBox();
@@ -96,6 +99,61 @@ void main() {
 
     expect(find.byKey(const ValueKey('amap-key-unavailable')), findsOneWidget);
     expect(nativeBuilds, 0);
+  });
+
+  testWidgets('production build without platform SDK key fails closed',
+      (tester) async {
+    await expectLater(
+      tester.pumpWidget(
+        MaterialApp(
+          home: JiYiFootprintMap(
+            visits: <FootprintVisit>[_visit()],
+            privacyAccepted: true,
+            selectedIndex: 0,
+            onSelected: (_) {},
+            config: const JiYiAmapConfig(
+              platformOverride: TargetPlatform.android,
+              appEnv: 'production',
+            ),
+          ),
+        ),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('Production AMap configuration'),
+        ),
+      ),
+    );
+  });
+
+  testWidgets('accepted privacy applies SDK privacy state before initialization',
+      (tester) async {
+    final calls = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            bootstrapJiYiAmapSdk(
+              context,
+              const JiYiAmapConfig(
+                androidKey: 'android-key',
+                platformOverride: TargetPlatform.android,
+                appEnv: 'development',
+              ),
+              hooks: JiYiAmapSdkHooks(
+                updatePrivacyAgree: (_) => calls.add('privacy'),
+                init: (context, {required apiKey}) => calls.add('init'),
+              ),
+            );
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+
+    expect(calls, <String>['privacy', 'init']);
   });
 
   testWidgets('missing canonical coordinates never creates fake marker', (tester) async {
