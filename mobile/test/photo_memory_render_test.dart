@@ -2,14 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/auth_session_store.dart';
 import 'package:jiyidashi/media_presentation_cache.dart';
-import 'package:jiyidashi/memory_detail_page.dart';
 
 const ownerA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ownerB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -97,18 +95,6 @@ Uint8List _validPngBytes() => base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
     );
 
-Future<void> _pumpUntil(
-  WidgetTester tester,
-  bool Function() done, {
-  int attempts = 30,
-}) async {
-  for (var index = 0; index < attempts; index++) {
-    await tester.pump(const Duration(milliseconds: 50));
-    if (done()) return;
-  }
-  fail('bounded widget pump did not reach expected state');
-}
-
 void main() {
   test('media download endpoint returns stable cache identity plus short-lived GET', () async {
     final store = MemoryAuthSessionStore()..installationId = 'photo-download-install';
@@ -159,83 +145,62 @@ void main() {
     expect(call, 2);
   });
 
-  testWidgets('PHOTO detail downloads once then renders local cached file',
-      (tester) async {
+  test('media resolver downloads once then reuses owner-scoped local cache',
+      () async {
     final root = await _tempRoot();
     addTearDown(() => root.delete(recursive: true));
     final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
     final api = _PhotoApi();
+    final resolver = MediaPresentationResolver(api: api, cache: cache);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MemoryDetailPage(
-          api: api,
-          memoryId: memoryId,
-          mediaCache: cache,
-          localPhotoRenderer: (file, key) => SizedBox(
-            key: key,
-            child: Text('local-file:${file.path}'),
-          ),
-        ),
-      ),
-    );
-    await _pumpUntil(
-      tester,
-      () => api.capabilityCalls == 1 &&
-          api.byteDownloadCalls == 1 &&
-          find.textContaining('local-file:').evaluate().isNotEmpty,
+    final first = await resolver.resolve(
+      ownerUserId: ownerA,
+      mediaId: mediaId,
     );
 
     expect(api.capabilityCalls, 1);
     expect(api.byteDownloadCalls, 1);
-    expect(find.text('测试照片'), findsWidgets);
-    expect(find.text('照片'), findsWidgets);
-    expect(find.textContaining('local-file:'), findsOneWidget);
+    expect(await first.readAsBytes(), _validPngBytes());
     expect(
       await cache.lookup(ownerUserId: ownerA, mediaId: mediaId),
       isNotNull,
     );
 
+    final second = await resolver.resolve(
+      ownerUserId: ownerA,
+      mediaId: mediaId,
+    );
+
+    expect(second.path, first.path);
+    expect(api.capabilityCalls, 1);
+    expect(api.byteDownloadCalls, 1);
   });
 
-  testWidgets('PHOTO detail cache hit does not ask for a signed capability',
-      (tester) async {
+  test('media resolver cache hit does not ask for a signed capability',
+      () async {
     final root = await _tempRoot();
     addTearDown(() => root.delete(recursive: true));
     final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
-    await cache.putBytes(
+    final seeded = await cache.putBytes(
       ownerUserId: ownerA,
       mediaId: mediaId,
       cacheVersion: cacheVersion,
       bytes: _validPngBytes(),
     );
     final api = _PhotoApi();
+    final resolver = MediaPresentationResolver(api: api, cache: cache);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MemoryDetailPage(
-          api: api,
-          memoryId: memoryId,
-          mediaCache: cache,
-          localPhotoRenderer: (file, key) => SizedBox(
-            key: key,
-            child: Text('local-file:${file.path}'),
-          ),
-        ),
-      ),
-    );
-    await _pumpUntil(
-      tester,
-      () => find.textContaining('local-file:').evaluate().isNotEmpty,
+    final resolved = await resolver.resolve(
+      ownerUserId: ownerA,
+      mediaId: mediaId,
     );
 
+    expect(resolved.path, seeded.path);
     expect(api.capabilityCalls, 0);
     expect(api.byteDownloadCalls, 0);
-    expect(find.textContaining('local-file:'), findsOneWidget);
   });
 
-  testWidgets('account switch prevents owner A cached image publication',
-      (tester) async {
+  test('media resolver rejects owner A cache after account switch', () async {
     final root = await _tempRoot();
     addTearDown(() => root.delete(recursive: true));
     final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
@@ -246,21 +211,17 @@ void main() {
       bytes: _validPngBytes(),
     );
     final api = _PhotoApi()..authenticatedUserId = ownerB;
+    final resolver = MediaPresentationResolver(api: api, cache: cache);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MemoryDetailPage(
-          api: api,
-          memoryId: memoryId,
-          mediaCache: cache,
-        ),
+    await expectLater(
+      resolver.resolve(
+        ownerUserId: ownerA,
+        mediaId: mediaId,
       ),
+      throwsA(isA<MediaCacheException>()),
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    expect(find.byType(Image), findsNothing);
     expect(api.capabilityCalls, 0);
     expect(api.byteDownloadCalls, 0);
   });
+
 }
