@@ -18,8 +18,8 @@ from app.long_term_reasoning_models import (
 )
 from app.models import Memory, MemoryEdit, MemorySource, MemoryType, SourceType, User
 from app.services.ai_gateway import (
-    AIGateway,
     AIEntitlementError,
+    AIGateway,
     AIInferenceRequest,
     AIProviderError,
     AIProviderResult,
