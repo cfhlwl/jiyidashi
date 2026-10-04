@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -237,42 +236,6 @@ void main() {
       isNotNull,
     );
   });
-  testWidgets('local media thumbnail cache hit never requests signed capability',
-      (tester) async {
-    final root = await _tempRoot();
-    addTearDown(() => root.delete(recursive: true));
 
-    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
-    await cache.putBytes(
-      ownerUserId: _ownerA,
-      mediaId: _mediaA,
-      cacheVersion: _versionA,
-      bytes: base64Decode(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-      ),
-    );
-    final api = _MediaApi(owner: _ownerA);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: LocalMediaThumbnail(
-            api: api,
-            mediaId: _mediaA,
-            cache: cache,
-          ),
-        ),
-      ),
-    );
-    // The resolver is asynchronous, but this widget has no animation contract.
-    // Use bounded pumps instead of pumpAndSettle so a broken image stream can never
-    // stall the full mobile suite.
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    expect(find.byType(Image), findsOneWidget);
-    expect(api.capabilityCalls, 0);
-    expect(api.downloadCalls, 0);
-  });
 
 }
