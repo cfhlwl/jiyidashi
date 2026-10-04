@@ -15,8 +15,8 @@ from app.core.db import (
 from app.core.security import AccessTokenClaims, decode_access_token_claims
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.models import User
-from app.services.auth_session_service import PublicAuthError, authenticate_access_session
 from app.services.api_abuse import enforce_default_authenticated_api_rate
+from app.services.auth_session_service import PublicAuthError, authenticate_access_session
 
 bearer = HTTPBearer()
 BearerCredentials = Annotated[HTTPAuthorizationCredentials, Depends(bearer)]
