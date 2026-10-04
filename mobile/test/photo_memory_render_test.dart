@@ -192,6 +192,15 @@ void main() {
       await cache.lookup(ownerUserId: ownerA, mediaId: mediaId),
       isNotNull,
     );
+
+    // Explicitly dispose FileImage before the test finishes. Flutter's test image
+    // decoder can otherwise keep a live stream in the shared image cache and prevent
+    // the worker isolate from becoming idle.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    PaintingBinding.instance.imageCache
+      ..clear()
+      ..clearLiveImages();
   });
 
   testWidgets('PHOTO detail cache hit does not ask for a signed capability',
@@ -224,6 +233,12 @@ void main() {
     expect(api.capabilityCalls, 0);
     expect(api.byteDownloadCalls, 0);
     expect(tester.widget<Image>(find.byType(Image)).image, isA<FileImage>());
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    PaintingBinding.instance.imageCache
+      ..clear()
+      ..clearLiveImages();
   });
 
   testWidgets('account switch prevents owner A cached image publication',
@@ -235,7 +250,7 @@ void main() {
       ownerUserId: ownerA,
       mediaId: mediaId,
       cacheVersion: cacheVersion,
-      bytes: <int>[0x89, 0x50, 0x4e, 0x47],
+      bytes: _validPngBytes(),
     );
     final api = _PhotoApi()..authenticatedUserId = ownerB;
 
