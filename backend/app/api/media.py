@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import hashlib
-
 from typing import Annotated
+
+import hashlib
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -103,7 +103,7 @@ def _media_cache_version(asset) -> str:
     payload = (
         f"{asset.id}:{asset.storage_etag}:{asset.size_bytes}:"
         f"{asset.completed_at.isoformat()}"
-    ).encode("utf-8")
+    ).encode()
     return hashlib.sha256(payload).hexdigest()
 
 
