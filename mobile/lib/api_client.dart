@@ -1257,7 +1257,19 @@ class JiYiApiClient {
     final cacheVersion = data['cache_version'];
     final rawDownload = data['download'];
     final validCacheVersion = cacheVersion is String &&
-        RegExp(r'^[0-9a-f]{64}  }
+        RegExp(r'^[0-9a-f]{64}\$').hasMatch(cacheVersion);
+    if (returnedId is! String ||
+        returnedId.toLowerCase() != normalized.toLowerCase() ||
+        !validCacheVersion ||
+        rawDownload is! Map<String, dynamic>) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    return MediaDownloadSession(
+      mediaId: returnedId,
+      cacheVersion: cacheVersion,
+      download: SignedDownloadTarget.fromJson(rawDownload),
+    );
+  }
 
   Future<Map<String, dynamic>> createPhotoMemory({
     required String mediaId,
