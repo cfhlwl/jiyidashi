@@ -13,6 +13,7 @@ from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.ocr_models import OCRRequest, OCRResult
 from app.schemas import (
+    MediaCompleteResponse,
     MediaDownloadResponse,
     MediaRead,
     MediaUploadCreate,
@@ -147,14 +148,14 @@ def create_upload(
     )
 
 
-@router.post("/{media_id}/complete", response_model=MediaRead)
+@router.post("/{media_id}/complete", response_model=MediaCompleteResponse)
 def complete_upload(
     media_id: UUID,
     request: Request,
     user_id: CurrentUser,
     db: DbSession,
     storage: Storage,
-) -> MediaRead:
+) -> MediaCompleteResponse:
     enforce_authenticated_api_rate(
         db,
         user_id=user_id,
@@ -175,7 +176,11 @@ def complete_upload(
     )
     cleanup_media_staging(storage, asset)
     db.refresh(asset)
-    return _media_read(asset)
+    media = _media_read(asset)
+    return MediaCompleteResponse(
+        **media.model_dump(),
+        cache_version=_media_cache_version(asset),
+    )
 
 
 @router.post("/{media_id}/download", response_model=MediaDownloadResponse)
