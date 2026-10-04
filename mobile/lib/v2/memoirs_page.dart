@@ -1,5 +1,7 @@
 // ignore_for_file: prefer_interpolation_to_compose_strings
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../ai_inference_presentation.dart';
@@ -15,15 +17,19 @@ import 'v2_api.dart';
 import 'v2_authority.dart';
 import 'v2_widgets.dart';
 
+typedef MemoirPhotoRenderer = Widget Function(File file);
+
 class MemoirsPage extends StatefulWidget {
   const MemoirsPage({
     super.key,
     required this.api,
     this.mediaCache,
+    this.photoRenderer,
   });
 
   final JiYiApiClient api;
   final LocalMediaCache? mediaCache;
+  final MemoirPhotoRenderer? photoRenderer;
 
   @override
   State<MemoirsPage> createState() => _MemoirsPageState();
@@ -281,13 +287,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
               children: [
                 Flexible(
                   child: InteractiveViewer(
-                    child: Image.file(
+                    child: (widget.photoRenderer ?? _defaultMemoirPhotoRenderer)(
                       localFile,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Padding(
-                        padding: EdgeInsets.all(JiYiSpacing.lg),
-                        child: Text('本地照片缓存已损坏，请关闭后重新打开。'),
-                      ),
                     ),
                   ),
                 ),
@@ -854,4 +855,16 @@ class _AnnualTimelineRow extends StatelessWidget {
       ],
     );
   }
+}
+
+
+Widget _defaultMemoirPhotoRenderer(File file) {
+  return Image.file(
+    file,
+    fit: BoxFit.contain,
+    errorBuilder: (_, __, ___) => const Padding(
+      padding: EdgeInsets.all(JiYiSpacing.lg),
+      child: Text('本地照片缓存已损坏，请关闭后重新打开。'),
+    ),
+  );
 }
