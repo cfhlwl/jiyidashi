@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -1185,6 +1186,53 @@ class JiYiApiClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(response.statusCode, '媒体上传失败');
     }
+  }
+
+  Future<Uint8List> downloadSignedMedia(
+    SignedDownloadTarget target, {
+    int maxBytes = 50 * 1024 * 1024,
+  }) async {
+    if (target.method != 'GET') {
+      throw ProtocolException('媒体下载协议不正确');
+    }
+    if (maxBytes <= 0) {
+      throw ArgumentError.value(maxBytes, 'maxBytes', 'must be positive');
+    }
+
+    final request = http.Request('GET', target.url)
+      ..headers.addAll(target.headers);
+    late final http.StreamedResponse response;
+    try {
+      response = await _http
+          .send(request)
+          .timeout(const Duration(seconds: 30));
+    } on http.ClientException catch (exc) {
+      throw TransportException('媒体下载连接失败', exc);
+    } on TimeoutException catch (exc) {
+      throw TransportException('媒体下载超时', exc);
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(response.statusCode, '媒体下载失败');
+    }
+
+    final bytes = BytesBuilder(copy: false);
+    var received = 0;
+    try {
+      await for (final chunk
+          in response.stream.timeout(const Duration(seconds: 30))) {
+        received += chunk.length;
+        if (received > maxBytes) {
+          throw ProtocolException('媒体下载超过本地缓存上限');
+        }
+        bytes.add(chunk);
+      }
+    } on TimeoutException catch (exc) {
+      throw TransportException('媒体下载超时', exc);
+    }
+    if (received == 0) {
+      throw ProtocolException('媒体下载为空');
+    }
+    return bytes.takeBytes();
   }
 
   Future<Map<String, dynamic>> completeMediaUpload(String mediaId) {
