@@ -105,6 +105,10 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                       if (selected.address != null) Text(selected.address!),
                       const SizedBox(height: JiYiSpacing.sm),
                       Text(selected.finalized ? '已形成足迹' : '仍在更新'),
+                      if (_visitDuration(selected) != null) ...[
+                        const SizedBox(height: JiYiSpacing.xs),
+                        Text('停留 ' + _visitDuration(selected)!),
+                      ],
                       const SizedBox(height: JiYiSpacing.sm),
                       Align(
                         alignment: Alignment.centerLeft,
@@ -221,6 +225,15 @@ class _VisitCard extends StatelessWidget {
                     ),
                     const SizedBox(height: JiYiSpacing.xxs),
                     Text(_visitTime(visit)),
+                    if (_visitDuration(visit) != null) ...[
+                      const SizedBox(height: JiYiSpacing.xxs),
+                      Text(
+                        '停留 ' + _visitDuration(visit)!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                     if (visit.address != null) ...[
                       const SizedBox(height: JiYiSpacing.xxs),
                       Text(
@@ -240,6 +253,20 @@ class _VisitCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String? _visitDuration(FootprintVisit visit) {
+  final leftAt = visit.leftAt;
+  if (leftAt == null) return null;
+  final start = DateTime.tryParse(visit.arrivedAt);
+  final end = DateTime.tryParse(leftAt);
+  if (start == null || end == null || end.isBefore(start)) return null;
+  final duration = end.difference(start);
+  final hours = duration.inHours;
+  final minutes = duration.inMinutes.remainder(60);
+  if (hours > 0 && minutes > 0) return hours.toString() + '小时' + minutes.toString() + '分钟';
+  if (hours > 0) return hours.toString() + '小时';
+  return duration.inMinutes.toString() + '分钟';
 }
 
 String _visitTime(FootprintVisit visit) {
