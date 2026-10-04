@@ -32,3 +32,61 @@ def enforce_authenticated_api_rate(
             client_ip=client_ip,
             route_class=route_class,
         )
+
+
+def _has_explicit_authenticated_rate_policy(request: Request) -> bool:
+    path = request.url.path
+    method = request.method.upper()
+
+    if path.endswith("/media/uploads"):
+        return True
+    if "/media/" in path and any(
+        path.endswith(suffix)
+        for suffix in (
+            "/complete",
+            "/download",
+            "/ocr",
+            "/vision",
+            "/voice-memory",
+        )
+    ):
+        return True
+    if "/memory/summaries/" in path:
+        return True
+    if "/life-stages/" in path and path.endswith("/reason"):
+        return True
+    if method == "POST" and path.endswith("/memoirs/annual"):
+        return True
+    if (
+        method == "POST"
+        and "/memoirs/life/stages/" in path
+        and not path.endswith("/memoirs/life/stages")
+    ):
+        return True
+    if path.endswith("/export/data"):
+        return True
+    return False
+
+
+def enforce_default_authenticated_api_rate(
+    db: Session,
+    *,
+    user_id: UUID,
+    request: Request,
+) -> None:
+    # Specialized media/AI/export routes keep their explicit stronger classes.
+    # Every other authenticated public API is covered centrally so new ordinary
+    # endpoints cannot silently bypass NORMAL_READ/NORMAL_MUTATION.
+    if _has_explicit_authenticated_rate_policy(request):
+        return
+    route_class = (
+        ApiRouteClass.NORMAL_READ
+        if request.method.upper() in {"GET", "HEAD", "OPTIONS"}
+        else ApiRouteClass.NORMAL_MUTATION
+    )
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=route_class,
+    )
