@@ -100,6 +100,24 @@ class _ThrowingSeedCache extends LocalMediaCache {
   }
 }
 
+class _SessionSwitchSeedCache extends LocalMediaCache {
+  _SessionSwitchSeedCache(this.onSeed)
+      : super(rootDirectoryProvider: () async => Directory.systemTemp);
+
+  final void Function() onSeed;
+
+  @override
+  Future<File> seedFromFile({
+    required String ownerUserId,
+    required String mediaId,
+    required String cacheVersion,
+    required File source,
+  }) async {
+    onSeed();
+    return source;
+  }
+}
+
 class _SessionSwitchMediaApi extends _FakeMediaApi {
   @override
   Future<MediaUploadSession> createMediaUpload({
@@ -570,6 +588,45 @@ void main() {
 
     expect(memoryId, 'photo-memory');
     expect(observedCacheError, isA<FileSystemException>());
+    expect(
+      api.calls.where((call) => call.startsWith('photo-memory:')).length,
+      1,
+    );
+  });
+
+  test(
+      'canonical photo save still fences account switch during cache seed',
+      () async {
+    final root =
+        await Directory.systemTemp.createTemp('jiyi-seed-session-switch-');
+    addTearDown(() => root.delete(recursive: true));
+    final source = File('${root.path}${Platform.pathSeparator}capture.jpg');
+    await source.writeAsBytes(<int>[0xff, 0xd8, 0xff], flush: true);
+
+    final api = _FakeMediaApi();
+    final cache = _SessionSwitchSeedCache(() {
+      api.logout();
+      api.accessToken = 'new-account-token';
+      api.authenticatedUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    });
+    final service = TrustedMediaCaptureService(
+      api,
+      localMediaCache: cache,
+    );
+    final file = PendingMediaFile.fromPath(
+      path: source.path,
+      clientUploadId: '97979797-9797-4979-8979-979797979797',
+      contentType: 'image/jpeg',
+      sizeBytes: 3,
+      originalFilename: 'capture.jpg',
+      occurredAt: DateTime.utc(2026, 10, 4),
+    );
+
+    await expectLater(
+      service.submitPhoto(file, content: '服务器已保存但账号随后切换'),
+      throwsA(isA<ProtocolException>()),
+    );
+
     expect(
       api.calls.where((call) => call.startsWith('photo-memory:')).length,
       1,
