@@ -380,9 +380,15 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     }
   }
 
+  void _amapPrivacyChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _amapPrivacyConsent.removeListener(_amapPrivacyChanged);
+    unawaited(_amapPrivacyConsent.close());
     _authorityRefreshTimer?.cancel();
     unawaited(_passiveRecoveryRequests?.cancel());
     if (widget.offlineQueue == null) {
@@ -932,6 +938,7 @@ class AppShell extends StatefulWidget {
     this.passiveDelivery,
     this.sync,
     this.mediaCache,
+    this.amapPrivacyConsent,
     this.onElderModeChanged,
     required this.onLogout,
   });
@@ -946,6 +953,7 @@ class AppShell extends StatefulWidget {
   final PassiveMemoryDeliveryCoordinator? passiveDelivery;
   final OfflineSyncCoordinator? sync;
   final LocalMediaCache? mediaCache;
+  final AmapPrivacyConsentAuthority? amapPrivacyConsent;
   final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
 
@@ -958,6 +966,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
   late final LocalMediaCache _mediaCache =
       widget.mediaCache ?? LocalMediaCache();
+  late final AmapPrivacyConsentController _amapPrivacyConsent =
+      widget.amapPrivacyConsent is AmapPrivacyConsentController
+          ? widget.amapPrivacyConsent! as AmapPrivacyConsentController
+          : AmapPrivacyConsentController(delegate: widget.amapPrivacyConsent);
   int index = 0;
   int syncGeneration = 0;
   bool _accountDeletionIntentActive = false;
@@ -970,6 +982,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _amapPrivacyConsent.addListener(_amapPrivacyChanged);
+    unawaited(_amapPrivacyConsent.readAccepted());
     _accountDeletionIntentActive = widget.resumeAccountDeletion;
     if (_accountDeletionIntentActive) {
       index = 4;
@@ -1260,8 +1274,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               : null,
     );
     final memoryPage = MemoryQueryPage(
+      key: ValueKey('memory-map-consent-${_amapPrivacyConsent.accepted}'),
       api: widget.api,
       mediaCache: _mediaCache,
+      amapPrivacyConsent: _amapPrivacyConsent,
       elderMode: _elderModeEnabled,
       initialQuestion: onboardingStep == OnboardingStep.retrieve ||
               onboardingStep == OnboardingStep.trust
@@ -1277,8 +1293,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final pages = <Widget>[
       TodayPage(
+        key: ValueKey('today-map-consent-${_amapPrivacyConsent.accepted}'),
         api: widget.api,
         mediaCache: _mediaCache,
+        amapPrivacyConsent: _amapPrivacyConsent,
         elderMode: _elderModeEnabled,
         onCapture: () {
           Navigator.of(context).push<void>(
@@ -1309,6 +1327,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         onStartOnboarding: onboarding == null
             ? null
             : () => unawaited(onboarding.restart()),
+        amapPrivacyConsent: _amapPrivacyConsent,
       ),
     ];
     return Scaffold(
@@ -1383,11 +1402,13 @@ class TimelinePage extends StatefulWidget {
     required this.api,
     this.mediaCache,
     this.elderMode = false,
+    this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
   final LocalMediaCache? mediaCache;
   final bool elderMode;
+  final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
   State<TimelinePage> createState() => _TimelinePageState();
@@ -1528,6 +1549,7 @@ class _TimelinePageState extends State<TimelinePage> {
             api: widget.api,
             memoryId: item.id,
             mediaCache: widget.mediaCache,
+            amapPrivacyConsent: widget.amapPrivacyConsent,
           ),
         ),
       );
@@ -1540,6 +1562,7 @@ class _TimelinePageState extends State<TimelinePage> {
         builder: (_) => PlaceDetailPage(
           api: widget.api,
           placeId: placeId,
+          amapPrivacyConsent: widget.amapPrivacyConsent,
         ),
       ),
     );
@@ -2444,8 +2467,9 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   }
 
   Future<void> _acceptMapPrivacy() async {
-    await _amapPrivacyConsent.accept();
-    if (mounted) setState(() => _mapPrivacyAccepted = true);
+    final accepted =
+        await requestAmapPrivacyConsent(context, _amapPrivacyConsent);
+    if (mounted && accepted) setState(() => _mapPrivacyAccepted = true);
   }
 
   @override
@@ -2591,6 +2615,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
           api: widget.api,
           memoryId: ids.first.toString(),
           mediaCache: widget.mediaCache,
+          amapPrivacyConsent: _amapPrivacyConsent,
         ),
       ),
     );
@@ -2806,6 +2831,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                       api: widget.api,
                       mediaCache: widget.mediaCache,
                       elderMode: widget.elderMode,
+                      amapPrivacyConsent: _amapPrivacyConsent,
                     ),
                   ),
                 );
@@ -3065,6 +3091,7 @@ class ProfilePage extends StatelessWidget {
     this.offlineQueue,
     this.onRevalidateLocationAuthority,
     this.onStartOnboarding,
+    this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
@@ -3077,6 +3104,7 @@ class ProfilePage extends StatelessWidget {
   final OfflineQueueStore? offlineQueue;
   final Future<void> Function()? onRevalidateLocationAuthority;
   final VoidCallback? onStartOnboarding;
+  final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
   Widget build(BuildContext context) {
@@ -3207,6 +3235,10 @@ class ProfilePage extends StatelessWidget {
                 api: api,
                 nativeLocationController: nativeLocationController,
               ),
+              if (amapPrivacyConsent != null) ...[
+                const SizedBox(height: JiYiSpacing.md),
+                _AmapPrivacyControls(authority: amapPrivacyConsent!),
+              ],
               if (nativeLocationController != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 NativeLocationSection(
@@ -3254,6 +3286,149 @@ class ProfilePage extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _AmapPrivacyControls extends StatefulWidget {
+  const _AmapPrivacyControls({required this.authority});
+
+  final AmapPrivacyConsentAuthority authority;
+
+  @override
+  State<_AmapPrivacyControls> createState() => _AmapPrivacyControlsState();
+}
+
+class _AmapPrivacyControlsState extends State<_AmapPrivacyControls> {
+  bool accepted = false;
+  bool loading = true;
+  String? error;
+  Listenable? _listenable;
+
+  @override
+  void initState() {
+    super.initState();
+    final authority = widget.authority;
+    if (authority is Listenable) {
+      _listenable = authority;
+      authority.addListener(_authorityChanged);
+    }
+    unawaited(_refresh());
+  }
+
+  @override
+  void didUpdateWidget(covariant _AmapPrivacyControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.authority == widget.authority) return;
+    _listenable?.removeListener(_authorityChanged);
+    _listenable = widget.authority is Listenable
+        ? widget.authority as Listenable
+        : null;
+    _listenable?.addListener(_authorityChanged);
+    unawaited(_refresh());
+  }
+
+  void _authorityChanged() => unawaited(_refresh());
+
+  Future<void> _refresh() async {
+    try {
+      final next = await widget.authority.readAccepted();
+      if (mounted) {
+        setState(() {
+          accepted = next;
+          loading = false;
+          error = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          accepted = false;
+          loading = false;
+          error = '地图服务授权状态暂时无法读取。';
+        });
+      }
+    }
+  }
+
+  Future<void> _enable() async {
+    if (loading) return;
+    final enabled = await requestAmapPrivacyConsent(context, widget.authority);
+    if (mounted && enabled) {
+      setState(() {
+        accepted = true;
+        error = null;
+      });
+    }
+  }
+
+  Future<void> _revoke() async {
+    if (loading) return;
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      await widget.authority.revoke();
+      if (mounted) {
+        setState(() {
+          accepted = false;
+          loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          loading = false;
+          error = '暂时无法撤销地图服务授权。';
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _listenable?.removeListener(_authorityChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return JiYiSectionCard(
+      leading: const Icon(Icons.map_outlined),
+      title: '高德地图服务',
+      subtitle: accepted ? '已授权，可展示真实地点地图。' : '未授权，不会创建高德地图视图。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            amapPrivacyDisclosure,
+            style: TextStyle(height: 1.5),
+          ),
+          const SizedBox(height: JiYiSpacing.sm),
+          if (accepted)
+            OutlinedButton.icon(
+              key: const ValueKey('amap-privacy-revoke'),
+              onPressed: loading ? null : _revoke,
+              icon: const Icon(Icons.block_outlined),
+              label: const Text('撤销地图授权'),
+            )
+          else
+            FilledButton.tonalIcon(
+              key: const ValueKey('amap-privacy-enable'),
+              onPressed: loading ? null : _enable,
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('查看说明并启用地图'),
+            ),
+          if (error != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.error,
+              message: error!,
+            ),
+          ],
+        ],
       ),
     );
   }
