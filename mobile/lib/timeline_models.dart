@@ -63,6 +63,7 @@ class TimelineReadItem {
     required this.title,
     required this.content,
     required this.isConfirmed,
+    required this.mediaId,
     required this.confidence,
     required this.visitFinalized,
   });
@@ -77,6 +78,7 @@ class TimelineReadItem {
   final String? title;
   final String? content;
   final bool? isConfirmed;
+  final String? mediaId;
   final double confidence;
   final bool? visitFinalized;
 
@@ -120,13 +122,17 @@ class TimelineReadItem {
     final title = _nullableText(value['title'], max: 240);
     final content = _nullableText(value['content'], max: 20000);
     final isConfirmed = value['is_confirmed'];
+    final mediaId = value['media_id'] == null
+        ? null
+        : _uuid(value['media_id'], '时间线媒体');
     final visitFinalized = value['visit_finalized'];
 
     if (kind == 'MEMORY') {
       if (memoryType == null ||
           content == null ||
           isConfirmed is! bool ||
-          visitFinalized != null) {
+          visitFinalized != null ||
+          (memoryType == 'PHOTO' && mediaId == null)) {
         throw ProtocolException('时间线记录格式不正确');
       }
     } else {
@@ -136,7 +142,8 @@ class TimelineReadItem {
           memoryType != null ||
           title != null ||
           content != null ||
-          isConfirmed != null) {
+          isConfirmed != null ||
+          mediaId != null) {
         throw ProtocolException('时间线记录格式不正确');
       }
     }
@@ -152,6 +159,7 @@ class TimelineReadItem {
       title: title,
       content: content,
       isConfirmed: isConfirmed as bool?,
+      mediaId: mediaId,
       confidence: confidenceRaw.toDouble(),
       visitFinalized: visitFinalized as bool?,
     );
