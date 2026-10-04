@@ -65,8 +65,9 @@ class _TodayPageState extends State<TodayPage> {
   }
 
   Future<void> _acceptMapPrivacy() async {
-    await _amapPrivacyConsent.accept();
-    if (mounted) setState(() => _mapPrivacyAccepted = true);
+    final accepted =
+        await requestAmapPrivacyConsent(context, _amapPrivacyConsent);
+    if (mounted && accepted) setState(() => _mapPrivacyAccepted = true);
   }
 
   @override
@@ -240,6 +241,7 @@ class _TodayPageState extends State<TodayPage> {
       onOpenFamily: widget.onOpenFamily,
       mapPrivacyAccepted: _mapPrivacyAccepted,
       onAcceptMapPrivacy: _acceptMapPrivacy,
+      amapPrivacyConsent: _amapPrivacyConsent,
       mediaCache: widget.mediaCache,
     );
   }
@@ -256,6 +258,7 @@ class _TodayExperienceBody extends StatelessWidget {
     this.onOpenFamily,
     required this.mapPrivacyAccepted,
     required this.onAcceptMapPrivacy,
+    required this.amapPrivacyConsent,
     this.mediaCache,
   });
 
@@ -268,6 +271,7 @@ class _TodayExperienceBody extends StatelessWidget {
   final VoidCallback? onOpenFamily;
   final bool mapPrivacyAccepted;
   final Future<void> Function() onAcceptMapPrivacy;
+  final AmapPrivacyConsentAuthority amapPrivacyConsent;
   final LocalMediaCache? mediaCache;
 
   @override
@@ -424,6 +428,7 @@ class _TodayExperienceBody extends StatelessWidget {
                     api: api,
                     memoryId: memories[index].id,
                     mediaCache: mediaCache,
+                    amapPrivacyConsent: amapPrivacyConsent,
                   ),
                 ),
               );
