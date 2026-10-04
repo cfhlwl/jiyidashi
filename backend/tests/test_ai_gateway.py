@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.admin_models import ProviderRuntimeEvidence, ProviderService
 from app.core.config import Settings
 from app.core.db import Base
 from app.entitlement_models import AIQuotaPeriod, AIUsageEvent, PlanCode, UserEntitlement
@@ -57,6 +58,7 @@ def _legacy_subject():
             UserEntitlement.__table__,
             AIQuotaPeriod.__table__,
             AIUsageEvent.__table__,
+            ProviderRuntimeEvidence.__table__,
         ],
     )
     user_id = uuid4()
@@ -104,6 +106,12 @@ async def test_gateway_returns_inference_with_provenance_and_resolved_limits():
             db=db,
             actor_user_id=user_id,
         )
+        evidence = db.get(
+            ProviderRuntimeEvidence,
+            (ProviderService.AI.value, gateway._config_fingerprint),
+        )
+        assert evidence is not None
+        assert evidence.last_success_at is not None
 
     assert result.output_text == "结构化推断"
     assert result.trust_class == "inference"
