@@ -299,6 +299,29 @@ class LocalMediaCache {
   }
 }
 
+typedef LocalMediaFileRenderer = Widget Function(
+  BuildContext context,
+  File file,
+  BoxFit fit,
+);
+
+class LocalMediaPresentationScope extends InheritedWidget {
+  const LocalMediaPresentationScope({
+    super.key,
+    required this.renderer,
+    required super.child,
+  });
+
+  final LocalMediaFileRenderer renderer;
+
+  static LocalMediaPresentationScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<LocalMediaPresentationScope>();
+
+  @override
+  bool updateShouldNotify(LocalMediaPresentationScope oldWidget) =>
+      renderer != oldWidget.renderer;
+}
+
 class LocalMediaThumbnail extends StatefulWidget {
   const LocalMediaThumbnail({
     super.key,
@@ -394,14 +417,16 @@ class _LocalMediaThumbnailState extends State<LocalMediaThumbnail> {
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               )
-            : Image.file(
-                file,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => ColoredBox(
-                  color: Theme.of(context).colorScheme.surfaceContainerLow,
-                  child: const Icon(Icons.broken_image_outlined),
-                ),
-              ),
+            : (LocalMediaPresentationScope.maybeOf(context)
+                    ?.renderer(context, file, BoxFit.cover) ??
+                Image.file(
+                  file,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => ColoredBox(
+                    color: Theme.of(context).colorScheme.surfaceContainerLow,
+                    child: const Icon(Icons.broken_image_outlined),
+                  ),
+                )),
       ),
     );
   }
