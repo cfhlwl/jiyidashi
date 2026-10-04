@@ -86,14 +86,28 @@ class _PhotoApi extends JiYiApiClient {
     int maxBytes = 50 * 1024 * 1024,
   }) async {
     byteDownloadCalls += 1;
-    return Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-    ]);
+    return _validPngBytes();
   }
 }
 
 Future<Directory> _tempRoot() =>
     Directory.systemTemp.createTemp('jiyi-photo-detail-');
+
+Uint8List _validPngBytes() => base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    );
+
+Future<void> _pumpUntil(
+  WidgetTester tester,
+  bool Function() done, {
+  int attempts = 30,
+}) async {
+  for (var index = 0; index < attempts; index++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (done()) return;
+  }
+  fail('bounded widget pump did not reach expected state');
+}
 
 void main() {
   test('media download endpoint returns stable cache identity plus short-lived GET', () async {
@@ -161,7 +175,12 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => api.capabilityCalls == 1 &&
+          api.byteDownloadCalls == 1 &&
+          find.byType(Image).evaluate().isNotEmpty,
+    );
 
     expect(api.capabilityCalls, 1);
     expect(api.byteDownloadCalls, 1);
@@ -184,7 +203,7 @@ void main() {
       ownerUserId: ownerA,
       mediaId: mediaId,
       cacheVersion: cacheVersion,
-      bytes: <int>[0x89, 0x50, 0x4e, 0x47],
+      bytes: _validPngBytes(),
     );
     final api = _PhotoApi();
 
@@ -197,7 +216,10 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.byType(Image).evaluate().isNotEmpty,
+    );
 
     expect(api.capabilityCalls, 0);
     expect(api.byteDownloadCalls, 0);
@@ -226,7 +248,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.byType(Image), findsNothing);
     expect(api.capabilityCalls, 0);
