@@ -4,6 +4,7 @@ import 'amap_footprint_map.dart';
 import 'amap_privacy_consent.dart';
 import 'api_client.dart';
 import 'memory_detail_page.dart';
+import 'media_presentation_cache.dart';
 import 'footprint_detail_page.dart';
 import 'footprint_models.dart';
 import 'timeline_models.dart';
@@ -408,6 +409,7 @@ class _TodayExperienceBody extends StatelessWidget {
       children: [
         for (var index = 0; index < memories.length; index++) ...[
           _TodayMemoryCard(
+            api: api,
             item: memories[index],
             onTap: () {
               Navigator.of(context).push<bool>(
@@ -460,8 +462,13 @@ class _TodayExperienceBody extends StatelessWidget {
 }
 
 class _TodayMemoryCard extends StatelessWidget {
-  const _TodayMemoryCard({required this.item, required this.onTap});
+  const _TodayMemoryCard({
+    required this.api,
+    required this.item,
+    required this.onTap,
+  });
 
+  final JiYiApiClient api;
   final TimelineReadItem item;
   final VoidCallback onTap;
 
@@ -480,19 +487,28 @@ class _TodayMemoryCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: JiYiProductColors.surfaceSoft,
-                  borderRadius: BorderRadius.circular(JiYiRadius.control),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(JiYiSpacing.sm),
-                  child: Icon(
-                    _todayMemoryIcon(item.memoryType),
-                    color: JiYiProductColors.brandPrimary,
+              if (item.memoryType == 'PHOTO' && item.mediaId != null)
+                LocalMediaThumbnail(
+                  key: ValueKey('today-photo-${item.id}'),
+                  api: api,
+                  mediaId: item.mediaId!,
+                  width: 88,
+                  height: 88,
+                )
+              else
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: JiYiProductColors.surfaceSoft,
+                    borderRadius: BorderRadius.circular(JiYiRadius.control),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(JiYiSpacing.sm),
+                    child: Icon(
+                      _todayMemoryIcon(item.memoryType),
+                      color: JiYiProductColors.brandPrimary,
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(width: JiYiSpacing.md),
               Expanded(
                 child: Column(
