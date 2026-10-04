@@ -903,6 +903,8 @@ async def summarize_year(
             actor_user_id=user_id,
         )
     except AIGatewayError as exc:
+        if exc.code == "PROVIDER_CONCURRENCY_SATURATED":
+            raise
         return _empty_result(
             AnnualSummaryStatus.PROVIDER_FAILED,
             context=context,
