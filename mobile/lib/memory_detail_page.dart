@@ -258,7 +258,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
             child: Image.file(
               local,
               key: ValueKey<String>(
-                'photo-local-' + current.id + '-' + local.path,
+                'photo-local-${current.id}-${local.path}',
               ),
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) {
