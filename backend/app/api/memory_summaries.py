@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,8 @@ from app.daily_summary_models import DailySummaryResult, DailySummaryStatus
 from app.deps import get_current_user_id
 from app.monthly_summary_models import MonthlySummaryResult, MonthlySummaryStatus
 from app.services.ai_gateway import get_ai_gateway
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 from app.services.annual_summary_service import summarize_year
 from app.services.daily_summary_service import summarize_today
 from app.services.monthly_summary_service import summarize_month
@@ -171,9 +173,16 @@ def _annual_response(result: AnnualSummaryResult) -> AnnualSummaryResponse:
 @router.post("/daily", response_model=DailySummaryResponse)
 async def generate_daily_summary(
     payload: DailySummaryRequest,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> DailySummaryResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     del payload
     # [人工注释][#103] This is only an authenticated adapter. Local-day boundaries,
     # authoritative snapshot/trust and provider handling remain owned by S3-015.
@@ -188,9 +197,16 @@ async def generate_daily_summary(
 @router.post("/monthly", response_model=MonthlySummaryResponse)
 async def generate_monthly_summary(
     payload: MonthlySummaryRequest,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> MonthlySummaryResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     result = await summarize_month(
         db,
         user_id=user_id,
@@ -203,9 +219,16 @@ async def generate_monthly_summary(
 @router.post("/annual", response_model=AnnualSummaryResponse)
 async def generate_annual_summary(
     payload: AnnualSummaryRequest,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> AnnualSummaryResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     result = await summarize_year(
         db,
         user_id=user_id,
