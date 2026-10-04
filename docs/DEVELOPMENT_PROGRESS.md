@@ -45,7 +45,7 @@
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
-> 当前阶段：**ADMIN-002 / Provider Configuration V1（Issue #196）**。BIZ-011 / PR #199 与 PROD-001 / PR #200 已合并完成；当前开始收口 AI 整理、ASR 与语义记忆检索的 Admin 可配置能力，要求 SUPER_ADMIN-only mutation、write-only secret、加密持久化、revision/CAS、bounded cache convergence 与显式 Embedding backfill。CORE-004 真机长期认证继续暂缓，待 Provider/服务端配置和剩余短周期上线项稳定后再基于最新 `main` 重新发起。
+> 当前阶段：**SEC-016 / Authenticated API Abuse & Provider Concurrency Guard V1（Issue #202）**。ADMIN-002 / PR #201 已正式审查并合并；当前开始收口 authenticated user/IP/route-class 限流、AI/ASR/Embedding 跨 Uvicorn worker 的 per-user/global provider concurrency，以及全局 Argon2 并发边界。PostgreSQL 为 V1 shared authority，禁止仅用进程内 semaphore。CORE-004 真机长期认证继续暂缓。
 
 ## 状态规则
 
@@ -384,7 +384,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | AUTH-004 | P0* | Native WeChat Login for Flutter Android/iOS | ⏸ | 后期配置，当前不阻塞主线开发。届时需完成 Android/iOS SDK 注册、`wxlogin` 回调、服务端 `code → openid/unionid → AuthIdentity → session`，并配置 Android 包签名、iOS Universal Link、微信 AppID；微信 secret 仅服务端。 |
 | BIZ-011 | P0 | Production Registration Entitlement Default | ✅ | **Issue #197 / PR #199 已正式审查并合并 `main=f805848ba16af786b3d15a6ae26d5dc3d399aa95`**。正式 `register_email_password()` 使用 canonical `FREE` initial entitlement；User + AuthIdentity + Entitlement 保持同事务原子提交。`LEGACY_FULL` 仅历史兼容/migration/dev-only 明确路径可用，现有历史用户不做批量降级或登录时重写。 |
 | OPS-002 | P0 | Durable Job & Maintenance Worker Foundation V1 | ⬜ | PostgreSQL-backed durable job/lease 优先；服务端自动推进 deletion/maintenance，并逐步异步化长耗时 AI。客户端只能发起/查询状态，不再承担服务端任务推进责任。 |
-| SEC-016 | P0 | Authenticated API Abuse & Provider Concurrency Guard | ⬜ | 在现有 Auth rate limit 之外增加 authenticated user/IP/route-class 限流；高成本 OCR/Vision/Summary/RAG/Export 独立门禁；增加跨 Uvicorn worker 的 per-user/global provider concurrency；登录增加全局 Argon2 并发边界并与 edge/WAF + per-IP 组合，禁止通过降低 Argon2 安全参数解决。 |
+| SEC-016 | P0 | Authenticated API Abuse & Provider Concurrency Guard | 🔵 | **当前主线 / Issue #202**。在既有 Auth rate limit 之外增加 authenticated per-user/per-IP/route-class 限流；AI/ASR/Embedding 使用 PostgreSQL-backed、跨 Uvicorn worker 的 per-user/global durable permit/lease，不允许进程内 semaphore 充当生产 authority；同时增加全局 Argon2 并发边界，保留登录 anti-enumeration 与现有 quota/entitlement 语义。 |
 | OPS-003 | P0 | Off-host Backup & Scheduled Operations | ⬜ | 当前 pg_dump 默认写本机目录。增加私有异地 COS/OSS backup bucket、保留策略、校验、自动上传与定期 restore drill；本机短期备份仅作为一层缓存，不能是唯一灾备。 |
 | MEDIA-001 | P1 | AI Media Input & Stale Upload Hardening | ⬜ | 原始图片存储上限与 AI 分析输入上限分离；增加 `AI_IMAGE_MAX_BYTES`/analysis derivative（缩放压缩，原图保留），避免 20MB→base64 大请求与 30s provider timeout/3M 出口冲突；stale PENDING upload 按 presign expiry + quiet settle + object absence 安全回收并释放 quota reservation。 |
 | API-001 | P1 | Export & Legacy Pagination Hardening | ⬜ | 当前 Data Export 虽有 section 5000 行硬上限，但仍同步将多 section 装入内存并返回 JSON；改为 async ExportJob→private object storage→短时签名下载，或至少真正 streaming。统一审计旧 API，无界列表（已确认 `GET /objects`）补 `limit + opaque cursor + stable order`。 |
@@ -398,7 +398,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | CORE-004 | P0 Gate | Passive Recording Real-device Certification V1 | ⏸ | **Issue #190 保留为未来 P0 Gate；PR #191 已关闭且未合并。** 当前不启动正式 24h/72h/12h 长时认证，先完成真机暴露问题、Provider/服务端配置和其他短周期上线收口；待 Android+iOS 基础闭环与测试环境稳定后，从当时最新 `main` 新建干净 certification PR/构建，并重新执行完整物理设备矩阵。模拟器、mock、CI 仍不得替代真机认证证据。 |
 | UIUX-P0-002 | P0 Product Gate | JiYi Consumer Visual Fidelity V1 | ⬜ | **新增视觉收口任务。** 2026-09-29 用户确认的 8 张高保真参考图（Today / Timeline / Memory Detail / Family / Memory Query / Unified Capture / Summary / Profile）作为 Consumer Visual Design Authority。保留 UIUX-P0-001 已完成的 `今天 / 记忆 / 人生 / 家庭 / 我的` IA、现有业务 authority 与隐私边界；仅对没有真实 authority 的步数/天气/情绪统计/收藏/回收站等字段做删除或真实降级，**不得因此把山水品牌氛围、photo-first 叙事、足迹地图主视觉、卡片层次和消费者质感简化成工具型白卡 UI**。Flutter 为首要视觉还原，Mini 同步同一视觉语言；Golden 必须改为验证新 Design Authority，而不是继续锁定当前简化版。 |
 | PROD-001 | P1 | Core Product Positioning & Promise Refresh | ✅ | **Issue #198 / PR #200 已正式审查并合并 `main=76a525d600ffa94cad1bc35e638c49657341a005`**。公开定位已统一为“自动记录生活、需要时帮助找回过去”的个人/家庭长期记忆产品；结构化事实/Evidence 为事实来源，AI 仅辅助搜索、整理、总结和表达；绝对自动记录承诺被明确禁止，CORE-004 长期真机认证状态保持真实。 |
-| ADMIN-002 | P0/P1 Ops | Provider Configuration V1 | 🔵 | **当前主线 / Issue #196**。把 Admin 现有只读 AI 服务页升级为 AI 整理、ASR、Embedding/RAG 的安全配置入口：SUPER_ADMIN-only mutation；API key write-only 且数据库加密；revision/CAS；多 worker bounded cache convergence；显式 enable/disable；Embedding backfill bounded/idempotent/owner-safe；不暴露 secret、不修改 CORE-004 采样逻辑。 |
+| ADMIN-002 | P0/P1 Ops | Provider Configuration V1 | ✅ | **Issue #196 / PR #201 已正式审查并合并 `e1ec4f392fad180cfd92c0653d9f0d38972ba736`**。AI/ASR/Embedding/RAG 已具备 SUPER_ADMIN-only 在线配置、write-only 加密凭证、revision/CAS、多 worker bounded cache convergence、exact-fingerprint runtime evidence 与 bounded/idempotent Embedding backfill；最终审查 P0/P1/P2=0/0/0。 |
 
 ### Public launch 顺序
 
