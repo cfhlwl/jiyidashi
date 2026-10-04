@@ -36,7 +36,7 @@ class WorkPermit(Base):
     token_digest: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     service_class: Mapped[str] = mapped_column(String(32), nullable=False)
     user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
     claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
