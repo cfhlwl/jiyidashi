@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,8 @@ from app.long_term_reasoning_models import (
     LongTermReasoningStatus,
 )
 from app.services.ai_gateway import AIProvenance, get_ai_gateway
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 from app.services.answer_trust_service import AnswerTrustState
 from app.services.long_term_reasoning_service import (
     LongTermReasoningError,
@@ -110,9 +112,16 @@ def _response(result: LongTermReasoningResult) -> LongTermReasoningResponse:
 async def reason_about_stage_route(
     life_stage_id: UUID,
     payload: LongTermReasoningRequest,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> LongTermReasoningResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     try:
         result = await reason_about_life_stage(
             db,
