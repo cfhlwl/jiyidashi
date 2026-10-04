@@ -184,7 +184,10 @@ void main() {
     expect(find.textContaining('不改变家庭、位置、记忆或隐私权限'), findsOneWidget);
     expect(find.text('隐私与记录控制'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('elder-mode-toggle')));
+    final elderToggle = find.byKey(const ValueKey('elder-mode-toggle'));
+    await tester.ensureVisible(elderToggle);
+    await tester.pumpAndSettle();
+    await tester.tap(elderToggle);
     await tester.pumpAndSettle();
     expect(api.lastElderMutation, isTrue);
     expect(changed, isTrue);
