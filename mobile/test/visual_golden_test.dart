@@ -868,13 +868,15 @@ Future<Key> _pumpShell(
   AmapPrivacyConsentAuthority? amapPrivacyConsent,
 }) async {
   final resolvedApi = api ?? _GoldenApi();
+  final resolvedCache = mediaCache ??
+      await _seedGoldenMediaCache(resolvedApi.authenticatedUserId!);
   return _pumpSurface(
     tester,
     AppShell(
       api: resolvedApi,
       offlineQueue: _GoldenQueue(),
       locationBridge: _GoldenLocationBridge(),
-      mediaCache: mediaCache,
+      mediaCache: resolvedCache,
       amapPrivacyConsent:
           amapPrivacyConsent ?? _GoldenAmapConsent(false),
       onLogout: () {},
@@ -928,9 +930,11 @@ void main() {
   });
 
   testWidgets('golden: timeline', (tester) async {
+    final api = _GoldenTimelineApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
     final key = await _pumpSurface(
       tester,
-      TimelinePage(api: _GoldenTimelineApi()),
+      TimelinePage(api: api, mediaCache: cache),
     );
     expect(find.text('时间线'), findsWidgets);
     expect(find.text('第一次产品讨论'), findsOneWidget);
@@ -1250,9 +1254,11 @@ void main() {
   });
 
   testWidgets('golden: V2 annual memoir ready', (tester) async {
+    final api = V2TestApi();
+    final cache = await _seedGoldenMediaCache(v2OwnerId);
     final key = await _pumpSurface(
       tester,
-      MemoirsPage(api: V2TestApi()),
+      MemoirsPage(api: api, mediaCache: cache),
     );
     await tester.enterText(find.byType(TextField).first, '2025');
     final annual = find.text('开始回看');
