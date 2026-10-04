@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from typing import Annotated
 from uuid import UUID
 
@@ -90,6 +92,19 @@ def _signed_transfer(value: PresignedTransfer) -> SignedTransfer:
 
 def _media_read(asset) -> MediaRead:
     return MediaRead.model_validate(asset)
+
+
+def _media_cache_version(asset) -> str:
+    # Local presentation cache needs a stable content identity that is independent
+    # from short-lived signed URLs. Keep storage implementation details server-only:
+    # hash them into an opaque version together with canonical READY metadata.
+    if asset.storage_etag is None or asset.completed_at is None:
+        raise MediaError("MEDIA_NOT_READY", 409)
+    payload = (
+        f"{asset.id}:{asset.storage_etag}:{asset.size_bytes}:"
+        f"{asset.completed_at.astimezone().isoformat()}"
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 @router.post(
@@ -184,6 +199,7 @@ def create_download(
         _raise_http(exc)
     return MediaDownloadResponse(
         media_id=asset.id,
+        cache_version=_media_cache_version(asset),
         download=_signed_transfer(transfer),
     )
 
