@@ -172,6 +172,10 @@ void main() {
           api: api,
           memoryId: memoryId,
           mediaCache: cache,
+          localPhotoRenderer: (file, key) => SizedBox(
+            key: key,
+            child: Text('local-file:${file.path}'),
+          ),
         ),
       ),
     );
@@ -179,28 +183,19 @@ void main() {
       tester,
       () => api.capabilityCalls == 1 &&
           api.byteDownloadCalls == 1 &&
-          find.byType(Image).evaluate().isNotEmpty,
+          find.textContaining('local-file:').evaluate().isNotEmpty,
     );
 
     expect(api.capabilityCalls, 1);
     expect(api.byteDownloadCalls, 1);
     expect(find.text('测试照片'), findsWidgets);
     expect(find.text('照片'), findsWidgets);
-    final image = tester.widget<Image>(find.byType(Image));
-    expect(image.image, isA<FileImage>());
+    expect(find.textContaining('local-file:'), findsOneWidget);
     expect(
       await cache.lookup(ownerUserId: ownerA, mediaId: mediaId),
       isNotNull,
     );
 
-    // Explicitly dispose FileImage before the test finishes. Flutter's test image
-    // decoder can otherwise keep a live stream in the shared image cache and prevent
-    // the worker isolate from becoming idle.
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
-    PaintingBinding.instance.imageCache
-      ..clear()
-      ..clearLiveImages();
   });
 
   testWidgets('PHOTO detail cache hit does not ask for a signed capability',
@@ -222,23 +217,21 @@ void main() {
           api: api,
           memoryId: memoryId,
           mediaCache: cache,
+          localPhotoRenderer: (file, key) => SizedBox(
+            key: key,
+            child: Text('local-file:${file.path}'),
+          ),
         ),
       ),
     );
     await _pumpUntil(
       tester,
-      () => find.byType(Image).evaluate().isNotEmpty,
+      () => find.textContaining('local-file:').evaluate().isNotEmpty,
     );
 
     expect(api.capabilityCalls, 0);
     expect(api.byteDownloadCalls, 0);
-    expect(tester.widget<Image>(find.byType(Image)).image, isA<FileImage>());
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
-    PaintingBinding.instance.imageCache
-      ..clear()
-      ..clearLiveImages();
+    expect(find.textContaining('local-file:'), findsOneWidget);
   });
 
   testWidgets('account switch prevents owner A cached image publication',
