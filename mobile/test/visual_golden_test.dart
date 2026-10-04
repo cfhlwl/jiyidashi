@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -309,6 +310,28 @@ class _GoldenApi extends JiYiApiClient {
 
   final Map<String, dynamic> privacyStatus;
   final ApiException? privacyError;
+
+  @override
+  Future<MediaDownloadSession> createMediaDownload(String mediaId) async {
+    return MediaDownloadSession(
+      mediaId: mediaId,
+      cacheVersion: _goldenCacheVersion,
+      download: SignedDownloadTarget(
+        method: 'GET',
+        url: Uri.parse('https://visual-fixture.invalid/media/$mediaId'),
+        headers: const <String, String>{},
+        expiresAt: DateTime.utc(2030, 1, 1),
+      ),
+    );
+  }
+
+  @override
+  Future<Uint8List> downloadSignedMedia(
+    SignedDownloadTarget target, {
+    int maxBytes = 50 * 1024 * 1024,
+  }) async {
+    return Uint8List.fromList(const <int>[1, 2, 3, 4]);
+  }
 
   @override
   Future<Map<String, dynamic>> getProfile() async => {
