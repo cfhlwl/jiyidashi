@@ -1,7 +1,10 @@
+import 'dart:io';
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/graph_page.dart';
 import 'package:jiyidashi/v2/life_event_detail_page.dart';
@@ -10,6 +13,24 @@ import 'package:jiyidashi/v2/memoirs_page.dart';
 import 'package:jiyidashi/v2/people_page.dart';
 
 import 'v2_test_api.dart';
+
+Future<LocalMediaCache> seedV2PhotoCache() async {
+  final root = await Directory.systemTemp.createTemp('jiyi-v2-photo-cache-');
+  addTearDown(() => root.delete(recursive: true));
+  final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
+  await cache.putBytes(
+    ownerUserId: v2OwnerId,
+    mediaId: v2MediaId,
+    cacheVersion:
+        'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    bytes: const <int>[1, 2, 3, 4],
+  );
+  cache.markAuthorityValidated(
+    ownerUserId: v2OwnerId,
+    mediaId: v2MediaId,
+  );
+  return cache;
+}
 
 Future<void> pumpSurface(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
@@ -112,7 +133,11 @@ void main() {
   });
 
   testWidgets('Annual Memoir READY labels narrative but not timeline/photos', (tester) async {
-    await pumpSurface(tester, MemoirsPage(api: V2TestApi()));
+    final cache = await seedV2PhotoCache();
+    await pumpSurface(
+      tester,
+      MemoirsPage(api: V2TestApi(), mediaCache: cache),
+    );
     final yearField = find.byType(TextField).first;
     await tester.enterText(yearField, '2025');
     final annual = find.text('开始回看');
