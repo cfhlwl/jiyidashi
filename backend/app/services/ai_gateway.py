@@ -68,9 +68,16 @@ class AIPolicyError(AIGatewayError):
 
 
 class AIEntitlementError(AIGatewayError):
-    def __init__(self, code: str, *, status_code: int):
+    def __init__(
+        self,
+        code: str,
+        *,
+        status_code: int,
+        retry_after: int | None = None,
+    ):
         super().__init__(code, retryable=status_code >= 500)
         self.status_code = status_code
+        self.retry_after = retry_after
 
 
 # Stage 3 模型调用只能穿过本模块。这里刻意没有数据库依赖：
@@ -402,7 +409,11 @@ class AIGateway:
                     settings=self._settings,
                 )
             except ConcurrencyRejected as exc:
-                raise AIEntitlementError(exc.code, status_code=429) from exc
+                raise AIEntitlementError(
+                    exc.code,
+                    status_code=429,
+                    retry_after=exc.retry_after,
+                ) from exc
             provider_started = True
             try:
                 provider_result = await self._provider.infer(validated)
@@ -520,7 +531,11 @@ class AIGateway:
                     settings=self._settings,
                 )
             except ConcurrencyRejected as exc:
-                raise AIEntitlementError(exc.code, status_code=429) from exc
+                raise AIEntitlementError(
+                    exc.code,
+                    status_code=429,
+                    retry_after=exc.retry_after,
+                ) from exc
             try:
                 async with asyncio.timeout(self._settings.ai_timeout_seconds):
                     provider_started = True
