@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'amap_footprint_map.dart';
+import 'amap_privacy_consent.dart';
 import 'api_client.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_format.dart';
@@ -12,10 +14,12 @@ class PlaceDetailPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.placeId,
+    this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
   final String placeId;
+  final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
   State<PlaceDetailPage> createState() => _PlaceDetailPageState();
@@ -28,11 +32,30 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   String? _error;
   bool _loading = true;
   bool _loadingMore = false;
+  late final AmapPrivacyConsentAuthority _amapPrivacyConsent;
+  bool _mapPrivacyAccepted = false;
 
   @override
   void initState() {
     super.initState();
+    _amapPrivacyConsent =
+        widget.amapPrivacyConsent ?? AmapPrivacyConsentStore();
+    _loadMapPrivacy();
     _loadInitial();
+  }
+
+  Future<void> _loadMapPrivacy() async {
+    try {
+      final accepted = await _amapPrivacyConsent.readAccepted();
+      if (mounted) setState(() => _mapPrivacyAccepted = accepted);
+    } catch (_) {
+      if (mounted) setState(() => _mapPrivacyAccepted = false);
+    }
+  }
+
+  Future<void> _acceptMapPrivacy() async {
+    await _amapPrivacyConsent.accept();
+    if (mounted) setState(() => _mapPrivacyAccepted = true);
   }
 
   Future<void> _loadInitial() async {
@@ -187,6 +210,25 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              JiYiPlaceMap(
+                latitude: place.latitude,
+                longitude: place.longitude,
+                name: place.name,
+                address: place.address,
+                privacyAccepted: _mapPrivacyAccepted,
+              ),
+              if (!_mapPrivacyAccepted &&
+                  place.latitude != null &&
+                  place.longitude != null) ...[
+                const SizedBox(height: JiYiSpacing.sm),
+                OutlinedButton.icon(
+                  key: const ValueKey('place-amap-privacy-accept'),
+                  onPressed: _acceptMapPrivacy,
+                  icon: const Icon(Icons.map_outlined),
+                  label: const Text('同意地图服务隐私说明并启用地图'),
+                ),
+              ],
+              const SizedBox(height: JiYiSpacing.md),
               JiYiSectionCard(
                 leading: Icon(
                   Icons.place_outlined,
@@ -343,6 +385,8 @@ class _PlaceDetailPlace {
     required this.id,
     required this.name,
     required this.nameSource,
+    required this.latitude,
+    required this.longitude,
     required this.address,
     required this.category,
     required this.visitCount,
@@ -353,6 +397,8 @@ class _PlaceDetailPlace {
   final String id;
   final String name;
   final String nameSource;
+  final double? latitude;
+  final double? longitude;
   final String? address;
   final String? category;
   final int visitCount;
@@ -371,11 +417,18 @@ class _PlaceDetailPlace {
     if (visitCount is! int || visitCount < 0) {
       throw ProtocolException('服务端返回格式不正确');
     }
+    final latitude = _nullableCoordinate(raw['latitude'], latitudeAxis: true);
+    final longitude = _nullableCoordinate(raw['longitude'], latitudeAxis: false);
+    if ((latitude == null) != (longitude == null)) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
 
     return _PlaceDetailPlace(
       id: id,
       name: name,
       nameSource: nameSource,
+      latitude: latitude,
+      longitude: longitude,
       address: _nullableText(raw['address']),
       category: _nullableText(raw['category']),
       visitCount: visitCount,
@@ -433,6 +486,19 @@ class _PlaceDetailVisit {
       visitFinalized: finalized,
     );
   }
+}
+
+double? _nullableCoordinate(Object? value, {required bool latitudeAxis}) {
+  if (value == null) return null;
+  if (value is! num || !value.isFinite) {
+    throw ProtocolException('服务端返回格式不正确');
+  }
+  final coordinate = value.toDouble();
+  final max = latitudeAxis ? 90.0 : 180.0;
+  if (coordinate < -max || coordinate > max) {
+    throw ProtocolException('服务端返回格式不正确');
+  }
+  return coordinate;
 }
 
 String _requiredText(Object? value) {
