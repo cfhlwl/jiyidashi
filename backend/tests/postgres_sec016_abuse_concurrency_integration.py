@@ -9,7 +9,6 @@ from datetime import UTC, datetime, timedelta
 from threading import Barrier, Lock, Thread
 from uuid import UUID, uuid4
 
-from fastapi import HTTPException
 from sqlalchemy import delete, inspect, select
 
 from app.abuse_models import ConcurrencyGuard, WorkPermit
@@ -18,7 +17,10 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal, engine
 from app.models import User
 from app.services import auth_rate_limit
-from app.services.auth_rate_limit import ApiRouteClass, consume_authenticated_api_attempt
+from app.services.auth_rate_limit import (
+    ApiRouteClass,
+    consume_authenticated_api_attempt,
+)
 from app.services.concurrency_guard import (
     ConcurrencyRejected,
     claim_argon2_permit,
