@@ -11,6 +11,40 @@ const _amapIosKey =
     String.fromEnvironment('AMAP_IOS_SDK_KEY', defaultValue: '');
 const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 
+typedef JiYiAmapPrivacyUpdater = void Function(AMapPrivacyStatement statement);
+typedef JiYiAmapInitializer = void Function(
+  BuildContext context, {
+  required AMapApiKey apiKey,
+});
+
+class JiYiAmapSdkHooks {
+  const JiYiAmapSdkHooks({
+    required this.updatePrivacyAgree,
+    required this.init,
+  });
+
+  final JiYiAmapPrivacyUpdater updatePrivacyAgree;
+  final JiYiAmapInitializer init;
+}
+
+void bootstrapJiYiAmapSdk(
+  BuildContext context,
+  JiYiAmapConfig config, {
+  JiYiAmapSdkHooks hooks = const JiYiAmapSdkHooks(
+    updatePrivacyAgree: AMapInitializer.updatePrivacyAgree,
+    init: AMapInitializer.init,
+  ),
+}) {
+  hooks.updatePrivacyAgree(
+    const AMapPrivacyStatement(
+      hasContains: true,
+      hasShow: true,
+      hasAgree: true,
+    ),
+  );
+  hooks.init(context, apiKey: config.apiKey);
+}
+
 class JiYiAmapConfig {
   const JiYiAmapConfig({
     this.androidKey = _amapAndroidKey,
@@ -257,14 +291,7 @@ class _NativeFootprintMapState extends State<_NativeFootprintMap> {
 
   @override
   Widget build(BuildContext context) {
-    AMapInitializer.updatePrivacyAgree(
-      const AMapPrivacyStatement(
-        hasContains: true,
-        hasShow: true,
-        hasAgree: true,
-      ),
-    );
-    AMapInitializer.init(context, apiKey: widget.config.apiKey);
+    bootstrapJiYiAmapSdk(context, widget.config);
     return AMapWidget(
       initialCameraPosition: CameraPosition(
         target: LatLng(
@@ -380,14 +407,7 @@ Widget _defaultPlaceNativeBuilder(
   String? address,
 ) {
   final coordinate = LatLng(latitude, longitude);
-  AMapInitializer.updatePrivacyAgree(
-    const AMapPrivacyStatement(
-      hasContains: true,
-      hasShow: true,
-      hasAgree: true,
-    ),
-  );
-  AMapInitializer.init(context, apiKey: config.apiKey);
+  bootstrapJiYiAmapSdk(context, config);
   return AMapWidget(
     initialCameraPosition: CameraPosition(target: coordinate, zoom: 15),
     markers: <Marker>{
