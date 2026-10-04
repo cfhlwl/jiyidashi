@@ -48,7 +48,12 @@ class _WidgetMediaApi extends JiYiApiClient {
   @override
   Future<Map<String, dynamic>> completeMediaUpload(String mediaId) async {
     mediaCompletes += 1;
-    return {'id': mediaId, 'status': 'READY'};
+    return {
+      'id': mediaId,
+      'status': 'READY',
+      'cache_version':
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    };
   }
 
   @override
