@@ -199,7 +199,7 @@ jobs:
                       raise SystemExit(0)
           raise SystemExit(1)
           ')"
-          xcodebuild test             -project ios/Runner.xcodeproj             -scheme Runner             -destination "platform=iOS Simulator,id=$device_id"             -only-testing:RunnerTests             CODE_SIGNING_ALLOWED=NO
+          xcodebuild test             -workspace ios/Runner.xcworkspace             -scheme Runner             -destination "platform=iOS Simulator,id=$device_id"             -only-testing:RunnerTests             CODE_SIGNING_ALLOWED=NO
 
       - name: Verify iOS progressive location declarations
         shell: bash
