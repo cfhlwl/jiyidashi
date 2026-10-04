@@ -36,8 +36,8 @@ class Permit:
 
 def _token_digest(token: str, settings: Settings) -> str:
     return hmac.new(
-        settings.jwt_secret.encode("utf-8"),
-        f"sec016:permit:{token}".encode("utf-8"),
+        settings.jwt_secret.encode(),
+        f"sec016:permit:{token}".encode(),
         hashlib.sha256,
     ).hexdigest()
 
