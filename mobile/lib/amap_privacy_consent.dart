@@ -1,11 +1,94 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 
 abstract interface class AmapPrivacyConsentAuthority {
   Future<bool> readAccepted();
   Future<void> accept();
   Future<void> revoke();
+}
+
+const amapPrivacyDisclosure =
+    '地图由高德地图 SDK 提供。启用地图前，我们会向高德提供展示地图所需的设备/网络环境信息，以及迹忆服务端已经形成的地点坐标，用于地图展示、标记和缩放。迹忆不会用设备当前位置替代或猜测你的到访记录。你可以随时在“我的”中撤销地图授权；撤销后将停止创建高德地图视图。';
+
+Future<bool> requestAmapPrivacyConsent(
+  BuildContext context,
+  AmapPrivacyConsentAuthority authority,
+) async {
+  final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('启用高德地图服务'),
+          content: const SingleChildScrollView(
+            child: Text(amapPrivacyDisclosure),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('暂不启用'),
+            ),
+            FilledButton(
+              key: const ValueKey('amap-privacy-confirm'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('同意并启用'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+  if (!confirmed) return false;
+  await authority.accept();
+  return true;
+}
+
+class AmapPrivacyConsentController extends ChangeNotifier
+    implements AmapPrivacyConsentAuthority {
+  AmapPrivacyConsentController({AmapPrivacyConsentAuthority? delegate})
+      : _delegate = delegate ?? AmapPrivacyConsentStore();
+
+  final AmapPrivacyConsentAuthority _delegate;
+  bool _accepted = false;
+  bool _loaded = false;
+
+  bool get accepted => _loaded && _accepted;
+
+  @override
+  Future<bool> readAccepted() async {
+    final next = await _delegate.readAccepted();
+    final changed = !_loaded || next != _accepted;
+    _loaded = true;
+    _accepted = next;
+    if (changed) notifyListeners();
+    return next;
+  }
+
+  @override
+  Future<void> accept() async {
+    await _delegate.accept();
+    if (!_loaded || !_accepted) {
+      _loaded = true;
+      _accepted = true;
+      notifyListeners();
+    }
+  }
+
+  @override
+  Future<void> revoke() async {
+    await _delegate.revoke();
+    if (!_loaded || _accepted) {
+      _loaded = true;
+      _accepted = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> close() async {
+    final delegate = _delegate;
+    if (delegate is AmapPrivacyConsentStore) {
+      await delegate.close();
+    }
+  }
 }
 
 class AmapPrivacyConsentStore implements AmapPrivacyConsentAuthority {
