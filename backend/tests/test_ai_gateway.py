@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.abuse_models import ConcurrencyGuard, WorkPermit
 from app.admin_models import ProviderRuntimeEvidence, ProviderService
 from app.core.config import Settings
 from app.core.db import Base
@@ -59,6 +60,8 @@ def _legacy_subject():
             AIQuotaPeriod.__table__,
             AIUsageEvent.__table__,
             ProviderRuntimeEvidence.__table__,
+            ConcurrencyGuard.__table__,
+            WorkPermit.__table__,
         ],
     )
     user_id = uuid4()
@@ -472,7 +475,7 @@ async def test_gateway_does_not_swallow_caller_cancellation():
                 actor_user_id=user_id,
             )
         )
-        await started.wait()
+        await asyncio.wait_for(started.wait(), timeout=2.0)
         task.cancel()
 
         with pytest.raises(asyncio.CancelledError):
