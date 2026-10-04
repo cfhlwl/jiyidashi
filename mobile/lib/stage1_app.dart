@@ -979,7 +979,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _amapPrivacyConsent.addListener(_amapPrivacyChanged);
-    unawaited(_amapPrivacyConsent.readAccepted());
+    unawaited(
+      _amapPrivacyConsent.readAccepted().catchError((_) => false),
+    );
     _accountDeletionIntentActive = widget.resumeAccountDeletion;
     if (_accountDeletionIntentActive) {
       index = 4;
@@ -1062,7 +1064,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _amapPrivacyConsent.removeListener(_amapPrivacyChanged);
     if (_ownsAmapPrivacyConsent) {
-      unawaited(_amapPrivacyConsent.close());
+      unawaited(_amapPrivacyConsent.close().catchError((_) {}));
       _amapPrivacyConsent.dispose();
     }
     _onboarding?.removeListener(_onboardingChanged);
