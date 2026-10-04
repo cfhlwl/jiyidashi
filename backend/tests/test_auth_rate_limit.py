@@ -112,3 +112,54 @@ async def test_normal_mutation_endpoint_returns_429_with_retry_after(client, mon
     assert second.status_code == 429
     assert second.json()["detail"] == "API_RATE_LIMITED"
     assert int(second.headers["Retry-After"]) >= 1
+
+
+
+@pytest.mark.asyncio
+async def test_direct_authenticated_claims_read_route_is_normal_read_limited(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_user_limit", 1)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_window_seconds", 60)
+    headers = await _dev_headers(client, "sec016-direct-claims-read")
+
+    first = await client.get("/v1/auth/sessions", headers=headers)
+    assert first.status_code == 200
+    second = await client.get("/v1/auth/sessions", headers=headers)
+    assert second.status_code == 429
+    assert second.json()["detail"] == "API_RATE_LIMITED"
+    assert int(second.headers["Retry-After"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_direct_authenticated_claims_mutation_route_is_normal_mutation_limited(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_mutation_user_limit", 1)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_mutation_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_window_seconds", 60)
+    headers = await _dev_headers(client, "sec016-direct-claims-mutation")
+
+    payload = {
+        "current_password": "definitely-wrong-password",
+        "new_password": "new-correct-horse-battery-staple",
+    }
+    first = await client.post(
+        "/v1/auth/change-password",
+        headers=headers,
+        json=payload,
+    )
+    assert first.status_code != 429
+    second = await client.post(
+        "/v1/auth/change-password",
+        headers=headers,
+        json=payload,
+    )
+    assert second.status_code == 429
+    assert second.json()["detail"] == "API_RATE_LIMITED"
+    assert int(second.headers["Retry-After"]) >= 1
