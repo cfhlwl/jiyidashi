@@ -2714,11 +2714,19 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       // [人工注释][S1-019] 只有服务端 DELETE 成功后才清空当前答案，
       // 这样“删除”才是真正影响后续检索的业务操作。
       await widget.api.deleteMemory(memoryId);
-      if (owner != null && mediaId != null && widget.mediaCache != null) {
-        await widget.mediaCache!.invalidateMedia(
-          ownerUserId: owner,
-          mediaId: mediaId,
-        );
+      final cache = widget.mediaCache;
+      if (owner != null && cache != null) {
+        if (mediaId != null) {
+          await cache.invalidateMedia(
+            ownerUserId: owner,
+            mediaId: mediaId,
+          );
+        } else {
+          // Canonical delete succeeded but the pre-delete projection could not
+          // prove the backing media identity. Prefer a broader owner purge over
+          // retaining an unknown deleted object as local presentation authority.
+          await cache.purgeOwner(owner);
+        }
       }
       setState(() {
         result = null;
