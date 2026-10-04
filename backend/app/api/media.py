@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.analytics_models import ProductActivity
@@ -23,6 +23,8 @@ from app.schemas import (
 )
 from app.services.ai_gateway import AIGateway, get_ai_gateway
 from app.services.analytics_service import record_active_day_safe
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 from app.services.asr import ASRProvider, get_asr_provider
 from app.services.entitlement_service import EntitlementError
 from app.services.media_service import (
@@ -79,10 +81,17 @@ def _media_read(asset) -> MediaRead:
 )
 def create_upload(
     payload: MediaUploadCreate,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
     storage: Storage,
 ) -> MediaUploadResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.MEDIA_TRANSFER,
+    )
     # [人工注释][S1-004][S1-006] 图片/语音创建上传都只返回短时 PUT 与 opaque media_id；
     # staging/final object key 永不进入公开 payload。
     try:
@@ -108,10 +117,17 @@ def create_upload(
 @router.post("/{media_id}/complete", response_model=MediaRead)
 def complete_upload(
     media_id: UUID,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
     storage: Storage,
 ) -> MediaRead:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.MEDIA_TRANSFER,
+    )
     # [人工注释][S1-004][S1-006] complete 不接受 object key/size/type 参数；
     # READY 必须先 commit 成功，staging 才允许 best-effort 清理，图片/语音规则一致。
     try:
@@ -132,10 +148,17 @@ def complete_upload(
 @router.post("/{media_id}/download", response_model=MediaDownloadResponse)
 def create_download(
     media_id: UUID,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
     storage: Storage,
 ) -> MediaDownloadResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.MEDIA_TRANSFER,
+    )
     # [人工注释][S1-006] 每次读取都重新签发短时 GET，数据库和 API 均不保存永久公开 URL。
     try:
         asset, transfer = sign_media_download(db, user_id, media_id, storage)
@@ -150,11 +173,18 @@ def create_download(
 @router.post("/{media_id}/ocr", response_model=OCRResult)
 async def extract_text_from_image(
     media_id: UUID,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
     storage: Storage,
     gateway: AI,
 ) -> OCRResult:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     # [人工注释][S3-006] OCR 只能由用户对一个明确 media_id 主动触发。
     # API 不接受 object URL/key/provider/key；结果仅作为 inference 返回，不写 Memory/Store。
     try:
@@ -172,11 +202,18 @@ async def extract_text_from_image(
 @router.post("/{media_id}/vision", response_model=VisionResult)
 async def observe_image(
     media_id: UUID,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
     storage: Storage,
     gateway: AI,
 ) -> VisionResult:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     # Vision is an explicit read-only inference action over one owner-scoped Media row.
     # The request cannot choose storage/provider/trust fields, and no result enters Store.
     try:
@@ -222,11 +259,18 @@ def create_memory_from_photo(
 def create_memory_from_voice(
     media_id: UUID,
     payload: VoiceMemoryCreate,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
     storage: Storage,
     asr: ASR,
 ) -> VoiceMemoryResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     # [人工注释][S1-004][S1-007] 客户端只提交 media_id + 可选标题/发生时间。
     # transcript/confidence/provider 成功状态全部由服务端从 READY 原始音频派生。
     try:
