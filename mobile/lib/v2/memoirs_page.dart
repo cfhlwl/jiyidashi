@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../ai_inference_presentation.dart';
 import '../api_client.dart';
+import '../media_presentation_cache.dart';
 import '../ui/jiyi_components.dart';
 import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
@@ -15,9 +16,14 @@ import 'v2_authority.dart';
 import 'v2_widgets.dart';
 
 class MemoirsPage extends StatefulWidget {
-  const MemoirsPage({super.key, required this.api});
+  const MemoirsPage({
+    super.key,
+    required this.api,
+    this.mediaCache,
+  });
 
   final JiYiApiClient api;
+  final LocalMediaCache? mediaCache;
 
   @override
   State<MemoirsPage> createState() => _MemoirsPageState();
@@ -25,6 +31,8 @@ class MemoirsPage extends StatefulWidget {
 
 class _MemoirsPageState extends State<MemoirsPage> {
   late final V2Api v2 = V2Api(widget.api);
+  late final LocalMediaCache _mediaCache =
+      widget.mediaCache ?? LocalMediaCache();
 
   final V2Authority annualAuthority = V2Authority();
   final V2Authority annualTimelineAuthority = V2Authority();
@@ -240,7 +248,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
 
   Future<void> _previewPhoto(V2AnnualMemoirPhoto photo) async {
     final current = annual;
-    if (current == null) return;
+    final owner = widget.api.authenticatedUserId;
+    if (current == null || owner == null || owner.trim().isEmpty) return;
     final identity = 'media:' + current.targetYear + ':' + photo.mediaId;
     late final V2AuthoritySnapshot snapshot;
     try {
@@ -250,7 +259,13 @@ class _MemoirsPageState extends State<MemoirsPage> {
       return;
     }
     try {
-      final signed = await v2.getVerifiedMediaDownload(photo.mediaId);
+      final localFile = await MediaPresentationResolver(
+        api: widget.api,
+        cache: _mediaCache,
+      ).resolve(
+        ownerUserId: owner,
+        mediaId: photo.mediaId,
+      );
       if (!mounted ||
           !mediaPreviewAuthority.isCurrent(widget.api, snapshot, identity) ||
           annual?.targetYear != current.targetYear) {
@@ -266,13 +281,12 @@ class _MemoirsPageState extends State<MemoirsPage> {
               children: [
                 Flexible(
                   child: InteractiveViewer(
-                    child: Image.network(
-                      signed.url.toString(),
-                      headers: signed.headers,
+                    child: Image.file(
+                      localFile,
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const Padding(
                         padding: EdgeInsets.all(JiYiSpacing.lg),
-                        child: Text('图片临时地址已失效，请关闭后重新打开。'),
+                        child: Text('本地照片缓存已损坏，请关闭后重新打开。'),
                       ),
                     ),
                   ),
@@ -286,6 +300,12 @@ class _MemoirsPageState extends State<MemoirsPage> {
           ),
         ),
       );
+    } on MediaUnavailableOffline {
+      if (!mounted ||
+          !mediaPreviewAuthority.isCurrent(widget.api, snapshot, identity)) {
+        return;
+      }
+      setState(() => annualError = '这张照片尚未缓存，离线时暂时无法显示。');
     } catch (exc) {
       if (!mounted ||
           !mediaPreviewAuthority.isCurrent(widget.api, snapshot, identity)) {
