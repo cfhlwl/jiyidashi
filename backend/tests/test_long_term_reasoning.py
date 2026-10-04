@@ -19,6 +19,7 @@ from app.long_term_reasoning_models import (
 from app.models import Memory, MemoryEdit, MemorySource, MemoryType, SourceType, User
 from app.services.ai_gateway import (
     AIGateway,
+    AIEntitlementError,
     AIInferenceRequest,
     AIProviderError,
     AIProviderResult,
@@ -860,3 +861,32 @@ def test_exact_enums_read_only_scope_and_no_0025_migration():
 
     graph = (root / "app/services/graph_projection_service.py").read_text()
     assert "LongTermReasoning" not in graph
+
+
+class _SaturatedGateway:
+    async def infer(self, request, *, db, actor_user_id):
+        del request, db, actor_user_id
+        raise AIEntitlementError(
+            "PROVIDER_CONCURRENCY_SATURATED",
+            status_code=429,
+            retry_after=19,
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_concurrency_saturation_is_not_collapsed_to_provider_failed():
+    with SessionLocal() as db:
+        owner = _owner(db, "sec016-saturation")
+        stage = _stage(db, owner)
+        with pytest.raises(AIEntitlementError) as caught:
+            await reason_about_life_stage(
+            db,
+            user_id=owner,
+            life_stage_id=stage.id,
+            question="阶段是什么？",
+            ai_gateway=_SaturatedGateway(),
+            )
+
+        assert caught.value.code == "PROVIDER_CONCURRENCY_SATURATED"
+        assert caught.value.status_code == 429
+        assert caught.value.retry_after == 19
