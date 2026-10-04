@@ -89,6 +89,7 @@ def _runtime_state(
     enabled: bool,
     configured: bool,
     now: datetime,
+    config_updated_at: datetime | None,
 ) -> str:
     if not enabled:
         return "CONFIGURED_UNVERIFIED" if configured else "DISABLED"
@@ -96,6 +97,15 @@ def _runtime_state(
         return "WARNING"
 
     recent_since = now - _EVIDENCE_WINDOW
+    if config_updated_at is not None:
+        updated = config_updated_at
+        if updated.tzinfo is None or updated.utcoffset() is None:
+            updated = updated.replace(tzinfo=UTC)
+        else:
+            updated = updated.astimezone(UTC)
+        # Evidence from an older provider revision cannot verify the new endpoint/key/model.
+        if updated > recent_since:
+            recent_since = updated
     if service == ProviderService.AI:
         success = _latest(
             db,
@@ -169,6 +179,9 @@ def read_provider_configurations(
                     enabled=snapshot.enabled,
                     configured=snapshot.credential_configured and bool(snapshot.model.strip()),
                     now=observed,
+                    config_updated_at=(
+                        snapshot.updated_at if isinstance(snapshot.updated_at, datetime) else None
+                    ),
                 ),
                 enabled=snapshot.enabled,
                 provider_type=snapshot.provider_type,
