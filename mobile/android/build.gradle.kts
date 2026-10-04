@@ -19,24 +19,23 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
-    project.evaluationDependsOn(":app")
-
     // AMap's Flutter bridge still declares compileSdk 35, while its resolved
-    // Android AAR graph requires API 36. Keep every Android module on one
-    // compile SDK so third-party plugin metadata validation cannot drift.
-    afterEvaluate {
-        when {
-            plugins.hasPlugin("com.android.application") ->
-                extensions.configure<ApplicationExtension> {
-                    compileSdk = 36
-                }
-
-            plugins.hasPlugin("com.android.library") ->
-                extensions.configure<LibraryExtension> {
-                    compileSdk = 36
-                }
+    // Android AAR graph requires API 36. Register against plugin application
+    // instead of afterEvaluate so late/already-evaluated Flutter plugin
+    // projects cannot fail configuration.
+    pluginManager.withPlugin("com.android.application") {
+        extensions.configure<ApplicationExtension> {
+            compileSdk = 36
         }
     }
+
+    pluginManager.withPlugin("com.android.library") {
+        extensions.configure<LibraryExtension> {
+            compileSdk = 36
+        }
+    }
+
+    project.evaluationDependsOn(":app")
 }
 
 tasks.register<Delete>("clean") {
