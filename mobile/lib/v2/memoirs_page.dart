@@ -287,9 +287,13 @@ class _MemoirsPageState extends State<MemoirsPage> {
               children: [
                 Flexible(
                   child: InteractiveViewer(
-                    child: (widget.photoRenderer ?? _defaultMemoirPhotoRenderer)(
-                      localFile,
-                    ),
+                    child: widget.photoRenderer?.call(localFile) ??
+                        LocalMediaPresentationScope.maybeOf(context)?.renderer(
+                          context,
+                          localFile,
+                          BoxFit.contain,
+                        ) ??
+                        _defaultMemoirPhotoRenderer(localFile),
                   ),
                 ),
                 TextButton(
