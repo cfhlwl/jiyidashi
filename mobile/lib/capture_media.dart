@@ -636,13 +636,18 @@ class TrustedMediaCaptureService {
           ownerUserId: session.owner,
           mediaId: upload.mediaId,
         );
-        _assertSameSession(session);
       } catch (error) {
         // Canonical server save already succeeded. Local presentation cache is
         // only an optimization and must never turn success into a false failure.
-        onLocalCacheSeedFailure?.call(error);
+        try {
+          onLocalCacheSeedFailure?.call(error);
+        } catch (_) {
+          // Observability hooks are best effort too.
+        }
       }
     }
+    // Cache degradation must never swallow an account/session authority change.
+    _assertSameSession(session);
     return memoryId;
   }
 
