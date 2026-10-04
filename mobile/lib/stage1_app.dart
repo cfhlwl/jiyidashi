@@ -2713,7 +2713,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       if (owner != null && mediaId != null && widget.mediaCache != null) {
         await widget.mediaCache!.invalidateMedia(
           ownerUserId: owner,
-          mediaId: mediaId!,
+          mediaId: mediaId,
         );
       }
       setState(() {
