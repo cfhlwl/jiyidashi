@@ -51,21 +51,23 @@ def _guard_row(db: Session, scope_key: str, now: datetime) -> ConcurrencyGuard:
         row.updated_at = now
         return row
 
-    db.add(ConcurrencyGuard(scope_key=scope_key, updated_at=now))
     try:
-        db.flush()
+        with db.begin_nested():
+            db.add(ConcurrencyGuard(scope_key=scope_key, updated_at=now))
+            db.flush()
     except IntegrityError:
-        db.rollback()
-        row = db.scalar(
-            select(ConcurrencyGuard)
-            .where(ConcurrencyGuard.scope_key == scope_key)
-            .with_for_update()
-        )
-        if row is None:
-            raise
-        row.updated_at = now
-        return row
-    return db.get(ConcurrencyGuard, scope_key)
+        # SAVEPOINT rollback preserves any guard rows already locked in the outer
+        # transaction while a concurrent first creator wins this scope.
+        pass
+    row = db.scalar(
+        select(ConcurrencyGuard)
+        .where(ConcurrencyGuard.scope_key == scope_key)
+        .with_for_update()
+    )
+    if row is None:
+        raise RuntimeError("CONCURRENCY_GUARD_CREATE_FAILED")
+    row.updated_at = now
+    return row
 
 
 def _active_count(
