@@ -99,6 +99,11 @@ def register_email_password(
             detail="AUTH_IDENTITY_EXISTS",
         )
 
+    # SEC-016: acquire/release the global Argon2 permit before opening the
+    # registration write transaction. This keeps the expensive CPU work outside user-row
+    # mutation state while the anonymous IP gate has already succeeded.
+    password_hash = hash_password(payload.password, bind=db.get_bind())
+
     user = User(
         nickname=payload.nickname,
         email=subject,
@@ -113,7 +118,7 @@ def register_email_password(
             user_id=user.id,
             provider=AuthProvider.EMAIL_PASSWORD,
             subject=subject,
-            secret_hash=hash_password(payload.password, bind=db.get_bind()),
+            secret_hash=password_hash,
         )
         db.add(identity)
         create_registration_default_entitlement(db, user_id=user.id)
