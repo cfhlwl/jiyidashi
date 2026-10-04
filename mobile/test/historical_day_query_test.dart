@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jiyidashi/amap_privacy_consent.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/stage1_app.dart';
 
@@ -25,6 +26,10 @@ Map<String, dynamic> footprintResult({
             'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
             'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
             'place_name': placeName,
+            'place_latitude': 39.9042,
+            'place_longitude': 116.4074,
+            'place_address': '测试地址',
+            'place_category': 'OFFICE',
             'arrived_at': '2026-09-25T10:16:00Z',
             'left_at': '2026-09-25T11:05:00Z',
             'arrived_at_local': '2026-09-25T18:16:00+08:00',
@@ -36,6 +41,19 @@ Map<String, dynamic> footprintResult({
         ],
       },
     };
+
+class _QueryMapConsent implements AmapPrivacyConsentAuthority {
+  bool accepted = false;
+
+  @override
+  Future<void> accept() async => accepted = true;
+
+  @override
+  Future<bool> readAccepted() async => accepted;
+
+  @override
+  Future<void> revoke() async => accepted = false;
+}
 
 class _HistoricalQueryApi extends JiYiApiClient {
   _HistoricalQueryApi({
@@ -63,7 +81,12 @@ Future<void> _submitHistoricalQuery(
 ) async {
   await tester.pumpWidget(
     MaterialApp(
-      home: Scaffold(body: MemoryQueryPage(api: api)),
+      home: Scaffold(
+        body: MemoryQueryPage(
+          api: api,
+          amapPrivacyConsent: _QueryMapConsent(),
+        ),
+      ),
     ),
   );
   await tester.enterText(find.byType(TextField).first, '我25号去哪了？');
@@ -84,6 +107,12 @@ void main() {
     expect(find.text('按日期看足迹'), findsOneWidget);
     expect(find.text('DATE_FOOTPRINT_QUERY'), findsNothing);
     expect(find.text('没有可展示的参考记录'), findsNothing);
+    expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amap-privacy-blocked')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('memory-query-amap-privacy-accept')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('late owner A day footprint cannot repopulate owner B query UI',
