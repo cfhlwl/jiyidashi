@@ -330,7 +330,7 @@ class _GoldenApi extends JiYiApiClient {
       {
         'kind': 'OBJECT_LOCATION',
         'id': '33333333-3333-4333-8333-333333333333',
-        'source_type': 'USER_PHOTO',
+        'source_type': 'USER_TEXT',
         'memory_source_id': '44444444-4444-4444-8444-444444444444',
         'occurred_at': '2026-09-20T02:20:00Z',
         'excerpt': '护照放在书房抽屉。',
@@ -529,8 +529,133 @@ class _GoldenFamilyApi extends _GoldenApi {
         },
       ];
     }
+    if (method == 'GET' && path == '/family/members/$memberId/photos') {
+      return [
+        {
+          'media_id': v2MediaId,
+          'content_type': 'image/jpeg',
+          'size_bytes': 4,
+          'created_at': '2026-09-20T01:15:00Z',
+          'completed_at': '2026-09-20T01:15:01Z',
+          'cache_version': _goldenCacheVersion,
+        },
+      ];
+    }
+    if (method == 'GET' &&
+        path == '/family/members/$memberId/current-location') {
+      return {
+        'resource_owner_user_id': memberId,
+        'latitude': 31.2243,
+        'longitude': 121.4768,
+        'accuracy': 8.0,
+        'recorded_at': '2026-09-20T08:35:00+08:00',
+        'fresh_until': '2030-09-20T09:00:00+08:00',
+      };
+    }
+    if (method == 'GET' &&
+        path == '/family/members/$memberId/today/footprint') {
+      return {
+        'timezone': 'Asia/Shanghai',
+        'day': '2026-09-20',
+        'visits': [
+          {
+            'id': '77777777-7777-4777-8777-777777777777',
+            'place_id': '88888888-8888-4888-8888-888888888888',
+            'place_name': '滨江公园',
+            'place_latitude': 31.2391,
+            'place_longitude': 121.4972,
+            'place_address': '上海市浦东新区滨江步道',
+            'place_category': 'PARK',
+            'arrived_at': '2026-09-20T01:00:00Z',
+            'left_at': '2026-09-20T02:10:00Z',
+            'arrived_at_local': '2026-09-20T09:00:00+08:00',
+            'left_at_local': '2026-09-20T10:10:00+08:00',
+            'confidence': 0.96,
+            'visit_source': 'LOCATION_CLUSTER',
+            'visit_finalized': true,
+          },
+        ],
+      };
+    }
+    if (method == 'GET' &&
+        path == '/family/members/$memberId/memories?limit=8') {
+      return [
+        {
+          'memory_id': '99999999-9999-4999-8999-999999999999',
+          'memory_type': 'NOTE',
+          'title': '周末一起散步',
+          'content': '傍晚沿江走了一段，风很舒服。',
+          'occurred_at': '2026-09-20T02:00:00Z',
+          'source_type': 'USER_TEXT',
+          'is_confirmed': true,
+          'edit_revision': 0,
+          'created_at': '2026-09-20T02:00:00Z',
+        },
+      ];
+    }
     throw ApiException(404, 'NOT_FOUND');
   }
+}
+
+class _GoldenHistoricalQueryApi extends _GoldenApi {
+  @override
+  Future<Map<String, dynamic>> queryMemory(String question) async => {
+        'answer': '9 月 20 日上午去了滨江公园，之后到了公司。',
+        'can_answer': true,
+        'certainty': 'confirmed',
+        'reason': null,
+        'intent': 'DATE_FOOTPRINT_QUERY',
+        'evidence': [
+          {
+            'kind': 'VISIT',
+            'id': '77777777-7777-4777-8777-777777777777',
+            'source_type': 'LOCATION_CLUSTER',
+            'occurred_at': '2026-09-20T01:00:00Z',
+            'excerpt': '滨江公园 · 09:00–10:10',
+            'confidence': 0.96,
+            'provenance': 'ORIGINAL_SOURCE',
+          },
+        ],
+        'memory_ids': const <String>[],
+        'day_footprint': {
+          'timezone': 'Asia/Shanghai',
+          'day': '2026-09-20',
+          'visits': [
+            {
+              'id': '77777777-7777-4777-8777-777777777777',
+              'place_id': '88888888-8888-4888-8888-888888888888',
+              'place_name': '滨江公园',
+              'place_latitude': 31.2391,
+              'place_longitude': 121.4972,
+              'place_address': '上海市浦东新区滨江步道',
+              'place_category': 'PARK',
+              'arrived_at': '2026-09-20T01:00:00Z',
+              'left_at': '2026-09-20T02:10:00Z',
+              'arrived_at_local': '2026-09-20T09:00:00+08:00',
+              'left_at_local': '2026-09-20T10:10:00+08:00',
+              'confidence': 0.96,
+              'visit_source': 'LOCATION_CLUSTER',
+              'visit_finalized': true,
+            },
+            {
+              'id': 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+              'place_id': 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb',
+              'place_name': '公司',
+              'place_latitude': 31.2243,
+              'place_longitude': 121.4768,
+              'place_address': '上海市静安区测试路 1 号',
+              'place_category': 'OFFICE',
+              'arrived_at': '2026-09-20T03:00:00Z',
+              'left_at': null,
+              'arrived_at_local': '2026-09-20T11:00:00+08:00',
+              'left_at_local': null,
+              'confidence': 0.92,
+              'visit_source': 'LOCATION_CLUSTER',
+              'visit_finalized': false,
+            },
+          ],
+        },
+      };
 }
 
 class _GoldenMemoryDetailApi extends _GoldenApi {
@@ -542,7 +667,7 @@ class _GoldenMemoryDetailApi extends _GoldenApi {
     'title': '第一次产品讨论',
     'content': '那天我们在办公室把第一版产品方向写满了整块白板。',
     'occurred_at': '2025-03-01T01:00:00Z',
-    'source_type': 'USER_TEXT',
+    'source_type': 'USER_PHOTO',
     'confidence': 1.0,
     'place_id': v2PlaceId,
     'latitude': null,
