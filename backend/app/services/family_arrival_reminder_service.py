@@ -244,9 +244,13 @@ def cancel_arrival_reminder(
     reminder_id: UUID,
     now: datetime | None = None,
 ) -> None:
-    probe = db.scalar(
-        select(FamilyArrivalReminder).where(FamilyArrivalReminder.id == reminder_id)
-    )
+    probe = db.execute(
+        select(
+            FamilyArrivalReminder.family_id,
+            FamilyArrivalReminder.resource_owner_user_id,
+            FamilyArrivalReminder.grantee_user_id,
+        ).where(FamilyArrivalReminder.id == reminder_id)
+    ).one_or_none()
     if probe is None or probe.resource_owner_user_id != actor_user_id:
         db.rollback()
         raise FamilyArrivalReminderError("ARRIVAL_REMINDER_NOT_AVAILABLE", 404)
@@ -270,6 +274,7 @@ def cancel_arrival_reminder(
             FamilyArrivalReminder.resource_owner_user_id == actor_user_id,
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if reminder is None:
         db.rollback()
@@ -320,11 +325,13 @@ def derive_arrival_for_finalized_visit(
     )
     transitioned = 0
     for reminder_id in reminder_ids:
-        probe = db.scalar(
-            select(FamilyArrivalReminder).where(
-                FamilyArrivalReminder.id == reminder_id
-            )
-        )
+        probe = db.execute(
+            select(
+                FamilyArrivalReminder.family_id,
+                FamilyArrivalReminder.resource_owner_user_id,
+                FamilyArrivalReminder.grantee_user_id,
+            ).where(FamilyArrivalReminder.id == reminder_id)
+        ).one_or_none()
         if probe is None:
             continue
         locked = _lock_membership_pair(
@@ -345,6 +352,7 @@ def derive_arrival_for_finalized_visit(
                 FamilyArrivalReminder.destination_place_id == visit.place_id,
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if reminder is None:
             continue
