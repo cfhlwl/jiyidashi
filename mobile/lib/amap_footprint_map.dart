@@ -9,17 +9,22 @@ const _amapAndroidKey =
     String.fromEnvironment('AMAP_ANDROID_SDK_KEY', defaultValue: '');
 const _amapIosKey =
     String.fromEnvironment('AMAP_IOS_SDK_KEY', defaultValue: '');
+const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 
 class JiYiAmapConfig {
   const JiYiAmapConfig({
     this.androidKey = _amapAndroidKey,
     this.iosKey = _amapIosKey,
     this.platformOverride,
+    this.appEnv = _appEnv,
   });
 
   final String androidKey;
   final String iosKey;
   final TargetPlatform? platformOverride;
+  final String appEnv;
+
+  bool get isProduction => appEnv.trim().toLowerCase() == 'production';
 
   bool get configuredForCurrentPlatform =>
       switch (platformOverride ?? defaultTargetPlatform) {
@@ -27,6 +32,17 @@ class JiYiAmapConfig {
         TargetPlatform.iOS => iosKey.trim().isNotEmpty,
         _ => false,
       };
+
+  void assertProductionConfiguration() {
+    final platform = platformOverride ?? defaultTargetPlatform;
+    final mapCapable =
+        platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+    if (isProduction && mapCapable && !configuredForCurrentPlatform) {
+      throw StateError(
+        'Production AMap configuration is missing the platform SDK key.',
+      );
+    }
+  }
 
   AMapApiKey get apiKey => AMapApiKey(
         androidKey: androidKey.trim().isEmpty ? null : androidKey.trim(),
@@ -65,6 +81,7 @@ class JiYiFootprintMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    config.assertProductionConfiguration();
     final mappable = visits.where((visit) => visit.isMappable).toList(growable: false);
     if (mappable.isEmpty) {
       return const _MapFallback(
@@ -240,15 +257,15 @@ class _NativeFootprintMapState extends State<_NativeFootprintMap> {
 
   @override
   Widget build(BuildContext context) {
+    AMapInitializer.updatePrivacyAgree(
+      const AMapPrivacyStatement(
+        hasContains: true,
+        hasShow: true,
+        hasAgree: true,
+      ),
+    );
     AMapInitializer.init(context, apiKey: widget.config.apiKey);
-  AMapInitializer.updatePrivacyAgree(
-    const AMapPrivacyStatement(
-      hasContains: true,
-      hasShow: true,
-      hasAgree: true,
-    ),
-  );
-  return AMapWidget(
+    return AMapWidget(
       initialCameraPosition: CameraPosition(
         target: LatLng(
           widget.visits.first.latitude!,
@@ -312,6 +329,7 @@ class JiYiPlaceMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    config.assertProductionConfiguration();
     if (!_validCoordinate) {
       return const SizedBox.shrink(
         key: ValueKey('amap-place-no-coordinate'),
@@ -362,7 +380,6 @@ Widget _defaultPlaceNativeBuilder(
   String? address,
 ) {
   final coordinate = LatLng(latitude, longitude);
-  AMapInitializer.init(context, apiKey: config.apiKey);
   AMapInitializer.updatePrivacyAgree(
     const AMapPrivacyStatement(
       hasContains: true,
@@ -370,6 +387,7 @@ Widget _defaultPlaceNativeBuilder(
       hasAgree: true,
     ),
   );
+  AMapInitializer.init(context, apiKey: config.apiKey);
   return AMapWidget(
     initialCameraPosition: CameraPosition(target: coordinate, zoom: 15),
     markers: <Marker>{
