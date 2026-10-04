@@ -89,6 +89,25 @@ jobs:
           printf '%s\n' "$response"
           echo "endpoint_status=reachable" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare iOS CocoaPods with bounded retry
+        timeout-minutes: 12
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd ios
+            for attempt in 1 2 3; do
+              if pod install; then
+                break
+              fi
+              if [ "$attempt" = "3" ]; then
+                exit 1
+              fi
+              echo "pod install failed on attempt $attempt; retrying transient CocoaPods download"
+              sleep $((attempt * 5))
+            done
+          )
+
       - name: Build iOS release app without Apple codesigning
         shell: bash
         run: |
