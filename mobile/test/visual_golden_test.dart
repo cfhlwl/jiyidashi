@@ -3,7 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jiyidashi/amap_footprint_map.dart';
+import 'package:jiyidashi/amap_privacy_consent.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/memory_detail_page.dart';
 import 'package:jiyidashi/native_location_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
@@ -28,6 +31,241 @@ const _goldenSize = Size(390, 844);
 const _goldenFontFamily = 'JiYi Golden CJK';
 const _captureDeterministicQueryPreview =
     bool.fromEnvironment('DETERMINISTIC_QUERY_VISUAL_PREVIEW');
+
+const _goldenCacheVersion =
+    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+class _GoldenAmapConsent implements AmapPrivacyConsentAuthority {
+  _GoldenAmapConsent(this.accepted);
+
+  bool accepted;
+
+  @override
+  Future<void> accept() async => accepted = true;
+
+  @override
+  Future<bool> readAccepted() async => accepted;
+
+  @override
+  Future<void> revoke() async => accepted = false;
+}
+
+Widget _goldenLocalPhoto(
+  BuildContext context,
+  File file,
+  BoxFit fit,
+) {
+  final scheme = Theme.of(context).colorScheme;
+  return Semantics(
+    label: '本地照片视觉测试样本',
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            scheme.primaryContainer,
+            scheme.tertiaryContainer,
+          ],
+        ),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Align(
+            alignment: const Alignment(0, -0.22),
+            child: Icon(
+              Icons.wb_sunny_outlined,
+              size: 42,
+              color: scheme.onPrimaryContainer.withValues(alpha: 0.78),
+            ),
+          ),
+          Align(
+            alignment: const Alignment(0, 0.42),
+            child: Icon(
+              Icons.landscape_outlined,
+              size: 92,
+              color: scheme.onTertiaryContainer.withValues(alpha: 0.88),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _goldenFootprintMap(
+  BuildContext context,
+  JiYiAmapConfig config,
+  List<FootprintVisit> visits,
+  int selectedIndex,
+  ValueChanged<int> onSelected,
+  bool interactive,
+) {
+  final scheme = Theme.of(context).colorScheme;
+  return DecoratedBox(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          scheme.surfaceContainerLow,
+          scheme.primaryContainer.withValues(alpha: 0.72),
+        ],
+      ),
+    ),
+    child: Stack(
+      children: [
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _GoldenMapLinePainter(
+              color: scheme.primary.withValues(alpha: 0.35),
+            ),
+          ),
+        ),
+        for (var index = 0; index < visits.length; index++)
+          Align(
+            alignment: Alignment(
+              visits.length == 1 ? 0 : -0.72 + (1.44 * index / (visits.length - 1)),
+              visits.length == 1 ? 0 : (index.isEven ? -0.28 : 0.3),
+            ),
+            child: GestureDetector(
+              onTap: interactive ? () => onSelected(index) : null,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: index == selectedIndex ? 19 : 16,
+                    backgroundColor: index == selectedIndex
+                        ? scheme.primary
+                        : scheme.surface,
+                    foregroundColor: index == selectedIndex
+                        ? scheme.onPrimary
+                        : scheme.primary,
+                    child: Text('${index + 1}'),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 120),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.surface.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      visits[index].placeName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+Widget _goldenPlaceMap(
+  BuildContext context,
+  JiYiAmapConfig config,
+  double latitude,
+  double longitude,
+  String name,
+  String? address,
+) {
+  final scheme = Theme.of(context).colorScheme;
+  return DecoratedBox(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          scheme.surfaceContainerLow,
+          scheme.primaryContainer.withValues(alpha: 0.75),
+        ],
+      ),
+    ),
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 21,
+            backgroundColor: scheme.primary,
+            foregroundColor: scheme.onPrimary,
+            child: const Icon(Icons.place),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            name,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          if (address != null && address.trim().isNotEmpty)
+            Text(
+              address,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _GoldenMapLinePainter extends CustomPainter {
+  const _GoldenMapLinePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2;
+    final path = Path()
+      ..moveTo(size.width * 0.16, size.height * 0.38)
+      ..cubicTo(
+        size.width * 0.38,
+        size.height * 0.15,
+        size.width * 0.58,
+        size.height * 0.74,
+        size.width * 0.84,
+        size.height * 0.46,
+      );
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_GoldenMapLinePainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+Future<LocalMediaCache> _seedGoldenMediaCache(
+  String ownerUserId, {
+  String mediaId = v2MediaId,
+}) async {
+  final root = await Directory.systemTemp.createTemp('jiyi-golden-media-');
+  addTearDown(() => root.delete(recursive: true));
+  final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
+  await cache.putBytes(
+    ownerUserId: ownerUserId,
+    mediaId: mediaId,
+    cacheVersion: _goldenCacheVersion,
+    bytes: const <int>[1, 2, 3, 4],
+  );
+  cache.markAuthorityValidated(
+    ownerUserId: ownerUserId,
+    mediaId: mediaId,
+  );
+  return cache;
+}
 
 // [人工注释][CI-005] Golden 必须显式加载仓库内固定版本的 CJK 字体；禁止依赖 Runner 系统字体，
 // 否则 Ubuntu 镜像变化或 flutter_test 缺字会把中文排版回归伪装成稳定结果。
@@ -91,7 +329,7 @@ class _GoldenApi extends JiYiApiClient {
       {
         'kind': 'OBJECT_LOCATION',
         'id': '33333333-3333-4333-8333-333333333333',
-        'source_type': 'USER_TEXT',
+        'source_type': 'USER_PHOTO',
         'memory_source_id': '44444444-4444-4444-8444-444444444444',
         'occurred_at': '2026-09-20T02:20:00Z',
         'excerpt': '护照放在书房抽屉。',
@@ -111,6 +349,10 @@ class _GoldenApi extends JiYiApiClient {
         'id': '11111111-1111-4111-8111-111111111111',
         'place_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         'place_name': '书房',
+        'place_latitude': 31.2304,
+        'place_longitude': 121.4737,
+        'place_address': '上海市静安区家中书房',
+        'place_category': 'HOME',
         'arrived_at': '2026-09-19T23:10:00Z',
         'left_at': '2026-09-20T00:00:00Z',
         'arrived_at_local': '2026-09-20T07:10:00+08:00',
@@ -123,6 +365,10 @@ class _GoldenApi extends JiYiApiClient {
         'id': '22222222-2222-4222-8222-222222222222',
         'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         'place_name': '公司',
+        'place_latitude': 31.2243,
+        'place_longitude': 121.4768,
+        'place_address': '上海市静安区测试路 1 号',
+        'place_category': 'OFFICE',
         'arrived_at': '2026-09-20T00:35:00Z',
         'left_at': null,
         'arrived_at_local': '2026-09-20T08:35:00+08:00',
@@ -151,11 +397,12 @@ class _GoldenApi extends JiYiApiClient {
                   'ended_at': null,
                   'place_id': v2PlaceId,
                   'place_name': '上海办公室',
-                  'memory_type': 'NOTE',
-                  'title': '第一次产品讨论',
+                  'memory_type': 'PHOTO',
+                  'title': '晨光里的白板',
                   'content': '把第一版产品方向写满了整块白板。',
-                  'source_type': 'USER_TEXT',
+                  'source_type': 'USER_PHOTO',
                   'is_confirmed': true,
+                  'media_id': v2MediaId,
                   'confidence': 1.0,
                   'visit_source': null,
                   'visit_finalized': null,
@@ -190,11 +437,12 @@ class _GoldenTimelineApi extends _GoldenApi {
             'ended_at': null,
             'place_id': v2PlaceId,
             'place_name': '上海办公室',
-            'memory_type': 'NOTE',
+            'memory_type': 'PHOTO',
             'title': '第一次产品讨论',
             'content': '把第一版产品方向写满了整块白板。',
-            'source_type': 'USER_TEXT',
+            'source_type': 'USER_PHOTO',
             'is_confirmed': true,
+            'media_id': v2MediaId,
             'confidence': 1.0,
             'visit_source': null,
             'visit_finalized': null,
@@ -289,7 +537,7 @@ class _GoldenMemoryDetailApi extends _GoldenApi {
   Future<Map<String, dynamic>> getMemory(String memoryId) async => {
     'id': v2MemoryId,
     'user_id': authenticatedUserId,
-    'memory_type': 'NOTE',
+    'memory_type': 'PHOTO',
     'title': '第一次产品讨论',
     'content': '那天我们在办公室把第一版产品方向写满了整块白板。',
     'occurred_at': '2025-03-01T01:00:00Z',
@@ -299,7 +547,7 @@ class _GoldenMemoryDetailApi extends _GoldenApi {
     'latitude': null,
     'longitude': null,
     'is_confirmed': true,
-    'metadata_json': const <String, dynamic>{},
+    'metadata_json': const <String, dynamic>{'media_id': v2MediaId},
     'edit_revision': 3,
     'edited_at': null,
     'created_at': '2025-03-01T01:00:00Z',
@@ -316,6 +564,8 @@ class _GoldenMemoryDetailApi extends _GoldenApi {
       'name': '上海办公室',
       'name_source': 'USER',
       'address': '上海市测试路 1 号',
+      'latitude': 31.2243,
+      'longitude': 121.4768,
       'category': 'OFFICE',
       'visit_count': 5,
       'first_visited_at': '2025-01-01T00:00:00Z',
