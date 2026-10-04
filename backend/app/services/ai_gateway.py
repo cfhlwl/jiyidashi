@@ -420,13 +420,6 @@ class AIGateway:
                     config_fingerprint=self._config_fingerprint,
                     succeeded=False,
                 )
-            if provider_started and not provider_completed:
-                record_provider_runtime_evidence(
-                    db.get_bind(),
-                    service=ProviderService.AI,
-                    config_fingerprint=self._config_fingerprint,
-                    succeeded=False,
-                )
             emit_operational_event(
                 event="ai.inference.failed",
                 level="WARNING",
