@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.core.config import Settings
-from app.core.db import SessionLocal
+from app.core.db import SessionLocal, engine
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.main import app
 from app.media_models import MediaAsset, MediaKind, MediaStatus
@@ -21,6 +21,7 @@ from app.services.ai_gateway import (
     DeterministicAIProvider,
     get_ai_gateway,
 )
+from app.services.concurrency_guard import claim_provider_permit, release_permit
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorageError,
@@ -555,3 +556,37 @@ async def test_deletion_generation_change_blocks_vision_result(
 
     assert response.status_code == 409
     assert response.json()["detail"] == "DATA_DELETION_REQUEST_STALE"
+
+
+@pytest.mark.asyncio
+async def test_vision_provider_concurrency_saturation_is_429_with_retry_after(
+    client,
+    vision_dependencies,
+):
+    storage, provider, _ = vision_dependencies
+    user_id, headers = await _new_user(client, "vision-provider-saturation")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings(
+        provider_ai_global_concurrency=1,
+        provider_ai_user_concurrency=1,
+        provider_permit_lease_seconds=30,
+    )
+    app.dependency_overrides[get_ai_gateway] = lambda: AIGateway(settings, provider)
+    occupied = claim_provider_permit(
+        engine,
+        service_class="AI",
+        user_id=user_id,
+        settings=settings,
+    )
+    try:
+        response = await client.post(
+            f"/v1/media/{media_id}/vision",
+            headers=headers,
+        )
+    finally:
+        assert release_permit(engine, permit=occupied, settings=settings) is True
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "PROVIDER_CONCURRENCY_SATURATED"
+    assert int(response.headers["Retry-After"]) >= 1
+    assert provider.image_requests == []
