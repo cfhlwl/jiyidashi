@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
+import 'media_presentation_cache.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
@@ -9,10 +12,12 @@ class MemoryDetailPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.memoryId,
+    this.mediaCache,
   });
 
   final JiYiApiClient api;
   final String memoryId;
+  final LocalMediaCache? mediaCache;
 
   @override
   State<MemoryDetailPage> createState() => _MemoryDetailPageState();
@@ -21,11 +26,10 @@ class MemoryDetailPage extends StatefulWidget {
 class _MemoryDetailPageState extends State<MemoryDetailPage> {
   _MemoryDetailView? memory;
   String? placeName;
-  MediaDownloadSession? photoDownload;
+  File? photoFile;
   String? photoError;
   bool photoRefreshing = false;
-  int _photoAutomaticRetryBudget = 1;
-  bool _photoRetryScheduled = false;
+  late final LocalMediaCache _mediaCache;
   bool loading = true;
   bool mutating = false;
   String? error;
@@ -34,6 +38,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
   @override
   void initState() {
     super.initState();
+    _mediaCache = widget.mediaCache ?? LocalMediaCache();
     _load();
   }
 
@@ -61,11 +66,9 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
     setState(() {
       loading = true;
       error = null;
-      photoDownload = null;
+      photoFile = null;
       photoError = null;
       photoRefreshing = false;
-      _photoAutomaticRetryBudget = 1;
-      _photoRetryScheduled = false;
     });
     try {
       final raw = await widget.api.getMemory(widget.memoryId);
@@ -77,7 +80,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       );
 
       String? resolvedPlace;
-      MediaDownloadSession? resolvedPhoto;
+      File? resolvedPhoto;
       String? resolvedPhotoError;
       final placeId = parsed.placeId;
       if (placeId != null) {
@@ -98,7 +101,13 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       final mediaId = parsed.mediaId;
       if (parsed.memoryType == 'PHOTO' && mediaId != null) {
         try {
-          resolvedPhoto = await widget.api.createMediaDownload(mediaId);
+          resolvedPhoto = await MediaPresentationResolver(
+            api: widget.api,
+            cache: _mediaCache,
+          ).resolve(
+            ownerUserId: owner,
+            mediaId: mediaId,
+          );
           if (!_sessionCurrent(version, owner)) return;
         } on ApiException {
           if (!_sessionCurrent(version, owner)) return;
@@ -116,7 +125,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       setState(() {
         memory = parsed;
         placeName = resolvedPlace;
-        photoDownload = resolvedPhoto;
+        photoFile = resolvedPhoto;
         photoError = resolvedPhotoError;
         loading = false;
       });
@@ -143,7 +152,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
     }
   }
 
-  Future<void> _refreshPhotoCapability({bool manual = false}) async {
+  Future<void> _refreshPhoto({bool manual = false}) async {
     final current = memory;
     final mediaId = current?.mediaId;
     final owner = widget.api.authenticatedUserId;
@@ -156,30 +165,39 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       return;
     }
     final version = widget.api.sessionVersion;
-    if (manual) {
-      _photoAutomaticRetryBudget = 1;
-    }
     setState(() {
       photoRefreshing = true;
       if (manual) photoError = null;
     });
     try {
-      final signed = await widget.api.createMediaDownload(mediaId);
+      final resolved = await MediaPresentationResolver(
+        api: widget.api,
+        cache: _mediaCache,
+      ).resolve(
+        ownerUserId: owner,
+        mediaId: mediaId,
+      );
       if (!_sessionCurrent(version, owner) ||
           memory?.id != current.id ||
           memory?.mediaId != mediaId) {
         return;
       }
       setState(() {
-        photoDownload = signed;
+        photoFile = resolved;
         photoError = null;
         photoRefreshing = false;
+      });
+    } on MediaUnavailableOffline {
+      if (!_sessionCurrent(version, owner)) return;
+      setState(() {
+        photoRefreshing = false;
+        photoError = '这张照片尚未缓存，离线时暂时无法显示。';
       });
     } on TransportException {
       if (!_sessionCurrent(version, owner)) return;
       setState(() {
         photoRefreshing = false;
-        photoError = '网络暂时不可用，照片可以稍后重试。';
+        photoError = '网络暂时不可用；已缓存的照片仍可离线查看。';
       });
     } on ApiException {
       if (!_sessionCurrent(version, owner)) return;
@@ -193,28 +211,18 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         photoRefreshing = false;
         photoError = '照片读取信息暂时不可用。';
       });
+    } on MediaCacheException {
+      if (!_sessionCurrent(version, owner)) return;
+      setState(() {
+        photoRefreshing = false;
+        photoError = '本地照片缓存暂时不可用，可以重试。';
+      });
     }
-  }
-
-  void _schedulePhotoResign() {
-    if (_photoAutomaticRetryBudget <= 0 ||
-        _photoRetryScheduled ||
-        photoRefreshing) {
-      return;
-    }
-    _photoAutomaticRetryBudget -= 1;
-    _photoRetryScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _photoRetryScheduled = false;
-      if (mounted) {
-        _refreshPhotoCapability();
-      }
-    });
   }
 
   Widget _photoCard(_MemoryDetailView current) {
-    final signed = photoDownload?.download;
-    if (signed == null) {
+    final local = photoFile;
+    if (local == null) {
       return JiYiSectionCard(
         title: '照片',
         child: Column(
@@ -225,7 +233,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
             OutlinedButton.icon(
               onPressed: photoRefreshing
                   ? null
-                  : () => _refreshPhotoCapability(manual: true),
+                  : () => _refreshPhoto(manual: true),
               icon: photoRefreshing
                   ? const SizedBox(
                       width: 18,
@@ -240,12 +248,6 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       );
     }
 
-    // Never persist or convert this short-lived capability into memory metadata. If it is
-    // already expired before image resolution begins, immediately obtain a new capability.
-    if (!signed.expiresAt.isAfter(DateTime.now().toUtc())) {
-      _schedulePhotoResign();
-    }
-
     return JiYiSectionCard(
       title: '照片',
       child: Column(
@@ -253,26 +255,17 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.network(
-              signed.url.toString(),
+            child: Image.file(
+              local,
               key: ValueKey<String>(
-                'photo-${current.id}-${signed.url}-${signed.expiresAt.toIso8601String()}',
+                'photo-local-' + current.id + '-' + local.path,
               ),
-              headers: signed.headers,
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) {
-                _schedulePhotoResign();
                 return Container(
                   constraints: const BoxConstraints(minHeight: 160),
                   alignment: Alignment.center,
-                  child: const Text('照片加载失败，正在尝试重新获取。'),
-                );
-              },
-              loadingBuilder: (context, child, progress) {
-                if (progress == null) return child;
-                return const SizedBox(
-                  height: 180,
-                  child: Center(child: CircularProgressIndicator()),
+                  child: const Text('本地照片缓存已损坏，请重新加载。'),
                 );
               },
             ),
@@ -287,9 +280,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
           ],
           const SizedBox(height: JiYiSpacing.sm),
           OutlinedButton.icon(
-            onPressed: photoRefreshing
-                ? null
-                : () => _refreshPhotoCapability(manual: true),
+            onPressed: photoRefreshing ? null : () => _refreshPhoto(manual: true),
             icon: const Icon(Icons.refresh),
             label: const Text('重新加载照片'),
           ),
@@ -380,6 +371,13 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
     });
     try {
       await widget.api.deleteMemory(current.id);
+      if (!_sessionCurrent(version, owner)) return;
+      if (current.mediaId != null && owner != null) {
+        await _mediaCache.invalidateMedia(
+          ownerUserId: owner,
+          mediaId: current.mediaId!,
+        );
+      }
       if (!_sessionCurrent(version, owner)) return;
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (_) {
