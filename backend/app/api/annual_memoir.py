@@ -14,13 +14,13 @@ from app.annual_memoir_models import (
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.services.ai_gateway import get_ai_gateway
-from app.services.api_abuse import enforce_authenticated_api_rate
-from app.services.auth_rate_limit import ApiRouteClass
 from app.services.annual_memoir_service import (
     AnnualMemoirError,
     build_annual_memoir,
     list_annual_memoir_photos,
 )
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 
 router = APIRouter(prefix="/memoirs", tags=["memoirs"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
