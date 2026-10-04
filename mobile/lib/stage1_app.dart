@@ -3033,7 +3033,13 @@ class ProfilePage extends StatelessWidget {
     final theme = Theme.of(context);
     return JiYiPageFrame(
       title: '我的',
-      subtitle: '管理账号信息、时区和隐私控制。',
+      subtitle: '管理账号信息、自动记录和隐私控制。',
+      hero: const JiYiHeroHeader(
+        eyebrow: '迹忆 · 我的',
+        title: '我的迹忆',
+        subtitle: '先确认记录是否正常，再管理隐私、位置和账号。',
+        icon: Icons.landscape_outlined,
+      ),
       child: FutureBuilder<Map<String, dynamic>>(
         future: api.getProfile(),
         builder: (context, snapshot) {
@@ -3137,17 +3143,6 @@ class ProfilePage extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: JiYiSpacing.md),
-              _ElderModeControls(
-                api: api,
-                initialEnabled: profile['elder_mode_enabled'] == true,
-                onChanged: onElderModeChanged ?? (_) {},
-              ),
-              const SizedBox(height: JiYiSpacing.md),
-              _PrivacyControls(
-                api: api,
-                nativeLocationController: nativeLocationController,
-              ),
               if (offlineQueue != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 RecordingHealthSection(
@@ -3156,6 +3151,11 @@ class ProfilePage extends StatelessWidget {
                   nativeLocationController: nativeLocationController,
                 ),
               ],
+              const SizedBox(height: JiYiSpacing.md),
+              _PrivacyControls(
+                api: api,
+                nativeLocationController: nativeLocationController,
+              ),
               if (nativeLocationController != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 NativeLocationSection(
@@ -3164,6 +3164,12 @@ class ProfilePage extends StatelessWidget {
                       () async => nativeLocationController!.privacyStatusUnknown(),
                 ),
               ],
+              const SizedBox(height: JiYiSpacing.md),
+              _ElderModeControls(
+                api: api,
+                initialEnabled: profile['elder_mode_enabled'] == true,
+                onChanged: onElderModeChanged ?? (_) {},
+              ),
               if (onStartOnboarding != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 JiYiSectionCard(
