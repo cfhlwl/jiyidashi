@@ -191,7 +191,16 @@ jobs:
           set -euo pipefail
           (
             cd ios
-            pod install
+            for attempt in 1 2 3; do
+              if pod install; then
+                break
+              fi
+              if [ "$attempt" = "3" ]; then
+                exit 1
+              fi
+              echo "pod install failed on attempt $attempt; retrying transient CocoaPods download"
+              sleep $((attempt * 5))
+            done
           )
           device_id="$(xcrun simctl list devices available -j | python3 -c '
           import json, sys
