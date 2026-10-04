@@ -24,8 +24,8 @@ from app.schemas import (
 from app.services.ai_gateway import AIGateway, get_ai_gateway
 from app.services.analytics_service import record_active_day_safe
 from app.services.api_abuse import enforce_authenticated_api_rate
-from app.services.auth_rate_limit import ApiRouteClass
 from app.services.asr import ASRProvider, get_asr_provider
+from app.services.auth_rate_limit import ApiRouteClass
 from app.services.entitlement_service import EntitlementError
 from app.services.media_service import (
     MediaError,
