@@ -35,10 +35,17 @@ Do not return markdown, confidence, IDs, coordinates, owner data, or extra field
 
 
 class OCRError(RuntimeError):
-    def __init__(self, code: str, status_code: int):
+    def __init__(
+        self,
+        code: str,
+        status_code: int,
+        *,
+        retry_after: int | None = None,
+    ):
         super().__init__(code)
         self.code = code
         self.status_code = status_code
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True)
@@ -137,6 +144,12 @@ async def _read_image(
 
 
 def _provider_error(exc: AIGatewayError) -> OCRError:
+    if exc.code == "PROVIDER_CONCURRENCY_SATURATED":
+        return OCRError(
+            exc.code,
+            429,
+            retry_after=getattr(exc, "retry_after", None),
+        )
     if exc.code == "ENTITLEMENT_STATE_UNAVAILABLE":
         return OCRError(exc.code, 503)
     if exc.code == "ENTITLEMENT_CAPABILITY_REQUIRED":
