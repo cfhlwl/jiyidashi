@@ -253,7 +253,7 @@ async def test_preserved_db_secret_cannot_move_to_new_endpoint_origin(client):
         json=_ai_payload(
             expected_revision=0,
             base_url="https://attacker.example.test/v1",
-            api_key="sk-explicit-replacement-secret",
+            api_key="test-explicit-replacement-secret",
         ),
     )
     assert rotated.status_code == 200
