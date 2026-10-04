@@ -310,11 +310,8 @@ class JiYiPlaceMap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!_validCoordinate) {
-      return const _MapFallback(
+      return const SizedBox.shrink(
         key: ValueKey('amap-place-no-coordinate'),
-        icon: Icons.location_off_outlined,
-        title: '这个地点暂时没有可用坐标',
-        message: '地点名称、地址和到访记录仍可正常查看。',
       );
     }
     if (!privacyAccepted) {
