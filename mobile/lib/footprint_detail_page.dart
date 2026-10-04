@@ -51,7 +51,7 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
     final mappable = widget.footprint.mappableVisits;
     final selected = mappable.isEmpty
         ? null
-        : mappable[_selectedIndex.clamp(0, mappable.length - 1) as int];
+        : mappable[_selectedIndex.clamp(0, mappable.length - 1)];
 
     return Scaffold(
       appBar: AppBar(title: const Text('今日足迹')),
@@ -90,7 +90,7 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
               if (selected != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 JiYiSectionCard(
-                  key: ValueKey('footprint-selected-' + selected.id),
+                  key: ValueKey('footprint-selected-${selected.id}'),
                   leading: Icon(
                     selected.finalized
                         ? Icons.location_on_outlined
@@ -107,7 +107,7 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
                       Text(selected.finalized ? '已形成足迹' : '仍在更新'),
                       if (_visitDuration(selected) != null) ...[
                         const SizedBox(height: JiYiSpacing.xs),
-                        Text('停留 ' + _visitDuration(selected)!),
+                        Text('停留 ${_visitDuration(selected)!}'),
                       ],
                       const SizedBox(height: JiYiSpacing.sm),
                       Align(
@@ -228,7 +228,7 @@ class _VisitCard extends StatelessWidget {
                     if (_visitDuration(visit) != null) ...[
                       const SizedBox(height: JiYiSpacing.xxs),
                       Text(
-                        '停留 ' + _visitDuration(visit)!,
+                        '停留 ${_visitDuration(visit)!}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -264,20 +264,20 @@ String? _visitDuration(FootprintVisit visit) {
   final duration = end.difference(start);
   final hours = duration.inHours;
   final minutes = duration.inMinutes.remainder(60);
-  if (hours > 0 && minutes > 0) return hours.toString() + '小时' + minutes.toString() + '分钟';
-  if (hours > 0) return hours.toString() + '小时';
-  return duration.inMinutes.toString() + '分钟';
+  if (hours > 0 && minutes > 0) return '${hours}小时${minutes}分钟';
+  if (hours > 0) return '${hours}小时';
+  return '${duration.inMinutes}分钟';
 }
 
 String _visitTime(FootprintVisit visit) {
   final arrival = _clock(visit.arrivedAtLocal);
   final departure =
       visit.leftAtLocal == null ? null : _clock(visit.leftAtLocal!);
-  return departure == null ? arrival + ' 起' : arrival + ' - ' + departure;
+  return departure == null ? '$arrival 起' : '$arrival - $departure';
 }
 
 String _clock(String serverLocalIso) {
   final match = RegExp(r'T(\d{2}):(\d{2})').firstMatch(serverLocalIso);
   if (match == null) return '—';
-  return match.group(1)! + ':' + match.group(2)!;
+  return '${match.group(1)!}:${match.group(2)!}';
 }
