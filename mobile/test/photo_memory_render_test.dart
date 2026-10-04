@@ -1,5 +1,6 @@
-import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/auth_session_store.dart';
+import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/memory_detail_page.dart';
 
 const ownerA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -14,6 +16,8 @@ const ownerB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const memoryId = '11111111-1111-4111-8111-111111111111';
 const mediaId = '22222222-2222-4222-8222-222222222222';
 const sessionId = '33333333-3333-4333-8333-333333333333';
+const cacheVersion =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 Map<String, dynamic> _sessionPayload() => <String, dynamic>{
       'access_token': 'access-v1',
@@ -46,18 +50,13 @@ Map<String, dynamic> _photoMemory() => <String, dynamic>{
     };
 
 class _PhotoApi extends JiYiApiClient {
-  _PhotoApi({
-    this.downloadCompleter,
-    List<MediaDownloadSession>? downloadSequence,
-  })  : downloadSequence = downloadSequence ?? <MediaDownloadSession>[],
-        super(baseUrl: 'https://example.invalid/v1') {
+  _PhotoApi() : super(baseUrl: 'https://example.invalid/v1') {
     accessToken = 'photo-access';
     authenticatedUserId = ownerA;
   }
 
-  final Completer<MediaDownloadSession>? downloadCompleter;
-  final List<MediaDownloadSession> downloadSequence;
-  int downloadCalls = 0;
+  int capabilityCalls = 0;
+  int byteDownloadCalls = 0;
 
   @override
   Future<Map<String, dynamic>> getMemory(String requestedMemoryId) async {
@@ -68,14 +67,10 @@ class _PhotoApi extends JiYiApiClient {
   @override
   Future<MediaDownloadSession> createMediaDownload(String requestedMediaId) async {
     expect(requestedMediaId, mediaId);
-    downloadCalls += 1;
-    final pending = downloadCompleter;
-    if (pending != null) return pending.future;
-    if (downloadSequence.isNotEmpty) {
-      return downloadSequence.removeAt(0);
-    }
+    capabilityCalls += 1;
     return MediaDownloadSession(
       mediaId: mediaId,
+      cacheVersion: cacheVersion,
       download: SignedDownloadTarget(
         method: 'GET',
         url: Uri.parse('https://storage.invalid/private-photo.jpg?signature=short-lived'),
@@ -84,10 +79,24 @@ class _PhotoApi extends JiYiApiClient {
       ),
     );
   }
+
+  @override
+  Future<Uint8List> downloadSignedMedia(
+    SignedDownloadTarget target, {
+    int maxBytes = 50 * 1024 * 1024,
+  }) async {
+    byteDownloadCalls += 1;
+    return Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+  }
 }
 
+Future<Directory> _tempRoot() =>
+    Directory.systemTemp.createTemp('jiyi-photo-detail-');
+
 void main() {
-  test('media download endpoint returns a validated short-lived GET capability', () async {
+  test('media download endpoint returns stable cache identity plus short-lived GET', () async {
     final store = MemoryAuthSessionStore()..installationId = 'photo-download-install';
     var call = 0;
     final api = JiYiApiClient(
@@ -110,6 +119,7 @@ void main() {
         return http.Response(
           jsonEncode(<String, dynamic>{
             'media_id': mediaId,
+            'cache_version': cacheVersion,
             'download': <String, dynamic>{
               'method': 'GET',
               'url': 'https://storage.example/private.jpg?sig=temporary',
@@ -127,6 +137,7 @@ void main() {
     final signed = await api.createMediaDownload(mediaId);
 
     expect(signed.mediaId, mediaId);
+    expect(signed.cacheVersion, cacheVersion);
     expect(signed.download.method, 'GET');
     expect(signed.download.url.host, 'storage.example');
     expect(signed.download.headers['x-object-signature'], 'signed');
@@ -134,97 +145,91 @@ void main() {
     expect(call, 2);
   });
 
-  testWidgets('PHOTO detail asks shared Flutter layer for original media capability',
+  testWidgets('PHOTO detail downloads once then renders local cached file',
       (tester) async {
+    final root = await _tempRoot();
+    addTearDown(() => root.delete(recursive: true));
+    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
     final api = _PhotoApi();
 
     await tester.pumpWidget(
       MaterialApp(
-        home: MemoryDetailPage(api: api, memoryId: memoryId),
+        home: MemoryDetailPage(
+          api: api,
+          memoryId: memoryId,
+          mediaCache: cache,
+        ),
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(api.downloadCalls, greaterThanOrEqualTo(1));
+    expect(api.capabilityCalls, 1);
+    expect(api.byteDownloadCalls, 1);
     expect(find.text('测试照片'), findsWidgets);
     expect(find.text('照片'), findsWidgets);
-    expect(find.byType(Image), findsOneWidget);
-
-    // Dispose before the test binding's disabled network client can drive further retries.
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testWidgets('expired photo capability is re-signed instead of reused', (tester) async {
-    final api = _PhotoApi(
-      downloadSequence: <MediaDownloadSession>[
-        MediaDownloadSession(
-          mediaId: mediaId,
-          download: SignedDownloadTarget(
-            method: 'GET',
-            url: Uri.parse('https://storage.invalid/expired-photo.jpg?sig=old'),
-            headers: const <String, String>{},
-            expiresAt: DateTime.utc(2025, 1, 1),
-          ),
-        ),
-        MediaDownloadSession(
-          mediaId: mediaId,
-          download: SignedDownloadTarget(
-            method: 'GET',
-            url: Uri.parse('https://storage.invalid/fresh-photo.jpg?sig=new'),
-            headers: const <String, String>{},
-            expiresAt: DateTime.utc(2030, 10, 3, 12),
-          ),
-        ),
-      ],
-    );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MemoryDetailPage(api: api, memoryId: memoryId),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-    await tester.pump();
-
-    expect(api.downloadCalls, 2);
     final image = tester.widget<Image>(find.byType(Image));
-    final provider = image.image as NetworkImage;
-    expect(provider.url, contains('fresh-photo.jpg'));
-    expect(provider.url, isNot(contains('expired-photo.jpg')));
-
-    await tester.pumpWidget(const SizedBox.shrink());
+    expect(image.image, isA<FileImage>());
+    expect(
+      await cache.lookup(ownerUserId: ownerA, mediaId: mediaId),
+      isNotNull,
+    );
   });
 
-  testWidgets('late photo capability from old owner is never published', (tester) async {
-    final gate = Completer<MediaDownloadSession>();
-    final api = _PhotoApi(downloadCompleter: gate);
+  testWidgets('PHOTO detail cache hit does not ask for a signed capability',
+      (tester) async {
+    final root = await _tempRoot();
+    addTearDown(() => root.delete(recursive: true));
+    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
+    await cache.putBytes(
+      ownerUserId: ownerA,
+      mediaId: mediaId,
+      cacheVersion: cacheVersion,
+      bytes: <int>[0x89, 0x50, 0x4e, 0x47],
+    );
+    final api = _PhotoApi();
 
     await tester.pumpWidget(
       MaterialApp(
-        home: MemoryDetailPage(api: api, memoryId: memoryId),
-      ),
-    );
-    await tester.pump();
-    expect(api.downloadCalls, 1);
-
-    api.authenticatedUserId = ownerB;
-    gate.complete(
-      MediaDownloadSession(
-        mediaId: mediaId,
-        download: SignedDownloadTarget(
-          method: 'GET',
-          url: Uri.parse('https://storage.invalid/stale-owner-a.jpg'),
-          headers: const <String, String>{},
-          expiresAt: DateTime.utc(2030, 10, 3, 12),
+        home: MemoryDetailPage(
+          api: api,
+          memoryId: memoryId,
+          mediaCache: cache,
         ),
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(api.capabilityCalls, 0);
+    expect(api.byteDownloadCalls, 0);
+    expect(tester.widget<Image>(find.byType(Image)).image, isA<FileImage>());
+  });
+
+  testWidgets('account switch prevents owner A cached image publication',
+      (tester) async {
+    final root = await _tempRoot();
+    addTearDown(() => root.delete(recursive: true));
+    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
+    await cache.putBytes(
+      ownerUserId: ownerA,
+      mediaId: mediaId,
+      cacheVersion: cacheVersion,
+      bytes: <int>[0x89, 0x50, 0x4e, 0x47],
+    );
+    final api = _PhotoApi()..authenticatedUserId = ownerB;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MemoryDetailPage(
+          api: api,
+          memoryId: memoryId,
+          mediaCache: cache,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
 
     expect(find.byType(Image), findsNothing);
-    expect(find.text('stale-owner-a.jpg'), findsNothing);
+    expect(api.capabilityCalls, 0);
+    expect(api.byteDownloadCalls, 0);
   });
 }
