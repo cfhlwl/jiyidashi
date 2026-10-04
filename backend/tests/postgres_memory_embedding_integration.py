@@ -16,6 +16,7 @@ from app.admin_models import (
     AdminAuditEvent,
     AdminRole,
     ProviderConfiguration,
+    ProviderRuntimeEvidence,
     ProviderService,
 )
 from app.admin_schemas import AdminEmbeddingBackfillRequest
@@ -579,6 +580,12 @@ def _assert_admin_backfill_is_bounded_resumable_and_owner_safe() -> None:
         assert rows[first_memory].user_id == first_user
         assert rows[second_memory].user_id == second_user
         assert len(provider.requests) == 2
+        evidence = db.get(
+            ProviderRuntimeEvidence,
+            (ProviderService.EMBEDDING.value, gateway.config_fingerprint),
+        )
+        assert evidence is not None
+        assert evidence.last_success_at is not None
 
     with SessionLocal() as cleanup:
         cleanup.delete(cleanup.get(User, first_user))
