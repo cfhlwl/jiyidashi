@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.core.security import AccessTokenClaims, decode_access_token_claims
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.models import User
 from app.services.auth_session_service import PublicAuthError, authenticate_access_session
+from app.services.api_abuse import enforce_default_authenticated_api_rate
 
 bearer = HTTPBearer()
 BearerCredentials = Annotated[HTTPAuthorizationCredentials, Depends(bearer)]
@@ -49,7 +50,11 @@ def get_authenticated_user_id(claims: AuthenticatedClaims) -> UUID:
 AuthenticatedUser = Annotated[UUID, Depends(get_authenticated_user_id)]
 
 
-def get_current_user_id(user_id: AuthenticatedUser, db: DbSession) -> UUID:
+def get_current_user_id(
+    request: Request,
+    user_id: AuthenticatedUser,
+    db: DbSession,
+) -> UUID:
     # [人工注释][S1-021-FIX-001] 请求入口只负责“准入”：在 User KEY SHARE 下读取
     # deletion generation 并保存到 Session.info。真正的持久化门禁由 GuardedSession
     # 在每一次 commit 前重新拿锁并比较 generation，因此 rollback/commit 都不能绕过。
@@ -95,5 +100,10 @@ def get_current_user_id(user_id: AuthenticatedUser, db: DbSession) -> UUID:
     db.info[USER_DATA_ADMISSION_INFO_KEY] = UserDataAdmission(
         user_id=user_id,
         deletion_generation=deletion_generation,
+    )
+    enforce_default_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
     )
     return user_id
