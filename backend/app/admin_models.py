@@ -158,6 +158,31 @@ class ProviderConfiguration(Base):
     )
 
 
+class ProviderRuntimeEvidence(Base):
+    """Bounded health evidence keyed by the exact provider runtime fingerprint."""
+
+    __tablename__ = "provider_runtime_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "service IN ('AI','ASR','EMBEDDING')",
+            name="ck_provider_runtime_evidence_service",
+        ),
+        Index(
+            "ix_provider_runtime_evidence_service_updated",
+            "service",
+            "updated_at",
+        ),
+    )
+
+    service: Mapped[str] = mapped_column(String(32), primary_key=True)
+    config_fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class EntitlementQuotaPolicy(Base):
     """Canonical DB-backed runtime quota catalog for commercial plans."""
 
