@@ -187,6 +187,10 @@ void main() {
       cacheVersion: cacheVersion,
       bytes: _validPngBytes(),
     );
+    cache.markAuthorityValidated(
+      ownerUserId: ownerA,
+      mediaId: mediaId,
+    );
     final api = _PhotoApi();
     final resolver = MediaPresentationResolver(api: api, cache: cache);
 
