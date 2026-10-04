@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -13,6 +14,22 @@ import 'package:jiyidashi/v2/memoirs_page.dart';
 import 'package:jiyidashi/v2/people_page.dart';
 
 import 'v2_test_api.dart';
+
+Uint8List _validPngBytes() => base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    );
+
+Future<void> _pumpUntil(
+  WidgetTester tester,
+  bool Function() done, {
+  int attempts = 30,
+}) async {
+  for (var index = 0; index < attempts; index++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (done()) return;
+  }
+  fail('bounded widget pump did not reach expected state');
+}
 
 Future<void> pumpSurface(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
@@ -50,7 +67,7 @@ class _MemoirMediaApi extends V2TestApi {
     int maxBytes = 50 * 1024 * 1024,
   }) async {
     downloadCalls += 1;
-    return Uint8List.fromList(<int>[0x89, 0x50, 0x4e, 0x47]);
+    return _validPngBytes();
   }
 }
 
@@ -171,7 +188,7 @@ void main() {
       mediaId: v2MediaId,
       cacheVersion:
           'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
-      bytes: <int>[0x89, 0x50, 0x4e, 0x47],
+      bytes: _validPngBytes(),
     );
     final api = _MemoirMediaApi();
 
@@ -188,7 +205,11 @@ void main() {
     final photo = find.text('团队合影');
     await tester.ensureVisible(photo);
     await tester.tap(photo);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.byType(Dialog).evaluate().isNotEmpty &&
+          find.byType(Image).evaluate().isNotEmpty,
+    );
 
     expect(find.byType(Dialog), findsOneWidget);
     expect(tester.widget<Image>(find.byType(Image)).image, isA<FileImage>());
