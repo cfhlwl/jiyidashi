@@ -194,7 +194,11 @@ void main() {
 
     await pumpSurface(
       tester,
-      MemoirsPage(api: api, mediaCache: cache),
+      MemoirsPage(
+        api: api,
+        mediaCache: cache,
+        photoRenderer: (file) => Text('local-memoir-photo:${file.path}'),
+      ),
     );
     await tester.enterText(find.byType(TextField).first, '2025');
     final annual = find.text('开始回看');
@@ -208,11 +212,11 @@ void main() {
     await _pumpUntil(
       tester,
       () => find.byType(Dialog).evaluate().isNotEmpty &&
-          find.byType(Image).evaluate().isNotEmpty,
+          find.textContaining('local-memoir-photo:').evaluate().isNotEmpty,
     );
 
     expect(find.byType(Dialog), findsOneWidget);
-    expect(tester.widget<Image>(find.byType(Image)).image, isA<FileImage>());
+    expect(find.textContaining('local-memoir-photo:'), findsOneWidget);
     expect(api.capabilityCalls, 0);
     expect(api.downloadCalls, 0);
   });
