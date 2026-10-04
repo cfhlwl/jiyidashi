@@ -266,6 +266,118 @@ class _NativeFootprintMapState extends State<_NativeFootprintMap> {
   }
 }
 
+typedef JiYiPlaceNativeBuilder = Widget Function(
+  BuildContext context,
+  JiYiAmapConfig config,
+  double latitude,
+  double longitude,
+  String name,
+  String? address,
+);
+
+class JiYiPlaceMap extends StatelessWidget {
+  const JiYiPlaceMap({
+    super.key,
+    required this.latitude,
+    required this.longitude,
+    required this.name,
+    required this.privacyAccepted,
+    this.address,
+    this.config = const JiYiAmapConfig(),
+    this.nativeBuilder,
+  });
+
+  final double? latitude;
+  final double? longitude;
+  final String name;
+  final String? address;
+  final bool privacyAccepted;
+  final JiYiAmapConfig config;
+  final JiYiPlaceNativeBuilder? nativeBuilder;
+
+  bool get _validCoordinate =>
+      latitude != null &&
+      longitude != null &&
+      latitude!.isFinite &&
+      longitude!.isFinite &&
+      latitude! >= -90 &&
+      latitude! <= 90 &&
+      longitude! >= -180 &&
+      longitude! <= 180;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_validCoordinate) {
+      return const _MapFallback(
+        key: ValueKey('amap-place-no-coordinate'),
+        icon: Icons.location_off_outlined,
+        title: '这个地点暂时没有可用坐标',
+        message: '地点名称、地址和到访记录仍可正常查看。',
+      );
+    }
+    if (!privacyAccepted) {
+      return const _MapFallback(
+        key: ValueKey('amap-place-privacy-blocked'),
+        icon: Icons.privacy_tip_outlined,
+        title: '地图尚未启用',
+        message: '同意地图服务隐私说明后才会初始化地图 SDK。',
+      );
+    }
+    if (!config.configuredForCurrentPlatform) {
+      return const _MapFallback(
+        key: ValueKey('amap-place-key-unavailable'),
+        icon: Icons.map_outlined,
+        title: '地图服务暂不可用',
+        message: '地点名称、地址和到访记录仍可正常查看。',
+      );
+    }
+
+    final builder = nativeBuilder ?? _defaultPlaceNativeBuilder;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: SizedBox(
+        key: const ValueKey('amap-place-real-surface'),
+        height: 240,
+        child: builder(
+          context,
+          config,
+          latitude!,
+          longitude!,
+          name,
+          address,
+        ),
+      ),
+    );
+  }
+}
+
+Widget _defaultPlaceNativeBuilder(
+  BuildContext context,
+  JiYiAmapConfig config,
+  double latitude,
+  double longitude,
+  String name,
+  String? address,
+) {
+  final coordinate = LatLng(latitude, longitude);
+  return AMapWidget(
+    apiKey: config.apiKey,
+    privacyStatement: const AMapPrivacyStatement(
+      hasContains: true,
+      hasShow: true,
+      hasAgree: true,
+    ),
+    initialCameraPosition: CameraPosition(target: coordinate, zoom: 15),
+    markers: <Marker>{
+      Marker(
+        position: coordinate,
+        infoWindow: InfoWindow(title: name, snippet: address),
+      ),
+    },
+    touchPoiEnabled: false,
+  );
+}
+
 class _MapFallback extends StatelessWidget {
   const _MapFallback({
     super.key,
