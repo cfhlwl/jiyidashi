@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -601,6 +602,23 @@ class _GoldenOfflineTimelineApi extends _GoldenApi {
   }
 }
 
+class _GoldenLoadingProfileApi extends _GoldenApi {
+  final Completer<Map<String, dynamic>> _profile = Completer<Map<String, dynamic>>();
+
+  @override
+  Future<Map<String, dynamic>> getProfile() => _profile.future;
+}
+
+class _GoldenCachedOfflineTimelineApi extends _GoldenTimelineApi {
+  int capabilityCalls = 0;
+
+  @override
+  Future<MediaDownloadSession> createMediaDownload(String mediaId) async {
+    capabilityCalls += 1;
+    throw TransportException('offline');
+  }
+}
+
 class _GoldenFamilyApi extends _GoldenApi {
   static const memberId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
@@ -887,8 +905,15 @@ Future<Key> _pumpSurface(
   WidgetTester tester,
   Widget child, {
   bool elderMode = false,
+  Size size = _goldenSize,
+  double textScale = 1.0,
+  JiYiAmapConfig amapConfig = const JiYiAmapConfig(
+    androidKey: 'golden-amap-key',
+    platformOverride: TargetPlatform.android,
+    appEnv: 'development',
+  ),
 }) async {
-  tester.view.physicalSize = _goldenSize;
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   tester.binding.platformDispatcher.localeTestValue = const Locale('zh', 'CN');
   addTearDown(() {
@@ -902,12 +927,19 @@ Future<Key> _pumpSurface(
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: _goldenTheme(elderMode: elderMode),
+      builder: textScale == 1.0
+          ? null
+          : (context, appChild) {
+              final media = MediaQuery.of(context);
+              return MediaQuery(
+                data: media.copyWith(
+                  textScaler: TextScaler.linear(textScale),
+                ),
+                child: appChild ?? const SizedBox.shrink(),
+              );
+            },
       home: JiYiAmapPresentationScope(
-        config: const JiYiAmapConfig(
-          androidKey: 'golden-amap-key',
-          platformOverride: TargetPlatform.android,
-          appEnv: 'development',
-        ),
+        config: amapConfig,
         footprintBuilder: _goldenFootprintMap,
         placeBuilder: _goldenPlaceMap,
         child: LocalMediaPresentationScope(
@@ -1068,6 +1100,113 @@ void main() {
     expect(find.text('我的人生'), findsWidgets);
     expect(find.text('人生经历'), findsOneWidget);
     await expectLater(find.byKey(key), matchesGoldenFile('goldens/life_home.png'));
+  });
+
+  testWidgets('golden: loading state', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      _goldenNavigationShell(
+        selectedIndex: 4,
+        showCapture: false,
+        child: ProfilePage(
+          api: _GoldenLoadingProfileApi(),
+          onLogout: () {},
+          onAccountDeleteIntentConfirmed: () async {},
+          onAccountDeleted: () async {},
+          offlineQueue: _GoldenQueue(),
+          amapPrivacyConsent: _GoldenAmapConsent(false),
+        ),
+      ),
+    );
+
+    expect(find.text('正在读取个人资料…'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/state_loading.png'),
+    );
+  });
+
+  testWidgets('golden: map unavailable factual fallback', (tester) async {
+    final api = _GoldenApi();
+    final key = await _pumpSurface(
+      tester,
+      _goldenNavigationShell(
+        selectedIndex: 0,
+        child: TodayPage(
+          api: api,
+          amapPrivacyConsent: _GoldenAmapConsent(true),
+        ),
+      ),
+      amapConfig: const JiYiAmapConfig(
+        androidKey: '',
+        platformOverride: TargetPlatform.android,
+        appEnv: 'development',
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('amap-key-unavailable')), findsOneWidget);
+    expect(find.text('书房'), findsWidgets);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/state_map_unavailable.png'),
+    );
+  });
+
+  testWidgets('golden: cached photo remains visible offline', (tester) async {
+    final api = _GoldenCachedOfflineTimelineApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
+    final key = await _pumpSurface(
+      tester,
+      TimelinePage(api: api, mediaCache: cache),
+    );
+
+    expect(
+      find.byKey(const ValueKey('timeline-photo-$v2MemoryId')),
+      findsOneWidget,
+    );
+    expect(api.capabilityCalls, 0);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/state_cached_photo_offline.png'),
+    );
+  });
+
+  testWidgets('golden: large-font memory query', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: MemoryQueryPage(api: _GoldenApi()),
+        ),
+      ),
+      textScale: 1.4,
+    );
+
+    expect(find.text('记忆'), findsWidgets);
+    expect(find.byKey(const ValueKey('memory-query-submit')), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/state_large_font.png'),
+    );
+  });
+
+  testWidgets('golden: small-screen memory query', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: MemoryQueryPage(api: _GoldenApi()),
+        ),
+      ),
+      size: const Size(320, 568),
+    );
+
+    expect(find.text('记忆'), findsWidgets);
+    expect(find.byKey(const ValueKey('memory-query-submit')), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/state_small_screen.png'),
+    );
   });
 
   testWidgets('golden: empty timeline state', (tester) async {
