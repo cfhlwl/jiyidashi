@@ -129,6 +129,7 @@ jobs:
           flutter build apk --debug
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_ANDROID_SDK_KEY=ci-amap-android-not-a-real-key
 
       # Flutter's Android migration creates the Gradle wrapper during the first Android
       # build; the repository intentionally does not commit gradlew. Run JVM policy tests
@@ -147,6 +148,7 @@ jobs:
           flutter build apk --release
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_ANDROID_SDK_KEY=ci-amap-android-not-a-real-key
 
   ios:
     runs-on: macos-latest
@@ -235,3 +237,4 @@ jobs:
           flutter build ios --debug --no-codesign
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_IOS_SDK_KEY=ci-amap-ios-not-a-real-key
