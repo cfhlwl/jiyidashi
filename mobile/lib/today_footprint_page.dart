@@ -337,7 +337,7 @@ class _TodayExperienceBody extends StatelessWidget {
     return JiYiSectionCard(
       key: const ValueKey('today-footprint-loaded'),
       leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-      title: footprint.visits.length.toString() + ' 个地点片段',
+      title: '${footprint.visits.length} 个地点片段',
       subtitle: '按今天真实形成的到访记录整理',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -629,6 +629,7 @@ String _todayHeroSubtitle(Map<String, dynamic>? data) {
 
 class FootprintVisitRow extends StatelessWidget {
   const FootprintVisitRow({
+    super.key,
     required this.visit,
     required this.elderMode,
   });
