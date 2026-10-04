@@ -134,7 +134,7 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
               const SizedBox(height: JiYiSpacing.xl),
               const JiYiSectionHeader(
                 title: '到访顺序',
-                subtitle: '按服务端已经形成的 Visit 时间排序。',
+                subtitle: '按已经形成的到访时间顺序整理。',
               ),
               const SizedBox(height: JiYiSpacing.sm),
               if (visits.isEmpty)
