@@ -38,7 +38,16 @@ SuperAdminMutation = Annotated[
 
 
 def _raise(exc: AdminOperationError) -> None:
-    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    headers = (
+        {"Retry-After": str(exc.retry_after)}
+        if exc.retry_after is not None
+        else None
+    )
+    raise HTTPException(
+        status_code=exc.status_code,
+        detail=exc.code,
+        headers=headers,
+    ) from exc
 
 
 def _read(row: AdminAccount) -> AdminAccountRead:
