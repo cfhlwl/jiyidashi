@@ -113,6 +113,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('memory-amap-privacy-accept')));
     await tester.pumpAndSettle();
 
+    expect(find.textContaining('高德地图 SDK'), findsOneWidget);
+    expect(consent.accepted, isFalse);
+
+    await tester.tap(find.byKey(const ValueKey('amap-privacy-confirm')));
+    await tester.pumpAndSettle();
+
     expect(consent.accepted, isTrue);
     expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsNothing);
     expect(find.text('测试公园'), findsWidgets);
