@@ -1,6 +1,8 @@
 # JiYi AMap mobile rendering authority
 
-UIUX-P0-002 uses the AMap native mobile map SDK through the official Flutter map plugin path.
+UIUX-P0-002 uses the AMap native mobile map SDK through the explicitly reviewed Flutter compatibility bridge pinned for PR #205.
+
+The preferred official Flutter package remains `amap_flutter_map 3.0.0`, but that release is not compatible with this repository's current Dart/Flutter/Android Gradle toolchain without maintaining a substantial local fork. The current bridge deviation, exact pub.dev archive checksum, risk assessment, and re-review triggers are documented in `docs/security/amap-flutter-bridge-supply-chain-review.md`. This is a reviewed exception, not a claim that the bridge is an official AMap package.
 
 ## Key separation
 
@@ -10,7 +12,9 @@ Never reuse the backend Web Service key in Flutter.
 - Android map rendering: `AMAP_ANDROID_SDK_KEY`
 - iOS map rendering: `AMAP_IOS_SDK_KEY`
 
-The mobile keys are supplied at build time with `--dart-define`. No key, keystore, COS credential, or backend Web Service key is committed to this repository.
+The mobile keys are supplied at build time with `--dart-define`. No real key, keystore, COS credential, or backend Web Service key is committed to this repository. CI uses obvious non-secret placeholder SDK keys only to prove the production startup gate is wired.
+
+Production startup calls `JiYiAmapConfig.assertProductionConfiguration()` before `runApp`. Android/iOS production builds without the platform SDK key fail closed instead of shipping a green build whose maps can never initialize.
 
 Current identifiers:
 
@@ -35,13 +39,20 @@ privacy accepted + platform SDK key present
 -> real canonical Place coordinates only
 ```
 
-The map plugin privacy statement is passed only on the accepted branch with:
+Before the accepted branch is entered, JiYi presents an explicit AMap disclosure describing the provider, map purpose, server-owned place coordinates used for display, and the device/network information needed by the SDK. Persisted consent is written only after the user presses **同意并启用**.
 
-- `hasContains = true`
-- `hasShow = true`
-- `hasAgree = true`
+The accepted bootstrap order is strict:
 
-Revoking the app's map/privacy consent must return the product to the non-map factual fallback before any future map initialization.
+```text
+show AMap disclosure
+-> explicit user agreement
+-> persist JiYi AMap consent
+-> AMapInitializer.updatePrivacyAgree(hasContains/show/agree = true)
+-> AMapInitializer.init(platform SDK key)
+-> construct native AMapWidget
+```
+
+No AMap SDK initializer is called on the denied branch. Profile exposes a dedicated revoke action backed by the same shared consent authority. Revocation notifies active product surfaces and returns them to the factual non-map fallback before any future map construction.
 
 ## Location truth
 
@@ -65,4 +76,8 @@ owner_user_id
 
 The `cache_version` is derived server-side from canonical READY media metadata and storage revision material, then hashed before projection so raw storage keys/ETags remain private.
 
-Account deletion purges that owner's presentation cache. Ordinary logout may retain encrypted/private app-local cache according to product policy, but a different account can never resolve another owner's cache path.
+Online cache hits are not treated as permanent authorization. They require a short in-process authority lease; after the lease expires JiYi revalidates the server download capability. If the server returns 403/404, the stale local media object and authority lease are invalidated immediately. Offline mode may still render bytes previously cached for the same authenticated owner, preserving the reviewed offline presentation behavior without creating cross-account authority.
+
+Family photos use the viewer account as the cache owner and embed the resource owner's UUID in the media cache key. Family photo list/download reads remain server-authorized. A 403/404 on Family Photos purges that resource owner's family-photo cache prefix for the viewer.
+
+Account deletion purges that owner's presentation cache. Ordinary logout may retain private app-local cache according to product policy, but a different account can never resolve another owner's cache path.
