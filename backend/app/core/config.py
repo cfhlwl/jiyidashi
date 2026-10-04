@@ -281,6 +281,27 @@ class Settings(BaseSettings):
         if self.is_production and not self.api_rate_limit_enabled:
             raise ValueError("API_RATE_LIMIT_ENABLED must be true in production")
 
+        concurrency_pairs = (
+            (
+                self.provider_ai_user_concurrency,
+                self.provider_ai_global_concurrency,
+                "PROVIDER_AI",
+            ),
+            (
+                self.provider_asr_user_concurrency,
+                self.provider_asr_global_concurrency,
+                "PROVIDER_ASR",
+            ),
+            (
+                self.provider_embedding_user_concurrency,
+                self.provider_embedding_global_concurrency,
+                "PROVIDER_EMBEDDING",
+            ),
+        )
+        for user_limit, global_limit, name in concurrency_pairs:
+            if user_limit > global_limit:
+                raise ValueError(f"{name}_USER_CONCURRENCY must be <= global concurrency")
+
         if self.auth_email_delivery_mode not in {"disabled", "smtp"}:
             raise ValueError("AUTH_EMAIL_DELIVERY_MODE must be disabled or smtp")
         if self.is_production and self.auth_email_delivery_mode != "smtp":
