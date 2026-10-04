@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'capture_media.dart';
+import 'media_presentation_cache.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
@@ -77,7 +78,11 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
           widget.mediaDeviceFactory?.call() ??
           PlatformCaptureMediaDevice();
   TrustedMediaCaptureService get _service =>
-      _serviceInstance ??= widget.service ?? TrustedMediaCaptureService(widget.api);
+      _serviceInstance ??= widget.service ??
+          TrustedMediaCaptureService(
+            widget.api,
+            localMediaCache: LocalMediaCache(),
+          );
   bool get _mediaBusy => photoBusy || voiceBusy || voiceRecording;
 
   @override
