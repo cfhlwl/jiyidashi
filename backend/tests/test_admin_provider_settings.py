@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -16,10 +16,13 @@ from app.admin_models import (
 from app.auth_models import AuthRateLimitBucket
 from app.core.config import Settings
 from app.core.db import SessionLocal
+from app.entitlement_models import AIQuotaPeriod, AIUsageEvent
 from app.embedding_policy import (
     MEMORY_EMBEDDING_MAX_INPUT_CHARS,
     MEMORY_EMBEDDING_MODEL,
 )
+from app.models import User
+from app.services.admin_provider_service import _runtime_state
 from app.services.admin_security import hash_admin_password
 from app.services.provider_config_service import (
     ProviderRuntimeConfigError,
@@ -326,6 +329,64 @@ def test_embedding_policy_cannot_change_model_or_input_limit():
             credential_configured=False,
             settings=settings,
         )
+
+
+
+def test_provider_verification_ignores_evidence_from_previous_revision():
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        user = User(nickname="provider-state-user")
+        db.add(user)
+        db.flush()
+        period = AIQuotaPeriod(
+            user_id=user.id,
+            period_start=now - timedelta(days=1),
+            period_end=now + timedelta(days=1),
+            provider_requests=1,
+            input_tokens=10,
+            output_tokens=5,
+        )
+        db.add(period)
+        db.flush()
+        db.add(
+            AIUsageEvent(
+                user_id=user.id,
+                gateway_request_id=uuid4(),
+                period_id=period.id,
+                purpose="admin002-state-proof",
+                provider_invocation_reserved=True,
+                provider_request_id="req-old-revision",
+                input_tokens=10,
+                output_tokens=5,
+                finalized_at=now - timedelta(minutes=5),
+                created_at=now - timedelta(minutes=5),
+            )
+        )
+        db.commit()
+
+        assert (
+            _runtime_state(
+                db,
+                service=ProviderService.AI,
+                enabled=True,
+                configured=True,
+                now=now,
+                config_updated_at=None,
+            )
+            == "NORMAL"
+        )
+        assert (
+            _runtime_state(
+                db,
+                service=ProviderService.AI,
+                enabled=True,
+                configured=True,
+                now=now,
+                config_updated_at=now - timedelta(minutes=1),
+            )
+            == "ENABLED_UNVERIFIED"
+        )
+
 
 
 def test_runtime_cache_converges_after_bounded_ttl(monkeypatch):
