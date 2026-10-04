@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import math
 from dataclasses import dataclass
+from enum import StrEnum
+from uuid import UUID
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -56,6 +58,42 @@ class RatePolicy:
     window_seconds: int
 
 
+class ApiRouteClass(StrEnum):
+    NORMAL_READ = "NORMAL_READ"
+    NORMAL_MUTATION = "NORMAL_MUTATION"
+    MEDIA_TRANSFER = "MEDIA_TRANSFER"
+    EXPENSIVE_AI = "EXPENSIVE_AI"
+    EXPENSIVE_EXPORT = "EXPENSIVE_EXPORT"
+
+
+def _api_policy(route_class: ApiRouteClass) -> tuple[RatePolicy, RatePolicy]:
+    window = settings.api_rate_window_seconds
+    if route_class == ApiRouteClass.NORMAL_READ:
+        return (
+            RatePolicy(settings.api_normal_user_limit, window),
+            RatePolicy(settings.api_normal_ip_limit, window),
+        )
+    if route_class == ApiRouteClass.NORMAL_MUTATION:
+        return (
+            RatePolicy(settings.api_mutation_user_limit, window),
+            RatePolicy(settings.api_mutation_ip_limit, window),
+        )
+    if route_class == ApiRouteClass.MEDIA_TRANSFER:
+        return (
+            RatePolicy(settings.api_media_user_limit, window),
+            RatePolicy(settings.api_media_ip_limit, window),
+        )
+    if route_class == ApiRouteClass.EXPENSIVE_AI:
+        return (
+            RatePolicy(settings.api_expensive_user_limit, window),
+            RatePolicy(settings.api_expensive_ip_limit, window),
+        )
+    return (
+        RatePolicy(settings.api_export_user_limit, window),
+        RatePolicy(settings.api_export_ip_limit, window),
+    )
+
+
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         return value.replace(tzinfo=UTC)
@@ -68,11 +106,11 @@ def _bucket_key(scope: str, value: str) -> str:
     return hmac.new(settings.jwt_secret.encode(), message, hashlib.sha256).hexdigest()
 
 
-def _rate_limited(retry_after_seconds: int) -> HTTPException:
+def _rate_limited(retry_after_seconds: int, *, detail: str = "AUTH_RATE_LIMITED") -> HTTPException:
     retry_after = max(1, retry_after_seconds)
     return HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        detail="AUTH_RATE_LIMITED",
+        detail=detail,
         headers={"Retry-After": str(retry_after)},
     )
 
@@ -154,7 +192,10 @@ def _consume(
                 scope=scope,
                 value=value,
             )
-            raise _rate_limited(retry_after)
+            raise _rate_limited(
+                retry_after,
+                detail="API_RATE_LIMITED" if scope.startswith("api_") else "AUTH_RATE_LIMITED",
+            )
         bucket.blocked_until = None
 
     if bucket.attempts >= policy.limit:
@@ -171,12 +212,41 @@ def _consume(
             scope=scope,
             value=value,
         )
-        raise _rate_limited(retry_after)
+        raise _rate_limited(
+            retry_after,
+            detail="API_RATE_LIMITED" if scope.startswith("api_") else "AUTH_RATE_LIMITED",
+        )
 
     bucket.attempts += 1
     bucket.updated_at = now
     db.commit()
     return bucket
+
+
+def consume_authenticated_api_attempt(
+    db: Session,
+    *,
+    user_id: UUID,
+    client_ip: str,
+    route_class: ApiRouteClass,
+) -> None:
+    if not settings.api_rate_limit_enabled:
+        return
+    user_policy, ip_policy = _api_policy(route_class)
+    # Route class is part of the HMAC input so policies are independent. Raw user/IP
+    # values never enter the persisted key.
+    _consume(
+        db,
+        scope=f"api_user:{route_class.value}",
+        value=str(user_id),
+        policy=user_policy,
+    )
+    _consume(
+        db,
+        scope=f"api_ip:{route_class.value}",
+        value=client_ip,
+        policy=ip_policy,
+    )
 
 
 def consume_registration_attempt(db: Session, client_ip: str) -> None:
