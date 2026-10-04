@@ -334,67 +334,53 @@ class _TodayExperienceBody extends StatelessWidget {
       );
     }
 
-    return JiYiSectionCard(
-      key: const ValueKey('today-footprint-loaded'),
-      leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-      title: '${footprint.visits.length} 个地点片段',
-      subtitle: '按今天真实形成的到访记录整理',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Stack(
-            children: [
+    void openFootprintDetail() {
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => FootprintDetailPage(
+            api: api,
+            footprint: footprint,
+            mapPrivacyAccepted: mapPrivacyAccepted,
+            onAcceptMapPrivacy: onAcceptMapPrivacy,
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      key: const ValueKey('today-footprint-map-open'),
+      behavior: HitTestBehavior.translucent,
+      onTap: openFootprintDetail,
+      child: JiYiSectionCard(
+        key: const ValueKey('today-footprint-loaded'),
+        leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
+        title: '${footprint.visits.length} 个地点片段',
+        subtitle: '按今天真实形成的到访记录整理',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (mapPrivacyAccepted) ...[
               IgnorePointer(
                 child: JiYiFootprintMap(
                   visits: footprint.visits,
-                  privacyAccepted: mapPrivacyAccepted,
+                  privacyAccepted: true,
                   selectedIndex: 0,
                   onSelected: (_) {},
                   interactive: false,
                 ),
               ),
-              Positioned.fill(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    key: const ValueKey('today-footprint-map-open'),
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () {
-                      Navigator.of(context).push<void>(
-                        MaterialPageRoute<void>(
-                          builder: (_) => FootprintDetailPage(
-                            api: api,
-                            footprint: footprint,
-                            mapPrivacyAccepted: mapPrivacyAccepted,
-                            onAcceptMapPrivacy: onAcceptMapPrivacy,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
+              const SizedBox(height: JiYiSpacing.md),
             ],
-          ),
-          if (!mapPrivacyAccepted) ...[
-            const SizedBox(height: JiYiSpacing.sm),
-            OutlinedButton.icon(
-              key: const ValueKey('today-amap-privacy-accept'),
-              onPressed: onAcceptMapPrivacy,
-              icon: const Icon(Icons.map_outlined),
-              label: const Text('同意地图服务隐私说明并启用地图'),
-            ),
+            for (var index = 0; index < footprint.visits.length; index++) ...[
+              FootprintVisitRow(
+                visit: footprint.visits[index],
+                elderMode: elderMode,
+              ),
+              if (index != footprint.visits.length - 1)
+                const Divider(height: JiYiSpacing.lg),
+            ],
           ],
-          const SizedBox(height: JiYiSpacing.md),
-          for (var index = 0; index < footprint.visits.length; index++) ...[
-            FootprintVisitRow(
-              visit: footprint.visits[index],
-              elderMode: elderMode,
-            ),
-            if (index != footprint.visits.length - 1)
-              const Divider(height: JiYiSpacing.lg),
-          ],
-        ],
+        ),
       ),
     );
   }
