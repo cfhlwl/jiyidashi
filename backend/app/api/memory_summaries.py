@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy.orm import Session
 
@@ -16,8 +16,10 @@ from app.core.db import get_db
 from app.daily_summary_models import DailySummaryResult, DailySummaryStatus
 from app.deps import get_current_user_id
 from app.monthly_summary_models import MonthlySummaryResult, MonthlySummaryStatus
-from app.services.ai_gateway import get_ai_gateway
+from app.services.ai_gateway import AIEntitlementError, get_ai_gateway
 from app.services.annual_summary_service import summarize_year
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 from app.services.daily_summary_service import summarize_today
 from app.services.monthly_summary_service import summarize_month
 
@@ -122,6 +124,21 @@ class AnnualSummaryResponse(BaseModel):
     citations: list[SummaryCitationResponse]
 
 
+def _raise_provider_saturation(exc: AIEntitlementError) -> None:
+    if exc.code != "PROVIDER_CONCURRENCY_SATURATED":
+        raise exc
+    headers = (
+        {"Retry-After": str(max(1, int(exc.retry_after)))}
+        if exc.retry_after is not None
+        else None
+    )
+    raise HTTPException(
+        status_code=429,
+        detail=exc.code,
+        headers=headers,
+    ) from exc
+
+
 def _citation_response(citation) -> SummaryCitationResponse:
     # [人工注释][#103] Public projection deliberately drops memory_source_id and all
     # provider/internal provenance. Owner-scoped Memory/Visit IDs are sufficient for V1 UI.
@@ -171,45 +188,75 @@ def _annual_response(result: AnnualSummaryResult) -> AnnualSummaryResponse:
 @router.post("/daily", response_model=DailySummaryResponse)
 async def generate_daily_summary(
     payload: DailySummaryRequest,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> DailySummaryResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     del payload
     # [人工注释][#103] This is only an authenticated adapter. Local-day boundaries,
     # authoritative snapshot/trust and provider handling remain owned by S3-015.
-    result = await summarize_today(
-        db,
-        user_id=user_id,
-        ai_gateway=get_ai_gateway(),
-    )
+    try:
+        result = await summarize_today(
+            db,
+            user_id=user_id,
+            ai_gateway=get_ai_gateway(),
+        )
+    except AIEntitlementError as exc:
+        _raise_provider_saturation(exc)
     return _daily_response(result)
 
 
 @router.post("/monthly", response_model=MonthlySummaryResponse)
 async def generate_monthly_summary(
     payload: MonthlySummaryRequest,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> MonthlySummaryResponse:
-    result = await summarize_month(
+    enforce_authenticated_api_rate(
         db,
         user_id=user_id,
-        ai_gateway=get_ai_gateway(),
-        target_month=payload.target_month,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
     )
+    try:
+        result = await summarize_month(
+            db,
+            user_id=user_id,
+            ai_gateway=get_ai_gateway(),
+            target_month=payload.target_month,
+        )
+    except AIEntitlementError as exc:
+        _raise_provider_saturation(exc)
     return _monthly_response(result)
 
 
 @router.post("/annual", response_model=AnnualSummaryResponse)
 async def generate_annual_summary(
     payload: AnnualSummaryRequest,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> AnnualSummaryResponse:
-    result = await summarize_year(
+    enforce_authenticated_api_rate(
         db,
         user_id=user_id,
-        ai_gateway=get_ai_gateway(),
-        target_year=payload.target_year,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
     )
+    try:
+        result = await summarize_year(
+            db,
+            user_id=user_id,
+            ai_gateway=get_ai_gateway(),
+            target_year=payload.target_year,
+        )
+    except AIEntitlementError as exc:
+        _raise_provider_saturation(exc)
     return _annual_response(result)

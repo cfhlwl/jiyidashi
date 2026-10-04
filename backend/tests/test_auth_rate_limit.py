@@ -22,6 +22,47 @@ def test_registration_ip_window_returns_429(client, monkeypatch):
     assert int(exc_info.value.headers["Retry-After"]) >= 1
 
 
+def test_authenticated_route_classes_are_independent_and_return_retry_after(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_expensive_user_limit", 1)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_expensive_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_user_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_window_seconds", 60)
+
+    from uuid import uuid4
+
+    user_id = uuid4()
+    client_ip = "198.51.100.88"
+    with SessionLocal() as db:
+        auth_rate_limit.consume_authenticated_api_attempt(
+            db,
+            user_id=user_id,
+            client_ip=client_ip,
+            route_class=auth_rate_limit.ApiRouteClass.EXPENSIVE_AI,
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            auth_rate_limit.consume_authenticated_api_attempt(
+                db,
+                user_id=user_id,
+                client_ip=client_ip,
+                route_class=auth_rate_limit.ApiRouteClass.EXPENSIVE_AI,
+            )
+        auth_rate_limit.consume_authenticated_api_attempt(
+            db,
+            user_id=user_id,
+            client_ip=client_ip,
+            route_class=auth_rate_limit.ApiRouteClass.NORMAL_READ,
+        )
+
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.detail == "API_RATE_LIMITED"
+    assert int(exc_info.value.headers["Retry-After"]) >= 1
+
+
 def test_rate_limit_bucket_does_not_store_raw_identifier(client):
     raw_value = "203.0.113.44"
     with SessionLocal() as db:
@@ -31,3 +72,94 @@ def test_rate_limit_bucket_does_not_store_raw_identifier(client):
         # [人工注释][S1-FIX-003] 数据库只保存固定长度 HMAC key，不保存原始 IP / 邮箱标识。
         assert len(key) == 64
         assert raw_value not in key
+
+
+
+async def _dev_headers(client, nickname: str) -> dict[str, str]:
+    response = await client.post("/v1/auth/dev-token", json={"nickname": nickname})
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.asyncio
+async def test_normal_read_endpoint_returns_429_with_retry_after(client, monkeypatch):
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_user_limit", 1)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_window_seconds", 60)
+    headers = await _dev_headers(client, "sec016-normal-read")
+
+    first = await client.get("/v1/user", headers=headers)
+    assert first.status_code == 200
+    second = await client.get("/v1/user", headers=headers)
+    assert second.status_code == 429
+    assert second.json()["detail"] == "API_RATE_LIMITED"
+    assert int(second.headers["Retry-After"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_normal_mutation_endpoint_returns_429_with_retry_after(client, monkeypatch):
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_mutation_user_limit", 1)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_mutation_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_window_seconds", 60)
+    headers = await _dev_headers(client, "sec016-normal-mutation")
+
+    first = await client.post("/v1/family", headers=headers)
+    assert first.status_code == 201
+    second = await client.post("/v1/family", headers=headers)
+    assert second.status_code == 429
+    assert second.json()["detail"] == "API_RATE_LIMITED"
+    assert int(second.headers["Retry-After"]) >= 1
+
+
+
+@pytest.mark.asyncio
+async def test_direct_authenticated_claims_read_route_is_normal_read_limited(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_user_limit", 1)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_window_seconds", 60)
+    headers = await _dev_headers(client, "sec016-direct-claims-read")
+
+    first = await client.get("/v1/auth/sessions", headers=headers)
+    assert first.status_code == 200
+    second = await client.get("/v1/auth/sessions", headers=headers)
+    assert second.status_code == 429
+    assert second.json()["detail"] == "API_RATE_LIMITED"
+    assert int(second.headers["Retry-After"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_direct_authenticated_claims_mutation_route_is_normal_mutation_limited(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_mutation_user_limit", 1)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_mutation_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_window_seconds", 60)
+    headers = await _dev_headers(client, "sec016-direct-claims-mutation")
+
+    payload = {
+        "current_password": "definitely-wrong-password",
+        "new_password": "new-correct-horse-battery-staple",
+    }
+    first = await client.post(
+        "/v1/auth/change-password",
+        headers=headers,
+        json=payload,
+    )
+    assert first.status_code != 429
+    second = await client.post(
+        "/v1/auth/change-password",
+        headers=headers,
+        json=payload,
+    )
+    assert second.status_code == 429
+    assert second.json()["detail"] == "API_RATE_LIMITED"
+    assert int(second.headers["Retry-After"]) >= 1

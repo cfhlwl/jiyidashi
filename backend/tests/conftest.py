@@ -16,6 +16,7 @@ os.environ["ENABLE_DEV_AUTH"] = "true"
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
 os.environ["PROVIDER_CONFIG_MASTER_KEY"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
+from app.abuse_models import ConcurrencyGuard, WorkPermit  # noqa: E402
 from app.admin_models import ProviderConfiguration  # noqa: E402
 from app.auth_models import AuthRateLimitBucket  # noqa: E402
 from app.core.db import SessionLocal, engine  # noqa: E402
@@ -47,6 +48,11 @@ def _clear_public_auth_rate_buckets() -> None:
                 AuthRateLimitBucket.scope.in_(_PUBLIC_AUTH_RATE_SCOPES)
             )
         )
+        db.execute(
+            delete(AuthRateLimitBucket).where(
+                AuthRateLimitBucket.scope.like("api_%")
+            )
+        )
         db.commit()
 
 
@@ -57,6 +63,23 @@ def isolate_public_auth_rate_limits():
         yield
     finally:
         _clear_public_auth_rate_buckets()
+
+
+@pytest.fixture(autouse=True)
+def isolate_sec016_permits():
+    if inspect(engine).has_table("work_permits"):
+        with SessionLocal() as db:
+            db.execute(delete(WorkPermit))
+            db.execute(delete(ConcurrencyGuard))
+            db.commit()
+    try:
+        yield
+    finally:
+        if inspect(engine).has_table("work_permits"):
+            with SessionLocal() as db:
+                db.execute(delete(WorkPermit))
+                db.execute(delete(ConcurrencyGuard))
+                db.commit()
 
 
 @pytest.fixture(autouse=True)

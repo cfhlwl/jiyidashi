@@ -803,6 +803,8 @@ async def reason_about_life_stage(
             LongTermReasoningStatus.EVIDENCE_CHANGED_DURING_GENERATION
         )
     except AIGatewayError as exc:
+        if exc.code == "PROVIDER_CONCURRENCY_SATURATED":
+            raise
         return _empty_result(
             LongTermReasoningStatus.PROVIDER_FAILED,
             provider_error_code=exc.code,

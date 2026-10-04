@@ -14,6 +14,11 @@ from sqlalchemy.orm import Session
 from app.admin_models import AdminAccount, AdminAuditEvent, AdminRole, AdminSession
 from app.core.config import Settings, get_settings
 from app.core.observability import current_request_id
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_argon2_permit,
+    release_permit,
+)
 
 _password_hasher = PasswordHasher()
 _DUMMY_ARGON2_HASH = (
@@ -23,30 +28,61 @@ _DUMMY_ARGON2_HASH = (
 
 
 class AdminOperationError(RuntimeError):
-    def __init__(self, code: str, status_code: int):
+    def __init__(
+        self,
+        code: str,
+        status_code: int,
+        *,
+        retry_after: int | None = None,
+    ):
         super().__init__(code)
         self.code = code
         self.status_code = status_code
+        self.retry_after = retry_after
 
 
 def normalize_admin_email(value: str) -> str:
     return value.strip().casefold()
 
 
-def hash_admin_password(password: str) -> str:
-    return _password_hasher.hash(password)
+def hash_admin_password(password: str, *, bind=None) -> str:
+    if bind is None:
+        return _password_hasher.hash(password)
+    try:
+        permit = claim_argon2_permit(bind)
+    except ConcurrencyRejected as exc:
+        raise AdminOperationError(
+            exc.code,
+            429,
+            retry_after=exc.retry_after,
+        ) from exc
+    try:
+        return _password_hasher.hash(password)
+    finally:
+        release_permit(bind, permit=permit)
 
 
 def _token_digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _verify_password(stored_hash: str | None, password: str) -> bool:
+def _verify_password(db: Session, stored_hash: str | None, password: str) -> bool:
     candidate = stored_hash or _DUMMY_ARGON2_HASH
     try:
-        return bool(_password_hasher.verify(candidate, password))
-    except (VerifyMismatchError, VerificationError, InvalidHashError):
-        return False
+        permit = claim_argon2_permit(db.get_bind())
+    except ConcurrencyRejected as exc:
+        raise AdminOperationError(
+            exc.code,
+            429,
+            retry_after=exc.retry_after,
+        ) from exc
+    try:
+        try:
+            return bool(_password_hasher.verify(candidate, password))
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            return False
+    finally:
+        release_permit(db.get_bind(), permit=permit)
 
 
 def _safe_audit_value(value: Any, *, depth: int = 0) -> Any:
@@ -116,14 +152,25 @@ def authenticate_admin(
         select(AdminAccount).where(AdminAccount.email == normalized)
     )
     stored_hash = account.password_hash if account is not None else None
-    verified = _verify_password(stored_hash, password)
+    verified = _verify_password(db, stored_hash, password)
 
     # Keep account existence, disabled state and password failure in one public response.
     if account is None or not verified or account.disabled:
         raise AdminOperationError("ADMIN_INVALID_CREDENTIALS", 401)
 
     if _password_hasher.check_needs_rehash(account.password_hash):
-        account.password_hash = _password_hasher.hash(password)
+        try:
+            permit = claim_argon2_permit(db.get_bind())
+        except ConcurrencyRejected as exc:
+            raise AdminOperationError(
+                exc.code,
+                429,
+                retry_after=exc.retry_after,
+            ) from exc
+        try:
+            account.password_hash = _password_hasher.hash(password)
+        finally:
+            release_permit(db.get_bind(), permit=permit)
         account.revision += 1
 
     return account

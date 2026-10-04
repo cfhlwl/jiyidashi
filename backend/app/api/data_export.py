@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import Select, select
@@ -35,6 +35,8 @@ from app.models import (
 from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
 from app.person_relationship_models import PersonRelationship
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 
 router = APIRouter(prefix="/export", tags=["export"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -122,7 +124,17 @@ def _object_location_payload(
 
 
 @router.get("/data")
-def export_current_user_data(user_id: CurrentUser, db: DbSession) -> JSONResponse:
+def export_current_user_data(
+    request: Request,
+    user_id: CurrentUser,
+    db: DbSession,
+) -> JSONResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_EXPORT,
+    )
     # [人工注释][S1-020] user_id 只来自已验证 Bearer token；接口不接受任意 owner 参数，
     # 所有集合都再次按 owner 过滤，防止导出成为跨账号数据旁路。
     user = db.get(User, user_id)

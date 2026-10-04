@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.admin_deps import AdminPrincipal, require_admin_mutation, require_admin_roles
@@ -22,6 +22,8 @@ from app.services.admin_provider_service import (
     update_provider_configuration,
 )
 from app.services.admin_security import AdminOperationError
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 
 router = APIRouter(tags=["admin-provider-settings"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -109,9 +111,16 @@ def embedding_backfill(
 )
 async def continue_embedding_backfill(
     payload: AdminEmbeddingBackfillRequest,
+    request: Request,
     db: DbSession,
     principal: SuperAdminMutation,
 ) -> AdminEmbeddingBackfillRead:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=principal.account.id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     try:
         return await run_embedding_backfill_batch(
             db,

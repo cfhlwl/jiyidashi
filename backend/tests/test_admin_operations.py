@@ -13,7 +13,9 @@ from app.admin_models import (
 from app.auth_models import AuthRateLimitBucket
 from app.core.db import SessionLocal
 from app.models import User
+from app.services import admin_security
 from app.services.admin_security import hash_admin_password
+from app.services.concurrency_guard import ConcurrencyRejected
 from app.services.entitlement_service import create_legacy_full_entitlement
 
 
@@ -244,3 +246,61 @@ async def test_admin_role_change_revokes_target_sessions_and_forbids_self_role_c
     )
     assert self_change.status_code == 409
     assert self_change.json()["detail"] == "ADMIN_SELF_ROLE_CHANGE_DENIED"
+
+
+
+async def test_admin_create_and_reset_use_global_argon2_permit(client, monkeypatch):
+    client.cookies.clear()
+    _, headers = await _login(client, role=AdminRole.SUPER_ADMIN)
+
+    target_email = f"target-{uuid4()}@example.com"
+    with SessionLocal() as db:
+        target = AdminAccount(
+            email=target_email,
+            display_name="目标管理员",
+            password_hash=hash_admin_password("Target-Old-Password-123!"),
+            role=AdminRole.OPERATOR.value,
+            disabled=False,
+            revision=0,
+        )
+        db.add(target)
+        db.commit()
+        db.refresh(target)
+        target_id = target.id
+        target_revision = target.revision
+
+    def saturated(*args, **kwargs):
+        raise ConcurrencyRejected(
+            "AUTH_PASSWORD_WORK_SATURATED",
+            retry_after=17,
+        )
+
+    monkeypatch.setattr(admin_security, "claim_argon2_permit", saturated)
+
+    create = await client.post(
+        "/admin/api/v1/admins",
+        headers=headers,
+        json={
+            "email": f"blocked-{uuid4()}@example.com",
+            "display_name": "并发受限管理员",
+            "password": "Blocked-Password-123!",
+            "role": "OPERATOR",
+            "confirmation": "创建管理员",
+        },
+    )
+    assert create.status_code == 429
+    assert create.json()["detail"] == "AUTH_PASSWORD_WORK_SATURATED"
+    assert create.headers["Retry-After"] == "17"
+
+    reset = await client.post(
+        f"/admin/api/v1/admins/{target_id}/password-reset",
+        headers=headers,
+        json={
+            "expected_revision": target_revision,
+            "new_password": "Target-New-Password-123!",
+            "confirmation": "重置管理员密码",
+        },
+    )
+    assert reset.status_code == 429
+    assert reset.json()["detail"] == "AUTH_PASSWORD_WORK_SATURATED"
+    assert reset.headers["Retry-After"] == "17"

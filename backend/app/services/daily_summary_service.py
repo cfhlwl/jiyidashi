@@ -873,6 +873,8 @@ async def summarize_today(
             actor_user_id=user_id,
         )
     except AIGatewayError as exc:
+        if exc.code == "PROVIDER_CONCURRENCY_SATURATED":
+            raise
         return _empty_result(
             DailySummaryStatus.PROVIDER_FAILED,
             context=context,

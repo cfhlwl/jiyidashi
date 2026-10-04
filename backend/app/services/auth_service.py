@@ -17,6 +17,11 @@ from app.services.auth_rate_limit import (
     consume_registration_attempt,
     record_login_failure,
 )
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_argon2_permit,
+    release_permit,
+)
 from app.services.entitlement_service import create_registration_default_entitlement
 
 _password_hasher = PasswordHasher()
@@ -31,17 +36,44 @@ def normalize_email(value: str) -> str:
     return value.strip().casefold()
 
 
-def hash_password(password: str) -> str:
-    return _password_hasher.hash(password)
+def _argon2_rejected(exc: ConcurrencyRejected) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=exc.code,
+        headers={"Retry-After": str(exc.retry_after)},
+    )
 
 
-def verify_password(secret_hash: str | None, password: str) -> bool:
+def hash_password(password: str, *, bind=None) -> str:
+    if bind is None:
+        return _password_hasher.hash(password)
+    try:
+        permit = claim_argon2_permit(bind)
+    except ConcurrencyRejected as exc:
+        raise _argon2_rejected(exc) from exc
+    try:
+        return _password_hasher.hash(password)
+    finally:
+        release_permit(bind, permit=permit)
+
+
+def verify_password(secret_hash: str | None, password: str, *, bind=None) -> bool:
     if not secret_hash:
         return False
+    permit = None
+    if bind is not None:
+        try:
+            permit = claim_argon2_permit(bind)
+        except ConcurrencyRejected as exc:
+            raise _argon2_rejected(exc) from exc
     try:
-        return bool(_password_hasher.verify(secret_hash, password))
-    except (VerifyMismatchError, VerificationError, InvalidHashError):
-        return False
+        try:
+            return bool(_password_hasher.verify(secret_hash, password))
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            return False
+    finally:
+        if permit is not None:
+            release_permit(bind, permit=permit)
 
 
 def register_email_password(
@@ -67,6 +99,11 @@ def register_email_password(
             detail="AUTH_IDENTITY_EXISTS",
         )
 
+    # SEC-016: acquire/release the global Argon2 permit before opening the
+    # registration write transaction. This keeps the expensive CPU work outside user-row
+    # mutation state while the anonymous IP gate has already succeeded.
+    password_hash = hash_password(payload.password, bind=db.get_bind())
+
     user = User(
         nickname=payload.nickname,
         email=subject,
@@ -81,7 +118,7 @@ def register_email_password(
             user_id=user.id,
             provider=AuthProvider.EMAIL_PASSWORD,
             subject=subject,
-            secret_hash=hash_password(payload.password),
+            secret_hash=password_hash,
         )
         db.add(identity)
         create_registration_default_entitlement(db, user_id=user.id)
@@ -174,7 +211,11 @@ def authenticate_email_password(
         if identity is not None and identity.secret_hash
         else _DUMMY_ARGON2_HASH
     )
-    verified = verify_password(verification_hash, payload.password)
+    verified = verify_password(
+        verification_hash,
+        payload.password,
+        bind=db.get_bind(),
+    )
 
     # [人工注释][S1-001][S1-FIX-004] HTTP 语义与 Argon2 成本路径都不区分账号不存在和密码错误。
     if identity is None or not identity.secret_hash or not verified:
@@ -196,7 +237,7 @@ def authenticate_email_password(
     user = _lock_login_user_for_authentication(db, identity.user_id)
 
     if _password_hasher.check_needs_rehash(identity.secret_hash):
-        identity.secret_hash = hash_password(payload.password)
+        identity.secret_hash = hash_password(payload.password, bind=db.get_bind())
     identity.last_login_at = datetime.now(UTC)
     db.commit()
     return user

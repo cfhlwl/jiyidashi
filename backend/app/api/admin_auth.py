@@ -127,7 +127,15 @@ def login(
         if exc.code == "ADMIN_INVALID_CREDENTIALS":
             record_admin_login_failure(db, client_ip, subject)
         db.rollback()
-        raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.code,
+            headers=(
+                {"Retry-After": str(exc.retry_after)}
+                if exc.retry_after is not None
+                else None
+            ),
+        ) from exc
 
     clear_admin_login_account_penalty(db, client_ip, subject)
 

@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.schemas import MemoryUpdate
 from app.services.ai_gateway import (
+    AIEntitlementError,
     AIGateway,
     AIInferenceRequest,
     AIProviderError,
@@ -1188,3 +1189,36 @@ def test_s3_017_adds_no_public_annual_summary_endpoint():
     }
     assert all("annual-summary" not in path for path in paths)
     assert all("/summary/annual" not in path for path in paths)
+
+
+class _SaturatedGateway:
+    async def infer(self, request, *, db, actor_user_id):
+        del request, db, actor_user_id
+        raise AIEntitlementError(
+            "PROVIDER_CONCURRENCY_SATURATED",
+            status_code=429,
+            retry_after=19,
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_concurrency_saturation_is_not_collapsed_to_provider_failed():
+    with SessionLocal() as db:
+        owner = _owner(db, "sec016-saturation", timezone="UTC")
+        _memory(
+            db,
+            owner,
+            content="九月完成测试",
+            occurred_at=datetime(2026, 9, 8, 1, 0, tzinfo=UTC),
+        )
+        with pytest.raises(AIEntitlementError) as caught:
+            await summarize_year(
+            db,
+            user_id=owner,
+            target_year="2026",
+            ai_gateway=_SaturatedGateway(),
+            )
+
+        assert caught.value.code == "PROVIDER_CONCURRENCY_SATURATED"
+        assert caught.value.status_code == 429
+        assert caught.value.retry_after == 19

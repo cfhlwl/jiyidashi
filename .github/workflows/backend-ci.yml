@@ -332,6 +332,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_security_alerting_integration.py
 
+      - name: PostgreSQL SEC-016 abuse and concurrency authority
+        # [P0][SEC-016] Real PostgreSQL proves shared authenticated rate buckets,
+        # provider/Argon2 final-slot races, expiring leases and token-bound release.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_sec016_abuse_concurrency_integration.py
+
       - name: PostgreSQL Entitlement & Quota concurrency
         # [P1][#168] Real PostgreSQL proves LEGACY_FULL backfill, storage reservation
         # serialization, AI last-slot exactly-once, and deletion lifecycle semantics.
@@ -535,4 +544,7 @@ jobs:
         run: python tests/postgres_account_delete_integration.py
 
       - name: Test
-        run: pytest -q
+        # Keep the final full-suite gate observable and bounded. If a test hangs,
+        # verbose node IDs identify the last started test instead of burning a runner indefinitely.
+        timeout-minutes: 20
+        run: pytest -vv --durations=30

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -12,7 +12,9 @@ from app.life_memoir_models import (
     LifeMemoirChapterResponse,
     LifeMemoirStageIndexResponse,
 )
-from app.services.ai_gateway import get_ai_gateway
+from app.services.ai_gateway import AIEntitlementError, get_ai_gateway
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 from app.services.life_memoir_service import (
     LifeMemoirError,
     build_life_memoir_chapter,
@@ -49,9 +51,16 @@ def list_life_memoir_stages_route(
 )
 async def build_life_memoir_chapter_route(
     life_stage_id: UUID,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> LifeMemoirChapterResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     try:
         return await build_life_memoir_chapter(
             db,
@@ -59,5 +68,18 @@ async def build_life_memoir_chapter_route(
             life_stage_id=life_stage_id,
             ai_gateway=get_ai_gateway(),
         )
+    except AIEntitlementError as exc:
+        if exc.code != "PROVIDER_CONCURRENCY_SATURATED":
+            raise
+        headers = (
+            {"Retry-After": str(max(1, int(exc.retry_after)))}
+            if exc.retry_after is not None
+            else None
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=exc.code,
+            headers=headers,
+        ) from exc
     except LongTermReasoningError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc

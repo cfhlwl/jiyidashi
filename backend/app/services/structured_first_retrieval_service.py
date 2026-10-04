@@ -37,6 +37,11 @@ from app.retrieval_models import (
     StructuredResolutionStatus,
     VectorRetrievalStatus,
 )
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.embedding_service import (
     build_memory_embedding_text,
     memory_embedding_fingerprint,
@@ -415,7 +420,18 @@ async def _vector_candidates(
 
     # Provider I/O runs before opening the short-lived vector read transaction.
     try:
-        inference = await gateway.embed(question)
+        try:
+            permit = claim_provider_permit(
+                caller_db.get_bind(),
+                service_class="EMBEDDING",
+                user_id=user_id,
+            )
+        except ConcurrencyRejected as exc:
+            return VectorRetrievalStatus.PROVIDER_FAILED, exc.code, ()
+        try:
+            inference = await gateway.embed(question)
+        finally:
+            release_permit(caller_db.get_bind(), permit=permit)
     except EmbeddingGatewayError as exc:
         record_provider_runtime_evidence(
             caller_db.get_bind(),

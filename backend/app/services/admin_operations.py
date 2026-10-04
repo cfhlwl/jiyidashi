@@ -117,7 +117,7 @@ def create_admin_account(
     row = AdminAccount(
         email=email,
         display_name=payload.display_name.strip(),
-        password_hash=hash_admin_password(payload.password),
+        password_hash=hash_admin_password(payload.password, bind=db.get_bind()),
         role=payload.role.value,
         disabled=False,
         revision=0,
@@ -241,7 +241,7 @@ def reset_admin_password(
     if target.revision != payload.expected_revision:
         raise AdminOperationError("ADMIN_STATE_STALE", 409)
 
-    target.password_hash = hash_admin_password(payload.new_password)
+    target.password_hash = hash_admin_password(payload.new_password, bind=db.get_bind())
     target.revision += 1
     target.updated_at = datetime.now(UTC)
     revoked = _revoke_target_sessions_in_transaction(db, target_admin_id=target.id)

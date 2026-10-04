@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.abuse_models import ConcurrencyGuard, WorkPermit
 from app.admin_models import EntitlementQuotaPolicy, ProviderRuntimeEvidence
 from app.core.config import Settings
 from app.core.db import Base, SessionLocal
@@ -59,6 +60,8 @@ def _engine():
             AIQuotaPeriod.__table__,
             AIUsageEvent.__table__,
             ProviderRuntimeEvidence.__table__,
+            ConcurrencyGuard.__table__,
+            WorkPermit.__table__,
             MediaAsset.__table__,
             EntitlementQuotaPolicy.__table__,
         ],

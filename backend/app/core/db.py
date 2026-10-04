@@ -220,6 +220,7 @@ def create_schema() -> None:
     # create_all 必须显式加载认证、媒体、删除状态机和幂等模型，
     # 不能依赖 router / schema 的偶然 import 顺序决定数据库是否缺表。
     from app import (  # noqa: F401
+        abuse_models,
         account_deletion_models,
         admin_models,
         analytics_models,

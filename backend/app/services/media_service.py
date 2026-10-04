@@ -24,6 +24,11 @@ from app.models import Memory, MemorySource, MemoryType, SourceType
 from app.schemas import MediaUploadCreate, PhotoMemoryCreate, VoiceMemoryCreate
 from app.security_models import SecuritySignalCode
 from app.services.asr import ASRProvider, ASRProviderError
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.entitlement_service import (
     EntitlementError,
     lock_entitlement_subject,
@@ -90,10 +95,17 @@ ASR_ERROR_STATUS = {
 # [人工注释][S1-004][S1-005][S1-006] 媒体服务统一持有用户归属、服务端 object key 与 READY 门禁。
 # 客户端只能携带 media_id，不能提交任意 object key 绕过所有权检查。
 class MediaError(RuntimeError):
-    def __init__(self, code: str, status_code: int):
+    def __init__(
+        self,
+        code: str,
+        status_code: int,
+        *,
+        retry_after: int | None = None,
+    ):
         super().__init__(code)
         self.code = code
         self.status_code = status_code
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True)
@@ -106,6 +118,7 @@ class MediaUploadResult:
 # 不把已参与数据库事务的 ORM 实例跨越网络 I/O 保存或继续访问。
 @dataclass(frozen=True)
 class VoiceMediaSnapshot:
+    user_id: UUID
     media_id: UUID
     object_key: str
     content_type: str
@@ -662,11 +675,28 @@ def _read_and_transcribe_voice(
 
     config_fingerprint = getattr(asr, "config_fingerprint", None)
     try:
-        result = asr.transcribe(
-            audio,
-            content_type=snapshot.content_type,
-            filename=snapshot.original_filename,
-        )
+        try:
+            permit = claim_provider_permit(
+                db.get_bind(),
+                service_class="ASR",
+                user_id=snapshot.user_id,
+                settings=settings,
+            )
+        except ConcurrencyRejected as exc:
+            _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
+            raise MediaError(exc.code, 429, retry_after=exc.retry_after) from exc
+        try:
+            result = asr.transcribe(
+                audio,
+                content_type=snapshot.content_type,
+                filename=snapshot.original_filename,
+            )
+        finally:
+            release_permit(
+                db.get_bind(),
+                permit=permit,
+                settings=settings,
+            )
     except ASRProviderError as exc:
         if config_fingerprint:
             record_provider_runtime_evidence(
@@ -753,6 +783,7 @@ def create_voice_memory(
         claim.updated_at = now
 
     snapshot = VoiceMediaSnapshot(
+        user_id=user_id,
         media_id=asset.id,
         object_key=asset.object_key,
         content_type=asset.content_type,

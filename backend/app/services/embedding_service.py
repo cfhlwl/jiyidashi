@@ -11,6 +11,11 @@ from app.admin_models import ProviderService
 from app.embedding_gateway import EmbeddingGateway, EmbeddingGatewayError
 from app.embedding_models import MemoryEmbedding
 from app.models import Memory, MemoryType
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.provider_config_service import record_provider_runtime_evidence
 from app.vector_support import VectorCapabilityError, inspect_vector_capability
 
@@ -162,7 +167,18 @@ async def generate_or_refresh_memory_embedding(
     db.commit()
 
     try:
-        inference = await gateway.embed(snapshot.canonical_text)
+        try:
+            permit = claim_provider_permit(
+                db.get_bind(),
+                service_class="EMBEDDING",
+                user_id=user_id,
+            )
+        except ConcurrencyRejected as exc:
+            raise EmbeddingServiceError(exc.code) from exc
+        try:
+            inference = await gateway.embed(snapshot.canonical_text)
+        finally:
+            release_permit(db.get_bind(), permit=permit)
     except EmbeddingGatewayError as exc:
         record_provider_runtime_evidence(
             db.get_bind(),
