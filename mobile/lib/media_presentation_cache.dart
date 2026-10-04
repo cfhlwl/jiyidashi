@@ -25,8 +25,11 @@ class LocalMediaCache {
   LocalMediaCache({
     MediaCacheRootProvider? rootDirectoryProvider,
     this.maxBytes = 256 * 1024 * 1024,
-  }) : _rootDirectoryProvider =
-            rootDirectoryProvider ?? _defaultRootDirectoryProvider {
+    this.authorityLeaseDuration = const Duration(minutes: 5),
+    DateTime Function()? nowProvider,
+  })  : _rootDirectoryProvider =
+            rootDirectoryProvider ?? _defaultRootDirectoryProvider,
+        _nowProvider = nowProvider ?? DateTime.now {
     if (maxBytes <= 0) {
       throw ArgumentError.value(maxBytes, 'maxBytes', 'must be positive');
     }
@@ -34,7 +37,10 @@ class LocalMediaCache {
 
   final MediaCacheRootProvider _rootDirectoryProvider;
   final int maxBytes;
+  final Duration authorityLeaseDuration;
+  final DateTime Function() _nowProvider;
   final Random _random = Random.secure();
+  final Map<String, DateTime> _authorityValidatedAt = <String, DateTime>{};
 
   static Future<Directory> _defaultRootDirectoryProvider() async {
     final databasePath = await getDatabasesPath();
@@ -154,10 +160,38 @@ class LocalMediaCache {
     );
   }
 
+  bool hasFreshAuthorityLease({
+    required String ownerUserId,
+    required String mediaId,
+  }) {
+    final key = _authorityKey(ownerUserId, mediaId);
+    final validatedAt = _authorityValidatedAt[key];
+    if (validatedAt == null) return false;
+    if (authorityLeaseDuration <= Duration.zero) return false;
+    final age = _nowProvider().toUtc().difference(validatedAt);
+    return !age.isNegative && age <= authorityLeaseDuration;
+  }
+
+  void markAuthorityValidated({
+    required String ownerUserId,
+    required String mediaId,
+  }) {
+    _authorityValidatedAt[_authorityKey(ownerUserId, mediaId)] =
+        _nowProvider().toUtc();
+  }
+
+  void invalidateAuthority({
+    required String ownerUserId,
+    required String mediaId,
+  }) {
+    _authorityValidatedAt.remove(_authorityKey(ownerUserId, mediaId));
+  }
+
   Future<void> invalidateMedia({
     required String ownerUserId,
     required String mediaId,
   }) async {
+    invalidateAuthority(ownerUserId: ownerUserId, mediaId: mediaId);
     final owner = _safeComponent(ownerUserId, 'ownerUserId');
     final media = _safeComponent(mediaId, 'mediaId').toLowerCase();
     final directory = await _ownerDirectory(owner, create: false);
@@ -174,6 +208,8 @@ class LocalMediaCache {
 
   Future<void> purgeOwner(String ownerUserId) async {
     final owner = _safeComponent(ownerUserId, 'ownerUserId');
+    final prefix = '${owner.toLowerCase()}::';
+    _authorityValidatedAt.removeWhere((key, _) => key.startsWith(prefix));
     final directory = await _ownerDirectory(owner, create: false);
     if (await directory.exists()) {
       await directory.delete(recursive: true);
@@ -376,16 +412,40 @@ class MediaPresentationResolver {
       ownerUserId: ownerUserId,
       mediaId: mediaId,
     );
-    if (cached != null) return cached;
-    if (offline) throw const MediaUnavailableOffline();
+    if (offline) {
+      if (cached != null) return cached;
+      throw const MediaUnavailableOffline();
+    }
+    if (cached != null &&
+        cache.hasFreshAuthorityLease(
+          ownerUserId: ownerUserId,
+          mediaId: mediaId,
+        )) {
+      return cached;
+    }
 
-    final capability = await api.createMediaDownload(mediaId);
+    late final MediaDownloadSession capability;
+    try {
+      capability = await api.createMediaDownload(mediaId);
+    } on ApiException catch (error) {
+      if (error.statusCode == 403 || error.statusCode == 404) {
+        await cache.invalidateMedia(
+          ownerUserId: ownerUserId,
+          mediaId: mediaId,
+        );
+      }
+      rethrow;
+    }
     _assertCurrent(ownerUserId, sessionVersion);
 
     final exactCached = await cache.lookup(
       ownerUserId: ownerUserId,
       mediaId: mediaId,
       cacheVersion: capability.cacheVersion,
+    );
+    cache.markAuthorityValidated(
+      ownerUserId: ownerUserId,
+      mediaId: mediaId,
     );
     if (exactCached != null) return exactCached;
 
@@ -395,12 +455,17 @@ class MediaPresentationResolver {
     );
     _assertCurrent(ownerUserId, sessionVersion);
 
-    return cache.putBytes(
+    final stored = await cache.putBytes(
       ownerUserId: ownerUserId,
       mediaId: capability.mediaId,
       cacheVersion: capability.cacheVersion,
       bytes: bytes,
     );
+    cache.markAuthorityValidated(
+      ownerUserId: ownerUserId,
+      mediaId: capability.mediaId,
+    );
+    return stored;
   }
 
   void _assertCurrent(String ownerUserId, int sessionVersion) {
@@ -411,6 +476,12 @@ class MediaPresentationResolver {
       );
     }
   }
+}
+
+String _authorityKey(String ownerUserId, String mediaId) {
+  final owner = _safeComponent(ownerUserId, 'ownerUserId').toLowerCase();
+  final media = _safeComponent(mediaId, 'mediaId').toLowerCase();
+  return '$owner::$media';
 }
 
 String _safeComponent(String value, String name) {
