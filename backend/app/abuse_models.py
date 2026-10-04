@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Index, String
+from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -35,6 +35,9 @@ class WorkPermit(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     token_digest: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     service_class: Mapped[str] = mapped_column(String(32), nullable=False)
-    user_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
