@@ -206,6 +206,28 @@ class LocalMediaCache {
     }
   }
 
+  Future<void> invalidateMediaPrefix({
+    required String ownerUserId,
+    required String mediaIdPrefix,
+  }) async {
+    final owner = _safeComponent(ownerUserId, 'ownerUserId');
+    final prefix = _safeComponent(mediaIdPrefix, 'mediaIdPrefix').toLowerCase();
+    final directory = await _ownerDirectory(owner, create: false);
+    if (await directory.exists()) {
+      await for (final entity in directory.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final name = _basename(entity.path).toLowerCase();
+        if (name.startsWith(prefix)) {
+          await _deleteQuietly(entity);
+        }
+      }
+    }
+    final authorityPrefix = '${owner.toLowerCase()}::$prefix';
+    _authorityValidatedAt.removeWhere(
+      (key, _) => key.startsWith(authorityPrefix),
+    );
+  }
+
   Future<void> purgeOwner(String ownerUserId) async {
     final owner = _safeComponent(ownerUserId, 'ownerUserId');
     final prefix = '${owner.toLowerCase()}::';
