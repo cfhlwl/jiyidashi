@@ -203,7 +203,7 @@ jobs:
                       raise SystemExit(0)
           raise SystemExit(1)
           ')"
-          xcodebuild test             -workspace ios/Runner.xcworkspace             -scheme Runner             -destination "platform=iOS Simulator,id=$device_id"             -only-testing:RunnerTests             CODE_SIGNING_ALLOWED=NO             ARCHS=x86_64             ONLY_ACTIVE_ARCH=YES
+          xcodebuild test             -workspace ios/Runner.xcworkspace             -scheme Runner             -destination "platform=iOS Simulator,id=$device_id,arch=x86_64"             -only-testing:RunnerTests             CODE_SIGNING_ALLOWED=NO             ARCHS=x86_64             ONLY_ACTIVE_ARCH=YES
 
       - name: Verify iOS progressive location declarations
         shell: bash
