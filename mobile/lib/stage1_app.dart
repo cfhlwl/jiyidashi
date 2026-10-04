@@ -380,15 +380,9 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     }
   }
 
-  void _amapPrivacyChanged() {
-    if (mounted) setState(() {});
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _amapPrivacyConsent.removeListener(_amapPrivacyChanged);
-    unawaited(_amapPrivacyConsent.close());
     _authorityRefreshTimer?.cancel();
     unawaited(_passiveRecoveryRequests?.cancel());
     if (widget.offlineQueue == null) {
@@ -966,6 +960,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
   late final LocalMediaCache _mediaCache =
       widget.mediaCache ?? LocalMediaCache();
+  late final bool _ownsAmapPrivacyConsent =
+      widget.amapPrivacyConsent is! AmapPrivacyConsentController;
   late final AmapPrivacyConsentController _amapPrivacyConsent =
       widget.amapPrivacyConsent is AmapPrivacyConsentController
           ? widget.amapPrivacyConsent! as AmapPrivacyConsentController
@@ -1057,9 +1053,18 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     });
   }
 
+  void _amapPrivacyChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _amapPrivacyConsent.removeListener(_amapPrivacyChanged);
+    if (_ownsAmapPrivacyConsent) {
+      unawaited(_amapPrivacyConsent.close());
+      _amapPrivacyConsent.dispose();
+    }
     _onboarding?.removeListener(_onboardingChanged);
     _onboarding?.dispose();
     _locationSampling?.dispose();
@@ -3311,8 +3316,9 @@ class _AmapPrivacyControlsState extends State<_AmapPrivacyControls> {
     super.initState();
     final authority = widget.authority;
     if (authority is Listenable) {
-      _listenable = authority;
-      authority.addListener(_authorityChanged);
+      final listenable = authority as Listenable;
+      _listenable = listenable;
+      listenable.addListener(_authorityChanged);
     }
     unawaited(_refresh());
   }
