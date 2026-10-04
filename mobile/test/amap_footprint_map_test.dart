@@ -75,6 +75,55 @@ void main() {
     expect(receivedCount, 1);
   });
 
+  testWidgets('map marker selection forwards canonical visit index',
+      (tester) async {
+    int? selectedIndex;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: JiYiFootprintMap(
+          visits: <FootprintVisit>[
+            _visit(),
+            FootprintVisit.fromJson(<String, dynamic>{
+              'id': '22222222-2222-4222-8222-222222222222',
+              'place_id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              'place_name': '第二地点',
+              'place_latitude': 39.9142,
+              'place_longitude': 116.4174,
+              'place_address': '测试地址 2',
+              'place_category': 'OFFICE',
+              'arrived_at': '2026-10-04T02:00:00Z',
+              'left_at': null,
+              'arrived_at_local': '2026-10-04T10:00:00+08:00',
+              'left_at_local': null,
+              'confidence': 0.97,
+              'visit_source': 'LOCATION_CLUSTER',
+              'visit_finalized': false,
+            }),
+          ],
+          privacyAccepted: true,
+          selectedIndex: 0,
+          onSelected: (index) => selectedIndex = index,
+          config: const JiYiAmapConfig(
+            androidKey: 'android-key',
+            platformOverride: TargetPlatform.android,
+          ),
+          nativeBuilder:
+              (context, config, visits, selected, onSelected, interactive) {
+            return TextButton(
+              key: const ValueKey('fake-amap-marker-1'),
+              onPressed: () => onSelected(1),
+              child: const Text('第二地点'),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('fake-amap-marker-1')));
+    expect(selectedIndex, 1);
+  });
+
   testWidgets('missing SDK key degrades to factual non-map fallback', (tester) async {
     var nativeBuilds = 0;
 
