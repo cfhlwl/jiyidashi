@@ -1252,6 +1252,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       sync: _sync,
       syncGeneration: syncGeneration,
       onQueueChanged: _queueChanged,
+      mediaCache: _mediaCache,
       elderMode: _elderModeEnabled,
       onAuthoritativeTextMemorySaved:
           onboardingStep == OnboardingStep.capture
@@ -1260,6 +1261,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final memoryPage = MemoryQueryPage(
       api: widget.api,
+      mediaCache: _mediaCache,
       elderMode: _elderModeEnabled,
       initialQuestion: onboardingStep == OnboardingStep.retrieve ||
               onboardingStep == OnboardingStep.trust
@@ -1276,6 +1278,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final pages = <Widget>[
       TodayPage(
         api: widget.api,
+        mediaCache: _mediaCache,
         elderMode: _elderModeEnabled,
         onCapture: () {
           Navigator.of(context).push<void>(
@@ -1375,10 +1378,12 @@ class TimelinePage extends StatefulWidget {
   const TimelinePage({
     super.key,
     required this.api,
+    this.mediaCache,
     this.elderMode = false,
   });
 
   final JiYiApiClient api;
+  final LocalMediaCache? mediaCache;
   final bool elderMode;
 
   @override
@@ -1519,6 +1524,7 @@ class _TimelinePageState extends State<TimelinePage> {
           builder: (_) => MemoryDetailPage(
             api: widget.api,
             memoryId: item.id,
+            mediaCache: widget.mediaCache,
           ),
         ),
       );
@@ -1576,6 +1582,7 @@ class _TimelinePageState extends State<TimelinePage> {
               _TimelineEntry(
                 api: widget.api,
                 item: _items[index],
+                mediaCache: widget.mediaCache,
                 isLast: index == _items.length - 1,
                 onTap: () => _openItem(_items[index]),
               ),
@@ -1627,10 +1634,12 @@ class _TimelineEntry extends StatelessWidget {
     required this.item,
     required this.isLast,
     required this.onTap,
+    this.mediaCache,
   });
 
   final JiYiApiClient api;
   final TimelineReadItem item;
+  final LocalMediaCache? mediaCache;
   final bool isLast;
   final VoidCallback onTap;
 
@@ -1722,6 +1731,7 @@ class _TimelineEntry extends StatelessWidget {
                           key: ValueKey('timeline-photo-${item.id}'),
                           api: api,
                           mediaId: item.mediaId!,
+                          cache: mediaCache,
                           width: 72,
                           height: 72,
                         )
@@ -1774,6 +1784,7 @@ class CapturePage extends StatefulWidget {
     this.syncGeneration = 0,
     this.onQueueChanged,
     this.onAuthoritativeTextMemorySaved,
+    this.mediaCache,
     this.elderMode = false,
   });
 
@@ -1782,6 +1793,7 @@ class CapturePage extends StatefulWidget {
   final OfflineSyncCoordinator? sync;
   final int syncGeneration;
   final VoidCallback? onQueueChanged;
+  final LocalMediaCache? mediaCache;
   final bool elderMode;
   final void Function(String memoryId, String querySeed)?
       onAuthoritativeTextMemorySaved;
@@ -2056,6 +2068,7 @@ class _CapturePageState extends State<CapturePage> {
             ],
             UnifiedMediaCaptureSection(
               api: widget.api,
+              mediaCache: widget.mediaCache,
               elderMode: true,
             ),
             const SizedBox(height: JiYiSpacing.md),
@@ -2162,7 +2175,10 @@ class _CapturePageState extends State<CapturePage> {
           // 图片与语音继续复用既有 verified media / ASR Evidence 协议；
           // 文字与物品位置仍由上方 outbox-first 路径负责，避免媒体大文件进入 SQLite。
           if (!widget.elderMode)
-            UnifiedMediaCaptureSection(api: widget.api),
+            UnifiedMediaCaptureSection(
+              api: widget.api,
+              mediaCache: widget.mediaCache,
+            ),
         ],
       ),
     );
@@ -2343,10 +2359,12 @@ class MemoryQueryPage extends StatefulWidget {
     this.initialQuestion,
     this.requiredEvidenceMemoryId,
     this.onTrustedEvidenceShown,
+    this.mediaCache,
     this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
+  final LocalMediaCache? mediaCache;
   final bool elderMode;
   final String? initialQuestion;
   final String? requiredEvidenceMemoryId;
@@ -2566,6 +2584,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
         builder: (_) => MemoryDetailPage(
           api: widget.api,
           memoryId: ids.first.toString(),
+          mediaCache: widget.mediaCache,
         ),
       ),
     );
@@ -2754,6 +2773,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   MaterialPageRoute(
                     builder: (_) => TimelinePage(
                       api: widget.api,
+                      mediaCache: widget.mediaCache,
                       elderMode: widget.elderMode,
                     ),
                   ),
