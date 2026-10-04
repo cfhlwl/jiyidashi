@@ -9,11 +9,11 @@ import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/footprint_models.dart';
 import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/memory_detail_page.dart';
-import 'package:jiyidashi/native_location_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
+import 'package:jiyidashi/today_footprint_page.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/family_page.dart';
 import 'package:jiyidashi/v2/graph_page.dart';
@@ -824,67 +824,6 @@ class _GoldenPlaceDetailApi extends JiYiApiClient {
       'next_cursor': 'golden-next-page',
     };
   }
-}
-
-class _GoldenLocationBridge implements NativeLocationBridge {
-  NativeLocationStatus _status({
-    NativeLocationRuntime runtime = NativeLocationRuntime.stopped,
-  }) {
-    return NativeLocationStatus(
-      supported: true,
-      platform: 'golden',
-      permission: NativeLocationPermission.notDetermined,
-      runtime: runtime,
-      automaticEnabled: false,
-      locationServicesEnabled: true,
-      reason: runtime == NativeLocationRuntime.paused
-          ? 'paused'
-          : 'foreground_permission_required',
-    );
-  }
-
-  @override
-  Future<NativeLocationStatus> status(String ownerUserId) async => _status();
-
-  @override
-  Future<NativeLocationStatus> requestForegroundPermission(
-    String ownerUserId,
-  ) async =>
-      _status();
-
-  @override
-  Future<NativeLocationStatus> enableAutomaticLocation(
-    String ownerUserId,
-  ) async =>
-      _status();
-
-  @override
-  Future<NativeLocationStatus> openBackgroundLocationSettings(
-    String ownerUserId,
-  ) async =>
-      _status();
-
-  @override
-  Future<NativeLocationStatus> openLocationServicesSettings(
-    String ownerUserId,
-  ) async =>
-      _status();
-
-  @override
-  Future<NativeLocationStatus> disableAutomaticLocation(
-    String ownerUserId,
-  ) async =>
-      _status();
-
-  @override
-  Future<NativeLocationStatus> start(String ownerUserId) async => _status();
-
-  @override
-  Future<NativeLocationStatus> pause(String ownerUserId) async =>
-      _status(runtime: NativeLocationRuntime.paused);
-
-  @override
-  Future<NativeLocationStatus> stop(String ownerUserId) async => _status();
 }
 
 // Golden tests must not depend on an unregistered platform channel. Native platform policy
