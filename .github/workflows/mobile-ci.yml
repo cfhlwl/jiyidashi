@@ -49,6 +49,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify AMap bridge provenance pin
+        run: python3 tool/check_amap_bridge_pin.py
+
+
       - name: Verify dependency lock
         id: android-lock
         shell: bash
