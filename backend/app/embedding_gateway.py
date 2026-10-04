@@ -7,10 +7,12 @@ from typing import Protocol
 
 import httpx
 
+from app.admin_models import ProviderService
 from app.core.config import Settings
 from app.services.provider_config_service import (
     ProviderRuntimeConfigError,
     get_runtime_provider_settings,
+    provider_runtime_fingerprint,
 )
 
 
@@ -157,6 +159,14 @@ class EmbeddingGateway:
     def __init__(self, settings: Settings, provider: EmbeddingProvider):
         self._settings = settings
         self._provider = provider
+        self._config_fingerprint = provider_runtime_fingerprint(
+            settings,
+            ProviderService.EMBEDDING,
+        )
+
+    @property
+    def config_fingerprint(self) -> str:
+        return self._config_fingerprint
 
     @property
     def model(self) -> str:
