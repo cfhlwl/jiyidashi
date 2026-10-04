@@ -7,9 +7,11 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.admin_models import ProviderService
 from app.embedding_gateway import EmbeddingGateway, EmbeddingGatewayError
 from app.embedding_models import MemoryEmbedding
 from app.models import Memory, MemoryType
+from app.services.provider_config_service import record_provider_runtime_evidence
 from app.vector_support import VectorCapabilityError, inspect_vector_capability
 
 
@@ -162,7 +164,20 @@ async def generate_or_refresh_memory_embedding(
     try:
         inference = await gateway.embed(snapshot.canonical_text)
     except EmbeddingGatewayError as exc:
+        record_provider_runtime_evidence(
+            db.get_bind(),
+            service=ProviderService.EMBEDDING,
+            config_fingerprint=gateway.config_fingerprint,
+            succeeded=False,
+        )
         raise EmbeddingServiceError(exc.code) from exc
+
+    record_provider_runtime_evidence(
+        db.get_bind(),
+        service=ProviderService.EMBEDDING,
+        config_fingerprint=gateway.config_fingerprint,
+        succeeded=True,
+    )
 
     current = _snapshot_memory(db, user_id=user_id, memory_id=memory_id)
     if (
