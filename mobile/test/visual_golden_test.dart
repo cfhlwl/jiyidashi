@@ -901,6 +901,19 @@ Future<void> _pumpVisualFrames(
   }
 }
 
+Future<void> _pumpUntilFinder(
+  WidgetTester tester,
+  Finder finder, {
+  int maxFrames = 100,
+  Duration step = const Duration(milliseconds: 30),
+}) async {
+  for (var frame = 0; frame < maxFrames; frame++) {
+    if (finder.evaluate().isNotEmpty) return;
+    await tester.pump(step);
+  }
+  fail('visual fixture did not reach expected state: $finder');
+}
+
 Future<Key> _pumpSurface(
   WidgetTester tester,
   Widget child, {
@@ -1163,6 +1176,10 @@ void main() {
     expect(
       find.byKey(const ValueKey('timeline-photo-$v2MemoryId')),
       findsOneWidget,
+    );
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
     );
     expect(api.capabilityCalls, 0);
     await expectLater(
@@ -1486,6 +1503,10 @@ void main() {
 
     expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
     expect(find.byKey(const ValueKey('today-photo-$v2MemoryId')), findsOneWidget);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
+    );
     expect(find.text('晨光里的白板'), findsOneWidget);
     await expectLater(
       find.byKey(key),
@@ -1503,6 +1524,10 @@ void main() {
 
     expect(find.text('第一次产品讨论'), findsOneWidget);
     expect(find.byKey(const ValueKey('timeline-photo-$v2MemoryId')), findsOneWidget);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
+    );
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_timeline.png'),
