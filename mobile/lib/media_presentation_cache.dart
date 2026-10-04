@@ -417,16 +417,19 @@ class _LocalMediaThumbnailState extends State<LocalMediaThumbnail> {
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               )
-            : (LocalMediaPresentationScope.maybeOf(context)
-                    ?.renderer(context, file, BoxFit.cover) ??
-                Image.file(
-                  file,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => ColoredBox(
-                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                    child: const Icon(Icons.broken_image_outlined),
-                  ),
-                )),
+            : KeyedSubtree(
+                key: ValueKey('local-media-ready-${widget.mediaId}'),
+                child: LocalMediaPresentationScope.maybeOf(context)
+                        ?.renderer(context, file, BoxFit.cover) ??
+                    Image.file(
+                      file,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => ColoredBox(
+                        color: Theme.of(context).colorScheme.surfaceContainerLow,
+                        child: const Icon(Icons.broken_image_outlined),
+                      ),
+                    ),
+              ),
       ),
     );
   }
