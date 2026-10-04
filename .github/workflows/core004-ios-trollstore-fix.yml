@@ -89,7 +89,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          flutter build ios --release --no-codesign             --dart-define=APP_ENV=production             --dart-define=API_BASE_URL="$API_BASE_URL"
+          flutter build ios --release --no-codesign             --dart-define=APP_ENV=production             --dart-define=API_BASE_URL="$API_BASE_URL"             --dart-define=AMAP_IOS_SDK_KEY=ci-amap-ios-not-a-real-key
           test -d build/ios/iphoneos/Runner.app
           test -f build/ios/iphoneos/Runner.app/Info.plist
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = "cn.jiyidashi.jiyidashi"
