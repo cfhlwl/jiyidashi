@@ -51,6 +51,11 @@ class SecurityScope(StrEnum):
     MEDIA_COMPLETE = "MEDIA_COMPLETE"
     MEDIA_DOWNLOAD = "MEDIA_DOWNLOAD"
     FAMILY_PHOTO_STORAGE = "FAMILY_PHOTO_STORAGE"
+    API_AUTHENTICATED = "API_AUTHENTICATED"
+    PROVIDER_AI = "PROVIDER_AI"
+    PROVIDER_ASR = "PROVIDER_ASR"
+    PROVIDER_EMBEDDING = "PROVIDER_EMBEDDING"
+    ARGON2 = "ARGON2"
 
 
 @dataclass(frozen=True)
@@ -162,6 +167,33 @@ RULES: dict[SecuritySignalCode, SecurityRulePolicy] = {
                 SecurityScope.FAMILY_PHOTO_STORAGE,
             }
         ),
+    ),
+    SecuritySignalCode.API_RATE_LIMIT_TRIGGERED: SecurityRulePolicy(
+        window_seconds=300,
+        threshold=1,
+        cooldown_seconds=300,
+        severity=SecuritySeverity.MEDIUM,
+        allowed_scopes=frozenset({SecurityScope.API_AUTHENTICATED}),
+    ),
+    SecuritySignalCode.PROVIDER_CONCURRENCY_SATURATED: SecurityRulePolicy(
+        window_seconds=300,
+        threshold=3,
+        cooldown_seconds=300,
+        severity=SecuritySeverity.MEDIUM,
+        allowed_scopes=frozenset(
+            {
+                SecurityScope.PROVIDER_AI,
+                SecurityScope.PROVIDER_ASR,
+                SecurityScope.PROVIDER_EMBEDDING,
+            }
+        ),
+    ),
+    SecuritySignalCode.ARGON2_CONCURRENCY_SATURATED: SecurityRulePolicy(
+        window_seconds=300,
+        threshold=3,
+        cooldown_seconds=300,
+        severity=SecuritySeverity.HIGH,
+        allowed_scopes=frozenset({SecurityScope.ARGON2}),
     ),
 }
 
