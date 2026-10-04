@@ -260,9 +260,19 @@ async def test_verified_photo_becomes_queryable_media_evidence(
         headers=auth_headers,
     )
     assert download.status_code == 200
-    assert download.json()["download"]["method"] == "GET"
-    assert "temporary=1" in download.json()["download"]["url"]
+    payload = download.json()
+    assert payload["download"]["method"] == "GET"
+    assert "temporary=1" in payload["download"]["url"]
+    assert len(payload["cache_version"]) == 64
+    assert all(char in "0123456789abcdef" for char in payload["cache_version"])
     assert fake_storage.last_download_key == final_key
+
+    second_download = await client.post(
+        f"/v1/media/{media_id}/download",
+        headers=auth_headers,
+    )
+    assert second_download.status_code == 200
+    assert second_download.json()["cache_version"] == payload["cache_version"]
 
 
 @pytest.mark.asyncio
