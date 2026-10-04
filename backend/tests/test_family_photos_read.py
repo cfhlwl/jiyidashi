@@ -216,8 +216,11 @@ async def test_family_photo_inventory_is_owner_ready_image_bounded_ordered_and_w
             "size_bytes",
             "created_at",
             "completed_at",
+            "cache_version",
         }
         assert item["content_type"] == "image/jpeg"
+        assert len(item["cache_version"]) == 64
+        int(item["cache_version"], 16)
         for forbidden in (
             "object_key",
             "upload_object_key",
