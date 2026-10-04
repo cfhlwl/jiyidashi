@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'account_delete_section.dart';
 import 'api_client.dart';
 import 'location_sampling_coordinator.dart';
+import 'media_presentation_cache.dart';
 import 'memory_detail_page.dart';
 import 'native_location_bridge.dart';
 import 'native_location_controller.dart';
@@ -1214,6 +1215,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // All producers are now sealed and drained; this transaction is the final owner-local
     // SQLite payload write/delete boundary for Stage 1 + Stage 2 raw location rows.
     await widget.offlineQueue.purgeOwner(owner);
+    await LocalMediaCache().purgeOwner(owner);
     final localOnboarding = widget.onboardingStore;
     if (localOnboarding != null) {
       await localOnboarding.deleteOwnerState(owner);
