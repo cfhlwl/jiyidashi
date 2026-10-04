@@ -50,7 +50,11 @@ AI = Annotated[AIGateway, Depends(get_ai_gateway)]
 
 
 def _raise_http(exc: MediaError) -> None:
-    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    raise HTTPException(
+        status_code=exc.status_code,
+        detail=exc.code,
+        headers=_retry_headers(exc.retry_after),
+    ) from exc
 
 
 def _retry_headers(retry_after: int | None) -> dict[str, str] | None:
