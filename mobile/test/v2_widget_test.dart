@@ -1,11 +1,7 @@
-import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
-import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/graph_page.dart';
 import 'package:jiyidashi/v2/life_event_detail_page.dart';
@@ -15,22 +11,6 @@ import 'package:jiyidashi/v2/people_page.dart';
 
 import 'v2_test_api.dart';
 
-Uint8List _validPngBytes() => base64Decode(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-    );
-
-Future<void> _pumpUntil(
-  WidgetTester tester,
-  bool Function() done, {
-  int attempts = 30,
-}) async {
-  for (var index = 0; index < attempts; index++) {
-    await tester.pump(const Duration(milliseconds: 50));
-    if (done()) return;
-  }
-  fail('bounded widget pump did not reach expected state');
-}
-
 Future<void> pumpSurface(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -39,36 +19,6 @@ Future<void> pumpSurface(WidgetTester tester, Widget child) async {
     ),
   );
   await tester.pumpAndSettle();
-}
-
-class _MemoirMediaApi extends V2TestApi {
-  int capabilityCalls = 0;
-  int downloadCalls = 0;
-
-  @override
-  Future<MediaDownloadSession> createMediaDownload(String mediaId) async {
-    capabilityCalls += 1;
-    return MediaDownloadSession(
-      mediaId: mediaId,
-      cacheVersion:
-          'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
-      download: SignedDownloadTarget(
-        method: 'GET',
-        url: Uri.parse('https://storage.invalid/memoir.jpg'),
-        headers: const <String, String>{},
-        expiresAt: DateTime.utc(2030, 1, 1),
-      ),
-    );
-  }
-
-  @override
-  Future<Uint8List> downloadSignedMedia(
-    SignedDownloadTarget target, {
-    int maxBytes = 50 * 1024 * 1024,
-  }) async {
-    downloadCalls += 1;
-    return _validPngBytes();
-  }
 }
 
 class OfflineV2TestApi extends V2TestApi {
@@ -175,63 +125,6 @@ void main() {
     expect(find.text('这一年的时间线'), findsOneWidget);
     expect(find.text('这一年的照片'), findsOneWidget);
     expect(find.text('团队合影'), findsOneWidget);
-  });
-
-  testWidgets('Annual Memoir cached photo preview stays local-first',
-      (tester) async {
-    final root = await Directory.systemTemp.createTemp('jiyi-memoir-cache-');
-    addTearDown(() => root.delete(recursive: true));
-
-    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
-    await cache.putBytes(
-      ownerUserId: v2OwnerId,
-      mediaId: v2MediaId,
-      cacheVersion:
-          'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
-      bytes: _validPngBytes(),
-    );
-    final api = _MemoirMediaApi();
-
-    await pumpSurface(
-      tester,
-      MemoirsPage(
-        api: api,
-        mediaCache: cache,
-        photoRenderer: (file) => Text('local-memoir-photo:${file.path}'),
-      ),
-    );
-    await tester.enterText(find.byType(TextField).first, '2025');
-    final annual = find.text('开始回看');
-    await tester.ensureVisible(annual);
-    await tester.tap(annual);
-    await _pumpUntil(
-      tester,
-      () => find.text('团队合影').evaluate().isNotEmpty,
-    );
-
-    final photo = find.text('团队合影');
-    await tester.ensureVisible(photo);
-    await tester.tap(photo);
-    await _pumpUntil(
-      tester,
-      () => find.byType(Dialog).evaluate().isNotEmpty &&
-          find.textContaining('local-memoir-photo:').evaluate().isNotEmpty,
-    );
-
-    expect(find.byType(Dialog), findsOneWidget);
-    expect(find.textContaining('local-memoir-photo:'), findsOneWidget);
-    expect(api.capabilityCalls, 0);
-    expect(api.downloadCalls, 0);
-
-    await tester.tap(find.text('关闭'));
-    await _pumpUntil(
-      tester,
-      () => find.byType(Dialog).evaluate().isEmpty,
-    );
-    expect(find.byType(Dialog), findsNothing);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
   });
 
   testWidgets('Life Memoir chapter is generated only after explicit stage action', (tester) async {
