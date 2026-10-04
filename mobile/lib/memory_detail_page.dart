@@ -312,12 +312,23 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: (widget.localPhotoRenderer ?? _defaultLocalPhotoRenderer)(
-              local,
-              ValueKey<String>(
-                'photo-local-${current.id}-${local.path}',
-              ),
-            ),
+            child: widget.localPhotoRenderer?.call(
+                  local,
+                  ValueKey<String>(
+                    'photo-local-${current.id}-${local.path}',
+                  ),
+                ) ??
+                LocalMediaPresentationScope.maybeOf(context)?.renderer(
+                  context,
+                  local,
+                  BoxFit.cover,
+                ) ??
+                _defaultLocalPhotoRenderer(
+                  local,
+                  ValueKey<String>(
+                    'photo-local-${current.id}-${local.path}',
+                  ),
+                ),
           ),
           if (photoError != null) ...[
             const SizedBox(height: JiYiSpacing.sm),
