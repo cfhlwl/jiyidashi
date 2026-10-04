@@ -14,6 +14,7 @@ from app.admin_models import (
     ProviderRuntimeEvidence,
     ProviderService,
 )
+from app.admin_schemas import AdminProviderConfigWrite
 from app.auth_models import AuthRateLimitBucket
 from app.core.config import Settings
 from app.core.db import SessionLocal
