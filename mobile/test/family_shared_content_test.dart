@@ -125,6 +125,19 @@ class _FamilySharedApi extends JiYiApiClient {
   }
 }
 
+Future<void> _pumpUntil(
+  WidgetTester tester,
+  bool Function() condition, {
+  String label = 'condition',
+  int maxFrames = 120,
+}) async {
+  for (var frame = 0; frame < maxFrames; frame++) {
+    if (condition()) return;
+    await tester.pump(const Duration(milliseconds: 25));
+  }
+  fail('family widget test did not reach $label');
+}
+
 void main() {
   testWidgets(
       'Family shared photos are local-first and revoked authority purges cached bytes',
@@ -147,15 +160,27 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const ValueKey('family-shared-open-$_member')).evaluate().isNotEmpty,
+      label: 'family member open control',
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('family-shared-open-$_member')),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const ValueKey('family-read-photos')).evaluate().isNotEmpty,
+      label: 'family photo read control',
+    );
 
     await tester.tap(find.byKey(const ValueKey('family-read-photos')));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('family-local-photo:').evaluate().isNotEmpty,
+      label: 'family local photo',
+    );
 
     expect(find.byKey(const ValueKey('family-photo-grid')), findsOneWidget);
     expect(find.textContaining('family-local-photo:'), findsOneWidget);
@@ -173,14 +198,22 @@ void main() {
 
     // A fresh list read revalidates authority. The exact cached bytes are reused.
     await tester.tap(find.byKey(const ValueKey('family-read-photos')));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => api.photoListCalls >= 2,
+      label: 'second family photo authority read',
+    );
     expect(api.photoListCalls, 2);
     expect(api.photoSignCalls, 1);
     expect(api.byteDownloadCalls, 1);
 
     api.photosDenied = true;
     await tester.tap(find.byKey(const ValueKey('family-read-photos')));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('没有把照片分享给你').evaluate().isNotEmpty,
+      label: 'revoked family photo message',
+    );
 
     expect(find.textContaining('没有把照片分享给你'), findsOneWidget);
     expect(
@@ -214,26 +247,46 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const ValueKey('family-shared-open-$_member')).evaluate().isNotEmpty,
+      label: 'family member open control',
+    );
     await tester.tap(
       find.byKey(const ValueKey('family-shared-open-$_member')),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const ValueKey('family-read-location')).evaluate().isNotEmpty,
+      label: 'family location read control',
+    );
 
     await tester.tap(find.byKey(const ValueKey('family-read-location')));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const ValueKey('family-amap-privacy-accept')).evaluate().isNotEmpty,
+      label: 'family map privacy control',
+    );
     expect(
       find.byKey(const ValueKey('family-amap-privacy-accept')),
       findsOneWidget,
     );
 
     await tester.tap(find.byKey(const ValueKey('family-amap-privacy-accept')));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('高德地图 SDK').evaluate().isNotEmpty,
+      label: 'AMap disclosure',
+    );
     expect(find.textContaining('高德地图 SDK'), findsOneWidget);
     expect(consent.accepted, isFalse);
 
     await tester.tap(find.byKey(const ValueKey('amap-privacy-confirm')));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => consent.accepted,
+      label: 'AMap consent acceptance',
+    );
     expect(consent.accepted, isTrue);
   });
 }
