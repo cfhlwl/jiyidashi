@@ -1571,6 +1571,7 @@ class _TimelinePageState extends State<TimelinePage> {
             const SizedBox(height: JiYiSpacing.md),
             for (var index = 0; index < _items.length; index++)
               _TimelineEntry(
+                api: widget.api,
                 item: _items[index],
                 isLast: index == _items.length - 1,
                 onTap: () => _openItem(_items[index]),
@@ -1619,11 +1620,13 @@ class _TimelinePageState extends State<TimelinePage> {
 
 class _TimelineEntry extends StatelessWidget {
   const _TimelineEntry({
+    required this.api,
     required this.item,
     required this.isLast,
     required this.onTap,
   });
 
+  final JiYiApiClient api;
   final TimelineReadItem item;
   final bool isLast;
   final VoidCallback onTap;
@@ -1711,7 +1714,15 @@ class _TimelineEntry extends StatelessWidget {
               const SizedBox(width: JiYiSpacing.sm),
               Expanded(
                 child: JiYiSectionCard(
-                  leading: Icon(icon),
+                  leading: item.memoryType == 'PHOTO' && item.mediaId != null
+                      ? LocalMediaThumbnail(
+                          key: ValueKey('timeline-photo-${item.id}'),
+                          api: api,
+                          mediaId: item.mediaId!,
+                          width: 72,
+                          height: 72,
+                        )
+                      : Icon(icon),
                   title: title,
                   subtitle: item.placeName != null && item.isMemory
                       ? item.placeName
