@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/amap_footprint_map.dart';
 import 'package:jiyidashi/amap_privacy_consent.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/footprint_models.dart';
 import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/memory_detail_page.dart';
 import 'package:jiyidashi/native_location_bridge.dart';
@@ -716,14 +717,31 @@ Future<Key> _pumpSurface(
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: _goldenTheme(elderMode: elderMode),
-      home: RepaintBoundary(key: key, child: child),
+      home: JiYiAmapPresentationScope(
+        config: const JiYiAmapConfig(
+          androidKey: 'golden-amap-key',
+          platformOverride: TargetPlatform.android,
+          appEnv: 'development',
+        ),
+        footprintBuilder: _goldenFootprintMap,
+        placeBuilder: _goldenPlaceMap,
+        child: LocalMediaPresentationScope(
+          renderer: _goldenLocalPhoto,
+          child: RepaintBoundary(key: key, child: child),
+        ),
+      ),
     ),
   );
   await tester.pumpAndSettle();
   return key;
 }
 
-Future<Key> _pumpShell(WidgetTester tester, {JiYiApiClient? api}) async {
+Future<Key> _pumpShell(
+  WidgetTester tester, {
+  JiYiApiClient? api,
+  LocalMediaCache? mediaCache,
+  AmapPrivacyConsentAuthority? amapPrivacyConsent,
+}) async {
   final resolvedApi = api ?? _GoldenApi();
   return _pumpSurface(
     tester,
@@ -731,6 +749,9 @@ Future<Key> _pumpShell(WidgetTester tester, {JiYiApiClient? api}) async {
       api: resolvedApi,
       offlineQueue: _GoldenQueue(),
       locationBridge: _GoldenLocationBridge(),
+      mediaCache: mediaCache,
+      amapPrivacyConsent:
+          amapPrivacyConsent ?? _GoldenAmapConsent(false),
       onLogout: () {},
     ),
   );
