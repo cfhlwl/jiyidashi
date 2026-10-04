@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -11,23 +11,27 @@ from app.admin_models import (
     AdminAuditEvent,
     AdminRole,
     ProviderConfiguration,
+    ProviderRuntimeEvidence,
     ProviderService,
 )
 from app.auth_models import AuthRateLimitBucket
 from app.core.config import Settings
 from app.core.db import SessionLocal
-from app.entitlement_models import AIQuotaPeriod, AIUsageEvent
 from app.embedding_policy import (
     MEMORY_EMBEDDING_MAX_INPUT_CHARS,
     MEMORY_EMBEDDING_MODEL,
 )
-from app.models import User
-from app.services.admin_provider_service import _runtime_state
-from app.services.admin_security import hash_admin_password
+from app.admin_schemas import AdminProviderConfigWrite
+from app.services.admin_provider_service import (
+    _runtime_state,
+    update_provider_configuration,
+)
+from app.services.admin_security import AdminOperationError, hash_admin_password
 from app.services.provider_config_service import (
     ProviderRuntimeConfigError,
     get_runtime_provider_settings,
     invalidate_provider_runtime_cache,
+    provider_runtime_fingerprint,
     validate_provider_policy,
 )
 
@@ -217,6 +221,92 @@ async def test_secret_is_write_only_encrypted_preserved_rotated_and_explicitly_c
         assert row.credential_ciphertext is None
 
 
+async def test_preserved_db_secret_cannot_move_to_new_endpoint_origin(client):
+    client.cookies.clear()
+    headers = await _login(client, AdminRole.SUPER_ADMIN)
+
+    created = await client.put(
+        "/admin/api/v1/settings/providers/ai",
+        headers=headers,
+        json=_ai_payload(),
+    )
+    assert created.status_code == 200
+
+    redirected = await client.put(
+        "/admin/api/v1/settings/providers/ai",
+        headers=headers,
+        json=_ai_payload(
+            expected_revision=0,
+            base_url="https://attacker.example.test/v1",
+            api_key=None,
+        ),
+    )
+    assert redirected.status_code == 409
+    assert (
+        redirected.json()["detail"]
+        == "ADMIN_PROVIDER_CREDENTIAL_DESTINATION_CHANGED"
+    )
+
+    rotated = await client.put(
+        "/admin/api/v1/settings/providers/ai",
+        headers=headers,
+        json=_ai_payload(
+            expected_revision=0,
+            base_url="https://attacker.example.test/v1",
+            api_key="sk-explicit-replacement-secret",
+        ),
+    )
+    assert rotated.status_code == 200
+    assert rotated.json()["revision"] == 1
+
+
+def test_bootstrap_secret_cannot_move_to_new_endpoint_origin_without_replacement():
+    settings = Settings(
+        app_env="test",
+        ai_provider="openai",
+        ai_base_url="https://api.openai.test/v1",
+        ai_api_key="bootstrap-server-secret",
+        ai_model="bootstrap-model",
+        provider_config_master_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    )
+    with SessionLocal() as db:
+        actor = AdminAccount(
+            email=f"bootstrap-provider-{uuid4()}@example.com",
+            display_name="Bootstrap Provider Admin",
+            password_hash=hash_admin_password("Provider-Bootstrap-Test-123!"),
+            role=AdminRole.SUPER_ADMIN.value,
+            disabled=False,
+            revision=0,
+        )
+        db.add(actor)
+        db.flush()
+
+        with pytest.raises(
+            AdminOperationError,
+            match="ADMIN_PROVIDER_CREDENTIAL_DESTINATION_CHANGED",
+        ):
+            update_provider_configuration(
+                db,
+                actor=actor,
+                service=ProviderService.AI,
+                payload=AdminProviderConfigWrite(
+                    expected_revision=None,
+                    enabled=True,
+                    provider_type="openai",
+                    base_url="https://attacker.example.test/v1",
+                    model="bootstrap-model",
+                    timeout_seconds=30,
+                    max_input_chars=64000,
+                    max_output_tokens=4096,
+                    min_confidence=None,
+                    api_key=None,
+                    clear_api_key=False,
+                ),
+                settings=settings,
+            )
+        db.rollback()
+
+
 async def test_provider_revision_conflict_fails_closed(client):
     client.cookies.clear()
     headers = await _login(client, AdminRole.SUPER_ADMIN)
@@ -332,34 +422,29 @@ def test_embedding_policy_cannot_change_model_or_input_limit():
 
 
 
-def test_provider_verification_ignores_evidence_from_previous_revision():
+def test_provider_verification_requires_current_runtime_fingerprint():
     now = datetime.now(UTC)
+    old_settings = Settings(
+        app_env="test",
+        ai_provider="openai",
+        ai_base_url="https://api.openai.test/v1",
+        ai_api_key="same-secret",
+        ai_model="revision-a",
+    )
+    new_settings = old_settings.model_copy(update={"ai_model": "revision-b"})
+    old_fingerprint = provider_runtime_fingerprint(old_settings, ProviderService.AI)
+    new_fingerprint = provider_runtime_fingerprint(new_settings, ProviderService.AI)
+    assert old_fingerprint != new_fingerprint
+
     with SessionLocal() as db:
-        user = User(nickname="provider-state-user")
-        db.add(user)
-        db.flush()
-        period = AIQuotaPeriod(
-            user_id=user.id,
-            period_start=now - timedelta(days=1),
-            period_end=now + timedelta(days=1),
-            provider_requests=1,
-            input_tokens=10,
-            output_tokens=5,
-        )
-        db.add(period)
-        db.flush()
+        # Simulate a stale worker finishing revision A after revision B was already saved.
         db.add(
-            AIUsageEvent(
-                user_id=user.id,
-                gateway_request_id=uuid4(),
-                period_id=period.id,
-                purpose="admin002-state-proof",
-                provider_invocation_reserved=True,
-                provider_request_id="req-old-revision",
-                input_tokens=10,
-                output_tokens=5,
-                finalized_at=now - timedelta(minutes=5),
-                created_at=now - timedelta(minutes=5),
+            ProviderRuntimeEvidence(
+                service=ProviderService.AI.value,
+                config_fingerprint=old_fingerprint,
+                last_success_at=now,
+                last_failure_at=None,
+                updated_at=now,
             )
         )
         db.commit()
@@ -370,8 +455,8 @@ def test_provider_verification_ignores_evidence_from_previous_revision():
                 service=ProviderService.AI,
                 enabled=True,
                 configured=True,
+                runtime_fingerprint=old_fingerprint,
                 now=now,
-                config_updated_at=None,
             )
             == "NORMAL"
         )
@@ -381,12 +466,33 @@ def test_provider_verification_ignores_evidence_from_previous_revision():
                 service=ProviderService.AI,
                 enabled=True,
                 configured=True,
+                runtime_fingerprint=new_fingerprint,
                 now=now,
-                config_updated_at=now - timedelta(minutes=1),
             )
             == "ENABLED_UNVERIFIED"
         )
 
+        db.add(
+            ProviderRuntimeEvidence(
+                service=ProviderService.AI.value,
+                config_fingerprint=new_fingerprint,
+                last_success_at=now,
+                last_failure_at=None,
+                updated_at=now,
+            )
+        )
+        db.commit()
+        assert (
+            _runtime_state(
+                db,
+                service=ProviderService.AI,
+                enabled=True,
+                configured=True,
+                runtime_fingerprint=new_fingerprint,
+                now=now,
+            )
+            == "NORMAL"
+        )
 
 
 def test_runtime_cache_converges_after_bounded_ttl(monkeypatch):
