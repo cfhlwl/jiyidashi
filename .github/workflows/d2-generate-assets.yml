@@ -135,8 +135,22 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/product-v2-goldens
           mkdir -p /tmp/product-v2-goldens/candidate
-          flutter test test/visual_golden_test.dart --update-goldens --reporter expanded
-          cp test/goldens/*.png /tmp/product-v2-goldens/candidate/
+
+          # UIUX-P0-002 candidate generation is intentionally limited to the
+          # surfaces awaiting human visual approval. The next step still runs
+          # the complete Flutter suite against all committed goldens.
+          flutter test test/visual_golden_test.dart             --plain-name "golden: design authority"             --update-goldens --reporter expanded
+          for test_name in             "golden: loading state"             "golden: map unavailable factual fallback"             "golden: cached photo remains visible offline"             "golden: large-font memory query"             "golden: small-screen memory query"; do
+            flutter test test/visual_golden_test.dart               --plain-name "$test_name"               --update-goldens --reporter expanded
+          done
+
+          cp test/goldens/design_authority_*.png /tmp/product-v2-goldens/candidate/
+          cp test/goldens/state_loading.png /tmp/product-v2-goldens/candidate/
+          cp test/goldens/state_map_unavailable.png /tmp/product-v2-goldens/candidate/
+          cp test/goldens/state_cached_photo_offline.png /tmp/product-v2-goldens/candidate/
+          cp test/goldens/state_large_font.png /tmp/product-v2-goldens/candidate/
+          cp test/goldens/state_small_screen.png /tmp/product-v2-goldens/candidate/
+
           git checkout -- test/goldens
           git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
