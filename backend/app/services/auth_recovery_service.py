@@ -310,7 +310,7 @@ def reset_password(
     if identity is None or user is None or user.auth_disabled_at is not None:
         raise AuthRecoveryError("AUTH_ACCOUNT_UNAVAILABLE", 401)
 
-    identity.secret_hash = hash_password(new_password)
+    identity.secret_hash = hash_password(new_password, bind=db.get_bind())
     row.consumed_at = now
     revoke_all_sessions_in_transaction(
         db,
@@ -343,10 +343,14 @@ def change_password(
         )
         .with_for_update()
     )
-    if identity is None or not verify_password(identity.secret_hash, current_password):
+    if identity is None or not verify_password(
+        identity.secret_hash,
+        current_password,
+        bind=db.get_bind(),
+    ):
         raise AuthRecoveryError("INVALID_CREDENTIALS", 401)
 
-    identity.secret_hash = hash_password(new_password)
+    identity.secret_hash = hash_password(new_password, bind=db.get_bind())
     revoke_all_sessions_in_transaction(
         db,
         user_id=user_id,
