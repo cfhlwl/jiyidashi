@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import func, select
 
+from app.admin_models import ProviderRuntimeEvidence, ProviderService
 from app.core.db import SessionLocal
 from app.main import app
 from app.media_models import MediaAsset, MediaEvidenceLink, MediaStatus
@@ -85,6 +86,7 @@ class FakeObjectStorage:
 
 class FakeASRProvider:
     def __init__(self):
+        self.config_fingerprint = "a" * 64
         self.result = ASRResult(
             text="明天下午三点去医院复查",
             confidence=0.93,
@@ -227,6 +229,13 @@ async def test_m4a_audio_container_is_supported_and_transcribed(
     assert created.json()["memory"]["source_type"] == "USER_VOICE"
     assert created.json()["memory"]["content"] == "明天下午三点去医院复查"
     assert asr.calls == 1
+    with SessionLocal() as db:
+        evidence = db.get(
+            ProviderRuntimeEvidence,
+            (ProviderService.ASR.value, asr.config_fingerprint),
+        )
+        assert evidence is not None
+        assert evidence.last_success_at is not None
 
 
 @pytest.mark.asyncio

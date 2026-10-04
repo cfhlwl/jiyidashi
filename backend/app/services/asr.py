@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Protocol
 
 import httpx
 
-from app.core.config import Settings, get_settings
+from app.admin_models import ProviderService
+from app.core.config import Settings
+from app.services.provider_config_service import (
+    ProviderRuntimeConfigError,
+    get_runtime_provider_settings,
+    provider_runtime_fingerprint,
+)
 
 
 # [人工注释][S1-007] ASR provider 是纯服务端可替换边界。客户端不接触模型密钥，
@@ -18,6 +23,9 @@ class ASRResult:
     confidence: float
     provider: str
     model: str
+    # ADMIN-002: bind the acceptance threshold to the same runtime config snapshot
+    # that selected endpoint/model/key, preventing mixed revisions during one request.
+    policy_min_confidence: float | None = None
 
 
 class ASRProviderError(RuntimeError):
@@ -37,6 +45,8 @@ class ASRProvider(Protocol):
 
 
 class DisabledASRProvider:
+    config_fingerprint: str | None = None
+
     def transcribe(
         self,
         audio: bytes,
@@ -76,6 +86,10 @@ class OpenAIASRProvider:
         transport: httpx.BaseTransport | None = None,
     ):
         self._settings = settings
+        self.config_fingerprint = provider_runtime_fingerprint(
+            settings,
+            ProviderService.ASR,
+        )
         # [人工注释][S1-PR18-FIX-003][S1-007] transport 仅作为 HTTP adapter 测试缝；
         # 默认 None 仍使用 httpx 的真实生产网络栈，CI 可用 MockTransport 验证 multipart/错误映射。
         self._transport = transport
@@ -134,12 +148,15 @@ class OpenAIASRProvider:
             confidence=confidence,
             provider="openai",
             model=self._settings.asr_model,
+            policy_min_confidence=self._settings.asr_min_confidence,
         )
 
 
-@lru_cache
 def get_asr_provider() -> ASRProvider:
-    settings = get_settings()
+    try:
+        settings = get_runtime_provider_settings()
+    except ProviderRuntimeConfigError as exc:
+        raise ASRProviderError("ASR_PROVIDER_UNAVAILABLE") from exc
     if settings.asr_provider == "disabled":
         return DisabledASRProvider()
     if settings.asr_provider == "openai":

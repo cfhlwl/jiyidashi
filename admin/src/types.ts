@@ -118,6 +118,46 @@ export type SecurityAlert = {
   safe_message: string
 }
 
+export type ProviderService = 'AI' | 'ASR' | 'EMBEDDING'
+
+export type ProviderConfig = {
+  service: ProviderService
+  label: string
+  state: 'DISABLED' | 'CONFIGURED_UNVERIFIED' | 'ENABLED_UNVERIFIED' | 'NORMAL' | 'WARNING'
+  enabled: boolean
+  provider_type: string
+  base_url: string
+  endpoint_host: string
+  model: string
+  timeout_seconds: number
+  max_input_chars: number | null
+  max_output_tokens: number | null
+  min_confidence: number | null
+  configured: boolean
+  revision: number | null
+  updated_at: string | null
+  source: 'BOOTSTRAP' | 'DATABASE'
+  dimensions: number | null
+}
+
+export type ProviderConfigList = {
+  services: ProviderConfig[]
+}
+
+export type EmbeddingBackfill = {
+  vector_database_capable: boolean
+  policy_model: string
+  policy_dimensions: number
+  eligible_memories: number
+  vector_rows: number
+  remaining_memories: number
+  batch_size: number | null
+  processed: number
+  refreshed: number
+  failed: number
+  last_error: string | null
+}
+
 export type SettingItem = {
   key: string
   label: string

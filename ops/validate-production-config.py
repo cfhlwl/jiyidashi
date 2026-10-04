@@ -54,6 +54,7 @@ REQUIRED_KEYS = {
     "AUTH_SMTP_PORT",
     "AUTH_SMTP_USERNAME",
     "AUTH_SMTP_PASSWORD",
+    "PROVIDER_CONFIG_MASTER_KEY",
     "AUTH_SMTP_FROM",
     "AUTH_SMTP_STARTTLS",
     "STORAGE_BACKEND",
@@ -68,6 +69,7 @@ REQUIRED_KEYS = {
     "STORAGE_DELETE_SETTLE_SECONDS",
     "MEDIA_MAX_IMAGE_BYTES",
     "MEDIA_MAX_AUDIO_BYTES",
+    "PROVIDER_CONFIG_CACHE_TTL_SECONDS",
     "ASR_PROVIDER",
     "ASR_BASE_URL",
     "ASR_API_KEY",
@@ -105,6 +107,7 @@ SENSITIVE_PLACEHOLDERS = {
     "STORAGE_SECRET_ACCESS_KEY",
     "AUTH_SMTP_USERNAME",
     "AUTH_SMTP_PASSWORD",
+    "PROVIDER_CONFIG_MASTER_KEY",
 }
 
 
@@ -119,6 +122,27 @@ def parse_env(path: Path) -> dict[str, str]:
             raise AssertionError(f"invalid env template line: {raw_line!r}")
         values[key.strip()] = value.strip()
     return values
+
+
+def assert_sensitive_placeholders(values: dict[str, str]) -> None:
+    for key in SENSITIVE_PLACEHOLDERS:
+        assert values.get(key, "").startswith("CHANGE_ME"), (
+            f"{key} must remain a placeholder in the committed template"
+        )
+
+
+def _prove_fernet_master_key_guard() -> None:
+    probe = {key: "CHANGE_ME_TEST_PLACEHOLDER" for key in SENSITIVE_PLACEHOLDERS}
+    probe["PROVIDER_CONFIG_MASTER_KEY"] = (
+        "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+    )
+    try:
+        assert_sensitive_placeholders(probe)
+    except AssertionError:
+        return
+    raise AssertionError(
+        "real-looking Fernet PROVIDER_CONFIG_MASTER_KEY unexpectedly passed"
+    )
 
 
 def tracked_files() -> list[Path]:
@@ -156,10 +180,8 @@ def main() -> None:
     assert "localhost" not in values["API_DOMAIN"]
     assert "127.0.0.1" not in values["API_DOMAIN"]
 
-    for key in SENSITIVE_PLACEHOLDERS:
-        assert values[key].startswith("CHANGE_ME"), (
-            f"{key} must remain a placeholder in the committed template"
-        )
+    assert_sensitive_placeholders(values)
+    _prove_fernet_master_key_guard()
 
     assert not subprocess.run(
         ["git", "-C", str(ROOT), "ls-files", "--error-unmatch", "backend/.env.production"],

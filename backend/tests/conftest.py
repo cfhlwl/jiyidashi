@@ -14,7 +14,9 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
 os.environ["JWT_SECRET"] = "test-secret-0123456789abcdef-0123456789abcdef"
 os.environ["ENABLE_DEV_AUTH"] = "true"
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
+os.environ["PROVIDER_CONFIG_MASTER_KEY"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
+from app.admin_models import ProviderConfiguration  # noqa: E402
 from app.auth_models import AuthRateLimitBucket  # noqa: E402
 from app.core.db import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -55,6 +57,25 @@ def isolate_public_auth_rate_limits():
         yield
     finally:
         _clear_public_auth_rate_buckets()
+
+
+@pytest.fixture(autouse=True)
+def isolate_provider_configuration():
+    from app.services.provider_config_service import invalidate_provider_runtime_cache
+
+    if inspect(engine).has_table("provider_configurations"):
+        with SessionLocal() as db:
+            db.execute(delete(ProviderConfiguration))
+            db.commit()
+    invalidate_provider_runtime_cache()
+    try:
+        yield
+    finally:
+        if inspect(engine).has_table("provider_configurations"):
+            with SessionLocal() as db:
+                db.execute(delete(ProviderConfiguration))
+                db.commit()
+        invalidate_provider_runtime_cache()
 
 
 @pytest.fixture(autouse=True)

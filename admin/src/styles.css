@@ -607,3 +607,60 @@ textarea,
     animation-iteration-count: 1 !important;
   }
 }
+
+.provider-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin-bottom: 20px;
+}
+
+.provider-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #39445a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.provider-field .ant-input-number,
+.provider-field .ant-select {
+  width: 100%;
+}
+
+.provider-field-wide {
+  grid-column: 1 / -1;
+}
+
+.provider-toggle {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  min-height: 32px;
+}
+
+.provider-clear-secret {
+  font-weight: 400;
+}
+
+.provider-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.provider-alert {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 767px) {
+  .provider-config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-field-wide {
+    grid-column: auto;
+  }
+}

@@ -80,7 +80,9 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'entitlement_quota_policies',
                           'auth_sessions',
                           'auth_refresh_token_receipts',
-                          'auth_one_time_tokens'
+                          'auth_one_time_tokens',
+                          'provider_configurations',
+                          'provider_runtime_evidence'
                       )
                     ORDER BY table_name, ordinal_position
                     """

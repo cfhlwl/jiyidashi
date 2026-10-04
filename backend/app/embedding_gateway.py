@@ -3,12 +3,17 @@ from __future__ import annotations
 import asyncio
 import math
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Protocol
 
 import httpx
 
-from app.core.config import Settings, get_settings
+from app.admin_models import ProviderService
+from app.core.config import Settings
+from app.services.provider_config_service import (
+    ProviderRuntimeConfigError,
+    get_runtime_provider_settings,
+    provider_runtime_fingerprint,
+)
 
 
 class EmbeddingGatewayError(RuntimeError):
@@ -154,6 +159,14 @@ class EmbeddingGateway:
     def __init__(self, settings: Settings, provider: EmbeddingProvider):
         self._settings = settings
         self._provider = provider
+        self._config_fingerprint = provider_runtime_fingerprint(
+            settings,
+            ProviderService.EMBEDDING,
+        )
+
+    @property
+    def config_fingerprint(self) -> str:
+        return self._config_fingerprint
 
     @property
     def model(self) -> str:
@@ -238,6 +251,9 @@ def build_embedding_gateway(
     return EmbeddingGateway(settings, provider)
 
 
-@lru_cache
 def get_embedding_gateway() -> EmbeddingGateway:
-    return build_embedding_gateway(get_settings())
+    try:
+        settings = get_runtime_provider_settings()
+    except ProviderRuntimeConfigError as exc:
+        raise EmbeddingGatewayError("EMBEDDING_PROVIDER_UNAVAILABLE") from exc
+    return build_embedding_gateway(settings)

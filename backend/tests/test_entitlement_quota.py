@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.admin_models import EntitlementQuotaPolicy
+from app.admin_models import EntitlementQuotaPolicy, ProviderRuntimeEvidence
 from app.core.config import Settings
 from app.core.db import Base, SessionLocal
 from app.entitlement_models import (
@@ -58,6 +58,7 @@ def _engine():
             UserEntitlement.__table__,
             AIQuotaPeriod.__table__,
             AIUsageEvent.__table__,
+            ProviderRuntimeEvidence.__table__,
             MediaAsset.__table__,
             EntitlementQuotaPolicy.__table__,
         ],

@@ -110,6 +110,7 @@ jobs:
           test -z "$(git status --porcelain -- package-lock.json tests/visual/snapshots)"
 
       - name: Upload Admin visual artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: admin-visual-${{ github.event.pull_request.head.sha || github.sha }}

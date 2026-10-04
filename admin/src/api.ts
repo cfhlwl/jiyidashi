@@ -7,7 +7,9 @@ import {
   fixtureDeletionTasks,
   fixtureFamilies,
   fixtureFamilyDetail,
+  fixtureEmbeddingBackfill,
   fixtureHealth,
+  fixtureProviders,
   fixtureQuota,
   fixtureSession,
   fixtureSettings,
@@ -36,6 +38,19 @@ const safeErrors: Record<string, string> = {
   ADMIN_SECURITY_ALERT_NOT_RETRYABLE: '当前状态不需要再次发送',
   ADMIN_ACCOUNT_EXISTS: '这个管理员账号已经存在',
   ADMIN_ACCOUNT_NOT_FOUND: '没有找到这个管理员账号',
+  ADMIN_PROVIDER_NOT_FOUND: '没有找到这个服务配置',
+  ADMIN_PROVIDER_CONFIG_UNAVAILABLE: '服务配置暂时不可用，请检查服务器安全配置',
+  ADMIN_PROVIDER_CONFIG_MASTER_KEY_UNAVAILABLE: '服务凭证加密密钥尚未配置',
+  ADMIN_PROVIDER_CONFIG_MASTER_KEY_INVALID: '服务凭证加密密钥配置无效',
+  ADMIN_PROVIDER_CREDENTIAL_REQUIRED: '启用服务前需要先配置访问凭证',
+  ADMIN_PROVIDER_TYPE_UNSUPPORTED: '当前服务类型不受支持',
+  ADMIN_PROVIDER_BASE_URL_INVALID: '请输入有效的服务地址',
+  ADMIN_PROVIDER_BASE_URL_HTTPS_REQUIRED: '生产环境服务地址必须使用 HTTPS',
+  ADMIN_PROVIDER_MODEL_REQUIRED: '请输入服务模型',
+  ADMIN_EMBEDDING_MODEL_POLICY_LOCKED: '语义检索模型由当前向量策略固定，不能在此修改',
+  ADMIN_EMBEDDING_INPUT_POLICY_LOCKED: '语义检索输入上限由当前向量策略固定，不能在此修改',
+  ADMIN_EMBEDDING_NOT_ENABLED: '请先启用语义记忆检索服务',
+  ADMIN_EMBEDDING_DATABASE_UNAVAILABLE: '当前数据库尚未具备向量检索能力',
 }
 
 export class AdminApiError extends Error {
@@ -73,6 +88,12 @@ function fixtureResponse<T>(path: string, method: string): T | undefined {
   if (path === '/system/settings') return fixtureSettings as T
   if (path === '/system/health') return fixtureHealth as T
   if (path === '/settings/quota-catalog') return fixtureQuota as T
+  if (path === '/settings/providers/embedding/backfill') return fixtureEmbeddingBackfill as T
+  if (path === '/settings/providers') return fixtureProviders as T
+  if (/^\/settings\/providers\/(ai|asr|embedding)$/.test(path)) {
+    const service = path.split('/').at(-1)?.toUpperCase()
+    return fixtureProviders.services.find((item) => item.service === service) as T
+  }
   if (path === '/admins') return fixtureAdmins as T
   if (method !== 'GET') return { message: '操作已完成' } as T
   return undefined

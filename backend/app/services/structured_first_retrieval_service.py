@@ -16,6 +16,7 @@ from sqlalchemy import and_, case, func, literal, or_, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
+from app.admin_models import ProviderService
 from app.embedding_gateway import EmbeddingGateway, EmbeddingGatewayError
 from app.embedding_models import MemoryEmbedding
 from app.models import (
@@ -44,6 +45,7 @@ from app.services.evidence_ranking_service import (
     EvidenceRankedSource,
     rank_evidence_sources,
 )
+from app.services.provider_config_service import record_provider_runtime_evidence
 
 _OBJECT_LOCATION_MARKERS = (
     "在哪",
@@ -415,8 +417,20 @@ async def _vector_candidates(
     try:
         inference = await gateway.embed(question)
     except EmbeddingGatewayError as exc:
+        record_provider_runtime_evidence(
+            caller_db.get_bind(),
+            service=ProviderService.EMBEDDING,
+            config_fingerprint=gateway.config_fingerprint,
+            succeeded=False,
+        )
         return VectorRetrievalStatus.PROVIDER_FAILED, exc.code, ()
 
+    record_provider_runtime_evidence(
+        caller_db.get_bind(),
+        service=ProviderService.EMBEDDING,
+        config_fingerprint=gateway.config_fingerprint,
+        succeeded=True,
+    )
     query_vector = list(inference.vector)
     with _read_session(caller_db) as db:
         distance_expr = MemoryEmbedding.embedding.cosine_distance(query_vector)

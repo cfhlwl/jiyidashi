@@ -59,6 +59,7 @@ def test_openai_asr_adapter_builds_expected_multipart_and_parses_logprobs():
     assert result.confidence == pytest.approx((0.90 * 0.81) ** 0.5)
     assert result.provider == "openai"
     assert result.model == "gpt-4o-mini-transcribe"
+    assert result.policy_min_confidence == pytest.approx(0.60)
 
 
 @pytest.mark.parametrize("status_code", [400, 401, 429, 500, 503])

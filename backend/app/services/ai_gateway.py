@@ -4,7 +4,6 @@ import asyncio
 import base64
 import re
 from dataclasses import dataclass, replace
-from functools import lru_cache
 from time import perf_counter
 from typing import Literal, Protocol
 from uuid import UUID, uuid4
@@ -12,12 +11,19 @@ from uuid import UUID, uuid4
 import httpx
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings, get_settings
+from app.admin_models import ProviderService
+from app.core.config import Settings
 from app.core.observability import emit_operational_event
 from app.services.entitlement_service import (
     EntitlementError,
     finalize_ai_usage,
     reserve_ai_provider_request,
+)
+from app.services.provider_config_service import (
+    ProviderRuntimeConfigError,
+    get_runtime_provider_settings,
+    provider_runtime_fingerprint,
+    record_provider_runtime_evidence,
 )
 
 _PURPOSE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
@@ -346,6 +352,10 @@ class AIGateway:
     def __init__(self, settings: Settings, provider: AIProvider):
         self._settings = settings
         self._provider = provider
+        self._config_fingerprint = provider_runtime_fingerprint(
+            settings,
+            ProviderService.AI,
+        )
 
     async def infer(
         self,
@@ -358,6 +368,8 @@ class AIGateway:
         gateway_request_id = str(gateway_request_uuid)
         started = perf_counter()
         validated: AIInferenceRequest | None = None
+        provider_started = False
+        provider_completed = False
         try:
             validated = self._validate_request(request)
             try:
@@ -376,8 +388,16 @@ class AIGateway:
 
             # Reservation is committed before provider I/O. Once this point is reached,
             # the provider-request unit remains consumed even on transport/provider failure.
+            provider_started = True
             provider_result = await self._provider.infer(validated)
             checked = _validate_provider_result(provider_result)
+            provider_completed = True
+            record_provider_runtime_evidence(
+                db.get_bind(),
+                service=ProviderService.AI,
+                config_fingerprint=self._config_fingerprint,
+                succeeded=True,
+            )
             try:
                 finalize_ai_usage(
                     db.get_bind(),
@@ -393,6 +413,13 @@ class AIGateway:
                     status_code=exc.status_code,
                 ) from exc
         except AIGatewayError as exc:
+            if provider_started and not provider_completed:
+                record_provider_runtime_evidence(
+                    db.get_bind(),
+                    service=ProviderService.AI,
+                    config_fingerprint=self._config_fingerprint,
+                    succeeded=False,
+                )
             emit_operational_event(
                 event="ai.inference.failed",
                 level="WARNING",
@@ -443,6 +470,8 @@ class AIGateway:
         gateway_request_id = str(gateway_request_uuid)
         started = perf_counter()
         validated: AIImageInferenceRequest | None = None
+        provider_started = False
+        provider_completed = False
         try:
             validated = self._validate_image_request(request)
             try:
@@ -463,10 +492,18 @@ class AIGateway:
             # do not implement their own HTTP timeout. Reservation is already durable.
             try:
                 async with asyncio.timeout(self._settings.ai_timeout_seconds):
+                    provider_started = True
                     provider_result = await self._provider.infer_image(validated)
             except TimeoutError as exc:
                 raise AITransportError("AI_GATEWAY_TIMEOUT", retryable=True) from exc
             checked = _validate_provider_result(provider_result)
+            provider_completed = True
+            record_provider_runtime_evidence(
+                db.get_bind(),
+                service=ProviderService.AI,
+                config_fingerprint=self._config_fingerprint,
+                succeeded=True,
+            )
             try:
                 finalize_ai_usage(
                     db.get_bind(),
@@ -482,6 +519,13 @@ class AIGateway:
                     status_code=exc.status_code,
                 ) from exc
         except AIGatewayError as exc:
+            if provider_started and not provider_completed:
+                record_provider_runtime_evidence(
+                    db.get_bind(),
+                    service=ProviderService.AI,
+                    config_fingerprint=self._config_fingerprint,
+                    succeeded=False,
+                )
             emit_operational_event(
                 event="ai.inference.failed",
                 level="WARNING",
@@ -702,6 +746,9 @@ def build_ai_gateway(
     return AIGateway(settings, provider)
 
 
-@lru_cache
 def get_ai_gateway() -> AIGateway:
-    return build_ai_gateway(get_settings())
+    try:
+        settings = get_runtime_provider_settings()
+    except ProviderRuntimeConfigError as exc:
+        raise AIProviderError("AI_PROVIDER_UNAVAILABLE") from exc
+    return build_ai_gateway(settings)

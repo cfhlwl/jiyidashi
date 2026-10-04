@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.admin_models import ProviderService
 from app.core.config import get_settings
 from app.entitlement_models import CapabilityCode, QuotaDimension
 from app.media_models import (
@@ -41,6 +42,7 @@ from app.services.object_storage import (
     PresignedTransfer,
     StoredObject,
 )
+from app.services.provider_config_service import record_provider_runtime_evidence
 from app.services.security_alerting import SecurityScope, record_security_signal
 
 ALLOWED_IMAGE_CONTENT_TYPES = {
@@ -658,6 +660,7 @@ def _read_and_transcribe_voice(
         _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
         raise MediaError("MEDIA_OBJECT_SIZE_MISMATCH", 409)
 
+    config_fingerprint = getattr(asr, "config_fingerprint", None)
     try:
         result = asr.transcribe(
             audio,
@@ -665,14 +668,34 @@ def _read_and_transcribe_voice(
             filename=snapshot.original_filename,
         )
     except ASRProviderError as exc:
+        if config_fingerprint:
+            record_provider_runtime_evidence(
+                db.get_bind(),
+                service=ProviderService.ASR,
+                config_fingerprint=config_fingerprint,
+                succeeded=False,
+            )
         _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
         raise MediaError(exc.code, ASR_ERROR_STATUS.get(exc.code, 502)) from exc
+
+    if config_fingerprint:
+        record_provider_runtime_evidence(
+            db.get_bind(),
+            service=ProviderService.ASR,
+            config_fingerprint=config_fingerprint,
+            succeeded=True,
+        )
 
     transcript = result.text.strip()
     if not transcript:
         _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
         raise MediaError("ASR_EMPTY_RESULT", 422)
-    if result.confidence < settings.asr_min_confidence:
+    threshold = (
+        result.policy_min_confidence
+        if result.policy_min_confidence is not None
+        else get_settings().asr_min_confidence
+    )
+    if result.confidence < threshold:
         _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
         raise MediaError("ASR_LOW_CONFIDENCE", 422)
     return result, transcript

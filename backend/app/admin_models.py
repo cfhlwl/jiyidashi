@@ -102,6 +102,87 @@ class AdminAuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ProviderService(StrEnum):
+    AI = "AI"
+    ASR = "ASR"
+    EMBEDDING = "EMBEDDING"
+
+
+class ProviderConfiguration(Base):
+    """Durable provider runtime authority. Credentials are encrypted server-side."""
+
+    __tablename__ = "provider_configurations"
+    __table_args__ = (
+        CheckConstraint(
+            "service IN ('AI','ASR','EMBEDDING')",
+            name="ck_provider_config_service",
+        ),
+        CheckConstraint("provider_type IN ('openai')", name="ck_provider_config_type"),
+        CheckConstraint("revision >= 0", name="ck_provider_config_revision"),
+        CheckConstraint(
+            "timeout_seconds >= 1 AND timeout_seconds <= 120",
+            name="ck_provider_config_timeout",
+        ),
+        CheckConstraint(
+            "max_input_chars IS NULL OR max_input_chars > 0",
+            name="ck_provider_config_input_limit",
+        ),
+        CheckConstraint(
+            "max_output_tokens IS NULL OR max_output_tokens > 0",
+            name="ck_provider_config_output_limit",
+        ),
+        CheckConstraint(
+            "min_confidence IS NULL OR (min_confidence >= 0 AND min_confidence <= 1)",
+            name="ck_provider_config_confidence",
+        ),
+    )
+
+    service: Mapped[str] = mapped_column(String(32), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    provider_type: Mapped[str] = mapped_column(String(32), nullable=False, default="openai")
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    model: Mapped[str] = mapped_column(String(255), nullable=False)
+    timeout_seconds: Mapped[float] = mapped_column(nullable=False)
+    max_input_chars: Mapped[int | None] = mapped_column(Integer)
+    max_output_tokens: Mapped[int | None] = mapped_column(Integer)
+    min_confidence: Mapped[float | None] = mapped_column()
+    credential_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    credential_ciphertext: Mapped[str | None] = mapped_column(Text)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_by_admin_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("admin_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ProviderRuntimeEvidence(Base):
+    """Bounded health evidence keyed by the exact provider runtime fingerprint."""
+
+    __tablename__ = "provider_runtime_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "service IN ('AI','ASR','EMBEDDING')",
+            name="ck_provider_runtime_evidence_service",
+        ),
+        Index(
+            "ix_provider_runtime_evidence_service_updated",
+            "service",
+            "updated_at",
+        ),
+    )
+
+    service: Mapped[str] = mapped_column(String(32), primary_key=True)
+    config_fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class EntitlementQuotaPolicy(Base):
     """Canonical DB-backed runtime quota catalog for commercial plans."""
 

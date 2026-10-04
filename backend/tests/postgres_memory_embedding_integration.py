@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import UTC, datetime
 from threading import Barrier, Thread
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
+from app.admin_models import (
+    AdminAccount,
+    AdminAuditEvent,
+    AdminRole,
+    ProviderConfiguration,
+    ProviderRuntimeEvidence,
+    ProviderService,
+)
+from app.admin_schemas import AdminEmbeddingBackfillRequest
 from app.core.config import Settings
 from app.core.db import (
     USER_DATA_ADMISSION_INFO_KEY,
@@ -25,9 +35,15 @@ from app.embedding_gateway import (
     EmbeddingRequest,
 )
 from app.embedding_models import MemoryEmbedding
-from app.embedding_policy import MEMORY_EMBEDDING_DIMENSIONS, MEMORY_EMBEDDING_MODEL
+from app.embedding_policy import (
+    MEMORY_EMBEDDING_DIMENSIONS,
+    MEMORY_EMBEDDING_MAX_INPUT_CHARS,
+    MEMORY_EMBEDDING_MODEL,
+)
 from app.models import Memory, User
 from app.schemas import MemoryUpdate
+from app.services.admin_provider_service import run_embedding_backfill_batch
+from app.services.admin_security import hash_admin_password
 from app.services.data_deletion_service import delete_all_user_data
 from app.services.embedding_service import (
     EmbeddingServiceError,
@@ -438,6 +454,263 @@ def _assert_deletion_generation_blocks_stale_commit() -> None:
         cleanup.commit()
 
 
+def _assert_admin_backfill_is_bounded_resumable_and_owner_safe() -> None:
+    first_user, first_memory = _seed_user_memory(
+        title="backfill A",
+        content="first owner memory",
+    )
+    second_user, second_memory = _seed_user_memory(
+        title="backfill B",
+        content="second owner memory",
+    )
+    admin_id = uuid4()
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        db.add(
+            AdminAccount(
+                id=admin_id,
+                email=f"embedding-admin-{admin_id.hex[:8]}@example.com",
+                display_name="Embedding Admin",
+                password_hash=hash_admin_password("Embedding-Admin-Test-123!"),
+                role=AdminRole.SUPER_ADMIN.value,
+                disabled=False,
+                revision=0,
+            )
+        )
+        db.flush()
+        db.add(
+            ProviderConfiguration(
+                service=ProviderService.EMBEDDING.value,
+                enabled=True,
+                provider_type="openai",
+                base_url="https://api.openai.test/v1",
+                model=MEMORY_EMBEDDING_MODEL,
+                timeout_seconds=5.0,
+                max_input_chars=MEMORY_EMBEDDING_MAX_INPUT_CHARS,
+                max_output_tokens=None,
+                min_confidence=None,
+                credential_override=False,
+                credential_ciphertext=None,
+                revision=0,
+                updated_by_admin_id=admin_id,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+
+    enabled_settings = Settings(
+        app_env="test",
+        database_url=DATABASE_URL,
+        embedding_provider="openai",
+        embedding_api_key="embedding-test-key",
+        embedding_base_url="https://api.openai.test/v1",
+        embedding_model=MEMORY_EMBEDDING_MODEL,
+        embedding_dimensions=MEMORY_EMBEDDING_DIMENSIONS,
+        embedding_timeout_seconds=5.0,
+    )
+    provider = DeterministicEmbeddingProvider()
+    gateway = EmbeddingGateway(enabled_settings, provider)
+
+    with SessionLocal() as db:
+        actor = db.get(AdminAccount, admin_id)
+        assert actor is not None
+        first = asyncio.run(
+            run_embedding_backfill_batch(
+                db,
+                actor=actor,
+                payload=AdminEmbeddingBackfillRequest(
+                    expected_provider_revision=0,
+                    batch_size=1,
+                ),
+                settings=enabled_settings,
+                gateway_override=gateway,
+            )
+        )
+        assert first.processed == 1
+        assert first.refreshed == 1
+        assert first.failed == 0
+        assert first.remaining_memories == 1
+
+    with SessionLocal() as db:
+        actor = db.get(AdminAccount, admin_id)
+        assert actor is not None
+        second = asyncio.run(
+            run_embedding_backfill_batch(
+                db,
+                actor=actor,
+                payload=AdminEmbeddingBackfillRequest(
+                    expected_provider_revision=0,
+                    batch_size=1,
+                ),
+                settings=enabled_settings,
+                gateway_override=gateway,
+            )
+        )
+        assert second.processed == 1
+        assert second.refreshed == 1
+        assert second.failed == 0
+        assert second.remaining_memories == 0
+
+    with SessionLocal() as db:
+        actor = db.get(AdminAccount, admin_id)
+        assert actor is not None
+        third = asyncio.run(
+            run_embedding_backfill_batch(
+                db,
+                actor=actor,
+                payload=AdminEmbeddingBackfillRequest(
+                    expected_provider_revision=0,
+                    batch_size=10,
+                ),
+                settings=enabled_settings,
+                gateway_override=gateway,
+            )
+        )
+        assert third.processed == 0
+        rows = {
+            row.memory_id: row
+            for row in db.scalars(
+                select(MemoryEmbedding).where(
+                    MemoryEmbedding.memory_id.in_((first_memory, second_memory))
+                )
+            )
+        }
+        assert set(rows) == {first_memory, second_memory}
+        assert rows[first_memory].user_id == first_user
+        assert rows[second_memory].user_id == second_user
+        assert len(provider.requests) == 2
+        evidence = db.get(
+            ProviderRuntimeEvidence,
+            (ProviderService.EMBEDDING.value, gateway.config_fingerprint),
+        )
+        assert evidence is not None
+        assert evidence.last_success_at is not None
+
+    with SessionLocal() as cleanup:
+        cleanup.delete(cleanup.get(User, first_user))
+        cleanup.delete(cleanup.get(User, second_user))
+        cleanup.delete(cleanup.get(ProviderConfiguration, ProviderService.EMBEDDING.value))
+        # Admin/audit rows are intentionally left in the disposable CI database:
+        # append-only audit history must never be rewritten merely for test cleanup.
+        cleanup.commit()
+
+
+def _assert_admin_backfill_stops_after_provider_revision_change() -> None:
+    first_user, first_memory = _seed_user_memory(
+        title="backfill revision A",
+        content="first paid call may finish",
+    )
+    second_user, second_memory = _seed_user_memory(
+        title="backfill revision B",
+        content="second paid call must be fenced",
+    )
+    admin_id = uuid4()
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        db.add(
+            AdminAccount(
+                id=admin_id,
+                email=f"embedding-fence-{admin_id.hex[:8]}@example.com",
+                display_name="Embedding Fence Admin",
+                password_hash=hash_admin_password("Embedding-Fence-Test-123!"),
+                role=AdminRole.SUPER_ADMIN.value,
+                disabled=False,
+                revision=0,
+            )
+        )
+        db.flush()
+        db.add(
+            ProviderConfiguration(
+                service=ProviderService.EMBEDDING.value,
+                enabled=True,
+                provider_type="openai",
+                base_url="https://api.openai.test/v1",
+                model=MEMORY_EMBEDDING_MODEL,
+                timeout_seconds=5.0,
+                max_input_chars=MEMORY_EMBEDDING_MAX_INPUT_CHARS,
+                max_output_tokens=None,
+                min_confidence=None,
+                credential_override=False,
+                credential_ciphertext=None,
+                revision=0,
+                updated_by_admin_id=admin_id,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+
+    enabled_settings = Settings(
+        app_env="test",
+        database_url=DATABASE_URL,
+        embedding_provider="openai",
+        embedding_api_key="embedding-test-key",
+        embedding_base_url="https://api.openai.test/v1",
+        embedding_model=MEMORY_EMBEDDING_MODEL,
+        embedding_dimensions=MEMORY_EMBEDDING_DIMENSIONS,
+        embedding_timeout_seconds=5.0,
+    )
+
+    class RevisionChangingProvider(DeterministicEmbeddingProvider):
+        async def embed(self, request):
+            result = await super().embed(request)
+            if len(self.requests) == 1:
+                with SessionLocal() as concurrent:
+                    row = concurrent.get(
+                        ProviderConfiguration,
+                        ProviderService.EMBEDDING.value,
+                    )
+                    assert row is not None
+                    row.enabled = False
+                    row.revision += 1
+                    row.updated_at = datetime.now(UTC)
+                    concurrent.commit()
+            return result
+
+    provider = RevisionChangingProvider()
+    gateway = EmbeddingGateway(enabled_settings, provider)
+
+    with SessionLocal() as db:
+        actor = db.get(AdminAccount, admin_id)
+        assert actor is not None
+        result = asyncio.run(
+            run_embedding_backfill_batch(
+                db,
+                actor=actor,
+                payload=AdminEmbeddingBackfillRequest(
+                    expected_provider_revision=0,
+                    batch_size=2,
+                ),
+                settings=enabled_settings,
+                gateway_override=gateway,
+            )
+        )
+        assert result.processed == 1
+        assert result.refreshed == 1
+        assert result.failed == 0
+        assert result.last_error == "PROVIDER_REVISION_CHANGED"
+        assert len(provider.requests) == 1
+        assert _embedding_count(first_memory) + _embedding_count(second_memory) == 1
+        audit = db.scalar(
+            select(AdminAuditEvent)
+            .where(AdminAuditEvent.action == "EMBEDDING_BACKFILL_BATCH")
+            .order_by(AdminAuditEvent.created_at.desc())
+            .limit(1)
+        )
+        assert audit is not None
+        assert audit.result == "PARTIAL"
+        assert audit.metadata_json["error_code"] == "PROVIDER_REVISION_CHANGED"
+
+    with SessionLocal() as cleanup:
+        cleanup.delete(cleanup.get(User, first_user))
+        cleanup.delete(cleanup.get(User, second_user))
+        cleanup.delete(cleanup.get(ProviderConfiguration, ProviderService.EMBEDDING.value))
+        # Admin/audit rows are intentionally left in the disposable CI database:
+        # append-only audit history must never be rewritten merely for test cleanup.
+        cleanup.commit()
+
+
 def _assert_data_delete_clears_only_owner_embeddings() -> None:
     owner_id, owner_memory_id = _seed_user_memory(
         title="删除 owner",
@@ -492,6 +765,8 @@ def main() -> None:
     _assert_memory_change_blocks_stale_vector()
     _assert_edit_and_soft_delete_invalidate()
     _assert_deletion_generation_blocks_stale_commit()
+    _assert_admin_backfill_is_bounded_resumable_and_owner_safe()
+    _assert_admin_backfill_stops_after_provider_revision_change()
     _assert_data_delete_clears_only_owner_embeddings()
 
     print("PostgreSQL Memory embedding/index invariants PASS")
