@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'amap_footprint_map.dart';
+import 'amap_privacy_consent.dart';
 import 'api_client.dart';
 import 'memory_detail_page.dart';
+import 'footprint_detail_page.dart';
 import 'footprint_models.dart';
 import 'timeline_models.dart';
 import 'ui/jiyi_components.dart';
@@ -17,12 +20,14 @@ class TodayPage extends StatefulWidget {
     this.elderMode = false,
     this.onCapture,
     this.onOpenFamily,
+    this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
   final bool elderMode;
   final VoidCallback? onCapture;
   final VoidCallback? onOpenFamily;
+  final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
   State<TodayPage> createState() => _TodayPageState();
@@ -35,11 +40,30 @@ class _TodayPageState extends State<TodayPage> {
   Object? _error;
   bool _loading = true;
   int _generation = 0;
+  late final AmapPrivacyConsentAuthority _amapPrivacyConsent;
+  bool _mapPrivacyAccepted = false;
 
   @override
   void initState() {
     super.initState();
+    _amapPrivacyConsent =
+        widget.amapPrivacyConsent ?? AmapPrivacyConsentStore();
+    _loadMapPrivacy();
     _load();
+  }
+
+  Future<void> _loadMapPrivacy() async {
+    try {
+      final accepted = await _amapPrivacyConsent.readAccepted();
+      if (mounted) setState(() => _mapPrivacyAccepted = accepted);
+    } catch (_) {
+      if (mounted) setState(() => _mapPrivacyAccepted = false);
+    }
+  }
+
+  Future<void> _acceptMapPrivacy() async {
+    await _amapPrivacyConsent.accept();
+    if (mounted) setState(() => _mapPrivacyAccepted = true);
   }
 
   @override
@@ -211,6 +235,8 @@ class _TodayPageState extends State<TodayPage> {
       elderMode: elderMode,
       onCapture: widget.onCapture,
       onOpenFamily: widget.onOpenFamily,
+      mapPrivacyAccepted: _mapPrivacyAccepted,
+      onAcceptMapPrivacy: _acceptMapPrivacy,
     );
   }
 }
@@ -224,6 +250,8 @@ class _TodayExperienceBody extends StatelessWidget {
     required this.elderMode,
     this.onCapture,
     this.onOpenFamily,
+    required this.mapPrivacyAccepted,
+    required this.onAcceptMapPrivacy,
   });
 
   final JiYiApiClient api;
@@ -233,6 +261,8 @@ class _TodayExperienceBody extends StatelessWidget {
   final bool elderMode;
   final VoidCallback? onCapture;
   final VoidCallback? onOpenFamily;
+  final bool mapPrivacyAccepted;
+  final Future<void> Function() onAcceptMapPrivacy;
 
   @override
   Widget build(BuildContext context) {
@@ -247,7 +277,7 @@ class _TodayExperienceBody extends StatelessWidget {
               : jiyiDisplayDate(footprint.day),
         ),
         const SizedBox(height: JiYiSpacing.sm),
-        _footprintCard(theme),
+        _footprintCard(context, theme),
         const SizedBox(height: JiYiSpacing.xl),
         const JiYiSectionHeader(
           title: '今日记忆',
@@ -288,7 +318,7 @@ class _TodayExperienceBody extends StatelessWidget {
     );
   }
 
-  Widget _footprintCard(ThemeData theme) {
+  Widget _footprintCard(BuildContext context, ThemeData theme) {
     if (footprint.visits.isEmpty) {
       return JiYiSectionCard(
         key: const ValueKey('today-footprint-empty'),
@@ -307,10 +337,55 @@ class _TodayExperienceBody extends StatelessWidget {
     return JiYiSectionCard(
       key: const ValueKey('today-footprint-loaded'),
       leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-      title: '${footprint.visits.length} 个地点片段',
+      title: footprint.visits.length.toString() + ' 个地点片段',
       subtitle: '按今天真实形成的到访记录整理',
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Stack(
+            children: [
+              IgnorePointer(
+                child: JiYiFootprintMap(
+                  visits: footprint.visits,
+                  privacyAccepted: mapPrivacyAccepted,
+                  selectedIndex: 0,
+                  onSelected: (_) {},
+                  interactive: false,
+                ),
+              ),
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    key: const ValueKey('today-footprint-map-open'),
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (_) => FootprintDetailPage(
+                            api: api,
+                            footprint: footprint,
+                            mapPrivacyAccepted: mapPrivacyAccepted,
+                            onAcceptMapPrivacy: onAcceptMapPrivacy,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (!mapPrivacyAccepted) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            OutlinedButton.icon(
+              key: const ValueKey('today-amap-privacy-accept'),
+              onPressed: onAcceptMapPrivacy,
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('同意地图服务隐私说明并启用地图'),
+            ),
+          ],
+          const SizedBox(height: JiYiSpacing.md),
           for (var index = 0; index < footprint.visits.length; index++) ...[
             FootprintVisitRow(
               visit: footprint.visits[index],
