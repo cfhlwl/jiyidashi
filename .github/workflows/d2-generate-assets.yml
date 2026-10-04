@@ -59,6 +59,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify AMap bridge provenance pin
+        run: python3 tool/check_amap_bridge_pin.py
+
+
       # UI/UX-001: the committed CJK golden font is a deterministic subset. Regenerate a
       # review candidate from the pinned upstream font whenever product copy grows.
       - name: Regenerate candidate CJK golden font
