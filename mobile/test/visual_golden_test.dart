@@ -1085,11 +1085,14 @@ void main() {
   );
 
   testWidgets('golden: memory detail', (tester) async {
+    final api = _GoldenMemoryDetailApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
     final key = await _pumpSurface(
       tester,
       MemoryDetailPage(
-        api: _GoldenMemoryDetailApi(),
+        api: api,
         memoryId: v2MemoryId,
+        mediaCache: cache,
       ),
     );
     expect(find.text('第一次产品讨论'), findsWidgets);
