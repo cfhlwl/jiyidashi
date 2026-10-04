@@ -632,6 +632,10 @@ class TrustedMediaCaptureService {
           cacheVersion: cacheVersion,
           source: File(localPath),
         );
+        cache.markAuthorityValidated(
+          ownerUserId: session.owner,
+          mediaId: upload.mediaId,
+        );
         _assertSameSession(session);
       } catch (error) {
         // Canonical server save already succeeded. Local presentation cache is
