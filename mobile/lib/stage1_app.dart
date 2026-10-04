@@ -1619,7 +1619,10 @@ class _TimelinePageState extends State<TimelinePage> {
               onTap: () {
                 Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
-                    builder: (_) => V2HomePage(api: widget.api),
+                    builder: (_) => V2HomePage(
+                      api: widget.api,
+                      mediaCache: widget.mediaCache,
+                    ),
                   ),
                 );
               },
