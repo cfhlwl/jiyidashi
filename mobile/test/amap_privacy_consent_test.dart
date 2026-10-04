@@ -101,7 +101,12 @@ void main() {
     await tester.pumpAndSettle();
 
     final revoke = find.byKey(const ValueKey('amap-privacy-revoke'));
-    await tester.ensureVisible(revoke);
+    await tester.scrollUntilVisible(
+      revoke,
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump();
     await tester.tap(revoke);
     await tester.pumpAndSettle();
 
