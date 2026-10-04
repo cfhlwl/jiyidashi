@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -246,7 +247,9 @@ void main() {
       ownerUserId: _ownerA,
       mediaId: _mediaA,
       cacheVersion: _versionA,
-      bytes: <int>[0x89, 0x50, 0x4e, 0x47],
+      bytes: base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      ),
     );
     final api = _MediaApi(owner: _ownerA);
 
@@ -261,7 +264,11 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    // The resolver is asynchronous, but this widget has no animation contract.
+    // Use bounded pumps instead of pumpAndSettle so a broken image stream can never
+    // stall the full mobile suite.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.byType(Image), findsOneWidget);
     expect(api.capabilityCalls, 0);
