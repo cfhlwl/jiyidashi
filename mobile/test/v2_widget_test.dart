@@ -1,6 +1,10 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/graph_page.dart';
 import 'package:jiyidashi/v2/life_event_detail_page.dart';
@@ -18,6 +22,36 @@ Future<void> pumpSurface(WidgetTester tester, Widget child) async {
     ),
   );
   await tester.pumpAndSettle();
+}
+
+class _MemoirMediaApi extends V2TestApi {
+  int capabilityCalls = 0;
+  int downloadCalls = 0;
+
+  @override
+  Future<MediaDownloadSession> createMediaDownload(String mediaId) async {
+    capabilityCalls += 1;
+    return MediaDownloadSession(
+      mediaId: mediaId,
+      cacheVersion:
+          'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+      download: SignedDownloadTarget(
+        method: 'GET',
+        url: Uri.parse('https://storage.invalid/memoir.jpg'),
+        headers: const <String, String>{},
+        expiresAt: DateTime.utc(2030, 1, 1),
+      ),
+    );
+  }
+
+  @override
+  Future<Uint8List> downloadSignedMedia(
+    SignedDownloadTarget target, {
+    int maxBytes = 50 * 1024 * 1024,
+  }) async {
+    downloadCalls += 1;
+    return Uint8List.fromList(<int>[0x89, 0x50, 0x4e, 0x47]);
+  }
 }
 
 class OfflineV2TestApi extends V2TestApi {
@@ -124,6 +158,42 @@ void main() {
     expect(find.text('这一年的时间线'), findsOneWidget);
     expect(find.text('这一年的照片'), findsOneWidget);
     expect(find.text('团队合影'), findsOneWidget);
+  });
+
+  testWidgets('Annual Memoir cached photo preview stays local-first',
+      (tester) async {
+    final root = await Directory.systemTemp.createTemp('jiyi-memoir-cache-');
+    addTearDown(() => root.delete(recursive: true));
+
+    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
+    await cache.putBytes(
+      ownerUserId: v2OwnerId,
+      mediaId: v2MediaId,
+      cacheVersion:
+          'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+      bytes: <int>[0x89, 0x50, 0x4e, 0x47],
+    );
+    final api = _MemoirMediaApi();
+
+    await pumpSurface(
+      tester,
+      MemoirsPage(api: api, mediaCache: cache),
+    );
+    await tester.enterText(find.byType(TextField).first, '2025');
+    final annual = find.text('开始回看');
+    await tester.ensureVisible(annual);
+    await tester.tap(annual);
+    await tester.pumpAndSettle();
+
+    final photo = find.text('团队合影');
+    await tester.ensureVisible(photo);
+    await tester.tap(photo);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(tester.widget<Image>(find.byType(Image)).image, isA<FileImage>());
+    expect(api.capabilityCalls, 0);
+    expect(api.downloadCalls, 0);
   });
 
   testWidgets('Life Memoir chapter is generated only after explicit stage action', (tester) async {
