@@ -45,6 +45,32 @@ class Settings(BaseSettings):
     provider_config_master_key: str = ""
     provider_config_cache_ttl_seconds: float = Field(default=2.0, ge=0.25, le=30.0)
 
+    # SEC-016: shared PostgreSQL abuse/concurrency policy. These are server-owned
+    # capacity controls, independent from entitlement/quota accounting.
+    api_rate_limit_enabled: bool = True
+    api_normal_user_limit: int = Field(default=240, ge=1, le=100000)
+    api_normal_ip_limit: int = Field(default=480, ge=1, le=100000)
+    api_mutation_user_limit: int = Field(default=120, ge=1, le=100000)
+    api_mutation_ip_limit: int = Field(default=240, ge=1, le=100000)
+    api_media_user_limit: int = Field(default=60, ge=1, le=100000)
+    api_media_ip_limit: int = Field(default=120, ge=1, le=100000)
+    api_expensive_user_limit: int = Field(default=30, ge=1, le=100000)
+    api_expensive_ip_limit: int = Field(default=60, ge=1, le=100000)
+    api_export_user_limit: int = Field(default=12, ge=1, le=100000)
+    api_export_ip_limit: int = Field(default=24, ge=1, le=100000)
+    api_rate_window_seconds: int = Field(default=60, ge=1, le=3600)
+
+    provider_ai_global_concurrency: int = Field(default=8, ge=1, le=1000)
+    provider_ai_user_concurrency: int = Field(default=2, ge=1, le=1000)
+    provider_asr_global_concurrency: int = Field(default=4, ge=1, le=1000)
+    provider_asr_user_concurrency: int = Field(default=1, ge=1, le=1000)
+    provider_embedding_global_concurrency: int = Field(default=8, ge=1, le=1000)
+    provider_embedding_user_concurrency: int = Field(default=2, ge=1, le=1000)
+    provider_permit_lease_seconds: int = Field(default=180, ge=5, le=1800)
+
+    argon2_global_concurrency: int = Field(default=4, ge=1, le=128)
+    argon2_permit_lease_seconds: int = Field(default=30, ge=5, le=300)
+
     enable_dev_auth: bool = False
     auto_create_schema: bool = False
     cors_origins: list[str] = Field(default_factory=list)
@@ -252,6 +278,8 @@ class Settings(BaseSettings):
 
         if self.is_production and not self.auth_rate_limit_enabled:
             raise ValueError("AUTH_RATE_LIMIT_ENABLED must be true in production")
+        if self.is_production and not self.api_rate_limit_enabled:
+            raise ValueError("API_RATE_LIMIT_ENABLED must be true in production")
 
         if self.auth_email_delivery_mode not in {"disabled", "smtp"}:
             raise ValueError("AUTH_EMAIL_DELIVERY_MODE must be disabled or smtp")
