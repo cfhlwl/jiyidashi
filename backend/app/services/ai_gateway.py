@@ -14,6 +14,11 @@ from sqlalchemy.orm import Session
 from app.admin_models import ProviderService
 from app.core.config import Settings
 from app.core.observability import emit_operational_event
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.entitlement_service import (
     EntitlementError,
     finalize_ai_usage,
@@ -386,10 +391,27 @@ class AIGateway:
                     status_code=exc.status_code,
                 ) from exc
 
-            # Reservation is committed before provider I/O. Once this point is reached,
-            # the provider-request unit remains consumed even on transport/provider failure.
+            # Reservation is committed before provider I/O. SEC-016 then claims a
+            # cross-worker permit in its own short transaction; no DB lock is held while
+            # awaiting the paid provider.
+            try:
+                permit = claim_provider_permit(
+                    db.get_bind(),
+                    service_class="AI",
+                    user_id=actor_user_id,
+                    settings=self._settings,
+                )
+            except ConcurrencyRejected as exc:
+                raise AIEntitlementError(exc.code, status_code=429) from exc
             provider_started = True
-            provider_result = await self._provider.infer(validated)
+            try:
+                provider_result = await self._provider.infer(validated)
+            finally:
+                release_permit(
+                    db.get_bind(),
+                    permit=permit,
+                    settings=self._settings,
+                )
             checked = _validate_provider_result(provider_result)
             provider_completed = True
             record_provider_runtime_evidence(
@@ -491,11 +513,26 @@ class AIGateway:
             # The Gateway owns the wall-clock bound even for future image adapters that
             # do not implement their own HTTP timeout. Reservation is already durable.
             try:
+                permit = claim_provider_permit(
+                    db.get_bind(),
+                    service_class="AI",
+                    user_id=actor_user_id,
+                    settings=self._settings,
+                )
+            except ConcurrencyRejected as exc:
+                raise AIEntitlementError(exc.code, status_code=429) from exc
+            try:
                 async with asyncio.timeout(self._settings.ai_timeout_seconds):
                     provider_started = True
                     provider_result = await self._provider.infer_image(validated)
             except TimeoutError as exc:
                 raise AITransportError("AI_GATEWAY_TIMEOUT", retryable=True) from exc
+            finally:
+                release_permit(
+                    db.get_bind(),
+                    permit=permit,
+                    settings=self._settings,
+                )
             checked = _validate_provider_result(provider_result)
             provider_completed = True
             record_provider_runtime_evidence(
