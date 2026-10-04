@@ -928,6 +928,7 @@ class AppShell extends StatefulWidget {
     this.motionSamplingBridge,
     this.passiveDelivery,
     this.sync,
+    this.mediaCache,
     this.onElderModeChanged,
     required this.onLogout,
   });
@@ -941,6 +942,7 @@ class AppShell extends StatefulWidget {
   final NativeMotionSamplingBridge? motionSamplingBridge;
   final PassiveMemoryDeliveryCoordinator? passiveDelivery;
   final OfflineSyncCoordinator? sync;
+  final LocalMediaCache? mediaCache;
   final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
 
@@ -951,6 +953,8 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   late final OfflineSyncCoordinator _sync =
       widget.sync ?? OfflineSyncCoordinator(api: widget.api, store: widget.offlineQueue);
+  late final LocalMediaCache _mediaCache =
+      widget.mediaCache ?? LocalMediaCache();
   int index = 0;
   int syncGeneration = 0;
   bool _accountDeletionIntentActive = false;
@@ -1215,7 +1219,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // All producers are now sealed and drained; this transaction is the final owner-local
     // SQLite payload write/delete boundary for Stage 1 + Stage 2 raw location rows.
     await widget.offlineQueue.purgeOwner(owner);
-    await LocalMediaCache().purgeOwner(owner);
+    await _mediaCache.purgeOwner(owner);
     final localOnboarding = widget.onboardingStore;
     if (localOnboarding != null) {
       await localOnboarding.deleteOwnerState(owner);
