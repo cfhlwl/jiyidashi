@@ -182,9 +182,15 @@ def release_permit(
 
 def provider_limits(settings: Settings, service_class: str) -> tuple[int, int]:
     if service_class == "AI":
-        return settings.provider_ai_global_concurrency, settings.provider_ai_user_concurrency
+        return (
+            settings.provider_ai_global_concurrency,
+            settings.provider_ai_user_concurrency,
+        )
     if service_class == "ASR":
-        return settings.provider_asr_global_concurrency, settings.provider_asr_user_concurrency
+        return (
+            settings.provider_asr_global_concurrency,
+            settings.provider_asr_user_concurrency,
+        )
     if service_class == "EMBEDDING":
         return (
             settings.provider_embedding_global_concurrency,
