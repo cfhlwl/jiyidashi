@@ -14,12 +14,15 @@ class JiYiAmapConfig {
   const JiYiAmapConfig({
     this.androidKey = _amapAndroidKey,
     this.iosKey = _amapIosKey,
+    this.platformOverride,
   });
 
   final String androidKey;
   final String iosKey;
+  final TargetPlatform? platformOverride;
 
-  bool get configuredForCurrentPlatform => switch (defaultTargetPlatform) {
+  bool get configuredForCurrentPlatform =>
+      switch (platformOverride ?? defaultTargetPlatform) {
         TargetPlatform.android => androidKey.trim().isNotEmpty,
         TargetPlatform.iOS => iosKey.trim().isNotEmpty,
         _ => false,
