@@ -54,8 +54,9 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   }
 
   Future<void> _acceptMapPrivacy() async {
-    await _amapPrivacyConsent.accept();
-    if (mounted) setState(() => _mapPrivacyAccepted = true);
+    final accepted =
+        await requestAmapPrivacyConsent(context, _amapPrivacyConsent);
+    if (mounted && accepted) setState(() => _mapPrivacyAccepted = true);
   }
 
   Future<void> _loadInitial() async {
