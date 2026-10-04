@@ -620,11 +620,13 @@ User Correction Rate
 | IOS-STORE-010 | iOS Digital Membership / StoreKit & Purchase Policy | ⬜ | PERSONAL/FAMILY/未来数字 AI 权益进入 iOS 销售前，单独完成 StoreKit/App Store IAP/订阅及服务端 Purchase→Entitlement 校验；不得直接照搬微信/支付宝的 App 内数字解锁路径。最终实现以提交时 Apple storefront、entitlement、external-purchase 等最新规则为准，避免把会变化的商店政策硬编码进 Plan authority。与 BIZ-017 联动。 |
 | IOS-STORE-011 | Release Archive / Reviewer Access / Submission Evidence | ⬜ | 使用正式 Bundle ID、Distribution 签名和 production 配置生成最终 Archive；验证无测试密钥/调试入口/私有 API/真实 secret 泄漏，Privacy Report 与权限用途一致。提供稳定审核账号、可用生产/审核后端、Review Notes、后台定位/注销/AI consent 的操作步骤、Support URL/Privacy URL、必要截图和联系信息。 |
 | IOS-STORE-012 | Final iOS Real-device & Store-readiness Gate | ⬜ | #205/相关客户端收口后重新执行 iOS 真机稳定性与关键路径验收：登录/refresh、冷启动恢复、照片上传与本地缓存、自动位置记忆、后台唤醒/恢复、高德地图、Privacy Pause、AI consent、账号注销。CORE-004 长时认证仍按其独立 P0 Gate 执行；正式提交不得以模拟器/无签名 IPA 代替最终 Release 包真机证据。 |
+| APP-ID-001 | Production Application Identity Migration — `com.jiyidays` | ⏸ | **后期统一迁移，当前不改 #205 / 测试包。** 当前 Android `applicationId` 与 iOS Bundle ID 为 `cn.jiyidashi.jiyidashi`；V1 正式生产目标暂冻结为 `com.jiyidays`，商店展示名仍为“迹忆”。迁移必须一次性核对 Android applicationId/namespace、iOS Bundle ID/App ID/Provisioning/Keychain、CI/Release 配置、高德 Android/iOS SDK Key 绑定、微信/Push/Universal Link/OAuth/IAP 等依赖应用身份的配置。应在正式 App Store/Google Play 生产条目、生产高德 Key、Push/第三方登录/IAP 等外部绑定最终锁定前完成；若届时目标 ID 已被占用或平台记录已锁定，先重新评估再迁移。 |
 
 ### App Store 正式提交锁
 
 ```text
 UIUX-P0-002 / consumer client stable
+→ APP-ID-001 production application identity migration PASS
 → IOS-STORE-002 Privacy Manifest / Required Reason API PASS
 → IOS-STORE-003 privacy policy / SDK disclosure PASS
 → IOS-STORE-004 third-party AI consent PASS
