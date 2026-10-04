@@ -219,6 +219,13 @@ void main() {
     expect(find.textContaining('local-memoir-photo:'), findsOneWidget);
     expect(api.capabilityCalls, 0);
     expect(api.downloadCalls, 0);
+
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
   });
 
   testWidgets('Life Memoir chapter is generated only after explicit stage action', (tester) async {
