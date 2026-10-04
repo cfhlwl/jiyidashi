@@ -72,3 +72,41 @@ def test_rate_limit_bucket_does_not_store_raw_identifier(client):
         # [人工注释][S1-FIX-003] 数据库只保存固定长度 HMAC key，不保存原始 IP / 邮箱标识。
         assert len(key) == 64
         assert raw_value not in key
+
+
+
+def _dev_headers(client, nickname: str) -> dict[str, str]:
+    response = client.post("/v1/auth/dev-token", json={"nickname": nickname})
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_normal_read_endpoint_returns_429_with_retry_after(client, monkeypatch):
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_user_limit", 1)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_normal_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_window_seconds", 60)
+    headers = _dev_headers(client, "sec016-normal-read")
+
+    first = client.get("/v1/user", headers=headers)
+    assert first.status_code == 200
+    second = client.get("/v1/user", headers=headers)
+    assert second.status_code == 429
+    assert second.json()["detail"] == "API_RATE_LIMITED"
+    assert int(second.headers["Retry-After"]) >= 1
+
+
+def test_normal_mutation_endpoint_returns_429_with_retry_after(client, monkeypatch):
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_limit_enabled", True)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_mutation_user_limit", 1)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_mutation_ip_limit", 10)
+    monkeypatch.setattr(auth_rate_limit.settings, "api_rate_window_seconds", 60)
+    headers = _dev_headers(client, "sec016-normal-mutation")
+
+    first = client.post("/v1/family", headers=headers)
+    assert first.status_code == 201
+    second = client.post("/v1/family", headers=headers)
+    assert second.status_code == 429
+    assert second.json()["detail"] == "API_RATE_LIMITED"
+    assert int(second.headers["Retry-After"]) >= 1
