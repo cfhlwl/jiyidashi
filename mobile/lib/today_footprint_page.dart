@@ -21,6 +21,7 @@ class TodayPage extends StatefulWidget {
     this.elderMode = false,
     this.onCapture,
     this.onOpenFamily,
+    this.mediaCache,
     this.amapPrivacyConsent,
   });
 
@@ -28,6 +29,7 @@ class TodayPage extends StatefulWidget {
   final bool elderMode;
   final VoidCallback? onCapture;
   final VoidCallback? onOpenFamily;
+  final LocalMediaCache? mediaCache;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
@@ -238,6 +240,7 @@ class _TodayPageState extends State<TodayPage> {
       onOpenFamily: widget.onOpenFamily,
       mapPrivacyAccepted: _mapPrivacyAccepted,
       onAcceptMapPrivacy: _acceptMapPrivacy,
+      mediaCache: widget.mediaCache,
     );
   }
 }
@@ -253,6 +256,7 @@ class _TodayExperienceBody extends StatelessWidget {
     this.onOpenFamily,
     required this.mapPrivacyAccepted,
     required this.onAcceptMapPrivacy,
+    this.mediaCache,
   });
 
   final JiYiApiClient api;
@@ -264,6 +268,7 @@ class _TodayExperienceBody extends StatelessWidget {
   final VoidCallback? onOpenFamily;
   final bool mapPrivacyAccepted;
   final Future<void> Function() onAcceptMapPrivacy;
+  final LocalMediaCache? mediaCache;
 
   @override
   Widget build(BuildContext context) {
@@ -411,12 +416,14 @@ class _TodayExperienceBody extends StatelessWidget {
           _TodayMemoryCard(
             api: api,
             item: memories[index],
+            mediaCache: mediaCache,
             onTap: () {
               Navigator.of(context).push<bool>(
                 MaterialPageRoute<bool>(
                   builder: (_) => MemoryDetailPage(
                     api: api,
                     memoryId: memories[index].id,
+                    mediaCache: mediaCache,
                   ),
                 ),
               );
@@ -466,11 +473,13 @@ class _TodayMemoryCard extends StatelessWidget {
     required this.api,
     required this.item,
     required this.onTap,
+    this.mediaCache,
   });
 
   final JiYiApiClient api;
   final TimelineReadItem item;
   final VoidCallback onTap;
+  final LocalMediaCache? mediaCache;
 
   @override
   Widget build(BuildContext context) {
@@ -492,6 +501,7 @@ class _TodayMemoryCard extends StatelessWidget {
                   key: ValueKey('today-photo-${item.id}'),
                   api: api,
                   mediaId: item.mediaId!,
+                  cache: mediaCache,
                   width: 88,
                   height: 88,
                 )
