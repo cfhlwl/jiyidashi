@@ -422,6 +422,31 @@ def test_embedding_policy_cannot_change_model_or_input_limit():
 
 
 
+def test_provider_runtime_fingerprint_is_server_secret_keyed_and_rotates_credential():
+    first_key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    second_key = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+    settings = Settings(
+        app_env="test",
+        provider_config_master_key=first_key,
+        ai_provider="openai",
+        ai_base_url="https://api.openai.test/v1",
+        ai_api_key="candidate-secret-a",
+        ai_model="revision-a",
+    )
+    original = provider_runtime_fingerprint(settings, ProviderService.AI)
+    rotated = provider_runtime_fingerprint(
+        settings.model_copy(update={"ai_api_key": "candidate-secret-b"}),
+        ProviderService.AI,
+    )
+    rekeyed = provider_runtime_fingerprint(
+        settings.model_copy(update={"provider_config_master_key": second_key}),
+        ProviderService.AI,
+    )
+
+    assert rotated != original
+    assert rekeyed != original
+
+
 def test_provider_verification_requires_current_runtime_fingerprint():
     now = datetime.now(UTC)
     old_settings = Settings(
