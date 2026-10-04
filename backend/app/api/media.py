@@ -53,12 +53,26 @@ def _raise_http(exc: MediaError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
 
 
+def _retry_headers(retry_after: int | None) -> dict[str, str] | None:
+    if retry_after is None:
+        return None
+    return {"Retry-After": str(max(1, int(retry_after)))}
+
+
 def _raise_ocr_http(exc: OCRError) -> None:
-    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    raise HTTPException(
+        status_code=exc.status_code,
+        detail=exc.code,
+        headers=_retry_headers(exc.retry_after),
+    ) from exc
 
 
 def _raise_vision_http(exc: VisionError) -> None:
-    raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    raise HTTPException(
+        status_code=exc.status_code,
+        detail=exc.code,
+        headers=_retry_headers(exc.retry_after),
+    ) from exc
 
 
 def _signed_transfer(value: PresignedTransfer) -> SignedTransfer:
