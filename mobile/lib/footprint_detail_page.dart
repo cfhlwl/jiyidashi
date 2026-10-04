@@ -51,7 +51,7 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
     final mappable = widget.footprint.mappableVisits;
     final selected = mappable.isEmpty
         ? null
-        : mappable[_selectedIndex.clamp(0, mappable.length - 1)];
+        : mappable[_selectedIndex.clamp(0, mappable.length - 1) as int];
 
     return Scaffold(
       appBar: AppBar(title: const Text('今日足迹')),
