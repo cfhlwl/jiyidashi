@@ -1338,7 +1338,7 @@ void main() {
     );
 
     expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
-    expect(find.byKey(ValueKey('today-photo-$v2MemoryId')), findsOneWidget);
+    expect(find.byKey(const ValueKey('today-photo-$v2MemoryId')), findsOneWidget);
     expect(find.text('晨光里的白板'), findsOneWidget);
     await expectLater(
       find.byKey(key),
@@ -1355,7 +1355,7 @@ void main() {
     );
 
     expect(find.text('第一次产品讨论'), findsOneWidget);
-    expect(find.byKey(ValueKey('timeline-photo-$v2MemoryId')), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-photo-$v2MemoryId')), findsOneWidget);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_timeline.png'),
@@ -1511,7 +1511,7 @@ void main() {
     await tester.tap(start);
     await tester.pumpAndSettle();
 
-    final photo = find.byKey(ValueKey('annual-photo-$v2MediaId'));
+    final photo = find.byKey(const ValueKey('annual-photo-$v2MediaId'));
     expect(photo, findsOneWidget);
     await tester.ensureVisible(photo);
     await tester.pumpAndSettle();
