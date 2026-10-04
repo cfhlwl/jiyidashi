@@ -414,6 +414,80 @@ class _GoldenApi extends JiYiApiClient {
       };
 
   @override
+  Future<Map<String, dynamic>> getRecordingHealth({
+    Map<String, dynamic>? clientState,
+  }) async {
+    final paused = privacyStatus['recording_paused'] == true;
+    final status = paused ? 'PAUSED' : 'HEALTHY';
+    final reason = paused ? 'PRIVACY_PAUSED' : 'RECENT_CAPTURE_AND_ACK';
+    return <String, dynamic>{
+      'health': <String, dynamic>{
+        'status': status,
+        'status_reason': reason,
+        'automatic_enabled': !paused,
+        'privacy_paused': paused,
+        'permission_state': paused ? null : 'BACKGROUND',
+        'location_services_state': 'ON',
+        'background_runtime_state': 'ELIGIBLE',
+        'battery_optimization_state': 'OPTIMIZED',
+        'native_producer_state': paused ? 'STOPPED' : 'RUNNING',
+        'native_queue_depth': 0,
+        'native_queue_capacity': 1000,
+        'native_oldest_pending_at': null,
+        'sqlite_queue_depth': 0,
+        'capacity_pressure': false,
+        'last_fix_at': paused ? null : '2026-09-20T02:30:00Z',
+        'last_enqueue_at': null,
+        'last_handoff_at': null,
+        'last_upload_attempt_at': null,
+        'last_upload_success_at': null,
+        'last_server_ack_at': paused ? null : '2026-09-20T02:31:00Z',
+        'last_visit_at': null,
+        'delivery_failure_count': 0,
+        'last_delivery_error_code': null,
+        'recovery_pending': false,
+        'recording_gap_state': paused ? 'UNKNOWN' : 'NONE',
+        'updated_at': '2026-09-20T02:32:00Z',
+      },
+      'today': <String, dynamic>{
+        'local_day': '2026-09-20',
+        'timezone': 'Asia/Shanghai',
+        'first_observed_at': null,
+        'last_observed_at': null,
+        'trusted_location_sample_count': paused ? 0 : 12,
+        'visit_count': paused ? 0 : 2,
+        'memory_count': 1,
+        'covered_duration_seconds': paused ? 0 : 12600,
+        'known_gap_duration_seconds': 0,
+        'largest_known_gap_seconds': 0,
+        'coverage_state': paused ? 'UNKNOWN' : 'HEALTHY',
+        'has_capacity_pressure': false,
+        'has_recorded_gap': false,
+        'has_unexplained_gap': false,
+        'recent_gaps': <Object?>[],
+      },
+      'aggregates': <String, dynamic>{
+        'healthy_days_7d': paused ? 0 : 6,
+        'healthy_days_30d': paused ? 0 : 24,
+        'evidence_days_7d': 7,
+        'evidence_days_30d': 28,
+        'gap_hours_7d': null,
+        'gap_hours_30d': null,
+        'bounded_gap_hours_7d': 0.0,
+        'bounded_gap_hours_30d': 0.0,
+        'days_with_capacity_pressure': null,
+        'days_with_permission_block': null,
+        'current_capacity_pressure': false,
+        'current_permission_block': false,
+      },
+      'recent_gaps': <Object?>[],
+      'active_gap_reasons': paused ? <String>['PRIVACY_PAUSED'] : <String>[],
+      'server_observed_at': '2026-09-20T02:32:00Z',
+      'native_state_observed': true,
+    };
+  }
+
+  @override
   Future<Map<String, dynamic>> getPrivacyStatus() async {
     final error = privacyError;
     if (error != null) throw error;
@@ -861,25 +935,102 @@ Future<Key> _pumpSurface(
   return key;
 }
 
-Future<Key> _pumpShell(
+Widget _goldenNavigationShell({
+  required int selectedIndex,
+  required Widget child,
+  bool showCapture = true,
+}) {
+  return Scaffold(
+    body: SafeArea(child: child),
+    floatingActionButton: showCapture
+        ? FloatingActionButton.extended(
+            onPressed: () {},
+            icon: const Icon(Icons.add),
+            label: const Text('记一下'),
+          )
+        : null,
+    bottomNavigationBar: NavigationBar(
+      selectedIndex: selectedIndex,
+      onDestinationSelected: (_) {},
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.today_outlined),
+          selectedIcon: Icon(Icons.today),
+          label: '今天',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.auto_stories_outlined),
+          selectedIcon: Icon(Icons.auto_stories),
+          label: '记忆',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.route_outlined),
+          selectedIcon: Icon(Icons.route),
+          label: '人生',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.family_restroom_outlined),
+          selectedIcon: Icon(Icons.family_restroom),
+          label: '家庭',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.person_outline),
+          selectedIcon: Icon(Icons.person),
+          label: '我的',
+        ),
+      ],
+    ),
+  );
+}
+
+Future<Key> _pumpGoldenToday(
   WidgetTester tester, {
-  JiYiApiClient? api,
-  LocalMediaCache? mediaCache,
-  AmapPrivacyConsentAuthority? amapPrivacyConsent,
+  bool mapAccepted = false,
 }) async {
-  final resolvedApi = api ?? _GoldenApi();
-  final resolvedCache = mediaCache ??
-      await _seedGoldenMediaCache(resolvedApi.authenticatedUserId!);
+  final api = _GoldenApi();
+  final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
   return _pumpSurface(
     tester,
-    AppShell(
-      api: resolvedApi,
-      offlineQueue: _GoldenQueue(),
-      locationBridge: _GoldenLocationBridge(),
-      mediaCache: resolvedCache,
-      amapPrivacyConsent:
-          amapPrivacyConsent ?? _GoldenAmapConsent(false),
-      onLogout: () {},
+    _goldenNavigationShell(
+      selectedIndex: 0,
+      child: TodayPage(
+        api: api,
+        mediaCache: cache,
+        amapPrivacyConsent: _GoldenAmapConsent(mapAccepted),
+      ),
+    ),
+  );
+}
+
+Future<Key> _pumpGoldenMemoryQuery(WidgetTester tester) {
+  return _pumpSurface(
+    tester,
+    _goldenNavigationShell(
+      selectedIndex: 1,
+      child: MemoryQueryPage(api: _GoldenApi()),
+    ),
+  );
+}
+
+Future<Key> _pumpGoldenProfile(
+  WidgetTester tester, {
+  _GoldenApi? api,
+  bool mapAccepted = false,
+}) {
+  final resolvedApi = api ?? _GoldenApi();
+  return _pumpSurface(
+    tester,
+    _goldenNavigationShell(
+      selectedIndex: 4,
+      showCapture: false,
+      child: ProfilePage(
+        api: resolvedApi,
+        onLogout: () {},
+        onAccountDeleteIntentConfirmed: () async {},
+        onAccountDeleted: () async {},
+        offlineQueue: _GoldenQueue(),
+        amapPrivacyConsent: _GoldenAmapConsent(mapAccepted),
+      ),
     ),
   );
 }
@@ -922,7 +1073,7 @@ void main() {
   });
 
   testWidgets('golden: today home', (tester) async {
-    final key = await _pumpShell(tester);
+    final key = await _pumpGoldenToday(tester);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/home_today.png'),
@@ -1055,9 +1206,7 @@ void main() {
   });
 
   testWidgets('golden: memory query', (tester) async {
-    final key = await _pumpShell(tester);
-    await tester.tap(find.text('记忆'));
-    await tester.pumpAndSettle();
+    final key = await _pumpGoldenMemoryQuery(tester);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/memory_query.png'),
@@ -1120,9 +1269,7 @@ void main() {
   testWidgets('golden: profile and privacy controls', (tester) async {
     // [人工注释][CI-005] Profile 使用确定性的 fake API 返回固定资料/暂停状态，
     // 只稳定异步输入，不复制或重写产品 UI。
-    final key = await _pumpShell(tester);
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    final key = await _pumpGoldenProfile(tester);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/profile_privacy.png'),
@@ -1130,7 +1277,7 @@ void main() {
   });
 
   testWidgets('golden: profile privacy paused', (tester) async {
-    final key = await _pumpShell(
+    final key = await _pumpGoldenProfile(
       tester,
       api: _GoldenApi(
         privacyStatus: const {
@@ -1139,8 +1286,6 @@ void main() {
         },
       ),
     );
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
 
     // Stage 2 adds a second, deliberate pause indicator for the native producer:
     // one banner is the authoritative server privacy state, the other proves native
@@ -1157,12 +1302,10 @@ void main() {
   testWidgets('privacy error stays unknown and never renders active success', (
     tester,
   ) async {
-    final key = await _pumpShell(
+    final key = await _pumpGoldenProfile(
       tester,
       api: _GoldenApi(privacyError: ApiException(503, '服务端状态读取失败')),
     );
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
 
     expect(find.text('无法确认当前隐私状态'), findsOneWidget);
     expect(find.text('服务端状态读取失败'), findsOneWidget);
@@ -1342,13 +1485,9 @@ void main() {
 
 
   testWidgets('golden: design authority Today map photo', (tester) async {
-    final api = _GoldenApi();
-    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
-    final key = await _pumpShell(
+    final key = await _pumpGoldenToday(
       tester,
-      api: api,
-      mediaCache: cache,
-      amapPrivacyConsent: _GoldenAmapConsent(true),
+      mapAccepted: true,
     );
 
     expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
@@ -1537,12 +1676,10 @@ void main() {
   });
 
   testWidgets('golden: design authority Profile privacy', (tester) async {
-    final key = await _pumpShell(
+    final key = await _pumpGoldenProfile(
       tester,
-      amapPrivacyConsent: _GoldenAmapConsent(true),
+      mapAccepted: true,
     );
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
 
     final amapControl = find.text('高德地图服务');
     await tester.scrollUntilVisible(
