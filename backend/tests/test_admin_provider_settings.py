@@ -21,7 +21,6 @@ from app.embedding_policy import (
     MEMORY_EMBEDDING_MAX_INPUT_CHARS,
     MEMORY_EMBEDDING_MODEL,
 )
-from app.admin_schemas import AdminProviderConfigWrite
 from app.services.admin_provider_service import (
     _runtime_state,
     update_provider_configuration,
