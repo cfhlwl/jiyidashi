@@ -89,4 +89,33 @@ void main() {
     expect(find.textContaining('不代表你实际步行、驾车或乘车的精确路线'), findsOneWidget);
     expect(find.textContaining('精确行驶路线'), findsNothing);
   });
+  testWidgets('footprint detail remains readable on small screen and large text',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: const TextScaler.linear(1.6),
+          ),
+          child: child!,
+        ),
+        home: FootprintDetailPage(
+          api: _FootprintApi(),
+          footprint: _day(),
+          mapPrivacyAccepted: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('家'), findsWidgets);
+    expect(find.byKey(const ValueKey('amap-privacy-blocked')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
 }
