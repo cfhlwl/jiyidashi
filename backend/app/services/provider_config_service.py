@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
 import hashlib
 import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from threading import Lock
 from time import monotonic
 from urllib.parse import urlparse
@@ -14,7 +14,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.admin_models import ProviderConfiguration, ProviderRuntimeEvidence, ProviderService
+from app.admin_models import (
+    ProviderConfiguration,
+    ProviderRuntimeEvidence,
+    ProviderService,
+)
 from app.core.config import Settings, get_settings
 from app.core.db import SessionLocal
 from app.embedding_policy import (
@@ -209,7 +213,10 @@ def provider_destination_authority(provider_type: str, base_url: str) -> tuple[s
         raise ProviderRuntimeConfigError("PROVIDER_BASE_URL_INVALID")
     scheme = parsed.scheme.lower()
     host = parsed.hostname.lower()
-    port = parsed.port
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ProviderRuntimeConfigError("PROVIDER_BASE_URL_INVALID") from exc
     if port is None:
         if scheme == "https":
             port = 443
