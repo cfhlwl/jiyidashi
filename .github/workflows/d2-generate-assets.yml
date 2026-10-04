@@ -178,6 +178,7 @@ jobs:
           flutter build apk --debug
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_ANDROID_SDK_KEY=ci-amap-android-not-a-real-key
 
       - name: Verify worktree remains clean
         working-directory: .
@@ -229,3 +230,4 @@ jobs:
           flutter build ios --debug --no-codesign
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_IOS_SDK_KEY=ci-amap-ios-not-a-real-key
