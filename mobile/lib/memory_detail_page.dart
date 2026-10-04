@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'amap_footprint_map.dart';
+import 'amap_privacy_consent.dart';
 import 'api_client.dart';
 import 'media_presentation_cache.dart';
 import 'ui/jiyi_components.dart';
@@ -13,11 +15,13 @@ class MemoryDetailPage extends StatefulWidget {
     required this.api,
     required this.memoryId,
     this.mediaCache,
+    this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
   final String memoryId;
   final LocalMediaCache? mediaCache;
+  final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
   State<MemoryDetailPage> createState() => _MemoryDetailPageState();
@@ -26,6 +30,11 @@ class MemoryDetailPage extends StatefulWidget {
 class _MemoryDetailPageState extends State<MemoryDetailPage> {
   _MemoryDetailView? memory;
   String? placeName;
+  String? placeAddress;
+  double? placeLatitude;
+  double? placeLongitude;
+  late final AmapPrivacyConsentAuthority _amapPrivacyConsent;
+  bool _mapPrivacyAccepted = false;
   File? photoFile;
   String? photoError;
   bool photoRefreshing = false;
@@ -39,7 +48,24 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
   void initState() {
     super.initState();
     _mediaCache = widget.mediaCache ?? LocalMediaCache();
+    _amapPrivacyConsent =
+        widget.amapPrivacyConsent ?? AmapPrivacyConsentStore();
+    _loadMapPrivacy();
     _load();
+  }
+
+  Future<void> _loadMapPrivacy() async {
+    try {
+      final accepted = await _amapPrivacyConsent.readAccepted();
+      if (mounted) setState(() => _mapPrivacyAccepted = accepted);
+    } catch (_) {
+      if (mounted) setState(() => _mapPrivacyAccepted = false);
+    }
+  }
+
+  Future<void> _acceptMapPrivacy() async {
+    await _amapPrivacyConsent.accept();
+    if (mounted) setState(() => _mapPrivacyAccepted = true);
   }
 
   @override
@@ -66,6 +92,10 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
     setState(() {
       loading = true;
       error = null;
+      placeName = null;
+      placeAddress = null;
+      placeLatitude = null;
+      placeLongitude = null;
       photoFile = null;
       photoError = null;
       photoRefreshing = false;
@@ -80,6 +110,9 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       );
 
       String? resolvedPlace;
+      String? resolvedAddress;
+      double? resolvedLatitude;
+      double? resolvedLongitude;
       File? resolvedPhoto;
       String? resolvedPhotoError;
       final placeId = parsed.placeId;
@@ -92,6 +125,22 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
               place['id']?.toString().toLowerCase() == placeId.toLowerCase()) {
             final name = place['name']?.toString().trim() ?? '';
             if (name.isNotEmpty) resolvedPlace = name;
+            final address = place['address'];
+            if (address is String && address.trim().isNotEmpty) {
+              resolvedAddress = address.trim();
+            }
+            final latitude = _memoryPlaceCoordinate(
+              place['latitude'],
+              latitudeAxis: true,
+            );
+            final longitude = _memoryPlaceCoordinate(
+              place['longitude'],
+              latitudeAxis: false,
+            );
+            if ((latitude == null) == (longitude == null)) {
+              resolvedLatitude = latitude;
+              resolvedLongitude = longitude;
+            }
           }
         } catch (_) {
           if (!_sessionCurrent(version, owner)) return;
@@ -125,6 +174,9 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       setState(() {
         memory = parsed;
         placeName = resolvedPlace;
+        placeAddress = resolvedAddress;
+        placeLatitude = resolvedLatitude;
+        placeLongitude = resolvedLongitude;
         photoFile = resolvedPhoto;
         photoError = resolvedPhotoError;
         loading = false;
@@ -458,6 +510,27 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
           _photoCard(current),
           const SizedBox(height: JiYiSpacing.md),
         ],
+        if (current.placeId != null &&
+            placeLatitude != null &&
+            placeLongitude != null) ...[
+          JiYiPlaceMap(
+            latitude: placeLatitude,
+            longitude: placeLongitude,
+            name: placeName ?? '已关联地点',
+            address: placeAddress,
+            privacyAccepted: _mapPrivacyAccepted,
+          ),
+          if (!_mapPrivacyAccepted) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            OutlinedButton.icon(
+              key: const ValueKey('memory-amap-privacy-accept'),
+              onPressed: _acceptMapPrivacy,
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('同意地图服务隐私说明并启用地图'),
+            ),
+          ],
+          const SizedBox(height: JiYiSpacing.md),
+        ],
         JiYiSectionCard(
           title: '记录',
           child: Column(
@@ -705,6 +778,18 @@ class _MemoryDetailView {
       editRevision: revision,
     );
   }
+}
+
+double? _memoryPlaceCoordinate(
+  Object? value, {
+  required bool latitudeAxis,
+}) {
+  if (value == null) return null;
+  if (value is! num || !value.isFinite) return null;
+  final coordinate = value.toDouble();
+  final max = latitudeAxis ? 90.0 : 180.0;
+  if (coordinate < -max || coordinate > max) return null;
+  return coordinate;
 }
 
 String _memoryTypeLabel(String value) => switch (value) {
