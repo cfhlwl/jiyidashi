@@ -1288,7 +1288,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         onOpenFamily: () => setState(() => index = 3),
       ),
       memoryPage,
-      LifePage(api: widget.api),
+      LifePage(
+        api: widget.api,
+        mediaCache: _mediaCache,
+      ),
       FamilyPage(api: widget.api),
       ProfilePage(
         api: widget.api,
