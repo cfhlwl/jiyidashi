@@ -13,7 +13,7 @@ from app.annual_memoir_models import (
 )
 from app.core.db import get_db
 from app.deps import get_current_user_id
-from app.services.ai_gateway import get_ai_gateway
+from app.services.ai_gateway import AIEntitlementError, get_ai_gateway
 from app.services.annual_memoir_service import (
     AnnualMemoirError,
     build_annual_memoir,
@@ -51,6 +51,19 @@ async def generate_annual_memoir(
             target_year=payload.target_year,
             ai_gateway=get_ai_gateway(),
         )
+    except AIEntitlementError as exc:
+        if exc.code != "PROVIDER_CONCURRENCY_SATURATED":
+            raise
+        headers = (
+            {"Retry-After": str(max(1, int(exc.retry_after)))}
+            if exc.retry_after is not None
+            else None
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=exc.code,
+            headers=headers,
+        ) from exc
     except AnnualMemoirError as exc:
         _raise_annual_memoir_error(exc)
 
