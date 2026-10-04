@@ -108,12 +108,8 @@ class LocalMediaCache {
     final directory = await _ownerDirectory(owner, create: true);
     final target = File('${directory.path}/${_fileName(media, version)}');
     final temporary = File(
-      target.path +
-          '.' +
-          DateTime.now().microsecondsSinceEpoch.toString() +
-          '.' +
-          _random.nextInt(1 << 32).toString() +
-          '.part',
+      '${target.path}.${DateTime.now().microsecondsSinceEpoch}.'
+      '${_random.nextInt(1 << 32)}.part',
     );
 
     try {
