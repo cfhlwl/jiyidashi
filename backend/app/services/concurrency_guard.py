@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import math
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -109,11 +108,19 @@ def claim_permit(
 
         # Correctness never depends on cleanup; expired rows are ignored. Delete only
         # a bounded age cohort during admission to keep the table compact.
-        db.execute(
-            delete(WorkPermit).where(
-                WorkPermit.expires_at <= now - timedelta(seconds=max(lease_seconds, 1))
+        stale_ids = list(
+            db.scalars(
+                select(WorkPermit.id)
+                .where(
+                    WorkPermit.expires_at
+                    <= now - timedelta(seconds=max(lease_seconds, 1))
+                )
+                .order_by(WorkPermit.expires_at.asc())
+                .limit(100)
             )
         )
+        if stale_ids:
+            db.execute(delete(WorkPermit).where(WorkPermit.id.in_(stale_ids)))
 
         global_active = _active_count(
             db,
