@@ -39,7 +39,7 @@
 <!-- Stage 3S：Annual Summary / Issue #91 / PR #93 已完成 complete-year snapshot、512+1/256+1 bounded inventory、all-raw S3-013 authority、strict Y-slot provider boundary、provider 前后完整重验与 PostgreSQL Annual Gate，并合并 main=dd558913；S3-017 转 ✅，Stage 3 S3-001~S3-019 正式收口。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-10-03  
+> 最后更新：2026-10-04  
 > Stage 1「记得住」：✅ complete  
 > Stage 2「自动记」：✅ complete  
 > Stage 3「懂生活 / AI Memory」：✅ complete  
@@ -601,30 +601,75 @@ User Correction Rate
 | CN-005 | 国内客服、注销与数据请求闭环 | ⬜ | 在 App/小程序内提供可达客服和隐私投诉入口，定义工单、身份核验、15 个工作日内处理目标、导出/更正/删除/注销结果通知和证据留存。 |
 | CN-006 | 国内网络与第三方服务实测 | ⬜ | 真实 HTTPS 域名、备案后 API、COS/OSS 合法域名、短信通道、微信回调、运营商网络、弱网/断网、国产 Android 机型和应用商店包需做生产预发布验收。 |
 
+
+## 8.2 Apple App Store 上架专项
+
+> **后置统一收口，不在当前 UIUX-P0-002 主线拆散实现。** 启动条件建议为：消费者端视觉/行为稳定、#205 完成并合并、正式 iOS Release 签名与生产后端进入预发布状态。以下项目是 **App Store submission gate**；未全部完成前，不得把“可上传 TestFlight / 可安装 IPA”表述为“已满足 App Store 正式上架条件”。
+
+| ID | 功能 / 需求 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| IOS-STORE-001 | App Store Compliance & Submission Readiness V1 | ⏸ | Apple 上架统一收口总任务。后期一次性完成 Privacy Manifest、隐私政策、第三方数据/AI consent、后台定位审核材料、App Privacy、登录政策、账号注销、IAP/StoreKit、审核账号与 Release Archive 验收；当前只登记，不启动实现。 |
+| IOS-STORE-002 | Privacy Manifest & Required Reason API Audit | ⬜ | 为 iOS App target 增加并审查 `PrivacyInfo.xcprivacy`；盘点 App 自身及 Flutter/原生/高德/secure-storage 等依赖使用的 Required Reason API 与 privacy manifest。当前原生代码使用 `UserDefaults`，正式 Archive 必须以当期 Apple approved reason API 规则声明；同时导出/检查 Xcode Privacy Report，禁止漏报或使用不匹配 reason。 |
+| IOS-STORE-003 | In-app Privacy Policy / User Agreement / SDK Disclosure | ⬜ | App Store Connect metadata 与 App 内均提供长期可访问的 HTTPS 隐私政策；登录/注册与“我的→隐私与权限”可进入。政策需覆盖定位/后台定位、照片、相机、麦克风/语音、对象存储、家庭授权、AI/ASR/OCR/Vision/Embedding 等处理目的、共享方、保存期限、撤回、导出、删除与注销，并列出第三方 SDK/服务清单。与 CN-002 共用 canonical 文档，避免中外两套事实漂移。 |
+| IOS-STORE-004 | Third-party AI/Data Processing Explicit Consent & Revocation | ⬜ | 第一次向第三方 AI/ASR/OCR/Vision/Embedding provider 发送用户个人内容前，显示清晰的数据类别、用途、第三方类型/提供方、处理边界，并取得明确同意；服务端持久化 consent revision。拒绝/撤回后基础记录、足迹、非第三方 AI 依赖能力仍可使用；不得用会员购买替代隐私同意。Provider 变更或处理目的实质变化时需重新评估 consent。 |
+| IOS-STORE-005 | AMap iOS Privacy & SDK Initialization Compliance | ⬜ | 与 UIUX-P0-002/#205 联动收口：未同意高德相关隐私披露时不得初始化/构建 AMap SDK；同意状态必须在 SDK 初始化/使用前正确应用，撤回后未来地图构建 fail closed；隐私政策列明高德 SDK 数据处理。正式 Release 还需检查 SDK privacy manifest/签名与实际版本。 |
+| IOS-STORE-006 | App Store Connect App Privacy / Data Collection Mapping | ⬜ | 基于最终生产数据流逐项填写 App Privacy（Privacy Nutrition Labels）：Contact Info、User Content、Photos/Audio、Precise/Coarse Location、Identifiers、Diagnostics/Usage Data 等只按真实收集/关联/用途申报；核对第三方 SDK/provider 数据流。每次新增 SDK、广告/分析、支付或 provider 后重新审查。 |
+| IOS-STORE-007 | Account Deletion Submission Readiness | ⬜ | 现有 App 内注销入口与 S1-022 durable delete 保留；上架前验证用户可在 App 内发起永久账号删除，关联个人数据/媒体按政策删除，失败/等待状态有明确说明且可恢复。优先在 OPS-002 后由服务端 durable worker 自动推进，避免依赖用户反复点击“继续注销”；同时准备审核演示路径。 |
+| IOS-STORE-008 | Background Location App Review Package | ⬜ | 后台定位继续只服务于用户主动启用的“自动位置记忆”。正式审核前验证 progressive permission（When In Use → 明确启用后再申请 Always）、拒绝 Always 时 App 核心非自动能力仍可用、Privacy Pause/关闭入口真实生效、Info.plist purpose string 与实际行为一致；准备 Review Notes 解释后台定位用途、开关路径和审核复现步骤。 |
+| IOS-STORE-009 | Login Policy / Sign in with Apple Review | ⬜ | 当前仅自有邮箱/密码认证时保持现状即可。若未来在 iOS 主客户端加入微信等第三方/社交登录，必须按提交时最新 App Review Guideline 4.8 重新审查，并提供符合要求的等效登录方案（通常包括 Sign in with Apple 或其他满足当期规则的方案）；不得先接微信登录后遗漏该 Gate。 |
+| IOS-STORE-010 | iOS Digital Membership / StoreKit & Purchase Policy | ⬜ | PERSONAL/FAMILY/未来数字 AI 权益进入 iOS 销售前，单独完成 StoreKit/App Store IAP/订阅及服务端 Purchase→Entitlement 校验；不得直接照搬微信/支付宝的 App 内数字解锁路径。最终实现以提交时 Apple storefront、entitlement、external-purchase 等最新规则为准，避免把会变化的商店政策硬编码进 Plan authority。与 BIZ-017 联动。 |
+| IOS-STORE-011 | Release Archive / Reviewer Access / Submission Evidence | ⬜ | 使用正式 Bundle ID、Distribution 签名和 production 配置生成最终 Archive；验证无测试密钥/调试入口/私有 API/真实 secret 泄漏，Privacy Report 与权限用途一致。提供稳定审核账号、可用生产/审核后端、Review Notes、后台定位/注销/AI consent 的操作步骤、Support URL/Privacy URL、必要截图和联系信息。 |
+| IOS-STORE-012 | Final iOS Real-device & Store-readiness Gate | ⬜ | #205/相关客户端收口后重新执行 iOS 真机稳定性与关键路径验收：登录/refresh、冷启动恢复、照片上传与本地缓存、自动位置记忆、后台唤醒/恢复、高德地图、Privacy Pause、AI consent、账号注销。CORE-004 长时认证仍按其独立 P0 Gate 执行；正式提交不得以模拟器/无签名 IPA 代替最终 Release 包真机证据。 |
+| APP-ID-001 | Production Application Identity Migration — `com.jiyidays` | ⏸ | **后期统一迁移，当前不改 #205 / 测试包。** 当前 Android `applicationId` 与 iOS Bundle ID 为 `cn.jiyidashi.jiyidashi`；V1 正式生产目标暂冻结为 `com.jiyidays`，商店展示名仍为“迹忆”。迁移必须一次性核对 Android applicationId/namespace、iOS Bundle ID/App ID/Provisioning/Keychain、CI/Release 配置、高德 Android/iOS SDK Key 绑定、微信/Push/Universal Link/OAuth/IAP 等依赖应用身份的配置。应在正式 App Store/Google Play 生产条目、生产高德 Key、Push/第三方登录/IAP 等外部绑定最终锁定前完成；若届时目标 ID 已被占用或平台记录已锁定，先重新评估再迁移。 |
+
+### App Store 正式提交锁
+
+```text
+UIUX-P0-002 / consumer client stable
+→ APP-ID-001 production application identity migration PASS
+→ IOS-STORE-002 Privacy Manifest / Required Reason API PASS
+→ IOS-STORE-003 privacy policy / SDK disclosure PASS
+→ IOS-STORE-004 third-party AI consent PASS
+→ IOS-STORE-005 AMap privacy PASS
+→ IOS-STORE-006 App Privacy mapping PASS
+→ IOS-STORE-007 account deletion PASS
+→ IOS-STORE-008 background-location review package PASS
+→ IOS-STORE-009 login-policy review PASS
+→ IOS-STORE-010 IAP policy PASS when digital sales are enabled
+→ IOS-STORE-011 final signed Archive + reviewer evidence PASS
+→ IOS-STORE-012 final real-device/store-readiness PASS
+→ 才允许标记 IOS-STORE-001 ✅
+```
+
+> App Store 政策会变化。IOS-STORE-001 启动时必须重新核对**当时生效**的 Apple App Review Guidelines、Required Reason API 列表、Privacy Manifest/SDK 要求、App Privacy 字段和支付/登录政策；本表记录的是当前已识别的工程 Gate，不以 2026-10-04 的政策文本永久冻结实现细节。
+
 ---
 
 # 9. 商业化与增长
 
+> **状态边界（2026-10-04）**：正式商业化实现尚未启动。现有 FREE/PERSONAL/FAMILY Plan、Quota、Entitlement、Admin 等仅视为技术基础，不代表定价、试用、Founder、订阅、支付、StoreKit 或消费者会员页面已经实现。除已明确完成的 BIZ-007～011 外，后续商业任务统一按本节重新排期。
+
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| BIZ-001 | 免费版权益 | 🟠 | Issue #168 / PR #172 已合并 FREE plan/capability/quota foundation。V1 商业基线：¥0 永久；基础“记录→保存→找到”长期可用，含基础文字/时间线/搜索/足迹/人物地点物品/导出，以及受 quota 控制的基础照片、语音、AI 回忆、OCR/Vision/总结体验；建议首发存储 500MB～1GB，但最终值只由 canonical server config 决定。 |
-| BIZ-002 | 个人会员 | 🟠 | PERSONAL authority 已有。V1 价格基线：¥15/月、¥129/年；创始会员首发 ¥99/年。建议首发存储 20GB；包含更高媒体/AI quota、高级时间线/历史/检索/RAG/总结/导出等。禁止宣传“无限 AI/OCR/Vision”，统一使用“包含充足的 AI 使用额度”。 |
-| BIZ-003 | 家庭会员 | 🟠 | FAMILY authority 已有且 Family permission/grant/privacy authority 保持独立。V1 价格基线：¥25/月、¥239/年；首发推广 ¥199/年；建议最多 5 人、共享存储 100GB。会员 capability 永远不能替代家庭成员隐私授权。 |
+| BIZ-001 | 免费版权益 | ⬜ | **商业实现未开始**。Issue #168 / PR #172 仅提供 FREE plan/capability/quota 技术基础。V1 商业基线：¥0 永久；基础“记录→保存→找到”长期可用，含基础文字/时间线/搜索/足迹/人物地点物品/导出，以及受 quota 控制的基础照片、语音、AI 回忆、OCR/Vision/总结体验；建议首发存储 500MB～1GB，但最终值只由 canonical server config 决定。 |
+| BIZ-002 | 个人会员 | ⬜ | **商业实现未开始**；PERSONAL authority 仅为技术基础。直连/Android/微信渠道 V1 价格基线：¥15/月、¥129/年；创始会员首发 ¥99/年。iOS App Store 采用独立 storefront price（见 BIZ-019），权益保持同一 PERSONAL。建议首发存储 20GB；包含更高媒体/AI quota、高级时间线/历史/检索/RAG/总结/导出等。禁止宣传“无限 AI/OCR/Vision”。 |
+| BIZ-003 | 家庭会员 | ⬜ | **商业实现未开始**；FAMILY authority 仅为技术基础，Family permission/grant/privacy authority 保持独立。直连/Android/微信渠道 V1 价格基线：¥25/月、¥239/年；首发推广 ¥199/年。iOS App Store 采用独立 storefront price（见 BIZ-019），权益保持同一 FAMILY。建议最多 5 人、共享存储 100GB。会员 capability 永远不能替代家庭成员隐私授权。 |
 | BIZ-004 | 高级会员 | ⏸ | PREMIUM capability foundation 可继续保留，但 **V1 消费者页面不展示、不销售**。后续根据真实 AI 成本和高频需求再评估“迹忆 Pro / AI 高级版”，参考区间 ¥199～299/年；V1 不实现该商业 SKU。 |
-| BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend + Mini/Flutter 产品展示已完成；V1 作为 PERSONAL/FAMILY 高价值能力的一部分，正式 entitlement packaging、quota、rollout 仍待商业化任务收口。 |
+| BIZ-005 | 年度回忆报告 | ⬜ | V2-010 Annual Electronic Memoir backend + Mini/Flutter 产品能力已完成，但**商业 packaging 尚未开始**；V1 计划作为 PERSONAL/FAMILY 高价值能力的一部分，正式 entitlement packaging、quota、rollout 待商业化工作线统一收口。 |
 | BIZ-006 | 实体年度回忆录 | ⏸ | 后续增值服务；V1 不做一次买断/实体商业闭环。 |
 | BIZ-007 | 北极星指标：成功找回记忆数 | ✅ | Issue #169 / PR #173 已完成两轮正式极窄复审并合并；server-owned successful-memory-retrieval 口径、durable dedupe 与 aggregate report 已收口 |
 | BIZ-008 | D1 / D7 / D30 留存 | ✅ | Issue #169 / PR #173 已合并；UTC signup cohort、active-day authority、D1/D7/D30 eligible/retained/null-zero 口径已收口 |
 | BIZ-009 | Memory Retrieval Success | ✅ | Issue #169 / PR #173 已合并；accepted-attempt denominator、SUCCESS numerator 与 privacy-safe success-rate aggregation 已收口 |
 | BIZ-010 | False Memory Rate | ✅ | S3-019 / Issue #87 / PR #89 已完成首版显式用户反馈驱动的 revision 指标基础：counts + denominator + rate；DELETE-only 不误算 false，不做 AI 质量打分/看板；已正式审查并合并 main |
 | BIZ-011 | Production Registration Entitlement Default | ✅ | **Issue #197 / PR #199 已合并 `main=f805848ba16af786b3d15a6ae26d5dc3d399aa95`**：正常生产注册默认 `FREE`，public registration 不再调用 `create_legacy_full_entitlement()`；`LEGACY_FULL` 仅历史兼容/migration-only（以及明确 dev-only）使用，不出现在消费者购买/营销/升级入口；历史 entitlement 原样保留，不做批量迁移。 |
-| BIZ-012 | Pricing Catalog & Commercial Policy V1 | ⬜ | 建立独立 Product/Price Catalog 与 Commercial Policy。首发逻辑产品：PERSONAL_MONTHLY/ANNUAL、FAMILY_MONTHLY/ANNUAL，以及 Founder/Launch price entry；价格使用 integer minor unit（人民币分），Plan 与 Price 解耦，客户端不得硬编码价格。 |
+| BIZ-012 | Pricing Catalog & Commercial Policy V1 | ⬜ | 建立独立 Product/Price Catalog 与 Commercial Policy。首发逻辑产品：PERSONAL_MONTHLY/ANNUAL、FAMILY_MONTHLY/ANNUAL，以及 Founder/Launch price entry；Price 必须支持 `sales_channel/storefront` 维度，同一 Plan 可在不同销售渠道使用不同价格；金额使用 integer minor unit，Plan 与 Price 解耦，客户端不得硬编码价格。 |
 | BIZ-013 | Value-triggered Trial & Founder Cohort | ⬜ | 新用户不注册即试用。满足价值条件（基线：记录≥10 / 连续使用≥3天 / 有效照片≥5）后可触发 14 天 PERSONAL 体验；服务端记录开始/结束，防卸载重领。Founder 使用 `pricing_cohort`/eligibility，不新增 PlanCode；基线前 5000 名个人付费会员 ¥99/年，续费锁价策略必须可运营修改。 |
 | BIZ-014 | Membership Expiration & Safe Downgrade | ⬜ | PERSONAL/FAMILY 到期降为 FREE，但不得删除/锁定已有记忆、照片、语音或已有 AI 结果；超 FREE 存储时已有媒体继续可读/可删，只禁止新增超额媒体；新的高成本 AI/付费 capability 按 FREE authority/quota 判定；续费后恢复写入。 |
-| BIZ-015 | Commercial Admin Simulation & Metrics | 🟠 | ADMIN-001 已包含 Entitlement & Quota 管理基础；商业化阶段需能由 SUPER_ADMIN 正确模拟 FREE→PERSONAL→FAMILY→expiry→downgrade，并记录 revision/audit。后台预留 FREE/PERSONAL/FAMILY/Trial 数量、转化、续费、平均存储/AI、AI/storage cost per paid user、ARPU 等指标；这些是运营指标，不是业务 hard rule。 |
+| BIZ-015 | Commercial Admin Simulation & Metrics | ⬜ | **商业模拟/运营指标尚未开始**；ADMIN-001 仅已包含 Entitlement & Quota 管理基础。商业化阶段需能由 SUPER_ADMIN 正确模拟 FREE→PERSONAL→FAMILY→expiry→downgrade，并记录 revision/audit。后台预留 FREE/PERSONAL/FAMILY/Trial 数量、转化、续费、平均存储/AI、AI/storage cost per paid user、ARPU 等指标；这些是运营指标，不是业务 hard rule。 |
 | BIZ-016 | Consumer Membership Surfaces V1 | ⬜ | Flutter/Mini 消费者页面只展示 FREE / PERSONAL / FAMILY 三档；不展示 PREMIUM、LEGACY_FULL、内部 quota/provider token。展示当前权益、使用量、价格 Catalog、Trial/Founder eligibility、到期/降级说明；不得将价格和 quota 写死在客户端。 |
 | BIZ-017 | Payment & Subscription Integration | ⬜ | 支付供应商单独任务。架构保持 Product → Price → Purchase/Subscription → Entitlement/Grant；Plan 不等于微信订单或 Apple SKU。未来接微信支付/App Store IAP 等；本任务完成前可由 Admin 模拟 entitlement 生命周期验证。 |
 | BIZ-018 | Invite Reward V1 | ⏸ | V1 可先保留数据模型/规则，不必首发开放。基线：邀请新用户并达到真实激活条件（如连续使用 7 天）后双方 +7 天 PERSONAL；需要账号唯一约束、设备/IP 风控、年度奖励上限、禁止自邀请与循环刷。 |
+| BIZ-019 | Cross-Store Pricing & Entitlement Parity V1 | ⬜ | **后期与 BIZ-012/BIZ-017/IOS-STORE-010 一起实现。** 同一 PERSONAL/FAMILY entitlement 在 Android/微信/官网/iOS 登录后保持一致，不建立 IOS_PERSONAL/ANDROID_PERSONAL 等分裂 Plan；仅 Price 按 `sales_channel/storefront` 区分。V1 基线：Android/微信 PERSONAL ¥15/月、¥129/年、Founder ¥99/年；iOS ¥18/月、¥148/年、Founder ¥118/年。Android/微信 FAMILY ¥25/月、¥239/年、Launch ¥199/年；iOS ¥30/月、¥268/年、Launch ¥228/年。iOS 用户在其他渠道已合法获得的 entitlement 登录后继续生效；App Store 购买仍由 StoreKit/IAP 校验。价格均为可运营调整基线，不硬编码 Apple 佣金或永久 storefront 政策。 |
 
 
 ## 9.1 V1 首发会员与定价设计基线（2026-09-30）
@@ -633,19 +678,33 @@ User Correction Rate
 
 ### 首发消费者套餐
 
+> 以下 Android/微信价格是直连销售渠道基线；iOS App Store 使用独立 storefront price。**渠道价格可以不同，但 Plan / Capability / Quota / Entitlement 语义必须相同。**
+
 ```text
 FREE
 ¥0 / 永久
 
-PERSONAL
+PERSONAL — Android / 微信
 ¥15 / 月
 ¥129 / 年
 Founder baseline: ¥99 / 年
 
-FAMILY
+PERSONAL — iOS App Store
+¥18 / 月
+¥148 / 年
+Founder baseline: ¥118 / 年
+
+FAMILY — Android / 微信
 ¥25 / 月
 ¥239 / 年
 Launch baseline: ¥199 / 年
+
+FAMILY — iOS App Store
+¥30 / 月
+¥268 / 年
+Launch baseline: ¥228 / 年
+
+FAMILY
 最多 5 人（基线）
 共享存储 100GB（基线）
 
@@ -825,21 +884,29 @@ Provider 已开始后，即使 timeout/provider failure，可按既定政策计�
 
 ### Pricing Catalog
 
-价格不得与 PlanCode 绑死。
+价格不得与 PlanCode 绑死；同一逻辑产品必须允许多个 `sales_channel/storefront` price entry。
 
-首发逻辑产品基线：
+首发逻辑产品/渠道价格基线：
 
 ```text
-JIYI_PERSONAL_MONTHLY       1500 fen
-JIYI_PERSONAL_YEARLY       12900 fen
-JIYI_PERSONAL_FOUNDER_YEARLY 9900 fen
+# Android / 微信 / direct baseline
+JIYI_PERSONAL_MONTHLY          1500 fen
+JIYI_PERSONAL_YEARLY          12900 fen
+JIYI_PERSONAL_FOUNDER_YEARLY   9900 fen
+JIYI_FAMILY_MONTHLY            2500 fen
+JIYI_FAMILY_YEARLY            23900 fen
+JIYI_FAMILY_LAUNCH_YEARLY     19900 fen
 
-JIYI_FAMILY_MONTHLY        2500 fen
-JIYI_FAMILY_YEARLY         23900 fen
-JIYI_FAMILY_LAUNCH_YEARLY  19900 fen
+# iOS App Store baseline
+JIYI_PERSONAL_MONTHLY_IOS          1800 fen
+JIYI_PERSONAL_YEARLY_IOS          14800 fen
+JIYI_PERSONAL_FOUNDER_YEARLY_IOS  11800 fen
+JIYI_FAMILY_MONTHLY_IOS            3000 fen
+JIYI_FAMILY_YEARLY_IOS            26800 fen
+JIYI_FAMILY_LAUNCH_YEARLY_IOS     22800 fen
 ```
 
-金额必须使用 integer minor unit，禁止 float。
+上述 `_IOS` 仅表达 Catalog 价格项示意，不代表新增 PlanCode。正式模型优先使用 `product + sales_channel/storefront + price` 关系，而不是复制 PERSONAL/FAMILY 会员类型。金额必须使用 integer minor unit，禁止 float。
 
 商业层概念分离：
 
@@ -961,16 +1028,20 @@ PREMIUM 商业销售
 
 ### 商业化实施顺序
 
+> 当前不启动；待现阶段产品/生产稳定工作完成后统一进入商业化工作线。
+
 ```text
-1. BIZ-011 注册默认 LEGACY_FULL → FREE
-2. BIZ-012 Pricing Catalog
+1. BIZ-011 注册默认 LEGACY_FULL → FREE              ✅ 已完成
+2. BIZ-012 Pricing Catalog + channel/storefront price
 3. Entitlement / Quota canonical runtime authority
-4. BIZ-013 Founder cohort
-5. BIZ-013 Value-triggered Trial
-6. BIZ-014 Expiration / safe downgrade
-7. ADMIN-001 Entitlement & Quota / Admin simulation
-8. BIZ-016 Flutter/Mini membership surfaces
-9. BIZ-017 WeChat Pay / App Store payment integration
+4. BIZ-013 Founder cohort + Value-triggered Trial
+5. BIZ-014 Expiration / safe downgrade
+6. BIZ-015 Admin simulation + commercial metrics
+7. BIZ-016 Flutter/Mini membership surfaces
+8. BIZ-019 Cross-store pricing / entitlement parity
+9. BIZ-017 Payment & Subscription Integration
+   ├─ WeChat/direct payment
+   └─ App Store StoreKit / IAP（IOS-STORE-010）
 10. Commercial Launch
 ```
 
@@ -985,6 +1056,116 @@ FREE
 ```
 
 所有 Capability / Quota 行为必须以服务端 canonical authority 为准。
+
+
+## 9.2 上线增长与留存优化（2026-10-04）
+
+> **单独作为消费者增长工作线推进，不等同于继续堆功能。** 目标是把“下载安装 → 第一次感受到价值 → 长期自动记录 → 成功找回 → 主动回忆 → 分享/邀请 → 口碑传播”做成完整增长飞轮。AI 仍只做搜索、理解、总结和表达辅助，不把“AI聊天”作为增长主卖点。
+
+### 增长飞轮
+
+```text
+下载安装
+→ 完成必要授权
+→ 首日就看到迹忆已经形成内容
+→ 第一次成功找回过去
+→ 后续持续自动形成可回忆生活
+→ 那年今日 / 周月回忆主动把过去送回来
+→ 生成值得保存与分享的回忆成果
+→ 朋友圈 / 微信好友 / 家庭邀请
+→ 新用户安装
+→ 家庭与个人记忆资产继续积累
+→ 留存、续费与口碑增强
+```
+
+| ID | 优先级 | 功能 / 需求 | 状态 | 说明 |
+| --- | --- | --- | --- | --- |
+| GROW-001 | P0.5 | First-day Aha / Recent Memory Bootstrap V1 | ⬜ | 解决“新用户第一天没有历史数据”的冷启动问题。用户明确授权照片访问后，优先在本机读取最近 30～90 天照片的拍摄时间、EXIF 地点等必要 metadata，生成“最近记忆”候选与日期/地点聚合，让用户安装当天就能看到“迹忆已经帮我找回一些过去”。不得在未授权时扫描；不得为做冷启动而默认上传全部原图；候选事实必须标明来源并允许跳过/纠正。后续可扩展日历/旧日记导入，但首版不做大而全导入。 |
+| GROW-002 | P0.5 | Today Active Recording Experience V1 | ⬜ | 基于已完成的 CORE-003 Recording Health，优化消费者“今天”首页，让用户明确看到“迹忆正在工作”：今日地点数、有效足迹/覆盖、最近记录时间、照片关联、记录健康状态与缺口。避免只展示技术状态；核心体验是“即使我没操作，今天也在自动形成记忆”。 |
+| GROW-003 | P1 | On This Day / Memory Resurfacing V1 | ⬜ | 增加“那年今日 / 去年今天 / 一个月前今天 / 值得回看的这一天”等低打扰主动回忆。候选必须来自真实 Memory/Visit/Photo Evidence，优先用户可感知价值，不做无证据 AI 编故事。需要 notification/reminder 时与 REM-001 共用正式 delivery authority，控制频率，避免骚扰。 |
+| GROW-004 | P1 Growth | Memory Story Cards & WeChat Moments Share V1 | ⬜ | **重点口碑传播能力。** 将月度回忆、旅行、家庭日、年度回忆等整理成高质量“回忆故事卡/我的九月/这次旅行/我们的家庭2026”等可保存成果；支持生成分享图片，并面向微信好友/朋友圈分享。分享前必须提供明确预览与隐私脱敏：默认不暴露精确地址、经纬度、家庭成员真实姓名、私密照片/语音文字；地点默认降为城市/用户确认名称，敏感字段必须由用户主动选择才可进入分享结果。分享卡可带低干扰“迹忆”品牌标识/来源，但不能覆盖主体内容。首版优先静态长图/多卡，不先做复杂视频生成。 |
+| GROW-005 | P1 Growth | Content-driven Family Invite V1 | ⬜ | Family Invite 不只放在设置页。把邀请放到真实内容场景：一次家庭旅行、一顿饭、孩子生日、长辈故事等，允许用户“邀请家人一起补充/保存这段回忆”。邀请落地页首先解释“这里有属于你的家庭记忆”，而不是先卖会员。继续严格受 Family Membership / Permission / Grant / Privacy authority 约束。与 BIZ-018 推荐奖励分离：内容邀请是产品增长，奖励邀请是后续商业增长。 |
+| GROW-006 | P0.5 | “找回”明星入口与 Query UX V1 | ⬜ | 基于已完成 CORE-002，把“我25号去哪了？”这类找回体验升级成消费者明星功能。入口文案优先“想找什么？ / 找回”，而不是“AI聊天”。结果先展示结构化事实、时间、地点、停留和 Evidence，再提供“帮我总结这一天”等 AI 二级动作。典型场景：某天去哪了、上次去某地、什么时候见过某人、某次照片在哪里。 |
+| GROW-007 | P0.5 Trust | My Data / Privacy Trust Center V1 | ⬜ | 把隐私从合规文档变成产品能力。集中展示“今天采集了什么、长期保留了什么、AI 本月处理次数、家庭当前共享范围、自动记录状态”，并提供暂停、关闭自动足迹、导出、删除、注销等真实操作。清晰承诺不使用私人 Memory/Photo/Location/Family 做广告画像。所有统计必须来自真实 authority，不得伪造“安全评分”。 |
+| GROW-008 | P1 Launch | Launch Messaging & Scenario Creative V1 | ⬜ | 首发营销不讲“多模态 AI 第二大脑”，只打 3 个一秒可懂场景：①“忘了25号去哪了？问迹忆。” ②“妈妈生日那天，我们去了哪家饭店？” ③“那些你没写日记的日子，也不该消失。” 官网/App Store/短视频素材展示真实产品路径与真实数据样例，AI 只作为辅助说明。建立 15～30 秒短视频、商店截图、官网首屏统一 narrative。 |
+| GROW-009 | P1 Analytics | Growth Funnel & Word-of-mouth Metrics V1 | ⬜ | 在现有 BIZ-007～010 指标基础上新增消费者增长漏斗：授权完成率、Time-to-First-Aha、7日有效记录覆盖率、30日 Memory Coverage、First Retrieval Success、分享卡生成率/实际分享率、Family 内容邀请率/接受率、D7/D30、Trial→Paid、续费。指标用于判断产品价值与口碑，不进入 entitlement hard rule。 |
+| GROW-010 | P1 Retention | Weekly / Monthly Memory Productization V1 | ⬜ | 将现有 Summary/Annual Memoir 能力产品化为“这一周 / 我的九月 / 我的2026”等可读、可保存、可分享成果。默认强调地点、照片、真实事件与用户确认内容，AI只负责组织语言。优先做少而精的高价值模板，不做大量花哨模板市场。 |
+| GROW-011 | P1 Growth | Value-triggered Share / Invite Timing V1 | ⬜ | 分享/邀请触发必须发生在真实价值事件之后，例如成功找回一天、生成月度回忆、完成旅行回忆或家庭内容整理；禁止注册即弹“分享给朋友”、首次打开即索要评价/邀请。需要建立频控、dismiss cooldown 与实验开关，避免破坏信任。 |
+
+### 朋友圈 / 微信分享产品原则
+
+```text
+私密原始记忆
+→ 用户主动选择生成回忆成果
+→ server/client 生成 share-safe projection
+→ 隐私脱敏
+→ 用户预览
+→ 用户主动确认
+→ 保存图片 / 微信好友 / 朋友圈
+```
+
+默认 share-safe projection：
+
+```text
+允许：
+日期/月份
+城市级地点
+用户明确确认的地点名称
+统计数字
+用户主动选择的照片
+用户主动选择的文字
+低干扰“迹忆”品牌来源
+
+默认禁止：
+精确经纬度
+家庭住址
+未确认的精确地点
+家庭成员真实姓名
+未选择的照片
+语音原文
+私密 Memory 原文
+后台定位原始点
+Evidence 内部 ID / provider 信息
+```
+
+朋友圈传播的目标不是做广告海报，而是让用户愿意分享一个真正属于自己的结果：
+
+```text
+我的九月
+这次旅行
+一年前的今天
+这一年和妈妈
+孩子这一年的成长
+我们的家庭2026
+```
+
+### 上线前 / 上线后优先级
+
+```text
+上线前消费者闭环优先：
+GROW-001 First-day Aha
+GROW-002 Today / Recording Health 产品化
+GROW-006 “找回”明星入口
+GROW-007 My Data / Privacy Trust Center
+
+上线首批增长能力：
+GROW-003 On This Day
+GROW-004 Memory Story Cards + 朋友圈/微信分享
+GROW-005 Content-driven Family Invite
+GROW-008 Launch Messaging
+GROW-009 Growth Funnel Metrics
+GROW-010 Weekly/Monthly Memory Productization
+GROW-011 Value-triggered Share / Invite Timing
+```
+
+### 产品约束
+
+- 不以“每天打开次数”和“使用时长”作为唯一成功指标；用户数天不打开、需要时 10 秒找回真实生活仍是成功体验。
+- 不为了提高分享率泄露精确足迹、家庭成员或私人记忆。
+- 不为了增长强制通讯录上传、默认公开、默认家庭共享或强制邀请。
+- 不把 AI 生成内容伪装成用户真实经历。
+- 不在首日用高频推送、评价弹窗、会员墙破坏自动记录和隐私信任。
+- 所有增长实验必须可关闭、可审计，并服从 Privacy / Family / Entitlement / Evidence authority。
 
 
 ---
