@@ -17,9 +17,9 @@ from app.daily_summary_models import DailySummaryResult, DailySummaryStatus
 from app.deps import get_current_user_id
 from app.monthly_summary_models import MonthlySummaryResult, MonthlySummaryStatus
 from app.services.ai_gateway import get_ai_gateway
+from app.services.annual_summary_service import summarize_year
 from app.services.api_abuse import enforce_authenticated_api_rate
 from app.services.auth_rate_limit import ApiRouteClass
-from app.services.annual_summary_service import summarize_year
 from app.services.daily_summary_service import summarize_today
 from app.services.monthly_summary_service import summarize_month
 
