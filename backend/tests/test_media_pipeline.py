@@ -174,6 +174,9 @@ async def test_verified_photo_becomes_queryable_media_evidence(
     )
     assert complete.status_code == 200
     assert complete.json()["status"] == "READY"
+    complete_cache_version = complete.json()["cache_version"]
+    assert len(complete_cache_version) == 64
+    assert all(char in "0123456789abcdef" for char in complete_cache_version)
     assert "storage_etag" not in complete.json()
     assert len(fake_storage.promotions) == 1
     promoted_source, final_key = fake_storage.promotions[0]
@@ -265,6 +268,7 @@ async def test_verified_photo_becomes_queryable_media_evidence(
     assert "temporary=1" in payload["download"]["url"]
     assert len(payload["cache_version"]) == 64
     assert all(char in "0123456789abcdef" for char in payload["cache_version"])
+    assert payload["cache_version"] == complete_cache_version
     assert fake_storage.last_download_key == final_key
 
     second_download = await client.post(
