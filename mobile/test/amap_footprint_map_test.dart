@@ -50,7 +50,6 @@ void main() {
   });
 
   testWidgets('accepted privacy + SDK key constructs real map adapter', (tester) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     var nativeBuilds = 0;
     var receivedCount = 0;
 
@@ -77,7 +76,6 @@ void main() {
   });
 
   testWidgets('missing SDK key degrades to factual non-map fallback', (tester) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     var nativeBuilds = 0;
 
     await tester.pumpWidget(
@@ -101,7 +99,6 @@ void main() {
   });
 
   testWidgets('missing canonical coordinates never creates fake marker', (tester) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     var nativeBuilds = 0;
 
     await tester.pumpWidget(
