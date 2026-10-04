@@ -990,16 +990,6 @@ Future<Key> _pumpGoldenToday(
   );
 }
 
-Future<Key> _pumpGoldenMemoryQuery(WidgetTester tester) {
-  return _pumpSurface(
-    tester,
-    _goldenNavigationShell(
-      selectedIndex: 1,
-      child: MemoryQueryPage(api: _GoldenApi()),
-    ),
-  );
-}
-
 Future<Key> _pumpGoldenProfile(
   WidgetTester tester, {
   _GoldenApi? api,
