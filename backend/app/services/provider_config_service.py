@@ -207,7 +207,10 @@ def read_provider_rows(db: Session) -> dict[ProviderService, ProviderConfigurati
     return result
 
 
-def provider_destination_authority(provider_type: str, base_url: str) -> tuple[str, str, int | None]:
+def provider_destination_authority(
+    provider_type: str,
+    base_url: str,
+) -> tuple[str, str, int | None]:
     parsed = urlparse(base_url.strip())
     if not parsed.scheme or not parsed.hostname:
         raise ProviderRuntimeConfigError("PROVIDER_BASE_URL_INVALID")
