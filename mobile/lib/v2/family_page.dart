@@ -1048,19 +1048,24 @@ class _FamilyPhotoTileState extends State<_FamilyPhotoTile> {
                 ),
               ),
             )
-          : widget.renderer?.call(current) ??
-              LocalMediaPresentationScope.maybeOf(context)?.renderer(
-                context,
-                current,
-                BoxFit.cover,
-              ) ??
-              Image.file(
-                current,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Center(
-                  child: Icon(Icons.broken_image_outlined),
-                ),
+          : KeyedSubtree(
+              key: ValueKey(
+                'family-photo-ready-${familyMediaCacheKey(widget.resourceOwnerUserId, widget.photo.mediaId)}',
               ),
+              child: widget.renderer?.call(current) ??
+                  LocalMediaPresentationScope.maybeOf(context)?.renderer(
+                    context,
+                    current,
+                    BoxFit.cover,
+                  ) ??
+                  Image.file(
+                    current,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Icon(Icons.broken_image_outlined),
+                    ),
+                  ),
+            ),
     );
   }
 }
