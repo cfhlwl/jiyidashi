@@ -1,6 +1,7 @@
 import '../api_client.dart';
 import '../footprint_models.dart';
 import 'family_models.dart';
+import 'v2_common.dart';
 
 class FamilyApi {
   FamilyApi(this.api);
