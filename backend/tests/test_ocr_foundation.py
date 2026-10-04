@@ -24,8 +24,8 @@ from app.services.ai_gateway import (
     OpenAIResponsesProvider,
     get_ai_gateway,
 )
-from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.concurrency_guard import claim_provider_permit, release_permit
+from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorageError,
