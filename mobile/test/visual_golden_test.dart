@@ -1024,6 +1024,12 @@ Future<Key> _pumpGoldenProfile(
 }
 
 void main() {
+  // UIUX-P0-002 replaces the legacy consumer-page baselines for Today,
+  // Timeline, Memory Detail, Family, Query, Unified Capture, Annual Summary,
+  // and Profile. Their authoritative visual gates are the eight
+  // design_authority_*.png tests below. Keep legacy state/error/Elder and
+  // unrelated feature goldens, but do not maintain a second competing baseline
+  // for those eight consumer surfaces.
   // #163: committed V2 baselines are generated from the same Flutter 3.47.4
   // deterministic CJK-font harness used by the existing mobile visual gate.
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -1060,30 +1066,6 @@ void main() {
     );
   });
 
-  testWidgets('golden: today home', (tester) async {
-    final key = await _pumpGoldenToday(tester);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/home_today.png'),
-    );
-  });
-
-  testWidgets('golden: timeline', (tester) async {
-    final api = _GoldenTimelineApi();
-    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
-    final key = await _pumpSurface(
-      tester,
-      TimelinePage(api: api, mediaCache: cache),
-    );
-    expect(find.text('时间线'), findsWidgets);
-    expect(find.text('第一次产品讨论'), findsOneWidget);
-    expect(find.text('周末咖啡店'), findsOneWidget);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/timeline.png'),
-    );
-  });
-
   testWidgets('golden: people', (tester) async {
     final key = await _pumpSurface(tester, PeoplePage(api: V2TestApi()));
     expect(find.text('重要的人'), findsWidgets);
@@ -1096,15 +1078,6 @@ void main() {
     expect(find.text('我的人生'), findsWidgets);
     expect(find.text('人生经历'), findsOneWidget);
     await expectLater(find.byKey(key), matchesGoldenFile('goldens/life_home.png'));
-  });
-
-  testWidgets('golden: family permissions', (tester) async {
-    final key = await _pumpSurface(tester, FamilyPage(api: _GoldenFamilyApi()));
-    expect(find.text('家庭成员 1'), findsOneWidget);
-    expect(find.text('可查看我的记忆'), findsOneWidget);
-    expect(find.text('可查看我的照片'), findsOneWidget);
-    expect(find.textContaining(_GoldenFamilyApi.memberId), findsNothing);
-    await expectLater(find.byKey(key), matchesGoldenFile('goldens/family_permissions.png'));
   });
 
   testWidgets('golden: empty timeline state', (tester) async {
@@ -1160,47 +1133,6 @@ void main() {
     );
   });
 
-  testWidgets('golden: unified capture media controls', (tester) async {
-    final key = await _pumpSurface(
-      tester,
-      Scaffold(
-        body: SafeArea(
-          child: CapturePage(
-            api: _GoldenApi(),
-            offlineQueue: _GoldenQueue(),
-          ),
-        ),
-      ),
-    );
-
-    final voiceStart =
-        find.byKey(const ValueKey<String>('capture-voice-start'));
-    await tester.ensureVisible(voiceStart);
-    await _pumpVisualFrames(tester);
-
-    expect(
-      find.byKey(const ValueKey<String>('capture-photo-camera')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('capture-photo-gallery')),
-      findsOneWidget,
-    );
-    expect(voiceStart, findsOneWidget);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/capture_media.png'),
-    );
-  });
-
-  testWidgets('golden: memory query', (tester) async {
-    final key = await _pumpGoldenMemoryQuery(tester);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/memory_query.png'),
-    );
-  });
-
   testWidgets(
     'preview: deterministic memory query trust label',
     (tester) async {
@@ -1232,37 +1164,6 @@ void main() {
     },
     skip: !_captureDeterministicQueryPreview,
   );
-
-  testWidgets('golden: memory detail', (tester) async {
-    final api = _GoldenMemoryDetailApi();
-    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
-    final key = await _pumpSurface(
-      tester,
-      MemoryDetailPage(
-        api: api,
-        memoryId: v2MemoryId,
-        mediaCache: cache,
-      ),
-    );
-    expect(find.text('第一次产品讨论'), findsWidgets);
-    expect(find.text('上海办公室'), findsOneWidget);
-    expect(find.textContaining('整块白板'), findsOneWidget);
-    expect(find.textContaining(v2MemoryId), findsNothing);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/memory_detail.png'),
-    );
-  });
-
-  testWidgets('golden: profile and privacy controls', (tester) async {
-    // [人工注释][CI-005] Profile 使用确定性的 fake API 返回固定资料/暂停状态，
-    // 只稳定异步输入，不复制或重写产品 UI。
-    final key = await _pumpGoldenProfile(tester);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/profile_privacy.png'),
-    );
-  });
 
   testWidgets('golden: profile privacy paused', (tester) async {
     final key = await _pumpGoldenProfile(
@@ -1389,31 +1290,6 @@ void main() {
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/v2_reasoning_answered.png'),
-    );
-  });
-
-  testWidgets('golden: V2 annual memoir ready', (tester) async {
-    final api = V2TestApi();
-    final cache = await _seedGoldenMediaCache(v2OwnerId);
-    final key = await _pumpSurface(
-      tester,
-      MemoirsPage(api: api, mediaCache: cache),
-    );
-    await tester.enterText(find.byType(TextField).first, '2025');
-    final annual = find.text('开始回看');
-    await tester.ensureVisible(annual);
-    await _pumpVisualFrames(tester);
-    await tester.tap(annual);
-    await _pumpVisualFrames(tester);
-    final storyHero = find.byKey(const ValueKey('annual-story-hero'));
-    await tester.ensureVisible(storyHero);
-    await _pumpVisualFrames(tester);
-    expect(storyHero, findsOneWidget);
-    expect(find.text('这一年的故事'), findsOneWidget);
-    expect(find.textContaining('新的产品阶段'), findsOneWidget);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/v2_annual_memoir_ready.png'),
     );
   });
 
