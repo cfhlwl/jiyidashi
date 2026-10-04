@@ -26,6 +26,7 @@ DbSession = Annotated[Session, Depends(get_db)]
 def get_authenticated_claims(
     credentials: BearerCredentials,
     db: DbSession,
+    request: Request = None,
 ) -> AccessTokenClaims:
     """Authenticate against JWT signature *and* current durable session authority."""
 
@@ -37,6 +38,12 @@ def get_authenticated_claims(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=exc.code,
         ) from exc
+    if request is not None:
+        enforce_default_authenticated_api_rate(
+            db,
+            user_id=claims.user_id,
+            request=request,
+        )
     return claims
 
 
@@ -101,10 +108,4 @@ def get_current_user_id(
         user_id=user_id,
         deletion_generation=deletion_generation,
     )
-    if request is not None:
-        enforce_default_authenticated_api_rate(
-            db,
-            user_id=user_id,
-            request=request,
-        )
     return user_id
