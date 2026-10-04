@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -13,6 +13,8 @@ from app.life_memoir_models import (
     LifeMemoirStageIndexResponse,
 )
 from app.services.ai_gateway import get_ai_gateway
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 from app.services.life_memoir_service import (
     LifeMemoirError,
     build_life_memoir_chapter,
@@ -49,9 +51,16 @@ def list_life_memoir_stages_route(
 )
 async def build_life_memoir_chapter_route(
     life_stage_id: UUID,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> LifeMemoirChapterResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     try:
         return await build_life_memoir_chapter(
             db,
