@@ -10,6 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.2
+  # 高德官方 Flutter 地图插件；客户端只接 Android/iOS SDK key，不接 Web Service key。
+  amap_flutter_map: 3.0.0
+  amap_flutter_base: 3.0.0
   flutter_secure_storage: 11.2.0
   image_picker: ^1.2.3
   record: ^7.1.1
