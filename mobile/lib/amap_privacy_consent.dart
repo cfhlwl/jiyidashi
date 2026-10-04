@@ -86,7 +86,12 @@ class AmapPrivacyConsentController extends ChangeNotifier
   Future<void> close() async {
     final delegate = _delegate;
     if (delegate is AmapPrivacyConsentStore) {
-      await delegate.close();
+      try {
+        await delegate.close();
+      } catch (_) {
+        // Cleanup is best effort. A failed consent-store open/read must stay
+        // fail-closed for maps, not become an asynchronous application crash.
+      }
     }
   }
 }
