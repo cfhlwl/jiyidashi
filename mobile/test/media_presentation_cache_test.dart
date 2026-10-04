@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/media_presentation_cache.dart';
@@ -235,4 +236,36 @@ void main() {
       isNotNull,
     );
   });
+  testWidgets('local media thumbnail cache hit never requests signed capability',
+      (tester) async {
+    final root = await _tempRoot();
+    addTearDown(() => root.delete(recursive: true));
+
+    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
+    await cache.putBytes(
+      ownerUserId: _ownerA,
+      mediaId: _mediaA,
+      cacheVersion: _versionA,
+      bytes: <int>[0x89, 0x50, 0x4e, 0x47],
+    );
+    final api = _MediaApi(owner: _ownerA);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LocalMediaThumbnail(
+            api: api,
+            mediaId: _mediaA,
+            cache: cache,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(api.capabilityCalls, 0);
+    expect(api.downloadCalls, 0);
+  });
+
 }
