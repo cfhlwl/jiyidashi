@@ -16,7 +16,7 @@ from app.long_term_reasoning_models import (
     LongTermReasoningResult,
     LongTermReasoningStatus,
 )
-from app.services.ai_gateway import AIProvenance, get_ai_gateway
+from app.services.ai_gateway import AIEntitlementError, AIProvenance, get_ai_gateway
 from app.services.answer_trust_service import AnswerTrustState
 from app.services.api_abuse import enforce_authenticated_api_rate
 from app.services.auth_rate_limit import ApiRouteClass
@@ -130,6 +130,19 @@ async def reason_about_stage_route(
             question=payload.question,
             ai_gateway=get_ai_gateway(),
         )
+    except AIEntitlementError as exc:
+        if exc.code != "PROVIDER_CONCURRENCY_SATURATED":
+            raise
+        headers = (
+            {"Retry-After": str(max(1, int(exc.retry_after)))}
+            if exc.retry_after is not None
+            else None
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=exc.code,
+            headers=headers,
+        ) from exc
     except LongTermReasoningError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
     return _response(result)
