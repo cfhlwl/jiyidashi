@@ -204,7 +204,10 @@ void main() {
     final annual = find.text('开始回看');
     await tester.ensureVisible(annual);
     await tester.tap(annual);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.text('团队合影').evaluate().isNotEmpty,
+    );
 
     final photo = find.text('团队合影');
     await tester.ensureVisible(photo);
@@ -221,11 +224,14 @@ void main() {
     expect(api.downloadCalls, 0);
 
     await tester.tap(find.text('关闭'));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.byType(Dialog).evaluate().isEmpty,
+    );
     expect(find.byType(Dialog), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
+    await tester.pump();
   });
 
   testWidgets('Life Memoir chapter is generated only after explicit stage action', (tester) async {
