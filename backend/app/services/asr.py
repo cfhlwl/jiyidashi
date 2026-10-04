@@ -6,10 +6,12 @@ from typing import Protocol
 
 import httpx
 
+from app.admin_models import ProviderService
 from app.core.config import Settings
 from app.services.provider_config_service import (
     ProviderRuntimeConfigError,
     get_runtime_provider_settings,
+    provider_runtime_fingerprint,
 )
 
 
@@ -43,6 +45,8 @@ class ASRProvider(Protocol):
 
 
 class DisabledASRProvider:
+    config_fingerprint: str | None = None
+
     def transcribe(
         self,
         audio: bytes,
@@ -82,6 +86,10 @@ class OpenAIASRProvider:
         transport: httpx.BaseTransport | None = None,
     ):
         self._settings = settings
+        self.config_fingerprint = provider_runtime_fingerprint(
+            settings,
+            ProviderService.ASR,
+        )
         # [人工注释][S1-PR18-FIX-003][S1-007] transport 仅作为 HTTP adapter 测试缝；
         # 默认 None 仍使用 httpx 的真实生产网络栈，CI 可用 MockTransport 验证 multipart/错误映射。
         self._transport = transport
