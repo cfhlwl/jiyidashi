@@ -1257,7 +1257,9 @@ class JiYiApiClient {
     final cacheVersion = data['cache_version'];
     final rawDownload = data['download'];
     final validCacheVersion = cacheVersion is String &&
-        RegExp(r'^[0-9a-f]{64}\$').hasMatch(cacheVersion);
+        cacheVersion.length == 64 &&
+        cacheVersion.codeUnits.every((unit) =>
+            (unit >= 48 && unit <= 57) || (unit >= 97 && unit <= 102));
     if (returnedId is! String ||
         returnedId.toLowerCase() != normalized.toLowerCase() ||
         !validCacheVersion ||
