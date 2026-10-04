@@ -22,8 +22,8 @@ from app.models import (
 )
 from app.schemas import MemoryUpdate
 from app.services.ai_gateway import (
-    AIGateway,
     AIEntitlementError,
+    AIGateway,
     AIInferenceRequest,
     AIProviderError,
     AIProviderResult,
