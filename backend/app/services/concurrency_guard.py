@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.abuse_models import ConcurrencyGuard, WorkPermit
 from app.core.config import Settings, get_settings
+from app.security_models import SecuritySignalCode
+from app.services.security_alerting import SecurityScope, record_security_signal
 
 
 class ConcurrencyRejected(RuntimeError):
@@ -129,6 +131,11 @@ def claim_permit(
         )
         if global_active >= global_limit:
             db.commit()
+            _record_saturation(
+                bind,
+                service_class=service_class,
+                user_id=user_id,
+            )
             raise ConcurrencyRejected(saturated_code, retry_after=lease_seconds)
 
         if user_id is not None and user_limit is not None:
@@ -140,6 +147,11 @@ def claim_permit(
             )
             if user_active >= user_limit:
                 db.commit()
+                _record_saturation(
+                    bind,
+                    service_class=service_class,
+                    user_id=user_id,
+                )
                 raise ConcurrencyRejected(saturated_code, retry_after=lease_seconds)
 
         token = secrets.token_urlsafe(32)
@@ -178,6 +190,33 @@ def release_permit(
         )
         db.commit()
         return bool(result.rowcount)
+
+
+def _record_saturation(
+    bind: Engine,
+    *,
+    service_class: str,
+    user_id: UUID | None,
+) -> None:
+    if service_class == "ARGON2":
+        signal_code = SecuritySignalCode.ARGON2_CONCURRENCY_SATURATED
+        scope = SecurityScope.ARGON2
+    else:
+        signal_code = SecuritySignalCode.PROVIDER_CONCURRENCY_SATURATED
+        scope = {
+            "AI": SecurityScope.PROVIDER_AI,
+            "ASR": SecurityScope.PROVIDER_ASR,
+            "EMBEDDING": SecurityScope.PROVIDER_EMBEDDING,
+        }.get(service_class)
+        if scope is None:
+            return
+    record_security_signal(
+        bind,
+        signal_code=signal_code,
+        correlation_kind="sec016_concurrency",
+        correlation_value=f"{service_class}:{user_id or 'global'}",
+        scope=scope,
+    )
 
 
 def provider_limits(settings: Settings, service_class: str) -> tuple[int, int]:
