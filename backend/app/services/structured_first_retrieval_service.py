@@ -37,6 +37,11 @@ from app.retrieval_models import (
     StructuredResolutionStatus,
     VectorRetrievalStatus,
 )
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.embedding_service import (
     build_memory_embedding_text,
     memory_embedding_fingerprint,
@@ -44,11 +49,6 @@ from app.services.embedding_service import (
 from app.services.evidence_ranking_service import (
     EvidenceRankedSource,
     rank_evidence_sources,
-)
-from app.services.concurrency_guard import (
-    ConcurrencyRejected,
-    claim_provider_permit,
-    release_permit,
 )
 from app.services.provider_config_service import record_provider_runtime_evidence
 
