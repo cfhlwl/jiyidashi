@@ -376,6 +376,10 @@ class MediaUploadResponse(MediaRead):
     upload: SignedTransfer | None
 
 
+class MediaCompleteResponse(MediaRead):
+    cache_version: str
+
+
 class MediaDownloadResponse(BaseModel):
     media_id: UUID
     # Opaque server-owned content version for local presentation cache identity.
