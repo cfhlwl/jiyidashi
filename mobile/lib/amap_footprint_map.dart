@@ -115,7 +115,9 @@ class JiYiFootprintMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    config.assertProductionConfiguration();
+    final scope = JiYiAmapPresentationScope.maybeOf(context);
+    final effectiveConfig = scope?.config ?? config;
+    effectiveConfig.assertProductionConfiguration();
     final mappable = visits.where((visit) => visit.isMappable).toList(growable: false);
     if (mappable.isEmpty) {
       return const _MapFallback(
@@ -133,7 +135,7 @@ class JiYiFootprintMap extends StatelessWidget {
         message: '同意应用隐私政策中的高德地图服务说明后，才会初始化地图 SDK。地点文字仍可正常查看。',
       );
     }
-    if (!config.configuredForCurrentPlatform) {
+    if (!effectiveConfig.configuredForCurrentPlatform) {
       return const _MapFallback(
         key: ValueKey('amap-key-unavailable'),
         icon: Icons.map_outlined,
@@ -144,7 +146,8 @@ class JiYiFootprintMap extends StatelessWidget {
 
     final safeSelected =
         selectedIndex >= 0 && selectedIndex < mappable.length ? selectedIndex : 0;
-    final builder = nativeBuilder ?? _defaultNativeBuilder;
+    final builder =
+        nativeBuilder ?? scope?.footprintBuilder ?? _defaultNativeBuilder;
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: SizedBox(
@@ -152,7 +155,7 @@ class JiYiFootprintMap extends StatelessWidget {
         height: interactive ? 360 : 210,
         child: builder(
           context,
-          config,
+          effectiveConfig,
           mappable,
           safeSelected,
           onSelected,
@@ -324,6 +327,29 @@ typedef JiYiPlaceNativeBuilder = Widget Function(
   String? address,
 );
 
+class JiYiAmapPresentationScope extends InheritedWidget {
+  const JiYiAmapPresentationScope({
+    super.key,
+    required this.config,
+    required this.footprintBuilder,
+    required this.placeBuilder,
+    required super.child,
+  });
+
+  final JiYiAmapConfig config;
+  final JiYiAmapNativeBuilder footprintBuilder;
+  final JiYiPlaceNativeBuilder placeBuilder;
+
+  static JiYiAmapPresentationScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<JiYiAmapPresentationScope>();
+
+  @override
+  bool updateShouldNotify(JiYiAmapPresentationScope oldWidget) =>
+      config != oldWidget.config ||
+      footprintBuilder != oldWidget.footprintBuilder ||
+      placeBuilder != oldWidget.placeBuilder;
+}
+
 class JiYiPlaceMap extends StatelessWidget {
   const JiYiPlaceMap({
     super.key,
@@ -356,7 +382,9 @@ class JiYiPlaceMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    config.assertProductionConfiguration();
+    final scope = JiYiAmapPresentationScope.maybeOf(context);
+    final effectiveConfig = scope?.config ?? config;
+    effectiveConfig.assertProductionConfiguration();
     if (!_validCoordinate) {
       return const SizedBox.shrink(
         key: ValueKey('amap-place-no-coordinate'),
@@ -370,7 +398,7 @@ class JiYiPlaceMap extends StatelessWidget {
         message: '同意地图服务隐私说明后才会初始化地图 SDK。',
       );
     }
-    if (!config.configuredForCurrentPlatform) {
+    if (!effectiveConfig.configuredForCurrentPlatform) {
       return const _MapFallback(
         key: ValueKey('amap-place-key-unavailable'),
         icon: Icons.map_outlined,
@@ -379,7 +407,8 @@ class JiYiPlaceMap extends StatelessWidget {
       );
     }
 
-    final builder = nativeBuilder ?? _defaultPlaceNativeBuilder;
+    final builder =
+        nativeBuilder ?? scope?.placeBuilder ?? _defaultPlaceNativeBuilder;
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: SizedBox(
@@ -387,7 +416,7 @@ class JiYiPlaceMap extends StatelessWidget {
         height: 240,
         child: builder(
           context,
-          config,
+          effectiveConfig,
           latitude!,
           longitude!,
           name,
