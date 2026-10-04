@@ -378,6 +378,9 @@ class MediaUploadResponse(MediaRead):
 
 class MediaDownloadResponse(BaseModel):
     media_id: UUID
+    # Opaque server-owned content version for local presentation cache identity.
+    # It must not expose storage object keys, raw ETag values, or signed URL lifetime.
+    cache_version: str
     download: SignedTransfer
 
 
