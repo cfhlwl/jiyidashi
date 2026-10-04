@@ -1323,4 +1323,224 @@ void main() {
     );
   });
 
+
+  testWidgets('golden: design authority Today map photo', (tester) async {
+    final api = _GoldenApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
+    final key = await _pumpShell(
+      tester,
+      api: api,
+      mediaCache: cache,
+      amapPrivacyConsent: _GoldenAmapConsent(true),
+    );
+
+    expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
+    expect(find.byKey(ValueKey('today-photo-$v2MemoryId')), findsOneWidget);
+    expect(find.text('晨光里的白板'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/design_authority_today.png'),
+    );
+  });
+
+  testWidgets('golden: design authority Timeline photo first', (tester) async {
+    final api = _GoldenTimelineApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
+    final key = await _pumpSurface(
+      tester,
+      TimelinePage(api: api, mediaCache: cache),
+    );
+
+    expect(find.text('第一次产品讨论'), findsOneWidget);
+    expect(find.byKey(ValueKey('timeline-photo-$v2MemoryId')), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/design_authority_timeline.png'),
+    );
+  });
+
+  testWidgets('golden: design authority Memory Detail photo map',
+      (tester) async {
+    final api = _GoldenMemoryDetailApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
+    final key = await _pumpSurface(
+      tester,
+      MemoryDetailPage(
+        api: api,
+        memoryId: v2MemoryId,
+        mediaCache: cache,
+        amapPrivacyConsent: _GoldenAmapConsent(true),
+      ),
+    );
+
+    expect(find.text('第一次产品讨论'), findsWidgets);
+    expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
+    expect(find.text('照片'), findsWidgets);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/design_authority_memory_detail.png'),
+    );
+  });
+
+  testWidgets('golden: design authority Family shared content',
+      (tester) async {
+    final api = _GoldenFamilyApi();
+    final mediaKey =
+        '${_GoldenFamilyApi.memberId.toLowerCase()}_${v2MediaId.toLowerCase()}';
+    final cache = await _seedGoldenMediaCache(
+      api.authenticatedUserId!,
+      mediaId: mediaKey,
+    );
+    final key = await _pumpSurface(
+      tester,
+      FamilyPage(
+        api: api,
+        mediaCache: cache,
+        amapPrivacyConsent: _GoldenAmapConsent(true),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey(
+          'family-shared-open-${_GoldenFamilyApi.memberId}',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('family-read-photos')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('family-read-location')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('family-photo-grid')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
+    final map = find.byKey(const ValueKey('amap-place-real-surface'));
+    await tester.scrollUntilVisible(
+      map,
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/design_authority_family.png'),
+    );
+  });
+
+  testWidgets('golden: design authority Memory Query evidence map',
+      (tester) async {
+    final api = _GoldenHistoricalQueryApi();
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: MemoryQueryPage(
+            api: api,
+            amapPrivacyConsent: _GoldenAmapConsent(true),
+          ),
+        ),
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('memory-query-input')),
+      '我 9 月 20 日去了哪里？',
+    );
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
+    expect(find.text('为什么这么回答'), findsOneWidget);
+    final map = find.byKey(const ValueKey('amap-real-surface'));
+    await tester.ensureVisible(map);
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/design_authority_memory_query.png'),
+    );
+  });
+
+  testWidgets('golden: design authority Unified Capture', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      Scaffold(
+        body: SafeArea(
+          child: CapturePage(
+            api: _GoldenApi(),
+            offlineQueue: _GoldenQueue(),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('capture-photo-camera')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('capture-photo-gallery')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('capture-voice-start')),
+      findsOneWidget,
+    );
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/design_authority_capture.png'),
+    );
+  });
+
+  testWidgets('golden: design authority Annual Summary photo story',
+      (tester) async {
+    final api = V2TestApi();
+    final cache = await _seedGoldenMediaCache(v2OwnerId);
+    final key = await _pumpSurface(
+      tester,
+      MemoirsPage(api: api, mediaCache: cache),
+    );
+
+    await tester.enterText(find.byType(TextField).first, '2025');
+    final start = find.text('开始回看');
+    await tester.ensureVisible(start);
+    await tester.tap(start);
+    await tester.pumpAndSettle();
+
+    final photo = find.byKey(ValueKey('annual-photo-$v2MediaId'));
+    expect(photo, findsOneWidget);
+    await tester.ensureVisible(photo);
+    await tester.pumpAndSettle();
+    expect(find.text('这一年的照片'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/design_authority_summary.png'),
+    );
+  });
+
+  testWidgets('golden: design authority Profile privacy', (tester) async {
+    final key = await _pumpShell(
+      tester,
+      amapPrivacyConsent: _GoldenAmapConsent(true),
+    );
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+
+    final amapControl = find.text('高德地图服务');
+    await tester.scrollUntilVisible(
+      amapControl,
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('隐私与记录控制'), findsOneWidget);
+    expect(find.byKey(const ValueKey('amap-privacy-revoke')), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/design_authority_profile.png'),
+    );
+  });
+
 }
