@@ -264,8 +264,8 @@ String? _visitDuration(FootprintVisit visit) {
   final duration = end.difference(start);
   final hours = duration.inHours;
   final minutes = duration.inMinutes.remainder(60);
-  if (hours > 0 && minutes > 0) return '${hours}小时${minutes}分钟';
-  if (hours > 0) return '${hours}小时';
+  if (hours > 0 && minutes > 0) return '$hours小时$minutes分钟';
+  if (hours > 0) return '$hours小时';
   return '${duration.inMinutes}分钟';
 }
 
