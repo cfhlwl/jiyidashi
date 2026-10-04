@@ -81,7 +81,8 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'auth_sessions',
                           'auth_refresh_token_receipts',
                           'auth_one_time_tokens',
-                          'provider_configurations'
+                          'provider_configurations',
+                          'provider_runtime_evidence'
                       )
                     ORDER BY table_name, ordinal_position
                     """
