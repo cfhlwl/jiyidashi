@@ -1058,6 +1058,116 @@ FREE
 所有 Capability / Quota 行为必须以服务端 canonical authority 为准。
 
 
+## 9.2 上线增长与留存优化（2026-10-04）
+
+> **单独作为消费者增长工作线推进，不等同于继续堆功能。** 目标是把“下载安装 → 第一次感受到价值 → 长期自动记录 → 成功找回 → 主动回忆 → 分享/邀请 → 口碑传播”做成完整增长飞轮。AI 仍只做搜索、理解、总结和表达辅助，不把“AI聊天”作为增长主卖点。
+
+### 增长飞轮
+
+```text
+下载安装
+→ 完成必要授权
+→ 首日就看到迹忆已经形成内容
+→ 第一次成功找回过去
+→ 后续持续自动形成可回忆生活
+→ 那年今日 / 周月回忆主动把过去送回来
+→ 生成值得保存与分享的回忆成果
+→ 朋友圈 / 微信好友 / 家庭邀请
+→ 新用户安装
+→ 家庭与个人记忆资产继续积累
+→ 留存、续费与口碑增强
+```
+
+| ID | 优先级 | 功能 / 需求 | 状态 | 说明 |
+| --- | --- | --- | --- | --- |
+| GROW-001 | P0.5 | First-day Aha / Recent Memory Bootstrap V1 | ⬜ | 解决“新用户第一天没有历史数据”的冷启动问题。用户明确授权照片访问后，优先在本机读取最近 30～90 天照片的拍摄时间、EXIF 地点等必要 metadata，生成“最近记忆”候选与日期/地点聚合，让用户安装当天就能看到“迹忆已经帮我找回一些过去”。不得在未授权时扫描；不得为做冷启动而默认上传全部原图；候选事实必须标明来源并允许跳过/纠正。后续可扩展日历/旧日记导入，但首版不做大而全导入。 |
+| GROW-002 | P0.5 | Today Active Recording Experience V1 | ⬜ | 基于已完成的 CORE-003 Recording Health，优化消费者“今天”首页，让用户明确看到“迹忆正在工作”：今日地点数、有效足迹/覆盖、最近记录时间、照片关联、记录健康状态与缺口。避免只展示技术状态；核心体验是“即使我没操作，今天也在自动形成记忆”。 |
+| GROW-003 | P1 | On This Day / Memory Resurfacing V1 | ⬜ | 增加“那年今日 / 去年今天 / 一个月前今天 / 值得回看的这一天”等低打扰主动回忆。候选必须来自真实 Memory/Visit/Photo Evidence，优先用户可感知价值，不做无证据 AI 编故事。需要 notification/reminder 时与 REM-001 共用正式 delivery authority，控制频率，避免骚扰。 |
+| GROW-004 | P1 Growth | Memory Story Cards & WeChat Moments Share V1 | ⬜ | **重点口碑传播能力。** 将月度回忆、旅行、家庭日、年度回忆等整理成高质量“回忆故事卡/我的九月/这次旅行/我们的家庭2026”等可保存成果；支持生成分享图片，并面向微信好友/朋友圈分享。分享前必须提供明确预览与隐私脱敏：默认不暴露精确地址、经纬度、家庭成员真实姓名、私密照片/语音文字；地点默认降为城市/用户确认名称，敏感字段必须由用户主动选择才可进入分享结果。分享卡可带低干扰“迹忆”品牌标识/来源，但不能覆盖主体内容。首版优先静态长图/多卡，不先做复杂视频生成。 |
+| GROW-005 | P1 Growth | Content-driven Family Invite V1 | ⬜ | Family Invite 不只放在设置页。把邀请放到真实内容场景：一次家庭旅行、一顿饭、孩子生日、长辈故事等，允许用户“邀请家人一起补充/保存这段回忆”。邀请落地页首先解释“这里有属于你的家庭记忆”，而不是先卖会员。继续严格受 Family Membership / Permission / Grant / Privacy authority 约束。与 BIZ-018 推荐奖励分离：内容邀请是产品增长，奖励邀请是后续商业增长。 |
+| GROW-006 | P0.5 | “找回”明星入口与 Query UX V1 | ⬜ | 基于已完成 CORE-002，把“我25号去哪了？”这类找回体验升级成消费者明星功能。入口文案优先“想找什么？ / 找回”，而不是“AI聊天”。结果先展示结构化事实、时间、地点、停留和 Evidence，再提供“帮我总结这一天”等 AI 二级动作。典型场景：某天去哪了、上次去某地、什么时候见过某人、某次照片在哪里。 |
+| GROW-007 | P0.5 Trust | My Data / Privacy Trust Center V1 | ⬜ | 把隐私从合规文档变成产品能力。集中展示“今天采集了什么、长期保留了什么、AI 本月处理次数、家庭当前共享范围、自动记录状态”，并提供暂停、关闭自动足迹、导出、删除、注销等真实操作。清晰承诺不使用私人 Memory/Photo/Location/Family 做广告画像。所有统计必须来自真实 authority，不得伪造“安全评分”。 |
+| GROW-008 | P1 Launch | Launch Messaging & Scenario Creative V1 | ⬜ | 首发营销不讲“多模态 AI 第二大脑”，只打 3 个一秒可懂场景：①“忘了25号去哪了？问迹忆。” ②“妈妈生日那天，我们去了哪家饭店？” ③“那些你没写日记的日子，也不该消失。” 官网/App Store/短视频素材展示真实产品路径与真实数据样例，AI 只作为辅助说明。建立 15～30 秒短视频、商店截图、官网首屏统一 narrative。 |
+| GROW-009 | P1 Analytics | Growth Funnel & Word-of-mouth Metrics V1 | ⬜ | 在现有 BIZ-007～010 指标基础上新增消费者增长漏斗：授权完成率、Time-to-First-Aha、7日有效记录覆盖率、30日 Memory Coverage、First Retrieval Success、分享卡生成率/实际分享率、Family 内容邀请率/接受率、D7/D30、Trial→Paid、续费。指标用于判断产品价值与口碑，不进入 entitlement hard rule。 |
+| GROW-010 | P1 Retention | Weekly / Monthly Memory Productization V1 | ⬜ | 将现有 Summary/Annual Memoir 能力产品化为“这一周 / 我的九月 / 我的2026”等可读、可保存、可分享成果。默认强调地点、照片、真实事件与用户确认内容，AI只负责组织语言。优先做少而精的高价值模板，不做大量花哨模板市场。 |
+| GROW-011 | P1 Growth | Value-triggered Share / Invite Timing V1 | ⬜ | 分享/邀请触发必须发生在真实价值事件之后，例如成功找回一天、生成月度回忆、完成旅行回忆或家庭内容整理；禁止注册即弹“分享给朋友”、首次打开即索要评价/邀请。需要建立频控、dismiss cooldown 与实验开关，避免破坏信任。 |
+
+### 朋友圈 / 微信分享产品原则
+
+```text
+私密原始记忆
+→ 用户主动选择生成回忆成果
+→ server/client 生成 share-safe projection
+→ 隐私脱敏
+→ 用户预览
+→ 用户主动确认
+→ 保存图片 / 微信好友 / 朋友圈
+```
+
+默认 share-safe projection：
+
+```text
+允许：
+日期/月份
+城市级地点
+用户明确确认的地点名称
+统计数字
+用户主动选择的照片
+用户主动选择的文字
+低干扰“迹忆”品牌来源
+
+默认禁止：
+精确经纬度
+家庭住址
+未确认的精确地点
+家庭成员真实姓名
+未选择的照片
+语音原文
+私密 Memory 原文
+后台定位原始点
+Evidence 内部 ID / provider 信息
+```
+
+朋友圈传播的目标不是做广告海报，而是让用户愿意分享一个真正属于自己的结果：
+
+```text
+我的九月
+这次旅行
+一年前的今天
+这一年和妈妈
+孩子这一年的成长
+我们的家庭2026
+```
+
+### 上线前 / 上线后优先级
+
+```text
+上线前消费者闭环优先：
+GROW-001 First-day Aha
+GROW-002 Today / Recording Health 产品化
+GROW-006 “找回”明星入口
+GROW-007 My Data / Privacy Trust Center
+
+上线首批增长能力：
+GROW-003 On This Day
+GROW-004 Memory Story Cards + 朋友圈/微信分享
+GROW-005 Content-driven Family Invite
+GROW-008 Launch Messaging
+GROW-009 Growth Funnel Metrics
+GROW-010 Weekly/Monthly Memory Productization
+GROW-011 Value-triggered Share / Invite Timing
+```
+
+### 产品约束
+
+- 不以“每天打开次数”和“使用时长”作为唯一成功指标；用户数天不打开、需要时 10 秒找回真实生活仍是成功体验。
+- 不为了提高分享率泄露精确足迹、家庭成员或私人记忆。
+- 不为了增长强制通讯录上传、默认公开、默认家庭共享或强制邀请。
+- 不把 AI 生成内容伪装成用户真实经历。
+- 不在首日用高频推送、评价弹窗、会员墙破坏自动记录和隐私信任。
+- 所有增长实验必须可关闭、可审计，并服从 Privacy / Family / Entitlement / Evidence authority。
+
+
 ---
 
 # 10. 明确后置 / 当前不做
