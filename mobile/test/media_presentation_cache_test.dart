@@ -25,10 +25,13 @@ class _MediaApi extends JiYiApiClient {
   int downloadCalls = 0;
   String cacheVersion = _versionA;
   Uint8List bytes = Uint8List.fromList(<int>[1, 2, 3, 4]);
+  Object? capabilityError;
 
   @override
   Future<MediaDownloadSession> createMediaDownload(String mediaId) async {
     capabilityCalls += 1;
+    final error = capabilityError;
+    if (error != null) throw error;
     return MediaDownloadSession(
       mediaId: mediaId,
       cacheVersion: cacheVersion,
@@ -134,6 +137,97 @@ void main() {
     expect(await second.readAsBytes(), api.bytes);
     expect(api.capabilityCalls, 1);
     expect(api.downloadCalls, 1);
+  });
+
+  test('online cached media revalidates authority without redownload', () async {
+    final root = await _tempRoot();
+    addTearDown(() => root.delete(recursive: true));
+
+    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
+    final seeded = await cache.putBytes(
+      ownerUserId: _ownerA,
+      mediaId: _mediaA,
+      cacheVersion: _versionA,
+      bytes: <int>[7, 8, 9],
+    );
+    final api = _MediaApi(owner: _ownerA);
+    final resolver = MediaPresentationResolver(api: api, cache: cache);
+
+    final resolved =
+        await resolver.resolve(ownerUserId: _ownerA, mediaId: _mediaA);
+
+    expect(resolved.path, seeded.path);
+    expect(api.capabilityCalls, 1);
+    expect(api.downloadCalls, 0);
+
+    final second =
+        await resolver.resolve(ownerUserId: _ownerA, mediaId: _mediaA);
+    expect(second.path, seeded.path);
+    expect(api.capabilityCalls, 1);
+    expect(api.downloadCalls, 0);
+  });
+
+  test('expired media authority lease revalidates without redownload', () async {
+    final root = await _tempRoot();
+    addTearDown(() => root.delete(recursive: true));
+    var now = DateTime.utc(2026, 10, 4, 12);
+
+    final cache = LocalMediaCache(
+      rootDirectoryProvider: () async => root,
+      authorityLeaseDuration: const Duration(minutes: 5),
+      nowProvider: () => now,
+    );
+    await cache.putBytes(
+      ownerUserId: _ownerA,
+      mediaId: _mediaA,
+      cacheVersion: _versionA,
+      bytes: <int>[7, 8, 9],
+    );
+    cache.markAuthorityValidated(ownerUserId: _ownerA, mediaId: _mediaA);
+
+    final api = _MediaApi(owner: _ownerA);
+    final resolver = MediaPresentationResolver(api: api, cache: cache);
+
+    await resolver.resolve(ownerUserId: _ownerA, mediaId: _mediaA);
+    expect(api.capabilityCalls, 0);
+
+    now = now.add(const Duration(minutes: 6));
+    await resolver.resolve(ownerUserId: _ownerA, mediaId: _mediaA);
+
+    expect(api.capabilityCalls, 1);
+    expect(api.downloadCalls, 0);
+  });
+
+  test('server revocation removes stale cached media immediately', () async {
+    final root = await _tempRoot();
+    addTearDown(() => root.delete(recursive: true));
+
+    final cache = LocalMediaCache(
+      rootDirectoryProvider: () async => root,
+      authorityLeaseDuration: Duration.zero,
+    );
+    final seeded = await cache.putBytes(
+      ownerUserId: _ownerA,
+      mediaId: _mediaA,
+      cacheVersion: _versionA,
+      bytes: <int>[7, 8, 9],
+    );
+    final api = _MediaApi(owner: _ownerA)
+      ..capabilityError = ApiException(403, 'MEDIA_ACCESS_REVOKED');
+    final resolver = MediaPresentationResolver(api: api, cache: cache);
+
+    await expectLater(
+      resolver.resolve(ownerUserId: _ownerA, mediaId: _mediaA),
+      throwsA(isA<ApiException>()),
+    );
+
+    expect(api.capabilityCalls, 1);
+    expect(api.downloadCalls, 0);
+    expect(await seeded.exists(), isFalse);
+    expect(
+      await cache.lookup(ownerUserId: _ownerA, mediaId: _mediaA),
+      isNull,
+    );
   });
 
   test('uncached offline media fails bounded without network request', () async {
