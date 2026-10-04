@@ -645,26 +645,29 @@ UIUX-P0-002 / consumer client stable
 
 # 9. 商业化与增长
 
+> **状态边界（2026-10-04）**：正式商业化实现尚未启动。现有 FREE/PERSONAL/FAMILY Plan、Quota、Entitlement、Admin 等仅视为技术基础，不代表定价、试用、Founder、订阅、支付、StoreKit 或消费者会员页面已经实现。除已明确完成的 BIZ-007～011 外，后续商业任务统一按本节重新排期。
+
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| BIZ-001 | 免费版权益 | 🟠 | Issue #168 / PR #172 已合并 FREE plan/capability/quota foundation。V1 商业基线：¥0 永久；基础“记录→保存→找到”长期可用，含基础文字/时间线/搜索/足迹/人物地点物品/导出，以及受 quota 控制的基础照片、语音、AI 回忆、OCR/Vision/总结体验；建议首发存储 500MB～1GB，但最终值只由 canonical server config 决定。 |
-| BIZ-002 | 个人会员 | 🟠 | PERSONAL authority 已有。V1 价格基线：¥15/月、¥129/年；创始会员首发 ¥99/年。建议首发存储 20GB；包含更高媒体/AI quota、高级时间线/历史/检索/RAG/总结/导出等。禁止宣传“无限 AI/OCR/Vision”，统一使用“包含充足的 AI 使用额度”。 |
-| BIZ-003 | 家庭会员 | 🟠 | FAMILY authority 已有且 Family permission/grant/privacy authority 保持独立。V1 价格基线：¥25/月、¥239/年；首发推广 ¥199/年；建议最多 5 人、共享存储 100GB。会员 capability 永远不能替代家庭成员隐私授权。 |
+| BIZ-001 | 免费版权益 | ⬜ | **商业实现未开始**。Issue #168 / PR #172 仅提供 FREE plan/capability/quota 技术基础。V1 商业基线：¥0 永久；基础“记录→保存→找到”长期可用，含基础文字/时间线/搜索/足迹/人物地点物品/导出，以及受 quota 控制的基础照片、语音、AI 回忆、OCR/Vision/总结体验；建议首发存储 500MB～1GB，但最终值只由 canonical server config 决定。 |
+| BIZ-002 | 个人会员 | ⬜ | **商业实现未开始**；PERSONAL authority 仅为技术基础。直连/Android/微信渠道 V1 价格基线：¥15/月、¥129/年；创始会员首发 ¥99/年。iOS App Store 采用独立 storefront price（见 BIZ-019），权益保持同一 PERSONAL。建议首发存储 20GB；包含更高媒体/AI quota、高级时间线/历史/检索/RAG/总结/导出等。禁止宣传“无限 AI/OCR/Vision”。 |
+| BIZ-003 | 家庭会员 | ⬜ | **商业实现未开始**；FAMILY authority 仅为技术基础，Family permission/grant/privacy authority 保持独立。直连/Android/微信渠道 V1 价格基线：¥25/月、¥239/年；首发推广 ¥199/年。iOS App Store 采用独立 storefront price（见 BIZ-019），权益保持同一 FAMILY。建议最多 5 人、共享存储 100GB。会员 capability 永远不能替代家庭成员隐私授权。 |
 | BIZ-004 | 高级会员 | ⏸ | PREMIUM capability foundation 可继续保留，但 **V1 消费者页面不展示、不销售**。后续根据真实 AI 成本和高频需求再评估“迹忆 Pro / AI 高级版”，参考区间 ¥199～299/年；V1 不实现该商业 SKU。 |
-| BIZ-005 | 年度回忆报告 | 🟠 | V2-010 Annual Electronic Memoir backend + Mini/Flutter 产品展示已完成；V1 作为 PERSONAL/FAMILY 高价值能力的一部分，正式 entitlement packaging、quota、rollout 仍待商业化任务收口。 |
+| BIZ-005 | 年度回忆报告 | ⬜ | V2-010 Annual Electronic Memoir backend + Mini/Flutter 产品能力已完成，但**商业 packaging 尚未开始**；V1 计划作为 PERSONAL/FAMILY 高价值能力的一部分，正式 entitlement packaging、quota、rollout 待商业化工作线统一收口。 |
 | BIZ-006 | 实体年度回忆录 | ⏸ | 后续增值服务；V1 不做一次买断/实体商业闭环。 |
 | BIZ-007 | 北极星指标：成功找回记忆数 | ✅ | Issue #169 / PR #173 已完成两轮正式极窄复审并合并；server-owned successful-memory-retrieval 口径、durable dedupe 与 aggregate report 已收口 |
 | BIZ-008 | D1 / D7 / D30 留存 | ✅ | Issue #169 / PR #173 已合并；UTC signup cohort、active-day authority、D1/D7/D30 eligible/retained/null-zero 口径已收口 |
 | BIZ-009 | Memory Retrieval Success | ✅ | Issue #169 / PR #173 已合并；accepted-attempt denominator、SUCCESS numerator 与 privacy-safe success-rate aggregation 已收口 |
 | BIZ-010 | False Memory Rate | ✅ | S3-019 / Issue #87 / PR #89 已完成首版显式用户反馈驱动的 revision 指标基础：counts + denominator + rate；DELETE-only 不误算 false，不做 AI 质量打分/看板；已正式审查并合并 main |
 | BIZ-011 | Production Registration Entitlement Default | ✅ | **Issue #197 / PR #199 已合并 `main=f805848ba16af786b3d15a6ae26d5dc3d399aa95`**：正常生产注册默认 `FREE`，public registration 不再调用 `create_legacy_full_entitlement()`；`LEGACY_FULL` 仅历史兼容/migration-only（以及明确 dev-only）使用，不出现在消费者购买/营销/升级入口；历史 entitlement 原样保留，不做批量迁移。 |
-| BIZ-012 | Pricing Catalog & Commercial Policy V1 | ⬜ | 建立独立 Product/Price Catalog 与 Commercial Policy。首发逻辑产品：PERSONAL_MONTHLY/ANNUAL、FAMILY_MONTHLY/ANNUAL，以及 Founder/Launch price entry；价格使用 integer minor unit（人民币分），Plan 与 Price 解耦，客户端不得硬编码价格。 |
+| BIZ-012 | Pricing Catalog & Commercial Policy V1 | ⬜ | 建立独立 Product/Price Catalog 与 Commercial Policy。首发逻辑产品：PERSONAL_MONTHLY/ANNUAL、FAMILY_MONTHLY/ANNUAL，以及 Founder/Launch price entry；Price 必须支持 `sales_channel/storefront` 维度，同一 Plan 可在不同销售渠道使用不同价格；金额使用 integer minor unit，Plan 与 Price 解耦，客户端不得硬编码价格。 |
 | BIZ-013 | Value-triggered Trial & Founder Cohort | ⬜ | 新用户不注册即试用。满足价值条件（基线：记录≥10 / 连续使用≥3天 / 有效照片≥5）后可触发 14 天 PERSONAL 体验；服务端记录开始/结束，防卸载重领。Founder 使用 `pricing_cohort`/eligibility，不新增 PlanCode；基线前 5000 名个人付费会员 ¥99/年，续费锁价策略必须可运营修改。 |
 | BIZ-014 | Membership Expiration & Safe Downgrade | ⬜ | PERSONAL/FAMILY 到期降为 FREE，但不得删除/锁定已有记忆、照片、语音或已有 AI 结果；超 FREE 存储时已有媒体继续可读/可删，只禁止新增超额媒体；新的高成本 AI/付费 capability 按 FREE authority/quota 判定；续费后恢复写入。 |
-| BIZ-015 | Commercial Admin Simulation & Metrics | 🟠 | ADMIN-001 已包含 Entitlement & Quota 管理基础；商业化阶段需能由 SUPER_ADMIN 正确模拟 FREE→PERSONAL→FAMILY→expiry→downgrade，并记录 revision/audit。后台预留 FREE/PERSONAL/FAMILY/Trial 数量、转化、续费、平均存储/AI、AI/storage cost per paid user、ARPU 等指标；这些是运营指标，不是业务 hard rule。 |
+| BIZ-015 | Commercial Admin Simulation & Metrics | ⬜ | **商业模拟/运营指标尚未开始**；ADMIN-001 仅已包含 Entitlement & Quota 管理基础。商业化阶段需能由 SUPER_ADMIN 正确模拟 FREE→PERSONAL→FAMILY→expiry→downgrade，并记录 revision/audit。后台预留 FREE/PERSONAL/FAMILY/Trial 数量、转化、续费、平均存储/AI、AI/storage cost per paid user、ARPU 等指标；这些是运营指标，不是业务 hard rule。 |
 | BIZ-016 | Consumer Membership Surfaces V1 | ⬜ | Flutter/Mini 消费者页面只展示 FREE / PERSONAL / FAMILY 三档；不展示 PREMIUM、LEGACY_FULL、内部 quota/provider token。展示当前权益、使用量、价格 Catalog、Trial/Founder eligibility、到期/降级说明；不得将价格和 quota 写死在客户端。 |
 | BIZ-017 | Payment & Subscription Integration | ⬜ | 支付供应商单独任务。架构保持 Product → Price → Purchase/Subscription → Entitlement/Grant；Plan 不等于微信订单或 Apple SKU。未来接微信支付/App Store IAP 等；本任务完成前可由 Admin 模拟 entitlement 生命周期验证。 |
 | BIZ-018 | Invite Reward V1 | ⏸ | V1 可先保留数据模型/规则，不必首发开放。基线：邀请新用户并达到真实激活条件（如连续使用 7 天）后双方 +7 天 PERSONAL；需要账号唯一约束、设备/IP 风控、年度奖励上限、禁止自邀请与循环刷。 |
+| BIZ-019 | Cross-Store Pricing & Entitlement Parity V1 | ⬜ | **后期与 BIZ-012/BIZ-017/IOS-STORE-010 一起实现。** 同一 PERSONAL/FAMILY entitlement 在 Android/微信/官网/iOS 登录后保持一致，不建立 IOS_PERSONAL/ANDROID_PERSONAL 等分裂 Plan；仅 Price 按 `sales_channel/storefront` 区分。V1 基线：Android/微信 PERSONAL ¥15/月、¥129/年、Founder ¥99/年；iOS ¥18/月、¥148/年、Founder ¥118/年。Android/微信 FAMILY ¥25/月、¥239/年、Launch ¥199/年；iOS ¥30/月、¥268/年、Launch ¥228/年。iOS 用户在其他渠道已合法获得的 entitlement 登录后继续生效；App Store 购买仍由 StoreKit/IAP 校验。价格均为可运营调整基线，不硬编码 Apple 佣金或永久 storefront 政策。 |
 
 
 ## 9.1 V1 首发会员与定价设计基线（2026-09-30）
@@ -673,19 +676,33 @@ UIUX-P0-002 / consumer client stable
 
 ### 首发消费者套餐
 
+> 以下 Android/微信价格是直连销售渠道基线；iOS App Store 使用独立 storefront price。**渠道价格可以不同，但 Plan / Capability / Quota / Entitlement 语义必须相同。**
+
 ```text
 FREE
 ¥0 / 永久
 
-PERSONAL
+PERSONAL — Android / 微信
 ¥15 / 月
 ¥129 / 年
 Founder baseline: ¥99 / 年
 
-FAMILY
+PERSONAL — iOS App Store
+¥18 / 月
+¥148 / 年
+Founder baseline: ¥118 / 年
+
+FAMILY — Android / 微信
 ¥25 / 月
 ¥239 / 年
 Launch baseline: ¥199 / 年
+
+FAMILY — iOS App Store
+¥30 / 月
+¥268 / 年
+Launch baseline: ¥228 / 年
+
+FAMILY
 最多 5 人（基线）
 共享存储 100GB（基线）
 
@@ -865,21 +882,29 @@ Provider 已开始后，即使 timeout/provider failure，可按既定政策计�
 
 ### Pricing Catalog
 
-价格不得与 PlanCode 绑死。
+价格不得与 PlanCode 绑死；同一逻辑产品必须允许多个 `sales_channel/storefront` price entry。
 
-首发逻辑产品基线：
+首发逻辑产品/渠道价格基线：
 
 ```text
-JIYI_PERSONAL_MONTHLY       1500 fen
-JIYI_PERSONAL_YEARLY       12900 fen
-JIYI_PERSONAL_FOUNDER_YEARLY 9900 fen
+# Android / 微信 / direct baseline
+JIYI_PERSONAL_MONTHLY          1500 fen
+JIYI_PERSONAL_YEARLY          12900 fen
+JIYI_PERSONAL_FOUNDER_YEARLY   9900 fen
+JIYI_FAMILY_MONTHLY            2500 fen
+JIYI_FAMILY_YEARLY            23900 fen
+JIYI_FAMILY_LAUNCH_YEARLY     19900 fen
 
-JIYI_FAMILY_MONTHLY        2500 fen
-JIYI_FAMILY_YEARLY         23900 fen
-JIYI_FAMILY_LAUNCH_YEARLY  19900 fen
+# iOS App Store baseline
+JIYI_PERSONAL_MONTHLY_IOS          1800 fen
+JIYI_PERSONAL_YEARLY_IOS          14800 fen
+JIYI_PERSONAL_FOUNDER_YEARLY_IOS  11800 fen
+JIYI_FAMILY_MONTHLY_IOS            3000 fen
+JIYI_FAMILY_YEARLY_IOS            26800 fen
+JIYI_FAMILY_LAUNCH_YEARLY_IOS     22800 fen
 ```
 
-金额必须使用 integer minor unit，禁止 float。
+上述 `_IOS` 仅表达 Catalog 价格项示意，不代表新增 PlanCode。正式模型优先使用 `product + sales_channel/storefront + price` 关系，而不是复制 PERSONAL/FAMILY 会员类型。金额必须使用 integer minor unit，禁止 float。
 
 商业层概念分离：
 
@@ -1001,16 +1026,20 @@ PREMIUM 商业销售
 
 ### 商业化实施顺序
 
+> 当前不启动；待现阶段产品/生产稳定工作完成后统一进入商业化工作线。
+
 ```text
-1. BIZ-011 注册默认 LEGACY_FULL → FREE
-2. BIZ-012 Pricing Catalog
+1. BIZ-011 注册默认 LEGACY_FULL → FREE              ✅ 已完成
+2. BIZ-012 Pricing Catalog + channel/storefront price
 3. Entitlement / Quota canonical runtime authority
-4. BIZ-013 Founder cohort
-5. BIZ-013 Value-triggered Trial
-6. BIZ-014 Expiration / safe downgrade
-7. ADMIN-001 Entitlement & Quota / Admin simulation
-8. BIZ-016 Flutter/Mini membership surfaces
-9. BIZ-017 WeChat Pay / App Store payment integration
+4. BIZ-013 Founder cohort + Value-triggered Trial
+5. BIZ-014 Expiration / safe downgrade
+6. BIZ-015 Admin simulation + commercial metrics
+7. BIZ-016 Flutter/Mini membership surfaces
+8. BIZ-019 Cross-store pricing / entitlement parity
+9. BIZ-017 Payment & Subscription Integration
+   ├─ WeChat/direct payment
+   └─ App Store StoreKit / IAP（IOS-STORE-010）
 10. Commercial Launch
 ```
 
