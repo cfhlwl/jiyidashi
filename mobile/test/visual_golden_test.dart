@@ -1589,6 +1589,14 @@ void main() {
     await _pumpVisualFrames(tester);
 
     expect(find.byKey(const ValueKey('family-photo-grid')), findsOneWidget);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(
+        ValueKey(
+          'family-photo-ready-${_GoldenFamilyApi.memberId.toLowerCase()}_${v2MediaId.toLowerCase()}',
+        ),
+      ),
+    );
     expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
     final map = find.byKey(const ValueKey('amap-place-real-surface'));
     await tester.scrollUntilVisible(
