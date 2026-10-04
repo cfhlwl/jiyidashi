@@ -58,6 +58,21 @@ def test_production_configuration_rejects_enabled_dev_auth():
         )
 
 
+def test_production_configuration_rejects_disabled_api_rate_limit():
+    with pytest.raises(ValueError, match="API_RATE_LIMIT_ENABLED must be true in production"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            database_url="sqlite:///./unused.db",
+            jwt_secret="0123456789abcdef0123456789abcdef",
+            enable_dev_auth=False,
+            auth_rate_limit_enabled=True,
+            api_rate_limit_enabled=False,
+            auto_create_schema=False,
+            **_PROD_AUTH_EMAIL,
+        )
+
+
 def test_production_configuration_rejects_disabled_auth_rate_limit():
     # [人工注释][S1-FIX-003] 正式匿名认证不能靠“以后配网关”假设保护，生产配置禁止关闭服务端门禁。
     with pytest.raises(ValueError, match="AUTH_RATE_LIMIT_ENABLED must be true in production"):
