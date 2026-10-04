@@ -255,37 +255,7 @@ class V2FamilyPhoto {
     if (!contentType.startsWith('image/')) return v2Invalid('家庭照片');
     final cacheVersion =
         v2Text(raw['cache_version'], label: '家庭照片', max: 64);
-    if (!RegExp(r'^[0-9a-f]{64}  const V2FamilyInvite({
-    required this.inviteId,
-    required this.token,
-    required this.expiresAt,
-  });
-
-  final String inviteId;
-  final String token;
-  final String expiresAt;
-
-  factory V2FamilyInvite.parse(Object? value) {
-    final raw = v2Map(value, '家庭邀请');
-    final token = v2Text(raw['token'], label: '家庭邀请', max: 512);
-    return V2FamilyInvite(
-      inviteId: v2Uuid(raw['invite_id'], '家庭邀请'),
-      token: token,
-      expiresAt: v2Aware(raw['expires_at'], '家庭邀请'),
-    );
-  }
-}
-
-String familyRoleLabel(String role) => role == 'OWNER' ? '家庭创建者' : '家庭成员';
-
-String familyPermissionLabel(String code) => switch (code) {
-      familyViewMemory => '可查看我的记忆',
-      familyViewPhotos => '可查看我的照片',
-      familyViewFootprint => '可查看我的今日足迹',
-      familyViewCurrentLocation => '可查看我的当前位置',
-      _ => '其他授权',
-    };
-).hasMatch(cacheVersion)) {
+    if (!RegExp(r'^[0-9a-f]{64}\$').hasMatch(cacheVersion)) {
       return v2Invalid('家庭照片');
     }
     return V2FamilyPhoto(
@@ -351,7 +321,7 @@ class V2FamilyPhotoDownload {
 String familyMediaCacheKey(String resourceOwnerUserId, String mediaId) {
   final owner = v2Uuid(resourceOwnerUserId, '家庭照片').toLowerCase();
   final media = v2Uuid(mediaId, '家庭照片').toLowerCase();
-  return '${owner}_${media}';
+  return '${owner}_$media';
 }
 
 class V2FamilyInvite {
