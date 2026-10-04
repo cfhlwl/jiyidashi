@@ -95,10 +95,17 @@ ASR_ERROR_STATUS = {
 # [人工注释][S1-004][S1-005][S1-006] 媒体服务统一持有用户归属、服务端 object key 与 READY 门禁。
 # 客户端只能携带 media_id，不能提交任意 object key 绕过所有权检查。
 class MediaError(RuntimeError):
-    def __init__(self, code: str, status_code: int):
+    def __init__(
+        self,
+        code: str,
+        status_code: int,
+        *,
+        retry_after: int | None = None,
+    ):
         super().__init__(code)
         self.code = code
         self.status_code = status_code
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True)
@@ -677,7 +684,7 @@ def _read_and_transcribe_voice(
             )
         except ConcurrencyRejected as exc:
             _release_voice_asr_claim(db, snapshot.media_id, snapshot.claim_token)
-            raise MediaError(exc.code, 429) from exc
+            raise MediaError(exc.code, 429, retry_after=exc.retry_after) from exc
         try:
             result = asr.transcribe(
                 audio,
