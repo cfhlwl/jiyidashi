@@ -9,18 +9,22 @@ import 'media_presentation_cache.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
+typedef LocalPhotoRenderer = Widget Function(File file, Key key);
+
 class MemoryDetailPage extends StatefulWidget {
   const MemoryDetailPage({
     super.key,
     required this.api,
     required this.memoryId,
     this.mediaCache,
+    this.localPhotoRenderer,
     this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
   final String memoryId;
   final LocalMediaCache? mediaCache;
+  final LocalPhotoRenderer? localPhotoRenderer;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
@@ -307,19 +311,11 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.file(
+            child: (widget.localPhotoRenderer ?? _defaultLocalPhotoRenderer)(
               local,
-              key: ValueKey<String>(
+              ValueKey<String>(
                 'photo-local-${current.id}-${local.path}',
               ),
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  constraints: const BoxConstraints(minHeight: 160),
-                  alignment: Alignment.center,
-                  child: const Text('本地照片缓存已损坏，请重新加载。'),
-                );
-              },
             ),
           ),
           if (photoError != null) ...[
@@ -818,4 +814,20 @@ String _formatDateTime(String value) {
   String two(int v) => v.toString().padLeft(2, '0');
   return '${local.year}-${two(local.month)}-${two(local.day)} '
       '${two(local.hour)}:${two(local.minute)}';
+}
+
+
+Widget _defaultLocalPhotoRenderer(File file, Key key) {
+  return Image.file(
+    file,
+    key: key,
+    fit: BoxFit.contain,
+    errorBuilder: (context, error, stackTrace) {
+      return Container(
+        constraints: const BoxConstraints(minHeight: 160),
+        alignment: Alignment.center,
+        child: const Text('本地照片缓存已损坏，请重新加载。'),
+      );
+    },
+  );
 }
