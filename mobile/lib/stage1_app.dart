@@ -1315,7 +1315,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         api: widget.api,
         mediaCache: _mediaCache,
       ),
-      FamilyPage(api: widget.api),
+      FamilyPage(
+        api: widget.api,
+        mediaCache: _mediaCache,
+        amapPrivacyConsent: _amapPrivacyConsent,
+      ),
       ProfilePage(
         api: widget.api,
         onElderModeChanged: (enabled) {
