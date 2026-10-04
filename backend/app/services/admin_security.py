@@ -45,8 +45,21 @@ def normalize_admin_email(value: str) -> str:
     return value.strip().casefold()
 
 
-def hash_admin_password(password: str) -> str:
-    return _password_hasher.hash(password)
+def hash_admin_password(password: str, *, bind=None) -> str:
+    if bind is None:
+        return _password_hasher.hash(password)
+    try:
+        permit = claim_argon2_permit(bind)
+    except ConcurrencyRejected as exc:
+        raise AdminOperationError(
+            exc.code,
+            429,
+            retry_after=exc.retry_after,
+        ) from exc
+    try:
+        return _password_hasher.hash(password)
+    finally:
+        release_permit(bind, permit=permit)
 
 
 def _token_digest(value: str) -> str:
