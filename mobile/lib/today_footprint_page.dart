@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'memory_detail_page.dart';
+import 'footprint_models.dart';
 import 'timeline_models.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_format.dart';
@@ -79,9 +80,9 @@ class _TodayPageState extends State<TodayPage> {
 
       // Validate Today first. Malformed authority stays a protocol fail-closed
       // state; secondary reads must never reclassify it as a network failure.
-      late final _TodayFootprint footprint;
+      late final FootprintDay footprint;
       try {
-        footprint = _TodayFootprint.fromJson(data);
+        footprint = FootprintDay.fromJson(data);
       } catch (_) {
         if (!current()) return;
         setState(() => _data = data);
@@ -178,9 +179,9 @@ class _TodayPageState extends State<TodayPage> {
       );
     }
 
-    late final _TodayFootprint footprint;
+    late final FootprintDay footprint;
     try {
-      footprint = _TodayFootprint.fromJson(_data!);
+      footprint = FootprintDay.fromJson(_data!);
     } on Object {
       return Column(
         key: const ValueKey('today-footprint-protocol-error'),
@@ -226,7 +227,7 @@ class _TodayExperienceBody extends StatelessWidget {
   });
 
   final JiYiApiClient api;
-  final _TodayFootprint footprint;
+  final FootprintDay footprint;
   final List<TimelineReadItem> memories;
   final bool memoryUnavailable;
   final bool elderMode;
@@ -311,7 +312,7 @@ class _TodayExperienceBody extends StatelessWidget {
       child: Column(
         children: [
           for (var index = 0; index < footprint.visits.length; index++) ...[
-            _FootprintVisitRow(
+            FootprintVisitRow(
               visit: footprint.visits[index],
               elderMode: elderMode,
             ),
@@ -545,19 +546,19 @@ IconData _todayMemoryIcon(String? value) => switch (value) {
 
 String _todayHeroSubtitle(Map<String, dynamic>? data) {
   final day = data?['day'];
-  if (day is String && _isStrictDateOnly(day)) {
+  if (day is String && isStrictDateOnly(day)) {
     return jiyiDisplayDate(day);
   }
   return '正在整理今天';
 }
 
-class _FootprintVisitRow extends StatelessWidget {
-  const _FootprintVisitRow({
+class FootprintVisitRow extends StatelessWidget {
+  const FootprintVisitRow({
     required this.visit,
     required this.elderMode,
   });
 
-  final _FootprintVisit visit;
+  final FootprintVisit visit;
   final bool elderMode;
 
   @override
@@ -634,140 +635,4 @@ String _clock(String serverLocalIso) {
     throw const FormatException('invalid server-local datetime');
   }
   return '${match.group(1)}:${match.group(2)}';
-}
-
-class _TodayFootprint {
-  const _TodayFootprint({
-    required this.timezone,
-    required this.day,
-    required this.visits,
-  });
-
-  final String timezone;
-  final String day;
-  final List<_FootprintVisit> visits;
-
-  factory _TodayFootprint.fromJson(Map<String, dynamic> data) {
-    final timezone = data['timezone'];
-    final day = data['day'];
-    final visits = data['visits'];
-    if (timezone is! String ||
-        timezone.trim().isEmpty ||
-        day is! String ||
-        !_isStrictDateOnly(day) ||
-        visits is! List<dynamic>) {
-      throw const FormatException('invalid today footprint');
-    }
-    return _TodayFootprint(
-      timezone: timezone,
-      day: day,
-      visits: visits
-          .map((item) {
-            if (item is! Map<String, dynamic>) {
-              throw const FormatException('invalid footprint visit');
-            }
-            return _FootprintVisit.fromJson(item);
-          })
-          .toList(growable: false),
-    );
-  }
-}
-
-class _FootprintVisit {
-  const _FootprintVisit({
-    required this.id,
-    required this.placeId,
-    required this.placeName,
-    required this.arrivedAt,
-    required this.leftAt,
-    required this.arrivedAtLocal,
-    required this.leftAtLocal,
-    required this.confidence,
-    required this.visitSource,
-    required this.finalized,
-  });
-
-  final String id;
-  final String placeId;
-  final String placeName;
-  final String arrivedAt;
-  final String? leftAt;
-  final String arrivedAtLocal;
-  final String? leftAtLocal;
-  final double confidence;
-  final String visitSource;
-  final bool finalized;
-
-  factory _FootprintVisit.fromJson(Map<String, dynamic> data) {
-    final id = data['id'];
-    final placeId = data['place_id'];
-    final placeName = data['place_name'];
-    final arrivedAt = data['arrived_at'];
-    final leftAt = data['left_at'];
-    final arrivedAtLocal = data['arrived_at_local'];
-    final leftAtLocal = data['left_at_local'];
-    final confidence = data['confidence'];
-    final visitSource = data['visit_source'];
-    final finalized = data['visit_finalized'];
-    if (id is! String ||
-        id.trim().isEmpty ||
-        placeId is! String ||
-        placeId.trim().isEmpty ||
-        placeName is! String ||
-        placeName.trim().isEmpty ||
-        arrivedAt is! String ||
-        arrivedAt.trim().isEmpty ||
-        (leftAt != null && leftAt is! String) ||
-        arrivedAtLocal is! String ||
-        arrivedAtLocal.trim().isEmpty ||
-        (leftAtLocal != null && leftAtLocal is! String) ||
-        confidence is! num ||
-        !confidence.isFinite ||
-        visitSource is! String ||
-        visitSource.trim().isEmpty ||
-        finalized is! bool) {
-      throw const FormatException('invalid footprint visit');
-    }
-    if (!_isStrictIsoDateTime(arrivedAt) ||
-        (leftAt is String && !_isStrictIsoDateTime(leftAt)) ||
-        !_isStrictIsoDateTime(arrivedAtLocal) ||
-        (leftAtLocal is String && !_isStrictIsoDateTime(leftAtLocal))) {
-      throw const FormatException('invalid footprint visit');
-    }
-    return _FootprintVisit(
-      id: id,
-      placeId: placeId,
-      placeName: placeName,
-      arrivedAt: arrivedAt,
-      leftAt: leftAt as String?,
-      arrivedAtLocal: arrivedAtLocal,
-      leftAtLocal: leftAtLocal as String?,
-      confidence: confidence.toDouble(),
-      visitSource: visitSource,
-      finalized: finalized,
-    );
-  }
-}
-
-
-bool _isStrictDateOnly(String value) {
-  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
-  if (match == null) return false;
-  final year = int.parse(match.group(1)!);
-  final month = int.parse(match.group(2)!);
-  final day = int.parse(match.group(3)!);
-  final parsed = DateTime.utc(year, month, day);
-  return parsed.year == year && parsed.month == month && parsed.day == day;
-}
-
-bool _isStrictIsoDateTime(String value) {
-  final match = RegExp(
-    r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$',
-  ).firstMatch(value);
-  if (match == null || !_isStrictDateOnly(value.substring(0, 10))) return false;
-  final hour = int.parse(match.group(4)!);
-  final minute = int.parse(match.group(5)!);
-  final second = int.parse(match.group(6)!);
-  if (hour > 23 || minute > 59 || second > 59) return false;
-  return DateTime.tryParse(value) != null;
 }
