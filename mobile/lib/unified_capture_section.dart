@@ -15,6 +15,7 @@ class UnifiedMediaCaptureSection extends StatefulWidget {
     this.mediaDevice,
     this.mediaDeviceFactory,
     this.service,
+    this.mediaCache,
     this.elderMode = false,
   }) : assert(mediaDevice == null || mediaDeviceFactory == null);
 
@@ -24,6 +25,7 @@ class UnifiedMediaCaptureSection extends StatefulWidget {
   // 生产默认仍创建 PlatformCaptureMediaDevice。
   final CaptureMediaDevice Function()? mediaDeviceFactory;
   final TrustedMediaCaptureService? service;
+  final LocalMediaCache? mediaCache;
   final bool elderMode;
 
   @override
@@ -81,7 +83,7 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
       _serviceInstance ??= widget.service ??
           TrustedMediaCaptureService(
             widget.api,
-            localMediaCache: LocalMediaCache(),
+            localMediaCache: widget.mediaCache ?? LocalMediaCache(),
           );
   bool get _mediaBusy => photoBusy || voiceBusy || voiceRecording;
 
