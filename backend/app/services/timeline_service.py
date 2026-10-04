@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Memory, Place, Visit
+from app.models import Memory, MemoryType, Place, Visit
 from app.schemas import TimelineItem, TimelineItemKind, TimelinePageResponse
 from app.services.time_service import user_day_bounds_utc, user_timezone_name
 
@@ -110,7 +110,7 @@ def _sort_key(item: TimelineItem) -> tuple[datetime, int, int]:
 
 
 def _memory_media_id(memory: Memory) -> UUID | None:
-    if memory.memory_type.value != "PHOTO":
+    if memory.memory_type != MemoryType.PHOTO:
         return None
     metadata = memory.metadata_json
     if not isinstance(metadata, dict):
