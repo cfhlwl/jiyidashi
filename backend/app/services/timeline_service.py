@@ -109,6 +109,19 @@ def _sort_key(item: TimelineItem) -> tuple[datetime, int, int]:
     )
 
 
+def _memory_media_id(memory: Memory) -> UUID | None:
+    if memory.memory_type.value != "PHOTO":
+        return None
+    metadata = memory.metadata_json
+    if not isinstance(metadata, dict):
+        return None
+    candidate = metadata.get("media_id")
+    try:
+        return UUID(str(candidate)) if candidate is not None else None
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
 def _memory_item(memory: Memory, place: Place | None) -> TimelineItem:
     return TimelineItem(
         kind=TimelineItemKind.MEMORY,
@@ -121,6 +134,7 @@ def _memory_item(memory: Memory, place: Place | None) -> TimelineItem:
         content=memory.content,
         source_type=memory.source_type,
         is_confirmed=memory.is_confirmed,
+        media_id=_memory_media_id(memory),
         confidence=memory.confidence,
     )
 
