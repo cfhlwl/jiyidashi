@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import httpx
 from sqlalchemy.orm import Session
 
+from app.admin_models import ProviderService
 from app.core.config import Settings
 from app.core.observability import emit_operational_event
 from app.services.entitlement_service import (
@@ -18,7 +19,6 @@ from app.services.entitlement_service import (
     finalize_ai_usage,
     reserve_ai_provider_request,
 )
-from app.admin_models import ProviderService
 from app.services.provider_config_service import (
     ProviderRuntimeConfigError,
     get_runtime_provider_settings,
