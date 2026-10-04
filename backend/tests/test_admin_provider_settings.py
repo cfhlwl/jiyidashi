@@ -236,6 +236,7 @@ async def test_provider_revision_conflict_fails_closed(client):
 def test_production_provider_url_must_be_https():
     settings = Settings(
         app_env="production",
+        enable_dev_auth=False,
         jwt_secret="x" * 48,
         auth_email_delivery_mode="smtp",
         auth_smtp_host="smtp.example.com",
