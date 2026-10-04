@@ -11,6 +11,7 @@ from app.admin_models import (
     AdminAccount,
     AdminRole,
     ProviderConfiguration,
+    ProviderRuntimeEvidence,
     ProviderService,
 )
 from app.admin_schemas import (
@@ -40,6 +41,8 @@ from app.services.provider_config_service import (
     effective_provider_credential,
     encrypt_provider_credential,
     invalidate_provider_runtime_cache,
+    provider_destination_authority,
+    provider_runtime_fingerprint,
     provider_snapshot,
     read_provider_rows,
     runtime_provider_settings_from_db,
@@ -88,69 +91,43 @@ def _runtime_state(
     service: ProviderService,
     enabled: bool,
     configured: bool,
+    runtime_fingerprint: str,
     now: datetime,
-    config_updated_at: datetime | None,
 ) -> str:
     if not enabled:
         return "CONFIGURED_UNVERIFIED" if configured else "DISABLED"
     if not configured:
         return "WARNING"
 
-    recent_since = now - _EVIDENCE_WINDOW
-    if config_updated_at is not None:
-        updated = config_updated_at
-        if updated.tzinfo is None or updated.utcoffset() is None:
-            updated = updated.replace(tzinfo=UTC)
-        else:
-            updated = updated.astimezone(UTC)
-        # Evidence from an older provider revision cannot verify the new endpoint/key/model.
-        if updated > recent_since:
-            recent_since = updated
-    if service == ProviderService.AI:
-        success = _latest(
-            db,
-            select(func.max(AIUsageEvent.finalized_at)).where(
-                AIUsageEvent.finalized_at.is_not(None),
-                AIUsageEvent.finalized_at >= recent_since,
-            ),
-        )
-        failure = _latest(
-            db,
-            select(func.max(AIUsageEvent.created_at)).where(
-                AIUsageEvent.finalized_at.is_(None),
-                AIUsageEvent.created_at >= recent_since,
-                AIUsageEvent.created_at <= now - _STALE_AI_RESERVATION_GRACE,
-            ),
-        )
-        if failure is not None and (success is None or failure > success):
-            return "WARNING"
-        return "NORMAL" if success is not None else "ENABLED_UNVERIFIED"
-
-    if service == ProviderService.ASR:
-        success = _latest(
-            db,
-            select(func.max(MemorySource.created_at)).where(
-                MemorySource.source_type == SourceType.USER_VOICE,
-                MemorySource.created_at >= recent_since,
-            ),
-        )
-        failure = _latest(
-            db,
-            select(func.max(MediaASRClaim.updated_at)).where(
-                MediaASRClaim.lease_expires_at < now,
-                MediaASRClaim.updated_at >= recent_since,
-            ),
-        )
-        if failure is not None and (success is None or failure > success):
-            return "WARNING"
-        return "NORMAL" if success is not None else "ENABLED_UNVERIFIED"
-
-    success = _latest(
-        db,
-        select(func.max(MemoryEmbedding.updated_at)).where(
-            MemoryEmbedding.updated_at >= recent_since
-        ),
+    evidence = db.get(
+        ProviderRuntimeEvidence,
+        (service.value, runtime_fingerprint),
     )
+    if evidence is None:
+        return "ENABLED_UNVERIFIED"
+
+    recent_since = now - _EVIDENCE_WINDOW
+
+    success = evidence.last_success_at
+    if success is not None:
+        if success.tzinfo is None or success.utcoffset() is None:
+            success = success.replace(tzinfo=UTC)
+        else:
+            success = success.astimezone(UTC)
+        if success < recent_since:
+            success = None
+
+    failure = evidence.last_failure_at
+    if failure is not None:
+        if failure.tzinfo is None or failure.utcoffset() is None:
+            failure = failure.replace(tzinfo=UTC)
+        else:
+            failure = failure.astimezone(UTC)
+        if failure < recent_since:
+            failure = None
+
+    if failure is not None and (success is None or failure > success):
+        return "WARNING"
     return "NORMAL" if success is not None else "ENABLED_UNVERIFIED"
 
 
@@ -161,6 +138,10 @@ def read_provider_configurations(
 ) -> AdminProviderConfigListRead:
     cfg = settings or get_settings()
     rows = read_provider_rows(db)
+    try:
+        runtime_settings = runtime_provider_settings_from_db(db, settings=cfg)
+    except ProviderRuntimeConfigError as exc:
+        raise _provider_error(exc) from exc
     observed = datetime.now(UTC)
     services: list[AdminProviderConfigRead] = []
     for service in ProviderService:
@@ -178,10 +159,11 @@ def read_provider_configurations(
                     service=service,
                     enabled=snapshot.enabled,
                     configured=snapshot.credential_configured and bool(snapshot.model.strip()),
-                    now=observed,
-                    config_updated_at=(
-                        snapshot.updated_at if isinstance(snapshot.updated_at, datetime) else None
+                    runtime_fingerprint=provider_runtime_fingerprint(
+                        runtime_settings,
+                        service,
                     ),
+                    now=observed,
                 ),
                 enabled=snapshot.enabled,
                 provider_type=snapshot.provider_type,
@@ -228,6 +210,11 @@ def update_provider_configuration(
         raise AdminOperationError("ADMIN_STATE_STALE", 409)
 
     try:
+        current_snapshot = provider_snapshot(
+            row,
+            service=service,
+            settings=cfg,
+        )
         current_secret = effective_provider_credential(
             row,
             service=service,
@@ -257,6 +244,28 @@ def update_provider_configuration(
         credential_ciphertext = None
         credential_changed = True
         effective_secret = ""
+
+    if (
+        current_secret
+        and payload.api_key is None
+        and not payload.clear_api_key
+    ):
+        try:
+            current_destination = provider_destination_authority(
+                current_snapshot.provider_type,
+                current_snapshot.base_url,
+            )
+            requested_destination = provider_destination_authority(
+                payload.provider_type,
+                payload.base_url,
+            )
+        except ProviderRuntimeConfigError as exc:
+            raise _provider_error(exc) from exc
+        if current_destination != requested_destination:
+            raise AdminOperationError(
+                "ADMIN_PROVIDER_CREDENTIAL_DESTINATION_CHANGED",
+                409,
+            )
 
     try:
         validate_provider_policy(
