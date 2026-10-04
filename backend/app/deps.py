@@ -51,9 +51,9 @@ AuthenticatedUser = Annotated[UUID, Depends(get_authenticated_user_id)]
 
 
 def get_current_user_id(
-    request: Request,
     user_id: AuthenticatedUser,
     db: DbSession,
+    request: Request = None,
 ) -> UUID:
     # [人工注释][S1-021-FIX-001] 请求入口只负责“准入”：在 User KEY SHARE 下读取
     # deletion generation 并保存到 Session.info。真正的持久化门禁由 GuardedSession
@@ -101,9 +101,10 @@ def get_current_user_id(
         user_id=user_id,
         deletion_generation=deletion_generation,
     )
-    enforce_default_authenticated_api_rate(
-        db,
-        user_id=user_id,
-        request=request,
-    )
+    if request is not None:
+        enforce_default_authenticated_api_rate(
+            db,
+            user_id=user_id,
+            request=request,
+        )
     return user_id
