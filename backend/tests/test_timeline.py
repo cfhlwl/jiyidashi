@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from app.core.db import SessionLocal
-from app.models import Memory, Place, User, Visit
+from app.models import Memory, MemoryType, Place, User, Visit
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -232,7 +232,7 @@ async def test_timeline_projects_only_photo_media_identity(client):
                 Memory(
                     id=photo_id,
                     user_id=user_id,
-                    memory_type="PHOTO",
+                    memory_type=MemoryType.PHOTO,
                     content="一张照片",
                     occurred_at=datetime(2026, 10, 4, 8, 0, tzinfo=UTC),
                     metadata_json={
@@ -245,7 +245,7 @@ async def test_timeline_projects_only_photo_media_identity(client):
                 Memory(
                     id=note_id,
                     user_id=user_id,
-                    memory_type="NOTE",
+                    memory_type=MemoryType.NOTE,
                     content="普通文字",
                     occurred_at=datetime(2026, 10, 4, 7, 0, tzinfo=UTC),
                     metadata_json={"media_id": str(uuid4())},
