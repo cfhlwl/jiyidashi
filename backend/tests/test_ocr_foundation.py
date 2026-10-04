@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.core.config import Settings
-from app.core.db import SessionLocal
+from app.core.db import SessionLocal, engine
 from app.main import app
 from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import Memory, MemorySource, ObjectItem, Place, Reminder, User, Visit
@@ -25,6 +25,7 @@ from app.services.ai_gateway import (
     get_ai_gateway,
 )
 from app.services.entitlement_service import create_legacy_full_entitlement
+from app.services.concurrency_guard import claim_provider_permit, release_permit
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorageError,
@@ -579,3 +580,37 @@ async def test_openai_image_adapter_keeps_image_and_credentials_inside_gateway()
     assert result.trust_class == "inference"
     assert result.provenance.provider == "openai"
     assert result.provenance.provider_request_id == "resp_ocr_123"
+
+
+@pytest.mark.asyncio
+async def test_ocr_provider_concurrency_saturation_is_429_with_retry_after(
+    client,
+    ocr_dependencies,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-provider-saturation")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings(
+        provider_ai_global_concurrency=1,
+        provider_ai_user_concurrency=1,
+        provider_permit_lease_seconds=30,
+    )
+    app.dependency_overrides[get_ai_gateway] = lambda: AIGateway(settings, provider)
+    occupied = claim_provider_permit(
+        engine,
+        service_class="AI",
+        user_id=user_id,
+        settings=settings,
+    )
+    try:
+        response = await client.post(
+            f"/v1/media/{media_id}/ocr",
+            headers=headers,
+        )
+    finally:
+        assert release_permit(engine, permit=occupied, settings=settings) is True
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "PROVIDER_CONCURRENCY_SATURATED"
+    assert int(response.headers["Retry-After"]) >= 1
+    assert provider.image_requests == []
