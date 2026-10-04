@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.annual_memoir_models import (
@@ -14,6 +14,8 @@ from app.annual_memoir_models import (
 from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.services.ai_gateway import get_ai_gateway
+from app.services.api_abuse import enforce_authenticated_api_rate
+from app.services.auth_rate_limit import ApiRouteClass
 from app.services.annual_memoir_service import (
     AnnualMemoirError,
     build_annual_memoir,
@@ -32,9 +34,16 @@ def _raise_annual_memoir_error(exc: AnnualMemoirError) -> None:
 @router.post("/annual", response_model=AnnualMemoirResponse)
 async def generate_annual_memoir(
     payload: AnnualMemoirRequest,
+    request: Request,
     user_id: CurrentUser,
     db: DbSession,
 ) -> AnnualMemoirResponse:
+    enforce_authenticated_api_rate(
+        db,
+        user_id=user_id,
+        request=request,
+        route_class=ApiRouteClass.EXPENSIVE_AI,
+    )
     try:
         return await build_annual_memoir(
             db,
