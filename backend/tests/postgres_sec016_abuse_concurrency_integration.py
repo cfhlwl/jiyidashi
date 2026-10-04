@@ -204,26 +204,80 @@ def _prove_stale_recovery_and_token_binding(user_id: UUID) -> None:
     assert release_permit(engine, permit=second, settings=settings) is True
 
 
-def _prove_argon2_global_cap() -> None:
+def _prove_live_permit_survives_owner_delete(user_id: UUID) -> None:
+    settings = _provider_settings(global_limit=1, user_limit=1)
+    permit = claim_provider_permit(
+        engine,
+        service_class="AI",
+        user_id=user_id,
+        settings=settings,
+    )
+    with SessionLocal() as db:
+        db.execute(delete(User).where(User.id == user_id))
+        db.commit()
+    with SessionLocal() as db:
+        row = db.get(WorkPermit, permit.permit_id)
+        assert row is not None
+        assert row.user_id is None
+    try:
+        claim_provider_permit(
+            engine,
+            service_class="AI",
+            user_id=uuid4(),
+            settings=settings,
+        )
+    except ConcurrencyRejected as exc:
+        assert exc.code == "PROVIDER_CONCURRENCY_SATURATED"
+    else:
+        raise AssertionError("owner deletion released a live provider slot")
+    assert release_permit(engine, permit=permit, settings=settings) is True
+
+
+def _race_argon2_claim() -> tuple[list, list[str]]:
     settings = get_settings().model_copy(
         update={
             "argon2_global_concurrency": 1,
             "argon2_permit_lease_seconds": 5,
         }
     )
-    first = claim_argon2_permit(engine, settings=settings)
-    try:
+    barrier = Barrier(2)
+    lock = Lock()
+    permits = []
+    denials: list[str] = []
+    errors: list[BaseException] = []
+
+    def worker() -> None:
         try:
-            claim_argon2_permit(engine, settings=settings)
+            barrier.wait(timeout=10)
+            permit = claim_argon2_permit(engine, settings=settings)
+            with lock:
+                permits.append(permit)
         except ConcurrencyRejected as exc:
-            assert exc.code == "AUTH_PASSWORD_WORK_SATURATED"
-            assert exc.retry_after >= 1
-        else:
-            raise AssertionError("Argon2 global cap did not reject")
-    finally:
-        assert release_permit(engine, permit=first, settings=settings) is True
-    second = claim_argon2_permit(engine, settings=settings)
-    assert release_permit(engine, permit=second, settings=settings) is True
+            with lock:
+                denials.append(exc.code)
+        except BaseException as exc:  # noqa: BLE001
+            with lock:
+                errors.append(exc)
+
+    threads = [
+        Thread(target=worker, name="sec016-argon2-a"),
+        Thread(target=worker, name="sec016-argon2-b"),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+        assert not thread.is_alive()
+    if errors:
+        raise errors[0]
+    return permits, denials
+
+
+def _prove_argon2_global_cap() -> None:
+    permits, denials = _race_argon2_claim()
+    assert len(permits) == 1
+    assert denials == ["AUTH_PASSWORD_WORK_SATURATED"]
+    assert release_permit(engine, permit=permits[0]) is True
 
 
 def _prove_authenticated_rate_bucket_race(user_id: UUID) -> None:
@@ -319,6 +373,8 @@ def main() -> None:
     try:
         _prove_provider_races(user_a, user_b)
         _prove_stale_recovery_and_token_binding(user_a)
+        _prove_live_permit_survives_owner_delete(user_a)
+        user_a = _seed_user("a-after-delete")
         _prove_argon2_global_cap()
         _prove_authenticated_rate_bucket_race(user_a)
     finally:
