@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:amap_flutter_base/amap_flutter_base.dart';
-import 'package:amap_flutter_map/amap_flutter_map.dart';
+import 'package:csp_amap_flutter_map/base/csp_amap_flutter_base.dart';
+import 'package:csp_amap_flutter_map/csp_amap_flutter_map.dart';
 
 import 'footprint_models.dart';
 
@@ -237,13 +237,15 @@ class _NativeFootprintMapState extends State<_NativeFootprintMap> {
 
   @override
   Widget build(BuildContext context) {
-    return AMapWidget(
-      apiKey: widget.config.apiKey,
-      privacyStatement: const AMapPrivacyStatement(
-        hasContains: true,
-        hasShow: true,
-        hasAgree: true,
-      ),
+    AMapInitializer.init(context, apiKey: widget.config.apiKey);
+  AMapInitializer.updatePrivacyAgree(
+    const AMapPrivacyStatement(
+      hasContains: true,
+      hasShow: true,
+      hasAgree: true,
+    ),
+  );
+  return AMapWidget(
       initialCameraPosition: CameraPosition(
         target: LatLng(
           widget.visits.first.latitude!,
@@ -360,13 +362,15 @@ Widget _defaultPlaceNativeBuilder(
   String? address,
 ) {
   final coordinate = LatLng(latitude, longitude);
-  return AMapWidget(
-    apiKey: config.apiKey,
-    privacyStatement: const AMapPrivacyStatement(
+  AMapInitializer.init(context, apiKey: config.apiKey);
+  AMapInitializer.updatePrivacyAgree(
+    const AMapPrivacyStatement(
       hasContains: true,
       hasShow: true,
       hasAgree: true,
     ),
+  );
+  return AMapWidget(
     initialCameraPosition: CameraPosition(target: coordinate, zoom: 15),
     markers: <Marker>{
       Marker(
