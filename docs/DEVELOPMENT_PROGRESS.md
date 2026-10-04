@@ -39,7 +39,7 @@
 <!-- Stage 3S：Annual Summary / Issue #91 / PR #93 已完成 complete-year snapshot、512+1/256+1 bounded inventory、all-raw S3-013 authority、strict Y-slot provider boundary、provider 前后完整重验与 PostgreSQL Annual Gate，并合并 main=dd558913；S3-017 转 ✅，Stage 3 S3-001~S3-019 正式收口。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-10-03  
+> 最后更新：2026-10-04  
 > Stage 1「记得住」：✅ complete  
 > Stage 2「自动记」：✅ complete  
 > Stage 3「懂生活 / AI Memory」：✅ complete  
@@ -600,6 +600,46 @@ User Correction Rate
 | CN-004 | 国内推送与系统兼容 | ⬜ | Android 国内设备不能只依赖 FCM；需评估厂商推送（华为/小米/OPPO/vivo 等）或微信订阅消息，并与 REM-001 统一送达、撤回、失败重试和隐私授权。 |
 | CN-005 | 国内客服、注销与数据请求闭环 | ⬜ | 在 App/小程序内提供可达客服和隐私投诉入口，定义工单、身份核验、15 个工作日内处理目标、导出/更正/删除/注销结果通知和证据留存。 |
 | CN-006 | 国内网络与第三方服务实测 | ⬜ | 真实 HTTPS 域名、备案后 API、COS/OSS 合法域名、短信通道、微信回调、运营商网络、弱网/断网、国产 Android 机型和应用商店包需做生产预发布验收。 |
+
+
+## 8.2 Apple App Store 上架专项
+
+> **后置统一收口，不在当前 UIUX-P0-002 主线拆散实现。** 启动条件建议为：消费者端视觉/行为稳定、#205 完成并合并、正式 iOS Release 签名与生产后端进入预发布状态。以下项目是 **App Store submission gate**；未全部完成前，不得把“可上传 TestFlight / 可安装 IPA”表述为“已满足 App Store 正式上架条件”。
+
+| ID | 功能 / 需求 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| IOS-STORE-001 | App Store Compliance & Submission Readiness V1 | ⏸ | Apple 上架统一收口总任务。后期一次性完成 Privacy Manifest、隐私政策、第三方数据/AI consent、后台定位审核材料、App Privacy、登录政策、账号注销、IAP/StoreKit、审核账号与 Release Archive 验收；当前只登记，不启动实现。 |
+| IOS-STORE-002 | Privacy Manifest & Required Reason API Audit | ⬜ | 为 iOS App target 增加并审查 `PrivacyInfo.xcprivacy`；盘点 App 自身及 Flutter/原生/高德/secure-storage 等依赖使用的 Required Reason API 与 privacy manifest。当前原生代码使用 `UserDefaults`，正式 Archive 必须以当期 Apple approved reason API 规则声明；同时导出/检查 Xcode Privacy Report，禁止漏报或使用不匹配 reason。 |
+| IOS-STORE-003 | In-app Privacy Policy / User Agreement / SDK Disclosure | ⬜ | App Store Connect metadata 与 App 内均提供长期可访问的 HTTPS 隐私政策；登录/注册与“我的→隐私与权限”可进入。政策需覆盖定位/后台定位、照片、相机、麦克风/语音、对象存储、家庭授权、AI/ASR/OCR/Vision/Embedding 等处理目的、共享方、保存期限、撤回、导出、删除与注销，并列出第三方 SDK/服务清单。与 CN-002 共用 canonical 文档，避免中外两套事实漂移。 |
+| IOS-STORE-004 | Third-party AI/Data Processing Explicit Consent & Revocation | ⬜ | 第一次向第三方 AI/ASR/OCR/Vision/Embedding provider 发送用户个人内容前，显示清晰的数据类别、用途、第三方类型/提供方、处理边界，并取得明确同意；服务端持久化 consent revision。拒绝/撤回后基础记录、足迹、非第三方 AI 依赖能力仍可使用；不得用会员购买替代隐私同意。Provider 变更或处理目的实质变化时需重新评估 consent。 |
+| IOS-STORE-005 | AMap iOS Privacy & SDK Initialization Compliance | ⬜ | 与 UIUX-P0-002/#205 联动收口：未同意高德相关隐私披露时不得初始化/构建 AMap SDK；同意状态必须在 SDK 初始化/使用前正确应用，撤回后未来地图构建 fail closed；隐私政策列明高德 SDK 数据处理。正式 Release 还需检查 SDK privacy manifest/签名与实际版本。 |
+| IOS-STORE-006 | App Store Connect App Privacy / Data Collection Mapping | ⬜ | 基于最终生产数据流逐项填写 App Privacy（Privacy Nutrition Labels）：Contact Info、User Content、Photos/Audio、Precise/Coarse Location、Identifiers、Diagnostics/Usage Data 等只按真实收集/关联/用途申报；核对第三方 SDK/provider 数据流。每次新增 SDK、广告/分析、支付或 provider 后重新审查。 |
+| IOS-STORE-007 | Account Deletion Submission Readiness | ⬜ | 现有 App 内注销入口与 S1-022 durable delete 保留；上架前验证用户可在 App 内发起永久账号删除，关联个人数据/媒体按政策删除，失败/等待状态有明确说明且可恢复。优先在 OPS-002 后由服务端 durable worker 自动推进，避免依赖用户反复点击“继续注销”；同时准备审核演示路径。 |
+| IOS-STORE-008 | Background Location App Review Package | ⬜ | 后台定位继续只服务于用户主动启用的“自动位置记忆”。正式审核前验证 progressive permission（When In Use → 明确启用后再申请 Always）、拒绝 Always 时 App 核心非自动能力仍可用、Privacy Pause/关闭入口真实生效、Info.plist purpose string 与实际行为一致；准备 Review Notes 解释后台定位用途、开关路径和审核复现步骤。 |
+| IOS-STORE-009 | Login Policy / Sign in with Apple Review | ⬜ | 当前仅自有邮箱/密码认证时保持现状即可。若未来在 iOS 主客户端加入微信等第三方/社交登录，必须按提交时最新 App Review Guideline 4.8 重新审查，并提供符合要求的等效登录方案（通常包括 Sign in with Apple 或其他满足当期规则的方案）；不得先接微信登录后遗漏该 Gate。 |
+| IOS-STORE-010 | iOS Digital Membership / StoreKit & Purchase Policy | ⬜ | PERSONAL/FAMILY/未来数字 AI 权益进入 iOS 销售前，单独完成 StoreKit/App Store IAP/订阅及服务端 Purchase→Entitlement 校验；不得直接照搬微信/支付宝的 App 内数字解锁路径。最终实现以提交时 Apple storefront、entitlement、external-purchase 等最新规则为准，避免把会变化的商店政策硬编码进 Plan authority。与 BIZ-017 联动。 |
+| IOS-STORE-011 | Release Archive / Reviewer Access / Submission Evidence | ⬜ | 使用正式 Bundle ID、Distribution 签名和 production 配置生成最终 Archive；验证无测试密钥/调试入口/私有 API/真实 secret 泄漏，Privacy Report 与权限用途一致。提供稳定审核账号、可用生产/审核后端、Review Notes、后台定位/注销/AI consent 的操作步骤、Support URL/Privacy URL、必要截图和联系信息。 |
+| IOS-STORE-012 | Final iOS Real-device & Store-readiness Gate | ⬜ | #205/相关客户端收口后重新执行 iOS 真机稳定性与关键路径验收：登录/refresh、冷启动恢复、照片上传与本地缓存、自动位置记忆、后台唤醒/恢复、高德地图、Privacy Pause、AI consent、账号注销。CORE-004 长时认证仍按其独立 P0 Gate 执行；正式提交不得以模拟器/无签名 IPA 代替最终 Release 包真机证据。 |
+
+### App Store 正式提交锁
+
+```text
+UIUX-P0-002 / consumer client stable
+→ IOS-STORE-002 Privacy Manifest / Required Reason API PASS
+→ IOS-STORE-003 privacy policy / SDK disclosure PASS
+→ IOS-STORE-004 third-party AI consent PASS
+→ IOS-STORE-005 AMap privacy PASS
+→ IOS-STORE-006 App Privacy mapping PASS
+→ IOS-STORE-007 account deletion PASS
+→ IOS-STORE-008 background-location review package PASS
+→ IOS-STORE-009 login-policy review PASS
+→ IOS-STORE-010 IAP policy PASS when digital sales are enabled
+→ IOS-STORE-011 final signed Archive + reviewer evidence PASS
+→ IOS-STORE-012 final real-device/store-readiness PASS
+→ 才允许标记 IOS-STORE-001 ✅
+```
+
+> App Store 政策会变化。IOS-STORE-001 启动时必须重新核对**当时生效**的 Apple App Review Guidelines、Required Reason API 列表、Privacy Manifest/SDK 要求、App Privacy 字段和支付/登录政策；本表记录的是当前已识别的工程 Gate，不以 2026-10-04 的政策文本永久冻结实现细节。
 
 ---
 
