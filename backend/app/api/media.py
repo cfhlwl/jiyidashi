@@ -102,7 +102,7 @@ def _media_cache_version(asset) -> str:
         raise MediaError("MEDIA_NOT_READY", 409)
     payload = (
         f"{asset.id}:{asset.storage_etag}:{asset.size_bytes}:"
-        f"{asset.completed_at.astimezone().isoformat()}"
+        f"{asset.completed_at.isoformat()}"
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
