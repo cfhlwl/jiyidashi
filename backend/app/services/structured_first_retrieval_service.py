@@ -45,6 +45,11 @@ from app.services.evidence_ranking_service import (
     EvidenceRankedSource,
     rank_evidence_sources,
 )
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.provider_config_service import record_provider_runtime_evidence
 
 _OBJECT_LOCATION_MARKERS = (
@@ -415,7 +420,18 @@ async def _vector_candidates(
 
     # Provider I/O runs before opening the short-lived vector read transaction.
     try:
-        inference = await gateway.embed(question)
+        try:
+            permit = claim_provider_permit(
+                caller_db.get_bind(),
+                service_class="EMBEDDING",
+                user_id=user_id,
+            )
+        except ConcurrencyRejected as exc:
+            return VectorRetrievalStatus.PROVIDER_FAILED, exc.code, ()
+        try:
+            inference = await gateway.embed(question)
+        finally:
+            release_permit(caller_db.get_bind(), permit=permit)
     except EmbeddingGatewayError as exc:
         record_provider_runtime_evidence(
             caller_db.get_bind(),
