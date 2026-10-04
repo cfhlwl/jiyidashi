@@ -631,6 +631,8 @@ class TimelineItem(BaseModel):
     content: str | None = None
     source_type: SourceType | None = None
     is_confirmed: bool | None = None
+    # PHOTO-only canonical media identity. Never expose storage keys or signed URLs here.
+    media_id: UUID | None = None
 
     # Shared/Visit evidence metadata.
     confidence: float
