@@ -41,6 +41,9 @@ def _record_auth_security_signal(
     value: str,
 ) -> None:
     security_scope = _SECURITY_SCOPE_BY_RATE_SCOPE.get(scope)
+    if scope.startswith("api_"):
+        security_scope = SecurityScope.API_AUTHENTICATED
+        signal_code = SecuritySignalCode.API_RATE_LIMIT_TRIGGERED
     if security_scope is None:
         return
     record_security_signal(
