@@ -13,7 +13,7 @@ class MediaCacheException implements Exception {
   final String message;
 
   @override
-  String toString() => 'MediaCacheException: ' + message;
+  String toString() => 'MediaCacheException: $message';
 }
 
 class MediaUnavailableOffline implements Exception {
@@ -37,7 +37,7 @@ class LocalMediaCache {
 
   static Future<Directory> _defaultRootDirectoryProvider() async {
     final databasePath = await getDatabasesPath();
-    return Directory(databasePath + '/jiyi_media_cache_v1');
+    return Directory('$databasePath/jiyi_media_cache_v1');
   }
 
   Future<File?> lookup({
@@ -53,9 +53,9 @@ class LocalMediaCache {
     File? candidate;
     if (cacheVersion != null) {
       final version = _safeVersion(cacheVersion);
-      candidate = File(directory.path + '/' + _fileName(media, version));
+      candidate = File('${directory.path}/${_fileName(media, version)}');
     } else {
-      final prefix = media.toLowerCase() + '_';
+      final prefix = '${media.toLowerCase()}_';
       final files = <File>[];
       await for (final entity in directory.list(followLinks: false)) {
         if (entity is File) {
@@ -106,7 +106,7 @@ class LocalMediaCache {
     final media = _safeComponent(mediaId, 'mediaId');
     final version = _safeVersion(cacheVersion);
     final directory = await _ownerDirectory(owner, create: true);
-    final target = File(directory.path + '/' + _fileName(media, version));
+    final target = File('${directory.path}/${_fileName(media, version)}');
     final temporary = File(
       target.path +
           '.' +
@@ -168,7 +168,7 @@ class LocalMediaCache {
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is File) {
         final name = _basename(entity.path);
-        if (name.startsWith(media + '_')) {
+        if (name.startsWith('${media}_')) {
           await _deleteQuietly(entity);
         }
       }
@@ -188,7 +188,7 @@ class LocalMediaCache {
     required bool create,
   }) async {
     final root = await _rootDirectoryProvider();
-    final directory = Directory(root.path + '/owners/' + owner);
+    final directory = Directory('${root.path}/owners/$owner');
     if (create && !await directory.exists()) {
       await directory.create(recursive: true);
     }
@@ -325,7 +325,7 @@ String _safeVersion(String value) {
 }
 
 String _fileName(String mediaId, String version) =>
-    mediaId.toLowerCase() + '_' + version + '.media';
+    '${mediaId.toLowerCase()}_$version.media';
 
 String _basename(String path) {
   final normalized = path.replaceAll('\\', '/');
