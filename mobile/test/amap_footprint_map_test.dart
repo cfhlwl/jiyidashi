@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/amap_footprint_map.dart';
@@ -27,12 +26,7 @@ FootprintVisit _visit({
 }
 
 void main() {
-  tearDown(() {
-    debugDefaultTargetPlatformOverride = null;
-  });
-
   testWidgets('privacy denied never constructs native AMap surface', (tester) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     var nativeBuilds = 0;
 
     await tester.pumpWidget(
@@ -42,7 +36,7 @@ void main() {
           privacyAccepted: false,
           selectedIndex: 0,
           onSelected: (_) {},
-          config: const JiYiAmapConfig(androidKey: 'android-key'),
+          config: const JiYiAmapConfig(androidKey: 'android-key', platformOverride: TargetPlatform.android),
           nativeBuilder: (context, config, visits, selected, onSelected, interactive) {
             nativeBuilds += 1;
             return const SizedBox();
@@ -93,7 +87,7 @@ void main() {
           privacyAccepted: true,
           selectedIndex: 0,
           onSelected: (_) {},
-          config: const JiYiAmapConfig(),
+          config: const JiYiAmapConfig(platformOverride: TargetPlatform.android),
           nativeBuilder: (context, config, visits, selected, onSelected, interactive) {
             nativeBuilds += 1;
             return const SizedBox();
