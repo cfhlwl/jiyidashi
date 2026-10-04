@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'account_delete_section.dart';
+import 'amap_footprint_map.dart';
+import 'amap_privacy_consent.dart';
 import 'api_client.dart';
+import 'footprint_models.dart';
 import 'location_sampling_coordinator.dart';
 import 'media_presentation_cache.dart';
 import 'memory_detail_page.dart';
@@ -2340,6 +2343,7 @@ class MemoryQueryPage extends StatefulWidget {
     this.initialQuestion,
     this.requiredEvidenceMemoryId,
     this.onTrustedEvidenceShown,
+    this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
@@ -2347,6 +2351,7 @@ class MemoryQueryPage extends StatefulWidget {
   final String? initialQuestion;
   final String? requiredEvidenceMemoryId;
   final VoidCallback? onTrustedEvidenceShown;
+  final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
   State<MemoryQueryPage> createState() => _MemoryQueryPageState();
@@ -2362,10 +2367,15 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   int _queryGeneration = 0;
   late int _observedSessionVersion;
   String? _observedOwner;
+  late final AmapPrivacyConsentAuthority _amapPrivacyConsent;
+  bool _mapPrivacyAccepted = false;
 
   @override
   void initState() {
     super.initState();
+    _amapPrivacyConsent =
+        widget.amapPrivacyConsent ?? AmapPrivacyConsentStore();
+    _loadMapPrivacy();
     _observedSessionVersion = widget.api.sessionVersion;
     _observedOwner = widget.api.authenticatedUserId;
     final initial = widget.initialQuestion?.trim();
@@ -2398,6 +2408,20 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
         next.isNotEmpty) {
       controller.text = next;
     }
+  }
+
+  Future<void> _loadMapPrivacy() async {
+    try {
+      final accepted = await _amapPrivacyConsent.readAccepted();
+      if (mounted) setState(() => _mapPrivacyAccepted = accepted);
+    } catch (_) {
+      if (mounted) setState(() => _mapPrivacyAccepted = false);
+    }
+  }
+
+  Future<void> _acceptMapPrivacy() async {
+    await _amapPrivacyConsent.accept();
+    if (mounted) setState(() => _mapPrivacyAccepted = true);
   }
 
   @override
@@ -2647,6 +2671,14 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             .whereType<Map<String, dynamic>>()
             .toList(growable: false);
     final footprintDay = dayFootprint?['day']?.toString();
+    FootprintDay? canonicalFootprint;
+    if (dayFootprint != null) {
+      try {
+        canonicalFootprint = FootprintDay.fromJson(dayFootprint);
+      } on FormatException {
+        canonicalFootprint = null;
+      }
+    }
     final certaintyLabel = _queryCertaintyLabel(certainty);
     final intentLabel = _queryIntentLabel(intent);
     // FIND_OBJECT 的 backing Memory 受结构化 ObjectLocation 状态约束，
@@ -2799,6 +2831,27 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             ),
             if (footprintVisits.isNotEmpty) ...[
               const SizedBox(height: JiYiSpacing.lg),
+              if (canonicalFootprint != null &&
+                  canonicalFootprint.mappableVisits.isNotEmpty) ...[
+                JiYiFootprintMap(
+                  key: const ValueKey('memory-query-day-map'),
+                  visits: canonicalFootprint.visits,
+                  privacyAccepted: _mapPrivacyAccepted,
+                  selectedIndex: 0,
+                  onSelected: (_) {},
+                  interactive: true,
+                ),
+                if (!_mapPrivacyAccepted) ...[
+                  const SizedBox(height: JiYiSpacing.sm),
+                  OutlinedButton.icon(
+                    key: const ValueKey('memory-query-amap-privacy-accept'),
+                    onPressed: _acceptMapPrivacy,
+                    icon: const Icon(Icons.map_outlined),
+                    label: const Text('同意地图服务隐私说明并启用地图'),
+                  ),
+                ],
+                const SizedBox(height: JiYiSpacing.md),
+              ],
               JiYiSectionCard(
                 leading: const Icon(Icons.place_outlined),
                 title: footprintDay == null ? '当天足迹' : '$footprintDay 足迹',
