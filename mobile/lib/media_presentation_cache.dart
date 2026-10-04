@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'api_client.dart';
@@ -237,6 +238,114 @@ class LocalMediaCache {
     } on FileSystemException {
       // Cache cleanup is best effort; canonical media remains server-owned.
     }
+  }
+}
+
+class LocalMediaThumbnail extends StatefulWidget {
+  const LocalMediaThumbnail({
+    super.key,
+    required this.api,
+    required this.mediaId,
+    this.cache,
+    this.width = 88,
+    this.height = 88,
+    this.borderRadius = 14,
+  });
+
+  final JiYiApiClient api;
+  final String mediaId;
+  final LocalMediaCache? cache;
+  final double width;
+  final double height;
+  final double borderRadius;
+
+  @override
+  State<LocalMediaThumbnail> createState() => _LocalMediaThumbnailState();
+}
+
+class _LocalMediaThumbnailState extends State<LocalMediaThumbnail> {
+  late final LocalMediaCache _cache = widget.cache ?? LocalMediaCache();
+  File? _file;
+  bool _unavailable = false;
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant LocalMediaThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mediaId != widget.mediaId ||
+        oldWidget.api != widget.api) {
+      _resolve();
+    }
+  }
+
+  Future<void> _resolve() async {
+    final generation = ++_generation;
+    final owner = widget.api.authenticatedUserId;
+    if (owner == null || owner.trim().isEmpty) {
+      if (mounted && generation == _generation) {
+        setState(() {
+          _file = null;
+          _unavailable = true;
+        });
+      }
+      return;
+    }
+    try {
+      final file = await MediaPresentationResolver(
+        api: widget.api,
+        cache: _cache,
+      ).resolve(
+        ownerUserId: owner,
+        mediaId: widget.mediaId,
+      );
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _file = file;
+        _unavailable = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _file = null;
+        _unavailable = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final file = _file;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(widget.borderRadius),
+      child: SizedBox(
+        width: widget.width,
+        height: widget.height,
+        child: file == null
+            ? ColoredBox(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                child: Icon(
+                  _unavailable
+                      ? Icons.image_not_supported_outlined
+                      : Icons.photo_outlined,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              )
+            : Image.file(
+                file,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => ColoredBox(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  child: const Icon(Icons.broken_image_outlined),
+                ),
+              ),
+      ),
+    );
   }
 }
 
