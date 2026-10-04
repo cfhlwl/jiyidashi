@@ -90,7 +90,7 @@ jobs:
           echo "endpoint_status=reachable" >> "$GITHUB_OUTPUT"
 
       - name: Prepare iOS CocoaPods with bounded retry
-        timeout-minutes: 12
+        timeout-minutes: 20
         shell: bash
         run: |
           set -euo pipefail
