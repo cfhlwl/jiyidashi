@@ -177,7 +177,7 @@ class _NativeFootprintMapState extends State<_NativeFootprintMap> {
                 : BitmapDescriptor.hueAzure,
           ),
           infoWindow: InfoWindow(
-            title: (index + 1).toString() + '. ' + widget.visits[index].placeName,
+            title: '${index + 1}. ${widget.visits[index].placeName}',
             snippet: widget.visits[index].address,
           ),
           onTap: (_) => widget.onSelected(index),
