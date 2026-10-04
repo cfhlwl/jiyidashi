@@ -398,12 +398,11 @@ class _GoldenApi extends JiYiApiClient {
                   'ended_at': null,
                   'place_id': v2PlaceId,
                   'place_name': '上海办公室',
-                  'memory_type': 'PHOTO',
-                  'title': '晨光里的白板',
+                  'memory_type': 'NOTE',
+                  'title': '第一次产品讨论',
                   'content': '把第一版产品方向写满了整块白板。',
-                  'source_type': 'USER_PHOTO',
+                  'source_type': 'USER_TEXT',
                   'is_confirmed': true,
-                  'media_id': v2MediaId,
                   'confidence': 1.0,
                   'visit_source': null,
                   'visit_finalized': null,
@@ -493,6 +492,40 @@ class _GoldenApi extends JiYiApiClient {
     if (error != null) throw error;
     return privacyStatus;
   }
+}
+
+class _GoldenPhotoTodayApi extends _GoldenApi {
+  @override
+  Future<Map<String, dynamic>> getTimelineEvents({
+    int limit = 30,
+    String? cursor,
+    String? day,
+  }) async => {
+        'timezone': 'Asia/Shanghai',
+        'day': day,
+        'items': day == '2026-09-20'
+            ? [
+                {
+                  'kind': 'MEMORY',
+                  'id': v2MemoryId,
+                  'occurred_at': '2026-09-20T01:15:00Z',
+                  'ended_at': null,
+                  'place_id': v2PlaceId,
+                  'place_name': '上海办公室',
+                  'memory_type': 'PHOTO',
+                  'title': '晨光里的白板',
+                  'content': '把第一版产品方向写满了整块白板。',
+                  'source_type': 'USER_PHOTO',
+                  'is_confirmed': true,
+                  'media_id': v2MediaId,
+                  'confidence': 1.0,
+                  'visit_source': null,
+                  'visit_finalized': null,
+                },
+              ]
+            : const <Map<String, dynamic>>[],
+        'next_cursor': null,
+      };
 }
 
 class _GoldenTimelineApi extends _GoldenApi {
@@ -939,8 +972,10 @@ Widget _goldenNavigationShell({
 Future<Key> _pumpGoldenToday(
   WidgetTester tester, {
   bool mapAccepted = false,
+  bool photoFirst = false,
 }) async {
-  final api = _GoldenApi();
+  final _GoldenApi api =
+      photoFirst ? _GoldenPhotoTodayApi() : _GoldenApi();
   final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
   return _pumpSurface(
     tester,
@@ -1441,6 +1476,7 @@ void main() {
     final key = await _pumpGoldenToday(
       tester,
       mapAccepted: true,
+      photoFirst: true,
     );
 
     expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
