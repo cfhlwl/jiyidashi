@@ -467,6 +467,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
           hero: current == null
               ? null
               : JiYiHeroHeader(
+                  atmospheric: true,
                   eyebrow: '迹忆 · 记忆',
                   title: current.title ?? '一段记忆',
                   subtitle: _formatDateTime(current.occurredAt),
