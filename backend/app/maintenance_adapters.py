@@ -37,6 +37,7 @@ from app.services.maintenance_jobs import (
     MaintenanceJobClaim,
     assert_maintenance_claim_current,
     enqueue_maintenance_job,
+    fence_owner_maintenance_jobs_for_deletion,
     renew_maintenance_claim,
 )
 from app.services.object_storage import (
@@ -183,49 +184,14 @@ def _cancel_other_owner_jobs(
     owner_user_id: UUID,
     current_job_id: UUID,
 ) -> int:
-    now = datetime.now(UTC)
     with SessionLocal() as db:
-        result = db.execute(
-            update(MaintenanceJob)
-            .where(
-                MaintenanceJob.owner_user_id == owner_user_id,
-                MaintenanceJob.id != current_job_id,
-                MaintenanceJob.status.in_(
-                    (
-                        MaintenanceJobStatus.PENDING.value,
-                        MaintenanceJobStatus.RUNNING.value,
-                        MaintenanceJobStatus.RETRY_WAIT.value,
-                    )
-                ),
-            )
-            .values(
-                status=MaintenanceJobStatus.CANCELLED.value,
-                completed_at=now,
-                next_attempt_at=now,
-                claimed_by=None,
-                claim_token=None,
-                lease_expires_at=None,
-                last_error_code="SUPERSEDED_BY_DESTRUCTIVE_OPERATION",
-                updated_at=now,
-            )
-        )
-        cancelled = getattr(result, "rowcount", 0)
-        db.execute(
-            update(MaintenanceJob)
-            .where(
-                MaintenanceJob.owner_user_id == owner_user_id,
-                MaintenanceJob.id != current_job_id,
-            )
-            .values(
-                owner_user_id=None,
-                dedupe_key=None,
-                resource_key=None,
-                payload_json={},
-                updated_at=now,
-            )
+        cancelled = fence_owner_maintenance_jobs_for_deletion(
+            db,
+            owner_user_id=owner_user_id,
+            preserve_job_id=current_job_id,
         )
         db.commit()
-        return int(cancelled) if isinstance(cancelled, int) and cancelled > 0 else 0
+        return cancelled
 
 
 def _require_owner(claim: MaintenanceJobClaim) -> UUID:
@@ -274,6 +240,7 @@ def handle_data_delete(claim: MaintenanceJobClaim) -> None:
                 request_id=request_id,
                 storage=_storage_for_claim(authority),
                 authority_check=authority.check,
+                maintenance_job_id=claim.id,
             )
     except DataDeletionError as exc:
         if exc.code == "USER_NOT_FOUND":
@@ -293,7 +260,18 @@ def handle_data_delete(claim: MaintenanceJobClaim) -> None:
 
 
 def handle_account_delete(claim: MaintenanceJobClaim) -> None:
-    owner_user_id = _require_owner(claim)
+    if claim.owner_user_id is None:
+        # Account finalization scrubs the current job in the same transaction that
+        # deletes User. A crash after that commit can only leave this anonymous
+        # RUNNING receipt; reclaiming it is a pure terminal-success cleanup.
+        if (
+            claim.dedupe_key is None
+            and claim.resource_key is None
+            and not claim.payload
+        ):
+            return
+        raise TerminalMaintenanceError("MAINTENANCE_OWNER_REQUIRED")
+    owner_user_id = claim.owner_user_id
     authority = ClaimAuthority(claim)
     authority.check()
     _cancel_other_owner_jobs(
@@ -310,6 +288,7 @@ def handle_account_delete(claim: MaintenanceJobClaim) -> None:
                 operation_id=UUID(str(claim.payload.get("operation_id"))),
                 storage=_storage_for_claim(authority),
                 authority_check=authority.check,
+                maintenance_job_id=claim.id,
             )
     except (AccountDeletionError, DataDeletionError) as exc:
         if getattr(exc, "code", "") == "USER_NOT_FOUND":
@@ -473,12 +452,18 @@ def handle_security_alert_delivery(claim: MaintenanceJobClaim) -> None:
 def handle_analytics_retention(claim: MaintenanceJobClaim) -> None:
     authority = ClaimAuthority(claim)
     authority.check()
-    settings = get_settings()
+    try:
+        retrieval_days = int(claim.payload["retrieval_days"])
+        active_day_days = int(claim.payload["active_day_days"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise TerminalMaintenanceError(
+            "ANALYTICS_RETENTION_PAYLOAD_INVALID"
+        ) from exc
     with SessionLocal() as db:
         retrieval_deleted, active_deleted = prune_analytics(
             db,
-            retrieval_days=settings.analytics_retrieval_retention_days,
-            active_day_days=settings.analytics_active_day_retention_days,
+            retrieval_days=retrieval_days,
+            active_day_days=active_day_days,
             batch_size=ANALYTICS_RETENTION_BATCH_SIZE,
             authority_check=authority.check,
         )
