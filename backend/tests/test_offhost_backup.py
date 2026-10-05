@@ -119,6 +119,34 @@ def test_partial_upload_without_manifest_is_not_valid(tmp_path: Path):
         latest_backup(store, config)
 
 
+class CorruptingCopyStore(FilesystemBackupStore):
+    def copy(self, source_key: str, destination_key: str) -> None:
+        super().copy(source_key, destination_key)
+        destination = self._path(destination_key)
+        body = bytearray(destination.read_bytes())
+        assert body
+        body[0] ^= 0x01
+        destination.write_bytes(body)
+
+
+def test_remote_content_mismatch_never_publishes_manifest(tmp_path: Path):
+    store = CorruptingCopyStore(tmp_path / "remote")
+    config = _config()
+
+    with pytest.raises(BackupError, match="BACKUP_REMOTE_CONTENT_MISMATCH"):
+        _publish(
+            store,
+            config,
+            tmp_path,
+            backup_id="pg-2026-10-05",
+            slot=datetime(2026, 10, 5, tzinfo=UTC),
+            body=b"content-integrity-proof",
+        )
+
+    _, _, manifest_key = _object_keys(config.prefix, "pg-2026-10-05")
+    assert store.head(manifest_key) is None
+
+
 def test_same_slot_retry_is_idempotent_and_does_not_replace_verified_dump(
     tmp_path: Path,
 ):
