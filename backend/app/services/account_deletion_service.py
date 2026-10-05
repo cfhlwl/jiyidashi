@@ -22,6 +22,7 @@ from app.services.data_deletion_service import (
     delete_all_user_data,
 )
 from app.services.maintenance_jobs import (
+    assert_maintenance_claim_current,
     fence_owner_maintenance_jobs_for_deletion,
     scrub_maintenance_job_identity,
 )
@@ -185,6 +186,7 @@ def _finalize_account_deletion(
     data_request_id: UUID,
     authority_check: Callable[[], None] | None = None,
     maintenance_job_id: UUID | None = None,
+    maintenance_claim_token: UUID | None = None,
 ) -> None:
     try:
         user = db.scalar(select(User).where(User.id == user_id).with_for_update())
@@ -234,8 +236,19 @@ def _finalize_account_deletion(
             )
         )
         if maintenance_job_id is not None:
-            if authority_check is not None:
-                authority_check()
+            if maintenance_claim_token is None:
+                raise AccountDeletionError(
+                    "ACCOUNT_DELETION_MAINTENANCE_TOKEN_MISSING",
+                    409,
+                )
+            # Validate and lock the durable claim in this same transaction. Calling
+            # the external authority callback after taking this row lock would
+            # self-block on a second Session.
+            assert_maintenance_claim_current(
+                db,
+                job_id=maintenance_job_id,
+                claim_token=maintenance_claim_token,
+            )
             if not scrub_maintenance_job_identity(
                 db,
                 job_id=maintenance_job_id,
@@ -246,7 +259,7 @@ def _finalize_account_deletion(
                     409,
                 )
         db.execute(delete(User).where(User.id == user_id))
-        if authority_check is not None:
+        if authority_check is not None and maintenance_job_id is None:
             authority_check()
         db.commit()
     except AccountDeletionError:
@@ -358,6 +371,7 @@ def progress_prepared_account_deletion(
     storage: ObjectStorage,
     authority_check: Callable[[], None] | None = None,
     maintenance_job_id: UUID | None = None,
+    maintenance_claim_token: UUID | None = None,
 ) -> AccountDeletionResult | None:
     """Advance an existing account deletion without bypassing local cleanup proof."""
 
@@ -410,6 +424,7 @@ def progress_prepared_account_deletion(
         data_request_id=data_deletion_request_id,
         authority_check=authority_check,
         maintenance_job_id=maintenance_job_id,
+        maintenance_claim_token=maintenance_claim_token,
     )
     return AccountDeletionResult(
         request_id=canonical_request_id,
