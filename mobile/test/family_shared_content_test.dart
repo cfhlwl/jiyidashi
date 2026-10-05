@@ -39,6 +39,7 @@ class _FamilySharedApi extends JiYiApiClient {
   int photoSignCalls = 0;
   int byteDownloadCalls = 0;
   bool photosDenied = false;
+  bool photoSignOffline = false;
 
   @override
   Future<Object?> requestV2Json(
@@ -91,6 +92,9 @@ class _FamilySharedApi extends JiYiApiClient {
     if (method == 'POST' &&
         path == '/family/members/$_member/photos/$_media/download') {
       photoSignCalls += 1;
+      if (photoSignOffline) {
+        throw TransportException('offline');
+      }
       return <String, dynamic>{
         'media_id': _media,
         'download': <String, dynamic>{
@@ -226,6 +230,73 @@ void main() {
         mediaId: mediaKey,
       ),
       isFalse,
+    );
+  });
+
+  testWidgets(
+      'Family cached photo remains visible when capability revalidation is offline',
+      (tester) async {
+    final root = await Directory.systemTemp.createTemp('jiyi-family-offline-');
+    addTearDown(() => root.delete(recursive: true));
+    final cache = LocalMediaCache(
+      rootDirectoryProvider: () async => root,
+      authorityLeaseDuration: Duration.zero,
+    );
+    final mediaKey = familyMediaCacheKey(_member, _media);
+    await cache.putBytes(
+      ownerUserId: _viewer,
+      mediaId: mediaKey,
+      cacheVersion: _cacheVersion,
+      bytes: <int>[1, 2, 3],
+    );
+    final api = _FamilySharedApi()..photoSignOffline = true;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FamilyPage(
+            api: api,
+            mediaCache: cache,
+            amapPrivacyConsent: _Consent(),
+            photoRenderer: (file) => Text('family-offline-photo:${file.path}'),
+          ),
+        ),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find
+          .byKey(const ValueKey('family-shared-open-$_member'))
+          .evaluate()
+          .isNotEmpty,
+      label: 'family member open control',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('family-shared-open-$_member')),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const ValueKey('family-read-photos')).evaluate().isNotEmpty,
+      label: 'family photo read control',
+    );
+    await tester.tap(find.byKey(const ValueKey('family-read-photos')));
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('family-offline-photo:').evaluate().isNotEmpty,
+      label: 'family cached offline photo',
+    );
+
+    expect(find.textContaining('family-offline-photo:'), findsOneWidget);
+    expect(api.photoListCalls, 1);
+    expect(api.photoSignCalls, 1);
+    expect(api.byteDownloadCalls, 0);
+    expect(
+      await cache.lookup(
+        ownerUserId: _viewer,
+        mediaId: mediaKey,
+        cacheVersion: _cacheVersion,
+      ),
+      isNotNull,
     );
   });
 
