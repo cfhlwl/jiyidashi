@@ -696,8 +696,9 @@ class _TodayVisitPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final time = _clock(visit.arrivedAtLocal);
+    final status = visit.finalized ? '已形成足迹' : '进行中';
     return Semantics(
-      label: '第 ${index + 1} 个地点，$time，${visit.placeName}',
+      label: '第 ${index + 1} 个地点，$time，${visit.placeName}，$status',
       child: Container(
         key: ValueKey('today-footprint-compact-${visit.id}'),
         constraints: const BoxConstraints(minHeight: 44),
