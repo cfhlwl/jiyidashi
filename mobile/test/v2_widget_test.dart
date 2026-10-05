@@ -1,6 +1,3 @@
-import 'dart:io';
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
@@ -13,24 +10,6 @@ import 'package:jiyidashi/v2/memoirs_page.dart';
 import 'package:jiyidashi/v2/people_page.dart';
 
 import 'v2_test_api.dart';
-
-Future<LocalMediaCache> seedV2PhotoCache() async {
-  final root = await Directory.systemTemp.createTemp('jiyi-v2-photo-cache-');
-  addTearDown(() => root.delete(recursive: true));
-  final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
-  await cache.putBytes(
-    ownerUserId: v2OwnerId,
-    mediaId: v2MediaId,
-    cacheVersion:
-        'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-    bytes: const <int>[1, 2, 3, 4],
-  );
-  cache.markAuthorityValidated(
-    ownerUserId: v2OwnerId,
-    mediaId: v2MediaId,
-  );
-  return cache;
-}
 
 Future<void> pumpSurface(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
@@ -145,13 +124,17 @@ void main() {
   });
 
   testWidgets('Annual Memoir READY labels narrative but not timeline/photos', (tester) async {
-    final cache = await seedV2PhotoCache();
     await tester.pumpWidget(
       MaterialApp(
         theme: JiYiTheme.light(),
         home: Scaffold(
           body: SafeArea(
-            child: MemoirsPage(api: V2TestApi(), mediaCache: cache),
+            child: LocalMediaPresentationScope(
+              renderer: (_, __, ___) => const SizedBox.shrink(),
+              thumbnailBuilder: (_, mediaId, __) =>
+                  Text('local-photo:$mediaId'),
+              child: MemoirsPage(api: V2TestApi()),
+            ),
           ),
         ),
       ),
