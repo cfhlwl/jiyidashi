@@ -52,6 +52,17 @@ class _GoldenAmapConsent implements AmapPrivacyConsentAuthority {
   Future<void> revoke() async => accepted = false;
 }
 
+Widget _goldenPagePhotoThumbnail(
+  BuildContext context,
+  String mediaId,
+  BoxFit fit,
+) =>
+    _goldenLocalPhoto(
+      context,
+      File('/tmp/jiyi-page-visual-$mediaId.media'),
+      fit,
+    );
+
 Widget _goldenLocalPhoto(
   BuildContext context,
   File file,
@@ -1057,6 +1068,7 @@ Future<Key> _pumpGoldenToday(
       child: TodayPage(
         api: api,
         mediaCache: cache,
+        photoThumbnailBuilder: _goldenPagePhotoThumbnail,
         amapPrivacyConsent: _GoldenAmapConsent(mapAccepted),
       ),
     ),
@@ -1201,7 +1213,11 @@ void main() {
     final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
     final key = await _pumpSurface(
       tester,
-      TimelinePage(api: api, mediaCache: cache),
+      TimelinePage(
+        api: api,
+        mediaCache: cache,
+        photoThumbnailBuilder: _goldenPagePhotoThumbnail,
+      ),
     );
 
     expect(
@@ -1550,7 +1566,11 @@ void main() {
     final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
     final key = await _pumpSurface(
       tester,
-      TimelinePage(api: api, mediaCache: cache),
+      TimelinePage(
+        api: api,
+        mediaCache: cache,
+        photoThumbnailBuilder: _goldenPagePhotoThumbnail,
+      ),
     );
 
     expect(find.text('第一次产品讨论'), findsOneWidget);
