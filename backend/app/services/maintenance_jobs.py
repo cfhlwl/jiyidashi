@@ -1,22 +1,28 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Mapping
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.maintenance_job_models import MaintenanceJob, MaintenanceJobStatus
-
+from app.maintenance_job_models import (
+    MaintenanceJob,
+    MaintenanceJobStatus,
+    MaintenanceJobType,
+)
 
 DEFAULT_LEASE_SECONDS = 60
 DEFAULT_MAX_ATTEMPTS = 5
 MAX_LEASE_SECONDS = 15 * 60
 BACKOFF_BASE_SECONDS = 5
 BACKOFF_MAX_SECONDS = 5 * 60
+MAX_RETRY_AFTER_SECONDS = 24 * 60 * 60
+DIAGNOSTIC_COUNT_CAP = 1_000_000
+KNOWN_JOB_TYPES = frozenset(item.value for item in MaintenanceJobType)
 
 
 class MaintenanceJobError(RuntimeError):
@@ -56,17 +62,34 @@ def _observed_now(now: datetime | None) -> datetime:
     return _as_utc(now or datetime.now(UTC))
 
 
+def _normalize_job_type(value: str | MaintenanceJobType) -> str:
+    normalized = value.value if isinstance(value, MaintenanceJobType) else value.strip()
+    if normalized not in KNOWN_JOB_TYPES:
+        raise ValueError("unsupported maintenance job type")
+    return normalized
+
+
 def _bounded_lease_seconds(value: int) -> int:
     if value < 1:
         raise ValueError("lease_seconds must be >= 1")
     return min(value, MAX_LEASE_SECONDS)
 
 
-def retry_backoff_seconds(attempt_count: int) -> int:
-    return min(
+def retry_backoff_seconds(
+    attempt_count: int,
+    *,
+    job_id: UUID | None = None,
+) -> int:
+    base = min(
         BACKOFF_BASE_SECONDS * (2 ** max(0, attempt_count - 1)),
         BACKOFF_MAX_SECONDS,
     )
+    if job_id is None:
+        return base
+    # Stable bounded jitter prevents synchronized retries without process-local RNG.
+    jitter_window = max(1, min(30, base // 5))
+    jitter = int.from_bytes(job_id.bytes[-2:], "big") % (jitter_window + 1)
+    return min(base + jitter, BACKOFF_MAX_SECONDS)
 
 
 def _immutable_identity_matches(
@@ -88,7 +111,7 @@ def _immutable_identity_matches(
 def enqueue_maintenance_job(
     db: Session,
     *,
-    job_type: str,
+    job_type: str | MaintenanceJobType,
     dedupe_key: str | None,
     owner_user_id: UUID | None = None,
     resource_key: str | None = None,
@@ -97,9 +120,7 @@ def enqueue_maintenance_job(
     next_attempt_at: datetime | None = None,
     now: datetime | None = None,
 ) -> tuple[MaintenanceJob, bool]:
-    normalized_type = job_type.strip()
-    if not normalized_type:
-        raise ValueError("job_type is required")
+    normalized_type = _normalize_job_type(job_type)
     normalized_dedupe = dedupe_key.strip() if dedupe_key is not None else None
     if normalized_dedupe == "":
         normalized_dedupe = None
@@ -146,7 +167,7 @@ def enqueue_maintenance_job(
         with db.begin_nested():
             db.add(job)
             db.flush()
-    except IntegrityError:
+    except IntegrityError as exc:
         if normalized_dedupe is None:
             raise
         existing = db.scalar(
@@ -164,10 +185,36 @@ def enqueue_maintenance_job(
             payload=frozen_payload,
             max_attempts=max_attempts,
         ):
-            raise MaintenanceJobConflict("MAINTENANCE_JOB_DEDUPE_CONFLICT")
+            raise MaintenanceJobConflict(
+                "MAINTENANCE_JOB_DEDUPE_CONFLICT"
+            ) from exc
         return existing, False
 
     return job, True
+
+
+def _expire_exhausted_running_jobs(db: Session, *, now: datetime) -> int:
+    result = db.execute(
+        update(MaintenanceJob)
+        .where(
+            MaintenanceJob.status == MaintenanceJobStatus.RUNNING.value,
+            MaintenanceJob.lease_expires_at.is_not(None),
+            MaintenanceJob.lease_expires_at <= now,
+            MaintenanceJob.attempt_count >= MaintenanceJob.max_attempts,
+        )
+        .values(
+            status=MaintenanceJobStatus.FAILED.value,
+            completed_at=now,
+            next_attempt_at=now,
+            claimed_by=None,
+            claim_token=None,
+            lease_expires_at=None,
+            last_error_code="MAINTENANCE_ATTEMPTS_EXHAUSTED",
+            updated_at=now,
+        )
+    )
+    rowcount = getattr(result, "rowcount", 0)
+    return int(rowcount) if isinstance(rowcount, int) and rowcount > 0 else 0
 
 
 def _eligible_job_statement(now: datetime):
@@ -213,6 +260,7 @@ def claim_next_maintenance_job(
     observed_at = _observed_now(now)
     bounded_lease = _bounded_lease_seconds(lease_seconds)
 
+    _expire_exhausted_running_jobs(db, now=observed_at)
     statement = _eligible_job_statement(observed_at)
     if db.get_bind().dialect.name == "postgresql":
         statement = statement.with_for_update(skip_locked=True)
@@ -277,12 +325,11 @@ def assert_maintenance_claim_current(
     claim_token: UUID,
     now: datetime | None = None,
 ) -> MaintenanceJob:
-    observed_at = _observed_now(now)
     return _locked_claimed_job(
         db,
         job_id=job_id,
         claim_token=claim_token,
-        now=observed_at,
+        now=_observed_now(now),
     )
 
 
@@ -313,15 +360,26 @@ def complete_maintenance_job(
     *,
     job_id: UUID,
     claim_token: UUID,
+    scrub_identity: bool = False,
     now: datetime | None = None,
-) -> None:
+) -> bool:
     observed_at = _observed_now(now)
-    job = _locked_claimed_job(
-        db,
-        job_id=job_id,
-        claim_token=claim_token,
-        now=observed_at,
-    )
+    statement = select(MaintenanceJob).where(MaintenanceJob.id == job_id)
+    if db.get_bind().dialect.name == "postgresql":
+        statement = statement.with_for_update()
+    job = db.scalar(statement)
+    if job is None:
+        raise MaintenanceLeaseLost("MAINTENANCE_LEASE_LOST")
+    if job.status == MaintenanceJobStatus.SUCCEEDED.value:
+        return False
+    if (
+        job.status != MaintenanceJobStatus.RUNNING.value
+        or job.claim_token != claim_token
+        or job.lease_expires_at is None
+        or _as_utc(job.lease_expires_at) <= observed_at
+    ):
+        raise MaintenanceLeaseLost("MAINTENANCE_LEASE_LOST")
+
     job.status = MaintenanceJobStatus.SUCCEEDED.value
     job.completed_at = observed_at
     job.next_attempt_at = observed_at
@@ -329,8 +387,13 @@ def complete_maintenance_job(
     job.claim_token = None
     job.lease_expires_at = None
     job.last_error_code = None
+    if scrub_identity:
+        job.dedupe_key = None
+        job.resource_key = None
+        job.payload_json = {}
     job.updated_at = observed_at
     db.flush()
+    return True
 
 
 def fail_maintenance_job(
@@ -360,12 +423,16 @@ def fail_maintenance_job(
         job.completed_at = observed_at
         job.next_attempt_at = observed_at
     else:
-        delay = (
-            max(1, retry_after_seconds)
-            if retry_after_seconds is not None
-            else retry_backoff_seconds(job.attempt_count)
-        )
-        delay = min(delay, BACKOFF_MAX_SECONDS)
+        if retry_after_seconds is not None:
+            delay = min(
+                max(1, retry_after_seconds),
+                MAX_RETRY_AFTER_SECONDS,
+            )
+        else:
+            delay = retry_backoff_seconds(
+                job.attempt_count,
+                job_id=job.id,
+            )
         job.status = MaintenanceJobStatus.RETRY_WAIT.value
         job.next_attempt_at = observed_at + timedelta(seconds=delay)
         job.completed_at = None
@@ -407,3 +474,48 @@ def cancel_maintenance_job(
     job.updated_at = observed_at
     db.flush()
     return True
+
+
+def maintenance_job_diagnostics(
+    db: Session,
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    observed_at = _observed_now(now)
+    counts = {
+        status: min(int(count), DIAGNOSTIC_COUNT_CAP)
+        for status, count in db.execute(
+            select(MaintenanceJob.status, func.count(MaintenanceJob.id)).group_by(
+                MaintenanceJob.status
+            )
+        ).all()
+    }
+    due_count = int(
+        db.scalar(
+            select(func.count(MaintenanceJob.id)).where(
+                or_(
+                    and_(
+                        MaintenanceJob.status.in_(
+                            (
+                                MaintenanceJobStatus.PENDING.value,
+                                MaintenanceJobStatus.RETRY_WAIT.value,
+                            )
+                        ),
+                        MaintenanceJob.next_attempt_at <= observed_at,
+                        MaintenanceJob.attempt_count < MaintenanceJob.max_attempts,
+                    ),
+                    and_(
+                        MaintenanceJob.status == MaintenanceJobStatus.RUNNING.value,
+                        MaintenanceJob.lease_expires_at.is_not(None),
+                        MaintenanceJob.lease_expires_at <= observed_at,
+                        MaintenanceJob.attempt_count < MaintenanceJob.max_attempts,
+                    ),
+                )
+            )
+        )
+        or 0
+    )
+    return {
+        "counts": counts,
+        "due": min(due_count, DIAGNOSTIC_COUNT_CAP),
+    }
