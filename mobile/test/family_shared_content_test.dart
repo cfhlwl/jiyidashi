@@ -350,7 +350,11 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.byKey(const ValueKey('family-amap-privacy-accept')));
+    final privacyAccept =
+        find.byKey(const ValueKey('family-amap-privacy-accept'));
+    await tester.ensureVisible(privacyAccept);
+    await tester.pumpAndSettle();
+    await tester.tap(privacyAccept);
     await _pumpUntil(
       tester,
       () => find.textContaining('高德地图 SDK').evaluate().isNotEmpty,
