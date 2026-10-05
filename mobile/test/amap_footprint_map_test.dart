@@ -49,6 +49,43 @@ void main() {
     expect(nativeBuilds, 0);
   });
 
+  testWidgets('revoked privacy stops future native AMap construction',
+      (tester) async {
+    var nativeBuilds = 0;
+
+    Widget surface(bool accepted) => MaterialApp(
+          home: JiYiFootprintMap(
+            visits: <FootprintVisit>[_visit()],
+            privacyAccepted: accepted,
+            selectedIndex: 0,
+            onSelected: (_) {},
+            config: const JiYiAmapConfig(
+              androidKey: 'android-key',
+              platformOverride: TargetPlatform.android,
+            ),
+            nativeBuilder:
+                (context, config, visits, selected, onSelected, interactive) {
+              nativeBuilds += 1;
+              return const SizedBox(key: ValueKey('native-amap-test-surface'));
+            },
+          ),
+        );
+
+    await tester.pumpWidget(surface(true));
+    expect(find.byKey(const ValueKey('native-amap-test-surface')), findsOneWidget);
+    expect(nativeBuilds, 1);
+
+    await tester.pumpWidget(surface(false));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('amap-privacy-blocked')), findsOneWidget);
+    expect(find.byKey(const ValueKey('native-amap-test-surface')), findsNothing);
+    expect(nativeBuilds, 1);
+
+    await tester.pumpWidget(surface(false));
+    await tester.pump();
+    expect(nativeBuilds, 1);
+  });
+
   testWidgets('accepted privacy + SDK key constructs real map adapter', (tester) async {
     var nativeBuilds = 0;
     var receivedCount = 0;
