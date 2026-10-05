@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import or_, select, union, update
+from sqlalchemy import or_, select, union
 from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
@@ -14,11 +14,7 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal, UserDataRequestStale, engine
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.maintenance.location_retention import maintain_discovered_location_owner
-from app.maintenance_job_models import (
-    MaintenanceJob,
-    MaintenanceJobStatus,
-    MaintenanceJobType,
-)
+from app.maintenance_job_models import MaintenanceJob, MaintenanceJobType
 from app.media_models import MediaAsset, MediaStatus
 from app.models import LocationDerivationState, LocationPoint, User
 from app.security_models import SecurityAlert, SecurityAlertDeliveryStatus
