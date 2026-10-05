@@ -695,12 +695,12 @@ def _verified_from_manifest(
     )
 
 
-def verify_backup(
+def _read_verified_manifest(
     store: BackupStore,
     config: BackupConfig,
     *,
     backup_id: str,
-) -> VerifiedBackup:
+) -> tuple[VerifiedBackup, bytes]:
     _, _, manifest_key = _object_keys(config.prefix, backup_id)
     body = store.read_bytes(manifest_key, max_bytes=64 * 1024)
     _validate_manifest_head(
@@ -715,6 +715,20 @@ def verify_backup(
         backup_id=verified.backup_id,
         sha256=verified.dump_sha256,
         size_bytes=verified.dump_size_bytes,
+    )
+    return verified, body
+
+
+def verify_backup(
+    store: BackupStore,
+    config: BackupConfig,
+    *,
+    backup_id: str,
+) -> VerifiedBackup:
+    verified, _ = _read_verified_manifest(
+        store,
+        config,
+        backup_id=backup_id,
     )
     return verified
 
@@ -840,7 +854,11 @@ def fetch_verified_backup(
     destination: Path,
     manifest_destination: Path | None = None,
 ) -> VerifiedBackup:
-    verified = verify_backup(store, config, backup_id=backup_id)
+    verified, manifest_body = _read_verified_manifest(
+        store,
+        config,
+        backup_id=backup_id,
+    )
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(destination.name + ".partial")
     temporary.unlink(missing_ok=True)
@@ -854,9 +872,8 @@ def fetch_verified_backup(
         temporary.unlink(missing_ok=True)
 
     if manifest_destination is not None:
-        body = store.read_bytes(verified.manifest_key, max_bytes=64 * 1024)
         manifest_destination.parent.mkdir(parents=True, exist_ok=True)
-        manifest_destination.write_bytes(body)
+        manifest_destination.write_bytes(manifest_body)
     return verified
 
 
