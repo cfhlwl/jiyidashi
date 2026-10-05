@@ -3132,46 +3132,89 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          JiYiSectionCard(
-            leading: Icon(
-              Icons.psychology_alt_outlined,
-              color: theme.colorScheme.primary,
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(JiYiRadius.card),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
             ),
-            title: widget.elderMode ? '你要找什么？' : '问一个问题',
-            subtitle: widget.elderMode
-                ? '输入物品名称或问题，再点“帮我找”。'
-                : '找不到可靠依据时，迹忆会明确告诉你，而不是猜一个答案。',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  key: const ValueKey('memory-query-input'),
-                  controller: controller,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: loading ? null : (_) => query(),
-                  decoration: InputDecoration(
-                    labelText: widget.elderMode ? '物品名称或问题' : '你想回忆什么？',
-                    hintText: widget.elderMode
-                        ? '例如：护照、钥匙，或“我的护照在哪里？”'
-                        : '例如：我的护照在哪里？',
-                    prefixIcon: const Icon(Icons.search),
+            child: Padding(
+              padding: const EdgeInsets.all(JiYiSpacing.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(
+                            JiYiRadius.control,
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(JiYiSpacing.sm),
+                          child: Icon(
+                            Icons.manage_search_outlined,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: JiYiSpacing.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.elderMode ? '你要找什么？' : '问一问你的记录',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: JiYiSpacing.xxs),
+                            Text(
+                              widget.elderMode
+                                  ? '输入物品名称或问题，再点“帮我找”。'
+                                  : '答案只会引用已有的可信记录。',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: JiYiSpacing.md),
-                FilledButton.icon(
-                  key: const ValueKey('memory-query-submit'),
-                  onPressed: loading ? null : query,
-                  icon: loading
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.manage_search_outlined),
-                  label: Text(
-                    loading ? '查找中…' : (widget.elderMode ? '帮我找' : '从我的记录里找'),
+                  const SizedBox(height: JiYiSpacing.md),
+                  TextField(
+                    key: const ValueKey('memory-query-input'),
+                    controller: controller,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: loading ? null : (_) => query(),
+                    decoration: InputDecoration(
+                      labelText: widget.elderMode ? '物品名称或问题' : '你想回忆什么？',
+                      hintText: widget.elderMode
+                          ? '例如：护照、钥匙，或“我的护照在哪里？”'
+                          : '例如：我的护照在哪里？',
+                      prefixIcon: const Icon(Icons.search),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: JiYiSpacing.md),
+                  FilledButton.icon(
+                    key: const ValueKey('memory-query-submit'),
+                    onPressed: loading ? null : query,
+                    icon: loading
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.arrow_upward_rounded),
+                    label: Text(
+                      loading ? '查找中…' : (widget.elderMode ? '帮我找' : '从我的记录里找'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           if (!widget.elderMode) ...[
