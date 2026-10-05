@@ -115,12 +115,13 @@ created_restore=false
 cleanup() {
   rm -f "$dump_path" "$manifest_path" "$dump_path.partial"
   if [[ "$created_restore" == "true" && "$BACKUP_RESTORE_RETAIN" != "true" ]]; then
-    "${compose[@]}" exec -T postgres sh -ceu "
-      PGPASSWORD="\$POSTGRES_PASSWORD" dropdb \
+    "${compose[@]}" exec -T \
+      -e "RESTORE_DATABASE=$restore_database" postgres sh -ceu '
+      PGPASSWORD="$POSTGRES_PASSWORD" dropdb \
         --host=127.0.0.1 \
-        --username="\$POSTGRES_USER" \
-        --if-exists '$restore_database'
-    " >/dev/null 2>&1 || true
+        --username="$POSTGRES_USER" \
+        --if-exists "$RESTORE_DATABASE"
+    ' >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
@@ -132,14 +133,15 @@ RESTORE_DATABASE="$restore_database" \
   bash "$ROOT_DIR/ops/restore-postgres.sh" "$dump_path"
 
 restored_revision="$(
-  "${compose[@]}" exec -T postgres sh -ceu "
-    PGPASSWORD="\$POSTGRES_PASSWORD" psql \
+  "${compose[@]}" exec -T \
+    -e "RESTORE_DATABASE=$restore_database" postgres sh -ceu '
+    PGPASSWORD="$POSTGRES_PASSWORD" psql \
       --host=127.0.0.1 \
-      --username="\$POSTGRES_USER" \
-      --dbname='$restore_database' \
+      --username="$POSTGRES_USER" \
+      --dbname="$RESTORE_DATABASE" \
       --tuples-only --no-align \
-      --command='SELECT MIN(version_num) FROM alembic_version HAVING COUNT(*) = 1;'
-  " | tr -d '[:space:]'
+      --command="SELECT MIN(version_num) FROM alembic_version HAVING COUNT(*) = 1;"
+  ' | tr -d '[:space:]'
 )"
 if [[ "$restored_revision" != "$manifest_schema_revision" ]]; then
   echo "restored Alembic revision does not match manifest" >&2
@@ -162,14 +164,15 @@ print(url.render_as_string(hide_password=False))
   '
 
 table_count="$(
-  "${compose[@]}" exec -T postgres sh -ceu "
-    PGPASSWORD="\$POSTGRES_PASSWORD" psql \
+  "${compose[@]}" exec -T \
+    -e "RESTORE_DATABASE=$restore_database" postgres sh -ceu '
+    PGPASSWORD="$POSTGRES_PASSWORD" psql \
       --host=127.0.0.1 \
-      --username="\$POSTGRES_USER" \
-      --dbname='$restore_database' \
+      --username="$POSTGRES_USER" \
+      --dbname="$RESTORE_DATABASE" \
       --tuples-only --no-align \
-      --command="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';"
-  " | tr -d '[:space:]'
+      --command="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=$public$;"
+  ' | tr -d '[:space:]'
 )"
 if [[ ! "$table_count" =~ ^[0-9]+$ ]] || (( table_count < 1 )); then
   echo "restored database has no public schema tables" >&2
@@ -177,14 +180,15 @@ if [[ ! "$table_count" =~ ^[0-9]+$ ]] || (( table_count < 1 )); then
 fi
 
 user_count="$(
-  "${compose[@]}" exec -T postgres sh -ceu "
-    PGPASSWORD="\$POSTGRES_PASSWORD" psql \
+  "${compose[@]}" exec -T \
+    -e "RESTORE_DATABASE=$restore_database" postgres sh -ceu '
+    PGPASSWORD="$POSTGRES_PASSWORD" psql \
       --host=127.0.0.1 \
-      --username="\$POSTGRES_USER" \
-      --dbname='$restore_database' \
+      --username="$POSTGRES_USER" \
+      --dbname="$RESTORE_DATABASE" \
       --tuples-only --no-align \
-      --command='SELECT COUNT(*) FROM users;'
-  " | tr -d '[:space:]'
+      --command="SELECT COUNT(*) FROM users;"
+  ' | tr -d '[:space:]'
 )"
 if [[ ! "$user_count" =~ ^[0-9]+$ ]]; then
   echo "restored users table is unreadable" >&2
@@ -194,12 +198,13 @@ fi
 echo "off-host restore drill PASS: $BACKUP_ID -> $restore_database"
 
 if [[ "$BACKUP_RESTORE_RETAIN" != "true" ]]; then
-  "${compose[@]}" exec -T postgres sh -ceu "
-    PGPASSWORD="\$POSTGRES_PASSWORD" dropdb \
+  "${compose[@]}" exec -T \
+    -e "RESTORE_DATABASE=$restore_database" postgres sh -ceu '
+    PGPASSWORD="$POSTGRES_PASSWORD" dropdb \
       --host=127.0.0.1 \
-      --username="\$POSTGRES_USER" \
-      --if-exists '$restore_database'
-  "
+      --username="$POSTGRES_USER" \
+      --if-exists "$RESTORE_DATABASE"
+  '
   created_restore=false
 fi
 
