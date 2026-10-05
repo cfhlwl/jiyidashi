@@ -95,6 +95,10 @@ jobs:
         timeout-minutes: 5
         run: pytest -q tests/test_offhost_backup.py
 
+      - name: OPS-004 focused runtime guardrail regressions
+        timeout-minutes: 5
+        run: pytest -q tests/test_runtime_guardrails.py
+
       - name: SQLite migration baseline
         env:
           DATABASE_URL: sqlite:///./ci-migration.db

@@ -31,6 +31,12 @@ REQUIRED_KEYS = {
     "API_DOMAIN",
     "ACME_EMAIL",
     "WEB_CONCURRENCY",
+    "DB_POOL_SIZE",
+    "DB_MAX_OVERFLOW",
+    "DB_POOL_TIMEOUT_SECONDS",
+    "DB_POOL_RECYCLE_SECONDS",
+    "DB_CONNECTION_BUDGET",
+    "API_REQUEST_BODY_LIMIT",
     "AUTH_RATE_LIMIT_ENABLED",
     "API_RATE_LIMIT_ENABLED",
     "API_NORMAL_USER_LIMIT",
@@ -229,6 +235,20 @@ def main() -> None:
     assert int(values["BACKUP_RETENTION_MONTHLY"]) >= 1
     assert values["DATABASE_URL"].startswith("postgresql+psycopg://")
     assert "@postgres:5432/" in values["DATABASE_URL"]
+    pool_size = int(values["DB_POOL_SIZE"])
+    max_overflow = int(values["DB_MAX_OVERFLOW"])
+    pool_timeout = int(values["DB_POOL_TIMEOUT_SECONDS"])
+    pool_recycle = int(values["DB_POOL_RECYCLE_SECONDS"])
+    connection_budget = int(values["DB_CONNECTION_BUDGET"])
+    web_concurrency = int(values["WEB_CONCURRENCY"])
+    assert 1 <= pool_size <= 10
+    assert 0 <= max_overflow <= 10
+    assert 1 <= pool_timeout <= 30
+    assert 30 <= pool_recycle <= 3600
+    assert 4 <= connection_budget <= 64
+    assert 1 <= web_concurrency <= 8
+    assert (web_concurrency + 1) * (pool_size + max_overflow) <= connection_budget
+    assert values["API_REQUEST_BODY_LIMIT"] == "2MB"
     assert values["STORAGE_ENDPOINT_URL"].startswith("https://")
     assert values["ASR_BASE_URL"].startswith("https://")
     assert values["AI_BASE_URL"].startswith("https://")
@@ -283,6 +303,27 @@ def main() -> None:
     assert "backup-ops:" in compose
     assert "backup-egress:" in compose
     assert 'profiles: ["ops"]' in compose
+    assert 'x-bounded-logging: &bounded-logging' in compose
+    assert 'driver: json-file' in compose
+    assert 'max-size: "10m"' in compose
+    assert 'max-file: "3"' in compose
+    for service in ("postgres", "api", "worker", "reverse-proxy"):
+        match = re.search(
+            rf"(?ms)^  {re.escape(service)}:\n(?P<body>(?:^    .*\n|^\n)*)",
+            compose,
+        )
+        assert match is not None, service
+        assert "logging: *bounded-logging" in match.group("body"), service
+
+    caddy = (ROOT / "ops" / "Caddyfile").read_text(encoding="utf-8")
+    assert 'Strict-Transport-Security "max-age=31536000"' in caddy
+    assert "preload" not in caddy
+    assert 'X-Content-Type-Options "nosniff"' in caddy
+    assert 'Referrer-Policy "strict-origin-when-cross-origin"' in caddy
+    assert 'X-Frame-Options "DENY"' in caddy
+    assert "respond /health/ready 404" in caddy
+    assert "request_body {" in caddy
+    assert "max_size {$API_REQUEST_BODY_LIMIT}" in caddy
 
     backup_service = (ROOT / "ops" / "systemd" / "jiyidashi-offhost-backup.service").read_text(
         encoding="utf-8"

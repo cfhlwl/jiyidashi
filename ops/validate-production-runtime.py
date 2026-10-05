@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import re
 import sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -37,6 +38,39 @@ def valid_fernet_key(value: str) -> bool:
     except (ValueError, UnicodeEncodeError, binascii.Error):
         return False
     return len(decoded) == 32
+
+
+def bounded_int(
+    values: dict[str, str],
+    name: str,
+    *,
+    minimum: int,
+    maximum: int,
+    errors: list[str],
+) -> int | None:
+    try:
+        value = int(values.get(name, ""))
+    except ValueError:
+        value = None
+    if value is None or not minimum <= value <= maximum:
+        errors.append(f"{name} must be between {minimum} and {maximum}")
+        return None
+    return value
+
+
+def body_limit_bytes(value: str) -> int | None:
+    match = re.fullmatch(r"([1-9][0-9]*)(B|KB|MB|KiB|MiB)", value)
+    if match is None:
+        return None
+    amount = int(match.group(1))
+    multiplier = {
+        "B": 1,
+        "KB": 1000,
+        "MB": 1000 * 1000,
+        "KiB": 1024,
+        "MiB": 1024 * 1024,
+    }[match.group(2)]
+    return amount * multiplier
 
 
 def main() -> None:
@@ -93,6 +127,44 @@ def main() -> None:
             errors.append("DATABASE_URL username must match POSTGRES_USER")
         if url_password != values.get("POSTGRES_PASSWORD", ""):
             errors.append("DATABASE_URL password must match POSTGRES_PASSWORD")
+
+    pool_size = bounded_int(
+        values, "DB_POOL_SIZE", minimum=1, maximum=10, errors=errors
+    )
+    max_overflow = bounded_int(
+        values, "DB_MAX_OVERFLOW", minimum=0, maximum=10, errors=errors
+    )
+    pool_timeout = bounded_int(
+        values, "DB_POOL_TIMEOUT_SECONDS", minimum=1, maximum=30, errors=errors
+    )
+    pool_recycle = bounded_int(
+        values, "DB_POOL_RECYCLE_SECONDS", minimum=30, maximum=3600, errors=errors
+    )
+    connection_budget = bounded_int(
+        values, "DB_CONNECTION_BUDGET", minimum=4, maximum=64, errors=errors
+    )
+    web_concurrency = bounded_int(
+        values, "WEB_CONCURRENCY", minimum=1, maximum=8, errors=errors
+    )
+    if (
+        pool_size is not None
+        and max_overflow is not None
+        and connection_budget is not None
+        and web_concurrency is not None
+    ):
+        max_application_connections = (web_concurrency + 1) * (
+            pool_size + max_overflow
+        )
+        if max_application_connections > connection_budget:
+            errors.append(
+                "DB pool connection budget exceeded for WEB_CONCURRENCY + worker"
+            )
+
+    request_body_limit = body_limit_bytes(values.get("API_REQUEST_BODY_LIMIT", ""))
+    if request_body_limit is None:
+        errors.append("API_REQUEST_BODY_LIMIT must be a bounded byte size")
+    elif not 256 * 1024 <= request_body_limit <= 8 * 1024 * 1024:
+        errors.append("API_REQUEST_BODY_LIMIT must be between 256KiB and 8MiB")
 
     backup_bucket = values.get("BACKUP_STORAGE_BUCKET", "")
     backup_region = values.get("BACKUP_STORAGE_REGION", "")

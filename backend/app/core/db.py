@@ -20,6 +20,32 @@ def _standard_connect_args(database_url: str) -> dict[str, object]:
     return connect_args
 
 
+def create_application_engine(
+    database_url: str,
+    *,
+    pool_size: int,
+    max_overflow: int,
+    pool_timeout_seconds: int,
+    pool_recycle_seconds: int,
+    enforce_pool_bounds: bool,
+) -> Engine:
+    kwargs: dict[str, object] = {
+        "echo": False,
+        "pool_pre_ping": True,
+        "connect_args": _standard_connect_args(database_url),
+    }
+    if enforce_pool_bounds and database_url.startswith("postgresql"):
+        kwargs.update(
+            {
+                "pool_size": pool_size,
+                "max_overflow": max_overflow,
+                "pool_timeout": pool_timeout_seconds,
+                "pool_recycle": pool_recycle_seconds,
+            }
+        )
+    return create_engine(database_url, **kwargs)
+
+
 def create_readiness_engine(
     database_url: str,
     *,
@@ -45,11 +71,13 @@ def create_readiness_engine(
     )
 
 
-engine = create_engine(
+engine = create_application_engine(
     settings.database_url,
-    echo=False,
-    pool_pre_ping=True,
-    connect_args=_standard_connect_args(settings.database_url),
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_timeout_seconds=settings.db_pool_timeout_seconds,
+    pool_recycle_seconds=settings.db_pool_recycle_seconds,
+    enforce_pool_bounds=settings.is_production,
 )
 
 readiness_engine = create_readiness_engine(

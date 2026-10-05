@@ -27,6 +27,12 @@ x-edge-image: &edge-image
     args:
       RELEASE_SHA: ${RELEASE_SHA:-unknown}
 
+x-bounded-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: pgvector/pgvector:0.8.6-pg16-bookworm
@@ -49,6 +55,7 @@ services:
       retries: 20
       start_period: 10s
     restart: unless-stopped
+    logging: *bounded-logging
 
   migrate:
     <<: [*backend-image, *backend-env]
@@ -87,6 +94,7 @@ services:
       retries: 12
       start_period: 10s
     restart: unless-stopped
+    logging: *bounded-logging
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777
@@ -121,6 +129,7 @@ services:
       retries: 4
       start_period: 15s
     restart: unless-stopped
+    logging: *bounded-logging
     stop_grace_period: 90s
     read_only: true
     tmpfs:
@@ -146,6 +155,7 @@ services:
     environment:
       API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required}
       ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      API_REQUEST_BODY_LIMIT: ${API_REQUEST_BODY_LIMIT:?API_REQUEST_BODY_LIMIT is required}
     volumes:
       - caddy_data:/data
       - caddy_config:/config
@@ -160,6 +170,7 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+    logging: *bounded-logging
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
