@@ -79,10 +79,21 @@ void main() {
     expect(find.byKey(const ValueKey('today-footprint-loaded')), findsOneWidget);
     expect(find.text('2 个地点片段'), findsOneWidget);
     expect(find.text('2026年9月20日'), findsWidgets);
-    expect(find.text('家'), findsOneWidget);
+    expect(find.text('07:10 · 家'), findsOneWidget);
+    expect(find.text('08:35 · 公司'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('第 1 个地点，07:10，家，已形成足迹'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel('第 2 个地点，08:35，公司，进行中'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('today-footprint-map-open')));
+    await tester.pumpAndSettle();
     expect(find.text('07:10 - 08:00'), findsOneWidget);
     expect(find.text('已形成足迹'), findsOneWidget);
-    expect(find.text('公司'), findsOneWidget);
     expect(find.text('08:35 起'), findsOneWidget);
     expect(find.text('进行中'), findsOneWidget);
   });
