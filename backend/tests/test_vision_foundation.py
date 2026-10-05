@@ -1,9 +1,11 @@
 import asyncio
 import json
+from io import BytesIO
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from PIL import Image
 from sqlalchemy import func, select
 
 from app.core.config import Settings
@@ -27,6 +29,16 @@ from app.services.object_storage import (
     ObjectStorageError,
     get_object_storage,
 )
+
+
+def _jpeg_bytes(width: int = 640, height: int = 480) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (width, height), (90, 120, 150)).save(
+        output,
+        format="JPEG",
+        quality=90,
+    )
+    return output.getvalue()
 
 
 class FakeVisionStorage:
@@ -93,10 +105,12 @@ def _insert_media(
     kind: MediaKind = MediaKind.IMAGE,
     status: MediaStatus = MediaStatus.READY,
     content_type: str = "image/jpeg",
-    data: bytes = b"\xff\xd8\xffvision-test-image",
+    data: bytes | None = None,
     completed: bool = True,
     recorded_size: int | None = None,
 ) -> UUID:
+    if data is None:
+        data = _jpeg_bytes()
     media_id = uuid4()
     object_key = f"media/{user_id}/{media_id.hex}"
     asset = MediaAsset(
@@ -158,7 +172,7 @@ async def test_explicit_vision_returns_server_owned_labels_without_persistence(
 ):
     storage, provider, _ = vision_dependencies
     user_id, headers = await _new_user(client, "vision-owner")
-    image = b"\xff\xd8\xffprivate-vision-image"
+    image = _jpeg_bytes(1200, 900)
     media_id = _insert_media(storage, user_id=user_id, data=image)
     before = _owner_counts(user_id)
 
@@ -207,8 +221,12 @@ async def test_explicit_vision_returns_server_owned_labels_without_persistence(
     assert len(provider.image_requests) == 1
     request = provider.image_requests[0]
     assert request.purpose == "vision.observe"
-    assert request.image_bytes == image
+    assert request.image_bytes != image
+    assert len(request.image_bytes) <= _gateway_settings().ai_image_max_bytes
     assert request.content_type == "image/jpeg"
+    with Image.open(BytesIO(request.image_bytes)) as derivative:
+        assert max(derivative.size) <= _gateway_settings().ai_image_max_dimension
+        assert derivative.width * derivative.height <= _gateway_settings().ai_image_max_pixels
     assert request.detail == "high"
     assert request.max_output_tokens == 512
     assert "Do not perform OCR" in request.system_instruction
