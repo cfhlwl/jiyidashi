@@ -233,6 +233,10 @@ def _assert_account_delete_requires_local_cleanup_proof() -> None:
     operation_id = uuid4()
     with SessionLocal() as db:
         db.add(User(id=user_id, nickname="ops002-account-boundary"))
+        # The models intentionally do not expose an ORM relationship. Flush the
+        # canonical FK parent explicitly so the PostgreSQL gate proves the deletion
+        # boundary rather than relying on unit-of-work insert ordering.
+        db.flush()
         db.add(
             AccountDeletionOperation(
                 id=operation_id,
