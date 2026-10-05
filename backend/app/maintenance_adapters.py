@@ -7,6 +7,8 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import or_, select, union, update
+from sqlalchemy.orm import Session
+
 from app.account_deletion_models import AccountDeletionOperation
 from app.core.config import get_settings
 from app.core.db import SessionLocal, UserDataRequestStale, engine
