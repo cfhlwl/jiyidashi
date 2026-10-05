@@ -160,6 +160,31 @@ def main() -> None:
                 "DB pool connection budget exceeded for WEB_CONCURRENCY + worker"
             )
 
+    media_image_max = bounded_int(
+        values, "MEDIA_MAX_IMAGE_BYTES", minimum=1, maximum=50 * 1024 * 1024, errors=errors
+    )
+    ai_image_max = bounded_int(
+        values, "AI_IMAGE_MAX_BYTES", minimum=64 * 1024, maximum=8 * 1024 * 1024, errors=errors
+    )
+    ai_image_dimension = bounded_int(
+        values, "AI_IMAGE_MAX_DIMENSION", minimum=256, maximum=8192, errors=errors
+    )
+    ai_image_pixels = bounded_int(
+        values, "AI_IMAGE_MAX_PIXELS", minimum=65_536, maximum=32_000_000, errors=errors
+    )
+    if (
+        media_image_max is not None
+        and ai_image_max is not None
+        and ai_image_max >= media_image_max
+    ):
+        errors.append("AI_IMAGE_MAX_BYTES must be lower than MEDIA_MAX_IMAGE_BYTES")
+    if (
+        ai_image_dimension is not None
+        and ai_image_pixels is not None
+        and ai_image_pixels > ai_image_dimension * ai_image_dimension
+    ):
+        errors.append("AI_IMAGE_MAX_PIXELS must not exceed AI_IMAGE_MAX_DIMENSION squared")
+
     request_body_limit = body_limit_bytes(values.get("API_REQUEST_BODY_LIMIT", ""))
     if request_body_limit is None:
         errors.append("API_REQUEST_BODY_LIMIT must be a bounded byte size")
