@@ -361,10 +361,17 @@ class _TodayExperienceBody extends StatelessWidget {
         key: const ValueKey('today-footprint-loaded'),
         leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
         title: '今日足迹',
-        subtitle: '${jiyiDisplayDate(footprint.day)} · ${footprint.visits.length} 个地点片段',
+        subtitle: jiyiDisplayDate(footprint.day),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text(
+              '${footprint.visits.length} 个地点片段',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
             if (mapPrivacyAccepted) ...[
               IgnorePointer(
                 child: JiYiFootprintMap(
@@ -705,13 +712,31 @@ class _TodayMasthead extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '迹忆 · 今天好',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      '迹忆',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    Text(
+                      ' · ',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      '今天好',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: JiYiSpacing.xs),
                 Text(
