@@ -69,6 +69,17 @@ void main() {
     expect(elder.colorScheme.primary, normal.colorScheme.primary);
   });
 
+  test('night theme keeps the same component system with readable contrast', () {
+    final night = JiYiTheme.dark();
+
+    expect(night.brightness, Brightness.dark);
+    expect(night.scaffoldBackgroundColor, const Color(0xFF0D1828));
+    expect(night.colorScheme.surface, const Color(0xFF16263B));
+    expect(night.colorScheme.onSurface, const Color(0xFFF3F6FA));
+    expect(night.floatingActionButtonTheme.backgroundColor, const Color(0xFF6FA8FF));
+    expect(night.navigationBarTheme.backgroundColor, const Color(0xFF16263B));
+  });
+
   test('malformed elder preference fails closed to normal mode', () async {
     var calls = 0;
     final api = JiYiApiClient(

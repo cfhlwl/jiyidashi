@@ -5,28 +5,75 @@ import 'jiyi_tokens.dart';
 // JiYiTheme 是 Flutter 产品视觉的唯一事实源；页面不得再次复制品牌色、输入框、按钮、Card、Dialog 或底部导航样式。
 abstract final class JiYiTheme {
   static const Color brandSeed = JiYiProductColors.brandPrimary;
-  static const Color appBackground = JiYiProductColors.background;
 
   static ThemeData light({String? fontFamily, bool elderMode = false}) {
+    return _build(
+      brightness: Brightness.light,
+      fontFamily: fontFamily,
+      elderMode: elderMode,
+      background: JiYiProductColors.background,
+      surface: JiYiProductColors.surface,
+      surfaceSoft: JiYiProductColors.surfaceSoft,
+      textPrimary: JiYiProductColors.textPrimary,
+      textSecondary: JiYiProductColors.textSecondary,
+      border: JiYiProductColors.border,
+      semanticColors: JiYiSemanticColors.light,
+    );
+  }
+
+  static ThemeData dark({String? fontFamily, bool elderMode = false}) {
+    return _build(
+      brightness: Brightness.dark,
+      fontFamily: fontFamily,
+      elderMode: elderMode,
+      background: const Color(0xFF0D1828),
+      surface: const Color(0xFF16263B),
+      surfaceSoft: const Color(0xFF203650),
+      textPrimary: const Color(0xFFF3F6FA),
+      textSecondary: const Color(0xFFAAB8C8),
+      border: const Color(0xFF2A425E),
+      semanticColors: JiYiSemanticColors.dark,
+    );
+  }
+
+  static ThemeData _build({
+    required Brightness brightness,
+    required String? fontFamily,
+    required bool elderMode,
+    required Color background,
+    required Color surface,
+    required Color surfaceSoft,
+    required Color textPrimary,
+    required Color textSecondary,
+    required Color border,
+    required JiYiSemanticColors semanticColors,
+  }) {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: brandSeed,
-      brightness: Brightness.light,
+      brightness: brightness,
     ).copyWith(
-      primary: JiYiProductColors.brandPrimary,
-      secondary: JiYiProductColors.brandSecondary,
-      surface: JiYiProductColors.surface,
-      surfaceContainerHighest: JiYiProductColors.surfaceSoft,
-      onSurface: JiYiProductColors.textPrimary,
-      onSurfaceVariant: JiYiProductColors.textSecondary,
-      outline: JiYiProductColors.brandSecondary,
-      outlineVariant: JiYiProductColors.border,
+      primary: brightness == Brightness.dark
+          ? const Color(0xFF6FA8FF)
+          : JiYiProductColors.brandPrimary,
+      onPrimary: brightness == Brightness.dark
+          ? const Color(0xFF071B35)
+          : Colors.white,
+      secondary: brightness == Brightness.dark
+          ? const Color(0xFFB7C9DE)
+          : JiYiProductColors.brandSecondary,
+      surface: surface,
+      surfaceContainerHighest: surfaceSoft,
+      onSurface: textPrimary,
+      onSurfaceVariant: textSecondary,
+      outline: textSecondary,
+      outlineVariant: border,
     );
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: appBackground,
+      scaffoldBackgroundColor: background,
       fontFamily: fontFamily,
-      extensions: const <ThemeExtension<dynamic>>[JiYiSemanticColors.light],
+      extensions: <ThemeExtension<dynamic>>[semanticColors],
     );
 
     final elderTextTheme = elderMode
@@ -55,9 +102,9 @@ abstract final class JiYiTheme {
           fontWeight: FontWeight.w700,
         ),
       ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: JiYiProductColors.background,
-        foregroundColor: JiYiProductColors.textPrimary,
+      appBarTheme: AppBarTheme(
+        backgroundColor: background,
+        foregroundColor: textPrimary,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
@@ -120,7 +167,7 @@ abstract final class JiYiTheme {
       cardTheme: CardThemeData(
         margin: EdgeInsets.zero,
         elevation: 0,
-        color: JiYiProductColors.surface,
+        color: surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(JiYiRadius.card),
           side: BorderSide(color: colorScheme.outlineVariant),
@@ -129,20 +176,27 @@ abstract final class JiYiTheme {
       navigationBarTheme: NavigationBarThemeData(
         height: elderMode ? 84 : 72,
         elevation: 0,
-        backgroundColor: JiYiProductColors.surface,
-        indicatorColor: JiYiProductColors.surfaceSoft,
+        backgroundColor: surface,
+        indicatorColor: surfaceSoft,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return base.textTheme.labelMedium?.copyWith(
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             color: selected
-                ? JiYiProductColors.brandPrimary
-                : JiYiProductColors.textSecondary,
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant,
           );
         }),
       ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(JiYiRadius.control),
+        ),
+      ),
       dialogTheme: DialogThemeData(
-        backgroundColor: JiYiProductColors.surface,
+        backgroundColor: surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(JiYiRadius.large),
         ),

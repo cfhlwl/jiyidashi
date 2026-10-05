@@ -315,9 +315,9 @@ class _TodayExperienceBody extends StatelessWidget {
         ),
         const SizedBox(height: JiYiSpacing.sm),
         JiYiSectionCard(
-          leading: const Icon(
+          leading: Icon(
             Icons.family_restroom_outlined,
-            color: JiYiProductColors.family,
+            color: theme.colorScheme.primary,
           ),
           title: '家庭内容按授权显示',
           subtitle: '进入家庭后，只读取家人明确授权给你的内容。',
@@ -537,7 +537,7 @@ class _TodayMemoryCard extends StatelessWidget {
     final theme = Theme.of(context);
     final title = item.title ?? _todayMemoryTypeLabel(item.memoryType);
     return Material(
-      color: JiYiProductColors.surface,
+      color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(JiYiRadius.card),
       child: InkWell(
         onTap: onTap,
@@ -552,14 +552,14 @@ class _TodayMemoryCard extends StatelessWidget {
               else
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    color: JiYiProductColors.surfaceSoft,
+                    color: theme.colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(JiYiRadius.control),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(JiYiSpacing.sm),
                     child: Icon(
                       _todayMemoryIcon(item.memoryType),
-                      color: JiYiProductColors.brandPrimary,
+                      color: theme.colorScheme.primary,
                     ),
                   ),
                 ),
@@ -583,7 +583,7 @@ class _TodayMemoryCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: JiYiProductColors.textSecondary,
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -591,7 +591,7 @@ class _TodayMemoryCard extends StatelessWidget {
                     Text(
                       jiyiDisplayTime(item.occurredAt),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: JiYiProductColors.textTertiary,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -623,7 +623,7 @@ class _TodayQuickAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: JiYiProductColors.surface,
+      color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(JiYiRadius.card),
       child: InkWell(
         onTap: onTap,
@@ -635,7 +635,7 @@ class _TodayQuickAction extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, color: JiYiProductColors.brandPrimary),
+                Icon(icon, color: theme.colorScheme.primary),
                 const SizedBox(height: JiYiSpacing.sm),
                 Text(
                   title,
@@ -647,7 +647,7 @@ class _TodayQuickAction extends StatelessWidget {
                 Text(
                   subtitle,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: JiYiProductColors.textSecondary,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -710,7 +710,7 @@ class _TodayVisitPill extends StatelessWidget {
           vertical: JiYiSpacing.xs,
         ),
         decoration: BoxDecoration(
-          color: JiYiProductColors.surfaceSoft,
+          color: theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(JiYiRadius.pill),
         ),
         child: Row(

@@ -682,13 +682,18 @@ class _AnnualStoryHero extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(JiYiRadius.large),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFFF3E4),
-            Color(0xFFEAF3FA),
-          ],
+          colors: theme.brightness == Brightness.dark
+              ? const [
+                  Color(0xFF203A59),
+                  Color(0xFF172B45),
+                ]
+              : const [
+                  Color(0xFFFFF3E4),
+                  Color(0xFFEAF3FA),
+                ],
         ),
       ),
       child: Padding(
@@ -700,7 +705,7 @@ class _AnnualStoryHero extends StatelessWidget {
               year,
               style: theme.textTheme.displaySmall?.copyWith(
                 fontWeight: FontWeight.w800,
-                color: JiYiProductColors.textPrimary,
+                color: theme.colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: JiYiSpacing.xs),
@@ -716,7 +721,7 @@ class _AnnualStoryHero extends StatelessWidget {
             Text(
               presentation.detail,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: JiYiProductColors.textSecondary,
+                color: theme.colorScheme.onSurfaceVariant,
                 height: 1.5,
               ),
             ),
@@ -727,7 +732,7 @@ class _AnnualStoryHero extends StatelessWidget {
                 narrative!,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   height: 1.7,
-                  color: JiYiProductColors.textPrimary,
+                  color: theme.colorScheme.onSurface,
                 ),
               ),
             ],
@@ -757,7 +762,7 @@ class _AnnualPhotoCard extends StatelessWidget {
     return SizedBox(
       width: 184,
       child: Material(
-        color: JiYiProductColors.surface,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(JiYiRadius.card),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -799,7 +804,7 @@ class _AnnualPhotoCard extends StatelessWidget {
                     Text(
                       jiyiDisplayDate(photo.occurredAt),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: JiYiProductColors.textSecondary,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -833,7 +838,7 @@ class _AnnualTimelineRow extends StatelessWidget {
               jiyiDisplayDate(item.occurredAt),
               textAlign: TextAlign.end,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: JiYiProductColors.textSecondary,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -847,16 +852,16 @@ class _AnnualTimelineRow extends StatelessWidget {
               Container(
                 width: 10,
                 height: 10,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: JiYiProductColors.location,
+                  color: theme.colorScheme.primary,
                 ),
               ),
               if (!isLast)
                 Container(
                   width: 2,
                   height: 58,
-                  color: JiYiProductColors.border,
+                  color: theme.colorScheme.outlineVariant,
                 ),
             ],
           ),

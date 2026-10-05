@@ -447,21 +447,20 @@ class JiYiHeroHeader extends StatelessWidget {
       borderRadius: BorderRadius.circular(JiYiRadius.large),
       child: Stack(
         children: [
-          const Positioned.fill(
+          Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFFEAF4FC),
-                    Color(0xFFFFF4E5),
-                  ],
+                  colors: theme.brightness == Brightness.dark
+                      ? const [Color(0xFF1B304A), Color(0xFF15243A)]
+                      : const [Color(0xFFEAF4FC), Color(0xFFFFF4E5)],
                 ),
               ),
             ),
           ),
-          if (atmospheric)
+          if (atmospheric && theme.brightness == Brightness.light)
             const Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
@@ -487,7 +486,7 @@ class JiYiHeroHeader extends StatelessWidget {
                         Text(
                           eyebrow!,
                           style: theme.textTheme.labelLarge?.copyWith(
-                            color: JiYiProductColors.brandPrimary,
+                            color: theme.colorScheme.primary,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.8,
                           ),
@@ -497,7 +496,7 @@ class JiYiHeroHeader extends StatelessWidget {
                       Text(
                         title,
                         style: theme.textTheme.headlineMedium?.copyWith(
-                          color: JiYiProductColors.textPrimary,
+                          color: theme.colorScheme.onSurface,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.6,
                         ),
@@ -509,7 +508,7 @@ class JiYiHeroHeader extends StatelessWidget {
                           child: Text(
                             subtitle!,
                             style: theme.textTheme.bodyLarge?.copyWith(
-                              color: JiYiProductColors.textSecondary,
+                              color: theme.colorScheme.onSurfaceVariant,
                               height: 1.55,
                             ),
                           ),
@@ -522,7 +521,7 @@ class JiYiHeroHeader extends StatelessWidget {
                   const SizedBox(width: JiYiSpacing.md),
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.68),
+                      color: theme.colorScheme.surface.withValues(alpha: 0.68),
                       shape: BoxShape.circle,
                     ),
                     child: Padding(
@@ -530,7 +529,7 @@ class JiYiHeroHeader extends StatelessWidget {
                       child: Icon(
                         icon,
                         size: JiYiIconSize.hero,
-                        color: JiYiProductColors.brandPrimary,
+                        color: theme.colorScheme.primary,
                       ),
                     ),
                   ),
@@ -657,7 +656,7 @@ class JiYiActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: JiYiProductColors.surface,
+      color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(JiYiRadius.card),
       child: InkWell(
         borderRadius: BorderRadius.circular(JiYiRadius.card),
@@ -669,14 +668,14 @@ class JiYiActionCard extends StatelessWidget {
             children: [
               DecoratedBox(
                 decoration: BoxDecoration(
-                  color: JiYiProductColors.surfaceSoft,
+                  color: theme.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(JiYiRadius.control),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(JiYiSpacing.sm),
                   child: Icon(
                     icon,
-                    color: JiYiProductColors.brandPrimary,
+                    color: theme.colorScheme.primary,
                     size: JiYiIconSize.medium,
                   ),
                 ),
