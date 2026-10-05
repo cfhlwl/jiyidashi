@@ -258,10 +258,7 @@ class _FamilyPageState extends State<FamilyPage> {
     } catch (exc) {
       if (!mounted || !_sameSession(sessionVersion, ownerUserId)) return;
       setState(() {
-        error = sensitiveOperationSafeError(
-          exc,
-          fallback: '权限更新失败，请重新打开后再试',
-        );
+        error = sensitiveOperationSafeError(exc, fallback: '权限更新失败，请重新打开后再试');
       });
     } finally {
       if (mounted && mutatingMemberId == key) {
@@ -282,10 +279,10 @@ class _FamilyPageState extends State<FamilyPage> {
       child: loading
           ? const Center(child: CircularProgressIndicator())
           : error != null && family == null && !noFamily
-              ? V2ErrorState(message: error!, onRetry: _load)
-              : noFamily
-                  ? _noFamily()
-                  : _familyReady(),
+          ? V2ErrorState(message: error!, onRetry: _load)
+          : noFamily
+          ? _noFamily()
+          : _familyReady(),
     );
   }
 
@@ -313,10 +310,7 @@ class _FamilyPageState extends State<FamilyPage> {
           decoration: const InputDecoration(labelText: '家庭邀请口令'),
         ),
         const SizedBox(height: JiYiSpacing.sm),
-        OutlinedButton(
-          onPressed: _joinFamily,
-          child: const Text('加入家庭'),
-        ),
+        OutlinedButton(onPressed: _joinFamily, child: const Text('加入家庭')),
       ],
     );
   }
@@ -353,8 +347,8 @@ class _FamilyPageState extends State<FamilyPage> {
               Text(
                 '当前共有 ${current.members.length} 位成员，其中 ${others.length} 位可由你配置共享范围。',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -405,7 +399,8 @@ class _FamilyPageState extends State<FamilyPage> {
 
   Widget _memberCard(V2FamilyMember member, int index) {
     final key = member.userId.toLowerCase();
-    final grant = grants[key] ??
+    final grant =
+        grants[key] ??
         V2FamilyPermissionGrant(
           granteeUserId: member.userId,
           permissions: const [],
@@ -441,9 +436,9 @@ class _FamilyPageState extends State<FamilyPage> {
             const SizedBox(height: JiYiSpacing.md),
             Text(
               '我授权给 TA',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: JiYiSpacing.xs),
             for (final permission in interactiveFamilyPermissions)
@@ -547,18 +542,15 @@ class _FamilyMasthead extends StatelessWidget {
               ],
             ),
             const SizedBox(height: JiYiSpacing.lg),
-            Row(
+            const Row(
               children: [
-                _FamilyMastheadMetric(
-                  icon: Icons.lock_outline,
-                  label: '按项授权',
-                ),
-                const SizedBox(width: JiYiSpacing.md),
+                _FamilyMastheadMetric(icon: Icons.lock_outline, label: '按项授权'),
+                SizedBox(width: JiYiSpacing.md),
                 _FamilyMastheadMetric(
                   icon: Icons.location_on_outlined,
                   label: '位置独立',
                 ),
-                const SizedBox(width: JiYiSpacing.md),
+                SizedBox(width: JiYiSpacing.md),
                 _FamilyMastheadMetric(
                   icon: Icons.visibility_outlined,
                   label: '可随时撤销',
@@ -584,7 +576,11 @@ class _FamilyMastheadMetric extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          Icon(icon, size: JiYiIconSize.small, color: theme.colorScheme.primary),
+          Icon(
+            icon,
+            size: JiYiIconSize.small,
+            color: theme.colorScheme.primary,
+          ),
           const SizedBox(height: JiYiSpacing.xxs),
           Text(
             label,
@@ -598,7 +594,6 @@ class _FamilyMastheadMetric extends StatelessWidget {
     );
   }
 }
-
 
 class _FamilyMemberSharedPage extends StatefulWidget {
   const _FamilyMemberSharedPage({
@@ -694,8 +689,9 @@ class _FamilyMemberSharedPageState extends State<_FamilyMemberSharedPage> {
       locationError = null;
     });
     try {
-      final next =
-          await familyApi.getMemberCurrentLocation(widget.member.userId);
+      final next = await familyApi.getMemberCurrentLocation(
+        widget.member.userId,
+      );
       if (!_sessionCurrent(version, viewer)) return;
       setState(() => location = next);
     } catch (error) {
@@ -721,8 +717,9 @@ class _FamilyMemberSharedPageState extends State<_FamilyMemberSharedPage> {
       footprintError = null;
     });
     try {
-      final next =
-          await familyApi.getMemberTodayFootprint(widget.member.userId);
+      final next = await familyApi.getMemberTodayFootprint(
+        widget.member.userId,
+      );
       if (!_sessionCurrent(version, viewer)) return;
       setState(() => footprint = next);
     } catch (error) {
@@ -887,8 +884,7 @@ class _FamilyMemberSharedPageState extends State<_FamilyMemberSharedPage> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: current.length > 6 ? 6 : current.length,
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   crossAxisSpacing: JiYiSpacing.sm,
                   mainAxisSpacing: JiYiSpacing.sm,
@@ -1200,18 +1196,16 @@ class _FamilyPhotoTileState extends State<_FamilyPhotoTile> {
               key: ValueKey(
                 'family-photo-ready-${familyMediaCacheKey(widget.resourceOwnerUserId, widget.photo.mediaId)}',
               ),
-              child: widget.renderer?.call(current) ??
-                  LocalMediaPresentationScope.maybeOf(context)?.renderer(
+              child:
+                  widget.renderer?.call(current) ??
+                  LocalMediaPresentationScope.maybeOf(
                     context,
-                    current,
-                    BoxFit.cover,
-                  ) ??
+                  )?.renderer(context, current, BoxFit.cover) ??
                   Image.file(
                     current,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Center(
-                      child: Icon(Icons.broken_image_outlined),
-                    ),
+                    errorBuilder: (_, __, ___) =>
+                        const Center(child: Icon(Icons.broken_image_outlined)),
                   ),
             ),
     );
@@ -1239,9 +1233,9 @@ class _FamilyFootprintRow extends StatelessWidget {
             children: [
               Text(
                 visit.placeName,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: JiYiSpacing.xs),
               Text(
@@ -1276,9 +1270,9 @@ class _FamilyMemoryCard extends StatelessWidget {
           children: [
             Text(
               title == null || title.isEmpty ? '一段记忆' : title,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: JiYiSpacing.xs),
             if (memory.content.trim().isNotEmpty)

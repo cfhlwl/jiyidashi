@@ -190,9 +190,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       if (!_sessionCurrent(version, owner)) return;
       setState(() {
         loading = false;
-        error = exc.statusCode == 404
-            ? '这条记忆已经不存在'
-            : '这条记忆暂时无法打开，可以稍后重试';
+        error = exc.statusCode == 404 ? '这条记忆已经不存在' : '这条记忆暂时无法打开，可以稍后重试';
       });
     } on ProtocolException {
       if (!_sessionCurrent(version, owner)) return;
@@ -288,9 +286,8 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
             Text(photoError ?? '正在准备照片…'),
             const SizedBox(height: JiYiSpacing.sm),
             OutlinedButton.icon(
-              onPressed: photoRefreshing
-                  ? null
-                  : () => _refreshPhoto(manual: true),
+              onPressed:
+                  photoRefreshing ? null : () => _refreshPhoto(manual: true),
               icon: photoRefreshing
                   ? const SizedBox(
                       width: 18,
@@ -340,7 +337,8 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
           ],
           const SizedBox(height: JiYiSpacing.sm),
           OutlinedButton.icon(
-            onPressed: photoRefreshing ? null : () => _refreshPhoto(manual: true),
+            onPressed:
+                photoRefreshing ? null : () => _refreshPhoto(manual: true),
             icon: const Icon(Icons.refresh),
             label: const Text('重新加载照片'),
           ),
@@ -382,9 +380,8 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       if (!_sessionCurrent(version, owner)) return;
       setState(() {
         mutating = false;
-        error = exc.statusCode == 409
-            ? '内容刚刚发生了变化，请重新打开后再试'
-            : '修改暂时无法保存，可以稍后重试';
+        error =
+            exc.statusCode == 409 ? '内容刚刚发生了变化，请重新打开后再试' : '修改暂时无法保存，可以稍后重试';
       });
     } catch (_) {
       if (!_sessionCurrent(version, owner)) return;
@@ -464,7 +461,14 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         child: JiYiPageFrame(
           title: current?.title ?? '记忆详情',
           subtitle: '回看你当时留下的内容。',
-          eyebrow: '迹忆 · 记录',
+          hero: current == null
+              ? null
+              : _MemoryDetailMasthead(
+                  title: current.title ?? '未命名记录',
+                  memoryType: current.memoryType,
+                  occurredAt: current.occurredAt,
+                  placeName: placeName,
+                ),
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null && current == null
@@ -537,14 +541,19 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _DetailRow(label: '类型', value: _memoryTypeLabel(current.memoryType)),
-              _DetailRow(label: '时间', value: _formatDateTime(current.occurredAt)),
+              _DetailRow(
+                  label: '类型', value: _memoryTypeLabel(current.memoryType)),
+              _DetailRow(
+                  label: '时间', value: _formatDateTime(current.occurredAt)),
               if (current.placeId != null)
                 _DetailRow(label: '地点', value: placeName ?? '已关联地点'),
               const SizedBox(height: JiYiSpacing.sm),
               Text(
                 current.content,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.copyWith(height: 1.6),
               ),
             ],
           ),
@@ -583,6 +592,96 @@ class _MemoryDetailDraft {
 
   final String? title;
   final String content;
+}
+
+class _MemoryDetailMasthead extends StatelessWidget {
+  const _MemoryDetailMasthead({
+    required this.title,
+    required this.memoryType,
+    required this.occurredAt,
+    this.placeName,
+  });
+
+  final String title;
+  final String memoryType;
+  final String occurredAt;
+  final String? placeName;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final place = placeName?.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '迹忆 · ${_memoryTypeLabel(memoryType)}',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: JiYiSpacing.xs),
+        Text(
+          title,
+          style: theme.textTheme.displaySmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.9,
+          ),
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
+        Wrap(
+          spacing: JiYiSpacing.sm,
+          runSpacing: JiYiSpacing.xs,
+          children: [
+            _MemoryDetailFact(
+              icon: Icons.schedule_outlined,
+              label: _formatDateTime(occurredAt),
+            ),
+            if (place != null && place.isNotEmpty)
+              _MemoryDetailFact(
+                icon: Icons.place_outlined,
+                label: place,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _MemoryDetailFact extends StatelessWidget {
+  const _MemoryDetailFact({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(JiYiRadius.pill),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: JiYiSpacing.sm,
+          vertical: JiYiSpacing.xs,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: JiYiIconSize.small, color: theme.colorScheme.primary),
+            const SizedBox(width: JiYiSpacing.xxs),
+            Text(label, style: theme.textTheme.labelMedium),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _MemoryDetailEditor extends StatefulWidget {
@@ -812,7 +911,6 @@ String _formatDateTime(String value) {
   return '${local.year}-${two(local.month)}-${two(local.day)} '
       '${two(local.hour)}:${two(local.minute)}';
 }
-
 
 Widget _defaultLocalPhotoRenderer(File file, Key key) {
   return Image.file(

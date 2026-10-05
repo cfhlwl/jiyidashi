@@ -67,8 +67,10 @@ class _TodayPageState extends State<TodayPage> {
   }
 
   Future<void> _acceptMapPrivacy() async {
-    final accepted =
-        await requestAmapPrivacyConsent(context, _amapPrivacyConsent);
+    final accepted = await requestAmapPrivacyConsent(
+      context,
+      _amapPrivacyConsent,
+    );
     if (mounted && accepted) setState(() => _mapPrivacyAccepted = true);
   }
 
@@ -154,9 +156,7 @@ class _TodayPageState extends State<TodayPage> {
     final elderMode = widget.elderMode;
     return JiYiPageFrame(
       title: elderMode ? '今天去了哪里' : '今天',
-      subtitle: elderMode
-          ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
-          : '看看今天留下了哪些值得记住的片段。',
+      subtitle: elderMode ? '这里只显示已经形成的足迹，不会用当前位置猜测。' : '看看今天留下了哪些值得记住的片段。',
       hero: _TodayMasthead(
         title: elderMode ? '今天去了哪里' : '今天',
         date: _todayHeroSubtitle(_data),
@@ -285,24 +285,15 @@ class _TodayExperienceBody extends StatelessWidget {
       children: [
         _footprintCard(context, theme),
         const SizedBox(height: JiYiSpacing.xl),
-        const JiYiSectionHeader(
-          title: '今日记忆',
-          subtitle: '主动记下的片段，会留在今天。',
-        ),
+        const JiYiSectionHeader(title: '今日记忆', subtitle: '主动记下的片段，会留在今天。'),
         const SizedBox(height: JiYiSpacing.sm),
         _memorySection(context),
         const SizedBox(height: JiYiSpacing.xl),
-        const JiYiSectionHeader(
-          title: '快速记录',
-          subtitle: '想到就记，不必等到以后。',
-        ),
+        const JiYiSectionHeader(title: '快速记录', subtitle: '想到就记，不必等到以后。'),
         const SizedBox(height: JiYiSpacing.sm),
         _quickCapture(context),
         const SizedBox(height: JiYiSpacing.xl),
-        const JiYiSectionHeader(
-          title: '家庭共享',
-          subtitle: '只有家人明确授权给你的内容才会被读取。',
-        ),
+        const JiYiSectionHeader(title: '家庭共享', subtitle: '只有家人明确授权给你的内容才会被读取。'),
         const SizedBox(height: JiYiSpacing.sm),
         JiYiSectionCard(
           leading: Icon(
@@ -333,9 +324,7 @@ class _TodayExperienceBody extends StatelessWidget {
         child: JiYiEmptyState(
           icon: Icons.location_off_outlined,
           title: '还没有足迹',
-          message: elderMode
-              ? '不会用当前位置猜测你去过哪里。'
-              : '形成到访后，会在这里按时间留下今天的足迹。',
+          message: elderMode ? '不会用当前位置猜测你去过哪里。' : '形成到访后，会在这里按时间留下今天的足迹。',
         ),
       );
     }
@@ -353,59 +342,108 @@ class _TodayExperienceBody extends StatelessWidget {
       );
     }
 
-    return GestureDetector(
-      key: const ValueKey('today-footprint-map-open'),
-      behavior: HitTestBehavior.translucent,
-      onTap: openFootprintDetail,
-      child: JiYiSectionCard(
-        key: const ValueKey('today-footprint-loaded'),
-        leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-        title: '今日足迹',
-        subtitle: jiyiDisplayDate(footprint.day),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '${footprint.visits.length} 个地点片段',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: JiYiSpacing.sm),
-            // 地图是“今天”页的主阅读面：未取得授权时展示事实性说明，
-            // 已授权后才初始化真实地图，避免把地图退化为普通列表的附属元素。
-            IgnorePointer(
-              child: JiYiFootprintMap(
-                visits: footprint.visits,
-                privacyAccepted: mapPrivacyAccepted,
-                selectedIndex: 0,
-                onSelected: (_) {},
-                interactive: false,
-              ),
-            ),
-            const SizedBox(height: JiYiSpacing.md),
-            if (elderMode)
-              for (var index = 0; index < footprint.visits.length; index++) ...[
-                FootprintVisitRow(
-                  visit: footprint.visits[index],
-                  elderMode: true,
-                ),
-                if (index != footprint.visits.length - 1)
-                  const Divider(height: JiYiSpacing.lg),
-              ]
-            else
-              Wrap(
-                spacing: JiYiSpacing.xs,
-                runSpacing: JiYiSpacing.xs,
+    return Material(
+      key: const ValueKey('today-footprint-loaded'),
+      color: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      child: InkWell(
+        key: const ValueKey('today-footprint-map-open'),
+        onTap: openFootprintDetail,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        child: Padding(
+          padding: const EdgeInsets.all(JiYiSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
                 children: [
-                  for (var index = 0; index < footprint.visits.length; index++)
-                    _TodayVisitPill(
-                      index: index,
-                      visit: footprint.visits[index],
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(JiYiRadius.control),
                     ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(JiYiSpacing.sm),
+                      child: Icon(
+                        Icons.route_outlined,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: JiYiSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '今日足迹',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: JiYiSpacing.xxs),
+                        Text(
+                          jiyiDisplayDate(footprint.day),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _TodayRouteCount(count: footprint.visits.length),
                 ],
               ),
-          ],
+              const SizedBox(height: JiYiSpacing.md),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(JiYiRadius.control),
+                // 地图是“今天”页的主阅读面：未取得授权时展示事实性说明，
+                // 已授权后才初始化真实地图，避免把地图退化为普通列表的附属元素。
+                child: IgnorePointer(
+                  child: JiYiFootprintMap(
+                    visits: footprint.visits,
+                    privacyAccepted: mapPrivacyAccepted,
+                    selectedIndex: 0,
+                    onSelected: (_) {},
+                    interactive: false,
+                  ),
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.md),
+              if (elderMode)
+                for (
+                  var index = 0;
+                  index < footprint.visits.length;
+                  index++
+                ) ...[
+                  FootprintVisitRow(
+                    visit: footprint.visits[index],
+                    elderMode: true,
+                  ),
+                  if (index != footprint.visits.length - 1)
+                    const Divider(height: JiYiSpacing.lg),
+                ]
+              else
+                Wrap(
+                  spacing: JiYiSpacing.xs,
+                  runSpacing: JiYiSpacing.xs,
+                  children: [
+                    for (
+                      var index = 0;
+                      index < footprint.visits.length;
+                      index++
+                    )
+                      _TodayVisitPill(
+                        index: index,
+                        visit: footprint.visits[index],
+                      ),
+                  ],
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -431,24 +469,24 @@ class _TodayExperienceBody extends StatelessWidget {
       );
     }
     Widget card(int index, {required bool compact}) => _TodayMemoryCard(
-          api: api,
-          item: memories[index],
-          compact: compact,
-          mediaCache: mediaCache,
-          photoThumbnailBuilder: photoThumbnailBuilder,
-          onTap: () {
-            Navigator.of(context).push<bool>(
-              MaterialPageRoute<bool>(
-                builder: (_) => MemoryDetailPage(
-                  api: api,
-                  memoryId: memories[index].id,
-                  mediaCache: mediaCache,
-                  amapPrivacyConsent: amapPrivacyConsent,
-                ),
-              ),
-            );
-          },
+      api: api,
+      item: memories[index],
+      compact: compact,
+      mediaCache: mediaCache,
+      photoThumbnailBuilder: photoThumbnailBuilder,
+      onTap: () {
+        Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (_) => MemoryDetailPage(
+              api: api,
+              memoryId: memories[index].id,
+              mediaCache: mediaCache,
+              amapPrivacyConsent: amapPrivacyConsent,
+            ),
+          ),
         );
+      },
+    );
     if (elderMode) {
       return Column(
         children: [
@@ -471,7 +509,10 @@ class _TodayExperienceBody extends StatelessWidget {
           runSpacing: JiYiSpacing.sm,
           children: [
             for (var index = 0; index < memories.length; index++)
-              SizedBox(width: width, child: card(index, compact: twoColumns)),
+              SizedBox(
+                width: width,
+                child: card(index, compact: twoColumns),
+              ),
           ],
         );
       },
@@ -506,6 +547,36 @@ class _TodayExperienceBody extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _TodayRouteCount extends StatelessWidget {
+  const _TodayRouteCount({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(JiYiRadius.pill),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: JiYiSpacing.sm,
+          vertical: JiYiSpacing.xs,
+        ),
+        child: Text(
+          '$count 个地点片段',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onPrimaryContainer,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -664,7 +735,8 @@ class _TodayMemoryCard extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    if (item.content != null && item.content!.trim().isNotEmpty) ...[
+                    if (item.content != null &&
+                        item.content!.trim().isNotEmpty) ...[
                       const SizedBox(height: JiYiSpacing.xs),
                       Text(
                         item.content!,
@@ -804,7 +876,9 @@ class _TodayQuickAction extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(JiYiRadius.card),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: JiYiTapTarget.normal + 56),
+          constraints: const BoxConstraints(
+            minHeight: JiYiTapTarget.normal + 56,
+          ),
           child: Padding(
             padding: const EdgeInsets.all(JiYiSpacing.md),
             child: Column(
@@ -835,20 +909,20 @@ class _TodayQuickAction extends StatelessWidget {
 }
 
 String _todayMemoryTypeLabel(String? value) => switch (value) {
-      'VOICE' => '一段语音记忆',
-      'PHOTO' => '一张照片记忆',
-      'PLACE' => '一个地点记忆',
-      'OBJECT_LOCATION' => '一条物品位置',
-      _ => '一段记忆',
-    };
+  'VOICE' => '一段语音记忆',
+  'PHOTO' => '一张照片记忆',
+  'PLACE' => '一个地点记忆',
+  'OBJECT_LOCATION' => '一条物品位置',
+  _ => '一段记忆',
+};
 
 IconData _todayMemoryIcon(String? value) => switch (value) {
-      'VOICE' => Icons.mic_none_outlined,
-      'PHOTO' => Icons.photo_outlined,
-      'PLACE' => Icons.place_outlined,
-      'OBJECT_LOCATION' => Icons.inventory_2_outlined,
-      _ => Icons.auto_stories_outlined,
-    };
+  'VOICE' => Icons.mic_none_outlined,
+  'PHOTO' => Icons.photo_outlined,
+  'PLACE' => Icons.place_outlined,
+  'OBJECT_LOCATION' => Icons.inventory_2_outlined,
+  _ => Icons.auto_stories_outlined,
+};
 
 String _todayHeroSubtitle(Map<String, dynamic>? data) {
   final day = data?['day'];
@@ -859,10 +933,7 @@ String _todayHeroSubtitle(Map<String, dynamic>? data) {
 }
 
 class _TodayVisitPill extends StatelessWidget {
-  const _TodayVisitPill({
-    required this.index,
-    required this.visit,
-  });
+  const _TodayVisitPill({required this.index, required this.visit});
 
   final int index;
   final FootprintVisit visit;
@@ -957,8 +1028,8 @@ class FootprintVisitRow extends StatelessWidget {
               elderMode
                   ? Icons.place_outlined
                   : (visit.finalized
-                      ? Icons.location_on_outlined
-                      : Icons.my_location_outlined),
+                        ? Icons.location_on_outlined
+                        : Icons.my_location_outlined),
               color: visit.finalized
                   ? theme.colorScheme.primary
                   : theme.colorScheme.tertiary,
@@ -971,10 +1042,11 @@ class FootprintVisitRow extends StatelessWidget {
               children: [
                 Text(
                   visit.placeName,
-                  style: (elderMode
-                          ? theme.textTheme.headlineSmall
-                          : theme.textTheme.titleMedium)
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style:
+                      (elderMode
+                              ? theme.textTheme.headlineSmall
+                              : theme.textTheme.titleMedium)
+                          ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: JiYiSpacing.xxs),
                 Text(
