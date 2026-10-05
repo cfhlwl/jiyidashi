@@ -84,22 +84,6 @@ def _assert_concurrent_enqueue_is_idempotent(base: datetime, prefix: str) -> Non
     key = f"{prefix}:dedupe"
     gate = Barrier(2)
 
-    def enqueue(_: int):
-        with SessionLocal() as db:
-            gate.wait(timeout=10)
-            job, created = enqueue_maintenance_job(
-                db,
-                job_type=MaintenanceJobType.DATA_DELETE,
-                dedupe_key=key,
-                resource_key="postgres-dedupe",
-                payload={"operation_id": str(uuid4())},
-                now=base,
-            )
-            # Both callers must use the same immutable payload. Replace the random value
-            # with the canonical one before the real concurrent exercise below.
-            db.rollback()
-            return job.id, created
-
     # Use one canonical immutable payload across both racing transactions.
     operation_id = str(uuid4())
 
@@ -117,7 +101,6 @@ def _assert_concurrent_enqueue_is_idempotent(base: datetime, prefix: str) -> Non
             db.commit()
             return job.id, created
 
-    del enqueue
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(canonical_enqueue, (1, 2)))
 
