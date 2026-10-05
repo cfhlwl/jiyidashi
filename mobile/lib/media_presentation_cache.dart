@@ -528,6 +528,7 @@ class MediaPresentationResolver {
       ownerUserId: ownerUserId,
       mediaId: mediaId,
     );
+    _assertCurrent(ownerUserId, sessionVersion);
     if (offline) {
       if (cached != null) return cached;
       throw const MediaUnavailableOffline();
@@ -555,6 +556,7 @@ class MediaPresentationResolver {
       // A network outage is not an authoritative revocation. Preserve the
       // reviewed offline behavior for bytes already cached by this same
       // authenticated owner. Server 403/404 above still fail closed and purge.
+      _assertCurrent(ownerUserId, sessionVersion);
       if (cached != null) return cached;
       rethrow;
     }
@@ -565,6 +567,7 @@ class MediaPresentationResolver {
       mediaId: mediaId,
       cacheVersion: capability.cacheVersion,
     );
+    _assertCurrent(ownerUserId, sessionVersion);
     cache.markAuthorityValidated(
       ownerUserId: ownerUserId,
       mediaId: mediaId,
@@ -583,6 +586,7 @@ class MediaPresentationResolver {
       cacheVersion: capability.cacheVersion,
       bytes: bytes,
     );
+    _assertCurrent(ownerUserId, sessionVersion);
     cache.markAuthorityValidated(
       ownerUserId: ownerUserId,
       mediaId: capability.mediaId,
