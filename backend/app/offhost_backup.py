@@ -20,6 +20,7 @@ MANIFEST_VERSION = 1
 TOOL_VERSION = "ops-003-v1"
 BACKUP_ID_RE = re.compile(r"^pg-[0-9]{4}-[0-9]{2}-[0-9]{2}(?:-[A-Za-z0-9._-]+)?$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+RELEASE_RE = re.compile(r"^(?:unknown|[0-9a-f]{7,64})$")
 SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 SENSITIVE_KEY_PARTS = (
     "password",
@@ -117,10 +118,10 @@ class BackupConfig:
     def validate(self) -> None:
         if not self.enabled:
             raise BackupError("OFFHOST_BACKUP_DISABLED")
-        if not self.bucket:
-            raise BackupError("BACKUP_BUCKET_REQUIRED")
-        if not self.region:
-            raise BackupError("BACKUP_REGION_REQUIRED")
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", self.bucket):
+            raise BackupError("BACKUP_BUCKET_INVALID")
+        if not SAFE_TOKEN_RE.fullmatch(self.region):
+            raise BackupError("BACKUP_REGION_INVALID")
         if not self.endpoint_url.startswith("https://"):
             raise BackupError("BACKUP_ENDPOINT_HTTPS_REQUIRED")
         if not self.access_key_id or not self.secret_access_key:
@@ -668,6 +669,12 @@ def publish_backup(
         size_bytes=dump_size_bytes,
     )
 
+    normalized_release = release_revision.strip() or "unknown"
+    if not RELEASE_RE.fullmatch(normalized_release):
+        raise BackupError("BACKUP_RELEASE_REVISION_INVALID")
+    if not SAFE_TOKEN_RE.fullmatch(schema_revision.strip()):
+        raise BackupError("BACKUP_SCHEMA_REVISION_INVALID")
+
     manifest: dict[str, object] = {
         "manifest_version": MANIFEST_VERSION,
         "backup_id": backup_id,
@@ -675,7 +682,7 @@ def publish_backup(
         "scheduled_slot": _iso(scheduled_slot),
         "source_database": config.source_database,
         "source_cluster_id": config.source_cluster_id,
-        "release_revision": release_revision.strip() or "unknown",
+        "release_revision": normalized_release,
         "schema_revision": schema_revision.strip(),
         "pg_dump_version": pg_dump_version.strip(),
         "compression_format": "postgres-custom",
@@ -765,7 +772,10 @@ def _list_verified_backups(
         if len(parts) < 3:
             raise BackupError("BACKUP_RETENTION_AMBIGUOUS_MANIFEST")
         backup_id = parts[-2]
-        expected = _object_keys(config.prefix, backup_id)[2]
+        try:
+            expected = _object_keys(config.prefix, backup_id)[2]
+        except BackupError as exc:
+            raise BackupError("BACKUP_RETENTION_AMBIGUOUS_MANIFEST") from exc
         if item.key != expected:
             raise BackupError("BACKUP_RETENTION_AMBIGUOUS_MANIFEST")
         verified.append(verify_backup(store, config, backup_id=backup_id))
