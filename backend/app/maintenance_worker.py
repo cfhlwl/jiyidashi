@@ -83,8 +83,17 @@ class MaintenanceWorker:
         self.handlers = dict(handlers)
         self.lease_seconds = lease_seconds
 
-    def run_once(self) -> MaintenanceRunResult:
+    def run_once(
+        self,
+        *,
+        stop_requested: Callable[[], bool] | None = None,
+    ) -> MaintenanceRunResult:
+        if stop_requested is not None and stop_requested():
+            return MaintenanceRunResult(claimed=False)
         with SessionLocal() as db:
+            if stop_requested is not None and stop_requested():
+                db.rollback()
+                return MaintenanceRunResult(claimed=False)
             claim = claim_next_maintenance_job(
                 db,
                 worker_id=self.worker_id,
@@ -319,8 +328,11 @@ def main(argv: list[str] | None = None) -> int:
                 )
             last_schedule = monotonic_now
 
+        if stop_event.is_set():
+            break
+
         try:
-            result = worker.run_once()
+            result = worker.run_once(stop_requested=stop_event.is_set)
         except Exception:
             emit_operational_event(
                 event="maintenance.worker.iteration_failed",
