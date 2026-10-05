@@ -226,7 +226,7 @@ def _sha256_bytes(value: bytes) -> str:
 def _assert_manifest_safe(value: object, *, path: str = "manifest") -> None:
     if isinstance(value, dict):
         for key, child in value.items():
-            lowered = str(key).lower()
+            lowered = str(key).lower().replace("-", "_")
             if any(part in lowered for part in SENSITIVE_KEY_PARTS):
                 raise BackupError("MANIFEST_SENSITIVE_KEY_REJECTED")
             _assert_manifest_safe(child, path=f"{path}.{key}")
@@ -239,8 +239,7 @@ def _assert_manifest_safe(value: object, *, path: str = "manifest") -> None:
         lowered = value.lower()
         if "://" in value and "@" in value:
             raise BackupError("MANIFEST_CREDENTIAL_URL_REJECTED")
-        if "-----begin " in lowered or "
-" in value or "" in value:
+        if "-----begin " in lowered or "\\n" in value or "\\r" in value:
             raise BackupError("MANIFEST_UNSAFE_STRING_REJECTED")
 
 
