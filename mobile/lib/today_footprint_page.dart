@@ -387,14 +387,27 @@ class _TodayExperienceBody extends StatelessWidget {
               ),
               const SizedBox(height: JiYiSpacing.md),
             ],
-            for (var index = 0; index < footprint.visits.length; index++) ...[
-              FootprintVisitRow(
-                visit: footprint.visits[index],
-                elderMode: elderMode,
+            if (elderMode)
+              for (var index = 0; index < footprint.visits.length; index++) ...[
+                FootprintVisitRow(
+                  visit: footprint.visits[index],
+                  elderMode: true,
+                ),
+                if (index != footprint.visits.length - 1)
+                  const Divider(height: JiYiSpacing.lg),
+              ]
+            else
+              Wrap(
+                spacing: JiYiSpacing.xs,
+                runSpacing: JiYiSpacing.xs,
+                children: [
+                  for (var index = 0; index < footprint.visits.length; index++)
+                    _TodayVisitPill(
+                      index: index,
+                      visit: footprint.visits[index],
+                    ),
+                ],
               ),
-              if (index != footprint.visits.length - 1)
-                const Divider(height: JiYiSpacing.lg),
-            ],
           ],
         ),
       ),
@@ -668,6 +681,69 @@ String _todayHeroSubtitle(Map<String, dynamic>? data) {
     return jiyiDisplayDate(day);
   }
   return '正在整理今天';
+}
+
+class _TodayVisitPill extends StatelessWidget {
+  const _TodayVisitPill({
+    required this.index,
+    required this.visit,
+  });
+
+  final int index;
+  final FootprintVisit visit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final time = _clock(visit.arrivedAtLocal);
+    return Semantics(
+      label: '第 ${index + 1} 个地点，$time，${visit.placeName}',
+      child: Container(
+        key: ValueKey('today-footprint-compact-${visit.id}'),
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(
+          horizontal: JiYiSpacing.sm,
+          vertical: JiYiSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: JiYiProductColors.surfaceSoft,
+          borderRadius: BorderRadius.circular(JiYiRadius.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: visit.finalized
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.tertiary,
+                shape: BoxShape.circle,
+              ),
+              child: SizedBox.square(
+                dimension: 24,
+                child: Center(
+                  child: Text(
+                    '${index + 1}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: JiYiSpacing.xs),
+            Text(
+              '$time · ${visit.placeName}',
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class FootprintVisitRow extends StatelessWidget {
