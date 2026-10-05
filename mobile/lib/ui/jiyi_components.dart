@@ -23,7 +23,6 @@ class JiYiPageFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         JiYiSpacing.lg,

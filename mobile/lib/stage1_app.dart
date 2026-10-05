@@ -2983,7 +2983,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                     color: theme.colorScheme.primary,
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(JiYiRadius.card),
-                      topRight: Radius.circular(JiYiRadius.xs),
+                      topRight: Radius.circular(JiYiSpacing.xs),
                       bottomLeft: Radius.circular(JiYiRadius.card),
                       bottomRight: Radius.circular(JiYiRadius.card),
                     ),
