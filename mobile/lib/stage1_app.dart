@@ -2136,6 +2136,23 @@ class _CapturePageState extends State<CapturePage> {
             ),
             const SizedBox(height: JiYiSpacing.md),
           ],
+          if (!widget.elderMode) ...[
+            const JiYiSectionHeader(
+              title: '先留住声音和画面',
+              subtitle: '只在你主动操作时录音、拍照或选择图片。',
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+            UnifiedMediaCaptureSection(
+              api: widget.api,
+              mediaCache: widget.mediaCache,
+            ),
+            const SizedBox(height: JiYiSpacing.xl),
+            const JiYiSectionHeader(
+              title: '也可以写下来',
+              subtitle: '一句话、一个物品位置，都可以成为以后找得回来的记录。',
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+          ],
           JiYiSectionCard(
             leading: Icon(
               Icons.edit_note_outlined,
@@ -2235,13 +2252,6 @@ class _CapturePageState extends State<CapturePage> {
             JiYiStatusBanner(kind: resultKind, message: visibleResult),
           ],
           const SizedBox(height: JiYiSpacing.md),
-          // 图片与语音继续复用既有 verified media / ASR Evidence 协议；
-          // 文字与物品位置仍由上方 outbox-first 路径负责，避免媒体大文件进入 SQLite。
-          if (!widget.elderMode)
-            UnifiedMediaCaptureSection(
-              api: widget.api,
-              mediaCache: widget.mediaCache,
-            ),
         ],
       ),
     );
