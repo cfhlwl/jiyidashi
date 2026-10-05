@@ -126,6 +126,15 @@ class BackupConfig:
             raise BackupError("BACKUP_ENDPOINT_HTTPS_REQUIRED")
         if not self.access_key_id or not self.secret_access_key:
             raise BackupError("BACKUP_CREDENTIALS_REQUIRED")
+        for value in (
+            self.bucket,
+            self.region,
+            self.access_key_id,
+            self.secret_access_key,
+            self.source_cluster_id,
+        ):
+            if value.startswith("CHANGE_ME"):
+                raise BackupError("BACKUP_PLACEHOLDER_CONFIGURATION_REJECTED")
         if self.addressing_style not in {"virtual", "path"}:
             raise BackupError("BACKUP_ADDRESSING_STYLE_INVALID")
         _canonical_prefix(self.prefix)
