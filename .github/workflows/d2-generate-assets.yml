@@ -162,44 +162,6 @@ jobs:
           path: |
             /tmp/product-v2-goldens/candidate/*.png
 
-      # UIUX-P0-002 one-shot acceptance gate. This never approves arbitrary
-      # --update-goldens output: every candidate byte must match the manually
-      # reviewed SHA-256 manifest committed for PR #205. The manifest deletes
-      # itself in the same commit, so later visual changes return to review-only.
-      - name: Commit exact reviewed UIUX-P0-002 goldens
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.number == 205 &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          hashFiles('mobile/tool/uiux_p0_002_approved_goldens.sha256') != ''
-        shell: bash
-        run: |
-          set -euo pipefail
-          manifest="tool/uiux_p0_002_approved_goldens.sha256"
-          candidate_dir="/tmp/product-v2-goldens/candidate"
-
-          awk '{print $2}' "$manifest" | sort > /tmp/uiux-approved-names.txt
-          find "$candidate_dir" -maxdepth 1 -type f -name '*.png' -printf '%f\n' | sort             > /tmp/uiux-candidate-names.txt
-          diff -u /tmp/uiux-approved-names.txt /tmp/uiux-candidate-names.txt
-
-          while read -r expected name extra; do
-            test -z "${extra:-}"
-            [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
-            [[ "$name" =~ ^[A-Za-z0-9_.-]+\.png$ ]]
-            actual="$(sha256sum "$candidate_dir/$name" | awk '{print $1}')"
-            echo "$name expected=$expected actual=$actual"
-            test "$actual" = "$expected"
-            cp "$candidate_dir/$name" "test/goldens/$name"
-          done < "$manifest"
-
-          rm "$manifest"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add test/goldens tool/uiux_p0_002_approved_goldens.sha256
-          git diff --cached --quiet && exit 0
-          git commit -m "UIUX-P0-002: accept reviewed golden baselines"
-          git push origin "HEAD:${{ github.head_ref }}"
-
       - name: Run Flutter tests including committed goldens
         timeout-minutes: 10
         run: flutter test --reporter expanded
