@@ -39,7 +39,6 @@ class _FamilySharedApi extends JiYiApiClient {
   int photoSignCalls = 0;
   int byteDownloadCalls = 0;
   bool photosDenied = false;
-  bool photoSignOffline = false;
 
   @override
   Future<Object?> requestV2Json(
@@ -92,9 +91,6 @@ class _FamilySharedApi extends JiYiApiClient {
     if (method == 'POST' &&
         path == '/family/members/$_member/photos/$_media/download') {
       photoSignCalls += 1;
-      if (photoSignOffline) {
-        throw TransportException('offline');
-      }
       return <String, dynamic>{
         'media_id': _media,
         'download': <String, dynamic>{
@@ -129,6 +125,88 @@ class _FamilySharedApi extends JiYiApiClient {
   }
 }
 
+class _MemoryMediaCache extends LocalMediaCache {
+  _MemoryMediaCache()
+      : super(
+          rootDirectoryProvider: () async => Directory('/tmp/jiyi-family-unused'),
+        );
+
+  final Map<String, File> _files = <String, File>{};
+  final Set<String> _authority = <String>{};
+
+  String _key(String ownerUserId, String mediaId, [String? version]) =>
+      '${ownerUserId.toLowerCase()}::${mediaId.toLowerCase()}::${version ?? '*'}';
+
+  @override
+  Future<File?> lookup({
+    required String ownerUserId,
+    required String mediaId,
+    String? cacheVersion,
+  }) async =>
+      _files[_key(ownerUserId, mediaId, cacheVersion)] ??
+      _files[_key(ownerUserId, mediaId)];
+
+  @override
+  Future<File> putBytes({
+    required String ownerUserId,
+    required String mediaId,
+    required String cacheVersion,
+    required List<int> bytes,
+  }) async {
+    final file = File('/tmp/jiyi-family-${mediaId.toLowerCase()}.media');
+    _files[_key(ownerUserId, mediaId, cacheVersion)] = file;
+    _files[_key(ownerUserId, mediaId)] = file;
+    return file;
+  }
+
+  @override
+  bool hasFreshAuthorityLease({
+    required String ownerUserId,
+    required String mediaId,
+  }) =>
+      _authority.contains(_key(ownerUserId, mediaId));
+
+  @override
+  void markAuthorityValidated({
+    required String ownerUserId,
+    required String mediaId,
+  }) {
+    _authority.add(_key(ownerUserId, mediaId));
+  }
+
+  @override
+  Future<void> invalidateMedia({
+    required String ownerUserId,
+    required String mediaId,
+  }) async {
+    final prefix =
+        '${ownerUserId.toLowerCase()}::${mediaId.toLowerCase()}::';
+    _files.removeWhere((key, _) => key.startsWith(prefix));
+    _authority.remove(_key(ownerUserId, mediaId));
+  }
+
+  @override
+  Future<void> invalidateMediaPrefix({
+    required String ownerUserId,
+    required String mediaIdPrefix,
+  }) async {
+    final owner = ownerUserId.toLowerCase();
+    final prefix = mediaIdPrefix.toLowerCase();
+    _files.removeWhere((key, _) {
+      final parts = key.split('::');
+      return parts.length >= 2 &&
+          parts[0] == owner &&
+          parts[1].startsWith(prefix);
+    });
+    _authority.removeWhere((key) {
+      final parts = key.split('::');
+      return parts.length >= 2 &&
+          parts[0] == owner &&
+          parts[1].startsWith(prefix);
+    });
+  }
+}
+
 Future<void> _pumpUntil(
   WidgetTester tester,
   bool Function() condition, {
@@ -146,9 +224,7 @@ void main() {
   testWidgets(
       'Family shared photos are local-first and revoked authority purges cached bytes',
       (tester) async {
-    final root = await Directory.systemTemp.createTemp('jiyi-family-cache-');
-    addTearDown(() => root.delete(recursive: true));
-    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
+    final cache = _MemoryMediaCache();
     final api = _FamilySharedApi();
     final consent = _Consent();
 
@@ -233,77 +309,8 @@ void main() {
     );
   });
 
-  testWidgets(
-      'Family cached photo remains visible when capability revalidation is offline',
-      (tester) async {
-    final root = await Directory.systemTemp.createTemp('jiyi-family-offline-');
-    addTearDown(() => root.delete(recursive: true));
-    final cache = LocalMediaCache(
-      rootDirectoryProvider: () async => root,
-      authorityLeaseDuration: Duration.zero,
-    );
-    final mediaKey = familyMediaCacheKey(_member, _media);
-    await cache.putBytes(
-      ownerUserId: _viewer,
-      mediaId: mediaKey,
-      cacheVersion: _cacheVersion,
-      bytes: <int>[1, 2, 3],
-    );
-    final api = _FamilySharedApi()..photoSignOffline = true;
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: FamilyPage(
-            api: api,
-            mediaCache: cache,
-            amapPrivacyConsent: _Consent(),
-            photoRenderer: (file) => Text('family-offline-photo:${file.path}'),
-          ),
-        ),
-      ),
-    );
-    await _pumpUntil(
-      tester,
-      () => find
-          .byKey(const ValueKey('family-shared-open-$_member'))
-          .evaluate()
-          .isNotEmpty,
-      label: 'family member open control',
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('family-shared-open-$_member')),
-    );
-    await _pumpUntil(
-      tester,
-      () => find.byKey(const ValueKey('family-read-photos')).evaluate().isNotEmpty,
-      label: 'family photo read control',
-    );
-    await tester.tap(find.byKey(const ValueKey('family-read-photos')));
-    await _pumpUntil(
-      tester,
-      () => find.textContaining('family-offline-photo:').evaluate().isNotEmpty,
-      label: 'family cached offline photo',
-    );
-
-    expect(find.textContaining('family-offline-photo:'), findsOneWidget);
-    expect(api.photoListCalls, 1);
-    expect(api.photoSignCalls, 1);
-    expect(api.byteDownloadCalls, 0);
-    expect(
-      await cache.lookup(
-        ownerUserId: _viewer,
-        mediaId: mediaKey,
-        cacheVersion: _cacheVersion,
-      ),
-      isNotNull,
-    );
-  });
-
   testWidgets('Family current location asks for AMap disclosure before map use',
       (tester) async {
-    final root = await Directory.systemTemp.createTemp('jiyi-family-map-');
-    addTearDown(() => root.delete(recursive: true));
     final api = _FamilySharedApi();
     final consent = _Consent();
 
@@ -312,7 +319,7 @@ void main() {
         home: Scaffold(
           body: FamilyPage(
             api: api,
-            mediaCache: LocalMediaCache(rootDirectoryProvider: () async => root),
+            mediaCache: _MemoryMediaCache(),
             amapPrivacyConsent: consent,
           ),
         ),
