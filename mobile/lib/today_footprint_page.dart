@@ -555,7 +555,6 @@ class _TodayMemoryCard extends StatelessWidget {
     if (compact) {
       return Material(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(JiYiRadius.card),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(JiYiRadius.card),
           side: BorderSide(color: theme.colorScheme.outlineVariant),
@@ -617,7 +616,6 @@ class _TodayMemoryCard extends StatelessWidget {
     }
     return Material(
       color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(JiYiRadius.card),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(JiYiRadius.card),
         side: BorderSide(color: theme.colorScheme.outlineVariant),
@@ -773,7 +771,6 @@ class _TodayQuickAction extends StatelessWidget {
     final theme = Theme.of(context);
     return Material(
       color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(JiYiRadius.card),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(JiYiRadius.card),
         side: BorderSide(color: theme.colorScheme.outlineVariant),

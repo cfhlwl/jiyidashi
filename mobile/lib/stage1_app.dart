@@ -2994,7 +2994,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                       vertical: JiYiSpacing.sm,
                     ),
                     child: Text(
-                      submittedQuestion!,
+                      '本次查找：$submittedQuestion',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onPrimary,
                         height: 1.45,

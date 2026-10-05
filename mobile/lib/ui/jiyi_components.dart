@@ -47,6 +47,44 @@ class JiYiPageFrame extends StatelessWidget {
   }
 }
 
+// 保留这个轻量兼容入口，供仍引用共享 Hero API 的模块平滑迁移。
+// 新页面优先使用 JiYiPageFrame 的中性标题系统，不再使用氛围插画或暖色背景。
+class JiYiHeroHeader extends StatelessWidget {
+  const JiYiHeroHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.eyebrow,
+    this.trailing,
+  });
+
+  final String title;
+  final String? subtitle;
+  final String? eyebrow;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.lg),
+        child: _JiYiPageTitle(
+          title: title,
+          subtitle: subtitle,
+          eyebrow: eyebrow,
+          trailing: trailing,
+        ),
+      ),
+    );
+  }
+}
+
 // SectionCard 统一 surface/outline/radius；标题和正文均由调用方提供真实内容，不在组件内补假数据。
 class JiYiSectionCard extends StatelessWidget {
   const JiYiSectionCard({
