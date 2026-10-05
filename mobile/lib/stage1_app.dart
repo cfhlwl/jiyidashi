@@ -1587,6 +1587,7 @@ class _TimelinePageState extends State<TimelinePage> {
       title: '时间线',
       subtitle: '按时间回看已经形成的地点和记忆线索。',
       hero: const JiYiHeroHeader(
+        atmospheric: true,
         eyebrow: '迹忆 · 记忆',
         title: '时间线',
         subtitle: '把你记录的事和已经形成的到访按时间串在一起。',
@@ -2809,6 +2810,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       hero: widget.elderMode
           ? null
           : const JiYiHeroHeader(
+              atmospheric: true,
               eyebrow: '迹忆 · 记忆',
               title: '记忆',
               subtitle: '从自己的记录里查找过去，也可以打开时间线慢慢回看。',
@@ -3155,6 +3157,7 @@ class ProfilePage extends StatelessWidget {
       title: '我的',
       subtitle: '管理账号信息、自动记录和隐私控制。',
       hero: const JiYiHeroHeader(
+        atmospheric: true,
         eyebrow: '迹忆 · 我的',
         title: '我的迹忆',
         subtitle: '先确认记录是否正常，再管理隐私、位置和账号。',
