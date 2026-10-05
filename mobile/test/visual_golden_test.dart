@@ -1303,7 +1303,9 @@ void main() {
     );
 
     expect(find.byKey(const ValueKey('amap-key-unavailable')), findsOneWidget);
-    expect(find.text('书房'), findsWidgets);
+    // Normal Today now uses compact visit pills; assert the canonical place
+    // remains visible without depending on the old full-row text shape.
+    expect(find.textContaining('书房'), findsWidgets);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/state_map_unavailable.png'),
