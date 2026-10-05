@@ -136,25 +136,15 @@ jobs:
           rm -rf /tmp/product-v2-goldens
           mkdir -p /tmp/product-v2-goldens/candidate
 
-          # UIUX-P0-002 candidate generation is intentionally limited to the
-          # surfaces awaiting human visual approval. The next step still runs
-          # the complete Flutter suite against all committed goldens.
-          # Run the whole approval matrix in one Flutter test process. Repeated
-          # flutter-tool startup made this step approach its 10-minute ceiling
-          # even when every selected visual test itself completed normally.
+          # Generate the complete deterministic visual suite in one Flutter
+          # process. This is candidate-only: every PNG is copied to the review
+          # artifact and the repository goldens are restored immediately below.
+          # Reviewing the full set catches global token/layout effects without
+          # silently accepting unrelated baselines.
           flutter test test/visual_golden_test.dart \
-            --name '^golden: (design authority|loading state|empty timeline state|offline timeline state|map unavailable factual fallback|cached photo remains visible offline|large-font memory query|small-screen memory query|Elder memory query)' \
             --update-goldens --reporter expanded
 
-          cp test/goldens/design_authority_*.png /tmp/product-v2-goldens/candidate/
-          cp test/goldens/state_loading.png /tmp/product-v2-goldens/candidate/
-          cp test/goldens/state_empty.png /tmp/product-v2-goldens/candidate/
-          cp test/goldens/state_offline.png /tmp/product-v2-goldens/candidate/
-          cp test/goldens/state_map_unavailable.png /tmp/product-v2-goldens/candidate/
-          cp test/goldens/state_cached_photo_offline.png /tmp/product-v2-goldens/candidate/
-          cp test/goldens/state_large_font.png /tmp/product-v2-goldens/candidate/
-          cp test/goldens/state_small_screen.png /tmp/product-v2-goldens/candidate/
-          cp test/goldens/elder_memory_query.png /tmp/product-v2-goldens/candidate/
+          cp test/goldens/*.png /tmp/product-v2-goldens/candidate/
 
           git checkout -- test/goldens
           git clean -f -- test/goldens
