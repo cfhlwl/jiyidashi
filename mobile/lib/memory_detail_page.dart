@@ -464,6 +464,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         child: JiYiPageFrame(
           title: '记忆详情',
           subtitle: '回看你当时留下的内容。',
+          eyebrow: '迹忆 · 记录',
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null && current == null

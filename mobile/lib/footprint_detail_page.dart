@@ -59,6 +59,7 @@ class _FootprintDetailPageState extends State<FootprintDetailPage> {
         child: JiYiPageFrame(
           title: '今天去了哪里',
           subtitle: jiyiDisplayDate(widget.footprint.day),
+          eyebrow: '迹忆 · 足迹',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

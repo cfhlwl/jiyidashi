@@ -140,6 +140,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
         child: JiYiPageFrame(
           title: '多年时间线',
           subtitle: '按年份回看你已经记录的人生经历和阶段。',
+          eyebrow: '我的人生',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

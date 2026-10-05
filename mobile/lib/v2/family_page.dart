@@ -275,6 +275,7 @@ class _FamilyPageState extends State<FamilyPage> {
     return JiYiPageFrame(
       title: '家庭',
       subtitle: '每一项共享都由你明确授权，位置需要单独开启。',
+      eyebrow: '迹忆',
       child: loading
           ? const Center(child: CircularProgressIndicator())
           : error != null && family == null && !noFamily
@@ -341,14 +342,30 @@ class _FamilyPageState extends State<FamilyPage> {
           ),
           title: '我的家庭',
           subtitle: '已连接 ${current.members.length} 位成员；每项内容仍需单独授权。',
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(
-                Icons.verified_user_outlined,
-                color: Theme.of(context).colorScheme.primary,
+              JiYiMetricStrip(
+                metrics: [
+                  JiYiMetric(
+                    icon: Icons.groups_2_outlined,
+                    value: '${current.members.length}',
+                    label: '全部成员',
+                  ),
+                  JiYiMetric(
+                    icon: Icons.person_outline,
+                    value: '${others.length}',
+                    label: '其他成员',
+                  ),
+                  JiYiMetric(
+                    icon: Icons.verified_user_outlined,
+                    value: familyRoleLabel(current.currentUserRole),
+                    label: '我的身份',
+                  ),
+                ],
               ),
-              const SizedBox(width: JiYiSpacing.sm),
-              const Expanded(child: Text('家庭成员不会自动获得你的足迹、记忆或位置。')),
+              const SizedBox(height: JiYiSpacing.md),
+              const Text('家庭成员不会自动获得你的足迹、记忆或位置。'),
             ],
           ),
         ),
@@ -689,6 +706,7 @@ class _FamilyMemberSharedPageState extends State<_FamilyMemberSharedPage> {
         child: JiYiPageFrame(
           title: '家人分享',
           subtitle: '只显示 TA 明确授权给你的内容；没有授权时不会从其他数据推断。',
+          eyebrow: '家庭',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

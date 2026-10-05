@@ -122,6 +122,7 @@ class _GraphNeighborhoodPageState extends State<GraphNeighborhoodPage> {
         child: JiYiPageFrame(
           title: '相关的人和事',
           subtitle: '查看与当前内容直接相关的人、地点、物品和经历。',
+          eyebrow: '迹忆 · 关联',
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null

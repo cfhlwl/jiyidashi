@@ -358,6 +358,7 @@ class _ReminderPageState extends State<ReminderPage> {
         child: JiYiPageFrame(
           title: '提醒',
           subtitle: '只管理与记忆关联的一次性提醒，不扩展为 Todo 或日历。',
+          eyebrow: '迹忆 · 提醒',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

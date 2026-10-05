@@ -433,6 +433,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         child: JiYiPageFrame(
           title: current?.displayName ?? '重要的人',
           subtitle: '这里展示你主动记录的资料、关系和相关记忆，不会自动猜测。',
+          eyebrow: '重要的人',
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null && current == null

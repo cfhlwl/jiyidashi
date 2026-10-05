@@ -318,6 +318,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
         child: JiYiPageFrame(
           title: current?.title ?? '人生阶段',
           subtitle: '阶段和事件关系是明确记录；长期回顾是用户主动触发的 AI 生成面。',
+          eyebrow: '我的人生',
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null && current == null

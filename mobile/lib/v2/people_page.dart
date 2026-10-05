@@ -151,6 +151,7 @@ class _PeoplePageState extends State<PeoplePage> {
     return JiYiPageFrame(
       title: '重要的人',
       subtitle: '记录生命中重要的人。只有你主动添加的人才会出现在这里。',
+      eyebrow: '记忆与人生',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

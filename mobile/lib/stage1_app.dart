@@ -1641,6 +1641,7 @@ class _TimelinePageState extends State<TimelinePage> {
     return JiYiPageFrame(
       title: '时间线',
       subtitle: '按时间回看已经形成的地点和记忆线索。',
+      eyebrow: '迹忆',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1661,6 +1662,31 @@ class _TimelinePageState extends State<TimelinePage> {
               message: '记下一件事或形成到访后，这里会按时间慢慢串起来。',
             )
           else ...[
+            JiYiSectionCard(
+              leading: const Icon(Icons.calendar_month_outlined),
+              title: _day == null ? '本次时间线' : jiyiDisplayDate(_day!),
+              subtitle: '以下内容按真实发生时间排列。',
+              child: JiYiMetricStrip(
+                metrics: [
+                  JiYiMetric(
+                    icon: Icons.auto_stories_outlined,
+                    value: '${_items.length}',
+                    label: '全部记录',
+                  ),
+                  JiYiMetric(
+                    icon: Icons.edit_note_outlined,
+                    value: '${_items.where((item) => item.isMemory).length}',
+                    label: '主动记忆',
+                  ),
+                  JiYiMetric(
+                    icon: Icons.place_outlined,
+                    value: '${_items.where((item) => !item.isMemory).length}',
+                    label: '地点足迹',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xl),
             const JiYiSectionHeader(
               title: '最近的记录',
               subtitle: '按时间从新到旧排列。',
@@ -2150,6 +2176,7 @@ class _CapturePageState extends State<CapturePage> {
       subtitle: widget.elderMode
           ? '先用语音说下来；你也可以选择打字或拍照。'
           : '把重要的内容或物品位置清楚地记下来。',
+      eyebrow: '迹忆',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2865,6 +2892,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       subtitle: widget.elderMode
           ? '只从你自己的可信记录里找；没有可靠记录时，我不会猜。'
           : '从自己的记录里找回过去发生的事；找不到时不会猜。',
+      eyebrow: widget.elderMode ? '迹忆' : '迹忆 · AI 回忆',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2947,6 +2975,36 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
           ],
           if (result != null) ...[
             const SizedBox(height: JiYiSpacing.md),
+            if (submittedQuestion != null) ...[
+              Align(
+                alignment: Alignment.centerRight,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(JiYiRadius.card),
+                      topRight: Radius.circular(JiYiRadius.xs),
+                      bottomLeft: Radius.circular(JiYiRadius.card),
+                      bottomRight: Radius.circular(JiYiRadius.card),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: JiYiSpacing.md,
+                      vertical: JiYiSpacing.sm,
+                    ),
+                    child: Text(
+                      submittedQuestion!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onPrimary,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.sm),
+            ],
             JiYiSectionCard(
               leading: Icon(
                 canAnswer ? Icons.lightbulb_outline : Icons.search_off_outlined,
@@ -2971,15 +3029,6 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                             : '我没有找到能够支持答案的相关记录。'),
                     style: theme.textTheme.titleMedium,
                   ),
-                  if (submittedQuestion != null) ...[
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text(
-                      '本次查找：$submittedQuestion',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: JiYiSpacing.sm),
                   Wrap(
                     spacing: JiYiSpacing.xs,
@@ -3209,6 +3258,7 @@ class ProfilePage extends StatelessWidget {
     return JiYiPageFrame(
       title: '我的',
       subtitle: '管理账号信息、自动记录和隐私控制。',
+      eyebrow: '迹忆',
       child: FutureBuilder<Map<String, dynamic>>(
         future: api.getProfile(),
         builder: (context, snapshot) {

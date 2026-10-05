@@ -154,6 +154,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         body: SafeArea(
           child: JiYiPageFrame(
             title: '地点详情',
+            eyebrow: '迹忆 · 地点',
             child: JiYiSectionCard(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: JiYiSpacing.xl),
@@ -180,6 +181,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         body: SafeArea(
           child: JiYiPageFrame(
             title: '地点详情',
+            eyebrow: '迹忆 · 地点',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -208,6 +210,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         child: JiYiPageFrame(
           title: _text(place.name, fallback: '未命名地点'),
           subtitle: _text(place.address, fallback: '暂无地址信息'),
+          eyebrow: '迹忆 · 地点',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

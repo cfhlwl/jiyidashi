@@ -10,11 +10,15 @@ class JiYiPageFrame extends StatelessWidget {
     required this.child,
     this.subtitle,
     this.hero,
+    this.eyebrow,
+    this.trailing,
   });
 
   final String title;
   final String? subtitle;
   final Widget? hero;
+  final String? eyebrow;
+  final Widget? trailing;
   final Widget child;
 
   @override
@@ -34,6 +38,8 @@ class JiYiPageFrame extends StatelessWidget {
           _JiYiPageTitle(
             title: title,
             subtitle: subtitle,
+            eyebrow: eyebrow,
+            trailing: trailing,
           ),
         const SizedBox(height: JiYiSpacing.xl),
         child,
@@ -131,10 +137,17 @@ class JiYiSectionCard extends StatelessWidget {
 // The cobalt rule is the visual signature of a screen: it gives every page a
 // shared reading edge without inventing a second, decorative hero layer.
 class _JiYiPageTitle extends StatelessWidget {
-  const _JiYiPageTitle({required this.title, this.subtitle});
+  const _JiYiPageTitle({
+    required this.title,
+    this.subtitle,
+    this.eyebrow,
+    this.trailing,
+  });
 
   final String title;
   final String? subtitle;
+  final String? eyebrow;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -142,27 +155,31 @@ class _JiYiPageTitle extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 4,
-          height: subtitle == null ? 36 : 56,
-          margin: const EdgeInsets.only(top: 3),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primary,
-            borderRadius: BorderRadius.circular(JiYiRadius.pill),
-          ),
-        ),
-        const SizedBox(width: JiYiSpacing.sm),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (eyebrow != null) ...[
+                Text(
+                  eyebrow!,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.xs),
+              ],
               Semantics(
                 header: true,
                 child: Text(
                   title,
-                  style: theme.textTheme.headlineSmall?.copyWith(
+                  style: (eyebrow == null
+                          ? theme.textTheme.headlineSmall
+                          : theme.textTheme.displaySmall)
+                      ?.copyWith(
                     fontWeight: FontWeight.w800,
-                    letterSpacing: -0.45,
+                    letterSpacing: eyebrow == null ? -0.45 : -0.9,
                   ),
                 ),
               ),
@@ -179,6 +196,10 @@ class _JiYiPageTitle extends StatelessWidget {
             ],
           ),
         ),
+        if (trailing != null) ...[
+          const SizedBox(width: JiYiSpacing.md),
+          trailing!,
+        ],
       ],
     );
   }
@@ -639,6 +660,76 @@ class JiYiActionCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class JiYiMetric {
+  const JiYiMetric({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+}
+
+// MetricStrip only lays out values already supplied by the caller. It never
+// calculates counts or turns missing data into a dashboard statistic.
+class JiYiMetricStrip extends StatelessWidget {
+  const JiYiMetricStrip({
+    super.key,
+    required this.metrics,
+  });
+
+  final List<JiYiMetric> metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        for (var index = 0; index < metrics.length; index++) ...[
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  metrics[index].icon,
+                  size: JiYiIconSize.small,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(height: JiYiSpacing.xxs),
+                Text(
+                  metrics[index].value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.xxs),
+                Text(
+                  metrics[index].label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (index != metrics.length - 1)
+            Container(
+              width: 1,
+              height: 46,
+              color: theme.colorScheme.outlineVariant,
+            ),
+        ],
+      ],
     );
   }
 }

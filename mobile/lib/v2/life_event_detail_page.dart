@@ -266,6 +266,7 @@ class _LifeEventDetailPageState extends State<LifeEventDetailPage> {
         child: JiYiPageFrame(
           title: current?.title ?? '人生经历',
           subtitle: '这是你明确保存的人生经历。',
+          eyebrow: '我的人生',
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null && current == null

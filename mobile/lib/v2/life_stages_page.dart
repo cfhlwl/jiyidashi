@@ -132,6 +132,7 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
         child: JiYiPageFrame(
           title: '人生阶段',
           subtitle: '阶段可以保持开放；事件只通过显式关系加入，不按标题或时间自动匹配。',
+          eyebrow: '我的人生',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

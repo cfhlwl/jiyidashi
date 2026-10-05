@@ -423,31 +423,51 @@ class _TodayExperienceBody extends StatelessWidget {
         ),
       );
     }
-    return Column(
-      children: [
-        for (var index = 0; index < memories.length; index++) ...[
-          _TodayMemoryCard(
-            api: api,
-            item: memories[index],
-            mediaCache: mediaCache,
-            photoThumbnailBuilder: photoThumbnailBuilder,
-            onTap: () {
-              Navigator.of(context).push<bool>(
-                MaterialPageRoute<bool>(
-                  builder: (_) => MemoryDetailPage(
-                    api: api,
-                    memoryId: memories[index].id,
-                    mediaCache: mediaCache,
-                    amapPrivacyConsent: amapPrivacyConsent,
-                  ),
+    Widget card(int index, {required bool compact}) => _TodayMemoryCard(
+          api: api,
+          item: memories[index],
+          compact: compact,
+          mediaCache: mediaCache,
+          photoThumbnailBuilder: photoThumbnailBuilder,
+          onTap: () {
+            Navigator.of(context).push<bool>(
+              MaterialPageRoute<bool>(
+                builder: (_) => MemoryDetailPage(
+                  api: api,
+                  memoryId: memories[index].id,
+                  mediaCache: mediaCache,
+                  amapPrivacyConsent: amapPrivacyConsent,
                 ),
-              );
-            },
-          ),
-          if (index != memories.length - 1)
-            const SizedBox(height: JiYiSpacing.sm),
+              ),
+            );
+          },
+        );
+    if (elderMode) {
+      return Column(
+        children: [
+          for (var index = 0; index < memories.length; index++) ...[
+            card(index, compact: false),
+            if (index != memories.length - 1)
+              const SizedBox(height: JiYiSpacing.sm),
+          ],
         ],
-      ],
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final twoColumns = constraints.maxWidth >= 340;
+        final width = twoColumns
+            ? (constraints.maxWidth - JiYiSpacing.sm) / 2
+            : constraints.maxWidth;
+        return Wrap(
+          spacing: JiYiSpacing.sm,
+          runSpacing: JiYiSpacing.sm,
+          children: [
+            for (var index = 0; index < memories.length; index++)
+              SizedBox(width: width, child: card(index, compact: twoColumns)),
+          ],
+        );
+      },
     );
   }
 
@@ -488,6 +508,7 @@ class _TodayMemoryCard extends StatelessWidget {
     required this.api,
     required this.item,
     required this.onTap,
+    required this.compact,
     this.mediaCache,
     this.photoThumbnailBuilder,
   });
@@ -495,17 +516,22 @@ class _TodayMemoryCard extends StatelessWidget {
   final JiYiApiClient api;
   final TimelineReadItem item;
   final VoidCallback onTap;
+  final bool compact;
   final LocalMediaCache? mediaCache;
   final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
 
-  Widget _photoThumbnail(BuildContext context) {
+  Widget _photoThumbnail(
+    BuildContext context, {
+    double width = 88,
+    double height = 88,
+  }) {
     final mediaId = item.mediaId!;
     final builder = photoThumbnailBuilder;
     if (builder != null) {
       return SizedBox(
         key: ValueKey('today-photo-${item.id}'),
-        width: 88,
-        height: 88,
+        width: width,
+        height: height,
         child: KeyedSubtree(
           key: ValueKey('local-media-ready-$mediaId'),
           child: builder(context, mediaId, BoxFit.cover),
@@ -517,8 +543,8 @@ class _TodayMemoryCard extends StatelessWidget {
       api: api,
       mediaId: mediaId,
       cache: mediaCache,
-      width: 88,
-      height: 88,
+      width: width,
+      height: height,
     );
   }
 
@@ -526,6 +552,69 @@ class _TodayMemoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final title = item.title ?? _todayMemoryTypeLabel(item.memoryType);
+    if (compact) {
+      return Material(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(JiYiRadius.card),
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(JiYiRadius.card),
+          child: Padding(
+            padding: const EdgeInsets.all(JiYiSpacing.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (item.memoryType == 'PHOTO' && item.mediaId != null)
+                  LayoutBuilder(
+                    builder: (context, constraints) => ClipRRect(
+                      borderRadius: BorderRadius.circular(JiYiRadius.control),
+                      child: _photoThumbnail(
+                        context,
+                        width: constraints.maxWidth,
+                        height: 108,
+                      ),
+                    ),
+                  )
+                else
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(JiYiRadius.control),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(JiYiSpacing.sm),
+                      child: Icon(
+                        _todayMemoryIcon(item.memoryType),
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: JiYiSpacing.sm),
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.xxs),
+                Text(
+                  jiyiDisplayTime(item.occurredAt),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Material(
       color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(JiYiRadius.card),
@@ -618,6 +707,15 @@ class _TodayMasthead extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(
+                  '迹忆',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.xs),
                 Text(
                   title,
                   style: theme.textTheme.displaySmall?.copyWith(

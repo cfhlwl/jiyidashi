@@ -421,6 +421,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
         child: JiYiPageFrame(
           title: '回忆总结',
           subtitle: '用已经记录的照片、时间和重要经历，慢慢把过去翻回来。',
+          eyebrow: '迹忆',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -684,7 +685,7 @@ class _AnnualStoryHero extends StatelessWidget {
                   Color(0xFF172B45),
                 ]
               : const [
-                  Color(0xFFFFF3E4),
+                  Color(0xFFF2F7FF),
                   Color(0xFFEAF3FA),
                 ],
         ),

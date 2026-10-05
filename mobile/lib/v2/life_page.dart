@@ -24,6 +24,7 @@ class LifePage extends StatelessWidget {
     return JiYiPageFrame(
       title: '我的人生',
       subtitle: '把重要经历、人生阶段和跨年的故事慢慢整理在一起。',
+      eyebrow: '迹忆',
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 520;

@@ -142,6 +142,7 @@ class _LifeEventsPageState extends State<LifeEventsPage> {
         child: JiYiPageFrame(
           title: '人生事件',
           subtitle: '这些经历来自你的明确记录；地点和相关记忆都从已有内容中选择。',
+          eyebrow: '我的人生',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
