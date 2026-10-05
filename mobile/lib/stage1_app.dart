@@ -1412,12 +1412,14 @@ class TimelinePage extends StatefulWidget {
     super.key,
     required this.api,
     this.mediaCache,
+    this.photoThumbnailBuilder,
     this.elderMode = false,
     this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
   final LocalMediaCache? mediaCache;
+  final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
   final bool elderMode;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
@@ -1620,6 +1622,7 @@ class _TimelinePageState extends State<TimelinePage> {
                 api: widget.api,
                 item: _items[index],
                 mediaCache: widget.mediaCache,
+                photoThumbnailBuilder: widget.photoThumbnailBuilder,
                 isLast: index == _items.length - 1,
                 onTap: () => _openItem(_items[index]),
               ),
@@ -1675,13 +1678,39 @@ class _TimelineEntry extends StatelessWidget {
     required this.isLast,
     required this.onTap,
     this.mediaCache,
+    this.photoThumbnailBuilder,
   });
 
   final JiYiApiClient api;
   final TimelineReadItem item;
   final LocalMediaCache? mediaCache;
+  final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
   final bool isLast;
   final VoidCallback onTap;
+
+  Widget _photoThumbnail(BuildContext context) {
+    final mediaId = item.mediaId!;
+    final builder = photoThumbnailBuilder;
+    if (builder != null) {
+      return SizedBox(
+        key: ValueKey('timeline-photo-${item.id}'),
+        width: 72,
+        height: 72,
+        child: KeyedSubtree(
+          key: ValueKey('local-media-ready-$mediaId'),
+          child: builder(context, mediaId, BoxFit.cover),
+        ),
+      );
+    }
+    return LocalMediaThumbnail(
+      key: ValueKey('timeline-photo-${item.id}'),
+      api: api,
+      mediaId: mediaId,
+      cache: mediaCache,
+      width: 72,
+      height: 72,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1767,14 +1796,7 @@ class _TimelineEntry extends StatelessWidget {
               Expanded(
                 child: JiYiSectionCard(
                   leading: item.memoryType == 'PHOTO' && item.mediaId != null
-                      ? LocalMediaThumbnail(
-                          key: ValueKey('timeline-photo-${item.id}'),
-                          api: api,
-                          mediaId: item.mediaId!,
-                          cache: mediaCache,
-                          width: 72,
-                          height: 72,
-                        )
+                      ? _photoThumbnail(context)
                       : Icon(icon),
                   title: title,
                   subtitle: item.placeName != null && item.isMemory
