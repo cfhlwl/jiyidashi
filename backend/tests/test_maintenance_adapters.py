@@ -29,7 +29,8 @@ from app.security_models import (
     SecuritySeverity,
     SecuritySignalCode,
 )
-from app.services import maintenance_adapters, security_alerting
+from app import maintenance_adapters
+from app.services import security_alerting
 from app.services.entitlement_service import storage_usage_bytes
 from app.services.maintenance_jobs import (
     claim_next_maintenance_job,
@@ -37,6 +38,12 @@ from app.services.maintenance_jobs import (
     enqueue_maintenance_job,
     fail_maintenance_job,
 )
+
+
+def _clear_maintenance_jobs() -> None:
+    with SessionLocal() as db:
+        db.execute(delete(MaintenanceJob))
+        db.commit()
 
 
 class FakeCleanupStorage:
@@ -87,6 +94,7 @@ async def test_stale_pending_media_cleanup_waits_for_capability_and_releases_quo
     monkeypatch,
 ):
     del client
+    _clear_maintenance_jobs()
     now = datetime.now(UTC)
     user_id = uuid4()
     active_media_id = uuid4()
@@ -194,6 +202,7 @@ async def test_security_alert_worker_retries_transient_then_stops_after_success(
     monkeypatch,
 ):
     del client
+    _clear_maintenance_jobs()
     now = datetime.now(UTC)
     alert_id = uuid4()
     dedupe_key = uuid4().hex + uuid4().hex
@@ -293,6 +302,7 @@ async def test_security_alert_terminal_delivery_does_not_loop(
     client,
 ):
     del client
+    _clear_maintenance_jobs()
     now = datetime.now(UTC)
     alert_id = uuid4()
     with SessionLocal() as db:
@@ -339,6 +349,7 @@ async def test_analytics_retention_job_is_bounded_and_resumable(
     monkeypatch,
 ):
     del client
+    _clear_maintenance_jobs()
     now = datetime.now(UTC)
     user_id = uuid4()
     operation_ids = [uuid4() for _ in range(3)]
