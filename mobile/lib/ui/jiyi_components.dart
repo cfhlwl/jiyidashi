@@ -431,12 +431,14 @@ class JiYiHeroHeader extends StatelessWidget {
     this.eyebrow,
     this.subtitle,
     this.icon,
+    this.atmospheric = false,
   });
 
   final String title;
   final String? eyebrow;
   final String? subtitle;
   final IconData? icon;
+  final bool atmospheric;
 
   @override
   Widget build(BuildContext context) {
@@ -459,13 +461,14 @@ class JiYiHeroHeader extends StatelessWidget {
               ),
             ),
           ),
-          const Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: _JiYiHeroLandscapePainter(),
+          if (atmospheric)
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _JiYiHeroLandscapePainter(),
+                ),
               ),
             ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               JiYiSpacing.xl,
