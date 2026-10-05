@@ -1862,22 +1862,17 @@ void main() {
     );
   });
 
-  testWidgets('golden: design authority Profile privacy', (tester) async {
+  testWidgets('golden: design authority Profile identity', (tester) async {
     final key = await _pumpGoldenProfile(
       tester,
       mapAccepted: true,
     );
 
-    final amapControl = find.text('高德地图服务');
-    await tester.scrollUntilVisible(
-      amapControl,
-      180,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await _pumpVisualFrames(tester);
-
-    expect(find.text('隐私与记录控制'), findsOneWidget);
-    expect(find.byKey(const ValueKey('amap-privacy-revoke')), findsOneWidget);
+    // Design Authority reviews the consumer identity hierarchy at the top of
+    // Profile. Privacy/map states retain their dedicated state goldens.
+    await _pumpUntilFinder(tester, find.text('测试用户'));
+    expect(find.text('当前登录账号'), findsOneWidget);
+    expect(find.text('golden@example.com'), findsOneWidget);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_profile.png'),
