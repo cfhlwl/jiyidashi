@@ -458,12 +458,19 @@ def handle_analytics_retention(claim: MaintenanceJobClaim) -> None:
             "ANALYTICS_RETENTION_PAYLOAD_INVALID"
         ) from exc
     with SessionLocal() as db:
+        def assert_claim_in_transaction() -> None:
+            assert_maintenance_claim_current(
+                db,
+                job_id=claim.id,
+                claim_token=claim.claim_token,
+            )
+
         retrieval_deleted, active_deleted = prune_analytics(
             db,
             retrieval_days=retrieval_days,
             active_day_days=active_day_days,
             batch_size=ANALYTICS_RETENTION_BATCH_SIZE,
-            authority_check=authority.check,
+            authority_check=assert_claim_in_transaction,
         )
     if (
         retrieval_deleted >= ANALYTICS_RETENTION_BATCH_SIZE
