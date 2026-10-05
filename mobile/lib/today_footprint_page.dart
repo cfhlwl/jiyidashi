@@ -699,6 +699,9 @@ class _TodayVisitPill extends StatelessWidget {
     final status = visit.finalized ? '已形成足迹' : '进行中';
     return Semantics(
       label: '第 ${index + 1} 个地点，$time，${visit.placeName}，$status',
+      // Keep the spoken summary deterministic: child text is already encoded
+      // in the explicit label and must not be merged a second time.
+      excludeSemantics: true,
       child: Container(
         key: ValueKey('today-footprint-compact-${visit.id}'),
         constraints: const BoxConstraints(minHeight: 44),

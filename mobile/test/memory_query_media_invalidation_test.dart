@@ -75,6 +75,33 @@ class _DeleteQueryProjectionFailureApi extends _DeleteQueryApi {
   }
 }
 
+Future<void> _waitForCacheRemoval(
+  WidgetTester tester,
+  Iterable<File> files,
+) async {
+  // The delete callback performs real filesystem I/O while the page shows an
+  // indeterminate progress indicator. pumpAndSettle() can wait on that spinner
+  // instead of the authority boundary, so wait for cache revocation directly.
+  await tester.pump();
+  final removed = await tester.runAsync<bool>(() async {
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (DateTime.now().isBefore(deadline)) {
+      var anyExists = false;
+      for (final file in files) {
+        if (await file.exists()) {
+          anyExists = true;
+          break;
+        }
+      }
+      if (!anyExists) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    return false;
+  });
+  expect(removed, isTrue, reason: 'deleted media cache was not revoked');
+  await tester.pump();
+}
+
 void main() {
   testWidgets('Memory Query delete invalidates the deleted photo cache',
       (tester) async {
@@ -108,7 +135,7 @@ void main() {
     expect(find.text('删除这条记忆？'), findsOneWidget);
 
     await tester.tap(find.text('确认删除'));
-    await tester.pumpAndSettle();
+    await _waitForCacheRemoval(tester, <File>[cached]);
 
     expect(api.deleteCalls, 1);
     expect(await cached.exists(), isFalse);
@@ -160,7 +187,7 @@ void main() {
     await tester.tap(find.text('删除最相关记忆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('确认删除'));
-    await tester.pumpAndSettle();
+    await _waitForCacheRemoval(tester, <File>[first, second]);
 
     expect(api.deleteCalls, 1);
     expect(await first.exists(), isFalse);
