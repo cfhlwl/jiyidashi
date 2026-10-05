@@ -1,0 +1,11 @@
+[Unit]
+Description=Run JiYiDashi off-host backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+Persistent=true
+RandomizedDelaySec=600
+Unit=jiyidashi-offhost-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=JiYiDashi off-host PostgreSQL backup
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/jiyidashi
+Environment=ENV_FILE=/srv/jiyidashi/backend/.env.production
+Environment=BACKUP_LOCAL_STAGING_DIR=/srv/jiyidashi/backups/offhost-staging
+Environment=BACKUP_LOCK_FILE=/var/lock/jiyidashi-offhost-backup.lock
+ExecStart=/usr/bin/bash /srv/jiyidashi/ops/offhost-backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6

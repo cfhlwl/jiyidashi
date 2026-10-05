@@ -7,6 +7,7 @@ import base64
 import binascii
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 REQUIRED_EXACT = {
     "APP_ENV": "production",
@@ -14,6 +15,7 @@ REQUIRED_EXACT = {
     "AUTH_RATE_LIMIT_ENABLED": "true",
     "AUTO_CREATE_SCHEMA": "false",
     "AUTH_EMAIL_DELIVERY_MODE": "smtp",
+    "BACKUP_OFFHOST_ENABLED": "true",
 }
 
 
@@ -69,8 +71,71 @@ def main() -> None:
         errors.append("AUTH_SMTP_FROM is required")
 
     database_url = values.get("DATABASE_URL", "")
-    if not database_url.startswith("postgresql+psycopg://") or "@postgres:5432/" not in database_url:
+    try:
+        parsed_database = urlsplit(database_url)
+    except ValueError:
+        parsed_database = None
+
+    if (
+        parsed_database is None
+        or parsed_database.scheme != "postgresql+psycopg"
+        or parsed_database.hostname != "postgres"
+        or parsed_database.port != 5432
+    ):
         errors.append("DATABASE_URL must target the production postgres service")
+    else:
+        url_database = unquote(parsed_database.path.lstrip("/"))
+        url_username = unquote(parsed_database.username or "")
+        url_password = unquote(parsed_database.password or "")
+        if url_database != values.get("POSTGRES_DB", ""):
+            errors.append("DATABASE_URL database must match POSTGRES_DB")
+        if url_username != values.get("POSTGRES_USER", ""):
+            errors.append("DATABASE_URL username must match POSTGRES_USER")
+        if url_password != values.get("POSTGRES_PASSWORD", ""):
+            errors.append("DATABASE_URL password must match POSTGRES_PASSWORD")
+
+    backup_bucket = values.get("BACKUP_STORAGE_BUCKET", "")
+    backup_region = values.get("BACKUP_STORAGE_REGION", "")
+    backup_endpoint = values.get("BACKUP_STORAGE_ENDPOINT_URL", "")
+    backup_access = values.get("BACKUP_STORAGE_ACCESS_KEY_ID", "")
+    backup_secret = values.get("BACKUP_STORAGE_SECRET_ACCESS_KEY", "")
+    backup_style = values.get("BACKUP_STORAGE_ADDRESSING_STYLE", "")
+    backup_prefix = values.get("BACKUP_OBJECT_PREFIX", "")
+    backup_cluster = values.get("BACKUP_SOURCE_CLUSTER_ID", "")
+    if not backup_bucket:
+        errors.append("BACKUP_STORAGE_BUCKET is required")
+    if not backup_region:
+        errors.append("BACKUP_STORAGE_REGION is required")
+    if not backup_endpoint.startswith("https://"):
+        errors.append("BACKUP_STORAGE_ENDPOINT_URL must use HTTPS")
+    if not backup_access or not backup_secret:
+        errors.append("backup storage credentials are required")
+    if backup_style not in {"virtual", "path"}:
+        errors.append("BACKUP_STORAGE_ADDRESSING_STYLE must be virtual or path")
+    if not backup_prefix.strip("/"):
+        errors.append("BACKUP_OBJECT_PREFIX is required")
+    if not backup_cluster:
+        errors.append("BACKUP_SOURCE_CLUSTER_ID is required")
+    for key, value in (
+        ("BACKUP_STORAGE_BUCKET", backup_bucket),
+        ("BACKUP_STORAGE_REGION", backup_region),
+        ("BACKUP_STORAGE_ACCESS_KEY_ID", backup_access),
+        ("BACKUP_STORAGE_SECRET_ACCESS_KEY", backup_secret),
+        ("BACKUP_SOURCE_CLUSTER_ID", backup_cluster),
+    ):
+        if value.startswith("CHANGE_ME"):
+            errors.append(f"{key} must not use the committed placeholder")
+    for key in (
+        "BACKUP_RETENTION_DAILY",
+        "BACKUP_RETENTION_WEEKLY",
+        "BACKUP_RETENTION_MONTHLY",
+    ):
+        try:
+            value = int(values.get(key, ""))
+        except ValueError:
+            value = 0
+        if value < 1:
+            errors.append(f"{key} must be >= 1")
 
     if errors:
         for error in errors:

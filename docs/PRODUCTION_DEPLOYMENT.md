@@ -184,6 +184,11 @@ External provider checks are separate operational acceptance and are intentional
 
 ## PostgreSQL backup
 
+OPS-001 local dumps remain the pre-migration safety copy. They are **not** the sole
+disaster-recovery authority after OPS-003. Production must also publish verified private
+off-host copies and run scheduled restore drills as defined in
+`docs/PRODUCTION_BACKUP.md`.
+
 Default local retention is 14 days and can be changed with `BACKUP_RETENTION_DAYS`.
 
 ```bash
