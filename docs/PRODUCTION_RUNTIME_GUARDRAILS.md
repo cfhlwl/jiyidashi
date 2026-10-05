@@ -71,6 +71,13 @@ commitment and is outside OPS-004 V1.
 The Admin Console remains served under `/admin/`, and `/admin/api/*` continues to
 proxy to the API. The same edge headers apply to Admin and API HTTPS responses.
 
+`/health/ready` is an internal readiness probe. Caddy returns 404 for the public
+HTTPS route, while Docker health checks and operators inside the backend network may
+continue to call `http://api:8000/health/ready` (or the container loopback equivalent).
+Public `/health` remains available for external liveness checks. This prevents unauthenticated
+external traffic from creating unbounded `NullPool` readiness connections outside the
+reviewed production database connection budget.
+
 ## Request-body ceiling
 
 Production uses:
@@ -124,6 +131,8 @@ The production deployment gate must prove on the exact PR HEAD that:
   `SELECT 1`;
 - Caddy validates with the configured body limit;
 - an HTTPS health response carries every required security header;
+- public `/health` returns normally while public `/health/ready` returns 404;
+- direct internal API `/health/ready` still returns database readiness;
 - Admin static routing still returns content;
 - a request over 2MB returns HTTP 413;
 - a normal-sized auth request is not rejected by the body ceiling.
