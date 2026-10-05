@@ -210,7 +210,7 @@
 | S2-001 | Android 原生后台定位模块 | ✅ | N / PR #37 已完成正式审查并合并 main |
 | S2-002 | iOS CoreLocation 后台定位模块 | ✅ | N / PR #37 已完成正式审查并合并 main |
 | S2-003 | Flutter 统一 Location Bridge | ✅ | N / PR #37 已完成正式审查并合并 main |
-| S2-004 | 运动状态识别 | ✅ | P / PR #41 已完成正式审查、latest-main clean replay、exact-head CI 与合并 |
+| S2-004 | GPS 速度代理运动状态 | ✅ | P / PR #41 已完成正式审查、latest-main clean replay、exact-head CI 与合并；**当前仅依据 location speed/accuracy 推断 stationary/walking/vehicle，用于自适应采样，不等同于 Core Motion / Android Activity Recognition 原生活动识别，也没有形成长期 Activity evidence。** 原生活动识别由 AUTO-CONTEXT-001 收口。 |
 | S2-005 | 智能定位采样策略 | ✅ | P / PR #41 已完成 motion/quality-aware cadence、stable UUID replay、FUTURE 422 retry 审查并合并 |
 | S2-006 | Location Point 批量同步 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
 | S2-007 | Visit 聚类 | ✅ | O / PR #36 已完成正式审查、latest-main Gate 并合并 `main` |
@@ -562,7 +562,9 @@ User Correction Rate
 
 | ID | 优先级 | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| AUTO-CONTEXT-000 | P0.5 Data | Durable Journey / Movement Segment V1 | ⬜ | **优先于一般上下文扩展。** 当前 raw LocationPoint 默认 30 天后会删除，而长期派生只保留 Visit/Place；因此两个 Visit 之间“怎么走、移动多久、距离多少、步行/骑行/乘车”等信息会永久丢失。新增 owner-scoped JourneySegment/MovementSegment，在 raw retention 前派生 start/end、duration、distance、mode candidate、confidence、source fingerprint、start/end place；必要时仅保留隐私友好的简化路线而非全部 raw GPS。必须支持重建/版本化/删除/导出。 |
 | PLACE-INTEL-001 | P1 | Frequent Places & Place Insights V1 | ⬜ | 基于已有 Place/Visit，不重做定位。增加最近 7/30/90 天 visit_count、total_duration、首次/最近到访、常见到达/离开时段、工作日/周末到访、frequent_score 与“我的地点/常去地点”排序。HOME/WORK 只生成候选，必须用户确认后才能成为事实；支持“最近常去、第一次去、很久没去、本月最常去”等回忆产品能力。 |
+| PLACE-INTEL-002 | P0.5/P1 | Place Semantic Identity / Merge V1 | ⬜ | 当前 Place 主要按 geohash bucket 建立，同一真实商场/公司可能因 GPS 漂移形成多个 Place；AMap poi.type 当前直接写入 category，而 Flutter UI 使用 HOME/OFFICE/CAFE/RESTAURANT 等 canonical category，语义并不统一。增加 provider POI/AOI identity、canonical category mapping、同 POI merge/alias、用户确认的 HOME/WORK semantic label，并保证 merge 后 Visit/Memory/Object 引用和审计不丢失。常去地点统计必须建立在该层收口之后。 |
 | AUTO-CONTEXT-001 | P1 | Native Activity Recognition V1 | ⬜ | 当前 MotionState 主要由 GPS speed/accuracy 推断。升级为系统原生活动信号：iOS 接入 Core Motion CMMotionActivityManager（stationary/walking/running/cycling/automotive/unknown）；Android 优先 Activity Recognition Transition API（STILL/WALKING/RUNNING/ON_BICYCLE/IN_VEHICLE）。活动信号作为 Evidence/Context，不直接升级为 Memory 事实；保留现有 speed-based fallback，国内无 Google Play Services 设备必须有 vendor-neutral fallback。 |
 | AUTO-CONTEXT-002 | P1 | Activity Segment Derivation V1 | ⬜ | 将低功耗 activity transition + Location/Visit 聚合成 ActivitySegment 候选，例如“步行 08:10–08:28”“乘车 08:30–09:05”“跑步 19:12–19:48”。要求 confidence/source/start/end，可被用户纠正。活动段与 Visit/Place/Timeline 对齐，回答“我那天怎么去的/运动了多久”等问题；低置信度只展示“可能”。 |
 | AUTO-CONTEXT-003 | P1/P2 Opt-in | Steps & Exercise Context V1 | ⬜ | 用户单独授权后读取 iOS HealthKit / Android Health Connect 的步数、运动/Workout/Exercise Session、距离等高层数据，用于“今天走了多少、跑步/骑行多久、这次运动在哪里”等生活上下文。健康权限按类型渐进请求，不与位置授权捆绑；未授权不影响迹忆核心功能。首版只读必要的活动数据，不采集临床/诊断信息。 |
@@ -572,7 +574,49 @@ User Correction Rate
 | AUTO-CONTEXT-007 | P1 | Environmental Context Enrichment V1 | ⬜ | 使用已有时间+地点在服务端补充天气、城市/区域、节假日等公共环境信息，让回忆从“去过哪里”变成“那天下雨、去了哪里、拍了哪些照片”。此类数据不要求额外传感器权限，但必须绑定具体时间/地点来源并可重算；天气等第三方数据不得成为用户行为事实。 |
 | AUTO-CONTEXT-008 | P1 | Daily Life Reconstruction V1 | ⬜ | 将 DayFootprint + ActivitySegment + Photo Context + Calendar Context + 用户主动 Memory 组成 evidence-first 的 DailyLifeSnapshot。结构化层先生成“去了哪里 / 如何移动 / 有哪些活动 / 拍了什么 / 有什么日程”，AI 只负责可选总结。典型目标：回答“我25号去了哪里、怎么去的、做了些什么？”并逐条展示来源和可信度。 |
 | AUTO-CONTEXT-009 | Research / P2 | iOS CLVisit Signal | ⬜ | 评估并接入 startMonitoringVisits() 作为 iOS 低功耗 Visit candidate，辅助现有 Significant Location Change + Standard Location。CLVisit 只提供候选信号，服务端 Visit 聚类仍是跨 iOS/Android 的统一 authority。 |
+| AUTO-CONTEXT-011 | P1 Reliability | Context Permission & Coverage Health V1 | ⬜ | 自动记录扩展后不能只监控位置健康。建立 motion/photo/calendar/health 等 source 的独立授权状态、last_observed_at、last_sync_at、coverage、error/revoked 状态；采用渐进式权限说明，不在首次启动一次性索取全部权限。Today/My Data 只展示真实 source health，某一来源关闭不能把整套自动记忆误报为正常。 |
+| AUTO-CONTEXT-012 | P1 iOS | Journaling Suggestions Bridge V1 | ⬜ | iOS 17.2+ 评估接入 Apple Journaling Suggestions picker，作为**用户主动选择的低摩擦历史补记/首日 Aha**入口，可接收用户选择后的地点、照片、Motion Activity/steps、Workout、媒体等高层 suggestion。该能力不是后台静默读取系统历史，必须保留 Apple picker 的用户选择边界；接入后转换为 typed Context/Evidence，而不是直接生成 confirmed Memory。 |
+| AUTO-CONTEXT-013 | P1 | Trip / Travel Episode Derivation V1 | ⬜ | 基于城市/区域变化、JourneySegment、Visit、照片时间地点形成“旅行/出差候选”，例如跨城市开始/结束、主要地点、持续天数、照片数量。默认只生成 candidate episode；“出差/旅游/探亲”等目的必须由日历、用户记录或用户确认支持，不凭位置猜。 |
+| AUTO-CONTEXT-014 | P1 | Context Candidate Rule Engine V1 | ⬜ | 在 typed Context 上做确定性候选规则：通勤、晨跑/跑步、长距离步行、餐饮停留、健身、旅行、重复日常等。规则输出 candidate + evidence refs + confidence，不直接写 confirmed Memory。地点类型只能作为弱证据；例如“在餐厅”不能自动等同“吃饭”。 |
 | AUTO-CONTEXT-010 | 🚫 V1 | Continuous Audio / Camera Body-posture Tracking | 🚫 | V1 不做 24 小时麦克风监听、后台摄像头体态识别或隐蔽环境录音。手机单独放置位置无法可靠代表人体坐/站/躺，不能把手机倾斜等信号冒充“人体姿态事实”。未来若有可穿戴设备，可在用户明确授权下研究更可靠姿态/活动输入。 |
+
+### 当前代码审查结论（2026-10-05）
+
+已确认当前自动记录实际边界：
+
+```text
+已经自动：
+LocationPoint
+→ Visit
+→ Place
+→ Today/Day Footprint
+→ Recording Health
+
+已有但只用于采样：
+GPS speed/accuracy
+→ stationary / walking / vehicle proxy
+→ adaptive location cadence
+
+当前尚未自动进入长期生活上下文：
+system activity recognition
+running / cycling
+movement journey segment
+photo EXIF / passive photo metadata
+calendar
+steps / workout / sleep
+weather / holiday
+trip episode
+DailyLifeSnapshot
+```
+
+特别注意：
+
+- LocationPoint 当前只长期派生 Visit；raw GPS 默认 retention = 30 天。AUTO-CONTEXT-000 未完成前，不应宣称多年后还能恢复完整移动路径/交通方式。
+- Vision 目前是用户对单张 READY 图片主动触发的 read-only inference，不会自动写 Memory/Evidence；保持这个安全边界，自动照片上下文优先使用时间/EXIF/地点等确定性 metadata。
+- PhotoMemoryCreate 目前仍要求用户主动提供 content；现有 image_picker 是主动选择/拍摄，不是相册自动索引。
+- Android Manifest 当前没有 ACTIVITY_RECOGNITION；iOS Info.plist 当前没有 NSMotionUsageDescription / HealthKit usage keys。
+- 当前仓库没有 EventKit/Calendar、HealthKit/Health Connect、weather、Journaling Suggestions 的实现。
+- 新上下文数据源应优先上传高层 segment/summary，而不是长期上传原始加速度计/陀螺仪流。
 
 ### 自动行为识别可信度分层
 
