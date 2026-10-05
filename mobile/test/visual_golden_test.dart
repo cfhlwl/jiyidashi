@@ -260,23 +260,111 @@ class _GoldenMapLinePainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
+class _GoldenMediaCache extends LocalMediaCache {
+  _GoldenMediaCache()
+      : super(
+          rootDirectoryProvider: () async => Directory('/tmp/jiyi-golden-unused'),
+        );
+
+  final Map<String, File> _files = <String, File>{};
+  final Set<String> _authority = <String>{};
+
+  String _key(String ownerUserId, String mediaId, [String? version]) =>
+      '${ownerUserId.toLowerCase()}::${mediaId.toLowerCase()}::${version ?? '*'}';
+
+  void seed({
+    required String ownerUserId,
+    required String mediaId,
+    required String cacheVersion,
+  }) {
+    final file = File('/tmp/jiyi-golden-${mediaId.toLowerCase()}.media');
+    _files[_key(ownerUserId, mediaId, cacheVersion)] = file;
+    _files[_key(ownerUserId, mediaId)] = file;
+    _authority.add(_key(ownerUserId, mediaId));
+  }
+
+  @override
+  Future<File?> lookup({
+    required String ownerUserId,
+    required String mediaId,
+    String? cacheVersion,
+  }) async =>
+      _files[_key(ownerUserId, mediaId, cacheVersion)] ??
+      _files[_key(ownerUserId, mediaId)];
+
+  @override
+  bool hasFreshAuthorityLease({
+    required String ownerUserId,
+    required String mediaId,
+  }) =>
+      _authority.contains(_key(ownerUserId, mediaId));
+
+  @override
+  void markAuthorityValidated({
+    required String ownerUserId,
+    required String mediaId,
+  }) {
+    _authority.add(_key(ownerUserId, mediaId));
+  }
+
+  @override
+  Future<File> putBytes({
+    required String ownerUserId,
+    required String mediaId,
+    required String cacheVersion,
+    required List<int> bytes,
+  }) async {
+    seed(
+      ownerUserId: ownerUserId,
+      mediaId: mediaId,
+      cacheVersion: cacheVersion,
+    );
+    return _files[_key(ownerUserId, mediaId, cacheVersion)]!;
+  }
+
+  @override
+  Future<void> invalidateMedia({
+    required String ownerUserId,
+    required String mediaId,
+  }) async {
+    final prefix =
+        '${ownerUserId.toLowerCase()}::${mediaId.toLowerCase()}::';
+    _files.removeWhere((key, _) => key.startsWith(prefix));
+    _authority.remove(_key(ownerUserId, mediaId));
+  }
+
+  @override
+  Future<void> invalidateMediaPrefix({
+    required String ownerUserId,
+    required String mediaIdPrefix,
+  }) async {
+    final owner = ownerUserId.toLowerCase();
+    final prefix = mediaIdPrefix.toLowerCase();
+    _files.removeWhere((key, _) {
+      final parts = key.split('::');
+      return parts.length >= 2 &&
+          parts[0] == owner &&
+          parts[1].startsWith(prefix);
+    });
+    _authority.removeWhere((key) {
+      final parts = key.split('::');
+      return parts.length >= 2 &&
+          parts[0] == owner &&
+          parts[1].startsWith(prefix);
+    });
+  }
+}
+
 Future<LocalMediaCache> _seedGoldenMediaCache(
   String ownerUserId, {
   String mediaId = v2MediaId,
 }) async {
-  final root = await Directory.systemTemp.createTemp('jiyi-golden-media-');
-  addTearDown(() => root.delete(recursive: true));
-  final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
-  await cache.putBytes(
-    ownerUserId: ownerUserId,
-    mediaId: mediaId,
-    cacheVersion: _goldenCacheVersion,
-    bytes: const <int>[1, 2, 3, 4],
-  );
-  cache.markAuthorityValidated(
-    ownerUserId: ownerUserId,
-    mediaId: mediaId,
-  );
+  final cache = _GoldenMediaCache()
+    ..seed(
+      ownerUserId: ownerUserId,
+      mediaId: mediaId,
+      cacheVersion: _goldenCacheVersion,
+    );
   return cache;
 }
 
