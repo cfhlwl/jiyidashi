@@ -689,13 +689,6 @@ class _FamilyMemberSharedPageState extends State<_FamilyMemberSharedPage> {
         child: JiYiPageFrame(
           title: '家人分享',
           subtitle: '只显示 TA 明确授权给你的内容；没有授权时不会从其他数据推断。',
-          hero: JiYiHeroHeader(
-            atmospheric: true,
-            eyebrow: '迹忆 · 家庭',
-            title: widget.memberLabel,
-            subtitle: '照片、位置、足迹和记忆分别授权，随时以服务端当前权限为准。',
-            icon: Icons.family_restroom_outlined,
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

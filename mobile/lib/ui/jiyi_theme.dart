@@ -188,6 +188,13 @@ abstract final class JiYiTheme {
           );
         }),
       ),
+      listTileTheme: ListTileThemeData(
+        minVerticalPadding: elderMode ? JiYiSpacing.md : JiYiSpacing.sm,
+        iconColor: colorScheme.primary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(JiYiRadius.control),
+        ),
+      ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,

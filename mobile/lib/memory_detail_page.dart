@@ -464,15 +464,6 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         child: JiYiPageFrame(
           title: '记忆详情',
           subtitle: '回看你当时留下的内容。',
-          hero: current == null
-              ? null
-              : JiYiHeroHeader(
-                  atmospheric: true,
-                  eyebrow: '迹忆 · 记忆',
-                  title: current.title ?? '一段记忆',
-                  subtitle: _formatDateTime(current.occurredAt),
-                  icon: _memoryIcon(current.memoryType),
-                ),
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null && current == null
@@ -810,14 +801,6 @@ String _memoryTypeLabel(String value) => switch (value) {
       'REMINDER' => '提醒记录',
       'EVENT' => '事件记录',
       _ => '记忆',
-    };
-
-IconData _memoryIcon(String value) => switch (value) {
-      'VOICE' => Icons.mic_none_outlined,
-      'PHOTO' => Icons.photo_outlined,
-      'PLACE' => Icons.place_outlined,
-      'OBJECT_LOCATION' => Icons.inventory_2_outlined,
-      _ => Icons.auto_stories_outlined,
     };
 
 String _formatDateTime(String value) {
