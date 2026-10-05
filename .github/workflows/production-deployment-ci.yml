@@ -132,6 +132,11 @@ jobs:
           OBSERVABILITY_LOG_LEVEL=INFO
           DATABASE_READINESS_CONNECT_TIMEOUT_SECONDS=2
           DATABASE_READINESS_STATEMENT_TIMEOUT_MS=1500
+          DB_POOL_SIZE=3
+          DB_MAX_OVERFLOW=1
+          DB_POOL_TIMEOUT_SECONDS=5
+          DB_POOL_RECYCLE_SECONDS=300
+          DB_CONNECTION_BUDGET=20
 
           POSTGRES_DB=jiyi_prod_ci
           POSTGRES_USER=jiyi
@@ -139,6 +144,7 @@ jobs:
           API_DOMAIN=api.example.test
           ACME_EMAIL=ops@example.test
           WEB_CONCURRENCY=1
+          API_REQUEST_BODY_LIMIT=2MB
 
           AUTH_RATE_LIMIT_ENABLED=true
           AUTH_REGISTER_IP_LIMIT=20
@@ -234,7 +240,7 @@ jobs:
       - name: Reject unsafe actual production environments
         shell: bash
         run: |
-          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'             'BACKUP_OFFHOST_ENABLED=false'             'BACKUP_STORAGE_BUCKET='             'BACKUP_STORAGE_ENDPOINT_URL=http://backup.invalid'             'BACKUP_STORAGE_SECRET_ACCESS_KEY='             'DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/not_the_app_db'             'DATABASE_URL=postgresql+psycopg://other-user:ci-postgres-password@postgres:5432/jiyi_prod_ci'             'DATABASE_URL=postgresql+psycopg://jiyi:wrong-password@postgres:5432/jiyi_prod_ci'; do
+          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'             'BACKUP_OFFHOST_ENABLED=false'             'BACKUP_STORAGE_BUCKET='             'BACKUP_STORAGE_ENDPOINT_URL=http://backup.invalid'             'BACKUP_STORAGE_SECRET_ACCESS_KEY='             'DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/not_the_app_db'             'DATABASE_URL=postgresql+psycopg://other-user:ci-postgres-password@postgres:5432/jiyi_prod_ci'             'DATABASE_URL=postgresql+psycopg://jiyi:wrong-password@postgres:5432/jiyi_prod_ci'             'DB_POOL_SIZE=0'             'DB_MAX_OVERFLOW=-1'             'DB_POOL_TIMEOUT_SECONDS=0'             'DB_POOL_RECYCLE_SECONDS=29'             'DB_CONNECTION_BUDGET=3'             'DB_POOL_SIZE=10'             'DB_MAX_OVERFLOW=10'             'DB_CONNECTION_BUDGET=20'             'API_REQUEST_BODY_LIMIT=unbounded'; do
             bad_env="$RUNNER_TEMP/bad-production.env"
             cp "$ENV_FILE" "$bad_env"
             key="${mutation%%=*}"
@@ -266,9 +272,22 @@ jobs:
               assert env["AUTO_CREATE_SCHEMA"] == "false"
           PY
 
-      - name: Render production Compose
+      - name: Render production Compose with bounded logging
         run: |
-          docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             config --quiet
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+            config --format json > "$RUNNER_TEMP/compose-rendered.json"
+          python3 - "$RUNNER_TEMP/compose-rendered.json" <<'PY'
+          import json
+          import sys
+
+          body = json.load(open(sys.argv[1], encoding="utf-8"))
+          for service in ("postgres", "api", "worker", "reverse-proxy"):
+              logging = body["services"][service]["logging"]
+              assert logging["driver"] == "json-file", (service, logging)
+              assert logging["options"]["max-size"] == "10m", (service, logging)
+              assert str(logging["options"]["max-file"]) == "3", (service, logging)
+          assert body["services"]["reverse-proxy"]["environment"]["API_REQUEST_BODY_LIMIT"] == "2MB"
+          PY
 
       - name: Prepare immutable production backend image from exact Git tree
         shell: bash
@@ -366,8 +385,74 @@ jobs:
           docker run --rm \
             -e API_DOMAIN=api.example.test \
             -e ACME_EMAIL=ops@example.test \
+            -e API_REQUEST_BODY_LIMIT=2MB \
             "$EDGE_IMAGE" \
             caddy validate --config /etc/caddy/Caddyfile
+
+      - name: OPS-004 HTTPS headers and request-body ceiling smoke
+        shell: bash
+        run: |
+          network=ops004-edge-smoke
+          api_name=ops004-api-smoke
+          edge_name=ops004-edge-smoke
+          cleanup() {
+            docker rm -f "$edge_name" "$api_name" >/dev/null 2>&1 || true
+            docker network rm "$network" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker network create "$network"
+
+          docker run -d --name "$api_name" --network "$network" \
+            --network-alias api \
+            -e DATABASE_URL=sqlite:////tmp/ops004-smoke.db \
+            -e WEB_CONCURRENCY=1 \
+            "$BACKEND_IMAGE"
+
+          docker run -d --name "$edge_name" --network "$network" \
+            -p 127.0.0.1:8443:443 \
+            -e API_DOMAIN=localhost \
+            -e ACME_EMAIL=ops@example.test \
+            -e API_REQUEST_BODY_LIMIT=2MB \
+            "$EDGE_IMAGE"
+
+          for i in $(seq 1 60); do
+            if curl -kfsS https://localhost:8443/health > "$RUNNER_TEMP/ops004-health.json"; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q '"status":"ok"' "$RUNNER_TEMP/ops004-health.json"
+
+          curl -kfsS -D "$RUNNER_TEMP/ops004-headers.txt" \
+            https://localhost:8443/health -o /dev/null
+          grep -qi '^Strict-Transport-Security: max-age=31536000' "$RUNNER_TEMP/ops004-headers.txt"
+          grep -qi '^X-Content-Type-Options: nosniff' "$RUNNER_TEMP/ops004-headers.txt"
+          grep -qi '^Referrer-Policy: strict-origin-when-cross-origin' "$RUNNER_TEMP/ops004-headers.txt"
+          grep -qi '^X-Frame-Options: DENY' "$RUNNER_TEMP/ops004-headers.txt"
+
+          curl -kfsS https://localhost:8443/admin/ -o "$RUNNER_TEMP/ops004-admin.html"
+          test -s "$RUNNER_TEMP/ops004-admin.html"
+
+          head -c 3145728 /dev/zero > "$RUNNER_TEMP/oversize.bin"
+          status="$(
+            curl -ksS -o "$RUNNER_TEMP/oversize-response.txt" -w '%{http_code}' \
+              -H 'Content-Type: application/octet-stream' \
+              --data-binary @"$RUNNER_TEMP/oversize.bin" \
+              https://localhost:8443/v1/auth/login
+          )"
+          test "$status" = "413"
+
+          printf '{"email":"invalid@example.test","password":"x"}' > "$RUNNER_TEMP/normal.json"
+          normal_status="$(
+            curl -ksS -o /dev/null -w '%{http_code}' \
+              -H 'Content-Type: application/json' \
+              --data-binary @"$RUNNER_TEMP/normal.json" \
+              https://localhost:8443/v1/auth/login
+          )"
+          test "$normal_status" != "413"
+
+          cleanup
+          trap - EXIT
 
       - name: Seed existing PostgreSQL volume then stop database
         shell: bash
@@ -424,6 +509,22 @@ jobs:
       - name: Verify no schema drift
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             run --rm --no-deps api alembic check
+
+      - name: OPS-004 PostgreSQL pool authority
+        run: |
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+            run --rm --no-deps api python - <<'PY'
+          from sqlalchemy import text
+          from app.core.db import engine
+
+          assert engine.dialect.name == "postgresql", engine.dialect.name
+          assert engine.pool.size() == 3, engine.pool.size()
+          assert engine.pool._max_overflow == 1, engine.pool._max_overflow
+          assert engine.pool._timeout == 5, engine.pool._timeout
+          assert engine.pool._recycle == 300, engine.pool._recycle
+          with engine.connect() as connection:
+              assert connection.scalar(text("SELECT 1")) == 1
+          PY
 
       - name: OPS-003 shell and backup module syntax
         shell: bash
