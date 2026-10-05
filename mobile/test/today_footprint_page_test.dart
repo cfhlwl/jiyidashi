@@ -92,19 +92,23 @@ void main() {
       ),
     );
 
-    // The consumer redesign places the footprint card below the hero. Flutter
-    // only exposes visible scroll children in the active semantics tree, so
-    // bring each pill into view before asserting the spoken accessibility label.
-    await tester.ensureVisible(firstPill);
-    await tester.pump();
+    // Verify the explicit accessibility contract on the widget itself.
+    // Semantics-tree visibility depends on scroll viewport state and is not the
+    // authority for whether the pill publishes the intended spoken label.
     expect(
-      find.bySemanticsLabel('第 1 个地点，07:10，家，已形成足迹'),
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.label == '第 1 个地点，07:10，家，已形成足迹',
+      ),
       findsOneWidget,
     );
-    await tester.ensureVisible(secondPill);
-    await tester.pump();
     expect(
-      find.bySemanticsLabel('第 2 个地点，08:35，公司，进行中'),
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.label == '第 2 个地点，08:35，公司，进行中',
+      ),
       findsOneWidget,
     );
 

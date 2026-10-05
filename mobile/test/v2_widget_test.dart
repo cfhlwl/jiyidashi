@@ -42,6 +42,18 @@ Future<void> pumpSurface(WidgetTester tester, Widget child) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> pumpUntilVisible(
+  WidgetTester tester,
+  Finder finder, {
+  required String reason,
+}) async {
+  for (var attempt = 0; attempt < 80; attempt++) {
+    await tester.pump(const Duration(milliseconds: 25));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+  fail('Timed out waiting for $reason');
+}
+
 class OfflineV2TestApi extends V2TestApi {
   OfflineV2TestApi();
 
@@ -142,9 +154,13 @@ void main() {
     await tester.enterText(yearField, '2025');
     final annual = find.text('开始回看');
     await tester.ensureVisible(annual);
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(annual);
-    await tester.pumpAndSettle();
+    await pumpUntilVisible(
+      tester,
+      find.text('AI 整理'),
+      reason: 'annual memoir result',
+    );
     expect(find.text('AI 整理'), findsOneWidget);
     expect(find.textContaining('新的产品阶段'), findsOneWidget);
     expect(find.text('这一年的时间线'), findsOneWidget);
