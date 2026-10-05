@@ -37,6 +37,12 @@ class AccountDeletionOperation(Base):
     # 若发起注销时已有 S1-021 正在进行，则复用它；否则保存服务端新生成的内部 UUID，
     # 绝不复用 Account Delete 的客户端 request_id，避免撞到历史 COMPLETED S1-021 receipt。
     data_deletion_request_id: Mapped[UUID] = mapped_column(nullable=False)
+    # Monotonic durable proof written only after the official client reports that
+    # owner-scoped local cleanup completed. Background progression may not infer it.
+    local_cleanup_ready_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
