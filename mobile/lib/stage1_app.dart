@@ -2176,7 +2176,7 @@ class _CapturePageState extends State<CapturePage> {
       subtitle: widget.elderMode
           ? '先用语音说下来；你也可以选择打字或拍照。'
           : '把重要的内容或物品位置清楚地记下来。',
-      eyebrow: '迹忆',
+      hero: _CaptureMasthead(elderMode: widget.elderMode),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2328,6 +2328,97 @@ class _CapturePageState extends State<CapturePage> {
           ],
           const SizedBox(height: JiYiSpacing.md),
         ],
+      ),
+    );
+  }
+}
+
+class _CaptureMasthead extends StatelessWidget {
+  const _CaptureMasthead({required this.elderMode});
+
+  final bool elderMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.large),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '迹忆 · 随手记录',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            Text(
+              elderMode ? '说给我听' : '记一下',
+              style: theme.textTheme.displaySmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.9,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            Text(
+              elderMode ? '按下录音或选择照片，把想记的事留住。' : '声音、文字和照片，都能成为以后找得回来的记忆。',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.lg),
+            Row(
+              children: const [
+                _CaptureChannel(icon: Icons.mic_none_outlined, label: '语音'),
+                SizedBox(width: JiYiSpacing.sm),
+                _CaptureChannel(icon: Icons.edit_note_outlined, label: '文字'),
+                SizedBox(width: JiYiSpacing.sm),
+                _CaptureChannel(icon: Icons.photo_camera_outlined, label: '照片'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CaptureChannel extends StatelessWidget {
+  const _CaptureChannel({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Expanded(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(JiYiRadius.control),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: JiYiSpacing.sm),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: JiYiIconSize.medium, color: theme.colorScheme.primary),
+              const SizedBox(height: JiYiSpacing.xxs),
+              Text(label, style: theme.textTheme.labelMedium),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2892,7 +2983,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       subtitle: widget.elderMode
           ? '只从你自己的可信记录里找；没有可靠记录时，我不会猜。'
           : '从自己的记录里找回过去发生的事；找不到时不会猜。',
-      eyebrow: widget.elderMode ? '迹忆' : '迹忆 · AI 回忆',
+      hero: _MemoryQueryMasthead(elderMode: widget.elderMode),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -3219,6 +3310,80 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   }
 }
 
+class _MemoryQueryMasthead extends StatelessWidget {
+  const _MemoryQueryMasthead({required this.elderMode});
+
+  final bool elderMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.large),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.lg),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(JiYiRadius.large),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(JiYiSpacing.md),
+                child: Icon(
+                  elderMode ? Icons.search_outlined : Icons.auto_awesome_outlined,
+                  color: theme.colorScheme.primary,
+                  size: JiYiIconSize.large,
+                ),
+              ),
+            ),
+            const SizedBox(width: JiYiSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    elderMode ? '迹忆 · 查找' : '迹忆 · AI 回忆',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: JiYiSpacing.xs),
+                  Text(
+                    elderMode ? '我想找东西' : '记忆',
+                    style: theme.textTheme.headlineLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.7,
+                    ),
+                  ),
+                  const SizedBox(height: JiYiSpacing.xs),
+                  Text(
+                    elderMode
+                        ? '只从你已经保存的记录里找。'
+                        : '把问题交给已有记录；答案会带上可查看的依据。',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ProfilePage extends StatelessWidget {
   const ProfilePage({
     super.key,
@@ -3258,7 +3423,7 @@ class ProfilePage extends StatelessWidget {
     return JiYiPageFrame(
       title: '我的',
       subtitle: '管理账号信息、自动记录和隐私控制。',
-      eyebrow: '迹忆',
+      hero: const _ProfileMasthead(),
       child: FutureBuilder<Map<String, dynamic>>(
         future: api.getProfile(),
         builder: (context, snapshot) {
@@ -3440,6 +3605,61 @@ class ProfilePage extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _ProfileMasthead extends StatelessWidget {
+  const _ProfileMasthead();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '迹忆 · 个人空间',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.xs),
+              Text(
+                '我的',
+                style: theme.textTheme.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.9,
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.xs),
+              Text(
+                '资料、隐私与外观，都由你自己掌控。',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            shape: BoxShape.circle,
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(JiYiSpacing.sm),
+            child: Icon(Icons.tune_outlined, color: theme.colorScheme.primary),
+          ),
+        ),
+      ],
     );
   }
 }

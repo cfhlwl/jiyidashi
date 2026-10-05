@@ -275,7 +275,10 @@ class _FamilyPageState extends State<FamilyPage> {
     return JiYiPageFrame(
       title: '家庭',
       subtitle: '每一项共享都由你明确授权，位置需要单独开启。',
-      eyebrow: '迹忆',
+      hero: _FamilyMasthead(
+        memberCount: family?.members.length,
+        currentRole: family?.currentUserRole,
+      ),
       child: loading
           ? const Center(child: CircularProgressIndicator())
           : error != null && family == null && !noFamily
@@ -337,35 +340,22 @@ class _FamilyPageState extends State<FamilyPage> {
         ],
         JiYiSectionCard(
           leading: Icon(
-            Icons.groups_2_outlined,
+            Icons.shield_outlined,
             color: Theme.of(context).colorScheme.primary,
           ),
-          title: '我的家庭',
-          subtitle: '已连接 ${current.members.length} 位成员；每项内容仍需单独授权。',
+          title: '共享边界',
+          subtitle: '每项内容都由你单独授权，位置不会随着加入家庭自动开放。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              JiYiMetricStrip(
-                metrics: [
-                  JiYiMetric(
-                    icon: Icons.groups_2_outlined,
-                    value: '${current.members.length}',
-                    label: '全部成员',
-                  ),
-                  JiYiMetric(
-                    icon: Icons.person_outline,
-                    value: '${others.length}',
-                    label: '其他成员',
-                  ),
-                  JiYiMetric(
-                    icon: Icons.verified_user_outlined,
-                    value: familyRoleLabel(current.currentUserRole),
-                    label: '我的身份',
-                  ),
-                ],
+              const Text('家庭成员不会自动获得你的足迹、记忆、照片或位置。'),
+              const SizedBox(height: JiYiSpacing.sm),
+              Text(
+                '当前共有 ${current.members.length} 位成员，其中 ${others.length} 位可由你配置共享范围。',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
               ),
-              const SizedBox(height: JiYiSpacing.md),
-              const Text('家庭成员不会自动获得你的足迹、记忆或位置。'),
             ],
           ),
         ),
@@ -470,6 +460,140 @@ class _FamilyPageState extends State<FamilyPage> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FamilyMasthead extends StatelessWidget {
+  const _FamilyMasthead({this.memberCount, this.currentRole});
+
+  final int? memberCount;
+  final String? currentRole;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ready = memberCount != null;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.large),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        boxShadow: theme.brightness == Brightness.dark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x0A14233A),
+                  blurRadius: 18,
+                  offset: Offset(0, 7),
+                ),
+              ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '迹忆 · 家庭',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            Row(
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(JiYiRadius.control),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(JiYiSpacing.sm),
+                    child: Icon(
+                      Icons.groups_2_outlined,
+                      size: JiYiIconSize.large,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: JiYiSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '家人空间',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: JiYiSpacing.xxs),
+                      Text(
+                        ready
+                            ? '已连接 $memberCount 位成员 · ${familyRoleLabel(currentRole!)}'
+                            : '只在你明确授权后，才会显示彼此的内容。',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: JiYiSpacing.lg),
+            Row(
+              children: [
+                _FamilyMastheadMetric(
+                  icon: Icons.lock_outline,
+                  label: '按项授权',
+                ),
+                const SizedBox(width: JiYiSpacing.md),
+                _FamilyMastheadMetric(
+                  icon: Icons.location_on_outlined,
+                  label: '位置独立',
+                ),
+                const SizedBox(width: JiYiSpacing.md),
+                _FamilyMastheadMetric(
+                  icon: Icons.visibility_outlined,
+                  label: '可随时撤销',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FamilyMastheadMetric extends StatelessWidget {
+  const _FamilyMastheadMetric({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, size: JiYiIconSize.small, color: theme.colorScheme.primary),
+          const SizedBox(height: JiYiSpacing.xxs),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }

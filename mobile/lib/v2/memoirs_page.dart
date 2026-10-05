@@ -421,7 +421,11 @@ class _MemoirsPageState extends State<MemoirsPage> {
         child: JiYiPageFrame(
           title: '回忆总结',
           subtitle: '用已经记录的照片、时间和重要经历，慢慢把过去翻回来。',
-          eyebrow: '迹忆',
+          hero: _MemoirMasthead(
+            year: annual?.targetYear,
+            photoCount: annualPhotos.length,
+            timelineCount: annualTimeline.length,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -657,6 +661,87 @@ class _MemoirsPageState extends State<MemoirsPage> {
   }
 }
 
+
+class _MemoirMasthead extends StatelessWidget {
+  const _MemoirMasthead({
+    this.year,
+    required this.photoCount,
+    required this.timelineCount,
+  });
+
+  final String? year;
+  final int photoCount;
+  final int timelineCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ready = year != null;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.large),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '迹忆 · 回忆总结',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            Text(
+              ready ? '$year 年的回忆' : '回忆总结',
+              style: theme.textTheme.displaySmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.8,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            Text(
+              ready
+                  ? '从 $photoCount 张照片和 $timelineCount 条时间线片段开始回看。'
+                  : '选择一个年份，用已经记录的片段重新看见生活。',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.45,
+              ),
+            ),
+            if (ready) ...[
+              const SizedBox(height: JiYiSpacing.lg),
+              JiYiMetricStrip(
+                metrics: [
+                  JiYiMetric(
+                    icon: Icons.photo_outlined,
+                    value: '$photoCount',
+                    label: '照片片段',
+                  ),
+                  JiYiMetric(
+                    icon: Icons.timeline_outlined,
+                    value: '$timelineCount',
+                    label: '时间线',
+                  ),
+                  const JiYiMetric(
+                    icon: Icons.auto_stories_outlined,
+                    value: '已整理',
+                    label: '年度回顾',
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _AnnualStoryHero extends StatelessWidget {
   const _AnnualStoryHero({

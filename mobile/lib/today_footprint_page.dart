@@ -372,18 +372,18 @@ class _TodayExperienceBody extends StatelessWidget {
               ),
             ),
             const SizedBox(height: JiYiSpacing.sm),
-            if (mapPrivacyAccepted) ...[
-              IgnorePointer(
-                child: JiYiFootprintMap(
-                  visits: footprint.visits,
-                  privacyAccepted: true,
-                  selectedIndex: 0,
-                  onSelected: (_) {},
-                  interactive: false,
-                ),
+            // 地图是“今天”页的主阅读面：未取得授权时展示事实性说明，
+            // 已授权后才初始化真实地图，避免把地图退化为普通列表的附属元素。
+            IgnorePointer(
+              child: JiYiFootprintMap(
+                visits: footprint.visits,
+                privacyAccepted: mapPrivacyAccepted,
+                selectedIndex: 0,
+                onSelected: (_) {},
+                interactive: false,
               ),
-              const SizedBox(height: JiYiSpacing.md),
-            ],
+            ),
+            const SizedBox(height: JiYiSpacing.md),
             if (elderMode)
               for (var index = 0; index < footprint.visits.length; index++) ...[
                 FootprintVisitRow(
