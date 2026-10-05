@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -106,6 +107,7 @@ def maintain_discovered_location_owner(
     user_id: UUID,
     *,
     now: datetime | None = None,
+    authority_check: Callable[[], None] | None = None,
 ) -> LocationMaintenanceResult | None:
     effective_now = now or datetime.now(UTC)
     with SessionLocal() as db:
@@ -115,6 +117,7 @@ def maintain_discovered_location_owner(
             db,
             user_id=user_id,
             now=effective_now,
+            authority_check=authority_check,
         )
 
 
