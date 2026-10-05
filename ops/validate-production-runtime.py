@@ -95,6 +95,15 @@ def main() -> None:
         errors.append("BACKUP_OBJECT_PREFIX is required")
     if not backup_cluster:
         errors.append("BACKUP_SOURCE_CLUSTER_ID is required")
+    for key, value in (
+        ("BACKUP_STORAGE_BUCKET", backup_bucket),
+        ("BACKUP_STORAGE_REGION", backup_region),
+        ("BACKUP_STORAGE_ACCESS_KEY_ID", backup_access),
+        ("BACKUP_STORAGE_SECRET_ACCESS_KEY", backup_secret),
+        ("BACKUP_SOURCE_CLUSTER_ID", backup_cluster),
+    ):
+        if value.startswith("CHANGE_ME"):
+            errors.append(f"{key} must not use the committed placeholder")
     for key in (
         "BACKUP_RETENTION_DAILY",
         "BACKUP_RETENTION_WEEKLY",
