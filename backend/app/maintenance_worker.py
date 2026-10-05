@@ -213,7 +213,12 @@ class MaintenanceWorker:
                     job_id=claim.id,
                     claim_token=claim.claim_token,
                     scrub_identity=(
-                        claim.job_type == MaintenanceJobType.ACCOUNT_DELETE.value
+                        claim.job_type
+                        in {
+                            MaintenanceJobType.DATA_DELETE.value,
+                            MaintenanceJobType.ACCOUNT_DELETE.value,
+                            MaintenanceJobType.MEDIA_PENDING_CLEANUP.value,
+                        }
                     ),
                 )
                 db.commit()
