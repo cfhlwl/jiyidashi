@@ -432,6 +432,23 @@ jobs:
           grep -qi '^Referrer-Policy: strict-origin-when-cross-origin' "$RUNNER_TEMP/ops004-headers.txt"
           grep -qi '^X-Frame-Options: DENY' "$RUNNER_TEMP/ops004-headers.txt"
 
+          ready_status="$(curl -ksS -o "$RUNNER_TEMP/ops004-ready-external.txt" -w '%{http_code}' \
+            https://localhost:8443/health/ready)"
+          test "$ready_status" = "404"
+
+          docker exec "$api_name" python - <<'PY'
+          import json
+          import urllib.request
+
+          body = json.load(
+              urllib.request.urlopen(
+                  "http://127.0.0.1:8000/health/ready",
+                  timeout=3,
+              )
+          )
+          assert body == {"status": "ready", "database": "ready"}, body
+          PY
+
           curl -kfsS https://localhost:8443/admin/ -o "$RUNNER_TEMP/ops004-admin.html"
           test -s "$RUNNER_TEMP/ops004-admin.html"
 
