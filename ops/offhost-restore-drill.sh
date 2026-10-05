@@ -138,7 +138,7 @@ restored_revision="$(
       --username="\$POSTGRES_USER" \
       --dbname='$restore_database' \
       --tuples-only --no-align \
-      --command="SELECT MIN(version_num) FROM alembic_version HAVING COUNT(*) = 1;"
+      --command='SELECT MIN(version_num) FROM alembic_version HAVING COUNT(*) = 1;'
   " | tr -d '[:space:]'
 )"
 if [[ "$restored_revision" != "$manifest_schema_revision" ]]; then
