@@ -17,6 +17,18 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    op.add_column(
+        "account_deletion_operations",
+        sa.Column("local_cleanup_ready_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "media_assets",
+        sa.Column(
+            "upload_capability_expires_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+        ),
+    )
     op.create_table(
         "maintenance_jobs",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -85,3 +97,5 @@ def downgrade() -> None:
     op.drop_index("ix_maintenance_jobs_lease", table_name="maintenance_jobs")
     op.drop_index("ix_maintenance_jobs_due", table_name="maintenance_jobs")
     op.drop_table("maintenance_jobs")
+    op.drop_column("media_assets", "upload_capability_expires_at")
+    op.drop_column("account_deletion_operations", "local_cleanup_ready_at")
