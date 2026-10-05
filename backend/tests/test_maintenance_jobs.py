@@ -156,7 +156,7 @@ def test_retry_wait_is_bounded_and_not_claimable_before_due(session_factory):
     with session_factory() as db:
         job, _ = enqueue_maintenance_job(
             db,
-            job_type="SECURITY_ALERT_RETRY",
+            job_type="SECURITY_ALERT_DELIVERY",
             dedupe_key="alert:1",
             now=now,
             max_attempts=4,
@@ -210,13 +210,13 @@ def test_terminal_failure_and_cancel_are_not_reclaimed(session_factory):
     with session_factory() as db:
         first, _ = enqueue_maintenance_job(
             db,
-            job_type="TEST_TERMINAL",
+            job_type="ANALYTICS_RETENTION",
             dedupe_key="terminal:1",
             now=now,
         )
         second, _ = enqueue_maintenance_job(
             db,
-            job_type="TEST_CANCEL",
+            job_type="MEDIA_PENDING_CLEANUP",
             dedupe_key="cancel:1",
             now=now + timedelta(seconds=1),
         )
@@ -270,3 +270,100 @@ def test_terminal_failure_and_cancel_are_not_reclaimed(session_factory):
             )
             is None
         )
+
+
+
+def test_unknown_job_type_is_rejected(session_factory):
+    with session_factory() as db:
+        with pytest.raises(ValueError, match="unsupported maintenance job type"):
+            enqueue_maintenance_job(
+                db,
+                job_type="ARBITRARY_BACKGROUND_CODE",
+                dedupe_key="unsupported:1",
+            )
+
+
+def test_expired_final_attempt_is_terminalized_after_worker_crash(session_factory):
+    now = datetime(2026, 10, 5, 10, 0, tzinfo=UTC)
+    with session_factory() as db:
+        job, _ = enqueue_maintenance_job(
+            db,
+            job_type="ANALYTICS_RETENTION",
+            dedupe_key="analytics:final-attempt",
+            now=now,
+            max_attempts=1,
+        )
+        db.commit()
+        job_id = job.id
+
+    with session_factory() as db:
+        claim = claim_next_maintenance_job(
+            db,
+            worker_id="crashing-worker",
+            lease_seconds=5,
+            now=now,
+        )
+        assert claim is not None
+        assert claim.attempt_count == 1
+        db.commit()
+
+    with session_factory() as db:
+        assert (
+            claim_next_maintenance_job(
+                db,
+                worker_id="reaper-worker",
+                now=now + timedelta(seconds=6),
+            )
+            is None
+        )
+        # The no-work path still has durable housekeeping to commit.
+        db.commit()
+
+    with session_factory() as db:
+        saved = db.get(MaintenanceJob, job_id)
+        assert saved is not None
+        assert saved.status == MaintenanceJobStatus.FAILED.value
+        assert saved.last_error_code == "MAINTENANCE_ATTEMPTS_EXHAUSTED"
+        assert saved.claim_token is None
+        assert saved.lease_expires_at is None
+
+
+def test_terminal_success_replay_is_idempotent(session_factory):
+    now = datetime(2026, 10, 5, 10, 30, tzinfo=UTC)
+    with session_factory() as db:
+        job, _ = enqueue_maintenance_job(
+            db,
+            job_type="LOCATION_RETENTION",
+            dedupe_key="location:success-replay",
+            now=now,
+        )
+        db.commit()
+        job_id = job.id
+
+    with session_factory() as db:
+        claim = claim_next_maintenance_job(
+            db,
+            worker_id="worker-a",
+            now=now,
+        )
+        assert claim is not None
+        assert complete_maintenance_job(
+            db,
+            job_id=job_id,
+            claim_token=claim.claim_token,
+            now=now + timedelta(seconds=1),
+        )
+        db.commit()
+        token = claim.claim_token
+
+    with session_factory() as db:
+        assert (
+            complete_maintenance_job(
+                db,
+                job_id=job_id,
+                claim_token=token,
+                now=now + timedelta(seconds=2),
+            )
+            is False
+        )
+        db.rollback()
