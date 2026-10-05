@@ -21,6 +21,7 @@ from app.maintenance_adapters import (
     handle_security_alert_delivery,
 )
 from app.maintenance_job_models import MaintenanceJob, MaintenanceJobStatus, MaintenanceJobType
+from app.maintenance_worker import MaintenanceWorker
 from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import User
 from app.security_models import (
@@ -457,4 +458,41 @@ async def test_analytics_retention_job_is_bounded_and_resumable(
         )
         db.execute(delete(MaintenanceJob).where(MaintenanceJob.id == second.id))
         db.execute(delete(User).where(User.id == user_id))
+        db.commit()
+
+
+
+@pytest.mark.asyncio
+async def test_worker_stop_request_does_not_take_new_claim(
+    client,
+):
+    del client
+    _clear_maintenance_jobs()
+    with SessionLocal() as db:
+        job, created = enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.ANALYTICS_RETENTION,
+            dedupe_key=f"ops002-stop:{uuid4()}",
+            payload={
+                "retrieval_days": 31,
+                "active_day_days": 31,
+            },
+        )
+        assert created
+        job_id = job.id
+        db.commit()
+
+    worker = MaintenanceWorker(
+        worker_id="ops002-stopping-worker",
+        handlers={},
+    )
+    result = worker.run_once(stop_requested=lambda: True)
+    assert result.claimed is False
+
+    with SessionLocal() as db:
+        saved = db.get(MaintenanceJob, job_id)
+        assert saved is not None
+        assert saved.status == MaintenanceJobStatus.PENDING.value
+        assert saved.attempt_count == 0
+        db.delete(saved)
         db.commit()
