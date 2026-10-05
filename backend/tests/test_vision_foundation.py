@@ -1,7 +1,7 @@
 import asyncio
 import json
-from io import BytesIO
 from datetime import UTC, datetime
+from io import BytesIO
 from uuid import UUID, uuid4
 
 import pytest
