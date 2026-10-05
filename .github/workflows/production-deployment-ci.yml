@@ -8,6 +8,10 @@ on:
       - "backend/app/main.py"
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
+      - "backend/app/services/image_analysis.py"
+      - "backend/app/services/ocr_service.py"
+      - "backend/app/services/vision_service.py"
+      - "backend/tests/test_media_analysis_derivative.py"
       - "backend/app/services/object_storage.py"
       - "backend/app/offhost_backup.py"
       - "backend/tests/test_offhost_backup.py"
@@ -38,6 +42,7 @@ on:
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - "docs/PRODUCTION_BACKUP.md"
       - "docs/PRODUCTION_RUNTIME_GUARDRAILS.md"
+      - "docs/PRODUCTION_MEDIA_ANALYSIS.md"
       - ".github/workflows/production-deployment-ci.yml"
   push:
     branches:
@@ -48,6 +53,10 @@ on:
       - "backend/app/main.py"
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
+      - "backend/app/services/image_analysis.py"
+      - "backend/app/services/ocr_service.py"
+      - "backend/app/services/vision_service.py"
+      - "backend/tests/test_media_analysis_derivative.py"
       - "backend/app/services/object_storage.py"
       - "backend/app/offhost_backup.py"
       - "backend/tests/test_offhost_backup.py"
@@ -78,6 +87,7 @@ on:
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - "docs/PRODUCTION_BACKUP.md"
       - "docs/PRODUCTION_RUNTIME_GUARDRAILS.md"
+      - "docs/PRODUCTION_MEDIA_ANALYSIS.md"
       - ".github/workflows/production-deployment-ci.yml"
 
 jobs:
