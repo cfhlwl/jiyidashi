@@ -104,6 +104,10 @@ def _assert_concurrent_enqueue_is_idempotent(base: datetime, prefix: str) -> Non
                 dedupe_key=key,
                 resource_key="postgres-dedupe",
                 payload={"operation_id": operation_id},
+                # This case proves only concurrent enqueue idempotency. Keep the
+                # resulting job outside later claim/reclaim scenarios so the gate
+                # does not depend on subtest execution order.
+                next_attempt_at=base + timedelta(days=1),
                 now=base,
             )
             db.commit()
