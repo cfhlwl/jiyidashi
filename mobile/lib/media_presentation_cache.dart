@@ -306,6 +306,12 @@ typedef LocalMediaPresentationResolver = Future<File> Function({
   required String mediaId,
 });
 
+typedef LocalMediaThumbnailBuilder = Widget Function(
+  BuildContext context,
+  String mediaId,
+  BoxFit fit,
+);
+
 typedef LocalMediaFileRenderer = Widget Function(
   BuildContext context,
   File file,
@@ -317,18 +323,22 @@ class LocalMediaPresentationScope extends InheritedWidget {
     super.key,
     required this.renderer,
     this.resolver,
+    this.thumbnailBuilder,
     required super.child,
   });
 
   final LocalMediaFileRenderer renderer;
   final LocalMediaPresentationResolver? resolver;
+  final LocalMediaThumbnailBuilder? thumbnailBuilder;
 
   static LocalMediaPresentationScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<LocalMediaPresentationScope>();
 
   @override
   bool updateShouldNotify(LocalMediaPresentationScope oldWidget) =>
-      renderer != oldWidget.renderer || resolver != oldWidget.resolver;
+      renderer != oldWidget.renderer ||
+      resolver != oldWidget.resolver ||
+      thumbnailBuilder != oldWidget.thumbnailBuilder;
 }
 
 class LocalMediaThumbnail extends StatefulWidget {
@@ -356,6 +366,7 @@ class LocalMediaThumbnail extends StatefulWidget {
 class _LocalMediaThumbnailState extends State<LocalMediaThumbnail> {
   late final LocalMediaCache _cache = widget.cache ?? LocalMediaCache();
   LocalMediaPresentationResolver? _presentationResolver;
+  LocalMediaThumbnailBuilder? _thumbnailBuilder;
   bool _dependenciesReady = false;
   File? _file;
   bool _unavailable = false;
@@ -364,20 +375,31 @@ class _LocalMediaThumbnailState extends State<LocalMediaThumbnail> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final nextResolver =
-        LocalMediaPresentationScope.maybeOf(context)?.resolver;
-    if (!_dependenciesReady || nextResolver != _presentationResolver) {
+    final scope = LocalMediaPresentationScope.maybeOf(context);
+    final nextResolver = scope?.resolver;
+    final nextThumbnailBuilder = scope?.thumbnailBuilder;
+    if (!_dependenciesReady ||
+        nextResolver != _presentationResolver ||
+        nextThumbnailBuilder != _thumbnailBuilder) {
       _dependenciesReady = true;
       _presentationResolver = nextResolver;
-      _resolve();
+      _thumbnailBuilder = nextThumbnailBuilder;
+      if (nextThumbnailBuilder == null) {
+        _resolve();
+      } else {
+        _generation += 1;
+        _file = null;
+        _unavailable = false;
+      }
     }
   }
 
   @override
   void didUpdateWidget(covariant LocalMediaThumbnail oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.mediaId != widget.mediaId ||
-        oldWidget.api != widget.api) {
+    if ((oldWidget.mediaId != widget.mediaId ||
+            oldWidget.api != widget.api) &&
+        _thumbnailBuilder == null) {
       _resolve();
     }
   }
@@ -426,6 +448,25 @@ class _LocalMediaThumbnailState extends State<LocalMediaThumbnail> {
 
   @override
   Widget build(BuildContext context) {
+    final synchronousBuilder = _thumbnailBuilder;
+    if (synchronousBuilder != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        child: SizedBox(
+          width: widget.width,
+          height: widget.height,
+          child: KeyedSubtree(
+            key: ValueKey('local-media-ready-${widget.mediaId}'),
+            child: synchronousBuilder(
+              context,
+              widget.mediaId,
+              BoxFit.cover,
+            ),
+          ),
+        ),
+      );
+    }
+
     final file = _file;
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
