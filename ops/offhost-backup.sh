@@ -89,7 +89,7 @@ schema_revision="$(
       --username="$POSTGRES_USER" \
       --dbname="$POSTGRES_DB" \
       --tuples-only --no-align \
-      --command="SELECT version_num FROM alembic_version LIMIT 1;"
+      --command="SELECT CASE WHEN COUNT(*) = 1 THEN MIN(version_num) ELSE '' END FROM alembic_version;"
   ' | tr -d '[:space:]'
 )"
 if [[ -z "$schema_revision" ]]; then
