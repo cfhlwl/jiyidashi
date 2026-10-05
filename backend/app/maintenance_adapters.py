@@ -6,12 +6,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, union, update
-from sqlalchemy.orm import Session
-
+from sqlalchemy import or_, select, union, update
 from app.account_deletion_models import AccountDeletionOperation
 from app.core.config import get_settings
-from app.core.db import SessionLocal, UserDataRequestStale
+from app.core.db import SessionLocal, UserDataRequestStale, engine
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.maintenance.location_retention import maintain_discovered_location_owner
 from app.maintenance_job_models import (
@@ -35,7 +33,6 @@ from app.services.data_deletion_service import (
 from app.services.maintenance_jobs import (
     DEFAULT_LEASE_SECONDS,
     MaintenanceJobClaim,
-    MaintenanceLeaseLost,
     assert_maintenance_claim_current,
     enqueue_maintenance_job,
     renew_maintenance_claim,
@@ -438,7 +435,7 @@ def handle_security_alert_delivery(claim: MaintenanceJobClaim) -> None:
         db.rollback()
 
     deliver_security_alert(
-        SessionLocal.kw["bind"],
+        engine,
         alert_id=str(alert_id),
         authority_check=authority.check,
     )
