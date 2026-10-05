@@ -1,0 +1,11 @@
+[Unit]
+Description=Run JiYiDashi off-host restore drill weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 04:15:00 UTC
+Persistent=true
+RandomizedDelaySec=900
+Unit=jiyidashi-restore-drill.service
+
+[Install]
+WantedBy=timers.target
