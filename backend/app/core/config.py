@@ -391,10 +391,13 @@ class Settings(BaseSettings):
 
         # [人工注释][S3-001] AI provider 选择在服务启动配置期失败关闭；生产 provider
         # endpoint 必须 HTTPS，客户端不会获得 key、base URL 或 provider 选择权。
-        if self.ai_image_max_bytes >= self.media_max_image_bytes:
-            raise ValueError("AI_IMAGE_MAX_BYTES must be lower than MEDIA_MAX_IMAGE_BYTES")
-        if self.ai_image_max_pixels > self.ai_image_max_dimension * self.ai_image_max_dimension:
-            raise ValueError("AI_IMAGE_MAX_PIXELS must not exceed AI_IMAGE_MAX_DIMENSION squared")
+        if self.is_production:
+            if self.ai_image_max_bytes >= self.media_max_image_bytes:
+                raise ValueError("AI_IMAGE_MAX_BYTES must be lower than MEDIA_MAX_IMAGE_BYTES")
+            if self.ai_image_max_pixels > self.ai_image_max_dimension * self.ai_image_max_dimension:
+                raise ValueError(
+                    "AI_IMAGE_MAX_PIXELS must not exceed AI_IMAGE_MAX_DIMENSION squared"
+                )
 
         if self.ai_provider not in {"disabled", "openai"}:
             raise ValueError("AI_PROVIDER must be disabled or openai")
