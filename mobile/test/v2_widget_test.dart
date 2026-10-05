@@ -146,9 +146,20 @@ void main() {
 
   testWidgets('Annual Memoir READY labels narrative but not timeline/photos', (tester) async {
     final cache = await seedV2PhotoCache();
-    await pumpSurface(
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: Scaffold(
+          body: SafeArea(
+            child: MemoirsPage(api: V2TestApi(), mediaCache: cache),
+          ),
+        ),
+      ),
+    );
+    await pumpUntilVisible(
       tester,
-      MemoirsPage(api: V2TestApi(), mediaCache: cache),
+      find.byType(TextField).first,
+      reason: 'annual memoir controls',
     );
     final yearField = find.byType(TextField).first;
     await tester.enterText(yearField, '2025');
