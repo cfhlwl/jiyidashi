@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     ai_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
     ai_max_input_chars: int = Field(default=64000, ge=1, le=1_000_000)
     ai_max_output_tokens: int = Field(default=4096, ge=1, le=65536)
+    ai_image_max_bytes: int = Field(default=2 * 1024 * 1024, ge=64 * 1024, le=8 * 1024 * 1024)
+    ai_image_max_dimension: int = Field(default=2048, ge=256, le=8192)
+    ai_image_max_pixels: int = Field(default=4_000_000, ge=65_536, le=32_000_000)
 
     # [BIZ-001..004] Commercial quota values are server-owned configuration.
     # LEGACY_FULL is intentionally unlimited and does not use this catalog.
@@ -388,6 +391,11 @@ class Settings(BaseSettings):
 
         # [人工注释][S3-001] AI provider 选择在服务启动配置期失败关闭；生产 provider
         # endpoint 必须 HTTPS，客户端不会获得 key、base URL 或 provider 选择权。
+        if self.ai_image_max_bytes >= self.media_max_image_bytes:
+            raise ValueError("AI_IMAGE_MAX_BYTES must be lower than MEDIA_MAX_IMAGE_BYTES")
+        if self.ai_image_max_pixels > self.ai_image_max_dimension * self.ai_image_max_dimension:
+            raise ValueError("AI_IMAGE_MAX_PIXELS must not exceed AI_IMAGE_MAX_DIMENSION squared")
+
         if self.ai_provider not in {"disabled", "openai"}:
             raise ValueError("AI_PROVIDER must be disabled or openai")
         if self.ai_provider == "openai":
