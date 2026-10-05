@@ -37,7 +37,7 @@ def _jpeg(
     ("image/webp", "WEBP"),
 ])
 def test_supported_images_build_bounded_jpeg_derivative(content_type: str, fmt: str):
-    image = Image.new("RGB", (2600, 1800), (20, 40, 60))
+    image = Image.new("RGB", (2200, 1600), (20, 40, 60))
     source = BytesIO()
     image.save(source, format=fmt)
 
