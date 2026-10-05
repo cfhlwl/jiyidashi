@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -98,6 +99,44 @@ def test_publish_is_manifest_last_and_revalidated(tmp_path: Path):
     assert "postgresql+psycopg://" not in serialized
 
 
+def _manifest_bytes(manifest: dict[str, object]) -> bytes:
+    return (
+        json.dumps(
+            manifest,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        + b"\n"
+    )
+
+
+def _rewrite_manifest_with_valid_metadata(
+    store: FilesystemBackupStore,
+    config: BackupConfig,
+    *,
+    backup_id: str,
+    mutate,
+) -> bytes:
+    _, _, manifest_key = _object_keys(config.prefix, backup_id)
+    manifest = json.loads(
+        store.read_bytes(manifest_key, max_bytes=64 * 1024).decode("utf-8")
+    )
+    mutate(manifest)
+    body = _manifest_bytes(manifest)
+    store.put_bytes(
+        key=manifest_key,
+        body=body,
+        metadata={
+            "backup-id": backup_id,
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "tool-version": "ops-003-v1",
+        },
+        content_type="application/json",
+    )
+    return body
+
+
 def test_partial_upload_without_manifest_is_not_valid(tmp_path: Path):
     store = FilesystemBackupStore(tmp_path / "remote")
     config = _config()
@@ -182,6 +221,109 @@ def test_same_slot_retry_is_idempotent_and_does_not_replace_verified_dump(
         destination=fetched,
     )
     assert fetched.read_bytes() == b"first-dump"
+
+
+@pytest.mark.parametrize(
+    ("field", "foreign_value", "error_code"),
+    [
+        ("source_cluster_id", "prod-cluster-b", "BACKUP_MANIFEST_FOREIGN_CLUSTER"),
+        ("source_database", "evil", "BACKUP_MANIFEST_FOREIGN_DATABASE"),
+    ],
+)
+def test_foreign_manifest_is_rejected_even_with_matching_checksum_metadata(
+    tmp_path: Path,
+    field: str,
+    foreign_value: str,
+    error_code: str,
+):
+    store = FilesystemBackupStore(tmp_path / "remote")
+    config = _config()
+    _publish(
+        store,
+        config,
+        tmp_path,
+        backup_id="pg-2026-10-05",
+        slot=datetime(2026, 10, 5, tzinfo=UTC),
+        body=b"foreign-authority-test",
+    )
+
+    _rewrite_manifest_with_valid_metadata(
+        store,
+        config,
+        backup_id="pg-2026-10-05",
+        mutate=lambda manifest: manifest.__setitem__(field, foreign_value),
+    )
+
+    with pytest.raises(BackupError, match=error_code):
+        verify_backup(store, config, backup_id="pg-2026-10-05")
+
+
+def test_manifest_slot_date_must_match_backup_id_even_with_valid_checksum(
+    tmp_path: Path,
+):
+    store = FilesystemBackupStore(tmp_path / "remote")
+    config = _config()
+    _publish(
+        store,
+        config,
+        tmp_path,
+        backup_id="pg-2026-10-05",
+        slot=datetime(2026, 10, 5, tzinfo=UTC),
+        body=b"slot-authority-test",
+    )
+
+    _rewrite_manifest_with_valid_metadata(
+        store,
+        config,
+        backup_id="pg-2026-10-05",
+        mutate=lambda manifest: manifest.__setitem__(
+            "scheduled_slot",
+            "2026-10-06T00:00:00Z",
+        ),
+    )
+
+    with pytest.raises(BackupError, match="BACKUP_MANIFEST_SLOT_IDENTITY_MISMATCH"):
+        verify_backup(store, config, backup_id="pg-2026-10-05")
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "verify",
+        "latest",
+        "retention",
+    ],
+)
+def test_same_size_valid_json_manifest_corruption_fails_closed(
+    tmp_path: Path,
+    operation: str,
+):
+    store = FilesystemBackupStore(tmp_path / "remote")
+    config = _config()
+    verified, _ = _publish(
+        store,
+        config,
+        tmp_path,
+        backup_id="pg-2026-10-05",
+        slot=datetime(2026, 10, 5, tzinfo=UTC),
+        body=b"manifest-integrity-test",
+    )
+
+    manifest_path = (tmp_path / "remote" / verified.manifest_key).resolve()
+    original = manifest_path.read_bytes()
+    corrupted = original.replace(b"prod-cluster-a", b"prod-cluster-b", 1)
+    assert corrupted != original
+    assert len(corrupted) == len(original)
+    json.loads(corrupted.decode("utf-8"))
+    manifest_path.write_bytes(corrupted)
+
+    with pytest.raises(BackupError, match="BACKUP_MANIFEST_CHECKSUM_MISMATCH"):
+        if operation == "verify":
+            verify_backup(store, config, backup_id=verified.backup_id)
+        elif operation == "latest":
+            latest_backup(store, config)
+        else:
+            apply_retention(store, config)
 
 
 def test_fetch_rejects_same_size_checksum_corruption_before_publish_to_destination(
