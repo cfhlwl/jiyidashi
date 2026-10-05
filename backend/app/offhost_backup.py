@@ -162,6 +162,7 @@ class VerifiedBackup:
     dump_sha256: str
     dump_size_bytes: int
     schema_revision: str
+    source_cluster_id: str
     source_database: str
 
 
@@ -252,6 +253,15 @@ def _assert_manifest_safe(value: object, *, path: str = "manifest") -> None:
             raise BackupError("MANIFEST_CREDENTIAL_URL_REJECTED")
         if "-----begin " in lowered or "\n" in value or "\r" in value:
             raise BackupError("MANIFEST_UNSAFE_STRING_REJECTED")
+
+
+def _assert_backup_slot_identity(
+    backup_id: str,
+    scheduled_slot: datetime,
+) -> None:
+    backup_date = backup_id[3:13]
+    if backup_date != scheduled_slot.astimezone(UTC).date().isoformat():
+        raise BackupError("BACKUP_MANIFEST_SLOT_IDENTITY_MISMATCH")
 
 
 def _object_keys(prefix: str, backup_id: str) -> tuple[str, str, str]:
@@ -601,6 +611,27 @@ def _validate_dump_head(
             raise BackupError("BACKUP_DUMP_METADATA_MISMATCH")
 
 
+def _validate_manifest_head(
+    head: StoredBackupObject | None,
+    *,
+    backup_id: str,
+    body: bytes,
+) -> None:
+    if head is None:
+        raise BackupError("BACKUP_MANIFEST_NOT_FOUND")
+    body_sha256 = _sha256_bytes(body)
+    if head.size_bytes != len(body):
+        raise BackupError("BACKUP_MANIFEST_SIZE_MISMATCH")
+    expected = {
+        "backup-id": backup_id,
+        "sha256": body_sha256,
+        "tool-version": TOOL_VERSION,
+    }
+    for key, value in expected.items():
+        if head.metadata.get(key) != value:
+            raise BackupError("BACKUP_MANIFEST_CHECKSUM_MISMATCH")
+
+
 def _manifest_from_bytes(body: bytes, *, expected_id: str) -> dict[str, object]:
     try:
         manifest = json.loads(body.decode("utf-8"))
@@ -619,10 +650,10 @@ def _manifest_from_bytes(body: bytes, *, expected_id: str) -> dict[str, object]:
 def _verified_from_manifest(
     manifest: dict[str, object],
     *,
-    prefix: str,
+    config: BackupConfig,
 ) -> VerifiedBackup:
     backup_id = _validate_backup_id(str(manifest.get("backup_id", "")))
-    _, expected_dump, expected_manifest = _object_keys(prefix, backup_id)
+    _, expected_dump, expected_manifest = _object_keys(config.prefix, backup_id)
     dump = manifest.get("dump")
     if not isinstance(dump, dict):
         raise BackupError("BACKUP_MANIFEST_DUMP_INVALID")
@@ -637,12 +668,20 @@ def _verified_from_manifest(
     if not SHA256_RE.fullmatch(sha256) or size_bytes <= 0:
         raise BackupError("BACKUP_MANIFEST_DUMP_INVALID")
     scheduled_slot = _parse_slot(str(manifest.get("scheduled_slot", "")))
+    _assert_backup_slot_identity(backup_id, scheduled_slot)
     schema_revision = str(manifest.get("schema_revision", ""))
+    source_cluster_id = str(manifest.get("source_cluster_id", ""))
     source_database = str(manifest.get("source_database", ""))
     if not SAFE_TOKEN_RE.fullmatch(schema_revision):
         raise BackupError("BACKUP_MANIFEST_SCHEMA_REVISION_INVALID")
+    if not SAFE_TOKEN_RE.fullmatch(source_cluster_id):
+        raise BackupError("BACKUP_MANIFEST_SOURCE_CLUSTER_INVALID")
     if not SAFE_TOKEN_RE.fullmatch(source_database):
         raise BackupError("BACKUP_MANIFEST_SOURCE_DATABASE_INVALID")
+    if source_cluster_id != config.source_cluster_id:
+        raise BackupError("BACKUP_MANIFEST_FOREIGN_CLUSTER")
+    if source_database != config.source_database:
+        raise BackupError("BACKUP_MANIFEST_FOREIGN_DATABASE")
     return VerifiedBackup(
         backup_id=backup_id,
         scheduled_slot=scheduled_slot,
@@ -651,6 +690,7 @@ def _verified_from_manifest(
         dump_sha256=sha256,
         dump_size_bytes=size_bytes,
         schema_revision=schema_revision,
+        source_cluster_id=source_cluster_id,
         source_database=source_database,
     )
 
@@ -663,8 +703,13 @@ def verify_backup(
 ) -> VerifiedBackup:
     _, _, manifest_key = _object_keys(config.prefix, backup_id)
     body = store.read_bytes(manifest_key, max_bytes=64 * 1024)
+    _validate_manifest_head(
+        store.head(manifest_key),
+        backup_id=backup_id,
+        body=body,
+    )
     manifest = _manifest_from_bytes(body, expected_id=backup_id)
-    verified = _verified_from_manifest(manifest, prefix=config.prefix)
+    verified = _verified_from_manifest(manifest, config=config)
     _validate_dump_head(
         store.head(verified.dump_key),
         backup_id=verified.backup_id,
@@ -686,6 +731,7 @@ def publish_backup(
     pg_dump_version: str,
 ) -> tuple[VerifiedBackup, bool]:
     backup_id = _validate_backup_id(backup_id)
+    _assert_backup_slot_identity(backup_id, scheduled_slot)
     if not dump_path.is_file():
         raise BackupError("BACKUP_DUMP_FILE_MISSING")
     dump_sha256, dump_size_bytes = _sha256_file(dump_path)
@@ -754,7 +800,7 @@ def publish_backup(
         },
     }
     _assert_manifest_safe(manifest)
-    verified = _verified_from_manifest(manifest, prefix=config.prefix)
+    verified = _verified_from_manifest(manifest, config=config)
     manifest_bytes = (
         json.dumps(
             manifest,
@@ -775,13 +821,11 @@ def publish_backup(
         },
         content_type="application/json",
     )
-    manifest_head = store.head(manifest_key)
-    if (
-        manifest_head is None
-        or manifest_head.size_bytes != len(manifest_bytes)
-        or manifest_head.metadata.get("sha256") != manifest_sha
-    ):
-        raise BackupError("BACKUP_MANIFEST_REVALIDATION_FAILED")
+    _validate_manifest_head(
+        store.head(manifest_key),
+        backup_id=backup_id,
+        body=manifest_bytes,
+    )
 
     verified = verify_backup(store, config, backup_id=backup_id)
     store.delete(staging_key)
