@@ -275,13 +275,6 @@ class _FamilyPageState extends State<FamilyPage> {
     return JiYiPageFrame(
       title: '家庭',
       subtitle: '每一项共享都由你明确授权，位置需要单独开启。',
-      hero: const JiYiHeroHeader(
-        atmospheric: true,
-        eyebrow: '迹忆 · 家庭',
-        title: '家庭',
-        subtitle: '和家人共享你明确允许的内容。位置需要单独授权。',
-        icon: Icons.family_restroom_outlined,
-      ),
       child: loading
           ? const Center(child: CircularProgressIndicator())
           : error != null && family == null && !noFamily
@@ -341,6 +334,25 @@ class _FamilyPageState extends State<FamilyPage> {
           JiYiStatusBanner(kind: JiYiStatusKind.success, message: status!),
           const SizedBox(height: JiYiSpacing.sm),
         ],
+        JiYiSectionCard(
+          leading: Icon(
+            Icons.groups_2_outlined,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          title: '我的家庭',
+          subtitle: '已连接 ${current.members.length} 位成员；每项内容仍需单独授权。',
+          child: Row(
+            children: [
+              Icon(
+                Icons.verified_user_outlined,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: JiYiSpacing.sm),
+              const Expanded(child: Text('家庭成员不会自动获得你的足迹、记忆或位置。')),
+            ],
+          ),
+        ),
+        const SizedBox(height: JiYiSpacing.md),
         if (current.currentUserRole == 'OWNER') ...[
           JiYiSectionCard(
             title: '邀请家人',

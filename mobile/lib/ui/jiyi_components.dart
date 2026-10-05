@@ -23,7 +23,7 @@ class JiYiPageFrame extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         JiYiSpacing.lg,
-        JiYiSpacing.xl,
+        JiYiSpacing.lg,
         JiYiSpacing.lg,
         JiYiSpacing.xxl,
       ),
@@ -79,6 +79,15 @@ class JiYiSectionCard extends StatelessWidget {
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(JiYiRadius.card),
         border: Border.all(color: theme.colorScheme.outlineVariant),
+        boxShadow: theme.brightness == Brightness.dark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x0A14233A),
+                  blurRadius: 14,
+                  offset: Offset(0, 4),
+                ),
+              ],
       ),
       child: Padding(
         padding: padding,
@@ -455,19 +464,11 @@ class JiYiHeroHeader extends StatelessWidget {
                   end: Alignment.bottomRight,
                   colors: theme.brightness == Brightness.dark
                       ? const [Color(0xFF1B304A), Color(0xFF15243A)]
-                      : const [Color(0xFFEAF4FC), Color(0xFFFFF4E5)],
+                      : const [Color(0xFFF8FBFF), Color(0xFFEEF4FA)],
                 ),
               ),
             ),
           ),
-          if (atmospheric && theme.brightness == Brightness.light)
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _JiYiHeroLandscapePainter(),
-                ),
-              ),
-            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               JiYiSpacing.xl,
@@ -543,55 +544,6 @@ class JiYiHeroHeader extends StatelessWidget {
   }
 }
 
-/// Decorative brand atmosphere only. These mountain/sun shapes never encode
-/// location, weather, route, or any other user fact.
-class _JiYiHeroLandscapePainter extends CustomPainter {
-  const _JiYiHeroLandscapePainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final sun = Paint()
-      ..color = const Color(0xFFFFDDA8).withValues(alpha: 0.72);
-    canvas.drawCircle(
-      Offset(size.width * 0.76, size.height * 0.34),
-      size.shortestSide * 0.08,
-      sun,
-    );
-
-    final far = Paint()
-      ..color = const Color(0xFFBFD7E7).withValues(alpha: 0.42);
-    final farPath = Path()
-      ..moveTo(0, size.height * 0.68)
-      ..lineTo(size.width * 0.18, size.height * 0.46)
-      ..lineTo(size.width * 0.34, size.height * 0.61)
-      ..lineTo(size.width * 0.51, size.height * 0.41)
-      ..lineTo(size.width * 0.68, size.height * 0.59)
-      ..lineTo(size.width * 0.84, size.height * 0.45)
-      ..lineTo(size.width, size.height * 0.62)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(farPath, far);
-
-    final near = Paint()
-      ..color = const Color(0xFF86AFC8).withValues(alpha: 0.28);
-    final nearPath = Path()
-      ..moveTo(0, size.height * 0.8)
-      ..lineTo(size.width * 0.22, size.height * 0.63)
-      ..lineTo(size.width * 0.43, size.height * 0.78)
-      ..lineTo(size.width * 0.62, size.height * 0.58)
-      ..lineTo(size.width * 0.82, size.height * 0.72)
-      ..lineTo(size.width, size.height * 0.61)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(nearPath, near);
-  }
-
-  @override
-  bool shouldRepaint(_JiYiHeroLandscapePainter oldDelegate) => false;
-}
-
 class JiYiSectionHeader extends StatelessWidget {
   const JiYiSectionHeader({
     super.key,
@@ -658,6 +610,10 @@ class JiYiActionCard extends StatelessWidget {
     return Material(
       color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(JiYiRadius.card),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
       child: InkWell(
         borderRadius: BorderRadius.circular(JiYiRadius.card),
         onTap: onTap,

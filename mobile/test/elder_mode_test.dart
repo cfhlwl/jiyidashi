@@ -80,6 +80,15 @@ void main() {
     expect(night.navigationBarTheme.backgroundColor, const Color(0xFF16263B));
   });
 
+  test('neutral light theme has no warm page base', () {
+    final light = JiYiTheme.light();
+
+    expect(light.scaffoldBackgroundColor, const Color(0xFFF7F8FA));
+    expect(light.colorScheme.surface, Colors.white);
+    expect(light.colorScheme.primary, const Color(0xFF2563EB));
+    expect(light.colorScheme.outlineVariant, const Color(0xFFE4E8EE));
+  });
+
   test('malformed elder preference fails closed to normal mode', () async {
     var calls = 0;
     final api = JiYiApiClient(

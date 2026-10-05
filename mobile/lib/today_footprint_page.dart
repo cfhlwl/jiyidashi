@@ -157,12 +157,9 @@ class _TodayPageState extends State<TodayPage> {
       subtitle: elderMode
           ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
           : '看看今天留下了哪些值得记住的片段。',
-      hero: JiYiHeroHeader(
-        atmospheric: true,
-        eyebrow: '迹忆 · 今天',
-        title: elderMode ? '今天去了哪里' : '今天好',
-        subtitle: _todayHeroSubtitle(_data),
-        icon: Icons.wb_sunny_outlined,
+      hero: _TodayMasthead(
+        title: elderMode ? '今天去了哪里' : '今天',
+        date: _todayHeroSubtitle(_data),
       ),
       child: _buildContent(elderMode),
     );
@@ -286,25 +283,18 @@ class _TodayExperienceBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        JiYiSectionHeader(
-          title: elderMode ? '今天去了哪里' : '今日足迹',
-          subtitle: elderMode
-              ? '只显示已经形成的足迹。'
-              : jiyiDisplayDate(footprint.day),
-        ),
-        const SizedBox(height: JiYiSpacing.sm),
         _footprintCard(context, theme),
         const SizedBox(height: JiYiSpacing.xl),
         const JiYiSectionHeader(
           title: '今日记忆',
-          subtitle: '今天主动记下的内容，会在这里留下可以回看的片段。',
+          subtitle: '主动记下的片段，会留在今天。',
         ),
         const SizedBox(height: JiYiSpacing.sm),
         _memorySection(context),
         const SizedBox(height: JiYiSpacing.xl),
         const JiYiSectionHeader(
           title: '快速记录',
-          subtitle: '现在想记住的事，不必等到以后。',
+          subtitle: '想到就记，不必等到以后。',
         ),
         const SizedBox(height: JiYiSpacing.sm),
         _quickCapture(context),
@@ -370,8 +360,8 @@ class _TodayExperienceBody extends StatelessWidget {
       child: JiYiSectionCard(
         key: const ValueKey('today-footprint-loaded'),
         leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-        title: '${footprint.visits.length} 个地点片段',
-        subtitle: '按今天真实形成的到访记录整理',
+        title: '今日足迹',
+        subtitle: '${jiyiDisplayDate(footprint.day)} · ${footprint.visits.length} 个地点',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -539,6 +529,10 @@ class _TodayMemoryCard extends StatelessWidget {
     return Material(
       color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(JiYiRadius.card),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(JiYiRadius.card),
@@ -606,6 +600,63 @@ class _TodayMemoryCard extends StatelessWidget {
   }
 }
 
+class _TodayMasthead extends StatelessWidget {
+  const _TodayMasthead({required this.title, required this.date});
+
+  final String title;
+  final String date;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: JiYiSpacing.xs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1.2,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.xs),
+                Text(
+                  date,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(JiYiRadius.pill),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(JiYiSpacing.sm),
+              child: Icon(
+                Icons.calendar_today_outlined,
+                color: theme.colorScheme.primary,
+                size: JiYiIconSize.medium,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TodayQuickAction extends StatelessWidget {
   const _TodayQuickAction({
     required this.icon,
@@ -625,6 +676,10 @@ class _TodayQuickAction extends StatelessWidget {
     return Material(
       color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(JiYiRadius.card),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(JiYiRadius.card),

@@ -421,13 +421,6 @@ class _MemoirsPageState extends State<MemoirsPage> {
         child: JiYiPageFrame(
           title: '回忆总结',
           subtitle: '用已经记录的照片、时间和重要经历，慢慢把过去翻回来。',
-          hero: const JiYiHeroHeader(
-            atmospheric: true,
-            eyebrow: '迹忆 · 回忆总结',
-            title: '把生活翻回来',
-            subtitle: '从照片和时间开始，再把值得记住的片段整理成故事。',
-            icon: Icons.auto_awesome_outlined,
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

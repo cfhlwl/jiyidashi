@@ -24,55 +24,59 @@ class LifePage extends StatelessWidget {
     return JiYiPageFrame(
       title: '我的人生',
       subtitle: '把重要经历、人生阶段和跨年的故事慢慢整理在一起。',
-      hero: const JiYiHeroHeader(
-        eyebrow: '迹忆 · 人生',
-        title: '我的人生',
-        subtitle: '把重要经历、人生阶段和跨年的故事慢慢整理在一起；AI 只在你主动回顾时参与。',
-        icon: Icons.auto_stories_outlined,
-      ),
-      child: Column(
-        children: [
-          _Entry(
-            icon: Icons.event_note_outlined,
-            title: '人生经历',
-            message: '整理重要经历，并关联你亲自确认的相关记录。',
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => LifeEventsPage(api: api)),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 520;
+          final width = compact
+              ? constraints.maxWidth
+              : (constraints.maxWidth - JiYiSpacing.md) / 2;
+          final entries = [
+            _Entry(
+              icon: Icons.event_note_outlined,
+              title: '人生经历',
+              message: '整理重要经历，并关联你亲自确认的记录。',
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => LifeEventsPage(api: api)),
+              ),
             ),
-          ),
-          const SizedBox(height: JiYiSpacing.sm),
-          _Entry(
-            icon: Icons.view_timeline_outlined,
-            title: '人生阶段',
-            message: '整理人生阶段与重要经历之间的关系，需要时再生成长期回顾。',
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => LifeStagesPage(api: api)),
+            _Entry(
+              icon: Icons.view_timeline_outlined,
+              title: '人生阶段',
+              message: '把经历放进人生阶段，再慢慢补全。',
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => LifeStagesPage(api: api)),
+              ),
             ),
-          ),
-          const SizedBox(height: JiYiSpacing.sm),
-          _Entry(
-            icon: Icons.history_outlined,
-            title: '多年时间线',
-            message: '按时间回看跨年的重要经历和人生阶段。',
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => LifeHistoryPage(api: api)),
+            _Entry(
+              icon: Icons.history_outlined,
+              title: '多年时间线',
+              message: '按时间回看跨年的重要经历与阶段。',
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => LifeHistoryPage(api: api)),
+              ),
             ),
-          ),
-          const SizedBox(height: JiYiSpacing.sm),
-          _Entry(
-            icon: Icons.auto_stories_outlined,
-            title: '人生故事',
-            message: '查看年度回顾，也可以按人生阶段生成故事章节。',
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => MemoirsPage(
-                  api: api,
-                  mediaCache: mediaCache,
+            _Entry(
+              icon: Icons.auto_stories_outlined,
+              title: '人生故事',
+              message: '用保存的记录回看年度与人生章节。',
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => MemoirsPage(
+                    api: api,
+                    mediaCache: mediaCache,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ];
+          return Wrap(
+            spacing: JiYiSpacing.md,
+            runSpacing: JiYiSpacing.md,
+            children: [
+              for (final entry in entries) SizedBox(width: width, child: entry),
+            ],
+          );
+        },
       ),
     );
   }
@@ -93,11 +97,50 @@ class _Entry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return JiYiActionCard(
-      icon: icon,
-      title: title,
-      message: message,
-      onTap: onTap,
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(JiYiRadius.card),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 168),
+          child: Padding(
+            padding: const EdgeInsets.all(JiYiSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(JiYiRadius.control),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(JiYiSpacing.sm),
+                    child: Icon(icon, color: theme.colorScheme.primary),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.xs),
+                Text(
+                  message,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
