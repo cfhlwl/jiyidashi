@@ -979,13 +979,12 @@ Future<Key> _pumpSurface(
         placeBuilder: _goldenPlaceMap,
         child: LocalMediaPresentationScope(
           renderer: _goldenLocalPhoto,
-          resolver: ({
-            required api,
-            required cache,
-            required ownerUserId,
-            required mediaId,
-          }) async =>
-              File('/tmp/jiyi-visual-$mediaId.media'),
+          thumbnailBuilder: (context, mediaId, fit) =>
+              _goldenLocalPhoto(
+                context,
+                File('/tmp/jiyi-visual-$mediaId.media'),
+                fit,
+              ),
           child: RepaintBoundary(key: key, child: child),
         ),
       ),
