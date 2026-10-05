@@ -160,6 +160,18 @@ jobs:
           git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
 
+      # Upload the exact-head review candidates immediately. Later committed-
+      # baseline gates remain fail-closed, but reviewers no longer have to wait
+      # for the entire Flutter suite before inspecting UIUX-P0-002 evidence.
+      - name: Upload Product Experience candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-p0-002-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            /tmp/product-v2-goldens/candidate/*.png
+
       - name: Run Flutter tests including committed goldens
         timeout-minutes: 10
         run: flutter test --reporter expanded
