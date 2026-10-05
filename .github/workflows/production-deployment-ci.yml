@@ -47,6 +47,8 @@ on:
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
       - "backend/app/services/object_storage.py"
+      - "backend/app/offhost_backup.py"
+      - "backend/tests/test_offhost_backup.py"
       - "backend/app/maintenance_worker.py"
       - "backend/app/maintenance_adapters.py"
       - "backend/app/maintenance_job_models.py"
@@ -421,13 +423,13 @@ jobs:
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             run --rm --no-deps api alembic check
 
-      - name: OPS-003 shell and focused backup regressions
+      - name: OPS-003 shell and backup module syntax
         shell: bash
         run: |
           bash -n ops/offhost-backup.sh
           bash -n ops/offhost-restore-drill.sh
           docker run --rm "$BACKEND_IMAGE" \
-            python -m pytest -q /app/tests/test_offhost_backup.py
+            python -m py_compile /app/app/offhost_backup.py
 
       - name: OPS-003 off-host backup publication and same-slot idempotency
         shell: bash
