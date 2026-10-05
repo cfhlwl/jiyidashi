@@ -81,10 +81,28 @@ void main() {
     expect(find.text('2026年9月20日'), findsWidgets);
     expect(find.text('07:10 · 家'), findsOneWidget);
     expect(find.text('08:35 · 公司'), findsOneWidget);
+    final firstPill = find.byKey(
+      const ValueKey(
+        'today-footprint-compact-11111111-1111-4111-8111-111111111111',
+      ),
+    );
+    final secondPill = find.byKey(
+      const ValueKey(
+        'today-footprint-compact-22222222-2222-4222-8222-222222222222',
+      ),
+    );
+
+    // The consumer redesign places the footprint card below the hero. Flutter
+    // only exposes visible scroll children in the active semantics tree, so
+    // bring each pill into view before asserting the spoken accessibility label.
+    await tester.ensureVisible(firstPill);
+    await tester.pump();
     expect(
       find.bySemanticsLabel('第 1 个地点，07:10，家，已形成足迹'),
       findsOneWidget,
     );
+    await tester.ensureVisible(secondPill);
+    await tester.pump();
     expect(
       find.bySemanticsLabel('第 2 个地点，08:35，公司，进行中'),
       findsOneWidget,

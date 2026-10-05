@@ -9,9 +9,6 @@ import 'package:jiyidashi/stage1_app.dart';
 const _owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const _memory = '11111111-1111-4111-8111-111111111111';
 const _media = '22222222-2222-4222-8222-222222222222';
-const _version =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-
 class _DeleteQueryApi extends JiYiApiClient {
   _DeleteQueryApi() : super(baseUrl: 'https://query-delete.invalid/v1') {
     accessToken = 'token';
@@ -75,47 +72,38 @@ class _DeleteQueryProjectionFailureApi extends _DeleteQueryApi {
   }
 }
 
-Future<void> _waitForCacheRemoval(
-  WidgetTester tester,
-  Iterable<File> files,
-) async {
-  // The delete callback performs real filesystem I/O while the page shows an
-  // indeterminate progress indicator. pumpAndSettle() can wait on that spinner
-  // instead of the authority boundary, so wait for cache revocation directly.
-  await tester.pump();
-  final removed = await tester.runAsync<bool>(() async {
-    final deadline = DateTime.now().add(const Duration(seconds: 5));
-    while (DateTime.now().isBefore(deadline)) {
-      var anyExists = false;
-      for (final file in files) {
-        if (await file.exists()) {
-          anyExists = true;
-          break;
-        }
-      }
-      if (!anyExists) return true;
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
-    return false;
-  });
-  expect(removed, isTrue, reason: 'deleted media cache was not revoked');
-  await tester.pump();
+class _TrackingMediaCache extends LocalMediaCache {
+  _TrackingMediaCache()
+      : super(rootDirectoryProvider: () async => Directory.systemTemp);
+
+  final List<String> invalidatedMedia = <String>[];
+  final List<String> purgedOwners = <String>[];
+
+  @override
+  Future<void> invalidateMedia({
+    required String ownerUserId,
+    required String mediaId,
+  }) async {
+    invalidateAuthority(ownerUserId: ownerUserId, mediaId: mediaId);
+    invalidatedMedia.add('$ownerUserId::$mediaId');
+  }
+
+  @override
+  Future<void> purgeOwner(String ownerUserId) async {
+    // The concrete LocalMediaCache purge semantics, including real file
+    // deletion, are covered in media_presentation_cache_test.dart. This spy
+    // keeps the widget integration test focused on selecting the correct
+    // authoritative invalidation boundary without mixing Flutter fake async
+    // with host filesystem I/O.
+    invalidateAuthority(ownerUserId: ownerUserId, mediaId: _media);
+    purgedOwners.add(ownerUserId);
+  }
 }
 
 void main() {
   testWidgets('Memory Query delete invalidates the deleted photo cache',
       (tester) async {
-    final root =
-        await Directory.systemTemp.createTemp('jiyi-query-delete-cache-');
-    addTearDown(() => root.delete(recursive: true));
-
-    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
-    final cached = await cache.putBytes(
-      ownerUserId: _owner,
-      mediaId: _media,
-      cacheVersion: _version,
-      bytes: <int>[1, 2, 3],
-    );
+    final cache = _TrackingMediaCache();
     cache.markAuthorityValidated(ownerUserId: _owner, mediaId: _media);
 
     final api = _DeleteQueryApi();
@@ -135,14 +123,11 @@ void main() {
     expect(find.text('删除这条记忆？'), findsOneWidget);
 
     await tester.tap(find.text('确认删除'));
-    await _waitForCacheRemoval(tester, <File>[cached]);
+    await tester.pumpAndSettle();
 
     expect(api.deleteCalls, 1);
-    expect(await cached.exists(), isFalse);
-    expect(
-      await cache.lookup(ownerUserId: _owner, mediaId: _media),
-      isNull,
-    );
+    expect(cache.invalidatedMedia, <String>['$_owner::$_media']);
+    expect(cache.purgedOwners, isEmpty);
     expect(
       cache.hasFreshAuthorityLease(ownerUserId: _owner, mediaId: _media),
       isFalse,
@@ -152,24 +137,7 @@ void main() {
   testWidgets(
       'Memory Query delete purges owner cache when deleted media projection is unavailable',
       (tester) async {
-    final root =
-        await Directory.systemTemp.createTemp('jiyi-query-delete-fallback-');
-    addTearDown(() => root.delete(recursive: true));
-
-    final cache = LocalMediaCache(rootDirectoryProvider: () async => root);
-    final first = await cache.putBytes(
-      ownerUserId: _owner,
-      mediaId: _media,
-      cacheVersion: _version,
-      bytes: <int>[1, 2, 3],
-    );
-    final second = await cache.putBytes(
-      ownerUserId: _owner,
-      mediaId: '33333333-3333-4333-8333-333333333333',
-      cacheVersion:
-          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-      bytes: <int>[4, 5, 6],
-    );
+    final cache = _TrackingMediaCache();
     cache.markAuthorityValidated(ownerUserId: _owner, mediaId: _media);
 
     final api = _DeleteQueryProjectionFailureApi();
@@ -187,14 +155,14 @@ void main() {
     await tester.tap(find.text('删除最相关记忆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('确认删除'));
-    await _waitForCacheRemoval(tester, <File>[first, second]);
+    await tester.pumpAndSettle();
 
     expect(api.deleteCalls, 1);
-    expect(await first.exists(), isFalse);
-    expect(await second.exists(), isFalse);
+    expect(cache.invalidatedMedia, isEmpty);
+    expect(cache.purgedOwners, <String>[_owner]);
     expect(
-      await cache.lookup(ownerUserId: _owner, mediaId: _media),
-      isNull,
+      cache.hasFreshAuthorityLease(ownerUserId: _owner, mediaId: _media),
+      isFalse,
     );
   });
 
