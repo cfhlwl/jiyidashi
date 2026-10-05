@@ -308,12 +308,12 @@ def main() -> None:
     assert 'max-size: "10m"' in compose
     assert 'max-file: "3"' in compose
     for service in ("postgres", "api", "worker", "reverse-proxy"):
-        service_start = compose.index(f"  {service}:")
-        next_service = compose.find("\n  ", service_start + 3)
-        service_block = compose[
-            service_start : next_service if next_service != -1 else len(compose)
-        ]
-        assert "logging: *bounded-logging" in service_block, service
+        match = re.search(
+            rf"(?ms)^  {re.escape(service)}:\n(?P<body>(?:^    .*\n|^\n)*)",
+            compose,
+        )
+        assert match is not None, service
+        assert "logging: *bounded-logging" in match.group("body"), service
 
     caddy = (ROOT / "ops" / "Caddyfile").read_text(encoding="utf-8")
     assert 'Strict-Transport-Security "max-age=31536000"' in caddy
