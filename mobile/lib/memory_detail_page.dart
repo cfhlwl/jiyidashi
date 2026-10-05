@@ -462,7 +462,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       appBar: AppBar(title: const Text('记忆详情')),
       body: SafeArea(
         child: JiYiPageFrame(
-          title: '记忆详情',
+          title: current?.title ?? '记忆详情',
           subtitle: '回看你当时留下的内容。',
           eyebrow: '迹忆 · 记录',
           child: loading

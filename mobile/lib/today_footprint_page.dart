@@ -361,7 +361,7 @@ class _TodayExperienceBody extends StatelessWidget {
         key: const ValueKey('today-footprint-loaded'),
         leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
         title: '今日足迹',
-        subtitle: '${jiyiDisplayDate(footprint.day)} · ${footprint.visits.length} 个地点',
+        subtitle: '${jiyiDisplayDate(footprint.day)} · ${footprint.visits.length} 个地点片段',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -706,7 +706,7 @@ class _TodayMasthead extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '迹忆',
+                  '迹忆 · 今天好',
                   style: theme.textTheme.labelLarge?.copyWith(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w800,

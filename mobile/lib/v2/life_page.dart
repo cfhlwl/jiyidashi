@@ -134,7 +134,7 @@ class _Entry extends StatelessWidget {
                     borderRadius: BorderRadius.circular(JiYiRadius.pill),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(height: JiYiSpacing.md),
                 Text(
                   title,
                   style: theme.textTheme.titleMedium?.copyWith(

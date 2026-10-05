@@ -370,7 +370,22 @@ class _FamilyPageState extends State<FamilyPage> {
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        if (current.currentUserRole == 'OWNER') ...[
+        const JiYiSectionHeader(
+          title: '家庭成员',
+          subtitle: '共享权限按成员逐项设置。当前位置与其他内容分开授权。',
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
+        if (others.isEmpty)
+          const JiYiEmptyState(
+            icon: Icons.family_restroom_outlined,
+            title: '还没有其他家庭成员',
+            message: '邀请家人加入后，再决定每个人可以查看哪些内容。',
+          ),
+        for (var index = 0; index < others.length; index++) ...[
+          _memberCard(others[index], index),
+          const SizedBox(height: JiYiSpacing.md),
+        ],
+        if (current.currentUserRole == 'OWNER')
           JiYiSectionCard(
             title: '邀请家人',
             subtitle: '口令只用于加入这个家庭，不会自动授予任何查看权限。',
@@ -394,23 +409,6 @@ class _FamilyPageState extends State<FamilyPage> {
               ],
             ),
           ),
-          const SizedBox(height: JiYiSpacing.md),
-        ],
-        const JiYiSectionHeader(
-          title: '家庭成员',
-          subtitle: '共享权限按成员逐项设置。当前位置与其他内容分开授权。',
-        ),
-        const SizedBox(height: JiYiSpacing.sm),
-        if (others.isEmpty)
-          const JiYiEmptyState(
-            icon: Icons.family_restroom_outlined,
-            title: '还没有其他家庭成员',
-            message: '邀请家人加入后，再决定每个人可以查看哪些内容。',
-          ),
-        for (var index = 0; index < others.length; index++) ...[
-          _memberCard(others[index], index),
-          const SizedBox(height: JiYiSpacing.md),
-        ],
       ],
     );
   }

@@ -234,26 +234,6 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
               ],
               const SizedBox(height: JiYiSpacing.md),
               JiYiSectionCard(
-                leading: Icon(
-                  Icons.place_outlined,
-                  color: theme.colorScheme.primary,
-                ),
-                title: '地点概况',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_line('类型', _placeCategoryLabel(place.category))),
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text('累计到访：${place.visitCount} 次'),
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text(_line('首次到访', place.firstVisitedAt == null ? null : jiyiDisplayDateTime(place.firstVisitedAt!))),
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text(_line('最近到访', place.lastVisitedAt == null ? null : jiyiDisplayDateTime(place.lastVisitedAt!))),
-                  ],
-                ),
-              ),
-              const SizedBox(height: JiYiSpacing.md),
-              JiYiSectionCard(
                 title: '到访历史',
                 subtitle: '只展示已经形成的到访记录；“仍在更新”不等于已确认事实。',
                 child: _visits.isEmpty
@@ -278,6 +258,26 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
                           ],
                         ],
                       ),
+              ),
+              const SizedBox(height: JiYiSpacing.md),
+              JiYiSectionCard(
+                leading: Icon(
+                  Icons.place_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                title: '地点概况',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_line('类型', _placeCategoryLabel(place.category))),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text('累计到访：${place.visitCount} 次'),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(_line('首次到访', place.firstVisitedAt == null ? null : jiyiDisplayDateTime(place.firstVisitedAt!))),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(_line('最近到访', place.lastVisitedAt == null ? null : jiyiDisplayDateTime(place.lastVisitedAt!))),
+                  ],
+                ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
