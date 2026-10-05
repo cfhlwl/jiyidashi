@@ -95,7 +95,7 @@ class BackupConfig:
     retention_monthly: int
 
     @classmethod
-    def from_env(cls) -> "BackupConfig":
+    def from_env(cls) -> BackupConfig:
         return cls(
             enabled=_env_bool("BACKUP_OFFHOST_ENABLED", default=False),
             bucket=os.getenv("BACKUP_STORAGE_BUCKET", "").strip(),
