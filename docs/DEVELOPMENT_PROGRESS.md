@@ -555,6 +555,55 @@ User Correction Rate
 
 对迹忆而言，“几天不打开 App，之后 10 秒找回真实一天”可以是成功体验，不以高打开时长作为唯一目标。
 
+
+## 6.4 Passive Context & Activity Memory（自动生活上下文）
+
+> **产品目标扩展：不仅记住“去了哪里”，还要在用户明确授权、证据足够时帮助记住“那段时间大概在做什么”。** 任何活动/行为推断都必须区分“系统直接活动信号”“结构化推断”“用户确认事实”，禁止把传感器猜测直接写成确认的人生事实。
+
+| ID | 优先级 | 功能 / 需求 | 状态 | 说明 |
+| --- | --- | --- | --- | --- |
+| PLACE-INTEL-001 | P1 | Frequent Places & Place Insights V1 | ⬜ | 基于已有 Place/Visit，不重做定位。增加最近 7/30/90 天 visit_count、total_duration、首次/最近到访、常见到达/离开时段、工作日/周末到访、frequent_score 与“我的地点/常去地点”排序。HOME/WORK 只生成候选，必须用户确认后才能成为事实；支持“最近常去、第一次去、很久没去、本月最常去”等回忆产品能力。 |
+| AUTO-CONTEXT-001 | P1 | Native Activity Recognition V1 | ⬜ | 当前 MotionState 主要由 GPS speed/accuracy 推断。升级为系统原生活动信号：iOS 接入 Core Motion CMMotionActivityManager（stationary/walking/running/cycling/automotive/unknown）；Android 优先 Activity Recognition Transition API（STILL/WALKING/RUNNING/ON_BICYCLE/IN_VEHICLE）。活动信号作为 Evidence/Context，不直接升级为 Memory 事实；保留现有 speed-based fallback，国内无 Google Play Services 设备必须有 vendor-neutral fallback。 |
+| AUTO-CONTEXT-002 | P1 | Activity Segment Derivation V1 | ⬜ | 将低功耗 activity transition + Location/Visit 聚合成 ActivitySegment 候选，例如“步行 08:10–08:28”“乘车 08:30–09:05”“跑步 19:12–19:48”。要求 confidence/source/start/end，可被用户纠正。活动段与 Visit/Place/Timeline 对齐，回答“我那天怎么去的/运动了多久”等问题；低置信度只展示“可能”。 |
+| AUTO-CONTEXT-003 | P1/P2 Opt-in | Steps & Exercise Context V1 | ⬜ | 用户单独授权后读取 iOS HealthKit / Android Health Connect 的步数、运动/Workout/Exercise Session、距离等高层数据，用于“今天走了多少、跑步/骑行多久、这次运动在哪里”等生活上下文。健康权限按类型渐进请求，不与位置授权捆绑；未授权不影响迹忆核心功能。首版只读必要的活动数据，不采集临床/诊断信息。 |
+| AUTO-CONTEXT-004 | P2 Opt-in | Sleep / Day-boundary Context V1 | ⬜ | 仅用户主动开启后读取 HealthKit/Health Connect 的睡眠 session 作为“睡觉/起床”时间边界和日记上下文，可生成“昨晚睡眠时间段”候选。睡眠属于敏感健康数据，默认关闭、单独解释用途、最小化存储；不得据此进行医疗诊断或健康结论。 |
+| AUTO-CONTEXT-005 | P1 | Passive Photo Context V1 | ⬜ | 与 GROW-001 联动。经明确照片权限后，优先本机增量读取新照片的拍摄时间、EXIF 地点、媒体类型等 metadata，形成“这段时间拍了几张照片/可能发生了一次旅行或聚会”的候选上下文；默认不把整个相册原图自动上传。Vision 仅在用户授权且需要时分析选择的媒体，推断不得无 Evidence 写事实。 |
+| AUTO-CONTEXT-006 | P1/P2 Opt-in | Calendar Context V1 | ⬜ | 用户单独授权后读取日历事件的时间、标题和地点，用于辅助解释某个 Visit/ActivitySegment，例如“14:00–15:00 日历有牙医预约”。Calendar 只作为来源明确的 Context/Evidence，不自动把计划当成“实际发生”；需要位置/活动证据或用户确认才能形成已发生事实。 |
+| AUTO-CONTEXT-007 | P1 | Environmental Context Enrichment V1 | ⬜ | 使用已有时间+地点在服务端补充天气、城市/区域、节假日等公共环境信息，让回忆从“去过哪里”变成“那天下雨、去了哪里、拍了哪些照片”。此类数据不要求额外传感器权限，但必须绑定具体时间/地点来源并可重算；天气等第三方数据不得成为用户行为事实。 |
+| AUTO-CONTEXT-008 | P1 | Daily Life Reconstruction V1 | ⬜ | 将 DayFootprint + ActivitySegment + Photo Context + Calendar Context + 用户主动 Memory 组成 evidence-first 的 DailyLifeSnapshot。结构化层先生成“去了哪里 / 如何移动 / 有哪些活动 / 拍了什么 / 有什么日程”，AI 只负责可选总结。典型目标：回答“我25号去了哪里、怎么去的、做了些什么？”并逐条展示来源和可信度。 |
+| AUTO-CONTEXT-009 | Research / P2 | iOS CLVisit Signal | ⬜ | 评估并接入 startMonitoringVisits() 作为 iOS 低功耗 Visit candidate，辅助现有 Significant Location Change + Standard Location。CLVisit 只提供候选信号，服务端 Visit 聚类仍是跨 iOS/Android 的统一 authority。 |
+| AUTO-CONTEXT-010 | 🚫 V1 | Continuous Audio / Camera Body-posture Tracking | 🚫 | V1 不做 24 小时麦克风监听、后台摄像头体态识别或隐蔽环境录音。手机单独放置位置无法可靠代表人体坐/站/躺，不能把手机倾斜等信号冒充“人体姿态事实”。未来若有可穿戴设备，可在用户明确授权下研究更可靠姿态/活动输入。 |
+
+### 自动行为识别可信度分层
+
+```text
+Level A — 系统/传感器直接信号
+位置点、Visit、Core Motion / Activity Recognition、步数、Workout、照片拍摄时间
+
+Level B — 确定性结构化派生
+连续步行段、乘车段、到访次数、停留时长、常去地点、路线切换
+
+Level C — 上下文推断候选
+“可能在通勤”
+“可能在跑步”
+“可能在餐厅吃饭”
+“可能参加了日历里的会议”
+
+Level D — 用户确认事实
+“这是公司”
+“那天在和老张吃饭”
+“这段是晨跑”
+```
+
+规则：
+
+- A/B 可以自动形成结构化 Context，但必须保留 source/confidence。
+- C 只能作为候选或问用户确认，不能直接写为 confirmed Memory。
+- D 才能成为最高权重用户事实。
+- “地点类型 = 餐厅”不等于“用户一定在吃饭”；“学校停留”不等于“用户在上课”；“静止”不等于“坐着”。
+- 不为了“记录更多”而无限申请权限。每一种新数据源都必须能解释“为什么迹忆需要它”，且用户可单独关闭。
+
+
 ---
 
 # 7. V3：AI 人生助手与硬件扩展
