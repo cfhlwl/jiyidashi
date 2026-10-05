@@ -4,11 +4,29 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 from app.models import utcnow
+
+
+class MaintenanceJobType(StrEnum):
+    DATA_DELETE = "DATA_DELETE"
+    ACCOUNT_DELETE = "ACCOUNT_DELETE"
+    MEDIA_PENDING_CLEANUP = "MEDIA_PENDING_CLEANUP"
+    SECURITY_ALERT_DELIVERY = "SECURITY_ALERT_DELIVERY"
+    ANALYTICS_RETENTION = "ANALYTICS_RETENTION"
+    LOCATION_RETENTION = "LOCATION_RETENTION"
 
 
 class MaintenanceJobStatus(StrEnum):
@@ -33,6 +51,14 @@ class MaintenanceJob(Base):
             "job_type",
             "dedupe_key",
             name="uq_maintenance_jobs_type_dedupe",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_maintenance_jobs_attempt_count",
+        ),
+        CheckConstraint(
+            "max_attempts >= 1 AND max_attempts <= 100",
+            name="ck_maintenance_jobs_max_attempts",
         ),
         Index(
             "ix_maintenance_jobs_due",
