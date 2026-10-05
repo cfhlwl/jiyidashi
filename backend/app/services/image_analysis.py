@@ -71,7 +71,7 @@ def build_analysis_image(
             source_pixels = width * height
             # Header-level bomb guard before full decode. The multiplier permits normal
             # large originals to be reduced while rejecting pathological dimensions.
-            source_pixel_guard = max(max_pixels * 16, max_dimension * max_dimension * 16)
+            source_pixel_guard = max(max_pixels * 4, max_dimension * max_dimension * 4)
             if source_pixels <= 0 or source_pixels > source_pixel_guard:
                 raise AnalysisImageError("AI_IMAGE_SOURCE_DIMENSIONS_UNSAFE")
 
@@ -98,7 +98,7 @@ def build_analysis_image(
                 image = image.convert("RGB")
 
             current = image
-            for shrink_round in range(5):
+            for shrink_round in range(10):
                 for quality in (85, 75, 65, 55, 45):
                     output = BytesIO()
                     current.save(
@@ -122,7 +122,7 @@ def build_analysis_image(
                             width=out_width,
                             height=out_height,
                         )
-                if shrink_round == 4 or current.width == 1 or current.height == 1:
+                if shrink_round == 9 or current.width == 1 or current.height == 1:
                     break
                 next_size = (
                     max(1, int(current.width * 0.8)),
