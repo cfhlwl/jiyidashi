@@ -140,16 +140,19 @@ jobs:
           # surfaces awaiting human visual approval. The next step still runs
           # the complete Flutter suite against all committed goldens.
           flutter test test/visual_golden_test.dart             --plain-name "golden: design authority"             --update-goldens --reporter expanded
-          for test_name in             "golden: loading state"             "golden: map unavailable factual fallback"             "golden: cached photo remains visible offline"             "golden: large-font memory query"             "golden: small-screen memory query"; do
+          for test_name in             "golden: loading state"             "golden: empty timeline state"             "golden: offline timeline state"             "golden: map unavailable factual fallback"             "golden: cached photo remains visible offline"             "golden: large-font memory query"             "golden: small-screen memory query"             "golden: Elder memory query"; do
             flutter test test/visual_golden_test.dart               --plain-name "$test_name"               --update-goldens --reporter expanded
           done
 
           cp test/goldens/design_authority_*.png /tmp/product-v2-goldens/candidate/
           cp test/goldens/state_loading.png /tmp/product-v2-goldens/candidate/
+          cp test/goldens/state_empty.png /tmp/product-v2-goldens/candidate/
+          cp test/goldens/state_offline.png /tmp/product-v2-goldens/candidate/
           cp test/goldens/state_map_unavailable.png /tmp/product-v2-goldens/candidate/
           cp test/goldens/state_cached_photo_offline.png /tmp/product-v2-goldens/candidate/
           cp test/goldens/state_large_font.png /tmp/product-v2-goldens/candidate/
           cp test/goldens/state_small_screen.png /tmp/product-v2-goldens/candidate/
+          cp test/goldens/elder_memory_query.png /tmp/product-v2-goldens/candidate/
 
           git checkout -- test/goldens
           git clean -f -- test/goldens
