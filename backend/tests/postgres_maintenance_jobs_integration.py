@@ -8,13 +8,22 @@ from datetime import UTC, datetime, timedelta
 from threading import Barrier
 from uuid import uuid4
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
+from app.account_deletion_models import AccountDeletionOperation
 from app.core.db import SessionLocal
+from app.data_deletion_models import DataDeletionOperation
+from app.maintenance_adapters import ClaimAuthority, _cancel_other_owner_jobs
+
 from app.maintenance_job_models import (
     MaintenanceJob,
     MaintenanceJobStatus,
     MaintenanceJobType,
+)
+from app.models import User
+from app.services.account_deletion_service import (
+    AccountDeletionError,
+    progress_prepared_account_deletion,
 )
 from app.services.maintenance_jobs import (
     MaintenanceLeaseLost,
@@ -208,6 +217,124 @@ def _assert_crashed_final_attempt_terminalizes(base: datetime, prefix: str) -> N
         db.rollback()
 
 
+class EmptyStorage:
+    def iter_object_keys(self, prefix: str):
+        return iter(())
+
+    def delete_object(self, object_key: str) -> None:
+        return None
+
+
+def _assert_account_delete_requires_local_cleanup_proof() -> None:
+    user_id = uuid4()
+    operation_id = uuid4()
+    with SessionLocal() as db:
+        db.add(User(id=user_id, nickname="ops002-account-boundary"))
+        db.add(
+            AccountDeletionOperation(
+                id=operation_id,
+                user_id=user_id,
+                request_id=uuid4(),
+                data_deletion_request_id=uuid4(),
+            )
+        )
+        db.commit()
+
+    try:
+        with SessionLocal() as db:
+            try:
+                progress_prepared_account_deletion(
+                    db,
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    storage=EmptyStorage(),
+                )
+                raise AssertionError("worker bypassed local_cleanup_ready proof")
+            except AccountDeletionError as exc:
+                assert exc.code == "ACCOUNT_DELETION_LOCAL_CLEANUP_NOT_READY"
+                assert exc.status_code == 409
+
+        with SessionLocal() as db:
+            assert (
+                db.scalar(
+                    select(DataDeletionOperation.id)
+                    .where(DataDeletionOperation.user_id == user_id)
+                    .limit(1)
+                )
+                is None
+            )
+            db.rollback()
+    finally:
+        with SessionLocal() as db:
+            db.execute(
+                delete(AccountDeletionOperation).where(
+                    AccountDeletionOperation.user_id == user_id
+                )
+            )
+            db.execute(delete(User).where(User.id == user_id))
+            db.commit()
+
+
+def _assert_destructive_fence_invalidates_old_claim(
+    base: datetime,
+    prefix: str,
+) -> None:
+    user_id = uuid4()
+    with SessionLocal() as db:
+        db.add(User(id=user_id, nickname="ops002-destructive-fence"))
+        old_job, _ = enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.LOCATION_RETENTION,
+            dedupe_key=f"{prefix}:old-owner-work",
+            owner_user_id=user_id,
+            now=base,
+        )
+        destructive_job, _ = enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.DATA_DELETE,
+            dedupe_key=f"{prefix}:destructive",
+            owner_user_id=user_id,
+            payload={"operation_id": str(uuid4())},
+            next_attempt_at=base + timedelta(seconds=30),
+            now=base,
+        )
+        old_job_id = old_job.id
+        destructive_job_id = destructive_job.id
+        db.commit()
+
+    with SessionLocal() as db:
+        old_claim = claim_next_maintenance_job(
+            db,
+            worker_id="old-owner-worker",
+            lease_seconds=60,
+            now=base,
+        )
+        assert old_claim is not None
+        assert old_claim.id == old_job_id
+        db.commit()
+
+    cancelled = _cancel_other_owner_jobs(
+        owner_user_id=user_id,
+        current_job_id=destructive_job_id,
+    )
+    assert cancelled == 1
+
+    try:
+        ClaimAuthority(old_claim).check()
+        raise AssertionError("cancelled stale claim remained authoritative")
+    except MaintenanceLeaseLost:
+        pass
+
+    with SessionLocal() as db:
+        saved = db.get(MaintenanceJob, old_job_id)
+        assert saved is not None
+        assert saved.status == MaintenanceJobStatus.CANCELLED.value
+        assert saved.claim_token is None
+        db.execute(delete(MaintenanceJob).where(MaintenanceJob.owner_user_id == user_id))
+        db.execute(delete(User).where(User.id == user_id))
+        db.commit()
+
+
 def main() -> None:
     prefix = f"ops002-{uuid4().hex}"
     base = datetime.now(UTC).replace(microsecond=0)
@@ -216,6 +343,11 @@ def main() -> None:
         _assert_concurrent_enqueue_is_idempotent(base + timedelta(minutes=1), prefix)
         _assert_expiry_reclaim_and_stale_token(base + timedelta(minutes=2), prefix)
         _assert_crashed_final_attempt_terminalizes(base + timedelta(minutes=3), prefix)
+        _assert_account_delete_requires_local_cleanup_proof()
+        _assert_destructive_fence_invalidates_old_claim(
+            base + timedelta(minutes=4),
+            prefix,
+        )
     finally:
         _delete_jobs(prefix)
 
