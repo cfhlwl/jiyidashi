@@ -482,7 +482,7 @@ async def test_image_gateway_enforces_wall_clock_timeout_for_provider_seams():
 async def test_image_gateway_rejects_oversized_input_before_provider():
     provider = DeterministicAIProvider(output_text='{"blocks":[]}')
     gateway = AIGateway(
-        _gateway_settings(media_max_image_bytes=4),
+        _gateway_settings(ai_image_max_bytes=64 * 1024),
         provider,
     )
 
@@ -494,7 +494,7 @@ async def test_image_gateway_rejects_oversized_input_before_provider():
                     purpose="ocr.extract",
                     system_instruction="Return OCR JSON.",
                     input_text="Read visible text.",
-                    image_bytes=b"12345",
+                    image_bytes=b"x" * (64 * 1024 + 1),
                     content_type="image/jpeg",
                 ),
                 db=db,
