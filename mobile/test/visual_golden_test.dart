@@ -1224,14 +1224,15 @@ void main() {
   // therefore uses the deterministic presentation resolver above.
   testWidgets('golden: cached photo remains visible offline', (tester) async {
     final api = _GoldenCachedOfflineTimelineApi();
-    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
+    // Resolver/cache correctness is covered by media_presentation_cache_test.
+    // This visual fixture renders the already-resolved local-photo state
+    // directly so the golden cannot hang on filesystem teardown/network fakes.
     final key = await _visualStep(
       'cached-photo surface bootstrap',
       _pumpSurface(
         tester,
         TimelinePage(
           api: api,
-          mediaCache: cache,
           photoThumbnailBuilder: _goldenPagePhotoThumbnail,
         ),
       ),
