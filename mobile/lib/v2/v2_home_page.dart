@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
+import '../media_presentation_cache.dart';
 import 'life_page.dart';
 import 'people_page.dart';
 
 class V2HomePage extends StatelessWidget {
-  const V2HomePage({super.key, required this.api});
+  const V2HomePage({
+    super.key,
+    required this.api,
+    this.mediaCache,
+  });
 
   final JiYiApiClient api;
+  final LocalMediaCache? mediaCache;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +32,10 @@ class V2HomePage extends StatelessWidget {
         body: TabBarView(
           children: [
             PeoplePage(api: api),
-            LifePage(api: api),
+            LifePage(
+              api: api,
+              mediaCache: mediaCache,
+            ),
           ],
         ),
       ),

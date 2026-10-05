@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/graph_page.dart';
 import 'package:jiyidashi/v2/life_event_detail_page.dart';
@@ -18,6 +19,18 @@ Future<void> pumpSurface(WidgetTester tester, Widget child) async {
     ),
   );
   await tester.pumpAndSettle();
+}
+
+Future<void> pumpUntilVisible(
+  WidgetTester tester,
+  Finder finder, {
+  required String reason,
+}) async {
+  for (var attempt = 0; attempt < 80; attempt++) {
+    await tester.pump(const Duration(milliseconds: 25));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+  fail('Timed out waiting for $reason');
 }
 
 class OfflineV2TestApi extends V2TestApi {
@@ -111,14 +124,37 @@ void main() {
   });
 
   testWidgets('Annual Memoir READY labels narrative but not timeline/photos', (tester) async {
-    await pumpSurface(tester, MemoirsPage(api: V2TestApi()));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: Scaffold(
+          body: SafeArea(
+            child: LocalMediaPresentationScope(
+              renderer: (_, __, ___) => const SizedBox.shrink(),
+              thumbnailBuilder: (_, mediaId, __) =>
+                  Text('local-photo:$mediaId'),
+              child: MemoirsPage(api: V2TestApi()),
+            ),
+          ),
+        ),
+      ),
+    );
+    await pumpUntilVisible(
+      tester,
+      find.byType(TextField).first,
+      reason: 'annual memoir controls',
+    );
     final yearField = find.byType(TextField).first;
     await tester.enterText(yearField, '2025');
     final annual = find.text('开始回看');
     await tester.ensureVisible(annual);
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.tap(annual);
-    await tester.pumpAndSettle();
+    await pumpUntilVisible(
+      tester,
+      find.text('AI 整理'),
+      reason: 'annual memoir result',
+    );
     expect(find.text('AI 整理'), findsOneWidget);
     expect(find.textContaining('新的产品阶段'), findsOneWidget);
     expect(find.text('这一年的时间线'), findsOneWidget);

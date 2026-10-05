@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'capture_media.dart';
+import 'media_presentation_cache.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 
@@ -14,6 +15,7 @@ class UnifiedMediaCaptureSection extends StatefulWidget {
     this.mediaDevice,
     this.mediaDeviceFactory,
     this.service,
+    this.mediaCache,
     this.elderMode = false,
   }) : assert(mediaDevice == null || mediaDeviceFactory == null);
 
@@ -23,6 +25,7 @@ class UnifiedMediaCaptureSection extends StatefulWidget {
   // 生产默认仍创建 PlatformCaptureMediaDevice。
   final CaptureMediaDevice Function()? mediaDeviceFactory;
   final TrustedMediaCaptureService? service;
+  final LocalMediaCache? mediaCache;
   final bool elderMode;
 
   @override
@@ -77,7 +80,11 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
           widget.mediaDeviceFactory?.call() ??
           PlatformCaptureMediaDevice();
   TrustedMediaCaptureService get _service =>
-      _serviceInstance ??= widget.service ?? TrustedMediaCaptureService(widget.api);
+      _serviceInstance ??= widget.service ??
+          TrustedMediaCaptureService(
+            widget.api,
+            localMediaCache: widget.mediaCache ?? LocalMediaCache(),
+          );
   bool get _mediaBusy => photoBusy || voiceBusy || voiceRecording;
 
   @override

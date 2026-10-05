@@ -376,8 +376,15 @@ class MediaUploadResponse(MediaRead):
     upload: SignedTransfer | None
 
 
+class MediaCompleteResponse(MediaRead):
+    cache_version: str
+
+
 class MediaDownloadResponse(BaseModel):
     media_id: UUID
+    # Opaque server-owned content version for local presentation cache identity.
+    # It must not expose storage object keys, raw ETag values, or signed URL lifetime.
+    cache_version: str
     download: SignedTransfer
 
 
@@ -624,6 +631,8 @@ class TimelineItem(BaseModel):
     content: str | None = None
     source_type: SourceType | None = None
     is_confirmed: bool | None = None
+    # PHOTO-only canonical media identity. Never expose storage keys or signed URLs here.
+    media_id: UUID | None = None
 
     # Shared/Visit evidence metadata.
     confidence: float

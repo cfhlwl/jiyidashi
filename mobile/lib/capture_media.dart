@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 
 import 'api_client.dart';
+import 'media_presentation_cache.dart';
 
 class CaptureMediaException implements Exception {
   CaptureMediaException(this.message);
@@ -561,8 +562,15 @@ class PlatformCaptureMediaDevice implements CaptureMediaDevice {
 enum MediaSubmissionPhase { uploading, verifying, saving, transcribing }
 
 class TrustedMediaCaptureService {
-  TrustedMediaCaptureService(this.api);
+  TrustedMediaCaptureService(
+    this.api, {
+    this.localMediaCache,
+    this.onLocalCacheSeedFailure,
+  });
+
   final JiYiApiClient api;
+  final LocalMediaCache? localMediaCache;
+  final void Function(Object error)? onLocalCacheSeedFailure;
 
   ({int version, String owner}) _captureSession() {
     final owner = api.authenticatedUserId?.trim();
@@ -600,8 +608,9 @@ class TrustedMediaCaptureService {
     _assertSameSession(session);
     onPhase?.call(MediaSubmissionPhase.verifying);
     _assertSameSession(session);
-    await api.completeMediaUpload(upload.mediaId);
+    final completed = await api.completeMediaUpload(upload.mediaId);
     _assertSameSession(session);
+    final cacheVersion = _cacheVersion(completed);
     onPhase?.call(MediaSubmissionPhase.saving);
     _assertSameSession(session);
     final response = await api.createPhotoMemory(
@@ -611,7 +620,35 @@ class TrustedMediaCaptureService {
       occurredAt: file.occurredAt,
     );
     _assertSameSession(session);
-    return _memoryId(response);
+
+    final cache = localMediaCache;
+    final localPath = file.localPath;
+    final memoryId = _memoryId(response);
+    if (cache != null && localPath != null) {
+      try {
+        await cache.seedFromFile(
+          ownerUserId: session.owner,
+          mediaId: upload.mediaId,
+          cacheVersion: cacheVersion,
+          source: File(localPath),
+        );
+        cache.markAuthorityValidated(
+          ownerUserId: session.owner,
+          mediaId: upload.mediaId,
+        );
+      } catch (error) {
+        // Canonical server save already succeeded. Local presentation cache is
+        // only an optimization and must never turn success into a false failure.
+        try {
+          onLocalCacheSeedFailure?.call(error);
+        } catch (_) {
+          // Observability hooks are best effort too.
+        }
+      }
+    }
+    // Cache degradation must never swallow an account/session authority change.
+    _assertSameSession(session);
+    return memoryId;
   }
 
   Future<String> submitVoice(
@@ -662,6 +699,18 @@ class TrustedMediaCaptureService {
     _assertSameSession(session);
     await api.uploadSignedMedia(target, bytes);
     _assertSameSession(session);
+  }
+
+  String _cacheVersion(Map<String, dynamic> response) {
+    final value = response['cache_version'];
+    final valid = value is String &&
+        value.length == 64 &&
+        value.codeUnits.every((unit) =>
+            (unit >= 48 && unit <= 57) || (unit >= 97 && unit <= 102));
+    if (!valid) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    return value;
   }
 
   String _memoryId(Map<String, dynamic> response) {

@@ -50,6 +50,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify AMap bridge provenance pin
+        run: python3 tool/check_amap_bridge_pin.py
+
+
       - name: Verify dependency lock
         run: git diff --exit-code -- pubspec.lock
 
@@ -85,11 +89,30 @@ jobs:
           printf '%s\n' "$response"
           echo "endpoint_status=reachable" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare iOS CocoaPods with bounded retry
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd ios
+            for attempt in 1 2 3; do
+              if pod install; then
+                break
+              fi
+              if [ "$attempt" = "3" ]; then
+                exit 1
+              fi
+              echo "pod install failed on attempt $attempt; retrying transient CocoaPods download"
+              sleep $((attempt * 5))
+            done
+          )
+
       - name: Build iOS release app without Apple codesigning
         shell: bash
         run: |
           set -euo pipefail
-          flutter build ios --release --no-codesign             --dart-define=APP_ENV=production             --dart-define=API_BASE_URL="$API_BASE_URL"
+          flutter build ios --release --no-codesign             --dart-define=APP_ENV=production             --dart-define=API_BASE_URL="$API_BASE_URL"             --dart-define=AMAP_IOS_SDK_KEY=ci-amap-ios-not-a-real-key
           test -d build/ios/iphoneos/Runner.app
           test -f build/ios/iphoneos/Runner.app/Info.plist
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = "cn.jiyidashi.jiyidashi"

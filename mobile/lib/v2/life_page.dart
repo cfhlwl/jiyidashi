@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
+import '../media_presentation_cache.dart';
 import '../ui/jiyi_components.dart';
 import '../ui/jiyi_tokens.dart';
 import 'life_events_page.dart';
@@ -9,9 +10,14 @@ import 'life_stages_page.dart';
 import 'memoirs_page.dart';
 
 class LifePage extends StatelessWidget {
-  const LifePage({super.key, required this.api});
+  const LifePage({
+    super.key,
+    required this.api,
+    this.mediaCache,
+  });
 
   final JiYiApiClient api;
+  final LocalMediaCache? mediaCache;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +64,12 @@ class LifePage extends StatelessWidget {
             title: '人生故事',
             message: '查看年度回顾，也可以按人生阶段生成故事章节。',
             onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => MemoirsPage(api: api)),
+              MaterialPageRoute(
+                builder: (_) => MemoirsPage(
+                  api: api,
+                  mediaCache: mediaCache,
+                ),
+              ),
             ),
           ),
         ],

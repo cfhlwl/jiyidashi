@@ -49,6 +49,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify AMap bridge provenance pin
+        run: python3 tool/check_amap_bridge_pin.py
+
+
       - name: Verify dependency lock
         id: android-lock
         shell: bash
@@ -129,6 +133,7 @@ jobs:
           flutter build apk --debug
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_ANDROID_SDK_KEY=ci-amap-android-not-a-real-key
 
       # Flutter's Android migration creates the Gradle wrapper during the first Android
       # build; the repository intentionally does not commit gradlew. Run JVM policy tests
@@ -147,6 +152,7 @@ jobs:
           flutter build apk --release
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_ANDROID_SDK_KEY=ci-amap-android-not-a-real-key
 
   ios:
     runs-on: macos-latest
@@ -189,6 +195,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          (
+            cd ios
+            for attempt in 1 2 3; do
+              if pod install; then
+                break
+              fi
+              if [ "$attempt" = "3" ]; then
+                exit 1
+              fi
+              echo "pod install failed on attempt $attempt; retrying transient CocoaPods download"
+              sleep $((attempt * 5))
+            done
+          )
           device_id="$(xcrun simctl list devices available -j | python3 -c '
           import json, sys
           data = json.load(sys.stdin)
@@ -199,7 +218,7 @@ jobs:
                       raise SystemExit(0)
           raise SystemExit(1)
           ')"
-          xcodebuild test             -project ios/Runner.xcodeproj             -scheme Runner             -destination "platform=iOS Simulator,id=$device_id"             -only-testing:RunnerTests             CODE_SIGNING_ALLOWED=NO
+          xcodebuild test             -workspace ios/Runner.xcworkspace             -scheme Runner             -destination "platform=iOS Simulator,id=$device_id,arch=x86_64"             -only-testing:RunnerTests             CODE_SIGNING_ALLOWED=NO             ARCHS=x86_64             ONLY_ACTIVE_ARCH=YES
 
       - name: Verify iOS progressive location declarations
         shell: bash
@@ -222,3 +241,4 @@ jobs:
           flutter build ios --debug --no-codesign
           --dart-define=APP_ENV=production
           --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_IOS_SDK_KEY=ci-amap-ios-not-a-real-key

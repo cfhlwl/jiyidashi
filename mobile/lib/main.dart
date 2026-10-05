@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'amap_footprint_map.dart';
 import 'api_client.dart';
 import 'native_location_bridge.dart';
 import 'native_motion_sampling_bridge.dart';
@@ -11,6 +12,7 @@ export 'stage1_app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  const JiYiAmapConfig().assertProductionConfiguration();
   runApp(const JiYiApp());
 }
 

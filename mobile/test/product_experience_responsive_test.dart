@@ -78,7 +78,8 @@ void main() {
     );
 
     expect(find.text('今天好'), findsOneWidget);
-    expect(find.text('上海办公室'), findsOneWidget);
+    expect(find.byKey(const ValueKey('today-footprint-loaded')), findsOneWidget);
+    expect(find.textContaining('上海办公室'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

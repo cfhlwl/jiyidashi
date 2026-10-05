@@ -121,7 +121,8 @@ class FamilyPhotoResponse(BaseModel):
     content_type: str
     size_bytes: int
     created_at: datetime
-    completed_at: datetime | None
+    completed_at: datetime
+    cache_version: str
 
 
 class FamilyPhotoDownloadResponse(BaseModel):

@@ -10,6 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.2
+  # 高德原生地图 SDK 的现代 Flutter bridge；客户端只接 Android/iOS SDK key。
+  # 官方 amap_flutter_map 3.0.0 仍依赖已移除的 hashValues，无法在 Flutter 3.47 编译。
+  csp_amap_flutter_map: 1.1.1
   flutter_secure_storage: 11.2.0
   image_picker: ^1.2.3
   record: ^7.1.1

@@ -431,82 +431,166 @@ class JiYiHeroHeader extends StatelessWidget {
     this.eyebrow,
     this.subtitle,
     this.icon,
+    this.atmospheric = false,
   });
 
   final String title;
   final String? eyebrow;
   final String? subtitle;
   final IconData? icon;
+  final bool atmospheric;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(JiYiRadius.large),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFEEF5FA),
-            Color(0xFFFFF8EF),
-          ],
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(JiYiSpacing.xl),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (eyebrow != null) ...[
-                    Text(
-                      eyebrow!,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: JiYiProductColors.brandPrimary,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                    const SizedBox(height: JiYiSpacing.sm),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(JiYiRadius.large),
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFFEAF4FC),
+                    Color(0xFFFFF4E5),
                   ],
-                  Text(
-                    title,
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      color: JiYiProductColors.textPrimary,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.6,
-                    ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: JiYiSpacing.sm),
-                    Text(
-                      subtitle!,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: JiYiProductColors.textSecondary,
-                        height: 1.55,
-                      ),
-                    ),
-                  ],
-                ],
+                ),
               ),
             ),
-            if (icon != null) ...[
-              const SizedBox(width: JiYiSpacing.md),
-              Icon(
-                icon,
-                size: JiYiIconSize.hero,
-                color: JiYiProductColors.brandPrimary,
+          ),
+          if (atmospheric)
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _JiYiHeroLandscapePainter(),
+                ),
               ),
-            ],
-          ],
-        ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              JiYiSpacing.xl,
+              JiYiSpacing.xl,
+              JiYiSpacing.xl,
+              JiYiSpacing.xxl,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (eyebrow != null) ...[
+                        Text(
+                          eyebrow!,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: JiYiProductColors.brandPrimary,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        const SizedBox(height: JiYiSpacing.sm),
+                      ],
+                      Text(
+                        title,
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          color: JiYiProductColors.textPrimary,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.6,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: JiYiSpacing.sm),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 280),
+                          child: Text(
+                            subtitle!,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: JiYiProductColors.textSecondary,
+                              height: 1.55,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (icon != null) ...[
+                  const SizedBox(width: JiYiSpacing.md),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.68),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(JiYiSpacing.sm),
+                      child: Icon(
+                        icon,
+                        size: JiYiIconSize.hero,
+                        color: JiYiProductColors.brandPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// Decorative brand atmosphere only. These mountain/sun shapes never encode
+/// location, weather, route, or any other user fact.
+class _JiYiHeroLandscapePainter extends CustomPainter {
+  const _JiYiHeroLandscapePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final sun = Paint()
+      ..color = const Color(0xFFFFDDA8).withValues(alpha: 0.72);
+    canvas.drawCircle(
+      Offset(size.width * 0.76, size.height * 0.34),
+      size.shortestSide * 0.08,
+      sun,
+    );
+
+    final far = Paint()
+      ..color = const Color(0xFFBFD7E7).withValues(alpha: 0.42);
+    final farPath = Path()
+      ..moveTo(0, size.height * 0.68)
+      ..lineTo(size.width * 0.18, size.height * 0.46)
+      ..lineTo(size.width * 0.34, size.height * 0.61)
+      ..lineTo(size.width * 0.51, size.height * 0.41)
+      ..lineTo(size.width * 0.68, size.height * 0.59)
+      ..lineTo(size.width * 0.84, size.height * 0.45)
+      ..lineTo(size.width, size.height * 0.62)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(farPath, far);
+
+    final near = Paint()
+      ..color = const Color(0xFF86AFC8).withValues(alpha: 0.28);
+    final nearPath = Path()
+      ..moveTo(0, size.height * 0.8)
+      ..lineTo(size.width * 0.22, size.height * 0.63)
+      ..lineTo(size.width * 0.43, size.height * 0.78)
+      ..lineTo(size.width * 0.62, size.height * 0.58)
+      ..lineTo(size.width * 0.82, size.height * 0.72)
+      ..lineTo(size.width, size.height * 0.61)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(nearPath, near);
+  }
+
+  @override
+  bool shouldRepaint(_JiYiHeroLandscapePainter oldDelegate) => false;
 }
 
 class JiYiSectionHeader extends StatelessWidget {

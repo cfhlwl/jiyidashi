@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/capture_media.dart';
+import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:record/record.dart';
 
 class _FakeMediaApi extends JiYiApiClient {
@@ -50,7 +51,12 @@ class _FakeMediaApi extends JiYiApiClient {
   @override
   Future<Map<String, dynamic>> completeMediaUpload(String mediaId) async {
     calls.add('complete:$mediaId');
-    return {'id': mediaId, 'status': 'READY'};
+    return {
+      'id': mediaId,
+      'status': 'READY',
+      'cache_version':
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    };
   }
 
   @override
@@ -76,6 +82,39 @@ class _FakeMediaApi extends JiYiApiClient {
     final error = voiceMemoryError;
     if (error != null) throw error;
     return {'memory': {'id': 'voice-memory'}};
+  }
+}
+
+class _ThrowingSeedCache extends LocalMediaCache {
+  _ThrowingSeedCache()
+      : super(rootDirectoryProvider: () async => Directory.systemTemp);
+
+  @override
+  Future<File> seedFromFile({
+    required String ownerUserId,
+    required String mediaId,
+    required String cacheVersion,
+    required File source,
+  }) {
+    throw const FileSystemException('cache disk unavailable');
+  }
+}
+
+class _SessionSwitchSeedCache extends LocalMediaCache {
+  _SessionSwitchSeedCache(this.onSeed)
+      : super(rootDirectoryProvider: () async => Directory.systemTemp);
+
+  final void Function() onSeed;
+
+  @override
+  Future<File> seedFromFile({
+    required String ownerUserId,
+    required String mediaId,
+    required String cacheVersion,
+    required File source,
+  }) async {
+    onSeed();
+    return source;
   }
 }
 
@@ -482,6 +521,116 @@ void main() {
       'complete:photo-media',
       'photo-memory:photo-media:酒店发票',
     ]);
+  });
+
+  test('captured photo seeds canonical owner/media cache without redownload',
+      () async {
+    final root = await Directory.systemTemp.createTemp('jiyi-capture-cache-');
+    addTearDown(() => root.delete(recursive: true));
+    final source = File('${root.path}${Platform.pathSeparator}capture.jpg');
+    await source.writeAsBytes(<int>[0xff, 0xd8, 0xff], flush: true);
+
+    final api = _FakeMediaApi();
+    final cache = LocalMediaCache(
+      rootDirectoryProvider: () async => Directory('${root.path}/cache'),
+    );
+    final service = TrustedMediaCaptureService(
+      api,
+      localMediaCache: cache,
+    );
+    final file = PendingMediaFile.fromPath(
+      path: source.path,
+      clientUploadId: '99999999-9999-4999-8999-999999999999',
+      contentType: 'image/jpeg',
+      sizeBytes: 3,
+      originalFilename: 'capture.jpg',
+      occurredAt: DateTime.utc(2026, 10, 4),
+    );
+
+    final memoryId = await service.submitPhoto(file, content: '刚拍的照片');
+    expect(memoryId, 'photo-memory');
+
+    final cached = await cache.lookup(
+      ownerUserId: api.authenticatedUserId!,
+      mediaId: 'photo-media',
+    );
+    expect(cached, isNotNull);
+    expect(await cached!.readAsBytes(), <int>[0xff, 0xd8, 0xff]);
+    expect(
+      api.calls.where((call) => call.startsWith('download:')),
+      isEmpty,
+    );
+  });
+
+  test('canonical photo save survives local cache seed failure', () async {
+    final root = await Directory.systemTemp.createTemp('jiyi-seed-failure-');
+    addTearDown(() => root.delete(recursive: true));
+    final source = File('${root.path}${Platform.pathSeparator}capture.jpg');
+    await source.writeAsBytes(<int>[0xff, 0xd8, 0xff], flush: true);
+
+    final api = _FakeMediaApi();
+    Object? observedCacheError;
+    final service = TrustedMediaCaptureService(
+      api,
+      localMediaCache: _ThrowingSeedCache(),
+      onLocalCacheSeedFailure: (error) => observedCacheError = error,
+    );
+    final file = PendingMediaFile.fromPath(
+      path: source.path,
+      clientUploadId: '98989898-9898-4989-8989-989898989898',
+      contentType: 'image/jpeg',
+      sizeBytes: 3,
+      originalFilename: 'capture.jpg',
+      occurredAt: DateTime.utc(2026, 10, 4),
+    );
+
+    final memoryId = await service.submitPhoto(file, content: '服务器已保存');
+
+    expect(memoryId, 'photo-memory');
+    expect(observedCacheError, isA<FileSystemException>());
+    expect(
+      api.calls.where((call) => call.startsWith('photo-memory:')).length,
+      1,
+    );
+  });
+
+  test(
+      'canonical photo save still fences account switch during cache seed',
+      () async {
+    final root =
+        await Directory.systemTemp.createTemp('jiyi-seed-session-switch-');
+    addTearDown(() => root.delete(recursive: true));
+    final source = File('${root.path}${Platform.pathSeparator}capture.jpg');
+    await source.writeAsBytes(<int>[0xff, 0xd8, 0xff], flush: true);
+
+    final api = _FakeMediaApi();
+    final cache = _SessionSwitchSeedCache(() {
+      api.logout();
+      api.accessToken = 'new-account-token';
+      api.authenticatedUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    });
+    final service = TrustedMediaCaptureService(
+      api,
+      localMediaCache: cache,
+    );
+    final file = PendingMediaFile.fromPath(
+      path: source.path,
+      clientUploadId: '97979797-9797-4979-8979-979797979797',
+      contentType: 'image/jpeg',
+      sizeBytes: 3,
+      originalFilename: 'capture.jpg',
+      occurredAt: DateTime.utc(2026, 10, 4),
+    );
+
+    await expectLater(
+      service.submitPhoto(file, content: '服务器已保存但账号随后切换'),
+      throwsA(isA<ProtocolException>()),
+    );
+
+    expect(
+      api.calls.where((call) => call.startsWith('photo-memory:')).length,
+      1,
+    );
   });
 
   test('voice reuses the same client id and reaches server ASR path', () async {

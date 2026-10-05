@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'amap_footprint_map.dart';
+import 'amap_privacy_consent.dart';
 import 'api_client.dart';
 import 'memory_detail_page.dart';
+import 'media_presentation_cache.dart';
+import 'footprint_detail_page.dart';
+import 'footprint_models.dart';
 import 'timeline_models.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_format.dart';
@@ -16,12 +21,18 @@ class TodayPage extends StatefulWidget {
     this.elderMode = false,
     this.onCapture,
     this.onOpenFamily,
+    this.mediaCache,
+    this.photoThumbnailBuilder,
+    this.amapPrivacyConsent,
   });
 
   final JiYiApiClient api;
   final bool elderMode;
   final VoidCallback? onCapture;
   final VoidCallback? onOpenFamily;
+  final LocalMediaCache? mediaCache;
+  final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
+  final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
   State<TodayPage> createState() => _TodayPageState();
@@ -34,11 +45,31 @@ class _TodayPageState extends State<TodayPage> {
   Object? _error;
   bool _loading = true;
   int _generation = 0;
+  late final AmapPrivacyConsentAuthority _amapPrivacyConsent;
+  bool _mapPrivacyAccepted = false;
 
   @override
   void initState() {
     super.initState();
+    _amapPrivacyConsent =
+        widget.amapPrivacyConsent ?? AmapPrivacyConsentStore();
+    _loadMapPrivacy();
     _load();
+  }
+
+  Future<void> _loadMapPrivacy() async {
+    try {
+      final accepted = await _amapPrivacyConsent.readAccepted();
+      if (mounted) setState(() => _mapPrivacyAccepted = accepted);
+    } catch (_) {
+      if (mounted) setState(() => _mapPrivacyAccepted = false);
+    }
+  }
+
+  Future<void> _acceptMapPrivacy() async {
+    final accepted =
+        await requestAmapPrivacyConsent(context, _amapPrivacyConsent);
+    if (mounted && accepted) setState(() => _mapPrivacyAccepted = true);
   }
 
   @override
@@ -79,9 +110,9 @@ class _TodayPageState extends State<TodayPage> {
 
       // Validate Today first. Malformed authority stays a protocol fail-closed
       // state; secondary reads must never reclassify it as a network failure.
-      late final _TodayFootprint footprint;
+      late final FootprintDay footprint;
       try {
-        footprint = _TodayFootprint.fromJson(data);
+        footprint = FootprintDay.fromJson(data);
       } catch (_) {
         if (!current()) return;
         setState(() => _data = data);
@@ -127,6 +158,7 @@ class _TodayPageState extends State<TodayPage> {
           ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
           : '看看今天留下了哪些值得记住的片段。',
       hero: JiYiHeroHeader(
+        atmospheric: true,
         eyebrow: '迹忆 · 今天',
         title: elderMode ? '今天去了哪里' : '今天好',
         subtitle: _todayHeroSubtitle(_data),
@@ -178,9 +210,9 @@ class _TodayPageState extends State<TodayPage> {
       );
     }
 
-    late final _TodayFootprint footprint;
+    late final FootprintDay footprint;
     try {
-      footprint = _TodayFootprint.fromJson(_data!);
+      footprint = FootprintDay.fromJson(_data!);
     } on Object {
       return Column(
         key: const ValueKey('today-footprint-protocol-error'),
@@ -210,6 +242,11 @@ class _TodayPageState extends State<TodayPage> {
       elderMode: elderMode,
       onCapture: widget.onCapture,
       onOpenFamily: widget.onOpenFamily,
+      mapPrivacyAccepted: _mapPrivacyAccepted,
+      onAcceptMapPrivacy: _acceptMapPrivacy,
+      amapPrivacyConsent: _amapPrivacyConsent,
+      mediaCache: widget.mediaCache,
+      photoThumbnailBuilder: widget.photoThumbnailBuilder,
     );
   }
 }
@@ -223,15 +260,25 @@ class _TodayExperienceBody extends StatelessWidget {
     required this.elderMode,
     this.onCapture,
     this.onOpenFamily,
+    required this.mapPrivacyAccepted,
+    required this.onAcceptMapPrivacy,
+    required this.amapPrivacyConsent,
+    this.mediaCache,
+    this.photoThumbnailBuilder,
   });
 
   final JiYiApiClient api;
-  final _TodayFootprint footprint;
+  final FootprintDay footprint;
   final List<TimelineReadItem> memories;
   final bool memoryUnavailable;
   final bool elderMode;
   final VoidCallback? onCapture;
   final VoidCallback? onOpenFamily;
+  final bool mapPrivacyAccepted;
+  final Future<void> Function() onAcceptMapPrivacy;
+  final AmapPrivacyConsentAuthority amapPrivacyConsent;
+  final LocalMediaCache? mediaCache;
+  final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -246,7 +293,7 @@ class _TodayExperienceBody extends StatelessWidget {
               : jiyiDisplayDate(footprint.day),
         ),
         const SizedBox(height: JiYiSpacing.sm),
-        _footprintCard(theme),
+        _footprintCard(context, theme),
         const SizedBox(height: JiYiSpacing.xl),
         const JiYiSectionHeader(
           title: '今日记忆',
@@ -287,7 +334,7 @@ class _TodayExperienceBody extends StatelessWidget {
     );
   }
 
-  Widget _footprintCard(ThemeData theme) {
+  Widget _footprintCard(BuildContext context, ThemeData theme) {
     if (footprint.visits.isEmpty) {
       return JiYiSectionCard(
         key: const ValueKey('today-footprint-empty'),
@@ -303,22 +350,66 @@ class _TodayExperienceBody extends StatelessWidget {
       );
     }
 
-    return JiYiSectionCard(
-      key: const ValueKey('today-footprint-loaded'),
-      leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-      title: '${footprint.visits.length} 个地点片段',
-      subtitle: '按今天真实形成的到访记录整理',
-      child: Column(
-        children: [
-          for (var index = 0; index < footprint.visits.length; index++) ...[
-            _FootprintVisitRow(
-              visit: footprint.visits[index],
-              elderMode: elderMode,
-            ),
-            if (index != footprint.visits.length - 1)
-              const Divider(height: JiYiSpacing.lg),
+    void openFootprintDetail() {
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => FootprintDetailPage(
+            api: api,
+            footprint: footprint,
+            mapPrivacyAccepted: mapPrivacyAccepted,
+            onAcceptMapPrivacy: onAcceptMapPrivacy,
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      key: const ValueKey('today-footprint-map-open'),
+      behavior: HitTestBehavior.translucent,
+      onTap: openFootprintDetail,
+      child: JiYiSectionCard(
+        key: const ValueKey('today-footprint-loaded'),
+        leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
+        title: '${footprint.visits.length} 个地点片段',
+        subtitle: '按今天真实形成的到访记录整理',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (mapPrivacyAccepted) ...[
+              IgnorePointer(
+                child: JiYiFootprintMap(
+                  visits: footprint.visits,
+                  privacyAccepted: true,
+                  selectedIndex: 0,
+                  onSelected: (_) {},
+                  interactive: false,
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.md),
+            ],
+            if (elderMode)
+              for (var index = 0; index < footprint.visits.length; index++) ...[
+                FootprintVisitRow(
+                  visit: footprint.visits[index],
+                  elderMode: true,
+                ),
+                if (index != footprint.visits.length - 1)
+                  const Divider(height: JiYiSpacing.lg),
+              ]
+            else
+              Wrap(
+                spacing: JiYiSpacing.xs,
+                runSpacing: JiYiSpacing.xs,
+                children: [
+                  for (var index = 0; index < footprint.visits.length; index++)
+                    _TodayVisitPill(
+                      index: index,
+                      visit: footprint.visits[index],
+                    ),
+                ],
+              ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -346,13 +437,18 @@ class _TodayExperienceBody extends StatelessWidget {
       children: [
         for (var index = 0; index < memories.length; index++) ...[
           _TodayMemoryCard(
+            api: api,
             item: memories[index],
+            mediaCache: mediaCache,
+            photoThumbnailBuilder: photoThumbnailBuilder,
             onTap: () {
               Navigator.of(context).push<bool>(
                 MaterialPageRoute<bool>(
                   builder: (_) => MemoryDetailPage(
                     api: api,
                     memoryId: memories[index].id,
+                    mediaCache: mediaCache,
+                    amapPrivacyConsent: amapPrivacyConsent,
                   ),
                 ),
               );
@@ -398,10 +494,43 @@ class _TodayExperienceBody extends StatelessWidget {
 }
 
 class _TodayMemoryCard extends StatelessWidget {
-  const _TodayMemoryCard({required this.item, required this.onTap});
+  const _TodayMemoryCard({
+    required this.api,
+    required this.item,
+    required this.onTap,
+    this.mediaCache,
+    this.photoThumbnailBuilder,
+  });
 
+  final JiYiApiClient api;
   final TimelineReadItem item;
   final VoidCallback onTap;
+  final LocalMediaCache? mediaCache;
+  final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
+
+  Widget _photoThumbnail(BuildContext context) {
+    final mediaId = item.mediaId!;
+    final builder = photoThumbnailBuilder;
+    if (builder != null) {
+      return SizedBox(
+        key: ValueKey('today-photo-${item.id}'),
+        width: 88,
+        height: 88,
+        child: KeyedSubtree(
+          key: ValueKey('local-media-ready-$mediaId'),
+          child: builder(context, mediaId, BoxFit.cover),
+        ),
+      );
+    }
+    return LocalMediaThumbnail(
+      key: ValueKey('today-photo-${item.id}'),
+      api: api,
+      mediaId: mediaId,
+      cache: mediaCache,
+      width: 88,
+      height: 88,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -418,19 +547,22 @@ class _TodayMemoryCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: JiYiProductColors.surfaceSoft,
-                  borderRadius: BorderRadius.circular(JiYiRadius.control),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(JiYiSpacing.sm),
-                  child: Icon(
-                    _todayMemoryIcon(item.memoryType),
-                    color: JiYiProductColors.brandPrimary,
+              if (item.memoryType == 'PHOTO' && item.mediaId != null)
+                _photoThumbnail(context)
+              else
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: JiYiProductColors.surfaceSoft,
+                    borderRadius: BorderRadius.circular(JiYiRadius.control),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(JiYiSpacing.sm),
+                    child: Icon(
+                      _todayMemoryIcon(item.memoryType),
+                      color: JiYiProductColors.brandPrimary,
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(width: JiYiSpacing.md),
               Expanded(
                 child: Column(
@@ -545,19 +677,87 @@ IconData _todayMemoryIcon(String? value) => switch (value) {
 
 String _todayHeroSubtitle(Map<String, dynamic>? data) {
   final day = data?['day'];
-  if (day is String && _isStrictDateOnly(day)) {
+  if (day is String && isStrictDateOnly(day)) {
     return jiyiDisplayDate(day);
   }
   return '正在整理今天';
 }
 
-class _FootprintVisitRow extends StatelessWidget {
-  const _FootprintVisitRow({
+class _TodayVisitPill extends StatelessWidget {
+  const _TodayVisitPill({
+    required this.index,
+    required this.visit,
+  });
+
+  final int index;
+  final FootprintVisit visit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final time = _clock(visit.arrivedAtLocal);
+    final status = visit.finalized ? '已形成足迹' : '进行中';
+    return Semantics(
+      label: '第 ${index + 1} 个地点，$time，${visit.placeName}，$status',
+      // Keep the spoken summary deterministic: child text is already encoded
+      // in the explicit label and must not be merged a second time.
+      excludeSemantics: true,
+      child: Container(
+        key: ValueKey('today-footprint-compact-${visit.id}'),
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(
+          horizontal: JiYiSpacing.sm,
+          vertical: JiYiSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: JiYiProductColors.surfaceSoft,
+          borderRadius: BorderRadius.circular(JiYiRadius.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: visit.finalized
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.tertiary,
+                shape: BoxShape.circle,
+              ),
+              child: SizedBox.square(
+                dimension: 24,
+                child: Center(
+                  child: Text(
+                    '${index + 1}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: JiYiSpacing.xs),
+            Text(
+              '$time · ${visit.placeName}',
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class FootprintVisitRow extends StatelessWidget {
+  const FootprintVisitRow({
+    super.key,
     required this.visit,
     required this.elderMode,
   });
 
-  final _FootprintVisit visit;
+  final FootprintVisit visit;
   final bool elderMode;
 
   @override
@@ -634,140 +834,4 @@ String _clock(String serverLocalIso) {
     throw const FormatException('invalid server-local datetime');
   }
   return '${match.group(1)}:${match.group(2)}';
-}
-
-class _TodayFootprint {
-  const _TodayFootprint({
-    required this.timezone,
-    required this.day,
-    required this.visits,
-  });
-
-  final String timezone;
-  final String day;
-  final List<_FootprintVisit> visits;
-
-  factory _TodayFootprint.fromJson(Map<String, dynamic> data) {
-    final timezone = data['timezone'];
-    final day = data['day'];
-    final visits = data['visits'];
-    if (timezone is! String ||
-        timezone.trim().isEmpty ||
-        day is! String ||
-        !_isStrictDateOnly(day) ||
-        visits is! List<dynamic>) {
-      throw const FormatException('invalid today footprint');
-    }
-    return _TodayFootprint(
-      timezone: timezone,
-      day: day,
-      visits: visits
-          .map((item) {
-            if (item is! Map<String, dynamic>) {
-              throw const FormatException('invalid footprint visit');
-            }
-            return _FootprintVisit.fromJson(item);
-          })
-          .toList(growable: false),
-    );
-  }
-}
-
-class _FootprintVisit {
-  const _FootprintVisit({
-    required this.id,
-    required this.placeId,
-    required this.placeName,
-    required this.arrivedAt,
-    required this.leftAt,
-    required this.arrivedAtLocal,
-    required this.leftAtLocal,
-    required this.confidence,
-    required this.visitSource,
-    required this.finalized,
-  });
-
-  final String id;
-  final String placeId;
-  final String placeName;
-  final String arrivedAt;
-  final String? leftAt;
-  final String arrivedAtLocal;
-  final String? leftAtLocal;
-  final double confidence;
-  final String visitSource;
-  final bool finalized;
-
-  factory _FootprintVisit.fromJson(Map<String, dynamic> data) {
-    final id = data['id'];
-    final placeId = data['place_id'];
-    final placeName = data['place_name'];
-    final arrivedAt = data['arrived_at'];
-    final leftAt = data['left_at'];
-    final arrivedAtLocal = data['arrived_at_local'];
-    final leftAtLocal = data['left_at_local'];
-    final confidence = data['confidence'];
-    final visitSource = data['visit_source'];
-    final finalized = data['visit_finalized'];
-    if (id is! String ||
-        id.trim().isEmpty ||
-        placeId is! String ||
-        placeId.trim().isEmpty ||
-        placeName is! String ||
-        placeName.trim().isEmpty ||
-        arrivedAt is! String ||
-        arrivedAt.trim().isEmpty ||
-        (leftAt != null && leftAt is! String) ||
-        arrivedAtLocal is! String ||
-        arrivedAtLocal.trim().isEmpty ||
-        (leftAtLocal != null && leftAtLocal is! String) ||
-        confidence is! num ||
-        !confidence.isFinite ||
-        visitSource is! String ||
-        visitSource.trim().isEmpty ||
-        finalized is! bool) {
-      throw const FormatException('invalid footprint visit');
-    }
-    if (!_isStrictIsoDateTime(arrivedAt) ||
-        (leftAt is String && !_isStrictIsoDateTime(leftAt)) ||
-        !_isStrictIsoDateTime(arrivedAtLocal) ||
-        (leftAtLocal is String && !_isStrictIsoDateTime(leftAtLocal))) {
-      throw const FormatException('invalid footprint visit');
-    }
-    return _FootprintVisit(
-      id: id,
-      placeId: placeId,
-      placeName: placeName,
-      arrivedAt: arrivedAt,
-      leftAt: leftAt as String?,
-      arrivedAtLocal: arrivedAtLocal,
-      leftAtLocal: leftAtLocal as String?,
-      confidence: confidence.toDouble(),
-      visitSource: visitSource,
-      finalized: finalized,
-    );
-  }
-}
-
-
-bool _isStrictDateOnly(String value) {
-  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
-  if (match == null) return false;
-  final year = int.parse(match.group(1)!);
-  final month = int.parse(match.group(2)!);
-  final day = int.parse(match.group(3)!);
-  final parsed = DateTime.utc(year, month, day);
-  return parsed.year == year && parsed.month == month && parsed.day == day;
-}
-
-bool _isStrictIsoDateTime(String value) {
-  final match = RegExp(
-    r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$',
-  ).firstMatch(value);
-  if (match == null || !_isStrictDateOnly(value.substring(0, 10))) return false;
-  final hour = int.parse(match.group(4)!);
-  final minute = int.parse(match.group(5)!);
-  final second = int.parse(match.group(6)!);
-  if (hour > 23 || minute > 59 || second > 59) return false;
-  return DateTime.tryParse(value) != null;
 }

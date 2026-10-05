@@ -1,9 +1,12 @@
 // ignore_for_file: prefer_interpolation_to_compose_strings
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../ai_inference_presentation.dart';
 import '../api_client.dart';
+import '../media_presentation_cache.dart';
 import '../ui/jiyi_components.dart';
 import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
@@ -14,10 +17,19 @@ import 'v2_api.dart';
 import 'v2_authority.dart';
 import 'v2_widgets.dart';
 
+typedef MemoirPhotoRenderer = Widget Function(File file);
+
 class MemoirsPage extends StatefulWidget {
-  const MemoirsPage({super.key, required this.api});
+  const MemoirsPage({
+    super.key,
+    required this.api,
+    this.mediaCache,
+    this.photoRenderer,
+  });
 
   final JiYiApiClient api;
+  final LocalMediaCache? mediaCache;
+  final MemoirPhotoRenderer? photoRenderer;
 
   @override
   State<MemoirsPage> createState() => _MemoirsPageState();
@@ -25,6 +37,8 @@ class MemoirsPage extends StatefulWidget {
 
 class _MemoirsPageState extends State<MemoirsPage> {
   late final V2Api v2 = V2Api(widget.api);
+  late final LocalMediaCache _mediaCache =
+      widget.mediaCache ?? LocalMediaCache();
 
   final V2Authority annualAuthority = V2Authority();
   final V2Authority annualTimelineAuthority = V2Authority();
@@ -240,7 +254,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
 
   Future<void> _previewPhoto(V2AnnualMemoirPhoto photo) async {
     final current = annual;
-    if (current == null) return;
+    final owner = widget.api.authenticatedUserId;
+    if (current == null || owner == null || owner.trim().isEmpty) return;
     final identity = 'media:' + current.targetYear + ':' + photo.mediaId;
     late final V2AuthoritySnapshot snapshot;
     try {
@@ -250,7 +265,13 @@ class _MemoirsPageState extends State<MemoirsPage> {
       return;
     }
     try {
-      final signed = await v2.getVerifiedMediaDownload(photo.mediaId);
+      final localFile = await MediaPresentationResolver(
+        api: widget.api,
+        cache: _mediaCache,
+      ).resolve(
+        ownerUserId: owner,
+        mediaId: photo.mediaId,
+      );
       if (!mounted ||
           !mediaPreviewAuthority.isCurrent(widget.api, snapshot, identity) ||
           annual?.targetYear != current.targetYear) {
@@ -266,15 +287,13 @@ class _MemoirsPageState extends State<MemoirsPage> {
               children: [
                 Flexible(
                   child: InteractiveViewer(
-                    child: Image.network(
-                      signed.url.toString(),
-                      headers: signed.headers,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Padding(
-                        padding: EdgeInsets.all(JiYiSpacing.lg),
-                        child: Text('图片临时地址已失效，请关闭后重新打开。'),
-                      ),
-                    ),
+                    child: widget.photoRenderer?.call(localFile) ??
+                        LocalMediaPresentationScope.maybeOf(context)?.renderer(
+                          context,
+                          localFile,
+                          BoxFit.contain,
+                        ) ??
+                        _defaultMemoirPhotoRenderer(localFile),
                   ),
                 ),
                 TextButton(
@@ -286,6 +305,12 @@ class _MemoirsPageState extends State<MemoirsPage> {
           ),
         ),
       );
+    } on MediaUnavailableOffline {
+      if (!mounted ||
+          !mediaPreviewAuthority.isCurrent(widget.api, snapshot, identity)) {
+        return;
+      }
+      setState(() => annualError = '这张照片尚未缓存，离线时暂时无法显示。');
     } catch (exc) {
       if (!mounted ||
           !mediaPreviewAuthority.isCurrent(widget.api, snapshot, identity)) {
@@ -397,6 +422,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
           title: '回忆总结',
           subtitle: '用已经记录的照片、时间和重要经历，慢慢把过去翻回来。',
           hero: const JiYiHeroHeader(
+            atmospheric: true,
             eyebrow: '迹忆 · 回忆总结',
             title: '把生活翻回来',
             subtitle: '从照片和时间开始，再把值得记住的片段整理成故事。',
@@ -488,6 +514,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
                 itemBuilder: (context, index) {
                   final photo = annualPhotos[index];
                   return _AnnualPhotoCard(
+                    api: widget.api,
+                    mediaCache: _mediaCache,
                     photo: photo,
                     onTap: () => _previewPhoto(photo),
                   );
@@ -711,8 +739,15 @@ class _AnnualStoryHero extends StatelessWidget {
 }
 
 class _AnnualPhotoCard extends StatelessWidget {
-  const _AnnualPhotoCard({required this.photo, required this.onTap});
+  const _AnnualPhotoCard({
+    required this.api,
+    required this.mediaCache,
+    required this.photo,
+    required this.onTap,
+  });
 
+  final JiYiApiClient api;
+  final LocalMediaCache mediaCache;
   final V2AnnualMemoirPhoto photo;
   final VoidCallback onTap;
 
@@ -724,46 +759,53 @@ class _AnnualPhotoCard extends StatelessWidget {
       child: Material(
         color: JiYiProductColors.surface,
         borderRadius: BorderRadius.circular(JiYiRadius.card),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           borderRadius: BorderRadius.circular(JiYiRadius.card),
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(JiYiSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: JiYiProductColors.surfaceSoft,
-                    borderRadius: BorderRadius.circular(JiYiRadius.control),
-                  ),
-                  child: const SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: Icon(
-                      Icons.photo_outlined,
-                      color: JiYiProductColors.media,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: LocalMediaThumbnail(
+                  key: ValueKey('annual-photo-${photo.mediaId}'),
+                  api: api,
+                  mediaId: photo.mediaId,
+                  cache: mediaCache,
+                  width: 184,
+                  height: 104,
+                  borderRadius: 0,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  JiYiSpacing.md,
+                  JiYiSpacing.sm,
+                  JiYiSpacing.md,
+                  JiYiSpacing.md,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      photo.title ?? '照片记忆',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: JiYiSpacing.xxs),
+                    Text(
+                      jiyiDisplayDate(photo.occurredAt),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: JiYiProductColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                Text(
-                  photo.title ?? '照片记忆',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: JiYiSpacing.xxs),
-                Text(
-                  jiyiDisplayDate(photo.occurredAt),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: JiYiProductColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -834,4 +876,16 @@ class _AnnualTimelineRow extends StatelessWidget {
       ],
     );
   }
+}
+
+
+Widget _defaultMemoirPhotoRenderer(File file) {
+  return Image.file(
+    file,
+    fit: BoxFit.contain,
+    errorBuilder: (_, __, ___) => const Padding(
+      padding: EdgeInsets.all(JiYiSpacing.lg),
+      child: Text('本地照片缓存已损坏，请关闭后重新打开。'),
+    ),
+  );
 }

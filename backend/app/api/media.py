@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Annotated
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from app.core.db import get_db
 from app.deps import get_current_user_id
 from app.ocr_models import OCRRequest, OCRResult
 from app.schemas import (
+    MediaCompleteResponse,
     MediaDownloadResponse,
     MediaRead,
     MediaUploadCreate,
@@ -92,6 +94,19 @@ def _media_read(asset) -> MediaRead:
     return MediaRead.model_validate(asset)
 
 
+def _media_cache_version(asset) -> str:
+    # Local presentation cache needs a stable content identity that is independent
+    # from short-lived signed URLs. Keep storage implementation details server-only:
+    # hash them into an opaque version together with canonical READY metadata.
+    if asset.storage_etag is None or asset.completed_at is None:
+        raise MediaError("MEDIA_NOT_READY", 409)
+    payload = (
+        f"{asset.id}:{asset.storage_etag}:{asset.size_bytes}:"
+        f"{asset.completed_at.isoformat()}"
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
 @router.post(
     "/uploads",
     response_model=MediaUploadResponse,
@@ -132,14 +147,14 @@ def create_upload(
     )
 
 
-@router.post("/{media_id}/complete", response_model=MediaRead)
+@router.post("/{media_id}/complete", response_model=MediaCompleteResponse)
 def complete_upload(
     media_id: UUID,
     request: Request,
     user_id: CurrentUser,
     db: DbSession,
     storage: Storage,
-) -> MediaRead:
+) -> MediaCompleteResponse:
     enforce_authenticated_api_rate(
         db,
         user_id=user_id,
@@ -160,7 +175,11 @@ def complete_upload(
     )
     cleanup_media_staging(storage, asset)
     db.refresh(asset)
-    return _media_read(asset)
+    media = _media_read(asset)
+    return MediaCompleteResponse(
+        **media.model_dump(),
+        cache_version=_media_cache_version(asset),
+    )
 
 
 @router.post("/{media_id}/download", response_model=MediaDownloadResponse)
@@ -184,6 +203,7 @@ def create_download(
         _raise_http(exc)
     return MediaDownloadResponse(
         media_id=asset.id,
+        cache_version=_media_cache_version(asset),
         download=_signed_transfer(transfer),
     )
 

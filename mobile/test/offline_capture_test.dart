@@ -244,8 +244,17 @@ void main() {
     }
     await tester.enterText(fields.at(1), content);
     final button = find.widgetWithText(FilledButton, '帮我记住');
-    await tester.ensureVisible(button);
-    await tester.tap(button);
+    final scrollable = find
+        .ancestor(of: button, matching: find.byType(Scrollable))
+        .first;
+    await tester.scrollUntilVisible(
+      button,
+      320,
+      scrollable: scrollable,
+    );
+    await tester.pumpAndSettle();
+    expect(button.hitTestable(), findsOneWidget);
+    await tester.tap(button.hitTestable());
     await tester.pump();
   }
 

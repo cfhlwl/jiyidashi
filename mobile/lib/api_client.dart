@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -135,10 +136,12 @@ class SignedDownloadTarget {
 class MediaDownloadSession {
   const MediaDownloadSession({
     required this.mediaId,
+    required this.cacheVersion,
     required this.download,
   });
 
   final String mediaId;
+  final String cacheVersion;
   final SignedDownloadTarget download;
 }
 
@@ -1185,6 +1188,53 @@ class JiYiApiClient {
     }
   }
 
+  Future<Uint8List> downloadSignedMedia(
+    SignedDownloadTarget target, {
+    int maxBytes = 50 * 1024 * 1024,
+  }) async {
+    if (target.method != 'GET') {
+      throw ProtocolException('媒体下载协议不正确');
+    }
+    if (maxBytes <= 0) {
+      throw ArgumentError.value(maxBytes, 'maxBytes', 'must be positive');
+    }
+
+    final request = http.Request('GET', target.url)
+      ..headers.addAll(target.headers);
+    late final http.StreamedResponse response;
+    try {
+      response = await _http
+          .send(request)
+          .timeout(const Duration(seconds: 30));
+    } on http.ClientException catch (exc) {
+      throw TransportException('媒体下载连接失败', exc);
+    } on TimeoutException catch (exc) {
+      throw TransportException('媒体下载超时', exc);
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(response.statusCode, '媒体下载失败');
+    }
+
+    final bytes = BytesBuilder(copy: false);
+    var received = 0;
+    try {
+      await for (final chunk
+          in response.stream.timeout(const Duration(seconds: 30))) {
+        received += chunk.length;
+        if (received > maxBytes) {
+          throw ProtocolException('媒体下载超过本地缓存上限');
+        }
+        bytes.add(chunk);
+      }
+    } on TimeoutException catch (exc) {
+      throw TransportException('媒体下载超时', exc);
+    }
+    if (received == 0) {
+      throw ProtocolException('媒体下载为空');
+    }
+    return bytes.takeBytes();
+  }
+
   Future<Map<String, dynamic>> completeMediaUpload(String mediaId) {
     return _jsonRequest('POST', '/media/$mediaId/complete');
   }
@@ -1204,14 +1254,21 @@ class JiYiApiClient {
     );
     _assertAuthenticatedSessionCurrent(snapshot);
     final returnedId = data['media_id'];
+    final cacheVersion = data['cache_version'];
     final rawDownload = data['download'];
+    final validCacheVersion = cacheVersion is String &&
+        cacheVersion.length == 64 &&
+        cacheVersion.codeUnits.every((unit) =>
+            (unit >= 48 && unit <= 57) || (unit >= 97 && unit <= 102));
     if (returnedId is! String ||
         returnedId.toLowerCase() != normalized.toLowerCase() ||
+        !validCacheVersion ||
         rawDownload is! Map<String, dynamic>) {
       throw ProtocolException('服务端返回格式不正确');
     }
     return MediaDownloadSession(
       mediaId: returnedId,
+      cacheVersion: cacheVersion,
       download: SignedDownloadTarget.fromJson(rawDownload),
     );
   }

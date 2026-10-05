@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -140,7 +141,21 @@ class FamilyPhotoView:
     content_type: str
     size_bytes: int
     created_at: datetime
-    completed_at: datetime | None
+    completed_at: datetime
+    cache_version: str
+
+
+def _family_photo_cache_version(
+    *,
+    media_id: UUID,
+    storage_etag: str,
+    size_bytes: int,
+    completed_at: datetime,
+) -> str:
+    payload = (
+        f"{media_id}:{storage_etag}:{size_bytes}:{completed_at.isoformat()}"
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _record_family_access(
@@ -269,11 +284,14 @@ def get_family_photos(
                     MediaAsset.size_bytes,
                     MediaAsset.created_at,
                     MediaAsset.completed_at,
+                    MediaAsset.storage_etag,
                 )
                 .where(
                     MediaAsset.user_id == resource_owner_user_id,
                     MediaAsset.kind == MediaKind.IMAGE,
                     MediaAsset.status == MediaStatus.READY,
+                    MediaAsset.completed_at.is_not(None),
+                    MediaAsset.storage_etag.is_not(None),
                 )
                 .order_by(MediaAsset.created_at.desc(), MediaAsset.id.desc())
                 .limit(FAMILY_PHOTO_LIST_LIMIT)
@@ -285,6 +303,12 @@ def get_family_photos(
                     size_bytes=row.size_bytes,
                     created_at=row.created_at,
                     completed_at=row.completed_at,
+                    cache_version=_family_photo_cache_version(
+                        media_id=row.media_id,
+                        storage_etag=row.storage_etag,
+                        size_bytes=row.size_bytes,
+                        completed_at=row.completed_at,
+                    ),
                 )
                 for row in rows
             )

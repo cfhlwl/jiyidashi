@@ -1,3 +1,4 @@
+import '../api_client.dart';
 import 'v2_common.dart';
 
 const Set<String> familyRoles = {'OWNER', 'MEMBER'};
@@ -127,6 +128,200 @@ List<V2FamilyPermissionGrant> parseFamilyPermissions(Object? value) {
     if (!ids.add(row.granteeUserId.toLowerCase())) return v2Invalid('家庭权限');
   }
   return List.unmodifiable(rows);
+}
+
+class V2FamilyCurrentLocation {
+  const V2FamilyCurrentLocation({
+    required this.resourceOwnerUserId,
+    required this.latitude,
+    required this.longitude,
+    required this.accuracy,
+    required this.recordedAt,
+    required this.freshUntil,
+  });
+
+  final String resourceOwnerUserId;
+  final double latitude;
+  final double longitude;
+  final double? accuracy;
+  final String recordedAt;
+  final String freshUntil;
+
+  factory V2FamilyCurrentLocation.parse(
+    Object? value, {
+    required String expectedResourceOwnerUserId,
+  }) {
+    final raw = v2Map(value, '家庭当前位置');
+    final owner = v2Uuid(raw['resource_owner_user_id'], '家庭当前位置');
+    if (owner.toLowerCase() != expectedResourceOwnerUserId.toLowerCase()) {
+      return v2Invalid('家庭当前位置');
+    }
+    final latitude = v2Double(raw['latitude'], '家庭当前位置');
+    final longitude = v2Double(raw['longitude'], '家庭当前位置');
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      return v2Invalid('家庭当前位置');
+    }
+    final rawAccuracy = raw['accuracy'];
+    final accuracy = rawAccuracy == null
+        ? null
+        : v2Double(rawAccuracy, '家庭当前位置');
+    if (accuracy != null && accuracy < 0) return v2Invalid('家庭当前位置');
+    final recordedAt = v2Aware(raw['recorded_at'], '家庭当前位置');
+    final freshUntil = v2Aware(raw['fresh_until'], '家庭当前位置');
+    if (DateTime.parse(freshUntil).toUtc().isBefore(
+          DateTime.parse(recordedAt).toUtc(),
+        )) {
+      return v2Invalid('家庭当前位置');
+    }
+    return V2FamilyCurrentLocation(
+      resourceOwnerUserId: owner,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
+      recordedAt: recordedAt,
+      freshUntil: freshUntil,
+    );
+  }
+}
+
+class V2FamilyMemory {
+  const V2FamilyMemory({
+    required this.memoryId,
+    required this.memoryType,
+    required this.title,
+    required this.content,
+    required this.occurredAt,
+    required this.sourceType,
+    required this.isConfirmed,
+    required this.editRevision,
+    required this.createdAt,
+  });
+
+  final String memoryId;
+  final String memoryType;
+  final String? title;
+  final String content;
+  final String occurredAt;
+  final String sourceType;
+  final bool isConfirmed;
+  final int editRevision;
+  final String createdAt;
+
+  factory V2FamilyMemory.parse(Object? value) {
+    final raw = v2Map(value, '家庭记忆');
+    final title = raw['title'];
+    if (title != null && (title is! String || title.length > 240)) {
+      return v2Invalid('家庭记忆');
+    }
+    final content = raw['content'];
+    if (content is! String || content.length > 20000) {
+      return v2Invalid('家庭记忆');
+    }
+    return V2FamilyMemory(
+      memoryId: v2Uuid(raw['memory_id'], '家庭记忆'),
+      memoryType: v2Text(raw['memory_type'], label: '家庭记忆', max: 40),
+      title: title as String?,
+      content: content,
+      occurredAt: v2Aware(raw['occurred_at'], '家庭记忆'),
+      sourceType: v2Text(raw['source_type'], label: '家庭记忆', max: 80),
+      isConfirmed: v2Bool(raw['is_confirmed'], '家庭记忆'),
+      editRevision: v2Int(raw['edit_revision'], label: '家庭记忆'),
+      createdAt: v2Aware(raw['created_at'], '家庭记忆'),
+    );
+  }
+}
+
+class V2FamilyPhoto {
+  const V2FamilyPhoto({
+    required this.mediaId,
+    required this.contentType,
+    required this.sizeBytes,
+    required this.createdAt,
+    required this.completedAt,
+    required this.cacheVersion,
+  });
+
+  final String mediaId;
+  final String contentType;
+  final int sizeBytes;
+  final String createdAt;
+  final String completedAt;
+  final String cacheVersion;
+
+  factory V2FamilyPhoto.parse(Object? value) {
+    final raw = v2Map(value, '家庭照片');
+    final contentType =
+        v2Text(raw['content_type'], label: '家庭照片', max: 100);
+    if (!contentType.startsWith('image/')) return v2Invalid('家庭照片');
+    final cacheVersion =
+        v2Text(raw['cache_version'], label: '家庭照片', max: 64);
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(cacheVersion)) {
+      return v2Invalid('家庭照片');
+    }
+    return V2FamilyPhoto(
+      mediaId: v2Uuid(raw['media_id'], '家庭照片'),
+      contentType: contentType,
+      sizeBytes: v2Int(raw['size_bytes'], label: '家庭照片', min: 1),
+      createdAt: v2Aware(raw['created_at'], '家庭照片'),
+      completedAt: v2Aware(raw['completed_at'], '家庭照片'),
+      cacheVersion: cacheVersion,
+    );
+  }
+}
+
+List<V2FamilyMemory> parseFamilyMemories(Object? value) {
+  final rows = v2List(value, '家庭记忆', 50)
+      .map(V2FamilyMemory.parse)
+      .toList(growable: false);
+  final ids = <String>{};
+  for (final row in rows) {
+    if (!ids.add(row.memoryId.toLowerCase())) return v2Invalid('家庭记忆');
+  }
+  return List.unmodifiable(rows);
+}
+
+List<V2FamilyPhoto> parseFamilyPhotos(Object? value) {
+  final rows = v2List(value, '家庭照片', 50)
+      .map(V2FamilyPhoto.parse)
+      .toList(growable: false);
+  final ids = <String>{};
+  for (final row in rows) {
+    if (!ids.add(row.mediaId.toLowerCase())) return v2Invalid('家庭照片');
+  }
+  return List.unmodifiable(rows);
+}
+
+class V2FamilyPhotoDownload {
+  const V2FamilyPhotoDownload({
+    required this.mediaId,
+    required this.download,
+  });
+
+  final String mediaId;
+  final SignedDownloadTarget download;
+
+  factory V2FamilyPhotoDownload.parse(
+    Object? value, {
+    required String expectedMediaId,
+  }) {
+    final raw = v2Map(value, '家庭照片下载');
+    final mediaId = v2Uuid(raw['media_id'], '家庭照片下载');
+    if (mediaId.toLowerCase() != expectedMediaId.toLowerCase()) {
+      return v2Invalid('家庭照片下载');
+    }
+    final download = raw['download'];
+    if (download is! Map<String, dynamic>) return v2Invalid('家庭照片下载');
+    return V2FamilyPhotoDownload(
+      mediaId: mediaId,
+      download: SignedDownloadTarget.fromJson(download),
+    );
+  }
+}
+
+String familyMediaCacheKey(String resourceOwnerUserId, String mediaId) {
+  final owner = v2Uuid(resourceOwnerUserId, '家庭照片').toLowerCase();
+  final media = v2Uuid(mediaId, '家庭照片').toLowerCase();
+  return '${owner}_$media';
 }
 
 class V2FamilyInvite {

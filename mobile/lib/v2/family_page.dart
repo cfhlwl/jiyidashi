@@ -1,17 +1,35 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import '../amap_footprint_map.dart';
+import '../amap_privacy_consent.dart';
 import '../api_client.dart';
+import '../footprint_models.dart';
+import '../media_presentation_cache.dart';
 import '../sensitive_operation_confirmation.dart';
 import '../ui/jiyi_components.dart';
+import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
 import 'family_api.dart';
 import 'family_models.dart';
 import 'v2_widgets.dart';
 
+typedef FamilyPhotoRenderer = Widget Function(File file);
+
 class FamilyPage extends StatefulWidget {
-  const FamilyPage({super.key, required this.api});
+  const FamilyPage({
+    super.key,
+    required this.api,
+    this.mediaCache,
+    this.amapPrivacyConsent,
+    this.photoRenderer,
+  });
 
   final JiYiApiClient api;
+  final LocalMediaCache? mediaCache;
+  final AmapPrivacyConsentAuthority? amapPrivacyConsent;
+  final FamilyPhotoRenderer? photoRenderer;
 
   @override
   State<FamilyPage> createState() => _FamilyPageState();
@@ -19,6 +37,10 @@ class FamilyPage extends StatefulWidget {
 
 class _FamilyPageState extends State<FamilyPage> {
   late final FamilyApi familyApi = FamilyApi(widget.api);
+  late final LocalMediaCache mediaCache =
+      widget.mediaCache ?? LocalMediaCache();
+  late final AmapPrivacyConsentAuthority amapPrivacyConsent =
+      widget.amapPrivacyConsent ?? AmapPrivacyConsentStore();
   final TextEditingController inviteToken = TextEditingController();
 
   V2Family? family;
@@ -254,6 +276,7 @@ class _FamilyPageState extends State<FamilyPage> {
       title: '家庭',
       subtitle: '每一项共享都由你明确授权，位置需要单独开启。',
       hero: const JiYiHeroHeader(
+        atmospheric: true,
         eyebrow: '迹忆 · 家庭',
         title: '家庭',
         subtitle: '和家人共享你明确允许的内容。位置需要单独授权。',
@@ -377,7 +400,35 @@ class _FamilyPageState extends State<FamilyPage> {
       child: Material(
         type: MaterialType.transparency,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            FilledButton.tonalIcon(
+              key: ValueKey('family-shared-open-${member.userId}'),
+              onPressed: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _FamilyMemberSharedPage(
+                      api: widget.api,
+                      member: member,
+                      memberLabel: '家庭成员 ${index + 1}',
+                      mediaCache: mediaCache,
+                      amapPrivacyConsent: amapPrivacyConsent,
+                      photoRenderer: widget.photoRenderer,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('查看 TA 分享给我的内容'),
+            ),
+            const SizedBox(height: JiYiSpacing.md),
+            Text(
+              '我授权给 TA',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
             for (final permission in interactiveFamilyPermissions)
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
@@ -390,6 +441,712 @@ class _FamilyPageState extends State<FamilyPage> {
                     ? null
                     : (enabled) => _toggle(member, permission, enabled),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _FamilyMemberSharedPage extends StatefulWidget {
+  const _FamilyMemberSharedPage({
+    required this.api,
+    required this.member,
+    required this.memberLabel,
+    required this.mediaCache,
+    required this.amapPrivacyConsent,
+    this.photoRenderer,
+  });
+
+  final JiYiApiClient api;
+  final V2FamilyMember member;
+  final String memberLabel;
+  final LocalMediaCache mediaCache;
+  final AmapPrivacyConsentAuthority amapPrivacyConsent;
+  final FamilyPhotoRenderer? photoRenderer;
+
+  @override
+  State<_FamilyMemberSharedPage> createState() =>
+      _FamilyMemberSharedPageState();
+}
+
+class _FamilyMemberSharedPageState extends State<_FamilyMemberSharedPage> {
+  late final FamilyApi familyApi = FamilyApi(widget.api);
+
+  V2FamilyCurrentLocation? location;
+  FootprintDay? footprint;
+  List<V2FamilyMemory>? memories;
+  List<V2FamilyPhoto>? photos;
+
+  bool locationLoading = false;
+  bool footprintLoading = false;
+  bool memoriesLoading = false;
+  bool photosLoading = false;
+  bool mapPrivacyAccepted = false;
+
+  String? locationError;
+  String? footprintError;
+  String? memoriesError;
+  String? photosError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMapPrivacy();
+  }
+
+  Future<void> _loadMapPrivacy() async {
+    try {
+      final accepted = await widget.amapPrivacyConsent.readAccepted();
+      if (mounted) setState(() => mapPrivacyAccepted = accepted);
+    } catch (_) {
+      if (mounted) setState(() => mapPrivacyAccepted = false);
+    }
+  }
+
+  bool _sessionCurrent(int version, String viewer) {
+    return mounted &&
+        widget.api.sessionVersion == version &&
+        widget.api.authenticatedUserId?.toLowerCase() == viewer.toLowerCase();
+  }
+
+  String _errorText(Object error, String kind) {
+    if (error is ApiException) {
+      if (error.message == 'FAMILY_READ_NOT_AUTHORIZED') {
+        return switch (kind) {
+          'location' => 'TA 没有把当前位置分享给你。',
+          'footprint' => 'TA 没有把今日足迹分享给你。',
+          'memory' => 'TA 没有把个人记忆分享给你。',
+          'photos' => 'TA 没有把照片分享给你。',
+          _ => '这项家庭内容没有授权给你。',
+        };
+      }
+      if (error.message == 'CURRENT_LOCATION_UNAVAILABLE') {
+        return 'TA 的当前位置暂时不可用。';
+      }
+      if (error.message == 'FAMILY_PHOTO_UNAVAILABLE') {
+        return '这张照片已经不可用。';
+      }
+    }
+    if (error is TransportException) return '网络暂时不可用，可以稍后重试。';
+    return '这项家庭内容暂时无法读取。';
+  }
+
+  Future<void> _readLocation() async {
+    if (locationLoading) return;
+    final viewer = widget.api.authenticatedUserId?.trim();
+    if (viewer == null || viewer.isEmpty) return;
+    final version = widget.api.sessionVersion;
+    setState(() {
+      locationLoading = true;
+      locationError = null;
+    });
+    try {
+      final next =
+          await familyApi.getMemberCurrentLocation(widget.member.userId);
+      if (!_sessionCurrent(version, viewer)) return;
+      setState(() => location = next);
+    } catch (error) {
+      if (!_sessionCurrent(version, viewer)) return;
+      setState(() {
+        location = null;
+        locationError = _errorText(error, 'location');
+      });
+    } finally {
+      if (_sessionCurrent(version, viewer)) {
+        setState(() => locationLoading = false);
+      }
+    }
+  }
+
+  Future<void> _readFootprint() async {
+    if (footprintLoading) return;
+    final viewer = widget.api.authenticatedUserId?.trim();
+    if (viewer == null || viewer.isEmpty) return;
+    final version = widget.api.sessionVersion;
+    setState(() {
+      footprintLoading = true;
+      footprintError = null;
+    });
+    try {
+      final next =
+          await familyApi.getMemberTodayFootprint(widget.member.userId);
+      if (!_sessionCurrent(version, viewer)) return;
+      setState(() => footprint = next);
+    } catch (error) {
+      if (!_sessionCurrent(version, viewer)) return;
+      setState(() {
+        footprint = null;
+        footprintError = _errorText(error, 'footprint');
+      });
+    } finally {
+      if (_sessionCurrent(version, viewer)) {
+        setState(() => footprintLoading = false);
+      }
+    }
+  }
+
+  Future<void> _readMemories() async {
+    if (memoriesLoading) return;
+    final viewer = widget.api.authenticatedUserId?.trim();
+    if (viewer == null || viewer.isEmpty) return;
+    final version = widget.api.sessionVersion;
+    setState(() {
+      memoriesLoading = true;
+      memoriesError = null;
+    });
+    try {
+      final next = await familyApi.getMemberMemories(
+        widget.member.userId,
+        limit: 8,
+      );
+      if (!_sessionCurrent(version, viewer)) return;
+      setState(() => memories = next);
+    } catch (error) {
+      if (!_sessionCurrent(version, viewer)) return;
+      setState(() {
+        memories = null;
+        memoriesError = _errorText(error, 'memory');
+      });
+    } finally {
+      if (_sessionCurrent(version, viewer)) {
+        setState(() => memoriesLoading = false);
+      }
+    }
+  }
+
+  Future<void> _readPhotos() async {
+    if (photosLoading) return;
+    final viewer = widget.api.authenticatedUserId?.trim();
+    if (viewer == null || viewer.isEmpty) return;
+    final version = widget.api.sessionVersion;
+    setState(() {
+      photosLoading = true;
+      photosError = null;
+    });
+    try {
+      final next = await familyApi.getMemberPhotos(widget.member.userId);
+      if (!_sessionCurrent(version, viewer)) return;
+      for (final photo in next) {
+        widget.mediaCache.markAuthorityValidated(
+          ownerUserId: viewer,
+          mediaId: familyMediaCacheKey(widget.member.userId, photo.mediaId),
+        );
+      }
+      setState(() => photos = next);
+    } on ApiException catch (error) {
+      if (!_sessionCurrent(version, viewer)) return;
+      if (error.statusCode == 403 || error.statusCode == 404) {
+        await widget.mediaCache.invalidateMediaPrefix(
+          ownerUserId: viewer,
+          mediaIdPrefix: '${widget.member.userId.toLowerCase()}_',
+        );
+      }
+      if (!_sessionCurrent(version, viewer)) return;
+      setState(() {
+        photos = null;
+        photosError = _errorText(error, 'photos');
+      });
+    } catch (error) {
+      if (!_sessionCurrent(version, viewer)) return;
+      setState(() {
+        photos = null;
+        photosError = _errorText(error, 'photos');
+      });
+    } finally {
+      if (_sessionCurrent(version, viewer)) {
+        setState(() => photosLoading = false);
+      }
+    }
+  }
+
+  Future<void> _acceptMapPrivacy() async {
+    final accepted = await requestAmapPrivacyConsent(
+      context,
+      widget.amapPrivacyConsent,
+    );
+    if (mounted && accepted) setState(() => mapPrivacyAccepted = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.memberLabel)),
+      body: SafeArea(
+        child: JiYiPageFrame(
+          title: '家人分享',
+          subtitle: '只显示 TA 明确授权给你的内容；没有授权时不会从其他数据推断。',
+          hero: JiYiHeroHeader(
+            atmospheric: true,
+            eyebrow: '迹忆 · 家庭',
+            title: widget.memberLabel,
+            subtitle: '照片、位置、足迹和记忆分别授权，随时以服务端当前权限为准。',
+            icon: Icons.family_restroom_outlined,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _photosSection(),
+              const SizedBox(height: JiYiSpacing.lg),
+              _locationSection(),
+              const SizedBox(height: JiYiSpacing.lg),
+              _footprintSection(),
+              const SizedBox(height: JiYiSpacing.lg),
+              _memorySection(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _photosSection() {
+    final current = photos;
+    return JiYiSectionCard(
+      leading: const Icon(Icons.photo_library_outlined),
+      title: 'TA 分享的照片',
+      subtitle: '照片优先从本机受控缓存展示；授权变化后会重新验证。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton.tonalIcon(
+            key: const ValueKey('family-read-photos'),
+            onPressed: photosLoading ? null : _readPhotos,
+            icon: photosLoading
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.photo_outlined),
+            label: Text(photosLoading ? '正在读取…' : '查看照片'),
+          ),
+          if (photosError != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.warning,
+              message: photosError!,
+            ),
+          ],
+          if (current != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            if (current.isEmpty)
+              const JiYiEmptyState(
+                icon: Icons.photo_outlined,
+                title: '暂时没有可分享的照片',
+                message: 'TA 后续分享的照片会显示在这里。',
+              )
+            else
+              GridView.builder(
+                key: const ValueKey('family-photo-grid'),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: current.length > 6 ? 6 : current.length,
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: JiYiSpacing.sm,
+                  mainAxisSpacing: JiYiSpacing.sm,
+                  childAspectRatio: 1.15,
+                ),
+                itemBuilder: (context, index) => _FamilyPhotoTile(
+                  api: widget.api,
+                  familyApi: familyApi,
+                  resourceOwnerUserId: widget.member.userId,
+                  photo: current[index],
+                  mediaCache: widget.mediaCache,
+                  renderer: widget.photoRenderer,
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _locationSection() {
+    final current = location;
+    return JiYiSectionCard(
+      leading: const Icon(Icons.my_location_outlined),
+      title: '当前位置',
+      subtitle: '只有 TA 单独授权且服务端判定位置仍新鲜时才会显示。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            key: const ValueKey('family-read-location'),
+            onPressed: locationLoading ? null : _readLocation,
+            icon: locationLoading
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.place_outlined),
+            label: Text(locationLoading ? '正在读取…' : '查看当前位置'),
+          ),
+          if (locationError != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.warning,
+              message: locationError!,
+            ),
+          ],
+          if (current != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            Text(
+              '更新于 ${jiyiDisplayTime(current.recordedAt)}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+            if (mapPrivacyAccepted)
+              JiYiPlaceMap(
+                latitude: current.latitude,
+                longitude: current.longitude,
+                name: widget.memberLabel,
+                address: '家人明确授权的当前位置',
+                privacyAccepted: true,
+              )
+            else
+              OutlinedButton.icon(
+                key: const ValueKey('family-amap-privacy-accept'),
+                onPressed: _acceptMapPrivacy,
+                icon: const Icon(Icons.map_outlined),
+                label: const Text('查看地图服务说明并启用地图'),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _footprintSection() {
+    final current = footprint;
+    return JiYiSectionCard(
+      leading: const Icon(Icons.route_outlined),
+      title: '今日足迹',
+      subtitle: '只展示服务端已经形成的到访片段，不用当前位置补全路线。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            key: const ValueKey('family-read-footprint'),
+            onPressed: footprintLoading ? null : _readFootprint,
+            icon: footprintLoading
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.route_outlined),
+            label: Text(footprintLoading ? '正在读取…' : '查看今日足迹'),
+          ),
+          if (footprintError != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.warning,
+              message: footprintError!,
+            ),
+          ],
+          if (current != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            if (current.visits.isEmpty)
+              const JiYiEmptyState(
+                icon: Icons.location_off_outlined,
+                title: '今天还没有形成足迹',
+                message: '没有可靠到访时不会补造地点。',
+              )
+            else
+              for (var index = 0; index < current.visits.length; index++) ...[
+                _FamilyFootprintRow(visit: current.visits[index]),
+                if (index != current.visits.length - 1)
+                  const Divider(height: JiYiSpacing.lg),
+              ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _memorySection() {
+    final current = memories;
+    return JiYiSectionCard(
+      leading: const Icon(Icons.auto_stories_outlined),
+      title: 'TA 分享的记忆',
+      subtitle: '这里是 Family-safe 只读投影，不包含内部 metadata 或原始位置点。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            key: const ValueKey('family-read-memories'),
+            onPressed: memoriesLoading ? null : _readMemories,
+            icon: memoriesLoading
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_stories_outlined),
+            label: Text(memoriesLoading ? '正在读取…' : '查看个人记忆'),
+          ),
+          if (memoriesError != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.warning,
+              message: memoriesError!,
+            ),
+          ],
+          if (current != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            if (current.isEmpty)
+              const JiYiEmptyState(
+                icon: Icons.auto_stories_outlined,
+                title: '暂时没有可分享的记忆',
+                message: 'TA 分享的记忆会显示在这里。',
+              )
+            else
+              for (var index = 0; index < current.length; index++) ...[
+                _FamilyMemoryCard(memory: current[index]),
+                if (index != current.length - 1)
+                  const SizedBox(height: JiYiSpacing.sm),
+              ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FamilyPhotoTile extends StatefulWidget {
+  const _FamilyPhotoTile({
+    required this.api,
+    required this.familyApi,
+    required this.resourceOwnerUserId,
+    required this.photo,
+    required this.mediaCache,
+    this.renderer,
+  });
+
+  final JiYiApiClient api;
+  final FamilyApi familyApi;
+  final String resourceOwnerUserId;
+  final V2FamilyPhoto photo;
+  final LocalMediaCache mediaCache;
+  final FamilyPhotoRenderer? renderer;
+
+  @override
+  State<_FamilyPhotoTile> createState() => _FamilyPhotoTileState();
+}
+
+class _FamilyPhotoTileState extends State<_FamilyPhotoTile> {
+  File? file;
+  bool unavailable = false;
+  int generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FamilyPhotoTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photo.mediaId != widget.photo.mediaId ||
+        oldWidget.photo.cacheVersion != widget.photo.cacheVersion ||
+        oldWidget.resourceOwnerUserId != widget.resourceOwnerUserId) {
+      _resolve();
+    }
+  }
+
+  bool _current(int attempt, int sessionVersion, String viewer) {
+    return mounted &&
+        generation == attempt &&
+        widget.api.sessionVersion == sessionVersion &&
+        widget.api.authenticatedUserId?.toLowerCase() == viewer.toLowerCase();
+  }
+
+  Future<void> _resolve() async {
+    final attempt = ++generation;
+    final viewer = widget.api.authenticatedUserId?.trim();
+    if (viewer == null || viewer.isEmpty) return;
+    final sessionVersion = widget.api.sessionVersion;
+    final mediaKey = familyMediaCacheKey(
+      widget.resourceOwnerUserId,
+      widget.photo.mediaId,
+    );
+    File? cached;
+    try {
+      cached = await widget.mediaCache.lookup(
+        ownerUserId: viewer,
+        mediaId: mediaKey,
+        cacheVersion: widget.photo.cacheVersion,
+      );
+      if (!_current(attempt, sessionVersion, viewer)) return;
+      if (cached != null &&
+          widget.mediaCache.hasFreshAuthorityLease(
+            ownerUserId: viewer,
+            mediaId: mediaKey,
+          )) {
+        setState(() {
+          file = cached;
+          unavailable = false;
+        });
+        return;
+      }
+
+      final signed = await widget.familyApi.createMemberPhotoDownload(
+        widget.resourceOwnerUserId,
+        widget.photo.mediaId,
+      );
+      if (!_current(attempt, sessionVersion, viewer)) return;
+      final bytes = await widget.api.downloadSignedMedia(signed.download);
+      if (!_current(attempt, sessionVersion, viewer)) return;
+      final stored = await widget.mediaCache.putBytes(
+        ownerUserId: viewer,
+        mediaId: mediaKey,
+        cacheVersion: widget.photo.cacheVersion,
+        bytes: bytes,
+      );
+      if (!_current(attempt, sessionVersion, viewer)) return;
+      widget.mediaCache.markAuthorityValidated(
+        ownerUserId: viewer,
+        mediaId: mediaKey,
+      );
+      setState(() {
+        file = stored;
+        unavailable = false;
+      });
+    } on ApiException catch (error) {
+      if (error.statusCode == 403 || error.statusCode == 404) {
+        await widget.mediaCache.invalidateMedia(
+          ownerUserId: viewer,
+          mediaId: mediaKey,
+        );
+      }
+      if (!_current(attempt, sessionVersion, viewer)) return;
+      setState(() {
+        file = null;
+        unavailable = true;
+      });
+    } catch (_) {
+      if (!_current(attempt, sessionVersion, viewer)) return;
+      setState(() {
+        file = null;
+        unavailable = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = file;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(JiYiRadius.control),
+      child: current == null
+          ? ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              child: Center(
+                child: Icon(
+                  unavailable
+                      ? Icons.image_not_supported_outlined
+                      : Icons.photo_outlined,
+                ),
+              ),
+            )
+          : KeyedSubtree(
+              key: ValueKey(
+                'family-photo-ready-${familyMediaCacheKey(widget.resourceOwnerUserId, widget.photo.mediaId)}',
+              ),
+              child: widget.renderer?.call(current) ??
+                  LocalMediaPresentationScope.maybeOf(context)?.renderer(
+                    context,
+                    current,
+                    BoxFit.cover,
+                  ) ??
+                  Image.file(
+                    current,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Icon(Icons.broken_image_outlined),
+                    ),
+                  ),
+            ),
+    );
+  }
+}
+
+class _FamilyFootprintRow extends StatelessWidget {
+  const _FamilyFootprintRow({required this.visit});
+
+  final FootprintVisit visit;
+
+  @override
+  Widget build(BuildContext context) {
+    final end = visit.leftAtLocal == null
+        ? '仍在停留'
+        : jiyiDisplayTime(visit.leftAtLocal!);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.place_outlined, size: 20),
+        const SizedBox(width: JiYiSpacing.sm),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                visit.placeName,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: JiYiSpacing.xs),
+              Text(
+                '${jiyiDisplayTime(visit.arrivedAtLocal)} · $end',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FamilyMemoryCard extends StatelessWidget {
+  const _FamilyMemoryCard({required this.memory});
+
+  final V2FamilyMemory memory;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = memory.title?.trim();
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(JiYiRadius.control),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title == null || title.isEmpty ? '一段记忆' : title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            if (memory.content.trim().isNotEmpty)
+              Text(
+                memory.content,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            const SizedBox(height: JiYiSpacing.xs),
+            Text(
+              jiyiDisplayDate(memory.occurredAt),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ),
       ),

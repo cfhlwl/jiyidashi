@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from app.core.db import SessionLocal
-from app.models import Memory, Place, User, Visit
+from app.models import Memory, MemoryType, Place, User, Visit
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -218,3 +218,61 @@ async def test_timeline_rejects_invalid_cursor(client):
         )
         assert response.status_code == 422
         assert response.json()["detail"] == "TIMELINE_CURSOR_INVALID"
+
+
+async def test_timeline_projects_only_photo_media_identity(client):
+    headers, user_id = await _new_user(client, "timeline-photo-media")
+    photo_id = uuid4()
+    note_id = uuid4()
+    media_id = uuid4()
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                Memory(
+                    id=photo_id,
+                    user_id=user_id,
+                    memory_type=MemoryType.PHOTO,
+                    content="一张照片",
+                    occurred_at=datetime(2026, 10, 4, 8, 0, tzinfo=UTC),
+                    metadata_json={
+                        "media_id": str(media_id),
+                        "storage_key": "must-never-leak",
+                        "storage_etag": "must-never-leak",
+                        "signed_url": "https://must-never-leak.invalid/object",
+                    },
+                ),
+                Memory(
+                    id=note_id,
+                    user_id=user_id,
+                    memory_type=MemoryType.NOTE,
+                    content="普通文字",
+                    occurred_at=datetime(2026, 10, 4, 7, 0, tzinfo=UTC),
+                    metadata_json={"media_id": str(uuid4())},
+                ),
+            ]
+        )
+        db.commit()
+
+    response = await client.get(
+        "/v1/timeline/events",
+        headers=headers,
+        params={"limit": 10},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    items = {item["id"]: item for item in body["items"]}
+
+    photo = items[str(photo_id)]
+    assert photo["memory_type"] == "PHOTO"
+    assert photo["media_id"] == str(media_id)
+
+    note = items[str(note_id)]
+    assert note["memory_type"] == "NOTE"
+    assert note["media_id"] is None
+
+    encoded = str(body)
+    assert "must-never-leak" not in encoded
+    assert "signed_url" not in encoded
+    assert "storage_key" not in encoded
+    assert "storage_etag" not in encoded
