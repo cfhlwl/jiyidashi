@@ -14,7 +14,6 @@ from app.account_deletion_models import AccountDeletionOperation
 from app.core.db import SessionLocal
 from app.data_deletion_models import DataDeletionOperation
 from app.maintenance_adapters import ClaimAuthority, _cancel_other_owner_jobs
-
 from app.maintenance_job_models import (
     MaintenanceJob,
     MaintenanceJobStatus,
