@@ -28,6 +28,8 @@ https://{$API_DOMAIN} {
         max_size {$API_REQUEST_BODY_LIMIT}
     }
 
+    respond /health/ready 404
+
     redir /admin /admin/ permanent
 
     handle /admin/api/* {
