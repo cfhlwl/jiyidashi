@@ -31,6 +31,22 @@ compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 for _ in $(seq 1 60); do
   if "${compose[@]}" exec -T postgres sh -ceu \
     'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+
+# Timers do not inherit deploy-shell variables. Reuse the exact immutable image
+# already running for API/worker unless the operator/CI explicitly supplied one.
+if [[ -z "${BACKEND_IMAGE:-}" ]]; then
+  runtime_cid="$("${compose[@]}" ps -q api 2>/dev/null || true)"
+  if [[ -z "$runtime_cid" ]]; then
+    runtime_cid="$("${compose[@]}" ps -q worker 2>/dev/null || true)"
+  fi
+  if [[ -z "$runtime_cid" ]]; then
+    echo "BACKEND_IMAGE is unset and no running api/worker image can be resolved" >&2
+    exit 3
+  fi
+  BACKEND_IMAGE="$(docker inspect "$runtime_cid" --format '{{.Config.Image}}')"
+  export BACKEND_IMAGE
+fi
+
     break
   fi
   sleep 2
@@ -108,11 +124,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+created_restore=true
 ENV_FILE="$ENV_FILE" \
 COMPOSE_FILE="$COMPOSE_FILE" \
 RESTORE_DATABASE="$restore_database" \
   bash "$ROOT_DIR/ops/restore-postgres.sh" "$dump_path"
-created_restore=true
 
 restored_revision="$(
   "${compose[@]}" exec -T postgres sh -ceu "
