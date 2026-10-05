@@ -299,6 +299,13 @@ class LocalMediaCache {
   }
 }
 
+typedef LocalMediaPresentationResolver = Future<File> Function({
+  required JiYiApiClient api,
+  required LocalMediaCache cache,
+  required String ownerUserId,
+  required String mediaId,
+});
+
 typedef LocalMediaFileRenderer = Widget Function(
   BuildContext context,
   File file,
@@ -309,17 +316,19 @@ class LocalMediaPresentationScope extends InheritedWidget {
   const LocalMediaPresentationScope({
     super.key,
     required this.renderer,
+    this.resolver,
     required super.child,
   });
 
   final LocalMediaFileRenderer renderer;
+  final LocalMediaPresentationResolver? resolver;
 
   static LocalMediaPresentationScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<LocalMediaPresentationScope>();
 
   @override
   bool updateShouldNotify(LocalMediaPresentationScope oldWidget) =>
-      renderer != oldWidget.renderer;
+      renderer != oldWidget.renderer || resolver != oldWidget.resolver;
 }
 
 class LocalMediaThumbnail extends StatefulWidget {
@@ -346,14 +355,22 @@ class LocalMediaThumbnail extends StatefulWidget {
 
 class _LocalMediaThumbnailState extends State<LocalMediaThumbnail> {
   late final LocalMediaCache _cache = widget.cache ?? LocalMediaCache();
+  LocalMediaPresentationResolver? _presentationResolver;
+  bool _dependenciesReady = false;
   File? _file;
   bool _unavailable = false;
   int _generation = 0;
 
   @override
-  void initState() {
-    super.initState();
-    _resolve();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextResolver =
+        LocalMediaPresentationScope.maybeOf(context)?.resolver;
+    if (!_dependenciesReady || nextResolver != _presentationResolver) {
+      _dependenciesReady = true;
+      _presentationResolver = nextResolver;
+      _resolve();
+    }
   }
 
   @override
@@ -378,13 +395,21 @@ class _LocalMediaThumbnailState extends State<LocalMediaThumbnail> {
       return;
     }
     try {
-      final file = await MediaPresentationResolver(
-        api: widget.api,
-        cache: _cache,
-      ).resolve(
-        ownerUserId: owner,
-        mediaId: widget.mediaId,
-      );
+      final override = _presentationResolver;
+      final file = override != null
+          ? await override(
+              api: widget.api,
+              cache: _cache,
+              ownerUserId: owner,
+              mediaId: widget.mediaId,
+            )
+          : await MediaPresentationResolver(
+              api: widget.api,
+              cache: _cache,
+            ).resolve(
+              ownerUserId: owner,
+              mediaId: widget.mediaId,
+            );
       if (!mounted || generation != _generation) return;
       setState(() {
         _file = file;
