@@ -284,6 +284,27 @@ def main() -> None:
     assert "backup-egress:" in compose
     assert 'profiles: ["ops"]' in compose
 
+    backup_service = (ROOT / "ops" / "systemd" / "jiyidashi-offhost-backup.service").read_text(
+        encoding="utf-8"
+    )
+    backup_timer = (ROOT / "ops" / "systemd" / "jiyidashi-offhost-backup.timer").read_text(
+        encoding="utf-8"
+    )
+    restore_service = (
+        ROOT / "ops" / "systemd" / "jiyidashi-restore-drill.service"
+    ).read_text(encoding="utf-8")
+    restore_timer = (
+        ROOT / "ops" / "systemd" / "jiyidashi-restore-drill.timer"
+    ).read_text(encoding="utf-8")
+    assert "Persistent=true" in backup_timer
+    assert "OnCalendar=*-*-* 02:15:00 UTC" in backup_timer
+    assert "Persistent=true" in restore_timer
+    assert "OnCalendar=Sun *-*-* 04:15:00 UTC" in restore_timer
+    assert "ops/offhost-backup.sh" in backup_service
+    assert "ops/offhost-restore-drill.sh latest" in restore_service
+    assert "jiyidashi-offhost-backup.lock" in backup_service
+    assert "jiyidashi-offhost-backup.lock" in restore_service
+
     dockerfile = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     assert "USER app" in dockerfile
     assert "--reload" not in dockerfile
