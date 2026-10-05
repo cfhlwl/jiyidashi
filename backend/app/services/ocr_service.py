@@ -255,6 +255,8 @@ async def extract_ocr(
         } else 422
         raise OCRError(f"OCR_ANALYSIS_{exc.code}", status) from exc
 
+    del image
+
     try:
         inference = await gateway.infer_image(
             AIImageInferenceRequest(
