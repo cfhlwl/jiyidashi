@@ -232,6 +232,7 @@ def create_schema() -> None:
         idempotency_models,
         life_event_models,
         life_stage_models,
+        maintenance_job_models,
         media_models,
         memory_feedback_models,
         models,
