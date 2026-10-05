@@ -1,5 +1,5 @@
-import com.android.build.api.dsl.ApplicationExtension
-import com.android.build.api.dsl.LibraryExtension
+import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+import com.android.build.api.variant.LibraryAndroidComponentsExtension
 
 allprojects {
     repositories {
@@ -19,19 +19,25 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
-    // AMap's Flutter bridge still declares compileSdk 35, while its resolved
-    // Android AAR graph requires API 36. Register against plugin application
-    // instead of afterEvaluate so late/already-evaluated Flutter plugin
-    // projects cannot fail configuration.
+    // Some Flutter plugins still declare compileSdk 35 even though their
+    // resolved Android AAR graph requires API 36. Plugin-application callbacks
+    // run before a plugin's own android {} block can finish and may therefore
+    // be overwritten. finalizeDsl runs after each Android build script has
+    // configured its DSL but before variants/tasks are created, so API 36 is
+    // the final compileSdk seen by AAR metadata validation.
     pluginManager.withPlugin("com.android.application") {
-        extensions.configure<ApplicationExtension> {
-            compileSdk = 36
+        extensions.configure<ApplicationAndroidComponentsExtension> {
+            finalizeDsl { extension ->
+                extension.compileSdk = 36
+            }
         }
     }
 
     pluginManager.withPlugin("com.android.library") {
-        extensions.configure<LibraryExtension> {
-            compileSdk = 36
+        extensions.configure<LibraryAndroidComponentsExtension> {
+            finalizeDsl { extension ->
+                extension.compileSdk = 36
+            }
         }
     }
 
