@@ -388,6 +388,7 @@ def complete_maintenance_job(
     job.lease_expires_at = None
     job.last_error_code = None
     if scrub_identity:
+        job.owner_user_id = None
         job.dedupe_key = None
         job.resource_key = None
         job.payload_json = {}
