@@ -71,6 +71,8 @@ class BackupStore(Protocol):
 
     def download(self, key: str, destination: Path) -> None: ...
 
+    def sha256(self, key: str) -> tuple[str, int]: ...
+
     def copy(self, source_key: str, destination_key: str) -> None: ...
 
     def delete(self, key: str) -> None: ...
@@ -359,6 +361,25 @@ class S3BackupStore:
         except Exception as exc:
             raise BackupError("BACKUP_STORAGE_DOWNLOAD_FAILED") from exc
 
+    def sha256(self, key: str) -> tuple[str, int]:
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=key)
+            body = response["Body"]
+            try:
+                while True:
+                    chunk = body.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    size += len(chunk)
+            finally:
+                body.close()
+        except Exception as exc:
+            raise BackupError("BACKUP_STORAGE_HASH_FAILED") from exc
+        return digest.hexdigest(), size
+
     def copy(self, source_key: str, destination_key: str) -> None:
         try:
             self._client.copy_object(
@@ -493,6 +514,12 @@ class FilesystemBackupStore:
         if not source.is_file():
             raise BackupError("BACKUP_OBJECT_NOT_FOUND")
         shutil.copyfile(source, destination)
+
+    def sha256(self, key: str) -> tuple[str, int]:
+        path = self._path(key)
+        if not path.is_file():
+            raise BackupError("BACKUP_OBJECT_NOT_FOUND")
+        return _sha256_file(path)
 
     def copy(self, source_key: str, destination_key: str) -> None:
         source = self._path(source_key)
@@ -698,6 +725,9 @@ def publish_backup(
         sha256=dump_sha256,
         size_bytes=dump_size_bytes,
     )
+    remote_sha256, remote_size = store.sha256(final_dump_key)
+    if remote_sha256 != dump_sha256 or remote_size != dump_size_bytes:
+        raise BackupError("BACKUP_REMOTE_CONTENT_MISMATCH")
 
     normalized_release = release_revision.strip() or "unknown"
     if not RELEASE_RE.fullmatch(normalized_release):
