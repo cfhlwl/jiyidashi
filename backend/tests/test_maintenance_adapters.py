@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import delete, select
 
+from app import maintenance_adapters
 from app.analytics_models import (
     ProductActiveDay,
     RetrievalAnalyticsAttempt,
@@ -20,7 +21,11 @@ from app.maintenance_adapters import (
     handle_media_pending_cleanup,
     handle_security_alert_delivery,
 )
-from app.maintenance_job_models import MaintenanceJob, MaintenanceJobStatus, MaintenanceJobType
+from app.maintenance_job_models import (
+    MaintenanceJob,
+    MaintenanceJobStatus,
+    MaintenanceJobType,
+)
 from app.maintenance_worker import MaintenanceWorker
 from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import User
@@ -30,7 +35,6 @@ from app.security_models import (
     SecuritySeverity,
     SecuritySignalCode,
 )
-from app import maintenance_adapters
 from app.services import security_alerting
 from app.services.entitlement_service import storage_usage_bytes
 from app.services.maintenance_jobs import (
@@ -87,7 +91,6 @@ def _enqueue_and_claim(
         assert claim.id == job_id
         db.commit()
         return claim
-
 
 @pytest.mark.asyncio
 async def test_stale_pending_media_cleanup_waits_for_capability_and_releases_quota(
@@ -196,7 +199,6 @@ async def test_stale_pending_media_cleanup_waits_for_capability_and_releases_quo
     assert stale_key not in storage.objects
     assert stale_key in storage.deleted
 
-
 @pytest.mark.asyncio
 async def test_security_alert_worker_retries_transient_then_stops_after_success(
     client,
@@ -297,7 +299,6 @@ async def test_security_alert_worker_retries_transient_then_stops_after_success(
         db.execute(delete(SecurityAlert).where(SecurityAlert.id == alert_id))
         db.commit()
 
-
 @pytest.mark.asyncio
 async def test_security_alert_terminal_delivery_does_not_loop(
     client,
@@ -342,7 +343,6 @@ async def test_security_alert_terminal_delivery_does_not_loop(
         db.execute(delete(MaintenanceJob).where(MaintenanceJob.id == claim.id))
         db.execute(delete(SecurityAlert).where(SecurityAlert.id == alert_id))
         db.commit()
-
 
 @pytest.mark.asyncio
 async def test_analytics_retention_job_is_bounded_and_resumable(
@@ -459,7 +459,6 @@ async def test_analytics_retention_job_is_bounded_and_resumable(
         db.execute(delete(MaintenanceJob).where(MaintenanceJob.id == second.id))
         db.execute(delete(User).where(User.id == user_id))
         db.commit()
-
 
 
 @pytest.mark.asyncio
