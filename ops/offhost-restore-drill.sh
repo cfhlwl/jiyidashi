@@ -42,9 +42,9 @@ done
 # Timers do not inherit deploy-shell variables. Reuse the exact immutable image
 # already running for API/worker unless the operator/CI explicitly supplied one.
 if [[ -z "${BACKEND_IMAGE:-}" ]]; then
-  runtime_cid="$("${compose[@]}" ps -q api 2>/dev/null || true)"
+  runtime_cid="$("${compose[@]}" ps -a -q api 2>/dev/null || true)"
   if [[ -z "$runtime_cid" ]]; then
-    runtime_cid="$("${compose[@]}" ps -q worker 2>/dev/null || true)"
+    runtime_cid="$("${compose[@]}" ps -a -q worker 2>/dev/null || true)"
   fi
   if [[ -z "$runtime_cid" ]]; then
     echo "BACKEND_IMAGE is unset and no running api/worker image can be resolved" >&2
