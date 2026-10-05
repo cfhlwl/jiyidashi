@@ -22,6 +22,7 @@ class TodayPage extends StatefulWidget {
     this.onCapture,
     this.onOpenFamily,
     this.mediaCache,
+    this.photoThumbnailBuilder,
     this.amapPrivacyConsent,
   });
 
@@ -30,6 +31,7 @@ class TodayPage extends StatefulWidget {
   final VoidCallback? onCapture;
   final VoidCallback? onOpenFamily;
   final LocalMediaCache? mediaCache;
+  final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
 
   @override
@@ -243,6 +245,7 @@ class _TodayPageState extends State<TodayPage> {
       onAcceptMapPrivacy: _acceptMapPrivacy,
       amapPrivacyConsent: _amapPrivacyConsent,
       mediaCache: widget.mediaCache,
+      photoThumbnailBuilder: widget.photoThumbnailBuilder,
     );
   }
 }
@@ -260,6 +263,7 @@ class _TodayExperienceBody extends StatelessWidget {
     required this.onAcceptMapPrivacy,
     required this.amapPrivacyConsent,
     this.mediaCache,
+    this.photoThumbnailBuilder,
   });
 
   final JiYiApiClient api;
@@ -273,6 +277,7 @@ class _TodayExperienceBody extends StatelessWidget {
   final Future<void> Function() onAcceptMapPrivacy;
   final AmapPrivacyConsentAuthority amapPrivacyConsent;
   final LocalMediaCache? mediaCache;
+  final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -421,6 +426,7 @@ class _TodayExperienceBody extends StatelessWidget {
             api: api,
             item: memories[index],
             mediaCache: mediaCache,
+            photoThumbnailBuilder: photoThumbnailBuilder,
             onTap: () {
               Navigator.of(context).push<bool>(
                 MaterialPageRoute<bool>(
@@ -479,12 +485,38 @@ class _TodayMemoryCard extends StatelessWidget {
     required this.item,
     required this.onTap,
     this.mediaCache,
+    this.photoThumbnailBuilder,
   });
 
   final JiYiApiClient api;
   final TimelineReadItem item;
   final VoidCallback onTap;
   final LocalMediaCache? mediaCache;
+  final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
+
+  Widget _photoThumbnail(BuildContext context) {
+    final mediaId = item.mediaId!;
+    final builder = photoThumbnailBuilder;
+    if (builder != null) {
+      return SizedBox(
+        key: ValueKey('today-photo-${item.id}'),
+        width: 88,
+        height: 88,
+        child: KeyedSubtree(
+          key: ValueKey('local-media-ready-$mediaId'),
+          child: builder(context, mediaId, BoxFit.cover),
+        ),
+      );
+    }
+    return LocalMediaThumbnail(
+      key: ValueKey('today-photo-${item.id}'),
+      api: api,
+      mediaId: mediaId,
+      cache: mediaCache,
+      width: 88,
+      height: 88,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -502,14 +534,7 @@ class _TodayMemoryCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (item.memoryType == 'PHOTO' && item.mediaId != null)
-                LocalMediaThumbnail(
-                  key: ValueKey('today-photo-${item.id}'),
-                  api: api,
-                  mediaId: item.mediaId!,
-                  cache: mediaCache,
-                  width: 88,
-                  height: 88,
-                )
+                _photoThumbnail(context)
               else
                 DecoratedBox(
                   decoration: BoxDecoration(
