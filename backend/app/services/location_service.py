@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -613,6 +614,7 @@ def maintain_location_history(
     user_id: UUID,
     now: datetime | None = None,
     settings: Settings | None = None,
+    authority_check: Callable[[], None] | None = None,
 ) -> LocationMaintenanceResult:
     """Advance Visit finalization and raw retention without requiring new uploads."""
 
@@ -628,6 +630,8 @@ def maintain_location_history(
         settings=settings,
         now=now,
     )
+    if authority_check is not None:
+        authority_check()
     db.commit()
     return LocationMaintenanceResult(
         derived_visits=derived_visits,
