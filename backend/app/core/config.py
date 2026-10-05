@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     database_readiness_connect_timeout_seconds: int = Field(default=2, ge=1, le=10)
     database_readiness_statement_timeout_ms: int = Field(default=1500, ge=100, le=10000)
 
+    # OPS-004: explicit production SQLAlchemy pool authority. SQLite/test engines
+    # intentionally ignore these PostgreSQL-only pool controls.
+    db_pool_size: int = Field(default=3, ge=1, le=10)
+    db_max_overflow: int = Field(default=1, ge=0, le=10)
+    db_pool_timeout_seconds: int = Field(default=5, ge=1, le=30)
+    db_pool_recycle_seconds: int = Field(default=300, ge=30, le=3600)
+    db_connection_budget: int = Field(default=20, ge=4, le=64)
+    web_concurrency: int = Field(default=1, ge=1, le=8)
+
     # [人工注释][S1-006] 媒体存储默认关闭且无公开 URL 回退；启用 s3 时可接
     # COS/OSS 的 S3 SigV4 兼容私有桶。
     storage_backend: str = "disabled"
@@ -280,6 +289,16 @@ class Settings(BaseSettings):
             raise ValueError("AUTH_RATE_LIMIT_ENABLED must be true in production")
         if self.is_production and not self.api_rate_limit_enabled:
             raise ValueError("API_RATE_LIMIT_ENABLED must be true in production")
+
+        if self.is_production:
+            process_count = self.web_concurrency + 1
+            max_application_connections = process_count * (
+                self.db_pool_size + self.db_max_overflow
+            )
+            if max_application_connections > self.db_connection_budget:
+                raise ValueError(
+                    "DB pool connection budget exceeded for WEB_CONCURRENCY + worker"
+                )
 
         concurrency_pairs = (
             (
