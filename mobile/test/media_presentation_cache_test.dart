@@ -198,6 +198,33 @@ void main() {
     expect(api.downloadCalls, 0);
   });
 
+  test('transport outage falls back to same-owner cached media', () async {
+    final root = await _tempRoot();
+    addTearDown(() => root.delete(recursive: true));
+
+    final cache = LocalMediaCache(
+      rootDirectoryProvider: () async => root,
+      authorityLeaseDuration: Duration.zero,
+    );
+    final seeded = await cache.putBytes(
+      ownerUserId: _ownerA,
+      mediaId: _mediaA,
+      cacheVersion: _versionA,
+      bytes: <int>[7, 8, 9],
+    );
+    final api = _MediaApi(owner: _ownerA)
+      ..capabilityError = TransportException('offline');
+    final resolver = MediaPresentationResolver(api: api, cache: cache);
+
+    final resolved =
+        await resolver.resolve(ownerUserId: _ownerA, mediaId: _mediaA);
+
+    expect(resolved.path, seeded.path);
+    expect(await resolved.readAsBytes(), <int>[7, 8, 9]);
+    expect(api.capabilityCalls, 1);
+    expect(api.downloadCalls, 0);
+  });
+
   test('server revocation removes stale cached media immediately', () async {
     final root = await _tempRoot();
     addTearDown(() => root.delete(recursive: true));
