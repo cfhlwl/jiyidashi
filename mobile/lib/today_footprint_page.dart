@@ -158,6 +158,7 @@ class _TodayPageState extends State<TodayPage> {
           ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
           : '看看今天留下了哪些值得记住的片段。',
       hero: JiYiHeroHeader(
+        atmospheric: true,
         eyebrow: '迹忆 · 今天',
         title: elderMode ? '今天去了哪里' : '今天好',
         subtitle: _todayHeroSubtitle(_data),
