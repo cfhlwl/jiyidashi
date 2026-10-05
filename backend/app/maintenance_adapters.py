@@ -206,6 +206,18 @@ def _cancel_other_owner_jobs(
                 claim_token=None,
                 lease_expires_at=None,
                 last_error_code="SUPERSEDED_BY_DESTRUCTIVE_OPERATION",
+                updated_at=now,
+            )
+        )
+        cancelled = getattr(result, "rowcount", 0)
+        db.execute(
+            update(MaintenanceJob)
+            .where(
+                MaintenanceJob.owner_user_id == owner_user_id,
+                MaintenanceJob.id != current_job_id,
+            )
+            .values(
+                owner_user_id=None,
                 dedupe_key=None,
                 resource_key=None,
                 payload_json={},
@@ -213,8 +225,7 @@ def _cancel_other_owner_jobs(
             )
         )
         db.commit()
-        rowcount = getattr(result, "rowcount", 0)
-        return int(rowcount) if isinstance(rowcount, int) and rowcount > 0 else 0
+        return int(cancelled) if isinstance(cancelled, int) and cancelled > 0 else 0
 
 
 def _require_owner(claim: MaintenanceJobClaim) -> UUID:
