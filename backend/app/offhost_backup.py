@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
 import os
@@ -89,6 +88,7 @@ class BackupConfig:
     addressing_style: str
     prefix: str
     source_cluster_id: str
+    source_database: str
     retention_daily: int
     retention_weekly: int
     retention_monthly: int
@@ -108,6 +108,7 @@ class BackupConfig:
             ).strip(),
             prefix=os.getenv("BACKUP_OBJECT_PREFIX", "postgresql-backups").strip(),
             source_cluster_id=os.getenv("BACKUP_SOURCE_CLUSTER_ID", "").strip(),
+            source_database=os.getenv("POSTGRES_DB", "").strip(),
             retention_daily=_env_int("BACKUP_RETENTION_DAILY", default=14),
             retention_weekly=_env_int("BACKUP_RETENTION_WEEKLY", default=8),
             retention_monthly=_env_int("BACKUP_RETENTION_MONTHLY", default=12),
@@ -129,6 +130,8 @@ class BackupConfig:
         _canonical_prefix(self.prefix)
         if not SAFE_TOKEN_RE.fullmatch(self.source_cluster_id):
             raise BackupError("BACKUP_SOURCE_CLUSTER_ID_INVALID")
+        if not SAFE_TOKEN_RE.fullmatch(self.source_database):
+            raise BackupError("BACKUP_SOURCE_DATABASE_INVALID")
         for value, name in (
             (self.retention_daily, "BACKUP_RETENTION_DAILY"),
             (self.retention_weekly, "BACKUP_RETENTION_WEEKLY"),
@@ -670,7 +673,7 @@ def publish_backup(
         "backup_id": backup_id,
         "created_at": _iso(datetime.now(UTC)),
         "scheduled_slot": _iso(scheduled_slot),
-        "source_database": os.getenv("POSTGRES_DB", "").strip(),
+        "source_database": config.source_database,
         "source_cluster_id": config.source_cluster_id,
         "release_revision": release_revision.strip() or "unknown",
         "schema_revision": schema_revision.strip(),
