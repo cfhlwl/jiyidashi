@@ -88,6 +88,18 @@ REQUIRED_KEYS = {
     "STORAGE_OBJECT_PREFIX",
     "STORAGE_PRESIGN_TTL_SECONDS",
     "STORAGE_DELETE_SETTLE_SECONDS",
+    "BACKUP_OFFHOST_ENABLED",
+    "BACKUP_STORAGE_BUCKET",
+    "BACKUP_STORAGE_REGION",
+    "BACKUP_STORAGE_ENDPOINT_URL",
+    "BACKUP_STORAGE_ACCESS_KEY_ID",
+    "BACKUP_STORAGE_SECRET_ACCESS_KEY",
+    "BACKUP_STORAGE_ADDRESSING_STYLE",
+    "BACKUP_OBJECT_PREFIX",
+    "BACKUP_SOURCE_CLUSTER_ID",
+    "BACKUP_RETENTION_DAILY",
+    "BACKUP_RETENTION_WEEKLY",
+    "BACKUP_RETENTION_MONTHLY",
     "MEDIA_MAX_IMAGE_BYTES",
     "MEDIA_MAX_AUDIO_BYTES",
     "PROVIDER_CONFIG_CACHE_TTL_SECONDS",
@@ -126,6 +138,8 @@ SENSITIVE_PLACEHOLDERS = {
     "POSTGRES_PASSWORD",
     "STORAGE_ACCESS_KEY_ID",
     "STORAGE_SECRET_ACCESS_KEY",
+    "BACKUP_STORAGE_ACCESS_KEY_ID",
+    "BACKUP_STORAGE_SECRET_ACCESS_KEY",
     "AUTH_SMTP_USERNAME",
     "AUTH_SMTP_PASSWORD",
     "PROVIDER_CONFIG_MASTER_KEY",
@@ -203,6 +217,16 @@ def main() -> None:
     assert values["AUTH_SMTP_HOST"]
     assert values["AUTH_SMTP_FROM"]
     assert values["STORAGE_BACKEND"] == "s3"
+    assert values["BACKUP_OFFHOST_ENABLED"].lower() == "true"
+    assert values["BACKUP_STORAGE_BUCKET"]
+    assert values["BACKUP_STORAGE_REGION"]
+    assert values["BACKUP_STORAGE_ENDPOINT_URL"].startswith("https://")
+    assert values["BACKUP_STORAGE_ADDRESSING_STYLE"] in {"virtual", "path"}
+    assert values["BACKUP_OBJECT_PREFIX"].strip("/")
+    assert values["BACKUP_SOURCE_CLUSTER_ID"]
+    assert int(values["BACKUP_RETENTION_DAILY"]) >= 1
+    assert int(values["BACKUP_RETENTION_WEEKLY"]) >= 1
+    assert int(values["BACKUP_RETENTION_MONTHLY"]) >= 1
     assert values["DATABASE_URL"].startswith("postgresql+psycopg://")
     assert "@postgres:5432/" in values["DATABASE_URL"]
     assert values["STORAGE_ENDPOINT_URL"].startswith("https://")
@@ -256,6 +280,9 @@ def main() -> None:
     assert 'AUTH_RATE_LIMIT_ENABLED: "true"' in compose
     assert 'AUTO_CREATE_SCHEMA: "false"' in compose
     assert "RELEASE_SHA: ${RELEASE_SHA:-unknown}" in compose
+    assert "backup-ops:" in compose
+    assert "backup-egress:" in compose
+    assert 'profiles: ["ops"]' in compose
 
     dockerfile = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     assert "USER app" in dockerfile
