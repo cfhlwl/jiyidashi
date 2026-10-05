@@ -446,6 +446,60 @@ def fail_maintenance_job(
     return job.status
 
 
+def fence_owner_maintenance_jobs_for_deletion(
+    db: Session,
+    *,
+    owner_user_id: UUID,
+    preserve_job_id: UUID | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Cancel stale owner work and erase its business identity in one transaction."""
+
+    observed_at = _observed_now(now)
+    active_filter = [
+        MaintenanceJob.owner_user_id == owner_user_id,
+        MaintenanceJob.status.in_(
+            (
+                MaintenanceJobStatus.PENDING.value,
+                MaintenanceJobStatus.RUNNING.value,
+                MaintenanceJobStatus.RETRY_WAIT.value,
+            )
+        ),
+    ]
+    identity_filter = [MaintenanceJob.owner_user_id == owner_user_id]
+    if preserve_job_id is not None:
+        active_filter.append(MaintenanceJob.id != preserve_job_id)
+        identity_filter.append(MaintenanceJob.id != preserve_job_id)
+
+    result = db.execute(
+        update(MaintenanceJob)
+        .where(*active_filter)
+        .values(
+            status=MaintenanceJobStatus.CANCELLED.value,
+            completed_at=observed_at,
+            next_attempt_at=observed_at,
+            claimed_by=None,
+            claim_token=None,
+            lease_expires_at=None,
+            last_error_code="SUPERSEDED_BY_DESTRUCTIVE_OPERATION",
+            updated_at=observed_at,
+        )
+    )
+    db.execute(
+        update(MaintenanceJob)
+        .where(*identity_filter)
+        .values(
+            owner_user_id=None,
+            dedupe_key=None,
+            resource_key=None,
+            payload_json={},
+            updated_at=observed_at,
+        )
+    )
+    rowcount = getattr(result, "rowcount", 0)
+    return int(rowcount) if isinstance(rowcount, int) and rowcount > 0 else 0
+
+
 def scrub_maintenance_job_identity(
     db: Session,
     *,
