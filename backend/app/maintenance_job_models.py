@@ -53,6 +53,11 @@ class MaintenanceJob(Base):
             name="uq_maintenance_jobs_type_dedupe",
         ),
         CheckConstraint(
+            "job_type IN ('DATA_DELETE', 'ACCOUNT_DELETE', 'MEDIA_PENDING_CLEANUP', "
+            "'SECURITY_ALERT_DELIVERY', 'ANALYTICS_RETENTION', 'LOCATION_RETENTION')",
+            name="ck_maintenance_jobs_known_type",
+        ),
+        CheckConstraint(
             "attempt_count >= 0",
             name="ck_maintenance_jobs_attempt_count",
         ),
