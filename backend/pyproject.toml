@@ -27,6 +27,8 @@ dependencies = [
   "httpx>=0.28,<1.0",
   # ADMIN-002: encrypt provider credentials at rest with a deployment-only master key.
   "cryptography>=44,<46",
+  # MEDIA-001: trusted server-side decode/orientation/resize boundary for AI derivatives.
+  "Pillow>=12.0,<13.0",
 ]
 
 [project.optional-dependencies]
