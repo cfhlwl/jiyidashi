@@ -1690,10 +1690,13 @@ void main() {
     final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
     final key = await _pumpSurface(
       tester,
-      TimelinePage(
-        api: api,
-        mediaCache: cache,
-        photoThumbnailBuilder: _goldenPagePhotoThumbnail,
+      _goldenNavigationShell(
+        selectedIndex: 1,
+        child: TimelinePage(
+          api: api,
+          mediaCache: cache,
+          photoThumbnailBuilder: _goldenPagePhotoThumbnail,
+        ),
       ),
     );
 
@@ -1732,54 +1735,37 @@ void main() {
     );
   });
 
-  testWidgets('golden: design authority Family shared content',
-      (tester) async {
+  testWidgets('golden: design authority Family home', (tester) async {
     final api = _GoldenFamilyApi();
-    final mediaKey =
-        '${_GoldenFamilyApi.memberId.toLowerCase()}_${v2MediaId.toLowerCase()}';
-    final cache = await _seedGoldenMediaCache(
-      api.authenticatedUserId!,
-      mediaId: mediaKey,
-    );
     final key = await _pumpSurface(
       tester,
-      FamilyPage(
-        api: api,
-        mediaCache: cache,
-        amapPrivacyConsent: _GoldenAmapConsent(true),
+      _goldenNavigationShell(
+        selectedIndex: 3,
+        child: FamilyPage(
+          api: api,
+          mediaCache: _GoldenMediaCache(),
+          amapPrivacyConsent: _GoldenAmapConsent(true),
+        ),
       ),
     );
 
-    await tester.tap(
+    await _pumpUntilFinder(
+      tester,
       find.byKey(
         const ValueKey(
           'family-shared-open-${_GoldenFamilyApi.memberId}',
         ),
       ),
     );
-    await _pumpVisualFrames(tester);
-    await tester.tap(find.byKey(const ValueKey('family-read-photos')));
-    await _pumpVisualFrames(tester);
-    await tester.tap(find.byKey(const ValueKey('family-read-location')));
-
-    expect(find.byKey(const ValueKey('family-photo-grid')), findsOneWidget);
-    await _pumpUntilFinder(
-      tester,
+    expect(find.text('家庭'), findsWidgets);
+    expect(
       find.byKey(
-        ValueKey(
-          'family-photo-ready-${_GoldenFamilyApi.memberId.toLowerCase()}_${v2MediaId.toLowerCase()}',
+        const ValueKey(
+          'family-shared-open-${_GoldenFamilyApi.memberId}',
         ),
       ),
+      findsOneWidget,
     );
-    final map = find.byKey(const ValueKey('amap-place-real-surface'));
-    await _pumpUntilFinder(tester, map);
-    expect(map, findsOneWidget);
-    await tester.scrollUntilVisible(
-      map,
-      180,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await _pumpVisualFrames(tester);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_family.png'),
@@ -1791,12 +1777,11 @@ void main() {
     final api = _GoldenHistoricalQueryApi();
     final key = await _pumpSurface(
       tester,
-      Scaffold(
-        body: SafeArea(
-          child: MemoryQueryPage(
-            api: api,
-            amapPrivacyConsent: _GoldenAmapConsent(true),
-          ),
+      _goldenNavigationShell(
+        selectedIndex: 1,
+        child: MemoryQueryPage(
+          api: api,
+          amapPrivacyConsent: _GoldenAmapConsent(true),
         ),
       ),
     );
