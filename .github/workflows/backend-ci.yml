@@ -84,6 +84,13 @@ jobs:
           tests/test_intent_router.py
           tests/test_memory_query.py
 
+      - name: OPS-002 focused durable worker regressions
+        timeout-minutes: 5
+        run: >-
+          pytest -q
+          tests/test_maintenance_jobs.py
+          tests/test_maintenance_adapters.py
+
       - name: SQLite migration baseline
         env:
           DATABASE_URL: sqlite:///./ci-migration.db
