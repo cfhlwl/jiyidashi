@@ -26,12 +26,17 @@ class _MediaApi extends JiYiApiClient {
   String cacheVersion = _versionA;
   Uint8List bytes = Uint8List.fromList(<int>[1, 2, 3, 4]);
   Object? capabilityError;
+  String? ownerBeforeCapabilityFailure;
 
   @override
   Future<MediaDownloadSession> createMediaDownload(String mediaId) async {
     capabilityCalls += 1;
     final error = capabilityError;
-    if (error != null) throw error;
+    if (error != null) {
+      final nextOwner = ownerBeforeCapabilityFailure;
+      if (nextOwner != null) authenticatedUserId = nextOwner;
+      throw error;
+    }
     return MediaDownloadSession(
       mediaId: mediaId,
       cacheVersion: cacheVersion,
@@ -221,6 +226,34 @@ void main() {
 
     expect(resolved.path, seeded.path);
     expect(await resolved.readAsBytes(), <int>[7, 8, 9]);
+    expect(api.capabilityCalls, 1);
+    expect(api.downloadCalls, 0);
+  });
+
+  test('transport fallback fails closed if account changes in flight', () async {
+    final root = await _tempRoot();
+    addTearDown(() => root.delete(recursive: true));
+
+    final cache = LocalMediaCache(
+      rootDirectoryProvider: () async => root,
+      authorityLeaseDuration: Duration.zero,
+    );
+    await cache.putBytes(
+      ownerUserId: _ownerA,
+      mediaId: _mediaA,
+      cacheVersion: _versionA,
+      bytes: <int>[7, 8, 9],
+    );
+    final api = _MediaApi(owner: _ownerA)
+      ..capabilityError = TransportException('offline')
+      ..ownerBeforeCapabilityFailure = _ownerB;
+    final resolver = MediaPresentationResolver(api: api, cache: cache);
+
+    await expectLater(
+      resolver.resolve(ownerUserId: _ownerA, mediaId: _mediaA),
+      throwsA(isA<MediaCacheException>()),
+    );
+
     expect(api.capabilityCalls, 1);
     expect(api.downloadCalls, 0);
   });
