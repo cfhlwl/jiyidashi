@@ -188,7 +188,7 @@ async def test_explicit_ocr_returns_inference_provenance_without_persistence(
 ):
     storage, provider, _ = ocr_dependencies
     user_id, headers = await _new_user(client, "ocr-owner")
-    image = _jpeg_bytes(1200, 900)
+    image = _jpeg_bytes(3200, 2400)
     media_id = _insert_media(storage, user_id=user_id, data=image)
     before = _owner_counts(user_id)
 
