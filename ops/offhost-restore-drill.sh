@@ -171,7 +171,7 @@ table_count="$(
       --username="$POSTGRES_USER" \
       --dbname="$RESTORE_DATABASE" \
       --tuples-only --no-align \
-      --command="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=$public$;"
+      --command="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=current_schema();"
   ' | tr -d '[:space:]'
 )"
 if [[ ! "$table_count" =~ ^[0-9]+$ ]] || (( table_count < 1 )); then
