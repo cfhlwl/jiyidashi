@@ -39,7 +39,7 @@
 <!-- Stage 3S：Annual Summary / Issue #91 / PR #93 已完成 complete-year snapshot、512+1/256+1 bounded inventory、all-raw S3-013 authority、strict Y-slot provider boundary、provider 前后完整重验与 PostgreSQL Annual Gate，并合并 main=dd558913；S3-017 转 ✅，Stage 3 S3-001~S3-019 正式收口。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-10-04  
+> 最后更新：2026-10-05  
 > Stage 1「记得住」：✅ complete  
 > Stage 2「自动记」：✅ complete  
 > Stage 3「懂生活 / AI Memory」：✅ complete  
@@ -309,7 +309,7 @@
 | ID | 功能 / 需求 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | ADMIN-001 | JiYi Production Admin Console V1 | ✅ | Issue #180 / PR #181 已完成正式产品/安全审查并合并；merge `97d6a3559a9ab5726acf3e8e8cc27c4c96095869`。独立 Admin 身份/RBAC、Dashboard、用户/家庭/会员与额度、删除/注销、安全中心、AI/ASR/检索/存储/系统健康、审计、受控设置、Admin visual regression 已收口。 |
-| OPS-002 | Durable Job & Maintenance Worker Foundation V1 | 🔵 | **Issue #206，P0 public-launch blocker，2026-10-05 已启动。** 本任务严格 backend/deployment-only，不修改 `mobile/**`、Mini UI 或 UIUX-P0-002 Design Authority 页面，避免与本地 Codex 视觉重构冲突。首版优先 PostgreSQL-backed durable jobs + claim/lease worker，不强制 Redis；先接管 Data Delete progression、Account Delete 在 `local_cleanup_ready=true` 后的服务端 progression、stale PENDING media cleanup、Security Alert retry、analytics/location retention 等不能依赖客户端/人工触发的任务；第二阶段再迁移 Annual/Life Memoir、Monthly/Annual Summary、Embedding refresh 等长耗时 AI。Redis 仅作为后续 wake-up/scale 层，PostgreSQL 始终是 Job authority。 |
+| OPS-002 | Durable Job & Maintenance Worker Foundation V1 | ✅ | **Issue #206 / PR #207 已完成正式审查并合并；merge `319e17725fcff5b18b7b44aeac19dbe682def5c9`。** PostgreSQL-backed durable job/claim/lease/retry authority、Data Delete、Account Delete（仅 `local_cleanup_ready_at` 后）、stale PENDING media cleanup、Security Alert retry、Analytics retention、Location retention、删除 fencing、lease reclaim、stale token 防护、crash recovery、bounded retry、graceful shutdown、独立 production worker 部署与 PostgreSQL 多 worker 并发 Gate 均已收口；Redis 仍仅为后续可选 wake-up/scale 层。 |
 | OPS-001 | Production Deployment V1 | 🟠 | Issue #136 / PR #137：Docker/Compose/Caddy、production env fail-closed、migration、immutable image、backup/restore/rollback 与 CI 已合并；真实 public-server acceptance 继续作为**最终上线 Gate**，顺延到 Production Launch Hardening + OPS-005 capacity acceptance 全部完成后，以最终生产拓扑验收 DNS/TLS/private storage/client domains/backup/restore/rollback/容量。 |
 ### OPS-002 架构决策（2026-09-30，production-launch audit 修订）
 
