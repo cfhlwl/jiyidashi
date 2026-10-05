@@ -37,6 +37,7 @@ on:
       - "ops/**"
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - "docs/PRODUCTION_BACKUP.md"
+      - "docs/PRODUCTION_RUNTIME_GUARDRAILS.md"
       - ".github/workflows/production-deployment-ci.yml"
   push:
     branches:
@@ -76,6 +77,7 @@ on:
       - "ops/**"
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - "docs/PRODUCTION_BACKUP.md"
+      - "docs/PRODUCTION_RUNTIME_GUARDRAILS.md"
       - ".github/workflows/production-deployment-ci.yml"
 
 jobs:
