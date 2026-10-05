@@ -604,7 +604,6 @@ class JiYiActionCard extends StatelessWidget {
       color: theme.colorScheme.surface,
       elevation: theme.brightness == Brightness.dark ? 0 : 1,
       shadowColor: const Color(0x0F14233A),
-      borderRadius: BorderRadius.circular(JiYiRadius.card),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(JiYiRadius.card),
         side: BorderSide(color: theme.colorScheme.outlineVariant),
