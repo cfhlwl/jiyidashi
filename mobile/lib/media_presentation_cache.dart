@@ -551,6 +551,12 @@ class MediaPresentationResolver {
         );
       }
       rethrow;
+    } on TransportException {
+      // A network outage is not an authoritative revocation. Preserve the
+      // reviewed offline behavior for bytes already cached by this same
+      // authenticated owner. Server 403/404 above still fail closed and purge.
+      if (cached != null) return cached;
+      rethrow;
     }
     _assertCurrent(ownerUserId, sessionVersion);
 
