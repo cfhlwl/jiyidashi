@@ -276,6 +276,7 @@ class _FamilyPageState extends State<FamilyPage> {
       title: '家庭',
       subtitle: '每一项共享都由你明确授权，位置需要单独开启。',
       hero: const JiYiHeroHeader(
+        atmospheric: true,
         eyebrow: '迹忆 · 家庭',
         title: '家庭',
         subtitle: '和家人共享你明确允许的内容。位置需要单独授权。',
@@ -677,6 +678,7 @@ class _FamilyMemberSharedPageState extends State<_FamilyMemberSharedPage> {
           title: '家人分享',
           subtitle: '只显示 TA 明确授权给你的内容；没有授权时不会从其他数据推断。',
           hero: JiYiHeroHeader(
+            atmospheric: true,
             eyebrow: '迹忆 · 家庭',
             title: widget.memberLabel,
             subtitle: '照片、位置、足迹和记忆分别授权，随时以服务端当前权限为准。',
