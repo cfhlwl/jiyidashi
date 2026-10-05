@@ -102,14 +102,11 @@ pg_dump_version="$(
 )"
 release_revision="${RELEASE_SHA:-}"
 if [[ -z "$release_revision" || "$release_revision" == "unknown" ]]; then
-  api_cid="$("${compose[@]}" ps -a -q api 2>/dev/null || true)"
-  if [[ -n "$api_cid" ]]; then
-    release_revision="$(
-      docker inspect "$api_cid" \
-        --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
-        2>/dev/null || true
-    )"
-  fi
+  release_revision="$(
+    docker image inspect "$BACKEND_IMAGE" \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+      2>/dev/null || true
+  )"
 fi
 release_revision="${release_revision:-unknown}"
 
