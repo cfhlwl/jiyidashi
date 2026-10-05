@@ -275,14 +275,17 @@ class S3BackupStore:
         metadata: dict[str, str],
         content_type: str,
     ) -> None:
-        with path.open("rb") as handle:
-            self._client.put_object(
-                Bucket=self._bucket,
-                Key=key,
-                Body=handle,
-                ContentType=content_type,
-                Metadata=metadata,
-            )
+        try:
+            with path.open("rb") as handle:
+                self._client.put_object(
+                    Bucket=self._bucket,
+                    Key=key,
+                    Body=handle,
+                    ContentType=content_type,
+                    Metadata=metadata,
+                )
+        except Exception as exc:
+            raise BackupError("BACKUP_STORAGE_PUT_FAILED") from exc
 
     def put_bytes(
         self,
@@ -292,13 +295,16 @@ class S3BackupStore:
         metadata: dict[str, str],
         content_type: str,
     ) -> None:
-        self._client.put_object(
-            Bucket=self._bucket,
-            Key=key,
-            Body=body,
-            ContentType=content_type,
-            Metadata=metadata,
-        )
+        try:
+            self._client.put_object(
+                Bucket=self._bucket,
+                Key=key,
+                Body=body,
+                ContentType=content_type,
+                Metadata=metadata,
+            )
+        except Exception as exc:
+            raise BackupError("BACKUP_STORAGE_PUT_FAILED") from exc
 
     def head(self, key: str) -> StoredBackupObject | None:
         try:
@@ -308,6 +314,8 @@ class S3BackupStore:
             code = str(exc.response.get("Error", {}).get("Code", ""))
             if status == 404 or code in {"404", "NoSuchKey", "NotFound"}:
                 return None
+            raise BackupError("BACKUP_STORAGE_HEAD_FAILED") from exc
+        except Exception as exc:
             raise BackupError("BACKUP_STORAGE_HEAD_FAILED") from exc
         return StoredBackupObject(
             key=key,
@@ -324,6 +332,8 @@ class S3BackupStore:
             response = self._client.get_object(Bucket=self._bucket, Key=key)
         except ClientError as exc:
             raise BackupError("BACKUP_STORAGE_READ_FAILED") from exc
+        except Exception as exc:
+            raise BackupError("BACKUP_STORAGE_READ_FAILED") from exc
         body = response["Body"]
         try:
             data = bytes(body.read(max_bytes + 1))
@@ -334,36 +344,48 @@ class S3BackupStore:
         return data
 
     def download(self, key: str, destination: Path) -> None:
-        with destination.open("wb") as handle:
-            self._client.download_fileobj(self._bucket, key, handle)
+        try:
+            with destination.open("wb") as handle:
+                self._client.download_fileobj(self._bucket, key, handle)
+        except Exception as exc:
+            raise BackupError("BACKUP_STORAGE_DOWNLOAD_FAILED") from exc
 
     def copy(self, source_key: str, destination_key: str) -> None:
-        self._client.copy_object(
-            Bucket=self._bucket,
-            CopySource={"Bucket": self._bucket, "Key": source_key},
-            Key=destination_key,
-            MetadataDirective="COPY",
-        )
+        try:
+            self._client.copy_object(
+                Bucket=self._bucket,
+                CopySource={"Bucket": self._bucket, "Key": source_key},
+                Key=destination_key,
+                MetadataDirective="COPY",
+            )
+        except Exception as exc:
+            raise BackupError("BACKUP_STORAGE_COPY_FAILED") from exc
 
     def delete(self, key: str) -> None:
-        self._client.delete_object(Bucket=self._bucket, Key=key)
+        try:
+            self._client.delete_object(Bucket=self._bucket, Key=key)
+        except Exception as exc:
+            raise BackupError("BACKUP_STORAGE_DELETE_FAILED") from exc
 
     def list(self, prefix: str) -> list[StoredBackupObject]:
         result: list[StoredBackupObject] = []
-        paginator = self._client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
-            for item in page.get("Contents", []):
-                key = item.get("Key")
-                if not isinstance(key, str) or not key:
-                    continue
-                result.append(
-                    StoredBackupObject(
-                        key=key,
-                        size_bytes=int(item.get("Size", -1)),
-                        metadata={},
-                        last_modified=item.get("LastModified"),
+        try:
+            paginator = self._client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+                for item in page.get("Contents", []):
+                    key = item.get("Key")
+                    if not isinstance(key, str) or not key:
+                        continue
+                    result.append(
+                        StoredBackupObject(
+                            key=key,
+                            size_bytes=int(item.get("Size", -1)),
+                            metadata={},
+                            last_modified=item.get("LastModified"),
+                        )
                     )
-                )
+        except Exception as exc:
+            raise BackupError("BACKUP_STORAGE_LIST_FAILED") from exc
         return result
 
 
