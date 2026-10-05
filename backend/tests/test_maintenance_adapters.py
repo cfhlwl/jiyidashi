@@ -17,10 +17,10 @@ from app.core.db import SessionLocal
 from app.maintenance_adapters import (
     RetryableMaintenanceError,
     TerminalMaintenanceError,
+    discover_and_enqueue_maintenance_jobs,
     handle_analytics_retention,
     handle_media_pending_cleanup,
     handle_security_alert_delivery,
-    discover_and_enqueue_maintenance_jobs,
 )
 from app.maintenance_job_models import (
     MaintenanceJob,
