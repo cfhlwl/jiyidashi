@@ -321,6 +321,7 @@ def main() -> None:
     assert 'X-Content-Type-Options "nosniff"' in caddy
     assert 'Referrer-Policy "strict-origin-when-cross-origin"' in caddy
     assert 'X-Frame-Options "DENY"' in caddy
+    assert "respond /health/ready 404" in caddy
     assert "request_body {" in caddy
     assert "max_size {$API_REQUEST_BODY_LIMIT}" in caddy
 
