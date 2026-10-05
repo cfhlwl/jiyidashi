@@ -54,6 +54,7 @@ from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
 from app.person_relationship_models import PersonRelationship
 from app.services.embedding_service import delete_owner_memory_embeddings
+from app.services.maintenance_jobs import fence_owner_maintenance_jobs_for_deletion
 from app.services.object_storage import (
     DisabledObjectStorage,
     ObjectStorage,
@@ -849,6 +850,7 @@ def delete_all_user_data(
     request_id: UUID,
     storage: ObjectStorage,
     authority_check: Callable[[], None] | None = None,
+    maintenance_job_id: UUID | None = None,
 ) -> DataDeletionResult:
     """Converge one destructive request across DB and object storage.
 
@@ -861,6 +863,15 @@ def delete_all_user_data(
     operation = _begin_or_load_operation(db, user_id, request_id)
     if operation.status == DataDeletionStatus.COMPLETED:
         return _operation_result(operation)
+
+    # This fence belongs to the canonical destructive state machine, not only the
+    # background adapter. Synchronous HTTP deletion must invalidate old workers too.
+    fence_owner_maintenance_jobs_for_deletion(
+        db,
+        owner_user_id=user_id,
+        preserve_job_id=maintenance_job_id,
+    )
+    db.commit()
 
     operation = _quiesce_and_capture_database_media(db, operation.id, user_id)
     if operation.status == DataDeletionStatus.COMPLETED:
