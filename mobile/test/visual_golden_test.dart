@@ -1486,10 +1486,10 @@ void main() {
       ),
     );
 
-    // Stage 2 adds a second, deliberate pause indicator for the native producer:
-    // one banner is the authoritative server privacy state, the other proves native
-    // location production has also converged to paused.
-    expect(find.text('自动采集已暂停'), findsNWidgets(2));
+    // The consumer Profile now presents the converged pause state once.
+    // Native producer convergence remains covered by focused Recording Health /
+    // location policy tests rather than duplicating the same user-facing banner.
+    expect(find.text('自动采集已暂停'), findsOneWidget);
     expect(find.textContaining('2026-09-18T01:30:00+08:00'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, '恢复记录'), findsOneWidget);
     await expectLater(
