@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import or_, select, union
+from sqlalchemy import func, or_, select, union
 from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
@@ -47,6 +47,7 @@ from app.services.object_storage import (
 from app.services.security_alerting import deliver_security_alert
 
 SCHEDULER_CATEGORY_LIMIT = 200
+SCHEDULER_SCAN_LIMIT = 2000
 ANALYTICS_RETENTION_BATCH_SIZE = 1000
 MEDIA_CLEANUP_MAX_ATTEMPTS = 20
 DELETION_MAX_ATTEMPTS = 50
@@ -536,12 +537,17 @@ def discover_and_enqueue_maintenance_jobs(
         linked_account_requests = select(
             AccountDeletionOperation.data_deletion_request_id
         )
+        scheduled_data_owners = select(MaintenanceJob.owner_user_id).where(
+            MaintenanceJob.job_type == MaintenanceJobType.DATA_DELETE.value,
+            MaintenanceJob.owner_user_id.is_not(None),
+        )
         data_operations = list(
             db.scalars(
                 select(DataDeletionOperation)
                 .where(
                     DataDeletionOperation.status != DataDeletionStatus.COMPLETED,
                     DataDeletionOperation.request_id.not_in(linked_account_requests),
+                    DataDeletionOperation.user_id.not_in(scheduled_data_owners),
                 )
                 .order_by(DataDeletionOperation.created_at.asc())
                 .limit(SCHEDULER_CATEGORY_LIMIT)
@@ -561,10 +567,17 @@ def discover_and_enqueue_maintenance_jobs(
             enqueued += int(created)
             existing += int(not created)
 
+        scheduled_account_owners = select(MaintenanceJob.owner_user_id).where(
+            MaintenanceJob.job_type == MaintenanceJobType.ACCOUNT_DELETE.value,
+            MaintenanceJob.owner_user_id.is_not(None),
+        )
         account_operations = list(
             db.scalars(
                 select(AccountDeletionOperation)
-                .where(AccountDeletionOperation.local_cleanup_ready_at.is_not(None))
+                .where(
+                    AccountDeletionOperation.local_cleanup_ready_at.is_not(None),
+                    AccountDeletionOperation.user_id.not_in(scheduled_account_owners),
+                )
                 .order_by(AccountDeletionOperation.created_at.asc())
                 .limit(SCHEDULER_CATEGORY_LIMIT)
             )
@@ -595,23 +608,51 @@ def discover_and_enqueue_maintenance_jobs(
                     MediaAsset.user_id.not_in(active_account_users),
                     MediaAsset.user_id.not_in(active_data_users),
                 )
-                .order_by(MediaAsset.created_at.asc(), MediaAsset.id.asc())
-                .limit(SCHEDULER_CATEGORY_LIMIT)
+                .order_by(
+                    func.coalesce(
+                        MediaAsset.upload_capability_expires_at,
+                        MediaAsset.created_at,
+                    ).asc(),
+                    MediaAsset.created_at.asc(),
+                    MediaAsset.id.asc(),
+                )
+                .limit(SCHEDULER_SCAN_LIMIT)
             )
         )
-        for asset in pending_media:
-            due_at = _media_cleanup_due_at(asset)
-            if due_at > observed_at:
+        due_media = [
+            (asset, _media_cleanup_due_at(asset))
+            for asset in pending_media
+            if _media_cleanup_due_at(asset) <= observed_at
+        ]
+        media_resource_keys = [f"media:{asset.id}" for asset, _ in due_media]
+        scheduled_media_keys: set[str] = set()
+        if media_resource_keys:
+            scheduled_media_keys = set(
+                db.scalars(
+                    select(MaintenanceJob.resource_key).where(
+                        MaintenanceJob.job_type
+                        == MaintenanceJobType.MEDIA_PENDING_CLEANUP.value,
+                        MaintenanceJob.resource_key.in_(media_resource_keys),
+                    )
+                )
+            )
+        media_added = 0
+        for asset, due_at in due_media:
+            resource_key = f"media:{asset.id}"
+            if resource_key in scheduled_media_keys:
+                existing += 1
                 continue
-            generation = int(_as_utc(
-                asset.upload_capability_expires_at or asset.created_at
-            ).timestamp())
+            generation = int(
+                _as_utc(
+                    asset.upload_capability_expires_at or asset.created_at
+                ).timestamp()
+            )
             created = _enqueue(
                 db,
                 job_type=MaintenanceJobType.MEDIA_PENDING_CLEANUP,
                 dedupe_key=f"media-cleanup:{asset.id}:{generation}",
                 owner_user_id=asset.user_id,
-                resource_key=f"media:{asset.id}",
+                resource_key=resource_key,
                 payload={
                     "media_id": str(asset.id),
                     "upload_object_key": asset.upload_object_key,
@@ -621,6 +662,11 @@ def discover_and_enqueue_maintenance_jobs(
             )
             enqueued += int(created)
             existing += int(not created)
+            if created:
+                media_added += 1
+                scheduled_media_keys.add(resource_key)
+                if media_added >= SCHEDULER_CATEGORY_LIMIT:
+                    break
 
         due_alerts = list(
             db.scalars(
@@ -638,21 +684,43 @@ def discover_and_enqueue_maintenance_jobs(
                     ),
                 )
                 .order_by(SecurityAlert.created_at.asc(), SecurityAlert.id.asc())
-                .limit(SCHEDULER_CATEGORY_LIMIT)
+                .limit(SCHEDULER_SCAN_LIMIT)
             )
         )
+        alert_resource_keys = [f"security-alert:{alert.id}" for alert in due_alerts]
+        scheduled_alert_keys: set[str] = set()
+        if alert_resource_keys:
+            scheduled_alert_keys = set(
+                db.scalars(
+                    select(MaintenanceJob.resource_key).where(
+                        MaintenanceJob.job_type
+                        == MaintenanceJobType.SECURITY_ALERT_DELIVERY.value,
+                        MaintenanceJob.resource_key.in_(alert_resource_keys),
+                    )
+                )
+            )
+        alert_added = 0
         for alert in due_alerts:
+            resource_key = f"security-alert:{alert.id}"
+            if resource_key in scheduled_alert_keys:
+                existing += 1
+                continue
             created = _enqueue(
                 db,
                 job_type=MaintenanceJobType.SECURITY_ALERT_DELIVERY,
                 dedupe_key=f"security-alert:{alert.id}",
-                resource_key=f"security-alert:{alert.id}",
+                resource_key=resource_key,
                 payload={"alert_id": str(alert.id)},
                 max_attempts=10,
                 next_attempt_at=alert.next_retry_at or observed_at,
             )
             enqueued += int(created)
             existing += int(not created)
+            if created:
+                alert_added += 1
+                scheduled_alert_keys.add(resource_key)
+                if alert_added >= SCHEDULER_CATEGORY_LIMIT:
+                    break
 
         analytics_key = (
             f"analytics-retention:{observed_at.date().isoformat()}:"
