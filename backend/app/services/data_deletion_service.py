@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -783,6 +784,8 @@ def _complete_database_cleanup(
     db: Session,
     operation_id: UUID,
     user_id: UUID,
+    *,
+    authority_check: Callable[[], None] | None = None,
 ) -> DataDeletionResult:
     try:
         # [人工注释][S1-021] 最终 DB 删除与 COMPLETED 状态同一事务提交；任意异常整体
@@ -821,6 +824,8 @@ def _complete_database_cleanup(
         operation.status = DataDeletionStatus.COMPLETED
         operation.completed_at = datetime.now(UTC)
         operation.updated_at = datetime.now(UTC)
+        if authority_check is not None:
+            authority_check()
         db.commit()
         return _operation_result(operation)
     except DataDeletionError:
@@ -843,6 +848,7 @@ def delete_all_user_data(
     user_id: UUID,
     request_id: UUID,
     storage: ObjectStorage,
+    authority_check: Callable[[], None] | None = None,
 ) -> DataDeletionResult:
     """Converge one destructive request across DB and object storage.
 
@@ -879,4 +885,9 @@ def delete_all_user_data(
             return waiting
         raise DataDeletionError("DATA_DELETION_STORAGE_PENDING", 409)
 
-    return _complete_database_cleanup(db, operation.id, user_id)
+    return _complete_database_cleanup(
+        db,
+        operation.id,
+        user_id,
+        authority_check=authority_check,
+    )
