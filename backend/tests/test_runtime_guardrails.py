@@ -39,6 +39,7 @@ def test_sqlite_application_engine_does_not_receive_postgres_pool_arguments(
         max_overflow=1,
         pool_timeout_seconds=5,
         pool_recycle_seconds=300,
+        enforce_pool_bounds=False,
     )
 
     kwargs = captured["kwargs"]
@@ -70,6 +71,7 @@ def test_postgres_application_engine_receives_canonical_pool_arguments(
         max_overflow=1,
         pool_timeout_seconds=5,
         pool_recycle_seconds=300,
+        enforce_pool_bounds=True,
     )
 
     assert captured["database_url"] == database_url
@@ -80,3 +82,33 @@ def test_postgres_application_engine_receives_canonical_pool_arguments(
     assert kwargs["pool_timeout"] == 5
     assert kwargs["pool_recycle"] == 300
     assert kwargs["pool_pre_ping"] is True
+
+
+def test_nonproduction_postgres_keeps_sqlalchemy_default_pool_shape(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    def fake_create_engine(database_url: str, **kwargs):
+        captured["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(db_module, "create_engine", fake_create_engine)
+
+    db_module.create_application_engine(
+        "postgresql+psycopg://user:password@postgres:5432/jiyi",
+        pool_size=3,
+        max_overflow=1,
+        pool_timeout_seconds=5,
+        pool_recycle_seconds=300,
+        enforce_pool_bounds=False,
+    )
+
+    kwargs = captured["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert "pool_size" not in kwargs
+    assert "max_overflow" not in kwargs
+    assert "pool_timeout" not in kwargs
+    assert "pool_recycle" not in kwargs
+
+
