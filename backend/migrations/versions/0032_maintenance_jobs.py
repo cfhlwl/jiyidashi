@@ -6,6 +6,7 @@ Create Date: 2026-10-05
 """
 
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 from alembic import op
@@ -28,6 +29,24 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             nullable=True,
         ),
+    )
+    media_assets = sa.table(
+        "media_assets",
+        sa.column("status", sa.String()),
+        sa.column("upload_capability_expires_at", sa.DateTime(timezone=True)),
+    )
+    # Older PENDING rows may have received a fresh PUT capability immediately before
+    # this deploy, but pre-OPS-002 code did not persist its expiry. Fail safe by
+    # granting every legacy PENDING row one full maximum capability window from the
+    # migration time instead of inferring safety from created_at.
+    op.execute(
+        media_assets.update()
+        .where(media_assets.c.status == "PENDING")
+        .values(
+            upload_capability_expires_at=(
+                datetime.now(UTC) + timedelta(seconds=3600)
+            )
+        )
     )
     op.create_table(
         "maintenance_jobs",
