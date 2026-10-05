@@ -970,8 +970,9 @@ class _FamilyPhotoTileState extends State<_FamilyPhotoTile> {
       widget.resourceOwnerUserId,
       widget.photo.mediaId,
     );
+    File? cached;
     try {
-      final cached = await widget.mediaCache.lookup(
+      cached = await widget.mediaCache.lookup(
         ownerUserId: viewer,
         mediaId: mediaKey,
         cacheVersion: widget.photo.cacheVersion,
@@ -1010,6 +1011,22 @@ class _FamilyPhotoTileState extends State<_FamilyPhotoTile> {
       setState(() {
         file = stored;
         unavailable = false;
+      });
+    } on TransportException {
+      // An offline viewer may keep displaying bytes previously authorized and
+      // cached for this same account/resource owner. A server 403/404 is handled
+      // separately below and still purges the stale family cache.
+      if (!_current(attempt, sessionVersion, viewer)) return;
+      if (cached != null) {
+        setState(() {
+          file = cached;
+          unavailable = false;
+        });
+        return;
+      }
+      setState(() {
+        file = null;
+        unavailable = true;
       });
     } on ApiException catch (error) {
       if (error.statusCode == 403 || error.statusCode == 404) {
