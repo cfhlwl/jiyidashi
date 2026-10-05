@@ -356,6 +356,79 @@ def test_fetch_rejects_same_size_checksum_corruption_before_publish_to_destinati
     assert not destination.with_name(destination.name + ".partial").exists()
 
 
+class ManifestMutatingDownloadStore(FilesystemBackupStore):
+    manifest_key: str | None = None
+    manifest_reads = 0
+
+    def read_bytes(self, key: str, *, max_bytes: int) -> bytes:
+        if key == self.manifest_key:
+            self.manifest_reads += 1
+        return super().read_bytes(key, max_bytes=max_bytes)
+
+    def download(self, key: str, destination: Path) -> None:
+        super().download(key, destination)
+        if self.manifest_key is None:
+            return
+        manifest = json.loads(
+            super().read_bytes(
+                self.manifest_key,
+                max_bytes=64 * 1024,
+            ).decode("utf-8")
+        )
+        manifest["schema_revision"] = "9999_maintenance_jobs"
+        body = _manifest_bytes(manifest)
+        self.put_bytes(
+            key=self.manifest_key,
+            body=body,
+            metadata={
+                "backup-id": str(manifest["backup_id"]),
+                "sha256": hashlib.sha256(body).hexdigest(),
+                "tool-version": "ops-003-v1",
+            },
+            content_type="application/json",
+        )
+
+
+def test_fetch_exports_the_exact_manifest_bytes_that_were_verified(
+    tmp_path: Path,
+):
+    store = ManifestMutatingDownloadStore(tmp_path / "remote")
+    config = _config()
+    verified, _ = _publish(
+        store,
+        config,
+        tmp_path,
+        backup_id="pg-2026-10-05",
+        slot=datetime(2026, 10, 5, tzinfo=UTC),
+        body=b"restore-manifest-toctou-proof",
+    )
+    store.manifest_key = verified.manifest_key
+
+    destination = tmp_path / "restore.dump"
+    manifest_destination = tmp_path / "restore.manifest.json"
+    fetched = fetch_verified_backup(
+        store,
+        config,
+        backup_id=verified.backup_id,
+        destination=destination,
+        manifest_destination=manifest_destination,
+    )
+
+    exported = json.loads(manifest_destination.read_text(encoding="utf-8"))
+    remote = json.loads(
+        FilesystemBackupStore.read_bytes(
+            store,
+            verified.manifest_key,
+            max_bytes=64 * 1024,
+        ).decode("utf-8")
+    )
+
+    assert fetched.schema_revision == "0032_maintenance_jobs"
+    assert exported["schema_revision"] == fetched.schema_revision
+    assert remote["schema_revision"] == "9999_maintenance_jobs"
+    assert store.manifest_reads == 1
+
+
 def test_retention_preserves_newest_and_ignores_outside_prefix(tmp_path: Path):
     store = FilesystemBackupStore(tmp_path / "remote")
     config = _config()
