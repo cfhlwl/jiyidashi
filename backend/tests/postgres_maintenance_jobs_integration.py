@@ -289,6 +289,7 @@ def _assert_destructive_fence_invalidates_old_claim(
     user_id = uuid4()
     with SessionLocal() as db:
         db.add(User(id=user_id, nickname="ops002-destructive-fence"))
+        db.flush()
         old_job, _ = enqueue_maintenance_job(
             db,
             job_type=MaintenanceJobType.LOCATION_RETENTION,
