@@ -619,19 +619,42 @@ Level D — 用户确认事实
 
 ## 7.1 Hardware Roadmap（软硬件结合）
 
-> **硬件原则：硬件必须补足手机 App 做不好的事情，而不是重复造一台手机或手表。** 迹忆硬件的第一目标是让“自动记住去了哪里、怎么移动、关键时刻做了什么”更可靠、摩擦更低；第二目标才是硬件销售收入。商业上优先形成“硬件一次性毛利 + PERSONAL/FAMILY 持续订阅”的双层收入。
+> **战略锁定：硬件属于后期扩展，不进入当前或首发主线。** 前期研发、测试、运营和资金优先投入 App 本身，目标是先做出一款专业、可信、长期不可替代的“个人与家庭长期记忆”产品。只有在 App 已形成稳定用户规模、留存、付费和正向现金流后，才允许启动第一方硬件立项。现阶段可以保留架构接口和研究记录，但不得因为未来硬件规划拖慢 App 的核心闭环。
+>
+> **硬件启动 Gate：** App 核心价值被真实用户验证、自动记录稳定、找回成功率和 Memory Coverage 达标、D30/续费进入稳定区间、商业模式已能覆盖持续运营成本，并存在明确的“手机/现有手表无法解决但第一方硬件可显著改善”的已验证需求。未满足这些条件时，HW-002～HW-007 一律保持后置。
+>
+> 硬件原则仍然是：硬件必须补足手机 App 做不好的事情，而不是重复造一台手机或手表。若未来启动，优先形成“硬件一次性毛利 + PERSONAL/FAMILY 持续订阅”的双层收入。
 
 ### 分阶段路线
 
+> 当前阶段只允许 H0 做低成本兼容性研究/接口预留；不投入自研硬件量产开发。HW-002 及以后必须通过上述 Hardware Start Gate 后重新立项、重新核算 ROI，再进入执行。
+
 | ID | 阶段 | 功能 / 产品 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| HW-001 | Phase H0 | Existing Wearable Integration V1 | ⬜ | **先不造硬件。** Apple Watch 通过 watchOS + HealthKit/Workout/用户授权活动数据；Wear OS 通过 Health Services/Health Connect；华为用户评估 Health Kit。迹忆统一映射到 ActivitySegment / Steps / Workout / Sleep Context。Watch 端重点做“一键记一下、快捷语音、今日足迹、找回、到家/到达确认”等轻交互，不把手表做成完整 App 副本。该阶段先验证“穿戴数据是否显著提高记忆覆盖和留存”。 |
+| HW-001 | Phase H0 | Existing Wearable Integration V1 | ⏸ | **后置，首发不做。** 仅保留未来 Apple Watch / Wear OS / 华为穿戴接入的接口与数据模型兼容性研究，不投入独立产品开发资源。待 App 核心闭环、用户规模和盈利能力得到验证后，再评估是否通过 HealthKit/Workout、Health Services/Health Connect、Health Kit 提升 ActivitySegment / Steps / Workout / Sleep Context。 |
 | HW-002 | Phase H1 POC | JiYi Memory Button Prototype | ⬜ | 做 20～50 台工程样机验证，不直接量产。核心器件只需要 BLE、实体按键、低功耗 MCU、IMU、RTC/时钟、震动/LED、少量本地存储和电池。单击创建可靠 MemoryMarker（时间戳 + 设备身份），双击/长按可定义为用户主动记忆动作。手机后续将 Marker 与 Location/Activity/Photo/Calendar 对齐；即使手机当时不在线，设备也要能缓存后补。 |
 | HW-003 | Phase H2 | JiYi Memory Clip V1 | ⬜ | 若 HW-002 验证成立，再做第一款可销售硬件“迹忆记忆夹/记忆扣”。身体佩戴比手机更适合采集 IMU，因此用于提升步行/跑步/骑行/乘车/静止等 ActivitySegment 可信度。V1 不内置 GPS/蜂窝，复用手机位置与网络以控制成本、体积和续航；可评估加入麦克风，但**只允许实体按键主动触发短语音**，必须有明显 LED/震动反馈与本地停止机制，绝不后台常开录音；不加摄像头。 |
 | HW-004 | Phase H2 | Hardware Secure Pairing / Sync / OTA | ⬜ | 建立 Device authority：per-device key、owner binding、BLE secure pairing、anti-replay、event sequence、离线队列、signed firmware/OTA、失窃解绑/撤销、恢复出厂、battery/firmware health。硬件事件只作为 Evidence/Context，不能绕过 Privacy Pause、Family Permission 或用户身份。 |
 | HW-005 | Phase H2 Commercial | Hardware + Membership Bundle V1 | ⬜ | 后端将 `HardwareProduct`、实物订单、设备 ownership 与 PERSONAL/FAMILY Entitlement 分开建模，即使前台作为套装销售也不得把“买了某设备”硬编码成永久会员。建议首款 Memory Clip 目标零售价区间 ¥399～499；首发可测试“设备 + 1年 PERSONAL”约 ¥499 左右，家庭双设备 + FAMILY 年费可测试 ¥799～899。**这些只是商业测算基线，不在拿到 ODM/BOM/渠道报价前冻结。** |
 | HW-006 | Phase H3 | Family / Elder Wearable | ⏸ | 用户规模和硬件售后体系成熟后，再评估长辈/家庭版本：更大的按键、语音记忆、到家/离家、家庭提醒等。独立 LTE/eSIM、GNSS、SOS、跌倒检测属于更高责任与认证等级，不能作为第一代硬件；如未来进入，应另立安全/误报/续航/通信资费/认证 Gate，避免把“记忆产品”贸然变成生命安全设备。 |
 | HW-007 | Phase H3 | Standalone Smartwatch / Always-on AI Pendant | 🚫 Early | **前期不做自研智能手表，也不做全天录音 AI 挂件。** 智能手表与手机能力重叠，研发/屏幕/OS/功耗/认证/售后成本高；全天录音带来巨大隐私、审核、存储和社会接受风险。只有当现有 Watch 集成和 Memory Clip 已证明有明确付费需求后才重新评估。 |
+
+### 当前阶段资源优先级
+
+```text
+P0  App 自动记录可靠性
+P0  登录/后台/照片/地点命名/真机稳定性
+P0  “去了哪里”与“做了什么”的可信重建
+P0  找回体验与 Evidence-backed answer
+P0  隐私、删除、导出、家庭权限
+P1  首日 Aha / 常去地点 / 活动识别 / 回忆 resurfacing
+P1  分享、家庭邀请、增长与留存
+P1  商业化与付费闭环
+
+硬件
+→ 后期
+→ 只有 App 已形成稳定用户 + 留存 + 付费 + 正向现金流后重新立项
+```
 
 ### 第一方硬件应该补足的能力
 
