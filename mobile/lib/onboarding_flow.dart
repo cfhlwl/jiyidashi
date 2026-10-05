@@ -62,32 +62,13 @@ class OnboardingIntroPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListView(
+    return JiYiPageFrame(
       key: const ValueKey('onboarding-intro'),
-      padding: const EdgeInsets.fromLTRB(
-        JiYiSpacing.lg,
-        JiYiSpacing.lg,
-        JiYiSpacing.lg,
-        JiYiSpacing.xxl,
-      ),
-      children: [
-        Semantics(
-          header: true,
-          child: Text(
-            '用 3 分钟体验一次“记住并找回”',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: JiYiSpacing.xs),
-        Text(
-          '迹忆的重点不是替你猜，而是把你主动留下的内容保存下来，需要时再连同依据一起找回来。',
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: JiYiSpacing.lg),
+      title: '用 3 分钟开始记忆',
+      subtitle: '先留下一条真实记录，再亲手把它找回来。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         JiYiSectionCard(
           leading: Icon(
             Icons.route_outlined,
@@ -136,7 +117,8 @@ class OnboardingIntroPage extends StatelessWidget {
           onPressed: onSkip,
           child: const Text('暂时跳过'),
         ),
-      ],
+        ],
+      ),
     );
   }
 }

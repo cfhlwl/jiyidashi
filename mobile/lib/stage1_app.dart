@@ -3287,10 +3287,18 @@ class ProfilePage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               JiYiSectionCard(
-                leading: CircleAvatar(
-                  backgroundColor: theme.colorScheme.primaryContainer,
-                  foregroundColor: theme.colorScheme.onPrimaryContainer,
-                  child: const Icon(Icons.person_outline),
+                leading: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(JiYiRadius.control),
+                  ),
+                  child: SizedBox.square(
+                    dimension: 42,
+                    child: Icon(
+                      Icons.person_outline,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
                 ),
                 title: nickname,
                 subtitle: '当前登录账号',
@@ -3575,8 +3583,8 @@ class _AppearanceControls extends StatelessWidget {
           _ThemeModeOption(
             value: ThemeMode.light,
             groupValue: mode,
-            title: '晨曦暖白',
-            subtitle: '柔和浅色，适合日间阅读',
+            title: '中性浅色',
+            subtitle: '冷白界面，适合日间阅读',
             enabled: enabled,
             onChanged: onChanged,
           ),

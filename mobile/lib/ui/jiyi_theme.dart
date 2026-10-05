@@ -107,7 +107,13 @@ abstract final class JiYiTheme {
         foregroundColor: textPrimary,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
+        titleTextStyle: base.textTheme.titleLarge?.copyWith(
+          color: textPrimary,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.25,
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -177,6 +183,10 @@ abstract final class JiYiTheme {
         height: elderMode ? 84 : 72,
         elevation: 0,
         backgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
+        indicatorShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(JiYiRadius.control),
+        ),
         indicatorColor: surfaceSoft,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
@@ -187,6 +197,21 @@ abstract final class JiYiTheme {
                 : colorScheme.onSurfaceVariant,
           );
         }),
+      ),
+      tabBarTheme: TabBarThemeData(
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicator: UnderlineTabIndicator(
+          borderSide: BorderSide(color: colorScheme.primary, width: 3),
+          insets: const EdgeInsets.symmetric(horizontal: JiYiSpacing.md),
+        ),
+        labelColor: colorScheme.primary,
+        unselectedLabelColor: colorScheme.onSurfaceVariant,
+        labelStyle: base.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+        ),
+        unselectedLabelStyle: base.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
       ),
       listTileTheme: ListTileThemeData(
         minVerticalPadding: elderMode ? JiYiSpacing.md : JiYiSpacing.sm,

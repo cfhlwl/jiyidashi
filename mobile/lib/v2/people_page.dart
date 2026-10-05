@@ -186,8 +186,15 @@ class _PeoplePageState extends State<PeoplePage> {
                   for (final person in people)
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.person_outline),
+                      leading: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(JiYiRadius.control),
+                        ),
+                        child: const SizedBox.square(
+                          dimension: 40,
+                          child: Icon(Icons.person_outline),
+                        ),
                       ),
                       title: Text(person.displayName),
                       subtitle: Text(

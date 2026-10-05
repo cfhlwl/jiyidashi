@@ -101,6 +101,10 @@ class _Entry extends StatelessWidget {
     return Material(
       color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(JiYiRadius.card),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(JiYiRadius.card),
@@ -119,6 +123,15 @@ class _Entry extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.all(JiYiSpacing.sm),
                     child: Icon(icon, color: theme.colorScheme.primary),
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.md),
+                Container(
+                  width: 28,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    borderRadius: BorderRadius.circular(JiYiRadius.pill),
                   ),
                 ),
                 const Spacer(),
