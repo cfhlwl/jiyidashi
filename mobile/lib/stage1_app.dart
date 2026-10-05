@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'account_delete_section.dart';
 import 'amap_footprint_map.dart';
@@ -58,6 +59,8 @@ class JiYiApp extends StatefulWidget {
 }
 
 class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
+  static const _themeModeStorageKey = 'jiyi.ui.theme-mode.v1';
+
   late final JiYiApiClient api = widget.api ?? JiYiApiClient();
   late final OfflineQueueStore offlineQueue =
       widget.offlineQueue ?? OfflineQueueStore();
@@ -84,6 +87,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   bool startOnboardingAfterAuth = false;
   bool resumeAccountDeletionAfterAuth = false;
   bool elderModeEnabled = false;
+  ThemeMode _themeMode = ThemeMode.system;
+  bool _themeModeChangedLocally = false;
   String? restoreMessage;
   Timer? _authorityRefreshTimer;
   StreamSubscription<void>? _passiveRecoveryRequests;
@@ -93,6 +98,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_restoreThemeMode());
     final recoveryBridge = motionSamplingBridge;
     if (recoveryBridge is NativePassiveRecoveryTriggerBridge) {
       final triggerBridge =
@@ -113,6 +119,45 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       const Duration(minutes: 5),
       (_) => unawaited(_refreshServerAuthority()),
     );
+  }
+
+  Future<void> _restoreThemeMode() async {
+    try {
+      final stored = await const FlutterSecureStorage().read(
+        key: _themeModeStorageKey,
+      );
+      if (!mounted || _themeModeChangedLocally) return;
+      final mode = switch (stored) {
+        'light' => ThemeMode.light,
+        'dark' => ThemeMode.dark,
+        _ => ThemeMode.system,
+      };
+      setState(() => _themeMode = mode);
+    } catch (_) {
+      // Appearance is a local preference. Storage failure must not block login or the shell.
+    }
+  }
+
+  void _setThemeMode(ThemeMode mode) {
+    _themeModeChangedLocally = true;
+    setState(() => _themeMode = mode);
+    final value = switch (mode) {
+      ThemeMode.light => 'light',
+      ThemeMode.dark => 'dark',
+      ThemeMode.system => 'system',
+    };
+    unawaited(_persistThemeMode(value));
+  }
+
+  Future<void> _persistThemeMode(String value) async {
+    try {
+      await const FlutterSecureStorage().write(
+        key: _themeModeStorageKey,
+        value: value,
+      );
+    } catch (_) {
+      // Appearance is a local preference. Storage failure must not block the shell.
+    }
   }
 
   Future<bool> _awaitPassiveRecoveryIdle() async {
@@ -403,6 +448,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       title: '迹忆',
       debugShowCheckedModeBanner: false,
       theme: JiYiTheme.light(elderMode: elderModeEnabled),
+      darkTheme: JiYiTheme.dark(elderMode: elderModeEnabled),
+      themeMode: _themeMode,
       home: restoringSession
           ? const Scaffold(
               body: SafeArea(
@@ -422,6 +469,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   motionSamplingBridge: motionSamplingBridge,
                   passiveDelivery: passiveDelivery,
                   sync: sync,
+                  themeMode: _themeMode,
+                  onThemeModeChanged: _setThemeMode,
                   onElderModeChanged: (enabled) {
                     if (mounted) setState(() => elderModeEnabled = enabled);
                   },
@@ -933,6 +982,8 @@ class AppShell extends StatefulWidget {
     this.sync,
     this.mediaCache,
     this.amapPrivacyConsent,
+    this.themeMode = ThemeMode.system,
+    this.onThemeModeChanged,
     this.onElderModeChanged,
     required this.onLogout,
   });
@@ -948,6 +999,8 @@ class AppShell extends StatefulWidget {
   final OfflineSyncCoordinator? sync;
   final LocalMediaCache? mediaCache;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
   final ValueChanged<bool>? onElderModeChanged;
   final VoidCallback onLogout;
 
@@ -1339,6 +1392,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             ? null
             : () => unawaited(onboarding.restart()),
         amapPrivacyConsent: _amapPrivacyConsent,
+        themeMode: widget.themeMode,
+        onThemeModeChanged: widget.onThemeModeChanged,
       ),
     ];
     return Scaffold(
@@ -1367,42 +1422,42 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       MaterialPageRoute(builder: (_) => capturePage),
                     );
                   },
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Icons.edit_outlined),
                   label: const Text('记一下'),
                 ),
       bottomNavigationBar: onboardingStep != null || _accountDeletionIntentActive
           ? null
           : NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (value) => setState(() => index = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.today_outlined),
-            selectedIcon: Icon(Icons.today),
-            label: '今天',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.auto_stories_outlined),
-            selectedIcon: Icon(Icons.auto_stories),
-            label: '记忆',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.route_outlined),
-            selectedIcon: Icon(Icons.route),
-            label: '人生',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.family_restroom_outlined),
-            selectedIcon: Icon(Icons.family_restroom),
-            label: '家庭',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: '我的',
-          ),
-        ],
-      ),
+              selectedIndex: index,
+              onDestinationSelected: (value) => setState(() => index = value),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.today_outlined),
+                  selectedIcon: Icon(Icons.today),
+                  label: '今天',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.auto_stories_outlined),
+                  selectedIcon: Icon(Icons.auto_stories),
+                  label: '记忆',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.route_outlined),
+                  selectedIcon: Icon(Icons.route),
+                  label: '人生',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.family_restroom_outlined),
+                  selectedIcon: Icon(Icons.family_restroom),
+                  label: '家庭',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: '我的',
+                ),
+              ],
+            ),
     );
   }
 }
@@ -3145,6 +3200,8 @@ class ProfilePage extends StatelessWidget {
     this.onRevalidateLocationAuthority,
     this.onStartOnboarding,
     this.amapPrivacyConsent,
+    this.themeMode = ThemeMode.system,
+    this.onThemeModeChanged,
   });
 
   final JiYiApiClient api;
@@ -3158,6 +3215,8 @@ class ProfilePage extends StatelessWidget {
   final Future<void> Function()? onRevalidateLocationAuthority;
   final VoidCallback? onStartOnboarding;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -3306,6 +3365,11 @@ class ProfilePage extends StatelessWidget {
                 api: api,
                 initialEnabled: profile['elder_mode_enabled'] == true,
                 onChanged: onElderModeChanged ?? (_) {},
+              ),
+              const SizedBox(height: JiYiSpacing.md),
+              _AppearanceControls(
+                mode: themeMode,
+                onChanged: onThemeModeChanged,
               ),
               if (onStartOnboarding != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
@@ -3502,6 +3566,90 @@ class _ElderModeControls extends StatefulWidget {
 
   @override
   State<_ElderModeControls> createState() => _ElderModeControlsState();
+}
+
+class _AppearanceControls extends StatelessWidget {
+  const _AppearanceControls({required this.mode, this.onChanged});
+
+  final ThemeMode mode;
+  final ValueChanged<ThemeMode>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onChanged != null;
+    return JiYiSectionCard(
+      leading: Icon(
+        Icons.palette_outlined,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+      title: '外观',
+      subtitle: '选择让你舒服的阅读方式。',
+      child: Column(
+        children: [
+          _ThemeModeOption(
+            value: ThemeMode.system,
+            groupValue: mode,
+            title: '跟随系统',
+            subtitle: '白天与夜晚自动切换',
+            enabled: enabled,
+            onChanged: onChanged,
+          ),
+          const Divider(),
+          _ThemeModeOption(
+            value: ThemeMode.light,
+            groupValue: mode,
+            title: '晨曦暖白',
+            subtitle: '柔和浅色，适合日间阅读',
+            enabled: enabled,
+            onChanged: onChanged,
+          ),
+          const Divider(),
+          _ThemeModeOption(
+            value: ThemeMode.dark,
+            groupValue: mode,
+            title: '夜航深蓝',
+            subtitle: '低亮深色，适合夜间阅读',
+            enabled: enabled,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemeModeOption extends StatelessWidget {
+  const _ThemeModeOption({
+    required this.value,
+    required this.groupValue,
+    required this.title,
+    required this.subtitle,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final ThemeMode value;
+  final ThemeMode groupValue;
+  final String title;
+  final String subtitle;
+  final bool enabled;
+  final ValueChanged<ThemeMode>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return RadioListTile<ThemeMode>(
+      contentPadding: EdgeInsets.zero,
+      value: value,
+      groupValue: groupValue,
+      onChanged: enabled
+          ? (next) {
+              if (next != null) onChanged!(next);
+            }
+          : null,
+      title: Text(title),
+      subtitle: Text(subtitle),
+    );
+  }
 }
 
 class _ElderModeControlsState extends State<_ElderModeControls> {

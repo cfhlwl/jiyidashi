@@ -95,6 +95,21 @@ class JiYiSemanticColors extends ThemeExtension<JiYiSemanticColors> {
     onInfoContainer: Color(0xFF0C2A3E),
   );
 
+  static const dark = JiYiSemanticColors(
+    success: Color(0xFF7CE0AB),
+    onSuccess: Color(0xFF082114),
+    successContainer: Color(0xFF143E29),
+    onSuccessContainer: Color(0xFFC6F8D9),
+    warning: Color(0xFFFFD080),
+    onWarning: Color(0xFF2D1B00),
+    warningContainer: Color(0xFF4A330F),
+    onWarningContainer: Color(0xFFFFE7B9),
+    info: Color(0xFF9CC7FF),
+    onInfo: Color(0xFF071D3B),
+    infoContainer: Color(0xFF17385E),
+    onInfoContainer: Color(0xFFD6E8FF),
+  );
+
   final Color success;
   final Color onSuccess;
   final Color successContainer;
