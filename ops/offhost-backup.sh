@@ -41,6 +41,13 @@ for _ in $(seq 1 60); do
   if "${compose[@]}" exec -T postgres sh -ceu \
     'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
 
+    break
+  fi
+  sleep 2
+done
+"${compose[@]}" exec -T postgres sh -ceu \
+  'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null
+
 # Timers do not inherit deploy-shell variables. Reuse the exact immutable image
 # already running for API/worker unless the operator/CI explicitly supplied one.
 if [[ -z "${BACKEND_IMAGE:-}" ]]; then
@@ -56,12 +63,6 @@ if [[ -z "${BACKEND_IMAGE:-}" ]]; then
   export BACKEND_IMAGE
 fi
 
-    break
-  fi
-  sleep 2
-done
-"${compose[@]}" exec -T postgres sh -ceu \
-  'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null
 
 find "$BACKUP_LOCAL_STAGING_DIR" \
   -type f -name 'jiyidashi-*.dump' \
