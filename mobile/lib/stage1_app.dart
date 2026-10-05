@@ -3621,11 +3621,9 @@ class _AppearanceControls extends StatelessWidget {
       subtitle: '选择让你舒服的阅读方式。',
       child: RadioGroup<ThemeMode>(
         groupValue: mode,
-        onChanged: enabled
-            ? (next) {
-                if (next != null) onChanged!(next);
-              }
-            : null,
+        onChanged: (next) {
+          if (enabled && next != null) onChanged!(next);
+        },
         child: Column(
           children: [
             _ThemeModeOption(
