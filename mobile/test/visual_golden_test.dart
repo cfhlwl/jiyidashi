@@ -71,37 +71,40 @@ Widget _goldenLocalPhoto(
   final scheme = Theme.of(context).colorScheme;
   return Semantics(
     label: '本地照片视觉测试样本',
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            scheme.primaryContainer,
-            scheme.tertiaryContainer,
+    child: AspectRatio(
+      aspectRatio: 4 / 3,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              scheme.primaryContainer,
+              scheme.tertiaryContainer,
+            ],
+          ),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Align(
+              alignment: const Alignment(0, -0.22),
+              child: Icon(
+                Icons.wb_sunny_outlined,
+                size: 42,
+                color: scheme.onPrimaryContainer.withValues(alpha: 0.78),
+              ),
+            ),
+            Align(
+              alignment: const Alignment(0, 0.42),
+              child: Icon(
+                Icons.landscape_outlined,
+                size: 92,
+                color: scheme.onTertiaryContainer.withValues(alpha: 0.88),
+              ),
+            ),
           ],
         ),
-      ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Align(
-            alignment: const Alignment(0, -0.22),
-            child: Icon(
-              Icons.wb_sunny_outlined,
-              size: 42,
-              color: scheme.onPrimaryContainer.withValues(alpha: 0.78),
-            ),
-          ),
-          Align(
-            alignment: const Alignment(0, 0.42),
-            child: Icon(
-              Icons.landscape_outlined,
-              size: 92,
-              color: scheme.onTertiaryContainer.withValues(alpha: 0.88),
-            ),
-          ),
-        ],
       ),
     ),
   );
@@ -1758,7 +1761,6 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('family-read-photos')));
     await _pumpVisualFrames(tester);
     await tester.tap(find.byKey(const ValueKey('family-read-location')));
-    await _pumpVisualFrames(tester);
 
     expect(find.byKey(const ValueKey('family-photo-grid')), findsOneWidget);
     await _pumpUntilFinder(
@@ -1769,8 +1771,9 @@ void main() {
         ),
       ),
     );
-    expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
     final map = find.byKey(const ValueKey('amap-place-real-surface'));
+    await _pumpUntilFinder(tester, map);
+    expect(map, findsOneWidget);
     await tester.scrollUntilVisible(
       map,
       180,
