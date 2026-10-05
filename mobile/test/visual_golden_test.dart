@@ -979,6 +979,13 @@ Future<Key> _pumpSurface(
         placeBuilder: _goldenPlaceMap,
         child: LocalMediaPresentationScope(
           renderer: _goldenLocalPhoto,
+          resolver: ({
+            required api,
+            required cache,
+            required ownerUserId,
+            required mediaId,
+          }) async =>
+              File('/tmp/jiyi-visual-$mediaId.media'),
           child: RepaintBoundary(key: key, child: child),
         ),
       ),
@@ -1187,6 +1194,9 @@ void main() {
     );
   });
 
+  // Cache/offline authority semantics are covered by MediaPresentationResolver unit
+  // regressions. This Golden freezes only the user-visible cached-photo state and
+  // therefore uses the deterministic presentation resolver above.
   testWidgets('golden: cached photo remains visible offline', (tester) async {
     final api = _GoldenCachedOfflineTimelineApi();
     final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
