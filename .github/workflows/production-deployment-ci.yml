@@ -36,6 +36,7 @@ on:
       - "ops/Dockerfile"
       - "ops/**"
       - "docs/PRODUCTION_DEPLOYMENT.md"
+      - "docs/PRODUCTION_BACKUP.md"
       - ".github/workflows/production-deployment-ci.yml"
   push:
     branches:
@@ -74,6 +75,7 @@ on:
       - "ops/Dockerfile"
       - "ops/**"
       - "docs/PRODUCTION_DEPLOYMENT.md"
+      - "docs/PRODUCTION_BACKUP.md"
       - ".github/workflows/production-deployment-ci.yml"
 
 jobs:
