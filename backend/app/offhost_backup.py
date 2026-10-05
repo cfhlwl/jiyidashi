@@ -239,7 +239,7 @@ def _assert_manifest_safe(value: object, *, path: str = "manifest") -> None:
         lowered = value.lower()
         if "://" in value and "@" in value:
             raise BackupError("MANIFEST_CREDENTIAL_URL_REJECTED")
-        if "-----begin " in lowered or "\\n" in value or "\\r" in value:
+        if "-----begin " in lowered or "\n" in value or "\r" in value:
             raise BackupError("MANIFEST_UNSAFE_STRING_REJECTED")
 
 
