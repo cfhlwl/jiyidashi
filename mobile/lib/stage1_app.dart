@@ -3619,35 +3619,37 @@ class _AppearanceControls extends StatelessWidget {
       ),
       title: '外观',
       subtitle: '选择让你舒服的阅读方式。',
-      child: Column(
-        children: [
-          _ThemeModeOption(
-            value: ThemeMode.system,
-            groupValue: mode,
-            title: '跟随系统',
-            subtitle: '白天与夜晚自动切换',
-            enabled: enabled,
-            onChanged: onChanged,
-          ),
-          const Divider(),
-          _ThemeModeOption(
-            value: ThemeMode.light,
-            groupValue: mode,
-            title: '中性浅色',
-            subtitle: '冷白界面，适合日间阅读',
-            enabled: enabled,
-            onChanged: onChanged,
-          ),
-          const Divider(),
-          _ThemeModeOption(
-            value: ThemeMode.dark,
-            groupValue: mode,
-            title: '夜航深蓝',
-            subtitle: '低亮深色，适合夜间阅读',
-            enabled: enabled,
-            onChanged: onChanged,
-          ),
-        ],
+      child: RadioGroup<ThemeMode>(
+        groupValue: mode,
+        onChanged: enabled
+            ? (next) {
+                if (next != null) onChanged!(next);
+              }
+            : null,
+        child: Column(
+          children: [
+            _ThemeModeOption(
+              value: ThemeMode.system,
+              title: '跟随系统',
+              subtitle: '白天与夜晚自动切换',
+              enabled: enabled,
+            ),
+            const Divider(),
+            _ThemeModeOption(
+              value: ThemeMode.light,
+              title: '中性浅色',
+              subtitle: '冷白界面，适合日间阅读',
+              enabled: enabled,
+            ),
+            const Divider(),
+            _ThemeModeOption(
+              value: ThemeMode.dark,
+              title: '夜航深蓝',
+              subtitle: '低亮深色，适合夜间阅读',
+              enabled: enabled,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3656,31 +3658,22 @@ class _AppearanceControls extends StatelessWidget {
 class _ThemeModeOption extends StatelessWidget {
   const _ThemeModeOption({
     required this.value,
-    required this.groupValue,
     required this.title,
     required this.subtitle,
     required this.enabled,
-    required this.onChanged,
   });
 
   final ThemeMode value;
-  final ThemeMode groupValue;
   final String title;
   final String subtitle;
   final bool enabled;
-  final ValueChanged<ThemeMode>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     return RadioListTile<ThemeMode>(
       contentPadding: EdgeInsets.zero,
       value: value,
-      groupValue: groupValue,
-      onChanged: enabled
-          ? (next) {
-              if (next != null) onChanged!(next);
-            }
-          : null,
+      enabled: enabled,
       title: Text(title),
       subtitle: Text(subtitle),
     );
