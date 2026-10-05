@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -170,6 +171,7 @@ def _finalize_account_deletion(
     user_id: UUID,
     operation_id: UUID,
     data_request_id: UUID,
+    authority_check: Callable[[], None] | None = None,
 ) -> None:
     try:
         user = db.scalar(select(User).where(User.id == user_id).with_for_update())
@@ -219,6 +221,8 @@ def _finalize_account_deletion(
             )
         )
         db.execute(delete(User).where(User.id == user_id))
+        if authority_check is not None:
+            authority_check()
         db.commit()
     except AccountDeletionError:
         raise
@@ -327,6 +331,7 @@ def progress_prepared_account_deletion(
     user_id: UUID,
     operation_id: UUID,
     storage: ObjectStorage,
+    authority_check: Callable[[], None] | None = None,
 ) -> AccountDeletionResult | None:
     """Advance an existing account deletion without bypassing local cleanup proof."""
 
@@ -354,6 +359,7 @@ def progress_prepared_account_deletion(
             user_id=user_id,
             request_id=data_deletion_request_id,
             storage=storage,
+            authority_check=authority_check,
         )
     except DataDeletionError as exc:
         if exc.code == "USER_NOT_FOUND":
@@ -375,6 +381,7 @@ def progress_prepared_account_deletion(
         user_id=user_id,
         operation_id=canonical_operation_id,
         data_request_id=data_deletion_request_id,
+        authority_check=authority_check,
     )
     return AccountDeletionResult(
         request_id=canonical_request_id,
