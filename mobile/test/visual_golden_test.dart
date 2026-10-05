@@ -934,6 +934,20 @@ Future<void> _pumpVisualFrames(
   }
 }
 
+Future<T> _visualStep<T>(
+  String label,
+  Future<T> future, {
+  Duration timeout = const Duration(seconds: 5),
+}) {
+  return future.timeout(
+    timeout,
+    onTimeout: () => throw TimeoutException(
+      'visual step timed out: $label',
+      timeout,
+    ),
+  );
+}
+
 Future<void> _pumpUntilFinder(
   WidgetTester tester,
   Finder finder, {
@@ -1211,12 +1225,15 @@ void main() {
   testWidgets('golden: cached photo remains visible offline', (tester) async {
     final api = _GoldenCachedOfflineTimelineApi();
     final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
-    final key = await _pumpSurface(
-      tester,
-      TimelinePage(
-        api: api,
-        mediaCache: cache,
-        photoThumbnailBuilder: _goldenPagePhotoThumbnail,
+    final key = await _visualStep(
+      'cached-photo surface bootstrap',
+      _pumpSurface(
+        tester,
+        TimelinePage(
+          api: api,
+          mediaCache: cache,
+          photoThumbnailBuilder: _goldenPagePhotoThumbnail,
+        ),
       ),
     );
 
@@ -1224,14 +1241,20 @@ void main() {
       find.byKey(const ValueKey('timeline-photo-$v2MemoryId')),
       findsOneWidget,
     );
-    await _pumpUntilFinder(
-      tester,
-      find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
+    await _visualStep(
+      'cached-photo local media ready',
+      _pumpUntilFinder(
+        tester,
+        find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
+      ),
     );
     expect(api.capabilityCalls, 0);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/state_cached_photo_offline.png'),
+    await _visualStep(
+      'cached-photo golden raster',
+      expectLater(
+        find.byKey(key),
+        matchesGoldenFile('goldens/state_cached_photo_offline.png'),
+      ),
     );
   });
 
@@ -1542,22 +1565,31 @@ void main() {
 
 
   testWidgets('golden: design authority Today map photo', (tester) async {
-    final key = await _pumpGoldenToday(
-      tester,
-      mapAccepted: true,
-      photoFirst: true,
+    final key = await _visualStep(
+      'Today surface bootstrap',
+      _pumpGoldenToday(
+        tester,
+        mapAccepted: true,
+        photoFirst: true,
+      ),
     );
 
     expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
     expect(find.byKey(const ValueKey('today-photo-$v2MemoryId')), findsOneWidget);
-    await _pumpUntilFinder(
-      tester,
-      find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
+    await _visualStep(
+      'Today local photo ready',
+      _pumpUntilFinder(
+        tester,
+        find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
+      ),
     );
     expect(find.text('晨光里的白板'), findsOneWidget);
-    await expectLater(
-      find.byKey(key),
-      matchesGoldenFile('goldens/design_authority_today.png'),
+    await _visualStep(
+      'Today golden raster',
+      expectLater(
+        find.byKey(key),
+        matchesGoldenFile('goldens/design_authority_today.png'),
+      ),
     );
   });
 
