@@ -43,6 +43,14 @@ def upgrade() -> None:
             ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_maintenance_jobs_attempt_count",
+        ),
+        sa.CheckConstraint(
+            "max_attempts >= 1 AND max_attempts <= 100",
+            name="ck_maintenance_jobs_max_attempts",
+        ),
         sa.UniqueConstraint(
             "job_type",
             "dedupe_key",
