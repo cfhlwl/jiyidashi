@@ -20,6 +20,7 @@ from app.maintenance_adapters import (
     handle_analytics_retention,
     handle_media_pending_cleanup,
     handle_security_alert_delivery,
+    discover_and_enqueue_maintenance_jobs,
 )
 from app.maintenance_job_models import (
     MaintenanceJob,
@@ -494,4 +495,74 @@ async def test_worker_stop_request_does_not_take_new_claim(
         assert saved.status == MaintenanceJobStatus.PENDING.value
         assert saved.attempt_count == 0
         db.delete(saved)
+        db.commit()
+
+
+
+@pytest.mark.asyncio
+async def test_scheduler_bounded_batches_do_not_starve_later_security_alerts(
+    client,
+):
+    del client
+    _clear_maintenance_jobs()
+    now = datetime.now(UTC)
+    alert_ids = [uuid4() for _ in range(205)]
+
+    with SessionLocal() as db:
+        db.execute(delete(SecurityAlert))
+        for index, alert_id in enumerate(alert_ids):
+            db.add(
+                SecurityAlert(
+                    id=alert_id,
+                    dedupe_key=uuid4().hex + uuid4().hex,
+                    rule_code=SecuritySignalCode.AUTH_RATE_LIMIT_TRIGGERED.value,
+                    severity=SecuritySeverity.MEDIUM.value,
+                    correlation_digest=f"{index:064x}",
+                    scope="AUTH_REGISTER_IP",
+                    window_started_at=now,
+                    window_seconds=600,
+                    signal_count=1,
+                    delivery_status=SecurityAlertDeliveryStatus.PENDING.value,
+                    delivery_attempts=0,
+                    created_at=now + timedelta(microseconds=index),
+                    updated_at=now,
+                )
+            )
+        db.commit()
+
+    discover_and_enqueue_maintenance_jobs(now=now)
+    with SessionLocal() as db:
+        first_count = len(
+            list(
+                db.scalars(
+                    select(MaintenanceJob.id).where(
+                        MaintenanceJob.job_type
+                        == MaintenanceJobType.SECURITY_ALERT_DELIVERY.value
+                    )
+                )
+            )
+        )
+        assert first_count == 200
+        db.rollback()
+
+    discover_and_enqueue_maintenance_jobs(now=now + timedelta(seconds=1))
+    with SessionLocal() as db:
+        second_count = len(
+            list(
+                db.scalars(
+                    select(MaintenanceJob.id).where(
+                        MaintenanceJob.job_type
+                        == MaintenanceJobType.SECURITY_ALERT_DELIVERY.value
+                    )
+                )
+            )
+        )
+        assert second_count == 205
+        db.execute(
+            delete(MaintenanceJob).where(
+                MaintenanceJob.job_type
+                == MaintenanceJobType.SECURITY_ALERT_DELIVERY.value
+            )
+        )
+        db.execute(delete(SecurityAlert))
         db.commit()
