@@ -67,7 +67,7 @@ if [[ -n "${BACKUP_TEST_FAKE_ROOT:-}" ]]; then
     exit 3
   fi
   mkdir -p "$BACKUP_TEST_FAKE_ROOT"
-  run_args+=(-v "$BACKUP_TEST_FAKE_ROOT:/backup-fake:rw")
+  run_args+=(-e CI=true -v "$BACKUP_TEST_FAKE_ROOT:/backup-fake:rw")
   module_args+=(--test-filesystem-root /backup-fake)
 fi
 
