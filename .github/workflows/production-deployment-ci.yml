@@ -9,6 +9,8 @@ on:
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
       - "backend/app/services/object_storage.py"
+      - "backend/app/offhost_backup.py"
+      - "backend/tests/test_offhost_backup.py"
       - "backend/app/maintenance_worker.py"
       - "backend/app/maintenance_adapters.py"
       - "backend/app/maintenance_job_models.py"
@@ -171,6 +173,18 @@ jobs:
           STORAGE_OBJECT_PREFIX=media
           STORAGE_PRESIGN_TTL_SECONDS=600
           STORAGE_DELETE_SETTLE_SECONDS=30
+          BACKUP_OFFHOST_ENABLED=true
+          BACKUP_STORAGE_BUCKET=ci-private-backup-bucket
+          BACKUP_STORAGE_REGION=ci-backup-region
+          BACKUP_STORAGE_ENDPOINT_URL=https://backup.example.invalid
+          BACKUP_STORAGE_ACCESS_KEY_ID=ci-backup-access-key
+          BACKUP_STORAGE_SECRET_ACCESS_KEY=ci-backup-secret-key
+          BACKUP_STORAGE_ADDRESSING_STYLE=virtual
+          BACKUP_OBJECT_PREFIX=postgresql-backups
+          BACKUP_SOURCE_CLUSTER_ID=ci-prod-cluster
+          BACKUP_RETENTION_DAILY=14
+          BACKUP_RETENTION_WEEKLY=8
+          BACKUP_RETENTION_MONTHLY=12
           MEDIA_MAX_IMAGE_BYTES=20971520
           MEDIA_MAX_AUDIO_BYTES=10485760
 
@@ -216,7 +230,7 @@ jobs:
       - name: Reject unsafe actual production environments
         shell: bash
         run: |
-          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'; do
+          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'             'BACKUP_OFFHOST_ENABLED=false'             'BACKUP_STORAGE_BUCKET='             'BACKUP_STORAGE_ENDPOINT_URL=http://backup.invalid'             'BACKUP_STORAGE_SECRET_ACCESS_KEY='; do
             bad_env="$RUNNER_TEMP/bad-production.env"
             cp "$ENV_FILE" "$bad_env"
             key="${mutation%%=*}"
@@ -406,6 +420,154 @@ jobs:
       - name: Verify no schema drift
         run: |
           docker compose             --env-file "$ENV_FILE"             -f docker-compose.prod.yml             run --rm --no-deps api alembic check
+
+      - name: OPS-003 shell and focused backup regressions
+        shell: bash
+        run: |
+          bash -n ops/offhost-backup.sh
+          bash -n ops/offhost-restore-drill.sh
+          docker run --rm "$BACKEND_IMAGE" \
+            python -m pytest -q /app/tests/test_offhost_backup.py
+
+      - name: OPS-003 off-host backup publication and same-slot idempotency
+        shell: bash
+        run: |
+          fake_root="$RUNNER_TEMP/offhost-backup-store"
+          staging="$RUNNER_TEMP/offhost-staging"
+          lock_file="$RUNNER_TEMP/offhost-backup.lock"
+          mkdir -p "$fake_root" "$staging"
+
+          for pass in 1 2; do
+            CI=true \
+            ENV_FILE="$ENV_FILE" \
+            COMPOSE_FILE="$PWD/docker-compose.prod.yml" \
+            BACKUP_TEST_FAKE_ROOT="$fake_root" \
+            BACKUP_LOCAL_STAGING_DIR="$staging" \
+            BACKUP_LOCK_FILE="$lock_file" \
+            BACKUP_SLOT=2026-10-05 \
+            RELEASE_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+              bash ops/offhost-backup.sh
+          done
+
+          test "$(find "$fake_root/postgresql-backups/verified" \
+            -type f -name manifest.json | wc -l)" -eq 1
+          test "$(find "$fake_root/postgresql-backups/verified" \
+            -type f -name database.dump | wc -l)" -eq 1
+          ! grep -R -F 'ci-backup-secret-key' "$fake_root"
+          ! grep -R -F 'ci-backup-access-key' "$fake_root"
+
+          manifest="$fake_root/postgresql-backups/verified/pg-2026-10-05/manifest.json"
+          python3 - "$manifest" <<'PY'
+          import json
+          import sys
+
+          body = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert body["backup_id"] == "pg-2026-10-05", body
+          assert body["manifest_version"] == 1, body
+          assert body["dump"]["size_bytes"] > 0, body
+          assert len(body["dump"]["sha256"]) == 64, body
+          assert "password" not in json.dumps(body).lower(), body
+          PY
+
+      - name: OPS-003 overlapping backup execution is fenced
+        shell: bash
+        run: |
+          lock_file="$RUNNER_TEMP/offhost-overlap.lock"
+          exec 8>"$lock_file"
+          flock -n 8
+
+          set +e
+          CI=true \
+          ENV_FILE="$ENV_FILE" \
+          COMPOSE_FILE="$PWD/docker-compose.prod.yml" \
+          BACKUP_TEST_FAKE_ROOT="$RUNNER_TEMP/offhost-backup-store" \
+          BACKUP_LOCAL_STAGING_DIR="$RUNNER_TEMP/offhost-staging" \
+          BACKUP_LOCK_FILE="$lock_file" \
+          BACKUP_SLOT=2026-10-05 \
+            bash ops/offhost-backup.sh
+          status=$?
+          set -e
+          test "$status" -eq 75
+          flock -u 8
+
+      - name: OPS-003 real PostgreSQL off-host restore drill
+        shell: bash
+        run: |
+          before="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+              exec -T postgres sh -ceu '
+                PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                  --host=127.0.0.1 --username="$POSTGRES_USER" \
+                  --dbname="$POSTGRES_DB" --tuples-only --no-align \
+                  --command="SELECT COUNT(*) FROM pg_database WHERE datname LIKE '\''jiyi_ops003_restore_%'\'';"
+              ' | tr -d '[:space:]'
+          )"
+
+          CI=true \
+          ENV_FILE="$ENV_FILE" \
+          COMPOSE_FILE="$PWD/docker-compose.prod.yml" \
+          BACKUP_TEST_FAKE_ROOT="$RUNNER_TEMP/offhost-backup-store" \
+          BACKUP_LOCAL_STAGING_DIR="$RUNNER_TEMP/offhost-restore" \
+          BACKUP_LOCK_FILE="$RUNNER_TEMP/offhost-restore.lock" \
+            bash ops/offhost-restore-drill.sh latest
+
+          after="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+              exec -T postgres sh -ceu '
+                PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                  --host=127.0.0.1 --username="$POSTGRES_USER" \
+                  --dbname="$POSTGRES_DB" --tuples-only --no-align \
+                  --command="SELECT COUNT(*) FROM pg_database WHERE datname LIKE '\''jiyi_ops003_restore_%'\'';"
+              ' | tr -d '[:space:]'
+          )"
+          test "$after" = "$before"
+
+      - name: OPS-003 corrupt dump fails before restore database mutation
+        shell: bash
+        run: |
+          remote_dump="$RUNNER_TEMP/offhost-backup-store/postgresql-backups/verified/pg-2026-10-05/database.dump"
+          python3 - "$remote_dump" <<'PY'
+          import sys
+
+          path = sys.argv[1]
+          body = bytearray(open(path, "rb").read())
+          assert body
+          body[0] ^= 0x01
+          open(path, "wb").write(body)
+          PY
+
+          before="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+              exec -T postgres sh -ceu '
+                PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                  --host=127.0.0.1 --username="$POSTGRES_USER" \
+                  --dbname="$POSTGRES_DB" --tuples-only --no-align \
+                  --command="SELECT COUNT(*) FROM pg_database WHERE datname LIKE '\''jiyi_ops003_restore_%'\'';"
+              ' | tr -d '[:space:]'
+          )"
+
+          set +e
+          CI=true \
+          ENV_FILE="$ENV_FILE" \
+          COMPOSE_FILE="$PWD/docker-compose.prod.yml" \
+          BACKUP_TEST_FAKE_ROOT="$RUNNER_TEMP/offhost-backup-store" \
+          BACKUP_LOCAL_STAGING_DIR="$RUNNER_TEMP/offhost-corrupt-restore" \
+          BACKUP_LOCK_FILE="$RUNNER_TEMP/offhost-corrupt.lock" \
+            bash ops/offhost-restore-drill.sh pg-2026-10-05
+          status=$?
+          set -e
+          test "$status" -ne 0
+
+          after="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+              exec -T postgres sh -ceu '
+                PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                  --host=127.0.0.1 --username="$POSTGRES_USER" \
+                  --dbname="$POSTGRES_DB" --tuples-only --no-align \
+                  --command="SELECT COUNT(*) FROM pg_database WHERE datname LIKE '\''jiyi_ops003_restore_%'\'';"
+              ' | tr -d '[:space:]'
+          )"
+          test "$after" = "$before"
 
       - name: Prove bounded security alert retry operator path
         run: |
