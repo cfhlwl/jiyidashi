@@ -100,6 +100,18 @@ class _TrackingMediaCache extends LocalMediaCache {
   }
 }
 
+Future<void> _pumpUntil(
+  WidgetTester tester,
+  bool Function() condition, {
+  required String reason,
+}) async {
+  for (var attempt = 0; attempt < 40; attempt++) {
+    await tester.pump(const Duration(milliseconds: 25));
+    if (condition()) return;
+  }
+  fail('Timed out waiting for $reason');
+}
+
 void main() {
   testWidgets('Memory Query delete invalidates the deleted photo cache',
       (tester) async {
@@ -116,14 +128,29 @@ void main() {
     );
     await tester.enterText(find.byType(TextField).first, '找照片');
     await tester.tap(find.text('从我的记录里找'));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.text('删除最相关记忆').evaluate().isNotEmpty,
+      reason: 'query result actions',
+    );
 
-    await tester.tap(find.text('删除最相关记忆'));
-    await tester.pumpAndSettle();
+    final deleteAction = find.text('删除最相关记忆');
+    await tester.ensureVisible(deleteAction);
+    await tester.pump();
+    await tester.tap(deleteAction);
+    await _pumpUntil(
+      tester,
+      () => find.text('删除这条记忆？').evaluate().isNotEmpty,
+      reason: 'delete confirmation dialog',
+    );
     expect(find.text('删除这条记忆？'), findsOneWidget);
 
     await tester.tap(find.text('确认删除'));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => api.deleteCalls == 1 && cache.invalidatedMedia.isNotEmpty,
+      reason: 'targeted media invalidation',
+    );
 
     expect(api.deleteCalls, 1);
     expect(cache.invalidatedMedia, <String>['$_owner::$_media']);
@@ -150,12 +177,27 @@ void main() {
     );
     await tester.enterText(find.byType(TextField).first, '找照片');
     await tester.tap(find.text('从我的记录里找'));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => find.text('删除最相关记忆').evaluate().isNotEmpty,
+      reason: 'query result actions',
+    );
 
-    await tester.tap(find.text('删除最相关记忆'));
-    await tester.pumpAndSettle();
+    final deleteAction = find.text('删除最相关记忆');
+    await tester.ensureVisible(deleteAction);
+    await tester.pump();
+    await tester.tap(deleteAction);
+    await _pumpUntil(
+      tester,
+      () => find.text('删除这条记忆？').evaluate().isNotEmpty,
+      reason: 'delete confirmation dialog',
+    );
     await tester.tap(find.text('确认删除'));
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      () => api.deleteCalls == 1 && cache.purgedOwners.isNotEmpty,
+      reason: 'owner cache purge fallback',
+    );
 
     expect(api.deleteCalls, 1);
     expect(cache.invalidatedMedia, isEmpty);
