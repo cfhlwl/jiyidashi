@@ -93,6 +93,58 @@ def test_forged_mime_and_excessive_source_dimensions_fail_closed():
         )
 
 
+
+
+
+def test_exif_orientation_is_applied_deterministically():
+    image = Image.new("RGB", (120, 240), (10, 20, 30))
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    source = BytesIO()
+    image.save(source, format="JPEG", quality=90, exif=exif)
+
+    derivative = build_analysis_image(
+        source.getvalue(),
+        declared_content_type="image/jpeg",
+        max_bytes=512 * 1024,
+        max_dimension=2048,
+        max_pixels=4_000_000,
+    )
+
+    assert (derivative.width, derivative.height) == (240, 120)
+
+
+def test_multiframe_and_unreducible_output_fail_closed():
+    first = Image.new("RGB", (32, 32), (255, 0, 0))
+    second = Image.new("RGB", (32, 32), (0, 255, 0))
+    animated = BytesIO()
+    first.save(
+        animated,
+        format="WEBP",
+        save_all=True,
+        append_images=[second],
+        duration=100,
+        loop=0,
+    )
+    with pytest.raises(AnalysisImageError, match="AI_IMAGE_MULTIFRAME_UNSUPPORTED"):
+        build_analysis_image(
+            animated.getvalue(),
+            declared_content_type="image/webp",
+            max_bytes=512 * 1024,
+            max_dimension=2048,
+            max_pixels=4_000_000,
+        )
+
+    with pytest.raises(AnalysisImageError, match="AI_IMAGE_DERIVATIVE_TOO_LARGE"):
+        build_analysis_image(
+            _jpeg(32, 32),
+            declared_content_type="image/jpeg",
+            max_bytes=1,
+            max_dimension=2048,
+            max_pixels=4_000_000,
+        )
+
+
 def test_gateway_independently_rejects_analysis_bytes_over_ceiling():
     settings = Settings(
         app_env="test",
