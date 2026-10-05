@@ -14,6 +14,7 @@ from app.services.ai_gateway import (
     AIGatewayError,
     AIImageInferenceRequest,
 )
+from app.services.image_analysis import AnalysisImageError, build_analysis_image
 from app.services.object_storage import ObjectNotFound, ObjectStorage, ObjectStorageError
 from app.vision_models import (
     VisionObservation,
@@ -331,6 +332,23 @@ async def observe_vision(
         size_bytes=snapshot.size_bytes,
     )
 
+    settings = get_settings()
+    try:
+        derivative = await asyncio.to_thread(
+            build_analysis_image,
+            image,
+            declared_content_type=snapshot.content_type,
+            max_bytes=settings.ai_image_max_bytes,
+            max_dimension=settings.ai_image_max_dimension,
+            max_pixels=settings.ai_image_max_pixels,
+        )
+    except AnalysisImageError as exc:
+        status = 413 if exc.code in {
+            "AI_IMAGE_SOURCE_DIMENSIONS_UNSAFE",
+            "AI_IMAGE_DERIVATIVE_TOO_LARGE",
+        } else 422
+        raise VisionError(f"VISION_ANALYSIS_{exc.code}", status) from exc
+
     try:
         inference = await gateway.infer_image(
             AIImageInferenceRequest(
@@ -340,8 +358,8 @@ async def observe_vision(
                     "Classify only safe, directly visible scene/object/activity "
                     "candidates using the allowed kind/code vocabulary."
                 ),
-                image_bytes=image,
-                content_type=snapshot.content_type,
+                image_bytes=derivative.image_bytes,
+                content_type=derivative.content_type,
                 detail="high",
                 max_output_tokens=512,
             ),
