@@ -37,8 +37,10 @@ This is intentionally below PostgreSQL's normal server connection capacity; prod
 preflight rejects a configuration whose derived application maximum exceeds the
 reviewed budget instead of waiting for PostgreSQL to fail under load.
 
-SQLite and test paths do not receive PostgreSQL QueuePool sizing arguments. Readiness
-checks continue to use their independent `NullPool` engine.
+Only production PostgreSQL application engines receive the bounded QueuePool settings.
+Development/test PostgreSQL keeps SQLAlchemy's existing default pool shape, SQLite never
+receives PostgreSQL-only pool arguments, and readiness checks continue to use their
+independent `NullPool` engine.
 
 ## Container log retention
 
