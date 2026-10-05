@@ -648,6 +648,195 @@ Level D — 用户确认事实
 - 不为了“记录更多”而无限申请权限。每一种新数据源都必须能解释“为什么迹忆需要它”，且用户可单独关闭。
 
 
+### 自动生活上下文实施顺序
+
+> **这条工作线的目标不是一次性申请更多权限，而是先保护已经产生的数据，再逐步增加新的高价值信号。** 实施顺序按“数据不可逆风险 → 地点准确性 → 活动识别 → 自动上下文 → 综合重建”推进。
+
+```text
+Phase C0 — 先保护已经拥有的数据
+1. AUTO-CONTEXT-000 Durable Journey / Movement Segment
+2. PLACE-INTEL-002 Place Semantic Identity / Merge
+
+Phase C1 — 把“去了哪里”做深
+3. PLACE-INTEL-001 Frequent Places / HOME-WORK candidate
+4. AUTO-CONTEXT-009 iOS CLVisit feasibility / auxiliary signal
+
+Phase C2 — 把“怎么移动”做出来
+5. AUTO-CONTEXT-001 Native Activity Recognition
+6. AUTO-CONTEXT-002 ActivitySegment
+7. AUTO-CONTEXT-011 Context Permission / Coverage Health
+
+Phase C3 — 增加非位置的自动上下文
+8. AUTO-CONTEXT-005 Passive Photo Context
+9. AUTO-CONTEXT-006 Calendar Context
+10. AUTO-CONTEXT-007 Weather / Holiday Environment
+11. AUTO-CONTEXT-003 Steps / Workout
+12. AUTO-CONTEXT-012 iOS Journaling Suggestions Bridge
+
+Phase C4 — 从信号升级为“生活片段”
+13. AUTO-CONTEXT-013 Trip / Travel Episode
+14. AUTO-CONTEXT-014 Context Candidate Rule Engine
+15. AUTO-CONTEXT-008 DailyLifeSnapshot / Daily Life Reconstruction
+
+Phase C5 — 更敏感、价值较低的后置能力
+16. AUTO-CONTEXT-004 Sleep / Day-boundary Context
+```
+
+依赖关系：
+
+```text
+PLACE-INTEL-002
+→ PLACE-INTEL-001
+
+AUTO-CONTEXT-001
+→ AUTO-CONTEXT-002
+
+AUTO-CONTEXT-000
++ PLACE-INTEL-002
++ AUTO-CONTEXT-002
++ AUTO-CONTEXT-005/006/007
+→ AUTO-CONTEXT-008
+
+AUTO-CONTEXT-008
+→ GROW-003 / GROW-004 / GROW-010 可获得更丰富的真实回忆素材
+```
+
+### 统一数据模型原则
+
+自动采集的新信号**不得全部直接写入 Memory**。建议长期分层：
+
+```text
+Raw Signal（短期）
+LocationPoint / native activity observation / photo metadata observation
+        ↓
+Durable Context（长期）
+Visit
+Place
+JourneySegment
+ActivitySegment
+PhotoContext
+CalendarContext
+WorkoutContext
+EnvironmentContext
+TripEpisode
+        ↓
+DailyLifeSnapshot
+        ↓
+Candidate Memory / User Confirmation
+        ↓
+Confirmed Memory
+```
+
+每个 Durable Context 至少包含：
+
+```text
+owner_user_id
+start_at / end_at
+source_type
+source_id / source_fingerprint
+confidence
+algorithm_version
+created_at
+revision / superseded state
+privacy/deletion lifecycle
+```
+
+禁止让 AI free-form 输出直接成为 Durable Context authority。
+
+### 自动生活上下文验收 Gate
+
+**AUTO-CONTEXT-000 / Journey：**
+- raw GPS retention 前能稳定派生 JourneySegment；
+- 至少保存起止时间、持续时长、距离、起止 Place、来源 fingerprint；
+- 同批 raw point 重放幂等，不产生重复 Journey；
+- 算法升级可重建且保留版本；
+- Data Export / Data Delete / Account Delete 完整覆盖；
+- raw GPS 删除后仍能回答“那天两个地点之间移动了多久/多远”，但不伪造已经丢失的精确轨迹。
+
+**PLACE-INTEL-002 / Place Identity：**
+- 同一高德 POI/AOI 因 GPS 漂移形成的 Place 可安全 merge/alias；
+- merge 不丢 Visit / Memory / ObjectLocation 引用；
+- provider category 映射为迹忆 canonical category；
+- HOME / WORK 只能用户确认后成为正式 semantic label；
+- 用户纠正优先级高于自动命名，算法刷新不得覆盖。
+
+**AUTO-CONTEXT-001/002 / Activity：**
+- iOS 真机覆盖 stationary/walking/running/cycling/automotive；
+- Android 真机覆盖 STILL/WALKING/RUNNING/ON_BICYCLE/IN_VEHICLE，并验证无 GMS 设备 fallback；
+- transition 重复/抖动有 debounce/hysteresis；
+- ActivitySegment 有 source/confidence/start/end；
+- 无活动权限时退回 GPS speed proxy，但 UI/数据明确标识来源；
+- 不长期上传原始 accelerometer/gyro 流。
+
+**AUTO-CONTEXT-005 / Photo：**
+- 明确授权后才扫描；
+- 首版以时间、EXIF location、媒体类型等 metadata 为主；
+- 不默认上传整个相册原图；
+- Limited Photos / revoke / deleted asset 正确处理；
+- 同一照片多次扫描稳定去重；
+- Vision 分析继续需要明确触发/授权，不自动把模型观察写成人生事实。
+
+**AUTO-CONTEXT-006 / Calendar：**
+- 授权按需申请、可撤回；
+- 日历“计划”与“实际发生”严格分离；
+- 日程只能作为 Context/Evidence，不能单独生成 confirmed event；
+- 修改/删除日历事件后 projection 可更新或失效。
+
+**AUTO-CONTEXT-003 / Health：**
+- HealthKit / Health Connect 分类型最小权限；
+- 步数/Workout/距离等只读必要数据；
+- 不采集诊断、疾病等与迹忆核心无关的健康数据；
+- 用户拒绝或撤回后核心 App 完整可用；
+- 健康数据不得用于广告画像。
+
+**AUTO-CONTEXT-007 / Environment：**
+- 历史天气/节假日绑定具体时间地点；
+- provider 失败不能影响核心 Timeline；
+- 环境信息可以重算，不冒充用户行为事实。
+
+**AUTO-CONTEXT-008 / DailyLifeSnapshot：**
+- 至少统一消费 Visit + Journey + Activity + PhotoContext + 用户 Memory；
+- Calendar/Workout/Weather 未授权时允许部分完成；
+- 每一项都能回溯到 source/evidence；
+- “我25号做了什么？”先返回结构化事实，再允许 AI 总结；
+- AI summary 无权新增结构化层不存在的人物、地点、行为、原因或时间。
+
+### 上线前自动记忆产品目标
+
+首发不要求所有 AUTO-CONTEXT 项全部完成，但至少要把 App 从“只有位置自动化”推进到：
+
+```text
+稳定自动记录位置
++
+长期保存 Visit / Place
++
+长期保存地点间 Journey
++
+常去地点与 HOME/WORK 用户确认
++
+原生活动识别 / ActivitySegment
++
+照片 metadata 自动上下文
++
+DailyLifeSnapshot 基础版
+```
+
+首发以后再渐进增加：
+
+```text
+Calendar
+Weather/Holiday
+HealthKit / Health Connect
+Journaling Suggestions
+Trip Episode
+Sleep
+```
+
+核心验收问题最终固定为：
+
+> **用户几天甚至几周不主动打开迹忆，之后回来问“那天我去了哪里、怎么去的、做了些什么？”时，系统能否基于真实证据给出有用且可解释的回答。**
+
+
 ---
 
 # 7. V3：AI 人生助手与硬件扩展
