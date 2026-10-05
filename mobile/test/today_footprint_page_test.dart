@@ -81,17 +81,6 @@ void main() {
     expect(find.text('2026年9月20日'), findsWidgets);
     expect(find.text('07:10 · 家'), findsOneWidget);
     expect(find.text('08:35 · 公司'), findsOneWidget);
-    final firstPill = find.byKey(
-      const ValueKey(
-        'today-footprint-compact-11111111-1111-4111-8111-111111111111',
-      ),
-    );
-    final secondPill = find.byKey(
-      const ValueKey(
-        'today-footprint-compact-22222222-2222-4222-8222-222222222222',
-      ),
-    );
-
     // Verify the explicit accessibility contract on the widget itself.
     // Semantics-tree visibility depends on scroll viewport state and is not the
     // authority for whether the pill publishes the intended spoken label.
