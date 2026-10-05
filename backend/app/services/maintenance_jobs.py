@@ -446,6 +446,31 @@ def fail_maintenance_job(
     return job.status
 
 
+def scrub_maintenance_job_identity(
+    db: Session,
+    *,
+    job_id: UUID,
+    owner_user_id: UUID | None = None,
+) -> bool:
+    """Remove user/resource identity without changing execution authority or outcome."""
+
+    statement = select(MaintenanceJob).where(MaintenanceJob.id == job_id)
+    if owner_user_id is not None:
+        statement = statement.where(MaintenanceJob.owner_user_id == owner_user_id)
+    if db.get_bind().dialect.name == "postgresql":
+        statement = statement.with_for_update()
+    job = db.scalar(statement)
+    if job is None:
+        return False
+    job.owner_user_id = None
+    job.dedupe_key = None
+    job.resource_key = None
+    job.payload_json = {}
+    job.updated_at = datetime.now(UTC)
+    db.flush()
+    return True
+
+
 def cancel_maintenance_job(
     db: Session,
     *,
