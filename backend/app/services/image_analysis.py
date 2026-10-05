@@ -75,14 +75,14 @@ def build_analysis_image(
             if source_pixels <= 0 or source_pixels > source_pixel_guard:
                 raise AnalysisImageError("AI_IMAGE_SOURCE_DIMENSIONS_UNSAFE")
 
+            opened.load()
+            image = ImageOps.exif_transpose(opened)
             target = _target_size(
-                width,
-                height,
+                image.width,
+                image.height,
                 max_dimension=max_dimension,
                 max_pixels=max_pixels,
             )
-            opened.load()
-            image = ImageOps.exif_transpose(opened)
             if image.size != target:
                 image.thumbnail(target, Image.Resampling.LANCZOS)
 
