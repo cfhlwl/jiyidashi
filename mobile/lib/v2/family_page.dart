@@ -1003,11 +1003,11 @@ class _FamilyPhotoTileState extends State<_FamilyPhotoTile> {
         cacheVersion: widget.photo.cacheVersion,
         bytes: bytes,
       );
+      if (!_current(attempt, sessionVersion, viewer)) return;
       widget.mediaCache.markAuthorityValidated(
         ownerUserId: viewer,
         mediaId: mediaKey,
       );
-      if (!_current(attempt, sessionVersion, viewer)) return;
       setState(() {
         file = stored;
         unavailable = false;
