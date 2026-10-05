@@ -18,6 +18,7 @@ from app import (  # noqa: F401
     idempotency_models,
     life_event_models,
     life_stage_models,
+    maintenance_job_models,
     media_models,
     memory_feedback_models,
     models,
