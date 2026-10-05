@@ -166,9 +166,11 @@ def _object_keys(user_id: UUID, media_id: UUID) -> tuple[str, str]:
 
 def _sign_upload(storage: ObjectStorage, asset: MediaAsset) -> PresignedTransfer:
     try:
-        return storage.sign_upload(asset.upload_object_key, asset.content_type)
+        transfer = storage.sign_upload(asset.upload_object_key, asset.content_type)
     except ObjectStorageError as exc:
         raise MediaError("MEDIA_STORAGE_UNAVAILABLE", 503) from exc
+    asset.upload_capability_expires_at = transfer.expires_at
+    return transfer
 
 
 def _validate_stored_object(asset: MediaAsset, stored: StoredObject) -> None:

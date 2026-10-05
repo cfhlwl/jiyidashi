@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, select
@@ -18,6 +20,11 @@ from app.services.data_deletion_service import (
     DataDeletionError,
     DataDeletionResult,
     delete_all_user_data,
+)
+from app.services.maintenance_jobs import (
+    assert_maintenance_claim_current,
+    fence_owner_maintenance_jobs_for_deletion,
+    scrub_maintenance_job_identity,
 )
 from app.services.object_storage import ObjectStorage
 
@@ -92,6 +99,10 @@ def _begin_or_load_account_deletion(
             reason="ACCOUNT_DELETION",
             except_session_id=continuation_session_id,
         )
+        fence_owner_maintenance_jobs_for_deletion(
+            db,
+            owner_user_id=user_id,
+        )
         db.commit()
         return existing
 
@@ -120,6 +131,10 @@ def _begin_or_load_account_deletion(
         user_id=user_id,
         reason="ACCOUNT_DELETION",
         except_session_id=continuation_session_id,
+    )
+    fence_owner_maintenance_jobs_for_deletion(
+        db,
+        owner_user_id=user_id,
     )
     try:
         db.commit()
@@ -169,6 +184,9 @@ def _finalize_account_deletion(
     user_id: UUID,
     operation_id: UUID,
     data_request_id: UUID,
+    authority_check: Callable[[], None] | None = None,
+    maintenance_job_id: UUID | None = None,
+    maintenance_claim_token: UUID | None = None,
 ) -> None:
     try:
         user = db.scalar(select(User).where(User.id == user_id).with_for_update())
@@ -217,7 +235,32 @@ def _finalize_account_deletion(
                 AccountDeletionOperation.user_id == user_id
             )
         )
+        if maintenance_job_id is not None:
+            if maintenance_claim_token is None:
+                raise AccountDeletionError(
+                    "ACCOUNT_DELETION_MAINTENANCE_TOKEN_MISSING",
+                    409,
+                )
+            # Validate and lock the durable claim in this same transaction. Calling
+            # the external authority callback after taking this row lock would
+            # self-block on a second Session.
+            assert_maintenance_claim_current(
+                db,
+                job_id=maintenance_job_id,
+                claim_token=maintenance_claim_token,
+            )
+            if not scrub_maintenance_job_identity(
+                db,
+                job_id=maintenance_job_id,
+                owner_user_id=user_id,
+            ):
+                raise AccountDeletionError(
+                    "ACCOUNT_DELETION_MAINTENANCE_JOB_LOST",
+                    409,
+                )
         db.execute(delete(User).where(User.id == user_id))
+        if authority_check is not None and maintenance_job_id is None:
+            authority_check()
         db.commit()
     except AccountDeletionError:
         raise
@@ -246,12 +289,31 @@ def delete_current_account(
     if operation is None:
         return _already_deleted(request_id)
 
-    if not local_cleanup_ready:
-        # [人工注释][S1-022-FIX-002] PREPARE 只持久化 AccountDeletionOperation gate。
-        # 官方客户端收到这个 durable 锚点后才清本机 owner payload；在客户端明确回报
-        # local_cleanup_ready=true 之前，服务端绝不推进 S1-021，更不能删除登录身份。
+    canonical_request_id = operation.request_id
+    if local_cleanup_ready and operation.local_cleanup_ready_at is None:
+        # The worker must have database evidence of the client-side owner purge.
+        # Persist this monotonic proof before any server-side destructive progression.
+        locked_operation = db.scalar(
+            select(AccountDeletionOperation)
+            .where(
+                AccountDeletionOperation.id == operation.id,
+                AccountDeletionOperation.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        if locked_operation is None:
+            db.rollback()
+            return _already_deleted(canonical_request_id)
+        if locked_operation.local_cleanup_ready_at is None:
+            locked_operation.local_cleanup_ready_at = datetime.now(UTC)
+        db.commit()
+        operation = locked_operation
+
+    if operation.local_cleanup_ready_at is None:
+        # PREPARE only persists the gate. A later false retry cannot revoke a
+        # previously committed proof, but before proof exists no server cleanup runs.
         return AccountDeletionResult(
-            request_id=operation.request_id,
+            request_id=canonical_request_id,
             data_deletion_status=None,
             completed=False,
             retry_after_seconds=None,
@@ -261,7 +323,6 @@ def delete_current_account(
     # [人工注释][S1-022][V2-003] 并发注销的另一个事务可能在 S1-021 返回
     # USER_NOT_FOUND 前已经删除 AccountDeletionOperation。先复制纯值，异常/收口路径
     # 不再解引用可能被并发删除并因 rollback/expire 失效的 ORM 实例。
-    canonical_request_id = operation.request_id
     data_deletion_request_id = operation.data_deletion_request_id
     operation_id = operation.id
 
@@ -291,6 +352,79 @@ def delete_current_account(
         user_id=user_id,
         operation_id=operation_id,
         data_request_id=data_deletion_request_id,
+    )
+    return AccountDeletionResult(
+        request_id=canonical_request_id,
+        data_deletion_status=DataDeletionStatus.COMPLETED,
+        completed=True,
+        retry_after_seconds=None,
+        deleted_counts=deleted_counts,
+    )
+
+
+
+def progress_prepared_account_deletion(
+    db: Session,
+    *,
+    user_id: UUID,
+    operation_id: UUID,
+    storage: ObjectStorage,
+    authority_check: Callable[[], None] | None = None,
+    maintenance_job_id: UUID | None = None,
+    maintenance_claim_token: UUID | None = None,
+) -> AccountDeletionResult | None:
+    """Advance an existing account deletion without bypassing local cleanup proof."""
+
+    operation = db.scalar(
+        select(AccountDeletionOperation).where(
+            AccountDeletionOperation.id == operation_id,
+            AccountDeletionOperation.user_id == user_id,
+        )
+    )
+    if operation is None:
+        db.rollback()
+        return None
+    if operation.local_cleanup_ready_at is None:
+        db.rollback()
+        raise AccountDeletionError("ACCOUNT_DELETION_LOCAL_CLEANUP_NOT_READY", 409)
+
+    canonical_request_id = operation.request_id
+    data_deletion_request_id = operation.data_deletion_request_id
+    canonical_operation_id = operation.id
+    db.rollback()
+
+    try:
+        data_result = delete_all_user_data(
+            db,
+            user_id=user_id,
+            request_id=data_deletion_request_id,
+            storage=storage,
+            authority_check=authority_check,
+            maintenance_job_id=maintenance_job_id,
+        )
+    except DataDeletionError as exc:
+        if exc.code == "USER_NOT_FOUND":
+            return _already_deleted(canonical_request_id)
+        raise
+
+    if not data_result.completed:
+        return AccountDeletionResult(
+            request_id=canonical_request_id,
+            data_deletion_status=data_result.status,
+            completed=False,
+            retry_after_seconds=data_result.retry_after_seconds,
+            deleted_counts=data_result.deleted_counts,
+        )
+
+    deleted_counts = data_result.deleted_counts
+    _finalize_account_deletion(
+        db,
+        user_id=user_id,
+        operation_id=canonical_operation_id,
+        data_request_id=data_deletion_request_id,
+        authority_check=authority_check,
+        maintenance_job_id=maintenance_job_id,
+        maintenance_claim_token=maintenance_claim_token,
     )
     return AccountDeletionResult(
         request_id=canonical_request_id,

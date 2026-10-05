@@ -84,6 +84,13 @@ jobs:
           tests/test_intent_router.py
           tests/test_memory_query.py
 
+      - name: OPS-002 focused durable worker regressions
+        timeout-minutes: 5
+        run: >-
+          pytest -q
+          tests/test_maintenance_jobs.py
+          tests/test_maintenance_adapters.py
+
       - name: SQLite migration baseline
         env:
           DATABASE_URL: sqlite:///./ci-migration.db
@@ -97,6 +104,15 @@ jobs:
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: alembic upgrade head
+
+      - name: PostgreSQL Durable Maintenance Job concurrency
+        # [OPS-002] Real PostgreSQL validates SKIP LOCKED single-claim authority,
+        # concurrent dedupe, lease reclaim, stale-token fencing and crash terminalization.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_maintenance_jobs_integration.py
 
       - name: PostgreSQL Elder Mode migration default
         # [S4-011] 真实 0018 legacy user 升级到 0019 后必须精确得到 FALSE，

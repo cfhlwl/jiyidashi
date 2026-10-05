@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
@@ -390,6 +391,8 @@ def prune_analytics(
     retrieval_days: int,
     active_day_days: int,
     now: datetime | None = None,
+    batch_size: int | None = None,
+    authority_check: Callable[[], None] | None = None,
 ) -> tuple[int, int]:
     if not 31 <= retrieval_days <= 3650:
         raise ValueError("ANALYTICS_RETRIEVAL_RETENTION_DAYS_OUT_OF_RANGE")
@@ -397,19 +400,47 @@ def prune_analytics(
         raise ValueError("ANALYTICS_ACTIVE_DAY_RETENTION_DAYS_OUT_OF_RANGE")
     if active_day_days < retrieval_days:
         raise ValueError("ANALYTICS_ACTIVE_DAY_RETENTION_MUST_NOT_BE_SHORTER")
+    if batch_size is not None and not 1 <= batch_size <= 5000:
+        raise ValueError("ANALYTICS_RETENTION_BATCH_SIZE_OUT_OF_RANGE")
 
     observed = _as_utc(now or datetime.now(UTC))
     retrieval_cutoff = observed - timedelta(days=retrieval_days)
     active_cutoff = (observed - timedelta(days=active_day_days)).date()
-    retrieval_result = db.execute(
-        delete(RetrievalAnalyticsAttempt).where(
-            RetrievalAnalyticsAttempt.occurred_at < retrieval_cutoff
+    retrieval_filter = RetrievalAnalyticsAttempt.occurred_at < retrieval_cutoff
+    active_filter = ProductActiveDay.activity_date_utc < active_cutoff
+
+    if batch_size is None:
+        retrieval_delete = delete(RetrievalAnalyticsAttempt).where(retrieval_filter)
+        active_delete = delete(ProductActiveDay).where(active_filter)
+    else:
+        retrieval_ids = (
+            select(RetrievalAnalyticsAttempt.id)
+            .where(retrieval_filter)
+            .order_by(
+                RetrievalAnalyticsAttempt.occurred_at.asc(),
+                RetrievalAnalyticsAttempt.id.asc(),
+            )
+            .limit(batch_size)
         )
-    )
-    active_result = db.execute(
-        delete(ProductActiveDay).where(
-            ProductActiveDay.activity_date_utc < active_cutoff
+        active_ids = (
+            select(ProductActiveDay.id)
+            .where(active_filter)
+            .order_by(
+                ProductActiveDay.activity_date_utc.asc(),
+                ProductActiveDay.id.asc(),
+            )
+            .limit(batch_size)
         )
-    )
+        retrieval_delete = delete(RetrievalAnalyticsAttempt).where(
+            RetrievalAnalyticsAttempt.id.in_(retrieval_ids)
+        )
+        active_delete = delete(ProductActiveDay).where(
+            ProductActiveDay.id.in_(active_ids)
+        )
+
+    retrieval_result = db.execute(retrieval_delete)
+    active_result = db.execute(active_delete)
+    if authority_check is not None:
+        authority_check()
     db.commit()
     return int(retrieval_result.rowcount or 0), int(active_result.rowcount or 0)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -475,6 +476,7 @@ def deliver_security_alert(
     *,
     alert_id: str,
     now: datetime | None = None,
+    authority_check: Callable[[], None] | None = None,
 ) -> bool:
     observed_at = _as_utc(now or datetime.now(UTC))
     try:
@@ -504,6 +506,8 @@ def deliver_security_alert(
                 return False
 
             alert.delivery_attempts += 1
+            if authority_check is not None:
+                authority_check()
             delivered = emit_security_alert_event_checked(
                 level="ERROR"
                 if alert.severity in {SecuritySeverity.HIGH.value, SecuritySeverity.CRITICAL.value}
@@ -516,6 +520,8 @@ def deliver_security_alert(
                 correlation_id=alert.correlation_digest,
                 delivery_status=SecurityAlertDeliveryStatus.DELIVERED.value,
             )
+            if authority_check is not None:
+                authority_check()
             if delivered:
                 alert.delivery_status = SecurityAlertDeliveryStatus.DELIVERED.value
                 alert.delivered_at = observed_at
@@ -532,6 +538,8 @@ def deliver_security_alert(
             db.commit()
             return bool(delivered)
     except Exception:
+        if authority_check is not None:
+            raise
         return False
 
 

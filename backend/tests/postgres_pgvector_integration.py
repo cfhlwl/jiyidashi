@@ -48,6 +48,14 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           table_name = 'auth_identities'
                           AND column_name = 'verified_at'
                       )
+                      AND NOT (
+                          table_name = 'account_deletion_operations'
+                          AND column_name = 'local_cleanup_ready_at'
+                      )
+                      AND NOT (
+                          table_name = 'media_assets'
+                          AND column_name = 'upload_capability_expires_at'
+                      )
                       AND table_name NOT IN (
                           'alembic_version',
                           'memory_embeddings',
@@ -84,7 +92,8 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'provider_configurations',
                           'provider_runtime_evidence',
                           'concurrency_guards',
-                          'work_permits'
+                          'work_permits',
+                          'maintenance_jobs'
                       )
                     ORDER BY table_name, ordinal_position
                     """

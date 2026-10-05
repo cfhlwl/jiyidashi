@@ -9,6 +9,10 @@ on:
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
       - "backend/app/services/object_storage.py"
+      - "backend/app/maintenance_worker.py"
+      - "backend/app/maintenance_adapters.py"
+      - "backend/app/maintenance_job_models.py"
+      - "backend/app/services/maintenance_jobs.py"
       - "backend/app/api/data_delete.py"
       - "backend/app/api/account_delete.py"
       - "backend/tests/postgres_observability_integration.py"
@@ -41,6 +45,10 @@ on:
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
       - "backend/app/services/object_storage.py"
+      - "backend/app/maintenance_worker.py"
+      - "backend/app/maintenance_adapters.py"
+      - "backend/app/maintenance_job_models.py"
+      - "backend/app/services/maintenance_jobs.py"
       - "backend/app/api/data_delete.py"
       - "backend/app/api/account_delete.py"
       - "backend/tests/postgres_observability_integration.py"
@@ -232,7 +240,7 @@ jobs:
           python3 - "$RUNNER_TEMP/compose.json" <<'PY'
           import json, sys
           body=json.load(open(sys.argv[1], encoding="utf-8"))
-          for service in ("api", "migrate"):
+          for service in ("api", "migrate", "worker"):
               env=body["services"][service]["environment"]
               assert env["APP_ENV"] == "production"
               assert env["ENABLE_DEV_AUTH"] == "false"
@@ -405,6 +413,35 @@ jobs:
             --env-file "$ENV_FILE" \
             -f docker-compose.prod.yml \
             run --rm --no-deps api python -m app.security_alert_retry --limit 25
+
+      - name: Start production worker and verify bounded health
+        run: |
+          docker compose \
+            --env-file "$ENV_FILE" \
+            -f docker-compose.prod.yml \
+            up -d --no-deps worker
+
+          for i in $(seq 1 30); do
+            if docker compose \
+              --env-file "$ENV_FILE" \
+              -f docker-compose.prod.yml \
+              exec -T worker python -m app.maintenance_worker --health \
+              > "$RUNNER_TEMP/worker-health.json" 2>/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+
+          python3 - "$RUNNER_TEMP/worker-health.json" <<'PY'
+          import json
+          import sys
+
+          body = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert body["status"] == "ready", body
+          assert body["schema"] == "current", body
+          assert isinstance(body["queue"]["counts"], dict), body
+          assert isinstance(body["queue"]["due"], int), body
+          PY
 
       - name: Start production API and verify liveness + readiness
         run: |

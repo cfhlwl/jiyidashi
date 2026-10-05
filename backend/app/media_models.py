@@ -55,6 +55,11 @@ class MediaAsset(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     storage_etag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Every newly issued upload capability refreshes this cleanup fence.
+    upload_capability_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

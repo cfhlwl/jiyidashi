@@ -93,6 +93,41 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  worker:
+    <<: [*backend-image, *backend-env]
+    command:
+      [
+        "python",
+        "-m",
+        "app.maintenance_worker",
+        "--poll-seconds",
+        "2",
+        "--schedule-seconds",
+        "15",
+        "--lease-seconds",
+        "60",
+      ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.maintenance_worker", "--health"]
+      interval: 30s
+      timeout: 5s
+      retries: 4
+      start_period: 15s
+    restart: unless-stopped
+    stop_grace_period: 90s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
   reverse-proxy:
     <<: *edge-image
     environment:
