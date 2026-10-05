@@ -241,6 +241,7 @@ def handle_data_delete(claim: MaintenanceJobClaim) -> None:
                 storage=_storage_for_claim(authority),
                 authority_check=authority.check,
                 maintenance_job_id=claim.id,
+                maintenance_claim_token=claim.claim_token,
             )
     except DataDeletionError as exc:
         if exc.code == "USER_NOT_FOUND":
