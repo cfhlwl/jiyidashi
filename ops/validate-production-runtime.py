@@ -7,6 +7,7 @@ import base64
 import binascii
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 REQUIRED_EXACT = {
     "APP_ENV": "production",
@@ -70,8 +71,28 @@ def main() -> None:
         errors.append("AUTH_SMTP_FROM is required")
 
     database_url = values.get("DATABASE_URL", "")
-    if not database_url.startswith("postgresql+psycopg://") or "@postgres:5432/" not in database_url:
+    try:
+        parsed_database = urlsplit(database_url)
+    except ValueError:
+        parsed_database = None
+
+    if (
+        parsed_database is None
+        or parsed_database.scheme != "postgresql+psycopg"
+        or parsed_database.hostname != "postgres"
+        or parsed_database.port != 5432
+    ):
         errors.append("DATABASE_URL must target the production postgres service")
+    else:
+        url_database = unquote(parsed_database.path.lstrip("/"))
+        url_username = unquote(parsed_database.username or "")
+        url_password = unquote(parsed_database.password or "")
+        if url_database != values.get("POSTGRES_DB", ""):
+            errors.append("DATABASE_URL database must match POSTGRES_DB")
+        if url_username != values.get("POSTGRES_USER", ""):
+            errors.append("DATABASE_URL username must match POSTGRES_USER")
+        if url_password != values.get("POSTGRES_PASSWORD", ""):
+            errors.append("DATABASE_URL password must match POSTGRES_PASSWORD")
 
     backup_bucket = values.get("BACKUP_STORAGE_BUCKET", "")
     backup_region = values.get("BACKUP_STORAGE_REGION", "")
