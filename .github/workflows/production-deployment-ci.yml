@@ -234,7 +234,7 @@ jobs:
       - name: Reject unsafe actual production environments
         shell: bash
         run: |
-          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'             'BACKUP_OFFHOST_ENABLED=false'             'BACKUP_STORAGE_BUCKET='             'BACKUP_STORAGE_ENDPOINT_URL=http://backup.invalid'             'BACKUP_STORAGE_SECRET_ACCESS_KEY='; do
+          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'             'BACKUP_OFFHOST_ENABLED=false'             'BACKUP_STORAGE_BUCKET='             'BACKUP_STORAGE_ENDPOINT_URL=http://backup.invalid'             'BACKUP_STORAGE_SECRET_ACCESS_KEY='             'DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/not_the_app_db'             'DATABASE_URL=postgresql+psycopg://other-user:ci-postgres-password@postgres:5432/jiyi_prod_ci'             'DATABASE_URL=postgresql+psycopg://jiyi:wrong-password@postgres:5432/jiyi_prod_ci'; do
             bad_env="$RUNNER_TEMP/bad-production.env"
             cp "$ENV_FILE" "$bad_env"
             key="${mutation%%=*}"
