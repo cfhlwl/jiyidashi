@@ -21,6 +21,10 @@ from app.services.data_deletion_service import (
     DataDeletionResult,
     delete_all_user_data,
 )
+from app.services.maintenance_jobs import (
+    fence_owner_maintenance_jobs_for_deletion,
+    scrub_maintenance_job_identity,
+)
 from app.services.object_storage import ObjectStorage
 
 
@@ -94,6 +98,10 @@ def _begin_or_load_account_deletion(
             reason="ACCOUNT_DELETION",
             except_session_id=continuation_session_id,
         )
+        fence_owner_maintenance_jobs_for_deletion(
+            db,
+            owner_user_id=user_id,
+        )
         db.commit()
         return existing
 
@@ -122,6 +130,10 @@ def _begin_or_load_account_deletion(
         user_id=user_id,
         reason="ACCOUNT_DELETION",
         except_session_id=continuation_session_id,
+    )
+    fence_owner_maintenance_jobs_for_deletion(
+        db,
+        owner_user_id=user_id,
     )
     try:
         db.commit()
@@ -172,6 +184,7 @@ def _finalize_account_deletion(
     operation_id: UUID,
     data_request_id: UUID,
     authority_check: Callable[[], None] | None = None,
+    maintenance_job_id: UUID | None = None,
 ) -> None:
     try:
         user = db.scalar(select(User).where(User.id == user_id).with_for_update())
@@ -220,6 +233,18 @@ def _finalize_account_deletion(
                 AccountDeletionOperation.user_id == user_id
             )
         )
+        if maintenance_job_id is not None:
+            if authority_check is not None:
+                authority_check()
+            if not scrub_maintenance_job_identity(
+                db,
+                job_id=maintenance_job_id,
+                owner_user_id=user_id,
+            ):
+                raise AccountDeletionError(
+                    "ACCOUNT_DELETION_MAINTENANCE_JOB_LOST",
+                    409,
+                )
         db.execute(delete(User).where(User.id == user_id))
         if authority_check is not None:
             authority_check()
@@ -332,6 +357,7 @@ def progress_prepared_account_deletion(
     operation_id: UUID,
     storage: ObjectStorage,
     authority_check: Callable[[], None] | None = None,
+    maintenance_job_id: UUID | None = None,
 ) -> AccountDeletionResult | None:
     """Advance an existing account deletion without bypassing local cleanup proof."""
 
@@ -360,6 +386,7 @@ def progress_prepared_account_deletion(
             request_id=data_deletion_request_id,
             storage=storage,
             authority_check=authority_check,
+            maintenance_job_id=maintenance_job_id,
         )
     except DataDeletionError as exc:
         if exc.code == "USER_NOT_FOUND":
@@ -382,6 +409,7 @@ def progress_prepared_account_deletion(
         operation_id=canonical_operation_id,
         data_request_id=data_deletion_request_id,
         authority_check=authority_check,
+        maintenance_job_id=maintenance_job_id,
     )
     return AccountDeletionResult(
         request_id=canonical_request_id,
