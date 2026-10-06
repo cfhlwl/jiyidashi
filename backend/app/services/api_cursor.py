@@ -70,6 +70,15 @@ def decode_object_cursor(
         signature = base64.urlsafe_b64decode(
             signature_token + "=" * (-len(signature_token) % 4)
         )
+        canonical_body = base64.urlsafe_b64encode(body).decode().rstrip("=")
+        canonical_signature = (
+            base64.urlsafe_b64encode(signature).decode().rstrip("=")
+        )
+        if (
+            body_token != canonical_body
+            or signature_token != canonical_signature
+        ):
+            raise CursorInvalid("OBJECT_CURSOR_INVALID")
         if not hmac.compare_digest(signature, _sign(body, cfg)):
             raise CursorInvalid("OBJECT_CURSOR_INVALID")
         payload = json.loads(body)
