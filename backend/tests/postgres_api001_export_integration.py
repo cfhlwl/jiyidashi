@@ -5,15 +5,20 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, inspect
 
+from app import maintenance_adapters
 from app.core.config import get_settings
 from app.core.db import SessionLocal, engine
+from app.data_deletion_models import DataDeletionOperation
 from app.export_models import UserExportJob
+from app.maintenance_adapters import handle_export
 from app.maintenance_job_models import MaintenanceJob, MaintenanceJobType
 from app.models import Memory, MemoryType, SourceType, User
 from app.services.export_service import (
@@ -22,10 +27,13 @@ from app.services.export_service import (
     publish_export_artifact,
     remove_temp_file,
 )
+from app.services.data_deletion_service import delete_all_user_data
 from app.services.maintenance_jobs import (
+    MaintenanceLeaseLost,
     claim_next_maintenance_job,
     enqueue_maintenance_job,
 )
+from app.services.object_storage import StoredObject
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -164,12 +172,182 @@ def _cleanup(user_id: UUID) -> None:
         db.commit()
 
 
+
+
+class BlockingExportStorage:
+    def __init__(self):
+        self.objects: set[str] = set()
+        self.upload_started = threading.Event()
+        self.release_upload = threading.Event()
+
+    def upload_file(self, local_path, object_key, content_type, sha256):
+        self.upload_started.set()
+        if not self.release_upload.wait(timeout=15):
+            raise AssertionError("blocked export upload was not released")
+        size = Path(local_path).stat().st_size
+        self.objects.add(object_key)
+        return StoredObject(
+            size_bytes=size,
+            content_type=content_type,
+            etag="api001-race",
+            sha256=sha256,
+        )
+
+    def iter_object_keys(self, prefix):
+        yield from sorted(key for key in self.objects if key.startswith(prefix))
+
+    def delete_object(self, object_key):
+        self.objects.discard(object_key)
+
+
+def _prove_export_delete_handoff_serializes_upload() -> None:
+    user_id = uuid4()
+    export_id = uuid4()
+    request_id = uuid4()
+    storage = BlockingExportStorage()
+
+    with SessionLocal() as db:
+        db.add(User(id=user_id, nickname="api001-delete-race"))
+        db.flush()
+        db.add(
+            UserExportJob(
+                id=export_id,
+                owner_user_id=user_id,
+                idempotency_key=uuid4(),
+            )
+        )
+        enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.EXPORT,
+            dedupe_key=f"export:{export_id}",
+            owner_user_id=user_id,
+            resource_key=f"user-export:{export_id}",
+            payload={"action": "GENERATE", "export_job_id": str(export_id)},
+            max_attempts=3,
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        claim = claim_next_maintenance_job(
+            db,
+            worker_id="api001-delete-race-export",
+            lease_seconds=2,
+        )
+        assert claim is not None
+        db.commit()
+
+    original_storage = maintenance_adapters.get_object_storage
+    maintenance_adapters.get_object_storage = lambda: storage
+    export_errors: list[BaseException] = []
+    delete_errors: list[BaseException] = []
+    delete_results = []
+    delete_done = threading.Event()
+
+    def run_export() -> None:
+        try:
+            handle_export(claim)
+        except BaseException as exc:
+            export_errors.append(exc)
+
+    def run_delete() -> None:
+        try:
+            with SessionLocal() as deleting:
+                delete_results.append(
+                    delete_all_user_data(
+                        deleting,
+                        user_id=user_id,
+                        request_id=request_id,
+                        storage=storage,
+                    )
+                )
+        except BaseException as exc:
+            delete_errors.append(exc)
+        finally:
+            delete_done.set()
+
+    export_thread = threading.Thread(target=run_export, name="api001-export-upload")
+    delete_thread = threading.Thread(target=run_delete, name="api001-data-delete")
+    try:
+        export_thread.start()
+        assert storage.upload_started.wait(timeout=15)
+        delete_thread.start()
+
+        # The destructive gate must not commit while the export owns the shared handoff.
+        assert not delete_done.wait(timeout=0.4)
+
+        storage.release_upload.set()
+        export_thread.join(timeout=15)
+        delete_thread.join(timeout=15)
+        assert not export_thread.is_alive()
+        assert not delete_thread.is_alive()
+        if export_errors:
+            raise export_errors[0]
+        if delete_errors:
+            raise delete_errors[0]
+        assert delete_results
+        assert not storage.objects
+
+        # Export presence restarts the storage quiet window. Advance only the durable
+        # test fixture deadline, then converge the canonical Data Delete state machine.
+        with SessionLocal() as db:
+            operation = db.scalar(
+                select(DataDeletionOperation).where(
+                    DataDeletionOperation.user_id == user_id,
+                    DataDeletionOperation.request_id == request_id,
+                )
+            )
+            assert operation is not None
+            operation.storage_quiet_until = datetime.now(UTC) - timedelta(seconds=1)
+            operation.storage_capability_expires_at = None
+            db.commit()
+
+        with SessionLocal() as db:
+            result = delete_all_user_data(
+                db,
+                user_id=user_id,
+                request_id=request_id,
+                storage=storage,
+            )
+            assert result.completed is True
+
+        with SessionLocal() as db:
+            assert db.get(UserExportJob, export_id) is None
+            assert not list(
+                db.scalars(
+                    select(UserExportJob).where(
+                        UserExportJob.owner_user_id == user_id
+                    )
+                )
+            )
+            db.rollback()
+        assert not storage.objects
+
+        try:
+            handle_export(claim)
+            raise AssertionError("stale export claim rebuilt after Data Delete")
+        except MaintenanceLeaseLost:
+            pass
+    finally:
+        storage.release_upload.set()
+        export_thread.join(timeout=2)
+        delete_thread.join(timeout=2)
+        maintenance_adapters.get_object_storage = original_storage
+        with SessionLocal() as db:
+            db.execute(
+                delete(MaintenanceJob).where(
+                    MaintenanceJob.id == claim.id
+                )
+            )
+            db.execute(delete(User).where(User.id == user_id))
+            db.commit()
+
 def main() -> None:
     _migration_roundtrip()
     user_id, export_id = _seed()
     try:
         _prove_single_claim(export_id)
         _prove_repeatable_read_snapshot_and_revision_fence(user_id, export_id)
+        _prove_export_delete_handoff_serializes_upload()
     finally:
         _cleanup(user_id)
     print("PostgreSQL API-001 export authority PASS")
