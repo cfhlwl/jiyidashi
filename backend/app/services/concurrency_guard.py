@@ -8,7 +8,6 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy import delete, func, select, update
@@ -22,10 +21,7 @@ from app.security_models import SecuritySignalCode
 from app.services.security_alerting import SecurityScope, record_security_signal
 
 
-_BlockingResult = TypeVar("_BlockingResult")
-
-
-async def run_blocking_worker(
+async def run_blocking_worker[_BlockingResult](
     func: Callable[..., _BlockingResult],
     /,
     *args,
@@ -56,17 +52,17 @@ async def run_blocking_worker(
                     worker.result()
                 except BaseException:
                     pass
-                raise cancelled
+                raise cancelled from None
             # A Task can receive cancellation more than once. Keep draining the
             # shielded worker until the physical thread is no longer running.
             continue
         except BaseException:
             if cancelled is not None:
-                raise cancelled
+                raise cancelled from None
             raise
 
         if cancelled is not None:
-            raise cancelled
+            raise cancelled from None
         return result
 
 

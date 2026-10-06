@@ -16,6 +16,7 @@ from app.core.db import SessionLocal, engine
 from app.main import app
 from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import Memory, MemorySource, ObjectItem, Place, Reminder, User, Visit
+from app.services import ocr_service as ocr_service_module
 from app.services.ai_gateway import (
     AIGateway,
     AIImageInferenceRequest,
@@ -28,7 +29,6 @@ from app.services.ai_gateway import (
     OpenAIResponsesProvider,
     get_ai_gateway,
 )
-from app.services import ocr_service as ocr_service_module
 from app.services.concurrency_guard import (
     ConcurrencyRejected,
     claim_image_preprocess_permit,
