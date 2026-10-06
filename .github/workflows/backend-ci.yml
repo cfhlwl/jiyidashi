@@ -107,6 +107,13 @@ jobs:
           tests/test_ocr_foundation.py
           tests/test_vision_foundation.py
 
+      - name: API-001 focused export and pagination regressions
+        timeout-minutes: 5
+        run: >-
+          pytest -q
+          tests/test_data_export.py
+          tests/test_api001_export_pagination.py
+
       - name: SQLite migration baseline
         env:
           DATABASE_URL: sqlite:///./ci-migration.db
@@ -445,6 +452,13 @@ jobs:
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_long_term_reasoning_integration.py
+
+      - name: PostgreSQL API-001 export authority
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_api001_export_integration.py
 
       - name: PostgreSQL schema drift check
         # [人工注释][S1-FIX-001] upgrade 成功不代表 ORM metadata 与 migration head 一致；alembic check 是正式漂移门禁。
