@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import hashlib
 import hmac
 import secrets
@@ -290,6 +291,45 @@ def release_permit(
         )
         db.commit()
         return bool(result.rowcount)
+
+
+@asynccontextmanager
+async def maintain_permit_lease(
+    bind: Engine,
+    *,
+    permit: Permit,
+    lease_seconds: int,
+    settings: Settings | None = None,
+):
+    cfg = settings or get_settings()
+    heartbeat = PermitHeartbeat(
+        bind,
+        permit=permit,
+        lease_seconds=lease_seconds,
+        settings=cfg,
+    )
+    heartbeat.start()
+    try:
+        yield heartbeat
+    finally:
+        failure: BaseException | None = None
+        try:
+            await heartbeat.stop()
+        except BaseException as exc:  # surfaced after release attempt
+            failure = exc
+        try:
+            released = await asyncio.to_thread(
+                release_permit,
+                bind,
+                permit=permit,
+                settings=cfg,
+            )
+        except BaseException as exc:
+            if failure is None:
+                failure = exc
+            released = False
+        if failure is not None or not released:
+            raise PermitLeaseLost() from failure
 
 
 def _record_saturation(
