@@ -55,7 +55,7 @@ from app.services.object_storage import (
     S3ObjectStorage,
     get_object_storage,
 )
-from tests.export_test_support import export_payload
+from export_test_support import export_payload
 
 
 class DeleteTestStorage:
