@@ -14,7 +14,6 @@ from app.core.db import SessionLocal
 from app.export_models import UserExportJob, UserExportStatus
 from app.main import app
 from app.maintenance_adapters import (
-    RetryableMaintenanceError,
     handle_export,
 )
 from app.maintenance_job_models import (
