@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from tests.export_test_support import export_payload
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
@@ -377,4 +378,4 @@ async def test_relationship_export_is_owner_scoped(client):
     assert rows[0]["relationship_kind"] == "OTHER"
     assert rows[0]["custom_label"] == "客户"
     assert rows[0]["note"] == "A private edge note"
-    assert "B secret relationship" not in exported.text
+    assert "B secret relationship" not in exported_text
