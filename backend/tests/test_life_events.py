@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from tests.export_test_support import export_payload
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
@@ -546,26 +547,23 @@ async def test_export_contains_life_events_and_never_reexposes_deleted_evidence(
         headers=headers_b,
     )).status_code == 201
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    body = exported.json()
+    body, exported_text = await export_payload(client, headers_a)
     assert len(body["life_events"]) == 1
     assert body["life_events"][0]["id"] == event_a["id"]
     assert "user_id" not in body["life_events"][0]
     assert len(body["life_event_memory_links"]) == 1
     assert body["life_event_memory_links"][0]["memory_id"] == memory_a["id"]
     assert "user_id" not in body["life_event_memory_links"][0]
-    assert "B secret event" not in exported.text
-    assert "B secret evidence" not in exported.text
+    assert "B secret event" not in exported_text
+    assert "B secret evidence" not in exported_text
 
     assert (await client.delete(
         f"/v1/memories/{memory_a['id']}",
         headers=headers_a,
     )).status_code == 204
-    after = await client.get("/v1/export/data", headers=headers_a)
-    assert after.status_code == 200
-    assert len(after.json()["life_events"]) == 1
-    assert after.json()["life_event_memory_links"] == []
+    after_body, _ = await export_payload(client, headers_a)
+    assert len(after_body["life_events"]) == 1
+    assert after_body["life_event_memory_links"] == []
 
 
 @pytest.mark.asyncio
