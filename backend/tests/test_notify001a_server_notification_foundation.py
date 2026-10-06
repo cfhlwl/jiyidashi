@@ -857,3 +857,140 @@ def test_data_export_never_contains_raw_push_token():
         assert '"devices"' not in body
     finally:
         remove_temp_file(generated.path)
+
+def test_final_worker_failure_converges_delivery_and_campaign(monkeypatch):
+    _reset_notification_jobs()
+    actor = _admin()
+    owner = _user("worker-final")
+    device = _device(
+        owner.id,
+        client_uuid=f"worker-final-{uuid4().hex}",
+        platform=PushPlatform.IOS,
+    )
+    campaign = _create_submitted_campaign(
+        actor=actor,
+        payload=_campaign_payload(
+            audience=NotificationAudienceType.DEVICE_IDS,
+            device_ids=[device.id],
+        ),
+    )
+    with SessionLocal() as db:
+        enqueue_due_notification_campaigns(
+            db,
+            now=datetime.now(UTC),
+            limit=20,
+        )
+        db.commit()
+
+    fanout_worker = MaintenanceWorker(
+        worker_id=f"notify-final-fanout-{uuid4().hex}",
+        handlers={
+            MaintenanceJobType.NOTIFICATION_FANOUT.value: handle_notification_fanout,
+        },
+    )
+    assert fanout_worker.run_once().outcome == "SUCCEEDED"
+
+    with SessionLocal() as db:
+        delivery = db.scalar(
+            select(NotificationDelivery).where(
+                NotificationDelivery.campaign_id == campaign.id
+            )
+        )
+        assert delivery is not None
+        delivery_id = delivery.id
+        job = db.scalar(
+            select(MaintenanceJob).where(
+                MaintenanceJob.job_type
+                == MaintenanceJobType.NOTIFICATION_DELIVERY.value,
+                MaintenanceJob.resource_key
+                == f"notification-delivery:{delivery.id}",
+            )
+        )
+        assert job is not None
+        job.max_attempts = 1
+        db.commit()
+
+    abandoned = {}
+
+    def explode_after_begin(claim):
+        attempt = begin_notification_delivery_attempt(claim)
+        assert attempt is not None
+        abandoned["attempt"] = attempt
+        raise RuntimeError("raw provider/process detail must not persist")
+
+    worker = MaintenanceWorker(
+        worker_id=f"notify-final-delivery-{uuid4().hex}",
+        handlers={
+            MaintenanceJobType.NOTIFICATION_DELIVERY.value: explode_after_begin,
+        },
+    )
+    result = worker.run_once()
+    assert result.outcome == "FAILED"
+
+    with SessionLocal() as db:
+        delivery = db.get(NotificationDelivery, delivery_id)
+        saved_campaign = db.get(NotificationCampaign, campaign.id)
+        assert delivery is not None and saved_campaign is not None
+        assert delivery.status == NotificationDeliveryStatus.TERMINAL_FAILURE.value
+        assert delivery.attempt_token is None
+        assert delivery.next_retry_at is None
+        assert delivery.error_code == "UNEXPECTED_MAINTENANCE_FAILURE"
+        assert saved_campaign.status == NotificationCampaignStatus.COMPLETED.value
+
+    stale, _ = finalize_notification_delivery_attempt(
+        attempt=abandoned["attempt"],
+        result=NotificationProviderResult.accepted_result(),
+    )
+    assert stale is False
+
+
+def test_final_worker_failure_converges_fanout_campaign():
+    _reset_notification_jobs()
+    actor = _admin()
+    owner = _user("fanout-final")
+    _device(
+        owner.id,
+        client_uuid=f"fanout-final-{uuid4().hex}",
+        platform=PushPlatform.IOS,
+    )
+    campaign = _create_submitted_campaign(
+        actor=actor,
+        payload=_campaign_payload(),
+    )
+    with SessionLocal() as db:
+        enqueue_due_notification_campaigns(
+            db,
+            now=datetime.now(UTC),
+            limit=20,
+        )
+        job = db.scalar(
+            select(MaintenanceJob).where(
+                MaintenanceJob.job_type
+                == MaintenanceJobType.NOTIFICATION_FANOUT.value,
+                MaintenanceJob.resource_key
+                == f"notification-campaign:{campaign.id}",
+            )
+        )
+        assert job is not None
+        job.max_attempts = 1
+        db.commit()
+
+    def explode(_claim):
+        raise RuntimeError("fanout database/process details must not persist")
+
+    worker = MaintenanceWorker(
+        worker_id=f"notify-fanout-final-{uuid4().hex}",
+        handlers={
+            MaintenanceJobType.NOTIFICATION_FANOUT.value: explode,
+        },
+    )
+    result = worker.run_once()
+    assert result.outcome == "FAILED"
+
+    with SessionLocal() as db:
+        saved = db.get(NotificationCampaign, campaign.id)
+        assert saved is not None
+        assert saved.status == NotificationCampaignStatus.FAILED.value
+        assert saved.error_code == "UNEXPECTED_MAINTENANCE_FAILURE"
+        assert saved.revision == campaign.revision + 1
+
