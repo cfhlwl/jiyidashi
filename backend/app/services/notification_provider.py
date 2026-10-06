@@ -34,7 +34,7 @@ class NotificationProviderResult:
     retry_after_seconds: int | None = None
 
     @classmethod
-    def accepted_result(cls) -> "NotificationProviderResult":
+    def accepted_result(cls) -> NotificationProviderResult:
         return cls(accepted=True, retryable=False)
 
     @classmethod
@@ -43,7 +43,7 @@ class NotificationProviderResult:
         code: str,
         *,
         retry_after_seconds: int | None = None,
-    ) -> "NotificationProviderResult":
+    ) -> NotificationProviderResult:
         return cls(
             accepted=False,
             retryable=True,
@@ -57,7 +57,7 @@ class NotificationProviderResult:
         code: str,
         *,
         invalid_token: bool = False,
-    ) -> "NotificationProviderResult":
+    ) -> NotificationProviderResult:
         return cls(
             accepted=False,
             retryable=False,
