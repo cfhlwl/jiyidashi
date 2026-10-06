@@ -29,6 +29,7 @@ class StoredObject:
     size_bytes: int
     content_type: str
     etag: str | None
+    sha256: str | None = None
 
 
 class ObjectStorageError(RuntimeError):
@@ -55,6 +56,7 @@ class ObjectStorage(Protocol):
         local_path: str,
         object_key: str,
         content_type: str,
+        sha256: str,
     ) -> StoredObject: ...
 
     def promote_object(self, source_key: str, destination_key: str) -> None: ...
@@ -94,6 +96,7 @@ class DisabledObjectStorage:
         local_path: str,
         object_key: str,
         content_type: str,
+        sha256: str,
     ) -> StoredObject:
         self._unavailable()
         raise AssertionError("unreachable")
@@ -210,10 +213,15 @@ class S3ObjectStorage:
             etag = etag.strip('"') or None
         else:
             etag = None
+        metadata = response.get("Metadata") or {}
+        sha256 = metadata.get("sha256")
+        if not isinstance(sha256, str) or len(sha256) != 64:
+            sha256 = None
         return StoredObject(
             size_bytes=int(response.get("ContentLength", -1)),
             content_type=str(response.get("ContentType") or "").lower(),
             etag=etag,
+            sha256=sha256,
         )
 
     def read_prefix(self, object_key: str, max_bytes: int) -> bytes:
@@ -278,6 +286,7 @@ class S3ObjectStorage:
         local_path: str,
         object_key: str,
         content_type: str,
+        sha256: str,
     ) -> StoredObject:
         # API-001: boto3 managed upload streams from the bounded local artifact;
         # the backend must never re-read a complete export into one Python bytes object.
@@ -286,7 +295,10 @@ class S3ObjectStorage:
                 local_path,
                 self._settings.storage_bucket,
                 object_key,
-                ExtraArgs={"ContentType": content_type},
+                ExtraArgs={
+                    "ContentType": content_type,
+                    "Metadata": {"sha256": sha256},
+                },
             )
         except Exception as exc:
             self._emit_failure("upload_file", "STORAGE_UPLOAD_FILE_FAILED")
