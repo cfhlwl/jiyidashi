@@ -46,11 +46,16 @@ attempt cannot publish over a newer revision. Failed unpublished attempt objects
 best-effort removed and later retries sweep the job prefix before generation.
 
 Blocking artifact upload runs under a database-backed heartbeat for the full physical
-upload duration, not just before/after checks. Lease loss, local I/O failure, storage
-failure, and unexpected execution failure all converge the revision-fenced
-`UserExportJob` out of RUNNING. If a final claimed attempt crashes and its lease
-expires, maintenance housekeeping terminalizes both the internal MaintenanceJob and
-the still-active public export job.
+upload duration, not just before/after checks. It also holds the canonical shared
+owner-destructive advisory handoff across upload, verification and publication. After
+acquiring that handoff the worker rechecks both maintenance authority and the current
+export/deletion gate, so either Export owns the shared phase before deletion starts or a
+committed Data/Account Delete gate stops the upload before object creation.
+
+Lease loss, local I/O failure, storage failure, and unexpected execution failure all
+converge the revision-fenced `UserExportJob` out of RUNNING. If a final claimed
+attempt crashes and its lease expires, maintenance housekeeping terminalizes both the
+internal MaintenanceJob and the still-active public export job.
 
 Production defaults:
 
@@ -100,7 +105,8 @@ API-001 audited production list routes under `backend/app/api/**`.
 
 | Surface | V1 result |
 | --- | --- |
-| `GET /v1/objects` | Changed to owner-bound HMAC keyset pagination, default 50, max 100, `limit+1`. |
+| `GET /v1/objects` | Legacy released-client array contract preserved unchanged. |
+| `GET /v1/objects/page-v1` | New owner-bound HMAC keyset pagination, default 50, max 100, `limit+1`. |
 | Memory timeline | Already bounded by request limit; canonical timeline API already has opaque cursor where required. |
 | Life events / event memories | Existing SQL limits, max 100. |
 | Life stages / stage events | Existing SQL limits, max 100. |
@@ -114,9 +120,11 @@ API-001 audited production list routes under `backend/app/api/**`.
 | Auth sessions | Explicit SQL hard limit 100 added by API-001. |
 | Admin account list | Privileged Admin surface, not owner-consumer pagination scope. |
 
-The objects cursor contains no trusted client authority. It is HMAC signed and binds
-version, endpoint, owner UUID, normalized-name key and object UUID. Malformed,
-tampered, foreign-owner, or version-mismatched cursors return a deterministic 400.
+The versioned `/objects/page-v1` cursor contains no trusted client authority. It is
+HMAC signed and binds version, endpoint, owner UUID, normalized-name key and object UUID.
+Malformed, tampered, foreign-owner, or version-mismatched cursors return a deterministic
+400. The legacy `/objects` array remains only for compatibility with already-released
+Flutter/Mini clients and is not the pagination contract for new callers.
 
 Stable order:
 
@@ -141,5 +149,6 @@ Exact-head CI must prove:
 - TTL download fails closed;
 - PostgreSQL REPEATABLE READ excludes writes committed after snapshot start;
 - migration roundtrip and schema drift pass;
-- object cursor default/max/multi-page/tamper/foreign-owner behavior passes;
+- legacy `/objects` still returns the released top-level array contract;
+- `/objects/page-v1` default/max/multi-page/tamper/foreign-owner behavior passes;
 - full backend and production deployment gates pass.
