@@ -24,6 +24,7 @@ from app.services.auth_rate_limit import (
 from app.services.concurrency_guard import (
     ConcurrencyRejected,
     claim_argon2_permit,
+    claim_image_preprocess_permit,
     claim_provider_permit,
     release_permit,
 )
@@ -173,6 +174,87 @@ def _prove_provider_races(user_a: UUID, user_b: UUID) -> None:
     finally:
         release_permit(engine, permit=first, settings=settings)
         release_permit(engine, permit=second, settings=settings)
+
+
+def _prove_image_preprocess_cross_worker_budget(
+    user_a: UUID,
+    user_b: UUID,
+) -> None:
+    settings = get_settings().model_copy(
+        update={
+            "ai_image_preprocess_global_concurrency": 2,
+            "ai_image_preprocess_user_concurrency": 1,
+            "ai_image_preprocess_permit_lease_seconds": 5,
+        }
+    )
+    barrier = Barrier(3)
+    lock = Lock()
+    permits = []
+    denials: list[str] = []
+    errors: list[BaseException] = []
+
+    def worker(user_id: UUID) -> None:
+        try:
+            barrier.wait(timeout=10)
+            permit = claim_image_preprocess_permit(
+                engine,
+                user_id=user_id,
+                settings=settings,
+            )
+            with lock:
+                permits.append(permit)
+        except ConcurrencyRejected as exc:
+            with lock:
+                denials.append(exc.code)
+        except BaseException as exc:  # noqa: BLE001
+            with lock:
+                errors.append(exc)
+
+    users = (user_a, user_b, uuid4())
+    threads = [
+        Thread(target=worker, args=(user_id,), name=f"media-preprocess-{index}")
+        for index, user_id in enumerate(users)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+        assert not thread.is_alive()
+    if errors:
+        raise errors[0]
+
+    assert len(permits) == 2
+    assert denials == ["AI_IMAGE_PREPROCESS_SATURATED"]
+    assert {permit.service_class for permit in permits} == {"AI_IMAGE_PREPROCESS"}
+    for permit in permits:
+        assert release_permit(engine, permit=permit, settings=settings) is True
+
+    # OCR and Vision call the same helper/service class, so an occupied global slot
+    # cannot be bypassed by changing inference surface.
+    settings_one = settings.model_copy(
+        update={
+            "ai_image_preprocess_global_concurrency": 1,
+            "ai_image_preprocess_user_concurrency": 1,
+        }
+    )
+    occupied = claim_image_preprocess_permit(
+        engine,
+        user_id=user_a,
+        settings=settings_one,
+    )
+    try:
+        try:
+            claim_image_preprocess_permit(
+                engine,
+                user_id=user_b,
+                settings=settings_one,
+            )
+        except ConcurrencyRejected as exc:
+            assert exc.code == "AI_IMAGE_PREPROCESS_SATURATED"
+        else:
+            raise AssertionError("shared image preprocessing cap did not reject")
+    finally:
+        assert release_permit(engine, permit=occupied, settings=settings_one) is True
 
 
 def _prove_stale_recovery_and_token_binding(user_id: UUID) -> None:
@@ -372,6 +454,7 @@ def main() -> None:
     user_b = _seed_user("b")
     try:
         _prove_provider_races(user_a, user_b)
+        _prove_image_preprocess_cross_worker_budget(user_a, user_b)
         _prove_stale_recovery_and_token_binding(user_a)
         _prove_live_permit_survives_owner_delete(user_a)
         user_a = _seed_user("a-after-delete")
