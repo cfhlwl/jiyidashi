@@ -17,37 +17,38 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "security_alerts",
-        sa.Column("delivery_revision", sa.Integer(), nullable=False, server_default="0"),
-    )
-    op.add_column(
-        "security_alerts",
-        sa.Column("delivery_attempt_token", sa.Uuid(), nullable=True),
-    )
-    op.add_column(
-        "security_alerts",
-        sa.Column("delivery_provider", sa.String(length=32), nullable=True),
-    )
-    op.add_column(
-        "security_alerts",
-        sa.Column("delivery_error_code", sa.String(length=80), nullable=True),
-    )
-    op.create_check_constraint(
-        "ck_security_alerts_delivery_revision",
-        "security_alerts",
-        "delivery_revision >= 0",
-    )
-    op.alter_column("security_alerts", "delivery_revision", server_default=None)
+    with op.batch_alter_table("security_alerts", recreate="auto") as batch:
+        batch.add_column(
+            sa.Column(
+                "delivery_revision",
+                sa.Integer(),
+                nullable=False,
+                server_default="0",
+            )
+        )
+        batch.add_column(
+            sa.Column("delivery_attempt_token", sa.Uuid(), nullable=True)
+        )
+        batch.add_column(
+            sa.Column("delivery_provider", sa.String(length=32), nullable=True)
+        )
+        batch.add_column(
+            sa.Column("delivery_error_code", sa.String(length=80), nullable=True)
+        )
+        batch.create_check_constraint(
+            "ck_security_alerts_delivery_revision",
+            "delivery_revision >= 0",
+        )
+        batch.alter_column("delivery_revision", server_default=None)
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "ck_security_alerts_delivery_revision",
-        "security_alerts",
-        type_="check",
-    )
-    op.drop_column("security_alerts", "delivery_error_code")
-    op.drop_column("security_alerts", "delivery_provider")
-    op.drop_column("security_alerts", "delivery_attempt_token")
-    op.drop_column("security_alerts", "delivery_revision")
+    with op.batch_alter_table("security_alerts", recreate="auto") as batch:
+        batch.drop_constraint(
+            "ck_security_alerts_delivery_revision",
+            type_="check",
+        )
+        batch.drop_column("delivery_error_code")
+        batch.drop_column("delivery_provider")
+        batch.drop_column("delivery_attempt_token")
+        batch.drop_column("delivery_revision")
