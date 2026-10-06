@@ -64,6 +64,12 @@ class ExportDownloadResponse(BaseModel):
     download: SignedTransfer
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -187,7 +193,7 @@ def download_export_job(
     if job.status != UserExportStatus.COMPLETED.value:
         raise HTTPException(status_code=409, detail="EXPORT_NOT_COMPLETED")
     now = datetime.now(UTC)
-    if job.expires_at is None or job.expires_at <= now:
+    if job.expires_at is None or _as_utc(job.expires_at) <= now:
         raise HTTPException(status_code=410, detail="EXPORT_EXPIRED")
     if (
         not job.artifact_object_key
