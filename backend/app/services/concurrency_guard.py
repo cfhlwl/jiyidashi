@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -171,6 +171,39 @@ def claim_permit(
             user_id=user_id,
             expires_at=row.expires_at,
         )
+
+
+def renew_permit(
+    bind: Engine,
+    *,
+    permit: Permit,
+    lease_seconds: int,
+    settings: Settings | None = None,
+) -> Permit | None:
+    cfg = settings or get_settings()
+    now = datetime.now(UTC)
+    new_expires_at = now + timedelta(seconds=lease_seconds)
+    with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
+        result = db.execute(
+            update(WorkPermit)
+            .where(
+                WorkPermit.id == permit.permit_id,
+                WorkPermit.token_digest == _token_digest(permit.token, cfg),
+                WorkPermit.service_class == permit.service_class,
+                WorkPermit.expires_at > now,
+            )
+            .values(expires_at=new_expires_at)
+        )
+        db.commit()
+        if not result.rowcount:
+            return None
+    return Permit(
+        permit_id=permit.permit_id,
+        token=permit.token,
+        service_class=permit.service_class,
+        user_id=permit.user_id,
+        expires_at=new_expires_at,
+    )
 
 
 def release_permit(
