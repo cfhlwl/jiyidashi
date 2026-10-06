@@ -397,6 +397,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | CORE-003 | P0 | Automatic Recording Health & Coverage V1 | ✅ | **Issue #188 / PR #189 已完成并合并**。统一复用 CORE-001 producer/runtime、permission/location services、Privacy、native/SQLite queue、delivery/backpressure/recovery authority，建立 owner-scoped `RecordingHealthSnapshot`；确定性输出 HEALTHY/DEGRADED/PAUSED/BLOCKED/RECOVERING/UNKNOWN，UNKNOWN 不得伪装 healthy；增加 evidence-derived Today Coverage、gap reason、Healthy Days、Location Gap Hours 与 Flutter 记录状态 UI，Mini 只展示 server-observed authority。正式审查 P0/P1/P2 = 0/0/0。 |
 | CORE-004 | P0 Gate | Passive Recording Real-device Certification V1 | ⏸ | **Issue #190 保留为未来 P0 Gate；PR #191 已关闭且未合并。** 当前不启动正式 24h/72h/12h 长时认证，先完成真机暴露问题、Provider/服务端配置和其他短周期上线收口；待 Android+iOS 基础闭环与测试环境稳定后，从当时最新 `main` 新建干净 certification PR/构建，并重新执行完整物理设备矩阵。模拟器、mock、CI 仍不得替代真机认证证据。 |
 | UIUX-P0-002 | P0 Product Gate | JiYi Consumer Visual Fidelity V1 | 🔵 | **当前主线 / Issue #204**。8 张用户确认高保真参考图为 Consumer Visual Design Authority；Flutter 优先恢复山水/晨曦品牌氛围、photo-first、真实足迹地图、层叠卡片和消费者产品质感。新增硬验收：Today/Place/Memory/Query/Summary/Memoir 在有真实坐标 authority 时使用真实高德地图；照片展示走 owner-scoped 本机持久缓存，cache miss 才签名下载，禁止业务 UI 反复直连 COS signed URL。Golden 将以新视觉为基准重置。 |
+| CORE-005 | **P0 Next** | Passive Recording Consumer Trust & Self-Healing V1 | ⏸ | **已登记，当前不实现；必须等 UIUX-P0-002 本地/UI 重构收口后立即作为下一批 P0 优先任务启动，避免修改 `mobile/**` 与当前 UI 工作冲突。** 解决 iOS 真机频繁出现“记录受限 / 正在恢复 / 原生采集已暂停”的消费者信任问题：① Current Runtime Health 与 Historical Coverage 完全解耦，过去 gap 不得把当前 RUNNING 误显示为故障；② 审计并减少 App resume 时对正常 iOS producer 的无条件 quarantine，研究短 TTL Recording Authority Lease / background async revalidation；③ Gap policy 区分 CONFIRMED_OUTAGE / LOW_POWER_OBSERVATION_GAP / DELIVERY_PENDING / PRIVACY_PAUSE / PERMISSION_BLOCKED / UNKNOWN，不能把 Significant Location Change / adaptive low-power 稀疏回调简单等同故障；④ 自动恢复优先，普通用户界面隐藏 producer/authority/queue 等工程术语，只在确实需要用户动作时显示强提醒；⑤ 真机覆盖 Wi-Fi↔5G、锁屏/后台、短时断网、access-token refresh、系统定位/权限变化；⑥ 修复后再恢复 CORE-004 24h/72h certification。真实未采集时段继续保持 unknown，不得插值伪造轨迹。 |
 | PROD-001 | P1 | Core Product Positioning & Promise Refresh | ✅ | **Issue #198 / PR #200 已正式审查并合并 `main=76a525d600ffa94cad1bc35e638c49657341a005`**。公开定位已统一为“自动记录生活、需要时帮助找回过去”的个人/家庭长期记忆产品；结构化事实/Evidence 为事实来源，AI 仅辅助搜索、整理、总结和表达；绝对自动记录承诺被明确禁止，CORE-004 长期真机认证状态保持真实。 |
 | ADMIN-002 | P0/P1 Ops | Provider Configuration V1 | ✅ | **Issue #196 / PR #201 已正式审查并合并 `e1ec4f392fad180cfd92c0653d9f0d38972ba736`**。AI/ASR/Embedding/RAG 已具备 SUPER_ADMIN-only 在线配置、write-only 加密凭证、revision/CAS、多 worker bounded cache convergence、exact-fingerprint runtime evidence 与 bounded/idempotent Embedding backfill；最终审查 P0/P1/P2=0/0/0。 |
 
@@ -408,8 +409,9 @@ ADMIN-001
 → CORE-001 Passive Memory Reliability
 → CORE-002 Historical Day Footprint / Date Query
 → CORE-003 Recording Health
-→ CORE-004 real-device certification
 → UIUX-P0-002 Consumer Visual Fidelity V1
+→ CORE-005 Passive Recording Consumer Trust & Self-Healing
+→ CORE-004 real-device certification（基于 CORE-005 修复后的 exact head 重跑）
 → AUTH-002（若 Mini 为首发主入口）
 → AUTH-003（若手机号为正式主登录入口）
 → AUTH-004（后期配置，正式启用 Flutter 微信登录时再纳入）
@@ -423,6 +425,56 @@ ADMIN-001
 → public/commercial rollout
 → V3
 ```
+
+### CORE-005 Passive Recording Consumer Trust & Self-Healing — Deferred P0
+
+> **状态边界（2026-10-06）：只登记，不启动代码修改。** 当前本地 Codex 正在重构 Consumer UI，为避免 `mobile/**`、Golden、页面状态组件发生冲突，CORE-005 在 UIUX-P0-002 收口前保持 ⏸。UI 稳定后立即转 🔵，优先级高于普通 P1 增量功能。
+
+现场问题与当前判断：
+
+```text
+已修：
+transient AUTH / network uncertainty
+→ 不再清除 automatic_enabled 用户偏好
+
+仍待修：
+App resume / authority revalidation
+→ 可能频繁 PAUSED / RECOVERING
+
+历史 gap
+→ 目前可能把当前健康状态一起标成 DEGRADED
+
+iOS low-power sparse callbacks
+→ 可能被 20 分钟 gap policy 误判为记录故障
+```
+
+消费者目标：
+
+```text
+当前正常
+→ 明确显示“自动记录正常”
+
+历史存在缺口
+→ 只影响“今日记录完整度”
+→ 不得误导为“当前记录受限”
+
+短时网络/前后台/令牌刷新
+→ 优先无感自愈
+→ 不要求用户理解恢复状态机
+
+确需用户操作
+→ 才提示“开启始终定位 / 开启系统定位”等明确动作
+```
+
+验收 Gate：
+
+- 当前 producer RUNNING + fresh fix/ACK 时，即使当天早些时候存在 gap，Current Health 仍必须可显示正常；Historical Coverage 独立展示缺口。
+- iOS 前后台切换不得无必要地产生可观测采集空档；若必须 quarantine，恢复必须 bounded、自动且有 reason/diagnostic。
+- Wi-Fi↔5G、短时断网、DNS/TLS route rebuild、access-token refresh 不得清除 enabled preference，也不得把 transient failure 变成长期 PAUSED。
+- Significant Location Change / adaptive low-power 稀疏回调不能仅因“>20 分钟无 sample”直接判 CONFIRMED_OUTAGE。
+- 真实没有任何采集证据的时间段保持 UNKNOWN，可由 Photo/Calendar/Activity 等其他 Evidence 补充上下文，但不得伪造 Visit/route。
+- 修复完成后必须以最新 exact head 重新执行 CORE-004 的 24h/72h iOS/Android 真机认证。
+
 
 ### UIUX-P0-002 Consumer Visual Authority
 
