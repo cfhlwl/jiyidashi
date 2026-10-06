@@ -692,8 +692,23 @@ def deliver_security_alert(
     now: datetime | None = None,
     authority_check: Callable[[], None] | None = None,
     human_adapter: SecurityAlertHumanDeliveryAdapter | None = None,
+    worker_execution: bool = False,
 ) -> bool:
     observed_at = _as_utc(now or datetime.now(UTC))
+    if not worker_execution and human_adapter is None:
+        with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
+            severity = db.scalar(
+                select(SecurityAlert.severity).where(
+                    SecurityAlert.id == UUID(alert_id)
+                )
+            )
+            db.rollback()
+        if severity in {
+            SecuritySeverity.HIGH.value,
+            SecuritySeverity.CRITICAL.value,
+        }:
+            return False
+
     attempt = begin_security_alert_delivery_attempt(
         bind,
         alert_id=UUID(alert_id),
