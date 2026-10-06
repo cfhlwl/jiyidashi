@@ -18,18 +18,18 @@ from app.core.observability import (
     emit_operational_event,
     emit_security_alert_event_checked,
 )
-from app.services.security_alert_human_delivery import (
-    HumanDeliveryResult,
-    SecurityAlertHumanDeliveryAdapter,
-    SecurityAlertHumanMessage,
-    get_security_alert_human_adapter,
-)
 from app.security_models import (
     SecurityAlert,
     SecurityAlertDeliveryStatus,
     SecuritySeverity,
     SecuritySignalCode,
     SecuritySignalWindow,
+)
+from app.services.security_alert_human_delivery import (
+    HumanDeliveryResult,
+    SecurityAlertHumanDeliveryAdapter,
+    SecurityAlertHumanMessage,
+    get_security_alert_human_adapter,
 )
 
 MAX_DELIVERY_ATTEMPTS = 5
