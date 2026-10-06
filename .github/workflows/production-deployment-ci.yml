@@ -432,8 +432,8 @@ jobs:
       - name: Real deploy.sh worker/API cutover from legacy release
         shell: bash
         env:
-          EXPECTED_SHA: \${{ github.event.pull_request.head.sha || github.sha }}
-          LEGACY_SHA: \${{ github.event.pull_request.base.sha || github.event.before }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          LEGACY_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           test "$LEGACY_SHA" != "$EXPECTED_SHA"
           git fetch --no-tags --depth=1 origin "$LEGACY_SHA"
@@ -469,6 +469,8 @@ jobs:
           )"
           test -n "$old_worker_cid"
           test -n "$old_api_cid"
+          test "$(docker inspect "$old_worker_cid" --format '{{.State.Running}}')" = "true"
+          test "$(docker inspect "$old_api_cid" --format '{{.State.Running}}')" = "true"
           test "$(docker inspect "$old_worker_cid" \
             --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$LEGACY_SHA"
 
