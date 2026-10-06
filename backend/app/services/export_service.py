@@ -950,6 +950,30 @@ def begin_export_attempt(
         return revision
 
 
+def assert_export_attempt_current(
+    *,
+    job_id: UUID,
+    owner_user_id: UUID,
+    revision: int,
+) -> None:
+    with SessionLocal() as db:
+        job = db.scalar(
+            select(UserExportJob).where(
+                UserExportJob.id == job_id,
+                UserExportJob.owner_user_id == owner_user_id,
+            )
+        )
+        if (
+            job is None
+            or job.status != UserExportStatus.RUNNING.value
+            or job.revision != revision
+        ):
+            db.rollback()
+            raise ExportSuperseded()
+        _ensure_export_owner_active(db, owner_user_id)
+        db.rollback()
+
+
 def publish_export_artifact(
     *,
     job_id: UUID,
