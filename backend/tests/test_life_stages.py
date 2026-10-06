@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from app.core.db import SessionLocal
 from app.life_stage_models import LifeStageEventLink
 from app.services.data_deletion_service import USER_DATA_INVENTORY
-from export_test_support import export_payload
+from app.testing_export_support import export_payload
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
