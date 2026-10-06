@@ -429,6 +429,116 @@ jobs:
           trap - EXIT
           TARGET_SHA="$EXPECTED_SHA" bash ops/validate-release-source.sh
 
+      - name: Real deploy.sh worker/API cutover from legacy release
+        shell: bash
+        env:
+          EXPECTED_SHA: \${{ github.event.pull_request.head.sha || github.sha }}
+          LEGACY_SHA: \${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          test "$LEGACY_SHA" != "$EXPECTED_SHA"
+          git fetch --no-tags --depth=1 origin "$LEGACY_SHA"
+
+          legacy_image="jiyidashi-backend:$LEGACY_SHA"
+          legacy_state="$RUNNER_TEMP/legacy-release-images"
+          RELEASE_IMAGE_STATE_DIR="$legacy_state" \
+            bash ops/prepare-release-image.sh "$legacy_image" "$LEGACY_SHA"
+
+          export RELEASE_SHA="$LEGACY_SHA"
+          export BACKEND_IMAGE="$legacy_image"
+          export EDGE_IMAGE
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml up -d postgres
+          for i in $(seq 1 60); do
+            if docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+              exec -T postgres sh -ceu \
+              'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+            run --rm migrate
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+            up -d --no-deps worker api
+
+          old_worker_cid="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml ps -q worker
+          )"
+          old_api_cid="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml ps -q api
+          )"
+          test -n "$old_worker_cid"
+          test -n "$old_api_cid"
+          test "$(docker inspect "$old_worker_cid" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$LEGACY_SHA"
+
+          export RELEASE_SHA="$EXPECTED_SHA"
+          export BACKEND_IMAGE="jiyidashi-backend:$EXPECTED_SHA"
+          deploy_log="$RUNNER_TEMP/deploy-cutover.log"
+          CI=true \
+          DEPLOY_CI_SKIP_EXTERNAL_SMOKE=true \
+          API_BASE_URL=https://ci-deploy.invalid \
+          TARGET_SHA="$EXPECTED_SHA" \
+          RELEASE_IMAGE_STATE_DIR="$RUNNER_TEMP/release-images" \
+          BACKUP_DIR="$RUNNER_TEMP/deploy-gate-backups" \
+            bash ops/deploy.sh | tee "$deploy_log"
+
+          new_worker_cid="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml ps -q worker
+          )"
+          new_api_cid="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml ps -q api
+          )"
+          test -n "$new_worker_cid"
+          test -n "$new_api_cid"
+          test "$new_worker_cid" != "$old_worker_cid"
+          test "$new_api_cid" != "$old_api_cid"
+          test -z "$(docker ps -q --filter "id=$old_worker_cid")"
+          test -z "$(docker ps -q --filter "id=$old_api_cid")"
+
+          expected_image_id="$(docker image inspect "$BACKEND_IMAGE" --format '{{.Id}}')"
+          test "$(docker inspect "$new_worker_cid" --format '{{.Image}}')" = "$expected_image_id"
+          test "$(docker inspect "$new_api_cid" --format '{{.Image}}')" = "$expected_image_id"
+          test "$(docker inspect "$new_worker_cid" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$EXPECTED_SHA"
+          test "$(docker inspect "$new_api_cid" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$EXPECTED_SHA"
+
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+            exec -T worker python -m app.maintenance_worker --health \
+            > "$RUNNER_TEMP/deploy-worker-health.json"
+          python3 - "$RUNNER_TEMP/deploy-worker-health.json" <<'PY'
+          import json
+          import sys
+
+          body = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert body["status"] == "ready", body
+          assert body["schema"] == "current", body
+          PY
+
+          python3 - "$deploy_log" <<'PY'
+          import sys
+
+          lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+          quiesce = next(
+              i for i, line in enumerate(lines)
+              if "quiesce maintenance worker and API before backup/migration" in line
+          )
+          migrate = next(
+              i for i, line in enumerate(lines)
+              if "run Alembic exactly once after backup" in line
+          )
+          worker = next(
+              i for i, line in enumerate(lines)
+              if "start exact-SHA maintenance worker" in line
+          )
+          api = next(
+              i for i, line in enumerate(lines)
+              if "start exact-SHA API" in line
+          )
+          assert quiesce < migrate < worker < api, (quiesce, migrate, worker, api)
+          PY
+
       - name: Validate Caddy configuration
         run: |
           docker run --rm \
