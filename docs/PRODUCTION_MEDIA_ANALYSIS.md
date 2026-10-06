@@ -23,10 +23,19 @@ MEDIA_MAX_IMAGE_BYTES=20971520
 AI_IMAGE_MAX_BYTES=2097152
 AI_IMAGE_MAX_DIMENSION=2048
 AI_IMAGE_MAX_PIXELS=4000000
+AI_IMAGE_PREPROCESS_GLOBAL_CONCURRENCY=2
+AI_IMAGE_PREPROCESS_USER_CONCURRENCY=1
+AI_IMAGE_PREPROCESS_PERMIT_LEASE_SECONDS=60
 ```
 
 The analysis byte ceiling is intentionally materially lower than the original-media
 ceiling. Production preflight rejects absent, invalid, or inconsistent values.
+
+Image preprocessing has a separate PostgreSQL-backed shared concurrency budget. It is
+claimed before the original object read and held only across bounded read, trusted decode,
+orientation/resize/encode, and release of the original byte buffer. OCR and Vision share
+the same `AI_IMAGE_PREPROCESS` service class. Provider concurrency remains a separate
+resource budget and is claimed later by AIGateway.
 
 ## Derivative pipeline
 
@@ -34,6 +43,7 @@ For JPEG, PNG, and WebP sources:
 
 ```text
 owner-scoped READY media snapshot
+→ claim shared AI_IMAGE_PREPROCESS permit
 → bounded original object read using authoritative MediaAsset size/policy
 → verify declared MIME matches trusted decoder format
 → reject multi-frame images
@@ -43,6 +53,7 @@ owner-scoped READY media snapshot
 → convert to JPEG and strip metadata
 → quality/size convergence
 → final <= AI_IMAGE_MAX_BYTES
+→ release original bytes and AI_IMAGE_PREPROCESS permit
 → AI Gateway second-layer byte/type policy
 → provider
 → re-lock/revalidate original Media + deletion generation
