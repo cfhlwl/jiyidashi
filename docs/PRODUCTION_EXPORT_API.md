@@ -130,8 +130,11 @@ Flutter/Mini clients. It is safe to return the complete domain because productio
 PostgreSQL enforces `MAX_OBJECTS_PER_OWNER=500` at the database boundary. Normal API
 inserts serialize on the same owner advisory key and return deterministic
 `409 OBJECT_LIMIT_REACHED`; a PostgreSQL BEFORE INSERT trigger is the final authority
-for bypass/concurrent writes. Migration 0034 refuses to upgrade if any existing owner
-already exceeds 500, so deployment never silently truncates or drops object data.
+for bypass/concurrent writes. Migration 0034 first takes `LOCK TABLE objects IN SHARE ROW EXCLUSIVE MODE` and
+holds it through the existing-data check, trigger installation, and transaction commit.
+Old API INSERTs therefore cannot cross the one-time installation window. The migration
+then refuses to upgrade if any existing owner already exceeds 500, so deployment never
+silently truncates or drops object data.
 
 Stable order:
 
@@ -160,6 +163,8 @@ Exact-head CI must prove:
   500-object bounded domain;
 - the 501st normal create returns `409 OBJECT_LIMIT_REACHED`;
 - migration 0034 rejects pre-existing >500-owner datasets;
+- a real PostgreSQL installation race proves a #501 legacy INSERT started after the
+  migration write gate blocks until trigger commit, then fails with the capacity invariant;
 - a real PostgreSQL 499 + two-way concurrent insert race converges to exactly 500
   (one commit, one DB-trigger rejection);
 - `/objects/page-v1` default/max/multi-page/tamper/foreign-owner behavior passes;
