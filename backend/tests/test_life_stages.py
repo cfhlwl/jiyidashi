@@ -561,10 +561,9 @@ async def test_export_contains_stage_sections_owner_scoped_and_no_memory_duplica
         headers=headers_a,
     )
     assert deleted_event.status_code == 204
-    after = await client.get("/v1/export/data", headers=headers_a)
-    assert after.status_code == 200
-    assert len(after.json()["life_stages"]) == 1
-    assert after.json()["life_stage_event_links"] == []
+    after_body, _ = await export_payload(client, headers_a)
+    assert len(after_body["life_stages"]) == 1
+    assert after_body["life_stage_event_links"] == []
 
 
 def test_inventory_and_no_ai_summary_graph_promotion_scope_locks():
