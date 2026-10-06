@@ -43,7 +43,6 @@ from app.services.export_service import (
     remove_temp_file,
 )
 from app.services.maintenance_jobs import (
-    DEFAULT_LEASE_SECONDS,
     MaintenanceJobClaim,
     MaintenanceLeaseLost,
     assert_maintenance_claim_current,
@@ -598,7 +597,7 @@ def handle_export(claim: MaintenanceJobClaim) -> None:
             "EXPORT_STORAGE_UNAVAILABLE",
             retry_after_seconds=30,
         ) from exc
-    except MaintenanceLeaseLost as exc:
+    except MaintenanceLeaseLost:
         terminal = claim.attempt_count >= claim.max_attempts
         mark_export_attempt_failed(
             job_id=export_job_id,
