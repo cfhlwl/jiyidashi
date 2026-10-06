@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
 from app.core.config import get_settings
-from app.core.db import SessionLocal, UserDataRequestStale, engine
+from app.core.db import (
+    SessionLocal,
+    UserDataRequestStale,
+    engine,
+    hold_user_data_disclosure_handoff,
+)
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.export_models import UserExportJob, UserExportStatus
 from app.maintenance.location_retention import maintain_discovered_location_owner
@@ -540,32 +545,44 @@ def handle_export(claim: MaintenanceJobClaim) -> None:
             revision=revision,
             attempt_token=claim.claim_token,
         )
-        stored = storage.upload_file(
-            generated.path,
-            object_key,
-            EXPORT_CONTENT_TYPE,
-            generated.sha256,
-        )
-        authority.check()
-        if (
-            stored.size_bytes != generated.size_bytes
-            or stored.sha256 != generated.sha256
-            or stored.content_type.split(";", 1)[0].strip().lower()
-            != EXPORT_CONTENT_TYPE
+        # Share the canonical destructive handoff across the entire physical
+        # upload -> verify -> publish boundary. Data/Account Delete takes the matching
+        # exclusive advisory lock before it can establish the destructive gate, so its
+        # final storage inventory cannot run ahead of an in-flight export upload.
+        with hold_user_data_disclosure_handoff(
+            engine,
+            user_id=owner_user_id,
         ):
-            raise ExportExecutionError(
-                "EXPORT_ARTIFACT_VERIFICATION_FAILED",
-                retryable=True,
+            # Re-check after acquiring the shared handoff. If deletion won the race,
+            # its committed gate/maintenance fencing must stop this stale attempt
+            # before any new export object is written.
+            authority.check()
+            stored = storage.upload_file(
+                generated.path,
+                object_key,
+                EXPORT_CONTENT_TYPE,
+                generated.sha256,
             )
-        if not publish_export_artifact(
-            job_id=export_job_id,
-            owner_user_id=owner_user_id,
-            revision=revision,
-            object_key=object_key,
-            size_bytes=generated.size_bytes,
-            sha256=generated.sha256,
-        ):
-            raise ExportExecutionError("EXPORT_AUTHORITY_LOST", retryable=False)
+            authority.check()
+            if (
+                stored.size_bytes != generated.size_bytes
+                or stored.sha256 != generated.sha256
+                or stored.content_type.split(";", 1)[0].strip().lower()
+                != EXPORT_CONTENT_TYPE
+            ):
+                raise ExportExecutionError(
+                    "EXPORT_ARTIFACT_VERIFICATION_FAILED",
+                    retryable=True,
+                )
+            if not publish_export_artifact(
+                job_id=export_job_id,
+                owner_user_id=owner_user_id,
+                revision=revision,
+                object_key=object_key,
+                size_bytes=generated.size_bytes,
+                sha256=generated.sha256,
+            ):
+                raise ExportExecutionError("EXPORT_AUTHORITY_LOST", retryable=False)
         object_key = None
     except ExportExecutionError as exc:
         terminal = not exc.retryable or claim.attempt_count >= claim.max_attempts
