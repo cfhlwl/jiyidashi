@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from tests.export_test_support import export_payload
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
@@ -540,9 +541,7 @@ async def test_export_contains_stage_sections_owner_scoped_and_no_memory_duplica
         headers=headers_b,
     )).status_code == 201
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    body = exported.json()
+    body, exported_text = await export_payload(client, headers_a)
     assert len(body["life_stages"]) == 1
     assert body["life_stages"][0]["id"] == stage_a["id"]
     assert "user_id" not in body["life_stages"][0]
@@ -554,8 +553,8 @@ async def test_export_contains_stage_sections_owner_scoped_and_no_memory_duplica
         "created_at",
     }
     assert "memory_id" not in body["life_stage_event_links"][0]
-    assert "B secret stage" not in exported.text
-    assert "B secret event" not in exported.text
+    assert "B secret stage" not in exported_text
+    assert "B secret event" not in exported_text
 
     deleted_event = await client.delete(
         f"/v1/life-events/{event_a['id']}",
