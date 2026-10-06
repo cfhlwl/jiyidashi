@@ -333,6 +333,161 @@ def _claim_exact_job(job_id: UUID, worker_id: str):
         return claim
 
 
+def _prove_fanout_crash_reclaim_resumes_from_cursor() -> None:
+    actor = _admin()
+    users = [_user(f"reclaim-{index}") for index in range(3)]
+    for index, user in enumerate(users):
+        _register(
+            user.id,
+            client_uuid=f"pg-reclaim-{index}-{uuid4().hex}",
+            token=f"pg-reclaim-token-{index}-{uuid4().hex}",
+            platform=PushPlatform.IOS,
+        )
+
+    campaign = _submitted_campaign(actor.id)
+    original_batch_size = notification_service.FANOUT_BATCH_SIZE
+    notification_service.FANOUT_BATCH_SIZE = 1
+    started_at = datetime.now(UTC)
+
+    try:
+        with SessionLocal() as db:
+            db.execute(
+                delete(MaintenanceJob).where(
+                    MaintenanceJob.job_type.in_(
+                        (
+                            MaintenanceJobType.NOTIFICATION_FANOUT.value,
+                            MaintenanceJobType.NOTIFICATION_DELIVERY.value,
+                        )
+                    )
+                )
+            )
+            job, created = enqueue_maintenance_job(
+                db,
+                job_type=MaintenanceJobType.NOTIFICATION_FANOUT,
+                dedupe_key=f"notify-pg-reclaim:{campaign.id}",
+                resource_key=f"notification-campaign:{campaign.id}",
+                payload={
+                    "campaign_id": str(campaign.id),
+                    "campaign_revision": campaign.revision,
+                },
+                max_attempts=3,
+                next_attempt_at=started_at,
+            )
+            assert created
+            job_id = job.id
+            db.commit()
+
+        with SessionLocal() as db:
+            first_claim = claim_next_maintenance_job(
+                db,
+                worker_id=f"notify-pg-crash-a-{uuid4().hex}",
+                lease_seconds=1,
+                now=started_at,
+            )
+            assert first_claim is not None
+            assert first_claim.id == job_id
+            db.commit()
+
+        # Commit one bounded page, then deliberately omit complete_maintenance_job:
+        # this is the process-crash boundary between business progress and job ACK.
+        process_notification_fanout_claim(first_claim)
+
+        with SessionLocal() as db:
+            first_campaign = db.get(NotificationCampaign, campaign.id)
+            assert first_campaign is not None
+            first_cursor = first_campaign.fanout_cursor_device_id
+            assert first_cursor is not None
+            first_deliveries = list(
+                db.scalars(
+                    select(NotificationDelivery).where(
+                        NotificationDelivery.campaign_id == campaign.id
+                    )
+                )
+            )
+            assert len(first_deliveries) == 1
+            first_device_id = first_deliveries[0].device_id
+
+            # The committed page also created a continuation. Keep it out of the
+            # artificial reclaim timestamp so claim_next must reclaim the crashed job.
+            db.execute(
+                update(MaintenanceJob)
+                .where(
+                    MaintenanceJob.job_type
+                    == MaintenanceJobType.NOTIFICATION_FANOUT.value,
+                    MaintenanceJob.id != job_id,
+                )
+                .values(next_attempt_at=started_at + timedelta(hours=1))
+            )
+            db.commit()
+
+        with SessionLocal() as db:
+            reclaimed = claim_next_maintenance_job(
+                db,
+                worker_id=f"notify-pg-crash-b-{uuid4().hex}",
+                lease_seconds=30,
+                now=started_at + timedelta(seconds=2),
+            )
+            assert reclaimed is not None
+            assert reclaimed.id == job_id
+            assert reclaimed.claim_token != first_claim.claim_token
+            assert reclaimed.attempt_count == 2
+            db.commit()
+
+        process_notification_fanout_claim(reclaimed)
+        with SessionLocal() as db:
+            assert complete_maintenance_job(
+                db,
+                job_id=reclaimed.id,
+                claim_token=reclaimed.claim_token,
+            )
+            db.commit()
+
+        with SessionLocal() as db:
+            resumed_campaign = db.get(NotificationCampaign, campaign.id)
+            assert resumed_campaign is not None
+            assert resumed_campaign.fanout_cursor_device_id is not None
+            assert resumed_campaign.fanout_cursor_device_id != first_cursor
+
+            deliveries = list(
+                db.scalars(
+                    select(NotificationDelivery).where(
+                        NotificationDelivery.campaign_id == campaign.id
+                    )
+                )
+            )
+            assert len(deliveries) == 2
+            assert len({row.device_id for row in deliveries}) == 2
+            assert sum(row.device_id == first_device_id for row in deliveries) == 1
+    finally:
+        notification_service.FANOUT_BATCH_SIZE = original_batch_size
+        with SessionLocal() as db:
+            db.execute(
+                delete(MaintenanceJob).where(
+                    MaintenanceJob.job_type.in_(
+                        (
+                            MaintenanceJobType.NOTIFICATION_FANOUT.value,
+                            MaintenanceJobType.NOTIFICATION_DELIVERY.value,
+                        )
+                    )
+                )
+            )
+            saved = db.get(NotificationCampaign, campaign.id)
+            if saved is not None:
+                message_id = saved.message_id
+                db.delete(saved)
+                db.flush()
+                from app.notification_models import NotificationMessage
+
+                message = db.get(NotificationMessage, message_id)
+                if message is not None:
+                    db.delete(message)
+            actor_row = db.get(AdminAccount, actor.id)
+            if actor_row is not None:
+                db.delete(actor_row)
+            db.commit()
+        _cleanup_users(*(user.id for user in users))
+
+
 def _prove_two_worker_fanout_unique_and_stale_delivery_fenced() -> None:
     actor = _admin()
     users = [_user(f"fanout-{index}") for index in range(4)]
@@ -636,6 +791,7 @@ def main() -> None:
     _alembic("upgrade", "head")
     _prove_legacy_token_migrates_inactive()
     _prove_concurrent_token_rebind_has_one_authority()
+    _prove_fanout_crash_reclaim_resumes_from_cursor()
     _prove_two_worker_fanout_unique_and_stale_delivery_fenced()
     _prove_final_account_delete_cascade_cannot_leave_delivery()
     _alembic("upgrade", "head")
