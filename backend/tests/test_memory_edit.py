@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from tests.export_test_support import export_payload
 from sqlalchemy import select
 
 from app.core.db import SessionLocal
@@ -103,9 +104,7 @@ async def test_content_edit_preserves_original_source_and_uses_edit_evidence(
     assert current["content"] == "合同已经放入蓝色柜子"
     assert current["edit_revision"] == 1
 
-    exported = await client.get("/v1/export/data", headers=auth_headers)
-    assert exported.status_code == 200
-    export_body = exported.json()
+    export_body, exported_text = await export_payload(client, auth_headers)
     exported_memory = next(
         item for item in export_body["memories"] if item["id"] == str(memory_id)
     )
