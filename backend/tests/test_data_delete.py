@@ -55,7 +55,7 @@ from app.services.object_storage import (
     S3ObjectStorage,
     get_object_storage,
 )
-
+from tests.export_test_support import export_payload
 
 class DeleteTestStorage:
     """Small storage double with LIST, idempotent DELETE and injected failures."""
@@ -75,16 +75,12 @@ class DeleteTestStorage:
             raise ObjectStorageError("synthetic delete failure")
         self.objects.discard(object_key)
 
-
 @pytest.fixture
 def delete_storage():
     storage = DeleteTestStorage()
     app.dependency_overrides[get_object_storage] = lambda: storage
     yield storage
     app.dependency_overrides.pop(get_object_storage, None)
-
-
-from tests.export_test_support import export_payload
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     response = await client.post("/v1/auth/dev-token", json={"nickname": nickname})
@@ -95,7 +91,6 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
         UUID(payload["user_id"]),
     )
 
-
 def _count_for_user(db, model, user_id: UUID) -> int:
     return int(
         db.scalar(
@@ -103,7 +98,6 @@ def _count_for_user(db, model, user_id: UUID) -> int:
         )
         or 0
     )
-
 
 def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | str]:
     now = datetime.now(UTC)
@@ -458,7 +452,6 @@ def _seed_full_owned_graph(owner_id: UUID, other_id: UUID) -> dict[str, UUID | s
     ids["final_key"] = final_key
     return ids
 
-
 @pytest.mark.asyncio
 async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_isolated(
     client,
@@ -666,7 +659,6 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
     with SessionLocal() as db:
         assert db.get(Memory, new_memory_id) is not None
 
-
 @pytest.mark.asyncio
 async def test_storage_failure_keeps_database_and_retry_converges(
     client,
@@ -741,7 +733,6 @@ async def test_storage_failure_keeps_database_and_retry_converges(
     with SessionLocal() as db:
         assert db.get(Memory, memory_id) is None
 
-
 @pytest.mark.asyncio
 async def test_database_failure_rolls_back_and_same_request_can_retry(
     client,
@@ -799,7 +790,6 @@ async def test_database_failure_rolls_back_and_same_request_can_retry(
     with SessionLocal() as db:
         assert db.get(Memory, memory_id) is None
 
-
 @pytest.mark.asyncio
 async def test_delete_requires_exact_confirmation_before_mutation(
     client,
@@ -823,7 +813,6 @@ async def test_delete_requires_exact_confirmation_before_mutation(
         assert db.scalar(
             select(DataDeletionOperation.id).where(DataDeletionOperation.user_id == user_id)
         ) is None
-
 
 def test_s3_object_inventory_is_paginated(monkeypatch):
     class StubPaginator:
@@ -857,7 +846,6 @@ def test_s3_object_inventory_is_paginated(monkeypatch):
         "media/user/b",
     ]
 
-
 def test_s3_object_inventory_failure_is_fail_closed(monkeypatch):
     class StubClient:
         def get_paginator(self, name):
@@ -878,7 +866,6 @@ def test_s3_object_inventory_failure_is_fail_closed(monkeypatch):
     )
     with pytest.raises(ObjectStorageError, match="failed to list objects"):
         list(storage.iter_object_keys("media/user/"))
-
 
 @pytest.mark.asyncio
 async def test_corrupt_media_key_cannot_delete_another_users_object(
@@ -923,7 +910,6 @@ async def test_corrupt_media_key_cannot_delete_another_users_object(
         assert db.scalar(
             select(DataDeletionOperation.id).where(DataDeletionOperation.user_id == user_id)
         ) is None
-
 
 @pytest.mark.asyncio
 async def test_orphan_staging_establishes_expiry_and_quiet_windows(
