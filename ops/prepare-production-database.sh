@@ -13,6 +13,9 @@ export ENV_FILE
 python3 "$ROOT_DIR/ops/validate-production-runtime.py" "$ENV_FILE"
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
+echo "quiesce maintenance worker and API before backup/migration"
+"${compose[@]}" stop -t 90 worker api
+
 echo "start PostgreSQL before any migration decision"
 "${compose[@]}" up -d postgres
 

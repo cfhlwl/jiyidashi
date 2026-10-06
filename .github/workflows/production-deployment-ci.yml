@@ -13,6 +13,11 @@ on:
       - "backend/app/services/vision_service.py"
       - "backend/tests/test_media_analysis_derivative.py"
       - "backend/app/services/object_storage.py"
+      - "backend/app/services/security_alerting.py"
+      - "backend/app/services/security_alert_human_delivery.py"
+      - "backend/app/security_models.py"
+      - "backend/tests/test_sec017_human_security_alert_delivery.py"
+      - "backend/tests/postgres_sec017_human_security_alert_delivery.py"
       - "backend/app/services/export_service.py"
       - "backend/app/export_models.py"
       - "backend/app/api/data_export.py"
@@ -28,6 +33,7 @@ on:
       - "backend/app/api/account_delete.py"
       - "backend/tests/postgres_observability_integration.py"
       - "docs/PRODUCTION_OBSERVABILITY.md"
+      - "docs/SECURITY_ALERTING.md"
       - "backend/Dockerfile"
       - "backend/.dockerignore"
       - "backend/.env.example"
@@ -64,6 +70,11 @@ on:
       - "backend/app/services/vision_service.py"
       - "backend/tests/test_media_analysis_derivative.py"
       - "backend/app/services/object_storage.py"
+      - "backend/app/services/security_alerting.py"
+      - "backend/app/services/security_alert_human_delivery.py"
+      - "backend/app/security_models.py"
+      - "backend/tests/test_sec017_human_security_alert_delivery.py"
+      - "backend/tests/postgres_sec017_human_security_alert_delivery.py"
       - "backend/app/services/export_service.py"
       - "backend/app/export_models.py"
       - "backend/app/api/data_export.py"
@@ -79,6 +90,7 @@ on:
       - "backend/app/api/account_delete.py"
       - "backend/tests/postgres_observability_integration.py"
       - "docs/PRODUCTION_OBSERVABILITY.md"
+      - "docs/SECURITY_ALERTING.md"
       - "backend/Dockerfile"
       - "backend/.dockerignore"
       - "backend/.env.example"
@@ -154,6 +166,10 @@ jobs:
           AUTO_CREATE_SCHEMA=false
           CORS_ORIGINS=[]
           OBSERVABILITY_LOG_LEVEL=INFO
+          SECURITY_ALERT_HUMAN_PROVIDER=feishu
+          SECURITY_ALERT_FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/ci-sec017-not-live-token
+          SECURITY_ALERT_FEISHU_SECRET=ci-sec017-signing-secret-not-live
+          SECURITY_ALERT_DELIVERY_TIMEOUT_SECONDS=5
           DATABASE_READINESS_CONNECT_TIMEOUT_SECONDS=2
           DATABASE_READINESS_STATEMENT_TIMEOUT_MS=1500
           DB_POOL_SIZE=3
@@ -273,7 +289,7 @@ jobs:
       - name: Reject unsafe actual production environments
         shell: bash
         run: |
-          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'             'BACKUP_OFFHOST_ENABLED=false'             'BACKUP_STORAGE_BUCKET='             'BACKUP_STORAGE_ENDPOINT_URL=http://backup.invalid'             'BACKUP_STORAGE_SECRET_ACCESS_KEY='             'DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/not_the_app_db'             'DATABASE_URL=postgresql+psycopg://other-user:ci-postgres-password@postgres:5432/jiyi_prod_ci'             'DATABASE_URL=postgresql+psycopg://jiyi:wrong-password@postgres:5432/jiyi_prod_ci'             'DB_POOL_SIZE=0'             'DB_MAX_OVERFLOW=-1'             'DB_POOL_TIMEOUT_SECONDS=0'             'DB_POOL_RECYCLE_SECONDS=29'             'DB_CONNECTION_BUDGET=3'             'DB_POOL_SIZE=10'             'DB_MAX_OVERFLOW=10'             'DB_CONNECTION_BUDGET=4'             'API_REQUEST_BODY_LIMIT=unbounded'             'AI_IMAGE_MAX_BYTES=20971520'             'AI_IMAGE_MAX_DIMENSION=0'             'AI_IMAGE_MAX_PIXELS=99999999'             'AI_IMAGE_PREPROCESS_GLOBAL_CONCURRENCY=0'             'AI_IMAGE_PREPROCESS_USER_CONCURRENCY=3'             'AI_IMAGE_PREPROCESS_PERMIT_LEASE_SECONDS=0'             'EXPORT_BATCH_SIZE=0'             'EXPORT_ARTIFACT_MAX_BYTES=1024'             'EXPORT_ARTIFACT_MAX_BYTES=268435457'             'EXPORT_ARTIFACT_TTL_HOURS=0'; do
+          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'             'BACKUP_OFFHOST_ENABLED=false'             'BACKUP_STORAGE_BUCKET='             'BACKUP_STORAGE_ENDPOINT_URL=http://backup.invalid'             'BACKUP_STORAGE_SECRET_ACCESS_KEY='             'DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/not_the_app_db'             'DATABASE_URL=postgresql+psycopg://other-user:ci-postgres-password@postgres:5432/jiyi_prod_ci'             'DATABASE_URL=postgresql+psycopg://jiyi:wrong-password@postgres:5432/jiyi_prod_ci'             'DB_POOL_SIZE=0'             'DB_MAX_OVERFLOW=-1'             'DB_POOL_TIMEOUT_SECONDS=0'             'DB_POOL_RECYCLE_SECONDS=29'             'DB_CONNECTION_BUDGET=3'             'DB_POOL_SIZE=10'             'DB_MAX_OVERFLOW=10'             'DB_CONNECTION_BUDGET=4'             'API_REQUEST_BODY_LIMIT=unbounded'             'AI_IMAGE_MAX_BYTES=20971520'             'AI_IMAGE_MAX_DIMENSION=0'             'AI_IMAGE_MAX_PIXELS=99999999'             'AI_IMAGE_PREPROCESS_GLOBAL_CONCURRENCY=0'             'AI_IMAGE_PREPROCESS_USER_CONCURRENCY=3'             'AI_IMAGE_PREPROCESS_PERMIT_LEASE_SECONDS=0'             'EXPORT_BATCH_SIZE=0'             'EXPORT_ARTIFACT_MAX_BYTES=1024'             'EXPORT_ARTIFACT_MAX_BYTES=268435457'             'EXPORT_ARTIFACT_TTL_HOURS=0'             'SECURITY_ALERT_HUMAN_PROVIDER=disabled'             'SECURITY_ALERT_FEISHU_WEBHOOK_URL='             'SECURITY_ALERT_FEISHU_WEBHOOK_URL=http://open.feishu.cn/open-apis/bot/v2/hook/bad'             'SECURITY_ALERT_FEISHU_WEBHOOK_URL=https://127.0.0.1/open-apis/bot/v2/hook/bad'             'SECURITY_ALERT_FEISHU_SECRET='             'SECURITY_ALERT_DELIVERY_TIMEOUT_SECONDS=0'; do
             bad_env="$RUNNER_TEMP/bad-production.env"
             cp "$ENV_FILE" "$bad_env"
             key="${mutation%%=*}"
@@ -412,6 +428,118 @@ jobs:
           rm backend/app/__ops_untracked_release_probe__.py
           trap - EXIT
           TARGET_SHA="$EXPECTED_SHA" bash ops/validate-release-source.sh
+
+      - name: Real deploy.sh worker/API cutover from legacy release
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          LEGACY_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          test "$LEGACY_SHA" != "$EXPECTED_SHA"
+          git fetch --no-tags --depth=1 origin "$LEGACY_SHA"
+
+          legacy_image="jiyidashi-backend:$LEGACY_SHA"
+          legacy_state="$RUNNER_TEMP/legacy-release-images"
+          RELEASE_IMAGE_STATE_DIR="$legacy_state" \
+            bash ops/prepare-release-image.sh "$legacy_image" "$LEGACY_SHA"
+
+          export RELEASE_SHA="$LEGACY_SHA"
+          export BACKEND_IMAGE="$legacy_image"
+          export EDGE_IMAGE
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml up -d postgres
+          for i in $(seq 1 60); do
+            if docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+              exec -T postgres sh -ceu \
+              'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+            run --rm migrate
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+            up -d --no-deps worker api
+
+          old_worker_cid="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml ps -q worker
+          )"
+          old_api_cid="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml ps -q api
+          )"
+          test -n "$old_worker_cid"
+          test -n "$old_api_cid"
+          test "$(docker inspect "$old_worker_cid" --format '{{.State.Running}}')" = "true"
+          test "$(docker inspect "$old_api_cid" --format '{{.State.Running}}')" = "true"
+          test "$(docker inspect "$old_worker_cid" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$LEGACY_SHA"
+
+          export RELEASE_SHA="$EXPECTED_SHA"
+          export BACKEND_IMAGE="jiyidashi-backend:$EXPECTED_SHA"
+          deploy_log="$RUNNER_TEMP/deploy-cutover.log"
+          CI=true \
+          DEPLOY_CI_SKIP_EXTERNAL_SMOKE=true \
+          API_BASE_URL=https://ci-deploy.invalid \
+          TARGET_SHA="$EXPECTED_SHA" \
+          RELEASE_IMAGE_STATE_DIR="$RUNNER_TEMP/release-images" \
+          BACKUP_DIR="$RUNNER_TEMP/deploy-gate-backups" \
+            bash ops/deploy.sh | tee "$deploy_log"
+
+          new_worker_cid="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml ps -q worker
+          )"
+          new_api_cid="$(
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml ps -q api
+          )"
+          test -n "$new_worker_cid"
+          test -n "$new_api_cid"
+          test "$new_worker_cid" != "$old_worker_cid"
+          test "$new_api_cid" != "$old_api_cid"
+          test -z "$(docker ps -q --filter "id=$old_worker_cid")"
+          test -z "$(docker ps -q --filter "id=$old_api_cid")"
+
+          expected_image_id="$(docker image inspect "$BACKEND_IMAGE" --format '{{.Id}}')"
+          test "$(docker inspect "$new_worker_cid" --format '{{.Image}}')" = "$expected_image_id"
+          test "$(docker inspect "$new_api_cid" --format '{{.Image}}')" = "$expected_image_id"
+          test "$(docker inspect "$new_worker_cid" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$EXPECTED_SHA"
+          test "$(docker inspect "$new_api_cid" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$EXPECTED_SHA"
+
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml \
+            exec -T worker python -m app.maintenance_worker --health \
+            > "$RUNNER_TEMP/deploy-worker-health.json"
+          python3 - "$RUNNER_TEMP/deploy-worker-health.json" <<'PY'
+          import json
+          import sys
+
+          body = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert body["status"] == "ready", body
+          assert body["schema"] == "current", body
+          PY
+
+          python3 - "$deploy_log" <<'PY'
+          import sys
+
+          lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+          quiesce = next(
+              i for i, line in enumerate(lines)
+              if "quiesce maintenance worker and API before backup/migration" in line
+          )
+          migrate = next(
+              i for i, line in enumerate(lines)
+              if "run Alembic exactly once after backup" in line
+          )
+          worker = next(
+              i for i, line in enumerate(lines)
+              if "start exact-SHA maintenance worker" in line
+          )
+          api = next(
+              i for i, line in enumerate(lines)
+              if "start exact-SHA API" in line
+          )
+          assert quiesce < migrate < worker < api, (quiesce, migrate, worker, api)
+          PY
 
       - name: Validate Caddy configuration
         run: |

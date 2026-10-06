@@ -700,6 +700,7 @@ def handle_security_alert_delivery(claim: MaintenanceJobClaim) -> None:
         engine,
         alert_id=str(alert_id),
         authority_check=authority.check,
+        worker_execution=True,
     )
     authority.check()
 
@@ -991,7 +992,7 @@ def discover_and_enqueue_maintenance_jobs(
                 dedupe_key=f"security-alert:{alert.id}",
                 resource_key=resource_key,
                 payload={"alert_id": str(alert.id)},
-                max_attempts=10,
+                max_attempts=5,
                 next_attempt_at=alert.next_retry_at or observed_at,
             )
             enqueued += int(created)

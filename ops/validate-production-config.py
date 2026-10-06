@@ -25,6 +25,10 @@ REQUIRED_KEYS = {
     "ENABLE_DEV_AUTH",
     "AUTO_CREATE_SCHEMA",
     "CORS_ORIGINS",
+    "SECURITY_ALERT_HUMAN_PROVIDER",
+    "SECURITY_ALERT_FEISHU_WEBHOOK_URL",
+    "SECURITY_ALERT_FEISHU_SECRET",
+    "SECURITY_ALERT_DELIVERY_TIMEOUT_SECONDS",
     "POSTGRES_DB",
     "POSTGRES_USER",
     "POSTGRES_PASSWORD",
@@ -264,6 +268,12 @@ def main() -> None:
     assert (web_concurrency + 1) * (pool_size + max_overflow) <= connection_budget
     assert values["API_REQUEST_BODY_LIMIT"] == "2MB"
     assert values["STORAGE_ENDPOINT_URL"].startswith("https://")
+    assert values["SECURITY_ALERT_HUMAN_PROVIDER"] == "feishu"
+    webhook = values["SECURITY_ALERT_FEISHU_WEBHOOK_URL"]
+    assert webhook.startswith("https://open.feishu.cn/open-apis/bot/v2/hook/")
+    assert "CHANGE_ME_SEC017_WEBHOOK_TOKEN" in webhook
+    assert values["SECURITY_ALERT_FEISHU_SECRET"] == "CHANGE_ME_SEC017_SIGNING_SECRET"
+    assert 1 <= float(values["SECURITY_ALERT_DELIVERY_TIMEOUT_SECONDS"]) <= 15
     assert 25 <= int(values["EXPORT_BATCH_SIZE"]) <= 1000
     export_artifact_max = int(values["EXPORT_ARTIFACT_MAX_BYTES"])
     assert 1024 * 1024 <= export_artifact_max <= 256 * 1024 * 1024

@@ -261,3 +261,22 @@ V1 does not ship a log-storage backend. Operators should configure their chosen 
 - enforce deletion/retention policy outside the application process.
 
 Security-alert routing, anomaly thresholds and incident notification delivery belong to **#165 / SEC-015**, not #161.
+
+
+## SEC-017 human security-alert events
+
+The worker emits only bounded allowlisted operational fields for:
+
+```text
+security.alert.human_delivery.attempted
+security.alert.human_delivery.delivered
+security.alert.human_delivery.retryable_failure
+security.alert.human_delivery.terminal_failure
+```
+
+Safe dimensions are `alert_id`, `rule_code`, `severity`, `signal_count`,
+`window_seconds`, one-way `correlation_id`, `attempt_number`, provider enum,
+stable `error_code`, retryable classification, and bounded `retry_after_seconds`.
+
+Webhook URL/token, signing secret, provider response body, and arbitrary exception text
+are not observability fields and are never emitted.

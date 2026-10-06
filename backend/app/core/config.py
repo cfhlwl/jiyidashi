@@ -74,6 +74,16 @@ class Settings(BaseSettings):
     argon2_global_concurrency: int = Field(default=4, ge=1, le=128)
     argon2_permit_lease_seconds: int = Field(default=30, ge=5, le=300)
 
+    # SEC-017: server-only human security alert provider.
+    security_alert_human_provider: str = "disabled"
+    security_alert_feishu_webhook_url: str = ""
+    security_alert_feishu_secret: str = ""
+    security_alert_delivery_timeout_seconds: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=15.0,
+    )
+
     enable_dev_auth: bool = False
     auto_create_schema: bool = False
     cors_origins: list[str] = Field(default_factory=list)
@@ -305,6 +315,49 @@ class Settings(BaseSettings):
             raise ValueError("AUTH_RATE_LIMIT_ENABLED must be true in production")
         if self.is_production and not self.api_rate_limit_enabled:
             raise ValueError("API_RATE_LIMIT_ENABLED must be true in production")
+
+        provider = self.security_alert_human_provider.strip().lower()
+        if provider not in {"disabled", "feishu"}:
+            raise ValueError(
+                "SECURITY_ALERT_HUMAN_PROVIDER must be disabled or feishu"
+            )
+        self.security_alert_human_provider = provider
+        webhook = self.security_alert_feishu_webhook_url.strip()
+        secret = self.security_alert_feishu_secret.strip()
+        if self.is_production and provider != "feishu":
+            raise ValueError(
+                "SECURITY_ALERT_HUMAN_PROVIDER must be feishu in production"
+            )
+        if provider == "feishu":
+            parsed_webhook = urlparse(webhook)
+            if (
+                parsed_webhook.scheme.lower() != "https"
+                or parsed_webhook.hostname != "open.feishu.cn"
+                or parsed_webhook.port not in (None, 443)
+                or parsed_webhook.username
+                or parsed_webhook.password
+                or parsed_webhook.query
+                or parsed_webhook.fragment
+                or not parsed_webhook.path.startswith("/open-apis/bot/v2/hook/")
+                or not parsed_webhook.path[len("/open-apis/bot/v2/hook/") :]
+                or "/" in parsed_webhook.path[len("/open-apis/bot/v2/hook/") :]
+            ):
+                raise ValueError(
+                    "SECURITY_ALERT_FEISHU_WEBHOOK_URL must be a reviewed Feishu HTTPS webhook"
+                )
+            if not secret:
+                raise ValueError(
+                    "SECURITY_ALERT_FEISHU_SECRET is required for feishu delivery"
+                )
+            if self.is_production and (
+                "CHANGE_ME" in webhook.upper()
+                or "PLACEHOLDER" in webhook.upper()
+                or "CHANGE_ME" in secret.upper()
+                or "PLACEHOLDER" in secret.upper()
+            ):
+                raise ValueError(
+                    "SECURITY_ALERT Feishu production credentials must not be placeholders"
+                )
 
         if self.is_production:
             process_count = self.web_concurrency + 1

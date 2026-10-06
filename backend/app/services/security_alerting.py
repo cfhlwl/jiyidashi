@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import or_, select, text
 from sqlalchemy.engine import Engine
@@ -14,13 +14,22 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.observability import emit_security_alert_event_checked
+from app.core.observability import (
+    emit_operational_event,
+    emit_security_alert_event_checked,
+)
 from app.security_models import (
     SecurityAlert,
     SecurityAlertDeliveryStatus,
     SecuritySeverity,
     SecuritySignalCode,
     SecuritySignalWindow,
+)
+from app.services.security_alert_human_delivery import (
+    HumanDeliveryResult,
+    SecurityAlertHumanDeliveryAdapter,
+    SecurityAlertHumanMessage,
+    get_security_alert_human_adapter,
 )
 
 MAX_DELIVERY_ATTEMPTS = 5
@@ -457,7 +466,24 @@ def record_security_signal(
             db.commit()
 
         if created:
-            deliver_security_alert(bind, alert_id=alert_id, now=observed_at)
+            # Alert creation stays observational on the business request path.
+            # Human HTTP delivery is worker-only; this event never marks HIGH/CRITICAL
+            # as delivered.
+            emit_security_alert_event_checked(
+                level=(
+                    "ERROR"
+                    if policy.severity
+                    in {SecuritySeverity.HIGH, SecuritySeverity.CRITICAL}
+                    else "WARNING"
+                ),
+                alert_id=alert_id,
+                rule_code=signal_code.value,
+                severity=policy.severity.value,
+                signal_count=alert.signal_count,
+                window_seconds=policy.window_seconds,
+                correlation_id=alert.correlation_digest,
+                delivery_status=SecurityAlertDeliveryStatus.PENDING.value,
+            )
         return alert_id
     except Exception:
         # SEC-015 is observational. Alerting failure must not rewrite the canonical API result.
@@ -471,77 +497,281 @@ def _delivery_backoff(attempt: int) -> int:
     )
 
 
+@dataclass(frozen=True)
+class SecurityAlertDeliveryAttempt:
+    alert_id: UUID
+    token: UUID
+    revision: int
+    attempt_number: int
+    rule_code: str
+    severity: str
+    correlation_digest: str
+    scope: str
+    signal_count: int
+    window_seconds: int
+    created_at: datetime
+    provider: str
+    requires_human: bool
+
+
+def begin_security_alert_delivery_attempt(
+    bind: Engine,
+    *,
+    alert_id: UUID,
+    now: datetime | None = None,
+) -> SecurityAlertDeliveryAttempt | None:
+    observed_at = _as_utc(now or datetime.now(UTC))
+    settings = get_settings()
+    with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
+        alert = db.scalar(
+            select(SecurityAlert)
+            .where(SecurityAlert.id == alert_id)
+            .with_for_update()
+        )
+        if alert is None:
+            db.rollback()
+            return None
+        if alert.delivery_status in {
+            SecurityAlertDeliveryStatus.DELIVERED.value,
+            SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value,
+        }:
+            db.rollback()
+            return None
+        if (
+            alert.next_retry_at is not None
+            and _as_utc(alert.next_retry_at) > observed_at
+        ):
+            db.rollback()
+            return None
+        if alert.delivery_attempts >= MAX_DELIVERY_ATTEMPTS:
+            alert.delivery_status = SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
+            alert.delivery_error_code = "SECURITY_ALERT_MAX_ATTEMPTS_EXHAUSTED"
+            alert.delivery_attempt_token = None
+            alert.next_retry_at = None
+            alert.updated_at = observed_at
+            db.commit()
+            return None
+
+        requires_human = alert.severity in {
+            SecuritySeverity.HIGH.value,
+            SecuritySeverity.CRITICAL.value,
+        }
+        provider = (
+            settings.security_alert_human_provider
+            if requires_human
+            else "structured_log"
+        )
+        token = uuid4()
+        alert.delivery_attempts += 1
+        alert.delivery_revision += 1
+        alert.delivery_attempt_token = token
+        alert.delivery_provider = provider
+        alert.delivery_error_code = None
+        alert.updated_at = observed_at
+        attempt = SecurityAlertDeliveryAttempt(
+            alert_id=alert.id,
+            token=token,
+            revision=alert.delivery_revision,
+            attempt_number=alert.delivery_attempts,
+            rule_code=alert.rule_code,
+            severity=alert.severity,
+            correlation_digest=alert.correlation_digest,
+            scope=alert.scope,
+            signal_count=alert.signal_count,
+            window_seconds=alert.window_seconds,
+            created_at=alert.created_at,
+            provider=provider,
+            requires_human=requires_human,
+        )
+        db.commit()
+        return attempt
+
+
+def finalize_security_alert_delivery_attempt(
+    bind: Engine,
+    *,
+    attempt: SecurityAlertDeliveryAttempt,
+    result: HumanDeliveryResult,
+    now: datetime | None = None,
+) -> bool:
+    observed_at = _as_utc(now or datetime.now(UTC))
+    with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
+        alert = db.scalar(
+            select(SecurityAlert)
+            .where(SecurityAlert.id == attempt.alert_id)
+            .with_for_update()
+        )
+        if (
+            alert is None
+            or alert.delivery_revision != attempt.revision
+            or alert.delivery_attempt_token != attempt.token
+            or alert.delivery_status
+            in {
+                SecurityAlertDeliveryStatus.DELIVERED.value,
+                SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value,
+            }
+        ):
+            db.rollback()
+            return False
+
+        alert.delivery_attempt_token = None
+        alert.delivery_error_code = result.error_code
+        if result.delivered:
+            alert.delivery_status = SecurityAlertDeliveryStatus.DELIVERED.value
+            alert.delivered_at = observed_at
+            alert.next_retry_at = None
+        elif not result.retryable or alert.delivery_attempts >= MAX_DELIVERY_ATTEMPTS:
+            alert.delivery_status = SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
+            alert.next_retry_at = None
+        else:
+            delay = _delivery_backoff(alert.delivery_attempts)
+            if result.retry_after_seconds is not None:
+                delay = min(
+                    DELIVERY_BACKOFF_MAX_SECONDS,
+                    max(delay, result.retry_after_seconds),
+                )
+            alert.delivery_status = SecurityAlertDeliveryStatus.RETRYABLE_FAILURE.value
+            alert.next_retry_at = observed_at + timedelta(seconds=delay)
+        alert.updated_at = observed_at
+        db.commit()
+        return True
+
+
+def _human_message(attempt: SecurityAlertDeliveryAttempt) -> SecurityAlertHumanMessage:
+    return SecurityAlertHumanMessage(
+        alert_id=str(attempt.alert_id),
+        severity=attempt.severity,
+        rule_code=attempt.rule_code,
+        scope=attempt.scope,
+        signal_count=attempt.signal_count,
+        window_seconds=attempt.window_seconds,
+        created_at=attempt.created_at,
+        correlation_digest=attempt.correlation_digest,
+    )
+
+
+def _emit_human_delivery_event(
+    event: str,
+    *,
+    attempt: SecurityAlertDeliveryAttempt,
+    result: HumanDeliveryResult | None = None,
+) -> None:
+    emit_operational_event(
+        event=event,
+        level=(
+            "ERROR"
+            if attempt.severity
+            in {SecuritySeverity.HIGH.value, SecuritySeverity.CRITICAL.value}
+            else "WARNING"
+        ),
+        provider=attempt.provider,
+        alert_id=str(attempt.alert_id),
+        rule_code=attempt.rule_code,
+        severity=attempt.severity,
+        signal_count=attempt.signal_count,
+        window_seconds=attempt.window_seconds,
+        correlation_id=attempt.correlation_digest,
+        delivery_status=(
+            SecurityAlertDeliveryStatus.DELIVERED.value
+            if result is not None and result.delivered
+            else None
+        ),
+        retryable=None if result is None else result.retryable,
+        error_code=None if result is None else result.error_code,
+        attempt_number=attempt.attempt_number,
+        retry_after_seconds=(
+            None if result is None else result.retry_after_seconds
+        ),
+    )
+
+
 def deliver_security_alert(
     bind: Engine,
     *,
     alert_id: str,
     now: datetime | None = None,
     authority_check: Callable[[], None] | None = None,
+    human_adapter: SecurityAlertHumanDeliveryAdapter | None = None,
+    worker_execution: bool = False,
 ) -> bool:
     observed_at = _as_utc(now or datetime.now(UTC))
-    try:
+    if not worker_execution and human_adapter is None:
         with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
-            alert = db.scalar(
-                select(SecurityAlert)
-                .where(SecurityAlert.id == UUID(alert_id))
-                .with_for_update()
-            )
-            if alert is None:
-                return False
-            if alert.delivery_status in {
-                SecurityAlertDeliveryStatus.DELIVERED.value,
-                SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value,
-            }:
-                return alert.delivery_status == SecurityAlertDeliveryStatus.DELIVERED.value
-            if alert.delivery_attempts >= MAX_DELIVERY_ATTEMPTS:
-                alert.delivery_status = SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
-                alert.next_retry_at = None
-                alert.updated_at = observed_at
-                db.commit()
-                return False
-            if (
-                alert.next_retry_at is not None
-                and _as_utc(alert.next_retry_at) > observed_at
-            ):
-                return False
-
-            alert.delivery_attempts += 1
-            if authority_check is not None:
-                authority_check()
-            delivered = emit_security_alert_event_checked(
-                level="ERROR"
-                if alert.severity in {SecuritySeverity.HIGH.value, SecuritySeverity.CRITICAL.value}
-                else "WARNING",
-                alert_id=str(alert.id),
-                rule_code=alert.rule_code,
-                severity=alert.severity,
-                signal_count=alert.signal_count,
-                window_seconds=alert.window_seconds,
-                correlation_id=alert.correlation_digest,
-                delivery_status=SecurityAlertDeliveryStatus.DELIVERED.value,
-            )
-            if authority_check is not None:
-                authority_check()
-            if delivered:
-                alert.delivery_status = SecurityAlertDeliveryStatus.DELIVERED.value
-                alert.delivered_at = observed_at
-                alert.next_retry_at = None
-            elif alert.delivery_attempts >= MAX_DELIVERY_ATTEMPTS:
-                alert.delivery_status = SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
-                alert.next_retry_at = None
-            else:
-                alert.delivery_status = SecurityAlertDeliveryStatus.RETRYABLE_FAILURE.value
-                alert.next_retry_at = observed_at + timedelta(
-                    seconds=_delivery_backoff(alert.delivery_attempts)
+            severity = db.scalar(
+                select(SecurityAlert.severity).where(
+                    SecurityAlert.id == UUID(alert_id)
                 )
-            alert.updated_at = observed_at
-            db.commit()
-            return bool(delivered)
-    except Exception:
-        if authority_check is not None:
-            raise
+            )
+            db.rollback()
+        if severity in {
+            SecuritySeverity.HIGH.value,
+            SecuritySeverity.CRITICAL.value,
+        }:
+            return False
+
+    attempt = begin_security_alert_delivery_attempt(
+        bind,
+        alert_id=UUID(alert_id),
+        now=observed_at,
+    )
+    if attempt is None:
         return False
 
+    if authority_check is not None:
+        authority_check()
+
+    log_ok = emit_security_alert_event_checked(
+        level=(
+            "ERROR"
+            if attempt.severity
+            in {SecuritySeverity.HIGH.value, SecuritySeverity.CRITICAL.value}
+            else "WARNING"
+        ),
+        alert_id=str(attempt.alert_id),
+        rule_code=attempt.rule_code,
+        severity=attempt.severity,
+        signal_count=attempt.signal_count,
+        window_seconds=attempt.window_seconds,
+        correlation_id=attempt.correlation_digest,
+        delivery_status=SecurityAlertDeliveryStatus.PENDING.value,
+    )
+
+    if attempt.requires_human:
+        _emit_human_delivery_event(
+            "security.alert.human_delivery.attempted",
+            attempt=attempt,
+        )
+        if authority_check is not None:
+            authority_check()
+        adapter = human_adapter or get_security_alert_human_adapter()
+        result = adapter.deliver(_human_message(attempt))
+        if authority_check is not None:
+            authority_check()
+    else:
+        result = HumanDeliveryResult(
+            delivered=bool(log_ok),
+            retryable=not bool(log_ok),
+            error_code=None if log_ok else "SECURITY_ALERT_LOG_DELIVERY_FAILED",
+        )
+
+    finalized = finalize_security_alert_delivery_attempt(
+        bind,
+        attempt=attempt,
+        result=result,
+        now=observed_at,
+    )
+    if not finalized:
+        return False
+
+    if attempt.requires_human:
+        if result.delivered:
+            event = "security.alert.human_delivery.delivered"
+        elif result.retryable:
+            event = "security.alert.human_delivery.retryable_failure"
+        else:
+            event = "security.alert.human_delivery.terminal_failure"
+        _emit_human_delivery_event(event, attempt=attempt, result=result)
+    return result.delivered
 
 def retry_due_security_alerts(
     bind: Engine,

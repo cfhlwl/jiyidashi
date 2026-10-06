@@ -573,6 +573,11 @@ def test_production_custom_storage_endpoint_requires_https():
         "auth_public_base_url": "https://app.example.test/auth",
         "auth_smtp_host": "smtp.example.invalid",
         "auth_smtp_from": "accounts@example.test",
+        "security_alert_human_provider": "feishu",
+        "security_alert_feishu_webhook_url": (
+            "https://open.feishu.cn/open-apis/bot/v2/hook/test-not-live-token"
+        ),
+        "security_alert_feishu_secret": "test-sec017-signing-secret",
     }
     with pytest.raises(ValueError, match="HTTPS"):
         Settings(**common, storage_endpoint_url="http://storage.example.com")
