@@ -32,6 +32,37 @@ async def test_legacy_objects_array_contract_remains_client_compatible(client):
     assert body[-1]["name"] == "legacy-054"
 
 @pytest.mark.asyncio
+async def test_legacy_objects_complete_domain_is_hard_bounded_at_500(client):
+    headers, user_id = await _new_user(client, "api001-object-hard-bound")
+    with SessionLocal() as db:
+        db.add_all(
+            ObjectItem(
+                user_id=user_id,
+                name=f"bounded-{index:03d}",
+                normalized_name=f"bounded-{index:03d}",
+            )
+            for index in range(500)
+        )
+        db.commit()
+
+    response = await client.get("/v1/objects", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body, list)
+    assert len(body) == 500
+    assert body[0]["name"] == "bounded-000"
+    assert body[-1]["name"] == "bounded-499"
+
+    overflow = await client.post(
+        "/v1/objects",
+        headers=headers,
+        json={"name": "bounded-overflow"},
+    )
+    assert overflow.status_code == 409
+    assert overflow.json()["detail"] == "OBJECT_LIMIT_REACHED"
+
+
+@pytest.mark.asyncio
 async def test_objects_default_page_is_bounded_and_stable(client):
     headers, user_id = await _new_user(client, "api001-objects")
     with SessionLocal() as db:
