@@ -677,6 +677,44 @@ async def test_ocr_preprocess_permit_releases_after_decode_failure(
 
 
 @pytest.mark.asyncio
+async def test_ocr_preprocess_permit_releases_after_source_too_large(
+    client,
+    ocr_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-preprocess-too-large-release")
+    settings = _gateway_settings(
+        ai_image_max_dimension=512,
+        ai_image_max_pixels=250_000,
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.ocr_service.get_settings", lambda: settings)
+    media_id = _insert_media(
+        storage,
+        user_id=user_id,
+        data=_jpeg_bytes(1200, 1200),
+    )
+
+    response = await client.post(f"/v1/media/{media_id}/ocr", headers=headers)
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == (
+        "OCR_ANALYSIS_AI_IMAGE_SOURCE_DIMENSIONS_UNSAFE"
+    )
+    assert provider.image_requests == []
+
+    released_slot = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    assert release_permit(engine, permit=released_slot, settings=settings) is True
+
+
+@pytest.mark.asyncio
 async def test_ocr_provider_concurrency_saturation_is_429_with_retry_after(
     client,
     ocr_dependencies,
