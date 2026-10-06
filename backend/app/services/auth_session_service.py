@@ -370,5 +370,6 @@ def list_active_sessions(db: Session, *, user_id: UUID) -> list[AuthSession]:
                 AuthSession.expires_at > now,
             )
             .order_by(AuthSession.last_used_at.desc(), AuthSession.id.desc())
+            .limit(100)
         )
     )
