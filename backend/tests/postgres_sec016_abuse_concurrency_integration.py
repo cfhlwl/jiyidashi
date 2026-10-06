@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 from dataclasses import replace
@@ -26,7 +27,9 @@ from app.services.concurrency_guard import (
     claim_argon2_permit,
     claim_image_preprocess_permit,
     claim_provider_permit,
+    maintain_permit_lease,
     release_permit,
+    renew_permit,
 )
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -257,6 +260,108 @@ def _prove_image_preprocess_cross_worker_budget(
         assert release_permit(engine, permit=occupied, settings=settings_one) is True
 
 
+def _preprocess_settings(*, global_limit: int, user_limit: int, lease_seconds: int):
+    return get_settings().model_copy(
+        update={
+            "ai_image_preprocess_global_concurrency": global_limit,
+            "ai_image_preprocess_user_concurrency": user_limit,
+            "ai_image_preprocess_permit_lease_seconds": lease_seconds,
+        }
+    )
+
+
+def _prove_preprocess_renewal_token_binding(user_a: UUID, user_b: UUID) -> None:
+    settings = _preprocess_settings(global_limit=1, user_limit=1, lease_seconds=5)
+    first = claim_image_preprocess_permit(
+        engine,
+        user_id=user_a,
+        settings=settings,
+    )
+    forged = replace(first, token=first.token + "-forged")
+    assert (
+        renew_permit(
+            engine,
+            permit=forged,
+            lease_seconds=5,
+            settings=settings,
+        )
+        is None
+    )
+
+    with SessionLocal() as db:
+        row = db.get(WorkPermit, first.permit_id)
+        assert row is not None
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+    assert (
+        renew_permit(
+            engine,
+            permit=first,
+            lease_seconds=5,
+            settings=settings,
+        )
+        is None
+    )
+    assert release_permit(engine, permit=first, settings=settings) is True
+
+    replacement = claim_image_preprocess_permit(
+        engine,
+        user_id=user_b,
+        settings=settings,
+    )
+    assert (
+        renew_permit(
+            engine,
+            permit=first,
+            lease_seconds=5,
+            settings=settings,
+        )
+        is None
+    )
+    assert release_permit(engine, permit=replacement, settings=settings) is True
+
+
+async def _prove_preprocess_heartbeat_lifecycle(
+    user_a: UUID,
+    user_b: UUID,
+) -> None:
+    settings = _preprocess_settings(global_limit=1, user_limit=1, lease_seconds=2)
+    first = await asyncio.to_thread(
+        claim_image_preprocess_permit,
+        engine,
+        user_id=user_a,
+        settings=settings,
+    )
+    async with maintain_permit_lease(
+        engine,
+        permit=first,
+        lease_seconds=2,
+        settings=settings,
+    ):
+        # Hold real work beyond the original lease. Heartbeat renewals must keep
+        # this slot authoritative across multiple PostgreSQL transactions.
+        await asyncio.sleep(2.6)
+        try:
+            await asyncio.to_thread(
+                claim_image_preprocess_permit,
+                engine,
+                user_id=user_b,
+                settings=settings,
+            )
+        except ConcurrencyRejected as exc:
+            assert exc.code == "AI_IMAGE_PREPROCESS_SATURATED"
+        else:
+            raise AssertionError("heartbeat lease allowed preprocessing oversubscription")
+
+    second = await asyncio.to_thread(
+        claim_image_preprocess_permit,
+        engine,
+        user_id=user_b,
+        settings=settings,
+    )
+    assert release_permit(engine, permit=second, settings=settings) is True
+
+
 def _prove_stale_recovery_and_token_binding(user_id: UUID) -> None:
     settings = _provider_settings(global_limit=1, user_limit=1)
     first = claim_provider_permit(
@@ -455,6 +560,8 @@ def main() -> None:
     try:
         _prove_provider_races(user_a, user_b)
         _prove_image_preprocess_cross_worker_budget(user_a, user_b)
+        _prove_preprocess_renewal_token_binding(user_a, user_b)
+        asyncio.run(_prove_preprocess_heartbeat_lifecycle(user_a, user_b))
         _prove_stale_recovery_and_token_binding(user_a)
         _prove_live_permit_survives_owner_delete(user_a)
         user_a = _seed_user("a-after-delete")
