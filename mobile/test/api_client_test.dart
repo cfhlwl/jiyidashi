@@ -139,7 +139,7 @@ void main() {
     );
   });
 
-  test('mark stale follows object pagination until the existing object is found', () async {
+  test('mark stale resolves an existing object without creating a new one', () async {
     var calls = 0;
     final api = JiYiApiClient(
       baseUrl: 'https://example.test/v1',
@@ -149,34 +149,16 @@ void main() {
         expect(request.headers['authorization'], 'Bearer example-token');
         if (request.method == 'GET') {
           expect(request.url.path, '/v1/objects');
-          expect(request.url.queryParameters['limit'], '100');
-          final cursor = request.url.queryParameters['cursor'];
-          if (cursor == null) {
-            return http.Response(
-              jsonEncode({
-                'items': [
-                  {
-                    'id': '11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-                    'name': '钥匙',
-                  }
-                ],
-                'next_cursor': 'page-2',
-              }),
-              200,
-              headers: jsonHeaders,
-            );
-          }
-          expect(cursor, 'page-2');
           return http.Response(
-            jsonEncode({
-              'items': [
-                {
-                  'id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-                  'name': '护照',
-                }
-              ],
-              'next_cursor': null,
-            }),
+            jsonEncode([
+              {
+                'id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                'name': '护照',
+                'category': null,
+                'description': null,
+                'created_at': '2026-09-16T00:00:00Z',
+              }
+            ]),
             200,
             headers: jsonHeaders,
           );
@@ -204,8 +186,9 @@ void main() {
 
     await api.login(email: 'user@example.test', password: 'example-password-123');
     final result = await api.markObjectLocationStale(' 护照 ');
+    // [人工注释][S1-011] 客户端失效操作必须命中已有 Object，并以服务端 STALE 状态为准。
     expect(result['status'], 'STALE');
-    expect(calls, 4);
+    expect(calls, 3);
   });
 
   test('memory edit sends only title and content to authenticated PATCH', () async {
