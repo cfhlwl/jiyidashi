@@ -32,6 +32,7 @@ from app.notification_schemas import (
     DevicePushRegistrationRequest,
 )
 from app.services import notification_service
+from app.services.account_deletion_service import delete_current_account
 from app.services.admin_security import hash_admin_password
 from app.services.export_service import generate_export_file, remove_temp_file
 from app.services.notification_provider import (
@@ -41,6 +42,7 @@ from app.services.notification_provider import (
 from app.services.notification_service import (
     begin_notification_delivery_attempt,
     campaign_confirmation_token,
+    cancel_notification_campaign,
     create_notification_campaign,
     eligible_device_counts,
     enqueue_due_notification_campaigns,
@@ -199,7 +201,10 @@ async def _login_admin(client, role: AdminRole) -> dict[str, str]:
     return {"X-CSRF-Token": csrf}
 
 
-async def test_device_push_registration_rotation_rebind_unregister_and_redaction(client):
+async def test_device_push_registration_rotation_rebind_unregister_and_redaction(
+    client,
+    caplog,
+):
     first = await client.post(
         "/v1/auth/dev-token",
         json={"nickname": "notify-owner-one"},
@@ -324,6 +329,9 @@ async def test_device_push_registration_rotation_rebind_unregister_and_redaction
         assert row.push_enabled is False
         assert row.push_token is None
         assert row.push_token_digest is None
+
+    assert token_one not in caplog.text
+    assert token_two not in caplog.text
 
 
 def test_targeting_counts_match_eligible_devices_and_filters():
@@ -996,4 +1004,243 @@ def test_final_worker_failure_converges_fanout_campaign():
         assert saved.status == NotificationCampaignStatus.FAILED.value
         assert saved.error_code == "UNEXPECTED_MAINTENANCE_FAILURE"
         assert saved.revision == campaign.revision + 1
+
+class _EmptyAccountDeleteStorage:
+    def iter_object_keys(self, prefix: str):
+        del prefix
+        return iter(())
+
+    def delete_object(self, object_key: str) -> None:
+        del object_key
+
+
+def test_account_delete_removes_active_push_authority():
+    owner = _user("account-delete-push")
+    device = _device(
+        owner.id,
+        client_uuid=f"account-delete-push-{uuid4().hex}",
+        platform=PushPlatform.IOS,
+    )
+
+    with SessionLocal() as db:
+        result = delete_current_account(
+            db,
+            user_id=owner.id,
+            request_id=uuid4(),
+            storage=_EmptyAccountDeleteStorage(),
+            local_cleanup_ready=True,
+        )
+        assert result.completed is True
+
+    with SessionLocal() as db:
+        assert db.get(User, owner.id) is None
+        assert db.get(Device, device.id) is None
+        assert (
+            db.query(Device)
+            .filter(
+                Device.user_id == owner.id,
+                Device.push_enabled.is_(True),
+            )
+            .count()
+            == 0
+        )
+
+
+def test_audience_cutoff_excludes_device_registered_after_submit():
+    _reset_notification_jobs()
+    actor = _admin()
+    owner = _user("cutoff")
+    first = _device(
+        owner.id,
+        client_uuid=f"cutoff-before-{uuid4().hex}",
+        platform=PushPlatform.IOS,
+    )
+    campaign = _create_submitted_campaign(
+        actor=actor,
+        payload=_campaign_payload(
+            audience=NotificationAudienceType.USER_IDS,
+            user_ids=[owner.id],
+        ),
+    )
+    second = _device(
+        owner.id,
+        client_uuid=f"cutoff-after-{uuid4().hex}",
+        platform=PushPlatform.ANDROID,
+    )
+
+    with SessionLocal() as db:
+        enqueue_due_notification_campaigns(
+            db,
+            now=datetime.now(UTC),
+            limit=20,
+        )
+        db.commit()
+
+    worker = MaintenanceWorker(
+        worker_id=f"notify-cutoff-{uuid4().hex}",
+        handlers={
+            MaintenanceJobType.NOTIFICATION_FANOUT.value: handle_notification_fanout,
+            MaintenanceJobType.NOTIFICATION_DELIVERY.value: handle_notification_delivery,
+        },
+    )
+    for _ in range(8):
+        result = worker.run_once()
+        if not result.claimed:
+            break
+
+    with SessionLocal() as db:
+        deliveries = list(
+            db.scalars(
+                select(NotificationDelivery).where(
+                    NotificationDelivery.campaign_id == campaign.id
+                )
+            )
+        )
+        assert [row.device_id for row in deliveries] == [first.id]
+        assert all(row.device_id != second.id for row in deliveries)
+
+
+def test_cancel_after_partial_fanout_fences_continuation(monkeypatch):
+    _reset_notification_jobs()
+    actor = _admin()
+    owner = _user("partial-cancel")
+    for index in range(3):
+        _device(
+            owner.id,
+            client_uuid=f"partial-cancel-{index}-{uuid4().hex}",
+            platform=PushPlatform.IOS,
+        )
+
+    monkeypatch.setattr(notification_service, "FANOUT_BATCH_SIZE", 1)
+    campaign = _create_submitted_campaign(
+        actor=actor,
+        payload=_campaign_payload(
+            audience=NotificationAudienceType.USER_IDS,
+            user_ids=[owner.id],
+        ),
+    )
+    with SessionLocal() as db:
+        enqueue_due_notification_campaigns(
+            db,
+            now=datetime.now(UTC),
+            limit=20,
+        )
+        db.commit()
+
+    fanout_worker = MaintenanceWorker(
+        worker_id=f"notify-partial-cancel-{uuid4().hex}",
+        handlers={
+            MaintenanceJobType.NOTIFICATION_FANOUT.value: handle_notification_fanout,
+        },
+    )
+    assert fanout_worker.run_once().outcome == "SUCCEEDED"
+
+    with SessionLocal() as db:
+        live_actor = db.get(AdminAccount, actor.id)
+        saved = db.get(NotificationCampaign, campaign.id)
+        assert live_actor is not None and saved is not None
+        assert saved.status == NotificationCampaignStatus.FANOUT.value
+        cancel_notification_campaign(
+            db,
+            actor=live_actor,
+            campaign_id=saved.id,
+            expected_revision=saved.revision,
+        )
+
+    drain_worker = MaintenanceWorker(
+        worker_id=f"notify-partial-cancel-drain-{uuid4().hex}",
+        handlers={
+            MaintenanceJobType.NOTIFICATION_FANOUT.value: handle_notification_fanout,
+            MaintenanceJobType.NOTIFICATION_DELIVERY.value: handle_notification_delivery,
+        },
+    )
+    for _ in range(8):
+        result = drain_worker.run_once()
+        if not result.claimed:
+            break
+
+    with SessionLocal() as db:
+        saved = db.get(NotificationCampaign, campaign.id)
+        deliveries = list(
+            db.scalars(
+                select(NotificationDelivery).where(
+                    NotificationDelivery.campaign_id == campaign.id
+                )
+            )
+        )
+        assert saved is not None
+        assert saved.status == NotificationCampaignStatus.CANCELLED.value
+        assert len(deliveries) == 1
+        assert deliveries[0].status == NotificationDeliveryStatus.CANCELLED.value
+
+
+def test_provider_failure_isolated_from_unrelated_platform():
+    _reset_notification_jobs()
+    actor = _admin()
+    owner = _user("provider-isolation")
+    ios = _device(
+        owner.id,
+        client_uuid=f"provider-isolation-ios-{uuid4().hex}",
+        platform=PushPlatform.IOS,
+    )
+    android = _device(
+        owner.id,
+        client_uuid=f"provider-isolation-android-{uuid4().hex}",
+        platform=PushPlatform.ANDROID,
+    )
+
+    set_notification_provider_for_testing(
+        platform=PushPlatform.IOS,
+        provider=PushProvider.TEST,
+        adapter=_InvalidTokenAdapter(),
+    )
+    try:
+        campaign = _create_submitted_campaign(
+            actor=actor,
+            payload=_campaign_payload(
+                audience=NotificationAudienceType.USER_IDS,
+                user_ids=[owner.id],
+            ),
+        )
+        with SessionLocal() as db:
+            enqueue_due_notification_campaigns(
+                db,
+                now=datetime.now(UTC),
+                limit=20,
+            )
+            db.commit()
+
+        worker = MaintenanceWorker(
+            worker_id=f"notify-provider-isolation-{uuid4().hex}",
+            handlers={
+                MaintenanceJobType.NOTIFICATION_FANOUT.value: handle_notification_fanout,
+                MaintenanceJobType.NOTIFICATION_DELIVERY.value: handle_notification_delivery,
+            },
+        )
+        for _ in range(8):
+            result = worker.run_once()
+            if not result.claimed:
+                break
+
+        with SessionLocal() as db:
+            rows = {
+                row.device_id: row
+                for row in db.scalars(
+                    select(NotificationDelivery).where(
+                        NotificationDelivery.campaign_id == campaign.id
+                    )
+                )
+            }
+            assert rows[ios.id].status == NotificationDeliveryStatus.TERMINAL_FAILURE.value
+            assert rows[android.id].status == NotificationDeliveryStatus.ACCEPTED.value
+            android_device = db.get(Device, android.id)
+            assert android_device is not None
+            assert android_device.push_enabled is True
+            assert android_device.push_token is not None
+    finally:
+        set_notification_provider_for_testing(
+            platform=PushPlatform.IOS,
+            provider=PushProvider.TEST,
+            adapter=None,
+        )
 
