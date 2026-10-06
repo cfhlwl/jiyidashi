@@ -75,6 +75,7 @@ class SecurityAlert(Base):
         UniqueConstraint("dedupe_key", name="uq_security_alerts_dedupe_key"),
         CheckConstraint("signal_count > 0", name="ck_security_alerts_signal_count"),
         CheckConstraint("delivery_attempts >= 0", name="ck_security_alerts_delivery_attempts"),
+        CheckConstraint("delivery_revision >= 0", name="ck_security_alerts_delivery_revision"),
         Index(
             "ix_security_alerts_retry_due",
             "delivery_status",
@@ -97,6 +98,10 @@ class SecurityAlert(Base):
         index=True,
     )
     delivery_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    delivery_revision: Mapped[int] = mapped_column(Integer, default=0)
+    delivery_attempt_token: Mapped[UUID | None] = mapped_column(nullable=True)
+    delivery_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    delivery_error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
