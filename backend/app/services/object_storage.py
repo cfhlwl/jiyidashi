@@ -50,6 +50,13 @@ class ObjectStorage(Protocol):
 
     def read_object(self, object_key: str, max_bytes: int) -> bytes: ...
 
+    def upload_file(
+        self,
+        local_path: str,
+        object_key: str,
+        content_type: str,
+    ) -> StoredObject: ...
+
     def promote_object(self, source_key: str, destination_key: str) -> None: ...
 
     def delete_object(self, object_key: str) -> None: ...
@@ -79,6 +86,15 @@ class DisabledObjectStorage:
         raise AssertionError("unreachable")
 
     def read_object(self, object_key: str, max_bytes: int) -> bytes:
+        self._unavailable()
+        raise AssertionError("unreachable")
+
+    def upload_file(
+        self,
+        local_path: str,
+        object_key: str,
+        content_type: str,
+    ) -> StoredObject:
         self._unavailable()
         raise AssertionError("unreachable")
 
@@ -256,6 +272,26 @@ class S3ObjectStorage:
             self._emit_failure("read_object", "STORAGE_BOUNDED_READ_EXCEEDED")
             raise ObjectStorageError("object exceeds bounded read")
         return data
+
+    def upload_file(
+        self,
+        local_path: str,
+        object_key: str,
+        content_type: str,
+    ) -> StoredObject:
+        # API-001: boto3 managed upload streams from the bounded local artifact;
+        # the backend must never re-read a complete export into one Python bytes object.
+        try:
+            self._client.upload_file(
+                local_path,
+                self._settings.storage_bucket,
+                object_key,
+                ExtraArgs={"ContentType": content_type},
+            )
+        except Exception as exc:
+            self._emit_failure("upload_file", "STORAGE_UPLOAD_FILE_FAILED")
+            raise ObjectStorageError("failed to upload file") from exc
+        return self.stat_object(object_key)
 
     def promote_object(self, source_key: str, destination_key: str) -> None:
         # [人工注释][S1-006] 晋升由服务端凭证执行，客户端拿不到 final key 的写权限。
