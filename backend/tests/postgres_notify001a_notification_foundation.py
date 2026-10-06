@@ -12,11 +12,7 @@ from sqlalchemy import delete, func, select, text
 
 from app.admin_models import AdminAccount, AdminRole
 from app.core.db import SessionLocal, engine
-from app.maintenance_job_models import (
-    MaintenanceJob,
-    MaintenanceJobStatus,
-    MaintenanceJobType,
-)
+from app.maintenance_job_models import MaintenanceJob, MaintenanceJobType
 from app.models import Device, User
 from app.notification_models import (
     NotificationAudienceType,
@@ -32,6 +28,7 @@ from app.notification_schemas import (
     AdminNotificationCampaignSubmit,
     DevicePushRegistrationRequest,
 )
+from app.services import notification_service
 from app.services.admin_security import hash_admin_password
 from app.services.maintenance_jobs import (
     claim_next_maintenance_job,
@@ -49,7 +46,6 @@ from app.services.notification_service import (
     register_device_push,
     submit_notification_campaign,
 )
-from app.services import notification_service
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
