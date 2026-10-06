@@ -23,6 +23,11 @@ def upgrade() -> None:
     if bind.dialect.name != "postgresql":
         return
 
+    # Establish the write gate before inspecting legacy cardinality. PostgreSQL
+    # holds this lock until the migration transaction commits, so an old API process
+    # cannot insert a 501st row between the preflight count and trigger installation.
+    op.execute("LOCK TABLE objects IN SHARE ROW EXCLUSIVE MODE")
+
     # Existing production data must already satisfy the business hard bound before
     # the invariant is installed. Do not silently truncate or delete owner data.
     op.execute(
