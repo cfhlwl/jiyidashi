@@ -74,17 +74,16 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
   JiYiStatusKind voiceMessageKind = JiYiStatusKind.info;
   ElderVoiceCaptureState elderVoiceState = ElderVoiceCaptureState.idle;
 
-  CaptureMediaDevice get _device =>
-      _deviceInstance ??=
-          widget.mediaDevice ??
-          widget.mediaDeviceFactory?.call() ??
-          PlatformCaptureMediaDevice();
-  TrustedMediaCaptureService get _service =>
-      _serviceInstance ??= widget.service ??
-          TrustedMediaCaptureService(
-            widget.api,
-            localMediaCache: widget.mediaCache ?? LocalMediaCache(),
-          );
+  CaptureMediaDevice get _device => _deviceInstance ??=
+      widget.mediaDevice ??
+      widget.mediaDeviceFactory?.call() ??
+      PlatformCaptureMediaDevice();
+  TrustedMediaCaptureService get _service => _serviceInstance ??=
+      widget.service ??
+      TrustedMediaCaptureService(
+        widget.api,
+        localMediaCache: widget.mediaCache ?? LocalMediaCache(),
+      );
   bool get _mediaBusy => photoBusy || voiceBusy || voiceRecording;
 
   @override
@@ -335,7 +334,8 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
     });
     try {
       final allowed = await device.startVoiceRecording();
-      final invalidated = !mounted ||
+      final invalidated =
+          !mounted ||
           !_lifecycleAllowsRecording ||
           sessionEpoch != _voiceSessionEpoch;
       if (invalidated) {
@@ -430,7 +430,8 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
     setState(() => voiceBusy = true);
     try {
       final clip = await device.stopVoiceRecording();
-      final invalidated = !mounted ||
+      final invalidated =
+          !mounted ||
           !_lifecycleAllowsRecording ||
           sessionEpoch != _voiceSessionEpoch;
       if (invalidated) {
@@ -455,8 +456,9 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
             ? ElderVoiceCaptureState.failed
             : ElderVoiceCaptureState.recorded;
         voiceSavedPendingCleanup = false;
-        voiceMessageKind =
-            clip == null ? JiYiStatusKind.error : JiYiStatusKind.info;
+        voiceMessageKind = clip == null
+            ? JiYiStatusKind.error
+            : JiYiStatusKind.info;
         voiceMessage = clip == null
             ? '没有得到可提交的录音，请重新录制。'
             : '录音已暂存在本机，成功保存前不会成为记忆。';
@@ -505,10 +507,14 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
           if (!mounted) return;
           setState(() {
             elderVoiceState = switch (phase) {
-              MediaSubmissionPhase.uploading => ElderVoiceCaptureState.uploading,
-              MediaSubmissionPhase.verifying => ElderVoiceCaptureState.verifying,
-              MediaSubmissionPhase.transcribing => ElderVoiceCaptureState.transcribing,
-              MediaSubmissionPhase.saving => ElderVoiceCaptureState.transcribing,
+              MediaSubmissionPhase.uploading =>
+                ElderVoiceCaptureState.uploading,
+              MediaSubmissionPhase.verifying =>
+                ElderVoiceCaptureState.verifying,
+              MediaSubmissionPhase.transcribing =>
+                ElderVoiceCaptureState.transcribing,
+              MediaSubmissionPhase.saving =>
+                ElderVoiceCaptureState.transcribing,
             };
             voiceMessageKind = JiYiStatusKind.info;
             voiceMessage = _voicePhaseText(phase);
@@ -584,15 +590,15 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
   }
 
   String get _elderVoiceStateText => switch (elderVoiceState) {
-        ElderVoiceCaptureState.idle => '准备好了，点“开始说”',
-        ElderVoiceCaptureState.recording => '正在听你说',
-        ElderVoiceCaptureState.recorded => '已经录好了',
-        ElderVoiceCaptureState.uploading => '正在上传',
-        ElderVoiceCaptureState.verifying => '正在验证录音',
-        ElderVoiceCaptureState.transcribing => '正在转成文字并保存',
-        ElderVoiceCaptureState.saved => '已经记住了',
-        ElderVoiceCaptureState.failed => '这次没有保存成功',
-      };
+    ElderVoiceCaptureState.idle => '准备好了，点“开始说”',
+    ElderVoiceCaptureState.recording => '正在听你说',
+    ElderVoiceCaptureState.recorded => '已经录好了',
+    ElderVoiceCaptureState.uploading => '正在上传',
+    ElderVoiceCaptureState.verifying => '正在验证录音',
+    ElderVoiceCaptureState.transcribing => '正在转成文字并保存',
+    ElderVoiceCaptureState.saved => '已经记住了',
+    ElderVoiceCaptureState.failed => '这次没有保存成功',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -602,7 +608,10 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
       children: [
         if (widget.elderMode) ...[
           JiYiSectionCard(
-            leading: Icon(Icons.mic_none_outlined, color: theme.colorScheme.primary),
+            leading: Icon(
+              Icons.mic_none_outlined,
+              color: theme.colorScheme.primary,
+            ),
             title: '帮我记一下',
             subtitle: '你主动开始说，迹忆才会录音。说完后还要由你确认保存。',
             child: Column(
@@ -618,20 +627,23 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
                   ),
                 ),
                 const SizedBox(height: JiYiSpacing.md),
-                if (!voiceRecording && voice == null)
-                  FilledButton.icon(
-                    key: const ValueKey('elder-voice-start'),
-                    onPressed: _mediaBusy ? null : _startVoiceRecording,
-                    icon: const Icon(Icons.mic_none_outlined),
-                    label: const Text('开始说'),
-                  ),
-                if (voiceRecording)
-                  FilledButton.icon(
-                    key: const ValueKey('elder-voice-stop'),
-                    onPressed: voiceBusy ? null : _stopVoiceRecording,
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    label: const Text('说完了'),
-                  ),
+                _VoiceRecorderHero(
+                  gestureKey: voice == null
+                      ? ValueKey(
+                          voiceRecording
+                              ? 'elder-voice-stop'
+                              : 'elder-voice-start',
+                        )
+                      : null,
+                  recording: voiceRecording,
+                  enabled:
+                      !photoBusy &&
+                      !voiceBusy &&
+                      (voice == null || voiceRecording),
+                  onStart: _startVoiceRecording,
+                  onStop: _stopVoiceRecording,
+                ),
+                const SizedBox(height: JiYiSpacing.md),
                 if (voice != null && !voiceSavedPendingCleanup) ...[
                   FilledButton.icon(
                     key: const ValueKey('elder-voice-submit'),
@@ -663,7 +675,10 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
           const SizedBox(height: JiYiSpacing.md),
         ],
         JiYiSectionCard(
-          leading: Icon(Icons.photo_camera_outlined, color: theme.colorScheme.primary),
+          leading: Icon(
+            Icons.photo_camera_outlined,
+            color: theme.colorScheme.primary,
+          ),
           title: '图片记一下',
           subtitle: '只处理你主动选择或用相机记录的图片；不会在后台处理相册。',
           child: Column(
@@ -674,7 +689,9 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
                   Expanded(
                     child: OutlinedButton.icon(
                       key: const ValueKey('capture-photo-camera'),
-                      onPressed: _mediaBusy ? null : () => _pickPhoto(fromCamera: true),
+                      onPressed: _mediaBusy
+                          ? null
+                          : () => _pickPhoto(fromCamera: true),
                       icon: const Icon(Icons.photo_camera_outlined),
                       label: const Text('相机'),
                     ),
@@ -683,7 +700,9 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
                   Expanded(
                     child: OutlinedButton.icon(
                       key: const ValueKey('capture-photo-gallery'),
-                      onPressed: _mediaBusy ? null : () => _pickPhoto(fromCamera: false),
+                      onPressed: _mediaBusy
+                          ? null
+                          : () => _pickPhoto(fromCamera: false),
                       icon: const Icon(Icons.photo_library_outlined),
                       label: const Text('从相册选择'),
                     ),
@@ -734,7 +753,10 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
               ],
               if (photoMessage != null) ...[
                 const SizedBox(height: JiYiSpacing.sm),
-                JiYiStatusBanner(kind: photoMessageKind, message: photoMessage!),
+                JiYiStatusBanner(
+                  kind: photoMessageKind,
+                  message: photoMessage!,
+                ),
               ],
             ],
           ),
@@ -742,68 +764,204 @@ class _UnifiedMediaCaptureSectionState extends State<UnifiedMediaCaptureSection>
         const SizedBox(height: JiYiSpacing.md),
         if (!widget.elderMode)
           JiYiSectionCard(
-          leading: Icon(Icons.mic_none_outlined, color: theme.colorScheme.primary),
-          title: '录一句',
-          subtitle: '只在你主动操作时录音，最长 60 秒；录音完成并验证后才会保存。',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (voiceRecording)
-                FilledButton.icon(
-                  key: const ValueKey('capture-voice-stop'),
-                  onPressed: voiceBusy ? null : _stopVoiceRecording,
-                  icon: const Icon(Icons.stop_circle_outlined),
-                  label: const Text('停止录音'),
-                )
-              else if (voice == null)
-                FilledButton.tonalIcon(
-                  key: const ValueKey('capture-voice-start'),
-                  onPressed: _mediaBusy ? null : _startVoiceRecording,
-                  icon: const Icon(Icons.mic_none_outlined),
-                  label: const Text('开始录音'),
+            leading: Icon(
+              Icons.mic_none_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            title: '录一句',
+            subtitle: '只在你主动操作时录音，最长 60 秒；录音完成并验证后才会保存。',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _VoiceRecorderHero(
+                  gestureKey: voice == null
+                      ? ValueKey(
+                          voiceRecording
+                              ? 'capture-voice-stop'
+                              : 'capture-voice-start',
+                        )
+                      : null,
+                  recording: voiceRecording,
+                  enabled:
+                      !photoBusy &&
+                      !voiceBusy &&
+                      (voice == null || voiceRecording),
+                  onStart: _startVoiceRecording,
+                  onStop: _stopVoiceRecording,
                 ),
-              if (voice != null && !voiceSavedPendingCleanup) ...[
-                const SizedBox(height: JiYiSpacing.sm),
-                TextField(
-                  key: const ValueKey('capture-voice-title'),
-                  controller: voiceTitleController,
-                  decoration: const InputDecoration(labelText: '语音标题（可选）'),
-                ),
-                const SizedBox(height: JiYiSpacing.sm),
-                FilledButton.icon(
-                  key: const ValueKey('capture-voice-submit'),
-                  onPressed: voiceBusy ? null : _submitVoice,
-                  icon: const Icon(Icons.graphic_eq),
-                  label: Text(voiceBusy ? '正在处理…' : '上传、转写并帮我记住'),
-                ),
-                const SizedBox(height: JiYiSpacing.xs),
-                OutlinedButton.icon(
-                  key: const ValueKey('capture-voice-clear'),
-                  onPressed: voiceBusy ? null : _clearVoice,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('清除本地临时录音'),
-                ),
-              ] else if (voice != null) ...[
-                const SizedBox(height: JiYiSpacing.sm),
-                OutlinedButton.icon(
-                  key: const ValueKey('capture-voice-clear'),
-                  onPressed: voiceBusy ? null : _clearVoice,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('再次清除本地临时录音'),
-                ),
+                const SizedBox(height: JiYiSpacing.md),
+                if (voice != null && !voiceSavedPendingCleanup) ...[
+                  const SizedBox(height: JiYiSpacing.sm),
+                  TextField(
+                    key: const ValueKey('capture-voice-title'),
+                    controller: voiceTitleController,
+                    decoration: const InputDecoration(labelText: '语音标题（可选）'),
+                  ),
+                  const SizedBox(height: JiYiSpacing.sm),
+                  FilledButton.icon(
+                    key: const ValueKey('capture-voice-submit'),
+                    onPressed: voiceBusy ? null : _submitVoice,
+                    icon: const Icon(Icons.graphic_eq),
+                    label: Text(voiceBusy ? '正在处理…' : '上传、转写并帮我记住'),
+                  ),
+                  const SizedBox(height: JiYiSpacing.xs),
+                  OutlinedButton.icon(
+                    key: const ValueKey('capture-voice-clear'),
+                    onPressed: voiceBusy ? null : _clearVoice,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('清除本地临时录音'),
+                  ),
+                ] else if (voice != null) ...[
+                  const SizedBox(height: JiYiSpacing.sm),
+                  OutlinedButton.icon(
+                    key: const ValueKey('capture-voice-clear'),
+                    onPressed: voiceBusy ? null : _clearVoice,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('再次清除本地临时录音'),
+                  ),
+                ],
+                if (voiceMessage != null) ...[
+                  const SizedBox(height: JiYiSpacing.sm),
+                  JiYiStatusBanner(
+                    kind: voiceMessageKind,
+                    message: voiceMessage!,
+                  ),
+                ],
               ],
-              if (voiceMessage != null) ...[
-                const SizedBox(height: JiYiSpacing.sm),
-                JiYiStatusBanner(kind: voiceMessageKind, message: voiceMessage!),
-              ],
-            ],
+            ),
           ),
-        ),
       ],
     );
   }
 }
 
+class _VoiceRecorderHero extends StatelessWidget {
+  const _VoiceRecorderHero({
+    this.gestureKey,
+    required this.recording,
+    required this.enabled,
+    required this.onStart,
+    required this.onStop,
+  });
+
+  final Key? gestureKey;
+  final bool recording;
+  final bool enabled;
+  final VoidCallback onStart;
+  final VoidCallback onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    return Semantics(
+      button: true,
+      label: recording ? '停止录音' : '开始录音',
+      child: Column(
+        children: [
+          SizedBox(
+            height: 54,
+            child: CustomPaint(
+              painter: _VoiceWavePainter(
+                color: accent.withValues(alpha: 0.62),
+                active: recording,
+              ),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.sm),
+          GestureDetector(
+            key: gestureKey,
+            // Long press is the primary interaction: recording begins after
+            // the press is held and ends when the finger is released. A tap
+            // remains as an explicit keyboard/screen-reader fallback.
+            onTap: enabled ? (recording ? onStop : onStart) : null,
+            onLongPressStart: enabled && !recording ? (_) => onStart() : null,
+            onLongPressEnd: enabled && recording ? (_) => onStop() : null,
+            child: AnimatedContainer(
+              duration: JiYiMotion.standard,
+              width: recording ? 116 : 104,
+              height: recording ? 116 : 104,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: enabled ? accent : theme.colorScheme.outlineVariant,
+                border: Border.all(
+                  color: theme.colorScheme.primaryContainer,
+                  width: 12,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: recording ? 0.24 : 0.12),
+                    blurRadius: recording ? 22 : 14,
+                    spreadRadius: recording ? 4 : 1,
+                  ),
+                ],
+              ),
+              child: Icon(
+                recording ? Icons.stop_rounded : Icons.mic_none_rounded,
+                color: theme.colorScheme.onPrimary,
+                size: 34,
+              ),
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.sm),
+          Text(
+            recording ? '正在听你说，松开结束' : '长按说话，松开后查看整理结果',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VoiceWavePainter extends CustomPainter {
+  const _VoiceWavePainter({required this.color, required this.active});
+
+  final Color color;
+  final bool active;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    const heights = <double>[
+      10,
+      18,
+      28,
+      16,
+      34,
+      22,
+      42,
+      24,
+      36,
+      18,
+      30,
+      16,
+      26,
+      12,
+    ];
+    final gap = size.width / (heights.length + 1);
+    for (var index = 0; index < heights.length; index++) {
+      final x = gap * (index + 1);
+      final factor = active ? 1 : 0.55;
+      final half = heights[index] * factor;
+      canvas.drawLine(
+        Offset(x, size.height / 2 - half / 2),
+        Offset(x, size.height / 2 + half / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _VoiceWavePainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.active != active;
+}
 
 Future<void> _disposeMediaDeviceSilently(CaptureMediaDevice device) async {
   try {

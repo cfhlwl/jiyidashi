@@ -1881,4 +1881,25 @@ void main() {
     );
   });
 
+  testWidgets('golden: design authority Recording privacy', (tester) async {
+    final key = await _pumpSurface(
+      tester,
+      RecordingPrivacyPage(
+        api: _GoldenApi(),
+        offlineQueue: _GoldenQueue(),
+      ),
+      size: const Size(390, 1600),
+    );
+
+    expect(find.text('记录与隐私'), findsWidgets);
+    expect(find.text('记录状态'), findsOneWidget);
+    expect(find.text('自动记录'), findsOneWidget);
+    expect(find.text('数据与权限'), findsOneWidget);
+    expect(find.text('暂停所有记录'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/design_authority_recording_privacy.png'),
+    );
+  });
+
 }

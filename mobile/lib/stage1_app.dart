@@ -1414,7 +1414,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   context,
                 ).push<void>(MaterialPageRoute(builder: (_) => capturePage));
               },
-              icon: const Icon(Icons.edit_outlined),
+              icon: const Icon(Icons.add_rounded),
               label: const Text('记一下'),
             ),
       bottomNavigationBar:
@@ -1720,33 +1720,124 @@ class _TimelineMasthead extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final date = day == null ? '把已经形成的记忆和足迹按时间串起来。' : jiyiDisplayDate(day!);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '迹忆 · 回看',
-          style: theme.textTheme.labelLarge?.copyWith(
-            color: theme.colorScheme.primary,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
+    return JiYiAmbientHero(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '迹忆 · 回看',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      '时间线',
+                      style: theme.textTheme.displaySmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.9,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface.withValues(alpha: 0.82),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(JiYiSpacing.sm),
+                  child: Icon(Icons.search, color: theme.colorScheme.primary),
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: JiYiSpacing.xs),
-        Text(
-          '时间线',
-          style: theme.textTheme.displaySmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.9,
+          const SizedBox(height: JiYiSpacing.xs),
+          Text(
+            itemCount == 0 ? date : '$date · $itemCount 条已形成的记录',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
-        const SizedBox(height: JiYiSpacing.xs),
-        Text(
-          itemCount == 0 ? date : '$date · $itemCount 条已形成的记录',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          const SizedBox(height: JiYiSpacing.md),
+          const Wrap(
+            spacing: JiYiSpacing.xs,
+            runSpacing: JiYiSpacing.xs,
+            children: [
+              _TimelineModePill(
+                icon: Icons.today_outlined,
+                label: '今天',
+                active: true,
+              ),
+              _TimelineModePill(
+                icon: Icons.auto_awesome_outlined,
+                label: '按时间回看',
+                active: false,
+              ),
+            ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimelineModePill extends StatelessWidget {
+  const _TimelineModePill({
+    required this.icon,
+    required this.label,
+    required this.active,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final foreground = active
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.onSurfaceVariant;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: active
+            ? theme.colorScheme.primaryContainer
+            : theme.colorScheme.surface.withValues(alpha: 0.70),
+        borderRadius: BorderRadius.circular(JiYiRadius.pill),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: JiYiSpacing.sm,
+          vertical: JiYiSpacing.xs,
         ),
-      ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: JiYiIconSize.small, color: foreground),
+            const SizedBox(width: JiYiSpacing.xs),
+            Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2002,18 +2093,77 @@ class _TimelineEntry extends StatelessWidget {
                 ),
                 const SizedBox(width: JiYiSpacing.sm),
                 Expanded(
-                  child: JiYiSectionCard(
-                    leading: item.memoryType == 'PHOTO' && item.mediaId != null
-                        ? _photoThumbnail(context)
-                        : Icon(icon),
-                    title: title,
-                    subtitle: item.placeName != null && item.isMemory
-                        ? item.placeName
-                        : null,
-                    child: Text(
-                      message,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(JiYiRadius.large),
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(JiYiSpacing.sm),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      icon,
+                                      size: JiYiIconSize.small,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: JiYiSpacing.xs),
+                                    Expanded(
+                                      child: Text(
+                                        title,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: JiYiSpacing.xs),
+                                Text(
+                                  item.placeName != null && item.isMemory
+                                      ? item.placeName!
+                                      : message,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: JiYiSpacing.xs),
+                                Text(
+                                  message,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (item.memoryType == 'PHOTO' &&
+                              item.mediaId != null) ...[
+                            const SizedBox(width: JiYiSpacing.sm),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                JiYiRadius.control,
+                              ),
+                              child: _photoThumbnail(context),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -3408,29 +3558,37 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                 ),
               ),
               const SizedBox(height: JiYiSpacing.sm),
-              ...evidence.map((item) {
-                final e = item as Map<String, dynamic>;
-                final sourceLabel = _evidenceSourceLabel(
-                  e['source_type']?.toString(),
-                );
-                final provenance = e['provenance']?.toString();
-                // USER_EDIT 明确告诉用户当前文字来自后续手工修正，不能继续伪装成原始媒体证明。
-                final displayedSource = provenance == 'USER_EDIT'
-                    ? '$sourceLabel · 用户编辑'
-                    : sourceLabel;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
-                  child: JiYiEvidenceCard(
-                    excerpt: e['excerpt']?.toString() ?? '',
-                    source: displayedSource,
-                    evidenceType: _queryEvidenceKindLabel(
-                      e['kind']?.toString() ?? '',
-                    ),
-                    occurredAt: e['occurred_at']?.toString() ?? '时间未知',
-                    confidence: '',
-                  ),
-                );
-              }),
+              SizedBox(
+                height: 260,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: evidence.length,
+                  separatorBuilder: (_, __) =>
+                      const SizedBox(width: JiYiSpacing.sm),
+                  itemBuilder: (context, index) {
+                    final e = evidence[index] as Map<String, dynamic>;
+                    final sourceLabel = _evidenceSourceLabel(
+                      e['source_type']?.toString(),
+                    );
+                    final provenance = e['provenance']?.toString();
+                    // USER_EDIT 明确告诉用户当前文字来自后续手工修正，不能继续伪装成原始媒体证明。
+                    final displayedSource = provenance == 'USER_EDIT'
+                        ? '$sourceLabel · 用户编辑'
+                        : sourceLabel;
+                    return SizedBox(
+                      width: 276,
+                      child: _MemoryEvidenceHorizontalCard(
+                        excerpt: e['excerpt']?.toString() ?? '',
+                        source: displayedSource,
+                        evidenceType: _queryEvidenceKindLabel(
+                          e['kind']?.toString() ?? '',
+                        ),
+                        occurredAt: e['occurred_at']?.toString() ?? '时间未知',
+                      ),
+                    );
+                  },
+                ),
+              ),
             ] else if (canAnswer && footprintVisits.isEmpty) ...[
               const SizedBox(height: JiYiSpacing.md),
               // 若服务端声称可回答却没有可展示 Evidence，UI 明确暴露该异常事实，不用美化层隐藏。
@@ -3505,6 +3663,80 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _MemoryEvidenceHorizontalCard extends StatelessWidget {
+  const _MemoryEvidenceHorizontalCard({
+    required this.excerpt,
+    required this.source,
+    required this.evidenceType,
+    required this.occurredAt,
+  });
+
+  final String excerpt;
+  final String source;
+  final String evidenceType;
+  final String occurredAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.fact_check_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: JiYiSpacing.xs),
+                Text(
+                  '相关记忆',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+            Text(
+              excerpt,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyLarge?.copyWith(height: 1.4),
+            ),
+            const Spacer(),
+            Text(
+              '$source · $evidenceType',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xxs),
+            Text(
+              occurredAt,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3703,23 +3935,52 @@ class ProfilePage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               JiYiSectionCard(
-                leading: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(JiYiRadius.control),
-                  ),
-                  child: SizedBox.square(
-                    dimension: 42,
-                    child: Icon(
-                      Icons.person_outline,
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
+                padding: const EdgeInsets.all(JiYiSpacing.lg),
+                leading: _ProfileAvatar(nickname: nickname),
                 title: nickname,
-                subtitle: '当前登录账号',
+                subtitle: '你的个人记忆空间',
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Wrap(
+                      spacing: JiYiSpacing.xs,
+                      runSpacing: JiYiSpacing.xs,
+                      children: [
+                        _ProfileMetaPill(
+                          icon: Icons.mail_outline,
+                          label: email.isEmpty ? '邮箱未提供' : '邮箱已绑定',
+                        ),
+                        _ProfileMetaPill(
+                          icon: Icons.schedule_outlined,
+                          label: timezone,
+                        ),
+                        _ProfileMetaPill(
+                          icon: profile['elder_mode_enabled'] == true
+                              ? Icons.accessibility_new_outlined
+                              : Icons.auto_awesome_outlined,
+                          label: profile['elder_mode_enabled'] == true
+                              ? '长辈模式已开启'
+                              : '标准模式',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: JiYiSpacing.md),
+                    Text(
+                      '当前登录账号',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      '账号信息',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.xs),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.mail_outline),
@@ -3736,12 +3997,20 @@ class ProfilePage extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: JiYiSpacing.md),
+              _ProfileRecordGroups(
+                api: api,
+                offlineQueue: offlineQueue,
+                nativeLocationController: nativeLocationController,
+                revalidateLocationAuthority: onRevalidateLocationAuthority,
+              ),
               if (offlineQueue != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 RecordingHealthSection(
                   api: api,
                   store: offlineQueue!,
                   nativeLocationController: nativeLocationController,
+                  compact: true,
                 ),
               ],
               const SizedBox(height: JiYiSpacing.md),
@@ -3812,57 +4081,801 @@ class ProfilePage extends StatelessWidget {
   }
 }
 
+class _ProfileRecordGroups extends StatelessWidget {
+  const _ProfileRecordGroups({
+    required this.api,
+    this.offlineQueue,
+    this.nativeLocationController,
+    this.revalidateLocationAuthority,
+  });
+
+  final JiYiApiClient api;
+  final OfflineQueueStore? offlineQueue;
+  final NativeLocationController? nativeLocationController;
+  final Future<void> Function()? revalidateLocationAuthority;
+
+  Future<void> _openRecordingPrivacy(BuildContext context) async {
+    final store = offlineQueue;
+    if (store == null) {
+      await _showExplanation(
+        context,
+        title: '记录与隐私',
+        message: '当前页面没有连接本机记录队列，无法展示完整的记录状态。',
+      );
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => RecordingPrivacyPage(
+          api: api,
+          offlineQueue: store,
+          nativeLocationController: nativeLocationController,
+          revalidateLocationAuthority: revalidateLocationAuthority,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openLocation(BuildContext context) async {
+    final controller = nativeLocationController;
+    if (controller == null) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('位置记录'),
+          content: const Text('当前设备没有可用的自动位置控制器。你仍然可以通过“记一下”主动保存记录。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            JiYiSpacing.md,
+            0,
+            JiYiSpacing.md,
+            JiYiSpacing.xl,
+          ),
+          child: NativeLocationSection(
+            controller: controller,
+            revalidateAuthority:
+                revalidateLocationAuthority ?? controller.privacyStatusUnknown,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPauseControls(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            JiYiSpacing.md,
+            0,
+            JiYiSpacing.md,
+            JiYiSpacing.xl,
+          ),
+          child: _PrivacyControls(
+            api: api,
+            nativeLocationController: nativeLocationController,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showExplanation(
+    BuildContext context, {
+    required String title,
+    required String message,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final locationEnabled = nativeLocationController?.status?.automaticEnabled ?? false;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ProfileSettingsCard(
+          title: '记录与隐私',
+          subtitle: '由你决定记录什么，并随时查看状态',
+          children: [
+            _ProfileSettingsRow(
+              icon: Icons.shield_outlined,
+              iconColor: theme.colorScheme.primary,
+              title: '打开完整设置',
+              subtitle: '查看记录状态、自动记录、数据与权限',
+              onTap: () => _openRecordingPrivacy(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: JiYiSpacing.md),
+        _ProfileSettingsCard(
+          title: '自动记录',
+          subtitle: '完成授权后尽可能自动记录',
+          trailing: Switch.adaptive(
+            value: locationEnabled,
+            onChanged: (_) => _openLocation(context),
+          ),
+          children: [
+            _ProfileSettingsRow(
+              icon: Icons.location_on_outlined,
+              iconColor: theme.colorScheme.primary,
+              title: '位置记录',
+              subtitle: '管理位置记录的权限设置',
+              onTap: () => _openLocation(context),
+            ),
+            const Divider(height: 1),
+            _ProfileSettingsRow(
+              icon: Icons.directions_run_outlined,
+              iconColor: theme.colorScheme.secondary,
+              title: '活动记录',
+              subtitle: '管理活动记录的权限设置',
+              onTap: () => _showExplanation(
+                context,
+                title: '活动记录',
+                message: '活动记录会结合设备系统状态与已经授权的位置证据。当前版本不会在未经明确授权时启动新的后台采集。',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: JiYiSpacing.md),
+        _ProfileSettingsCard(
+          title: '数据与权限',
+          children: [
+            _ProfileSettingsRow(
+              icon: Icons.photo_library_outlined,
+              iconColor: context.jiyiSemanticColors.success,
+              title: '照片与语音',
+              subtitle: '管理照片与语音的使用权限',
+              onTap: () => _showExplanation(
+                context,
+                title: '照片与语音',
+                message: '照片和语音只会在你主动使用“记一下”时提交；系统权限会在对应功能首次使用时单独询问。',
+              ),
+            ),
+            const Divider(height: 1),
+            _ProfileSettingsRow(
+              icon: Icons.family_restroom_outlined,
+              iconColor: const Color(0xFFE58B1B),
+              title: '家庭共享',
+              subtitle: '与家人共享记录，管理共享范围',
+              onTap: () => _showExplanation(
+                context,
+                title: '家庭共享',
+                message: '请在“家庭”页面按成员逐项授权。加入家庭不会自动开放你的记忆、照片或位置。',
+              ),
+            ),
+            const Divider(height: 1),
+            _ProfileSettingsRow(
+              icon: Icons.download_outlined,
+              iconColor: theme.colorScheme.primary,
+              title: '导出我的数据',
+              subtitle: '数据导出入口将在服务端能力开放后启用',
+              enabled: false,
+            ),
+          ],
+        ),
+        const SizedBox(height: JiYiSpacing.md),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(JiYiRadius.card),
+            onTap: () => _openPauseControls(context),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(JiYiRadius.card),
+                border: Border.all(color: theme.colorScheme.error.withValues(alpha: 0.28)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: JiYiSpacing.md,
+                  vertical: JiYiSpacing.sm,
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.pause_circle_filled, color: theme.colorScheme.error),
+                    const SizedBox(width: JiYiSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '暂停所有记录',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: theme.colorScheme.error,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            '暂停后将不再自动记录，已保存的数据不会被删除。',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onErrorContainer,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: theme.colorScheme.error),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class RecordingPrivacyPage extends StatelessWidget {
+  const RecordingPrivacyPage({
+    super.key,
+    required this.api,
+    required this.offlineQueue,
+    this.nativeLocationController,
+    this.revalidateLocationAuthority,
+  });
+
+  final JiYiApiClient api;
+  final OfflineQueueStore offlineQueue;
+  final NativeLocationController? nativeLocationController;
+  final Future<void> Function()? revalidateLocationAuthority;
+
+  Future<void> _openLocation(BuildContext context) async {
+    final controller = nativeLocationController;
+    if (controller == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            JiYiSpacing.md,
+            0,
+            JiYiSpacing.md,
+            JiYiSpacing.xl,
+          ),
+          child: NativeLocationSection(
+            controller: controller,
+            revalidateAuthority:
+                revalidateLocationAuthority ?? controller.privacyStatusUnknown,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPauseControls(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            JiYiSpacing.md,
+            0,
+            JiYiSpacing.md,
+            JiYiSpacing.xl,
+          ),
+          child: _PrivacyControls(
+            api: api,
+            nativeLocationController: nativeLocationController,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showExplanation(
+    BuildContext context, {
+    required String title,
+    required String message,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final locationEnabled = nativeLocationController?.status?.automaticEnabled ?? false;
+    return Scaffold(
+      appBar: AppBar(
+        leading: const BackButton(),
+        centerTitle: true,
+        title: const Text('记录与隐私'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(
+          JiYiSpacing.lg,
+          JiYiSpacing.sm,
+          JiYiSpacing.lg,
+          JiYiSpacing.xl,
+        ),
+        children: [
+          Text(
+            '记录与隐私',
+            style: theme.textTheme.displaySmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.9,
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.xs),
+          Text(
+            '由你决定记录什么，并随时查看状态',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.xl),
+          RecordingHealthSection(
+            api: api,
+            store: offlineQueue,
+            nativeLocationController: nativeLocationController,
+            compact: true,
+          ),
+          const SizedBox(height: JiYiSpacing.md),
+          _ProfileSettingsCard(
+            title: '自动记录',
+            subtitle: '完成授权后尽可能自动记录',
+            trailing: Switch.adaptive(
+              value: locationEnabled,
+              onChanged: (_) => _openLocation(context),
+            ),
+            children: [
+              _ProfileSettingsRow(
+                icon: Icons.location_on_outlined,
+                iconColor: theme.colorScheme.primary,
+                title: '位置记录',
+                subtitle: '管理位置记录的权限设置',
+                onTap: nativeLocationController == null
+                    ? null
+                    : () => _openLocation(context),
+              ),
+              const Divider(height: 1),
+              _ProfileSettingsRow(
+                icon: Icons.directions_run_outlined,
+                iconColor: theme.colorScheme.secondary,
+                title: '活动记录',
+                subtitle: '管理活动记录的权限设置',
+                onTap: () => _showExplanation(
+                  context,
+                  title: '活动记录',
+                  message: '活动记录会结合设备系统状态与已经授权的位置证据。当前版本不会在未经明确授权时启动新的后台采集。',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: JiYiSpacing.md),
+          _ProfileSettingsCard(
+            title: '数据与权限',
+            children: [
+              _ProfileSettingsRow(
+                icon: Icons.photo_library_outlined,
+                iconColor: context.jiyiSemanticColors.success,
+                title: '照片与语音',
+                subtitle: '管理照片与语音的使用权限',
+                onTap: () => _showExplanation(
+                  context,
+                  title: '照片与语音',
+                  message: '照片和语音只会在你主动使用“记一下”时提交；系统权限会在对应功能首次使用时单独询问。',
+                ),
+              ),
+              const Divider(height: 1),
+              _ProfileSettingsRow(
+                icon: Icons.family_restroom_outlined,
+                iconColor: const Color(0xFFE58B1B),
+                title: '家庭共享',
+                subtitle: '与家人共享记录，管理共享范围',
+                onTap: () => _showExplanation(
+                  context,
+                  title: '家庭共享',
+                  message: '请在“家庭”页面按成员逐项授权。加入家庭不会自动开放你的记忆、照片或位置。',
+                ),
+              ),
+              const Divider(height: 1),
+              _ProfileSettingsRow(
+                icon: Icons.download_outlined,
+                iconColor: theme.colorScheme.primary,
+                title: '导出我的数据',
+                subtitle: '数据导出入口将在服务端能力开放后启用',
+                enabled: false,
+              ),
+            ],
+          ),
+          const SizedBox(height: JiYiSpacing.md),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(JiYiRadius.card),
+              onTap: () => _openPauseControls(context),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(JiYiRadius.card),
+                  border: Border.all(color: theme.colorScheme.error.withValues(alpha: 0.28)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: JiYiSpacing.md,
+                    vertical: JiYiSpacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.pause_circle_filled, color: theme.colorScheme.error),
+                      const SizedBox(width: JiYiSpacing.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '暂停所有记录',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                color: theme.colorScheme.error,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              '暂停后将不再自动记录，已保存的数据不会被删除。',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: theme.colorScheme.error),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileSettingsCard extends StatelessWidget {
+  const _ProfileSettingsCard({
+    required this.title,
+    required this.children,
+    this.subtitle,
+    this.trailing,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        boxShadow: theme.brightness == Brightness.dark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x0A14233A),
+                  blurRadius: 14,
+                  offset: Offset(0, 4),
+                ),
+              ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          JiYiSpacing.lg,
+          JiYiSpacing.md,
+          JiYiSpacing.lg,
+          JiYiSpacing.sm,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: JiYiSpacing.xxs),
+                        Text(
+                          subtitle!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (trailing != null) trailing!,
+              ],
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileSettingsRow extends StatelessWidget {
+  const _ProfileSettingsRow({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(vertical: JiYiSpacing.sm),
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(JiYiSpacing.sm),
+              child: Icon(icon, color: iconColor),
+            ),
+          ),
+          const SizedBox(width: JiYiSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: enabled ? null : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.xxs),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (enabled) Icon(Icons.chevron_right, color: theme.colorScheme.outline),
+        ],
+      ),
+    );
+    if (!enabled || onTap == null) return content;
+    return Semantics(
+      button: true,
+      label: '$title，$subtitle',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(JiYiRadius.control),
+          onTap: onTap,
+          child: content,
+        ),
+      ),
+    );
+  }
+}
+
 class _ProfileMasthead extends StatelessWidget {
   const _ProfileMasthead();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '迹忆 · 个人空间',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
+    return JiYiAmbientHero(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '迹忆 · 个人空间',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
                 ),
-              ),
-              const SizedBox(height: JiYiSpacing.xs),
-              Text(
-                '我的',
-                style: theme.textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.9,
+                const SizedBox(height: JiYiSpacing.xs),
+                Text(
+                  '我的',
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.9,
+                  ),
                 ),
-              ),
-              const SizedBox(height: JiYiSpacing.xs),
-              Text(
-                '资料、隐私与外观，都由你自己掌控。',
-                style: theme.textTheme.bodyMedium?.copyWith(
+                const SizedBox(height: JiYiSpacing.xs),
+                Text(
+                  '资料、隐私与外观，都由你自己掌控。',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface.withValues(alpha: 0.82),
+              shape: BoxShape.circle,
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(JiYiSpacing.sm),
+              child: Icon(Icons.tune_outlined, color: theme.colorScheme.primary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({required this.nickname});
+
+  final String nickname;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final initial = nickname.trim().isEmpty ? '我' : nickname.trim().characters.first;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primary,
+            theme.colorScheme.secondary,
+          ],
+        ),
+        boxShadow: theme.brightness == Brightness.dark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x1A2563EB),
+                  blurRadius: 12,
+                  offset: Offset(0, 5),
+                ),
+              ],
+      ),
+      child: SizedBox.square(
+        dimension: 52,
+        child: Center(
+          child: Text(
+            initial,
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: theme.colorScheme.onPrimary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileMetaPill extends StatelessWidget {
+  const _ProfileMetaPill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(JiYiRadius.pill),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: JiYiSpacing.sm,
+          vertical: JiYiSpacing.xs,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: JiYiIconSize.small, color: theme.colorScheme.primary),
+            const SizedBox(width: JiYiSpacing.xs),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 190),
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            shape: BoxShape.circle,
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(JiYiSpacing.sm),
-            child: Icon(Icons.tune_outlined, color: theme.colorScheme.primary),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

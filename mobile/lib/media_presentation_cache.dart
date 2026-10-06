@@ -60,7 +60,7 @@ class LocalMediaCache {
     File? candidate;
     if (cacheVersion != null) {
       final version = _safeVersion(cacheVersion);
-      candidate = File('${directory.path}/${_fileName(media, version)}');
+      candidate = File(_joinPath(directory.path, _fileName(media, version)));
     } else {
       final prefix = '${media.toLowerCase()}_';
       final files = <File>[];
@@ -113,7 +113,7 @@ class LocalMediaCache {
     final media = _safeComponent(mediaId, 'mediaId');
     final version = _safeVersion(cacheVersion);
     final directory = await _ownerDirectory(owner, create: true);
-    final target = File('${directory.path}/${_fileName(media, version)}');
+    final target = File(_joinPath(directory.path, _fileName(media, version)));
     final temporary = File(
       '${target.path}.${DateTime.now().microsecondsSinceEpoch}.'
       '${_random.nextInt(1 << 32)}.part',
@@ -243,7 +243,7 @@ class LocalMediaCache {
     required bool create,
   }) async {
     final root = await _rootDirectoryProvider();
-    final directory = Directory('${root.path}/owners/$owner');
+    final directory = Directory(_joinPath(root.path, 'owners/$owner'));
     if (create && !await directory.exists()) {
       await directory.create(recursive: true);
     }
@@ -633,3 +633,6 @@ String _basename(String path) {
   final normalized = path.replaceAll('\\', '/');
   return normalized.substring(normalized.lastIndexOf('/') + 1);
 }
+
+String _joinPath(String base, String child) =>
+    Directory(base).uri.resolve(child).toFilePath();

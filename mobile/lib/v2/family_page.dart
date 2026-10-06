@@ -275,6 +275,8 @@ class _FamilyPageState extends State<FamilyPage> {
       hero: _FamilyMasthead(
         memberCount: family?.members.length,
         currentRole: family?.currentUserRole,
+        members: family?.members ?? const [],
+        currentUserId: familyApi.currentUserId,
       ),
       child: loading
           ? const Center(child: CircularProgressIndicator())
@@ -337,8 +339,8 @@ class _FamilyPageState extends State<FamilyPage> {
             Icons.shield_outlined,
             color: Theme.of(context).colorScheme.primary,
           ),
-          title: '共享边界',
-          subtitle: '每项内容都由你单独授权，位置不会随着加入家庭自动开放。',
+          title: '家庭权限与信任',
+          subtitle: '分享由你决定，位置不会随着加入家庭自动开放。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -460,38 +462,66 @@ class _FamilyPageState extends State<FamilyPage> {
   }
 }
 
+class _FamilyAvatar extends StatelessWidget {
+  const _FamilyAvatar({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: 58,
+      height: 58,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        border: Border.all(color: theme.colorScheme.surface, width: 4),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1414233A),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: theme.colorScheme.onPrimary,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _FamilyMasthead extends StatelessWidget {
-  const _FamilyMasthead({this.memberCount, this.currentRole});
+  const _FamilyMasthead({
+    this.memberCount,
+    this.currentRole,
+    this.members = const [],
+    this.currentUserId,
+  });
 
   final int? memberCount;
   final String? currentRole;
+  final List<V2FamilyMember> members;
+  final String? currentUserId;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final ready = memberCount != null;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(JiYiRadius.large),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        boxShadow: theme.brightness == Brightness.dark
-            ? null
-            : const [
-                BoxShadow(
-                  color: Color(0x0A14233A),
-                  blurRadius: 18,
-                  offset: Offset(0, 7),
-                ),
-              ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(JiYiSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return JiYiAmbientHero(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             Text(
-              '迹忆 · 家庭',
+              '迹忆 · 家庭空间',
               style: theme.textTheme.labelLarge?.copyWith(
                 color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w800,
@@ -501,37 +531,22 @@ class _FamilyMasthead extends StatelessWidget {
             const SizedBox(height: JiYiSpacing.xs),
             Row(
               children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(JiYiRadius.control),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(JiYiSpacing.sm),
-                    child: Icon(
-                      Icons.groups_2_outlined,
-                      size: JiYiIconSize.large,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: JiYiSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '家人空间',
-                        style: theme.textTheme.headlineSmall?.copyWith(
+                        '家庭',
+                        style: theme.textTheme.displaySmall?.copyWith(
                           fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
+                          letterSpacing: -0.9,
                         ),
                       ),
                       const SizedBox(height: JiYiSpacing.xxs),
                       Text(
                         ready
-                            ? '已连接 $memberCount 位成员 · ${familyRoleLabel(currentRole!)}'
-                            : '只在你明确授权后，才会显示彼此的内容。',
+                            ? '让爱有迹可循，和家人一起留住生活的美好 · $memberCount 位成员 · ${familyRoleLabel(currentRole!)}'
+                            : '让爱有迹可循，和家人一起留住生活的美好',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -539,6 +554,30 @@ class _FamilyMasthead extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (ready && members.isNotEmpty)
+                  SizedBox(
+                    width: 92,
+                    height: 58,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        for (var index = 0; index < members.length && index < 3; index++)
+                          Positioned(
+                            right: index * 22,
+                            top: 0,
+                            child: _FamilyAvatar(
+                              label: members[index].userId.toLowerCase() ==
+                                      currentUserId?.toLowerCase()
+                                  ? '我'
+                                  : '家${index + 1}',
+                              color: index.isEven
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.secondary,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: JiYiSpacing.lg),
@@ -558,7 +597,6 @@ class _FamilyMasthead extends StatelessWidget {
               ],
             ),
           ],
-        ),
       ),
     );
   }

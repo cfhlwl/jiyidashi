@@ -268,10 +268,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
       final localFile = await MediaPresentationResolver(
         api: widget.api,
         cache: _mediaCache,
-      ).resolve(
-        ownerUserId: owner,
-        mediaId: photo.mediaId,
-      );
+      ).resolve(ownerUserId: owner, mediaId: photo.mediaId);
       if (!mounted ||
           !mediaPreviewAuthority.isCurrent(widget.api, snapshot, identity) ||
           annual?.targetYear != current.targetYear) {
@@ -287,12 +284,11 @@ class _MemoirsPageState extends State<MemoirsPage> {
               children: [
                 Flexible(
                   child: InteractiveViewer(
-                    child: widget.photoRenderer?.call(localFile) ??
-                        LocalMediaPresentationScope.maybeOf(context)?.renderer(
+                    child:
+                        widget.photoRenderer?.call(localFile) ??
+                        LocalMediaPresentationScope.maybeOf(
                           context,
-                          localFile,
-                          BoxFit.contain,
-                        ) ??
+                        )?.renderer(context, localFile, BoxFit.contain) ??
                         _defaultMemoirPhotoRenderer(localFile),
                   ),
                 ),
@@ -508,7 +504,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: annualPhotos.length,
-                separatorBuilder: (_, __) => const SizedBox(width: JiYiSpacing.sm),
+                separatorBuilder: (_, __) =>
+                    const SizedBox(width: JiYiSpacing.sm),
                 itemBuilder: (context, index) {
                   final photo = annualPhotos[index];
                   return _AnnualPhotoCard(
@@ -529,6 +526,19 @@ class _MemoirsPageState extends State<MemoirsPage> {
                 icon: const Icon(Icons.add_photo_alternate_outlined),
                 label: const Text('查看更多照片'),
               ),
+            ),
+          ],
+          if (annualPhotos.isNotEmpty || annualTimeline.isNotEmpty) ...[
+            const SizedBox(height: JiYiSpacing.xl),
+            const JiYiSectionHeader(
+              title: '记录趋势',
+              subtitle: '按月份聚合已经保存的照片和时间线片段。',
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+            _AnnualActivityChart(
+              year: result.targetYear,
+              photos: annualPhotos,
+              timeline: annualTimeline,
             ),
           ],
           const SizedBox(height: JiYiSpacing.xl),
@@ -636,7 +646,10 @@ class _MemoirsPageState extends State<MemoirsPage> {
               label: Text(chapterLoading ? '正在整理故事…' : '生成这个阶段的故事'),
             ),
           if (chapterError != null)
-            JiYiStatusBanner(kind: JiYiStatusKind.error, message: chapterError!),
+            JiYiStatusBanner(
+              kind: JiYiStatusKind.error,
+              message: chapterError!,
+            ),
           if (result != null) ...[
             const SizedBox(height: JiYiSpacing.md),
             V2TrustBadge(presentation: result.presentation),
@@ -660,7 +673,6 @@ class _MemoirsPageState extends State<MemoirsPage> {
     );
   }
 }
-
 
 class _MemoirMasthead extends StatelessWidget {
   const _MemoirMasthead({
@@ -765,14 +777,8 @@ class _AnnualStoryHero extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: theme.brightness == Brightness.dark
-              ? const [
-                  Color(0xFF203A59),
-                  Color(0xFF172B45),
-                ]
-              : const [
-                  Color(0xFFF2F7FF),
-                  Color(0xFFEAF3FA),
-                ],
+              ? const [Color(0xFF203A59), Color(0xFF172B45)]
+              : const [Color(0xFFF2F7FF), Color(0xFFEAF3FA)],
         ),
       ),
       child: Padding(
@@ -962,6 +968,123 @@ class _AnnualTimelineRow extends StatelessWidget {
   }
 }
 
+class _AnnualActivityChart extends StatelessWidget {
+  const _AnnualActivityChart({
+    required this.year,
+    required this.photos,
+    required this.timeline,
+  });
+
+  final String year;
+  final List<V2AnnualMemoirPhoto> photos;
+  final List<V2LifeHistoryItem> timeline;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final counts = List<int>.filled(12, 0);
+    for (final date in [
+      ...photos.map((item) => item.occurredAt),
+      ...timeline.map((item) => item.occurredAt),
+    ]) {
+      final parsed = DateTime.tryParse(date);
+      if (parsed == null || parsed.year.toString() != year) continue;
+      counts[parsed.month - 1]++;
+    }
+    final maximum = counts.fold<int>(
+      0,
+      (value, item) => item > value ? item : value,
+    );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          JiYiSpacing.md,
+          JiYiSpacing.lg,
+          JiYiSpacing.md,
+          JiYiSpacing.md,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 122,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (var index = 0; index < counts.length; index++)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            if (counts[index] > 0)
+                              Text(
+                                '${counts[index]}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            const SizedBox(height: 4),
+                            AnimatedContainer(
+                              duration: JiYiMotion.standard,
+                              height: maximum == 0
+                                  ? 8
+                                  : 8 + (counts[index] / maximum) * 82,
+                              decoration: BoxDecoration(
+                                color: counts[index] == 0
+                                    ? theme.colorScheme.surfaceContainerHighest
+                                    : theme.colorScheme.primary,
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(JiYiRadius.control),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.xs),
+            Row(
+              children: [
+                for (var index = 0; index < 12; index++)
+                  Expanded(
+                    child: Text(
+                      '${index + 1}月',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (maximum == 0) ...[
+              const SizedBox(height: JiYiSpacing.sm),
+              Text(
+                '这一年还没有足够的记录形成趋势。',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 Widget _defaultMemoirPhotoRenderer(File file) {
   return Image.file(

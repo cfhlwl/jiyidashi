@@ -777,74 +777,113 @@ class _TodayMasthead extends StatelessWidget {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: JiYiSpacing.xs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      '迹忆',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
-                      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final titleBlock = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    '迹忆',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
                     ),
-                    Text(
-                      ' · ',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    Text(
-                      '今天好',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: JiYiSpacing.xs),
-                Text(
-                  title,
-                  style: theme.textTheme.displaySmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -1.2,
                   ),
-                ),
-                const SizedBox(height: JiYiSpacing.xs),
-                Text(
-                  date,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
+                  Text(
+                    ' · ',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
+                  Text(
+                    '今天好',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: JiYiSpacing.xs),
+              Text(
+                title,
+                style: theme.textTheme.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1.2,
                 ),
-              ],
-            ),
-          ),
-          DecoratedBox(
+              ),
+              const SizedBox(height: JiYiSpacing.xs),
+              Text(
+                date,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          );
+          final datePill = DecoratedBox(
             decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
+              color: theme.colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(JiYiRadius.pill),
               border: Border.all(color: theme.colorScheme.outlineVariant),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(JiYiSpacing.sm),
-              child: Icon(
-                Icons.calendar_today_outlined,
-                color: theme.colorScheme.primary,
-                size: JiYiIconSize.medium,
+              padding: const EdgeInsets.symmetric(
+                horizontal: JiYiSpacing.sm,
+                vertical: JiYiSpacing.xs,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    color: theme.colorScheme.primary,
+                    size: JiYiIconSize.small,
+                  ),
+                  const SizedBox(width: JiYiSpacing.xs),
+                  Text(
+                    date,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: JiYiSpacing.xxs),
+                  Icon(
+                    Icons.chevron_right,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    size: JiYiIconSize.small,
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+          );
+
+          // Small screenshots keep the date pill on its own row so the title
+          // remains the visual anchor instead of forcing a right-side overflow.
+          if (constraints.maxWidth < 370) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                titleBlock,
+                const SizedBox(height: JiYiSpacing.sm),
+                Align(alignment: Alignment.centerRight, child: datePill),
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: titleBlock),
+              const SizedBox(width: JiYiSpacing.sm),
+              datePill,
+            ],
+          );
+        },
       ),
     );
   }

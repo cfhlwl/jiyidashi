@@ -24,25 +24,118 @@ class JiYiPageFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        JiYiSpacing.lg,
-        JiYiSpacing.lg,
-        JiYiSpacing.lg,
-        JiYiSpacing.xxl,
-      ),
+      padding: const EdgeInsets.fromLTRB(JiYiSpacing.lg, 12, JiYiSpacing.lg, 96),
       children: [
-        if (hero != null)
-          hero!
-        else
-          _JiYiPageTitle(
-            title: title,
-            subtitle: subtitle,
-            eyebrow: eyebrow,
-            trailing: trailing,
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (hero != null)
+                hero!
+              else
+                _JiYiPageTitle(
+                  title: title,
+                  subtitle: subtitle,
+                  eyebrow: eyebrow,
+                  trailing: trailing,
+                ),
+              const SizedBox(height: JiYiSpacing.xl),
+              child,
+            ],
           ),
-        const SizedBox(height: JiYiSpacing.xl),
-        child,
+        ),
       ],
+    );
+  }
+}
+
+/// A restrained atmospheric surface used by the memory pages. It gives the
+/// screen a recognisable opening without inventing a photo or masking a real
+/// record. The cool-blue gradients are deliberately neutral so the content
+/// remains the source of warmth.
+class JiYiAmbientHero extends StatelessWidget {
+  const JiYiAmbientHero({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(JiYiRadius.large),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: dark
+                ? [
+                    JiYiProductColors.darkSurfaceElevated,
+                    JiYiProductColors.darkSurface,
+                    const Color(0xFF123B5D),
+                  ]
+                : [
+                    theme.colorScheme.surface,
+                    JiYiProductColors.surfaceSoft,
+                    const Color(0xFFE5EFFB),
+                  ],
+          ),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+          boxShadow: dark
+              ? null
+              : const [
+                  BoxShadow(
+                    color: Color(0x0C14233A),
+                    blurRadius: 20,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              top: -42,
+              right: -26,
+              child: _AmbientOrb(
+                size: 128,
+                color: theme.colorScheme.primary.withValues(alpha: 0.10),
+              ),
+            ),
+            Positioned(
+              bottom: -54,
+              left: -30,
+              child: _AmbientOrb(
+                size: 150,
+                color: theme.colorScheme.secondary.withValues(alpha: 0.08),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(JiYiSpacing.lg),
+              child: child,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AmbientOrb extends StatelessWidget {
+  const _AmbientOrb({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+      ),
     );
   }
 }
@@ -215,6 +308,8 @@ class _JiYiPageTitle extends StatelessWidget {
                           ? theme.textTheme.headlineSmall
                           : theme.textTheme.displaySmall)
                       ?.copyWith(
+                    fontSize: eyebrow == null ? 32 : 34,
+                    height: 1.15,
                     fontWeight: FontWeight.w800,
                     letterSpacing: eyebrow == null ? -0.45 : -0.9,
                   ),

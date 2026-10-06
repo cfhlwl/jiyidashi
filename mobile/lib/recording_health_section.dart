@@ -13,11 +13,16 @@ class RecordingHealthSection extends StatefulWidget {
     required this.api,
     required this.store,
     this.nativeLocationController,
+    this.compact = false,
   });
 
   final JiYiApiClient api;
   final OfflineQueueStore store;
   final NativeLocationController? nativeLocationController;
+  /// Compact is used by the redesigned personal-space surface. It keeps the
+  /// same server/native evidence but presents the status as a dashboard row;
+  /// the full evidence view remains available behind “查看详情”.
+  final bool compact;
 
   @override
   State<RecordingHealthSection> createState() => _RecordingHealthSectionState();
@@ -28,6 +33,7 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
   bool _loading = true;
   String? _error;
   int _requestEpoch = 0;
+  bool _showDetails = false;
 
   @override
   void initState() {
@@ -194,6 +200,9 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
             nativeReason == 'background_settings_required'
         ? RecordingHealthAction.openBackgroundLocationSettings
         : suggested;
+    if (widget.compact) {
+      return _buildCompact(context, view, action);
+    }
     return JiYiSectionCard(
       leading: Icon(
         Icons.health_and_safety_outlined,
@@ -273,6 +282,163 @@ class _RecordingHealthSectionState extends State<RecordingHealthSection> {
             label: Text(_loading ? '正在确认…' : '重新确认记录状态'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCompact(
+    BuildContext context,
+    RecordingHealthView? view,
+    RecordingHealthAction? action,
+  ) {
+    final theme = Theme.of(context);
+    final known = view != null;
+    final healthy = view?.status == RecordingHealthStatus.healthy;
+    final detailTime = view == null ? '正在确认…' : _lastSuccessMessage(view);
+    final summary = detailTime.isEmpty ? '尚未有可展示的服务器确认时间' : detailTime;
+    return JiYiSectionCard(
+      padding: const EdgeInsets.fromLTRB(
+        JiYiSpacing.lg,
+        JiYiSpacing.md,
+        JiYiSpacing.lg,
+        JiYiSpacing.lg,
+      ),
+      title: '记录状态',
+      subtitle: '由你决定记录什么，并随时查看状态。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_loading && !known)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: JiYiSpacing.md),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _HealthStatusDot(healthy: healthy, known: known),
+                const SizedBox(width: JiYiSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        known ? _title(view.status) : '当前记录状态未知',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: JiYiSpacing.xxs),
+                      Text(
+                        summary,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: known
+                      ? () => setState(() => _showDetails = !_showDetails)
+                      : _refresh,
+                  icon: Icon(
+                    _showDetails ? Icons.expand_less : Icons.chevron_right,
+                  ),
+                  label: Text(_showDetails ? '收起详情' : '查看详情'),
+                ),
+              ],
+            ),
+          const SizedBox(height: JiYiSpacing.md),
+          const Divider(height: 1),
+          const SizedBox(height: JiYiSpacing.md),
+          Text(
+            '记录效果会受系统权限、后台策略和网络影响。',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (_showDetails && view != null) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            JiYiStatusBanner(
+              key: const ValueKey('recording-health-banner'),
+              kind: _kind(view.status),
+              title: _title(view.status),
+              message: _message(view),
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+            _CoverageSummary(view: view),
+            if (view.activeGapReasons.isNotEmpty) ...[
+              const SizedBox(height: JiYiSpacing.sm),
+              Text(
+                _activeGapMessage(view.activeGapReasons),
+                key: const ValueKey('recording-health-gap-reason'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            if (_showQueue(view)) ...[
+              const SizedBox(height: JiYiSpacing.sm),
+              Text(
+                _queueMessage(view),
+                key: const ValueKey('recording-health-queue'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            if (action != null && _canRenderAction(action)) ...[
+              const SizedBox(height: JiYiSpacing.sm),
+              FilledButton.icon(
+                key: const ValueKey('recording-health-action'),
+                onPressed: _loading ? null : () => _runHealthAction(action),
+                icon: Icon(_actionIcon(action)),
+                label: Text(_actionLabel(action)),
+              ),
+            ],
+            const SizedBox(height: JiYiSpacing.sm),
+            OutlinedButton.icon(
+              key: const ValueKey('recording-health-refresh'),
+              onPressed: _loading ? null : _refresh,
+              icon: const Icon(Icons.refresh),
+              label: Text(_loading ? '正在确认…' : '重新确认记录状态'),
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            JiYiStatusBanner(kind: JiYiStatusKind.warning, message: _error!),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HealthStatusDot extends StatelessWidget {
+  const _HealthStatusDot({required this.healthy, required this.known});
+
+  final bool healthy;
+  final bool known;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = !known
+        ? theme.colorScheme.outline
+        : (healthy ? context.jiyiSemanticColors.success : context.jiyiSemanticColors.warning);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color.withValues(alpha: 0.14),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(JiYiSpacing.sm),
+        child: DecoratedBox(
+          decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+          child: const SizedBox.square(dimension: 18),
+        ),
       ),
     );
   }

@@ -26,12 +26,12 @@ abstract final class JiYiTheme {
       brightness: Brightness.dark,
       fontFamily: fontFamily,
       elderMode: elderMode,
-      background: const Color(0xFF0D1828),
-      surface: const Color(0xFF16263B),
-      surfaceSoft: const Color(0xFF203650),
-      textPrimary: const Color(0xFFF3F6FA),
-      textSecondary: const Color(0xFFAAB8C8),
-      border: const Color(0xFF2A425E),
+      background: JiYiProductColors.darkBackground,
+      surface: JiYiProductColors.darkSurface,
+      surfaceSoft: JiYiProductColors.darkSurfaceElevated,
+      textPrimary: JiYiProductColors.darkTextPrimary,
+      textSecondary: JiYiProductColors.darkTextSecondary,
+      border: JiYiProductColors.darkBorder,
       semanticColors: JiYiSemanticColors.dark,
     );
   }
@@ -48,26 +48,27 @@ abstract final class JiYiTheme {
     required Color border,
     required JiYiSemanticColors semanticColors,
   }) {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: brandSeed,
-      brightness: brightness,
-    ).copyWith(
-      primary: brightness == Brightness.dark
-          ? const Color(0xFF6FA8FF)
-          : JiYiProductColors.brandPrimary,
-      onPrimary: brightness == Brightness.dark
-          ? const Color(0xFF071B35)
-          : Colors.white,
-      secondary: brightness == Brightness.dark
-          ? const Color(0xFFB7C9DE)
-          : JiYiProductColors.brandSecondary,
-      surface: surface,
-      surfaceContainerHighest: surfaceSoft,
-      onSurface: textPrimary,
-      onSurfaceVariant: textSecondary,
-      outline: textSecondary,
-      outlineVariant: border,
-    );
+    final colorScheme =
+        ColorScheme.fromSeed(
+          seedColor: brandSeed,
+          brightness: brightness,
+        ).copyWith(
+          primary: brightness == Brightness.dark
+              ? JiYiProductColors.brandHighlight
+              : JiYiProductColors.brandPrimary,
+          onPrimary: brightness == Brightness.dark
+              ? const Color(0xFF071B35)
+              : Colors.white,
+          secondary: brightness == Brightness.dark
+              ? const Color(0xFFB7C9DE)
+              : JiYiProductColors.brandSecondary,
+          surface: surface,
+          surfaceContainerHighest: surfaceSoft,
+          onSurface: textPrimary,
+          onSurfaceVariant: textSecondary,
+          outline: textSecondary,
+          outlineVariant: border,
+        );
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
@@ -78,12 +79,30 @@ abstract final class JiYiTheme {
 
     final elderTextTheme = elderMode
         ? base.textTheme.copyWith(
-            bodySmall: base.textTheme.bodySmall?.copyWith(fontSize: 16, height: 1.6),
-            bodyMedium: base.textTheme.bodyMedium?.copyWith(fontSize: 18, height: 1.65),
-            bodyLarge: base.textTheme.bodyLarge?.copyWith(fontSize: 20, height: 1.65),
-            titleSmall: base.textTheme.titleSmall?.copyWith(fontSize: 19, height: 1.5),
-            titleMedium: base.textTheme.titleMedium?.copyWith(fontSize: 22, height: 1.5),
-            headlineSmall: base.textTheme.headlineSmall?.copyWith(fontSize: 30, height: 1.35),
+            bodySmall: base.textTheme.bodySmall?.copyWith(
+              fontSize: 16,
+              height: 1.6,
+            ),
+            bodyMedium: base.textTheme.bodyMedium?.copyWith(
+              fontSize: 18,
+              height: 1.65,
+            ),
+            bodyLarge: base.textTheme.bodyLarge?.copyWith(
+              fontSize: 20,
+              height: 1.65,
+            ),
+            titleSmall: base.textTheme.titleSmall?.copyWith(
+              fontSize: 19,
+              height: 1.5,
+            ),
+            titleMedium: base.textTheme.titleMedium?.copyWith(
+              fontSize: 22,
+              height: 1.5,
+            ),
+            headlineSmall: base.textTheme.headlineSmall?.copyWith(
+              fontSize: 30,
+              height: 1.35,
+            ),
           )
         : base.textTheme;
 
@@ -223,8 +242,19 @@ abstract final class JiYiTheme {
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
+        focusColor: colorScheme.primary,
+        hoverColor: colorScheme.primary,
+        splashColor: colorScheme.primaryContainer,
+        extendedTextStyle: base.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.1,
+        ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(JiYiRadius.control),
+          borderRadius: BorderRadius.circular(JiYiRadius.large),
+          side: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.72),
+            width: 1,
+          ),
         ),
       ),
       dialogTheme: DialogThemeData(

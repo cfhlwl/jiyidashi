@@ -68,8 +68,10 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
   }
 
   Future<void> _acceptMapPrivacy() async {
-    final accepted =
-        await requestAmapPrivacyConsent(context, _amapPrivacyConsent);
+    final accepted = await requestAmapPrivacyConsent(
+      context,
+      _amapPrivacyConsent,
+    );
     if (mounted && accepted) setState(() => _mapPrivacyAccepted = true);
   }
 
@@ -158,10 +160,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
           resolvedPhoto = await MediaPresentationResolver(
             api: widget.api,
             cache: _mediaCache,
-          ).resolve(
-            ownerUserId: owner,
-            mediaId: mediaId,
-          );
+          ).resolve(ownerUserId: owner, mediaId: mediaId);
           if (!_sessionCurrent(version, owner)) return;
         } on ApiException {
           if (!_sessionCurrent(version, owner)) return;
@@ -228,10 +227,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       final resolved = await MediaPresentationResolver(
         api: widget.api,
         cache: _mediaCache,
-      ).resolve(
-        ownerUserId: owner,
-        mediaId: mediaId,
-      );
+      ).resolve(ownerUserId: owner, mediaId: mediaId);
       if (!_sessionCurrent(version, owner) ||
           memory?.id != current.id ||
           memory?.mediaId != mediaId) {
@@ -286,8 +282,9 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
             Text(photoError ?? '正在准备照片…'),
             const SizedBox(height: JiYiSpacing.sm),
             OutlinedButton.icon(
-              onPressed:
-                  photoRefreshing ? null : () => _refreshPhoto(manual: true),
+              onPressed: photoRefreshing
+                  ? null
+                  : () => _refreshPhoto(manual: true),
               icon: photoRefreshing
                   ? const SizedBox(
                       width: 18,
@@ -309,23 +306,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: widget.localPhotoRenderer?.call(
-                  local,
-                  ValueKey<String>(
-                    'photo-local-${current.id}-${local.path}',
-                  ),
-                ) ??
-                LocalMediaPresentationScope.maybeOf(context)?.renderer(
-                  context,
-                  local,
-                  BoxFit.cover,
-                ) ??
-                _defaultLocalPhotoRenderer(
-                  local,
-                  ValueKey<String>(
-                    'photo-local-${current.id}-${local.path}',
-                  ),
-                ),
+            child: _photoView(local, current.id),
           ),
           if (photoError != null) ...[
             const SizedBox(height: JiYiSpacing.sm),
@@ -337,14 +318,29 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
           ],
           const SizedBox(height: JiYiSpacing.sm),
           OutlinedButton.icon(
-            onPressed:
-                photoRefreshing ? null : () => _refreshPhoto(manual: true),
+            onPressed: photoRefreshing
+                ? null
+                : () => _refreshPhoto(manual: true),
             icon: const Icon(Icons.refresh),
             label: const Text('重新加载照片'),
           ),
         ],
       ),
     );
+  }
+
+  Widget _photoView(File local, String memoryId) {
+    return widget.localPhotoRenderer?.call(
+          local,
+          ValueKey<String>('photo-local-$memoryId-${local.path}'),
+        ) ??
+        LocalMediaPresentationScope.maybeOf(
+          context,
+        )?.renderer(context, local, BoxFit.cover) ??
+        _defaultLocalPhotoRenderer(
+          local,
+          ValueKey<String>('photo-local-$memoryId-${local.path}'),
+        );
   }
 
   Future<void> _edit() async {
@@ -380,8 +376,9 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
       if (!_sessionCurrent(version, owner)) return;
       setState(() {
         mutating = false;
-        error =
-            exc.statusCode == 409 ? '内容刚刚发生了变化，请重新打开后再试' : '修改暂时无法保存，可以稍后重试';
+        error = exc.statusCode == 409
+            ? '内容刚刚发生了变化，请重新打开后再试'
+            : '修改暂时无法保存，可以稍后重试';
       });
     } catch (_) {
       if (!_sessionCurrent(version, owner)) return;
@@ -468,32 +465,35 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
                   memoryType: current.memoryType,
                   occurredAt: current.occurredAt,
                   placeName: placeName,
+                  media: photoFile == null
+                      ? null
+                      : _photoView(photoFile!, current.id),
                 ),
           child: loading
               ? const Center(child: CircularProgressIndicator())
               : error != null && current == null
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        JiYiStatusBanner(
-                          kind: JiYiStatusKind.error,
-                          message: error!,
-                        ),
-                        const SizedBox(height: JiYiSpacing.md),
-                        OutlinedButton.icon(
-                          onPressed: _load,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('重新打开'),
-                        ),
-                      ],
-                    )
-                  : current == null
-                      ? const JiYiEmptyState(
-                          icon: Icons.auto_stories_outlined,
-                          title: '这条记忆不可用',
-                          message: '可以返回记忆页重新查找。',
-                        )
-                      : _ready(current),
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    JiYiStatusBanner(
+                      kind: JiYiStatusKind.error,
+                      message: error!,
+                    ),
+                    const SizedBox(height: JiYiSpacing.md),
+                    OutlinedButton.icon(
+                      onPressed: _load,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重新打开'),
+                    ),
+                  ],
+                )
+              : current == null
+              ? const JiYiEmptyState(
+                  icon: Icons.auto_stories_outlined,
+                  title: '这条记忆不可用',
+                  message: '可以返回记忆页重新查找。',
+                )
+              : _ready(current),
         ),
       ),
     );
@@ -542,18 +542,21 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _DetailRow(
-                  label: '类型', value: _memoryTypeLabel(current.memoryType)),
+                label: '类型',
+                value: _memoryTypeLabel(current.memoryType),
+              ),
               _DetailRow(
-                  label: '时间', value: _formatDateTime(current.occurredAt)),
+                label: '时间',
+                value: _formatDateTime(current.occurredAt),
+              ),
               if (current.placeId != null)
                 _DetailRow(label: '地点', value: placeName ?? '已关联地点'),
               const SizedBox(height: JiYiSpacing.sm),
               Text(
                 current.content,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyLarge
-                    ?.copyWith(height: 1.6),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(height: 1.6),
               ),
             ],
           ),
@@ -600,53 +603,109 @@ class _MemoryDetailMasthead extends StatelessWidget {
     required this.memoryType,
     required this.occurredAt,
     this.placeName,
+    this.media,
   });
 
   final String title;
   final String memoryType;
   final String occurredAt;
   final String? placeName;
+  final Widget? media;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final place = placeName?.trim();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final facts = Wrap(
+      spacing: JiYiSpacing.sm,
+      runSpacing: JiYiSpacing.xs,
       children: [
-        Text(
-          '迹忆 · ${_memoryTypeLabel(memoryType)}',
-          style: theme.textTheme.labelLarge?.copyWith(
-            color: theme.colorScheme.primary,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
-          ),
+        _MemoryDetailFact(
+          icon: Icons.schedule_outlined,
+          label: _formatDateTime(occurredAt),
         ),
-        const SizedBox(height: JiYiSpacing.xs),
-        Text(
-          title,
-          style: theme.textTheme.displaySmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.9,
-          ),
-        ),
-        const SizedBox(height: JiYiSpacing.sm),
-        Wrap(
-          spacing: JiYiSpacing.sm,
-          runSpacing: JiYiSpacing.xs,
-          children: [
-            _MemoryDetailFact(
-              icon: Icons.schedule_outlined,
-              label: _formatDateTime(occurredAt),
+        if (place != null && place.isNotEmpty)
+          _MemoryDetailFact(icon: Icons.place_outlined, label: place),
+      ],
+    );
+    if (media == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '迹忆 · ${_memoryTypeLabel(memoryType)}',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
             ),
-            if (place != null && place.isNotEmpty)
-              _MemoryDetailFact(
-                icon: Icons.place_outlined,
-                label: place,
+          ),
+          const SizedBox(height: JiYiSpacing.xs),
+          Text(
+            title,
+            style: theme.textTheme.displaySmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.9,
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.sm),
+          facts,
+        ],
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(JiYiRadius.sheet),
+      child: SizedBox(
+        height: 270,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            media!,
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.68),
+                  ],
+                ),
               ),
+            ),
+            Positioned(
+              left: JiYiSpacing.lg,
+              right: JiYiSpacing.lg,
+              bottom: JiYiSpacing.lg,
+              child: DefaultTextStyle(
+                style: const TextStyle(color: Colors.white),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '迹忆 · ${_memoryTypeLabel(memoryType)}',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      title,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: JiYiSpacing.sm),
+                    facts,
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -673,8 +732,11 @@ class _MemoryDetailFact extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon,
-                size: JiYiIconSize.small, color: theme.colorScheme.primary),
+            Icon(
+              icon,
+              size: JiYiIconSize.small,
+              color: theme.colorScheme.primary,
+            ),
             const SizedBox(width: JiYiSpacing.xxs),
             Text(label, style: theme.textTheme.labelMedium),
           ],
@@ -694,10 +756,12 @@ class _MemoryDetailEditor extends StatefulWidget {
 }
 
 class _MemoryDetailEditorState extends State<_MemoryDetailEditor> {
-  late final TextEditingController title =
-      TextEditingController(text: widget.memory.title ?? '');
-  late final TextEditingController content =
-      TextEditingController(text: widget.memory.content);
+  late final TextEditingController title = TextEditingController(
+    text: widget.memory.title ?? '',
+  );
+  late final TextEditingController content = TextEditingController(
+    text: widget.memory.content,
+  );
   String? error;
 
   @override
@@ -778,8 +842,8 @@ class _DetailRow extends StatelessWidget {
             child: Text(
               label,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           Expanded(child: Text(value)),
@@ -880,10 +944,7 @@ class _MemoryDetailView {
   }
 }
 
-double? _memoryPlaceCoordinate(
-  Object? value, {
-  required bool latitudeAxis,
-}) {
+double? _memoryPlaceCoordinate(Object? value, {required bool latitudeAxis}) {
   if (value == null) return null;
   if (value is! num || !value.isFinite) return null;
   final coordinate = value.toDouble();
@@ -893,15 +954,15 @@ double? _memoryPlaceCoordinate(
 }
 
 String _memoryTypeLabel(String value) => switch (value) {
-      'NOTE' => '文字记录',
-      'VOICE' => '语音记录',
-      'PHOTO' => '照片记录',
-      'PLACE' => '地点记录',
-      'OBJECT_LOCATION' => '物品位置',
-      'REMINDER' => '提醒记录',
-      'EVENT' => '事件记录',
-      _ => '记忆',
-    };
+  'NOTE' => '文字记录',
+  'VOICE' => '语音记录',
+  'PHOTO' => '照片记录',
+  'PLACE' => '地点记录',
+  'OBJECT_LOCATION' => '物品位置',
+  'REMINDER' => '提醒记录',
+  'EVENT' => '事件记录',
+  _ => '记忆',
+};
 
 String _formatDateTime(String value) {
   final parsed = DateTime.tryParse(value);

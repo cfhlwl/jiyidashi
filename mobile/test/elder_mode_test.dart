@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
+import 'package:jiyidashi/ui/jiyi_tokens.dart';
 
 const _ownerA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const _ownerB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -73,20 +74,23 @@ void main() {
     final night = JiYiTheme.dark();
 
     expect(night.brightness, Brightness.dark);
-    expect(night.scaffoldBackgroundColor, const Color(0xFF0D1828));
-    expect(night.colorScheme.surface, const Color(0xFF16263B));
-    expect(night.colorScheme.onSurface, const Color(0xFFF3F6FA));
-    expect(night.floatingActionButtonTheme.backgroundColor, const Color(0xFF6FA8FF));
-    expect(night.navigationBarTheme.backgroundColor, const Color(0xFF16263B));
+    expect(night.scaffoldBackgroundColor, JiYiProductColors.darkBackground);
+    expect(night.colorScheme.surface, JiYiProductColors.darkSurface);
+    expect(night.colorScheme.onSurface, JiYiProductColors.darkTextPrimary);
+    expect(
+      night.floatingActionButtonTheme.backgroundColor,
+      JiYiProductColors.brandHighlight,
+    );
+    expect(night.navigationBarTheme.backgroundColor, JiYiProductColors.darkSurface);
   });
 
   test('neutral light theme has no warm page base', () {
     final light = JiYiTheme.light();
 
-    expect(light.scaffoldBackgroundColor, const Color(0xFFF7F8FA));
-    expect(light.colorScheme.surface, Colors.white);
-    expect(light.colorScheme.primary, const Color(0xFF2563EB));
-    expect(light.colorScheme.outlineVariant, const Color(0xFFE4E8EE));
+    expect(light.scaffoldBackgroundColor, JiYiProductColors.background);
+    expect(light.colorScheme.surface, JiYiProductColors.surface);
+    expect(light.colorScheme.primary, JiYiProductColors.brandPrimary);
+    expect(light.colorScheme.outlineVariant, JiYiProductColors.border);
   });
 
   test('malformed elder preference fails closed to normal mode', () async {
