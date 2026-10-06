@@ -1396,25 +1396,28 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         onThemeModeChanged: widget.onThemeModeChanged,
       ),
     ];
+    final onboardingExperience = OnboardingExperience(
+      step: _accountDeletionIntentActive ? null : onboardingStep,
+      onStart: onboarding?.startFlow ?? () {},
+      onSkip: () {
+        if (onboarding != null) unawaited(onboarding.skip());
+      },
+      onComplete: () {
+        if (onboarding != null) unawaited(onboarding.complete());
+      },
+      child: onboardingStep == OnboardingStep.capture
+          ? capturePage
+          : pages[index],
+    );
+    final todayVisualShell =
+        onboardingStep == null && !_accountDeletionIntentActive && index == 0;
     return Scaffold(
-      body: SafeArea(
-        child: OnboardingExperience(
-          step: _accountDeletionIntentActive ? null : onboardingStep,
-          onStart: onboarding?.startFlow ?? () {},
-          onSkip: () {
-            if (onboarding != null) unawaited(onboarding.skip());
-          },
-          onComplete: () {
-            if (onboarding != null) unawaited(onboarding.complete());
-          },
-          child: onboardingStep == OnboardingStep.capture
-              ? capturePage
-              : pages[index],
-        ),
-      ),
+      body: todayVisualShell
+          ? onboardingExperience
+          : SafeArea(child: onboardingExperience),
       // [人工注释][S1-026] 引导进行时由 GuideBar 提供唯一退出入口；隐藏而不是保留“看得见但点不动”的底部导航。
       floatingActionButton:
-          onboardingStep != null || _accountDeletionIntentActive
+          onboardingStep != null || _accountDeletionIntentActive || index == 0
               ? null
               : FloatingActionButton.extended(
                   onPressed: () {
@@ -1427,37 +1430,128 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 ),
       bottomNavigationBar: onboardingStep != null || _accountDeletionIntentActive
           ? null
-          : NavigationBar(
+          : _JiYiBottomNavigation(
               selectedIndex: index,
               onDestinationSelected: (value) => setState(() => index = value),
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.today_outlined),
-                  selectedIcon: Icon(Icons.today),
-                  label: '今天',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.auto_stories_outlined),
-                  selectedIcon: Icon(Icons.auto_stories),
-                  label: '记忆',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.route_outlined),
-                  selectedIcon: Icon(Icons.route),
-                  label: '人生',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.family_restroom_outlined),
-                  selectedIcon: Icon(Icons.family_restroom),
-                  label: '家庭',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
-                  label: '我的',
-                ),
-              ],
             ),
+    );
+  }
+}
+
+class _JiYiBottomNavigation extends StatelessWidget {
+  const _JiYiBottomNavigation({
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+
+  static const _destinations = [
+    (Icons.today_outlined, Icons.today, '今天'),
+    (Icons.auto_stories_outlined, Icons.auto_stories, '记忆'),
+    (Icons.route_outlined, Icons.route, '人生'),
+    (Icons.family_restroom_outlined, Icons.family_restroom, '家庭'),
+    (Icons.person_outline, Icons.person, '我的'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D152D4B),
+            blurRadius: 14,
+            offset: Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: SizedBox(
+          height: JiYiTodayGeometry.bottomNavigationContentHeight,
+          child: Row(
+            children: [
+              for (var index = 0; index < _destinations.length; index++)
+                Expanded(
+                  child: _JiYiBottomNavigationItem(
+                    icon: _destinations[index].$1,
+                    selectedIcon: _destinations[index].$2,
+                    label: _destinations[index].$3,
+                    selected: selectedIndex == index,
+                    onTap: () => onDestinationSelected(index),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _JiYiBottomNavigationItem extends StatelessWidget {
+  const _JiYiBottomNavigationItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = selected
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(selected ? selectedIcon : icon, size: 24, color: color),
+              const SizedBox(height: 1),
+              Text(
+                label,
+                maxLines: 1,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: color,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 2),
+              AnimatedContainer(
+                duration: JiYiMotion.fast,
+                curve: JiYiMotion.easing,
+                width: selected ? 28 : 0,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

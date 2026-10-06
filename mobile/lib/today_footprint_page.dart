@@ -67,8 +67,10 @@ class _TodayPageState extends State<TodayPage> {
   }
 
   Future<void> _acceptMapPrivacy() async {
-    final accepted =
-        await requestAmapPrivacyConsent(context, _amapPrivacyConsent);
+    final accepted = await requestAmapPrivacyConsent(
+      context,
+      _amapPrivacyConsent,
+    );
     if (mounted && accepted) setState(() => _mapPrivacyAccepted = true);
   }
 
@@ -94,9 +96,6 @@ class _TodayPageState extends State<TodayPage> {
       setState(() {
         _loading = true;
         _error = null;
-        _data = null;
-        _todayMemories = const [];
-        _memoryUnavailable = false;
       });
     }
     bool current() =>
@@ -152,24 +151,21 @@ class _TodayPageState extends State<TodayPage> {
   @override
   Widget build(BuildContext context) {
     final elderMode = widget.elderMode;
-    return JiYiPageFrame(
-      title: elderMode ? '今天去了哪里' : '今天',
-      subtitle: elderMode
-          ? '这里只显示已经形成的足迹，不会用当前位置猜测。'
-          : '看看今天留下了哪些值得记住的片段。',
+    final date = _todayHeroSubtitle(_data);
+    return _TodayPageShell(
       hero: JiYiHeroHeader(
+        fullBleed: true,
+        height: JiYiTodayGeometry.heroHeight,
         atmospheric: true,
-        eyebrow: '迹忆 · 今天',
-        title: elderMode ? '今天去了哪里' : '今天好',
-        subtitle: _todayHeroSubtitle(_data),
-        icon: Icons.wb_sunny_outlined,
+        title: elderMode ? '今天去了哪里' : '今天',
+        subtitle: '$date\n${elderMode ? '这里只显示已经形成的足迹。' : '把今天留在这里'}',
       ),
       child: _buildContent(elderMode),
     );
   }
 
   Widget _buildContent(bool elderMode) {
-    if (_loading) {
+    if (_loading && _data == null) {
       return const JiYiSectionCard(
         child: Padding(
           key: ValueKey('today-footprint-loading'),
@@ -189,7 +185,7 @@ class _TodayPageState extends State<TodayPage> {
       );
     }
 
-    if (_error != null) {
+    if (_error != null && _data == null) {
       return Column(
         key: const ValueKey('today-footprint-error'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -251,6 +247,148 @@ class _TodayPageState extends State<TodayPage> {
   }
 }
 
+class _TodayPageShell extends StatelessWidget {
+  const _TodayPageShell({required this.hero, required this.child});
+
+  final Widget hero;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ColoredBox(
+      color: theme.scaffoldBackgroundColor,
+      child: CustomScrollView(
+        key: const ValueKey('today-visual-scroll'),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: JiYiTodayGeometry.heroHeight,
+                  child: hero,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    JiYiTodayGeometry.pageHorizontalPadding,
+                    JiYiTodayGeometry.heroHeight -
+                        JiYiTodayGeometry.heroFootprintOverlap,
+                    JiYiTodayGeometry.pageHorizontalPadding,
+                    JiYiSpacing.xxl,
+                  ),
+                  child: child,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TodaySurfaceCard extends StatelessWidget {
+  const _TodaySurfaceCard({
+    super.key,
+    required this.child,
+    required this.title,
+    this.leading,
+    this.trailing,
+    this.fixedHeight,
+    this.dense = false,
+  });
+
+  final Widget child;
+  final String title;
+  final Widget? leading;
+  final Widget? trailing;
+  final double? fixedHeight;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final compact = fixedHeight != null && fixedHeight! <= 100;
+    final content = Padding(
+      padding: compact
+          ? const EdgeInsets.fromLTRB(10, 6, 10, 6)
+          : dense
+          ? const EdgeInsets.fromLTRB(16, 6, 16, 9)
+          : const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              if (leading != null) ...[
+                IconTheme.merge(
+                  data: const IconThemeData(size: 28),
+                  child: leading!,
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
+                  ),
+                ),
+              ),
+              if (trailing != null)
+                IconTheme.merge(
+                  data: IconThemeData(
+                    size: 28,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  child: trailing!,
+                ),
+            ],
+          ),
+          SizedBox(
+            height: compact
+                ? 4
+                : dense
+                ? 2
+                : 8,
+          ),
+          if (fixedHeight == null) child else Expanded(child: child),
+        ],
+      ),
+    );
+    return Material(
+      color: theme.colorScheme.surface,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      borderRadius: BorderRadius.circular(JiYiRadius.large),
+      clipBehavior: Clip.antiAlias,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(JiYiRadius.large),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x10152D4B),
+              blurRadius: 16,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: fixedHeight == null
+            ? content
+            : SizedBox(height: fixedHeight, child: content),
+      ),
+    );
+  }
+}
+
 class _TodayExperienceBody extends StatelessWidget {
   const _TodayExperienceBody({
     required this.api,
@@ -286,33 +424,13 @@ class _TodayExperienceBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        JiYiSectionHeader(
-          title: elderMode ? '今天去了哪里' : '今日足迹',
-          subtitle: elderMode
-              ? '只显示已经形成的足迹。'
-              : jiyiDisplayDate(footprint.day),
-        ),
-        const SizedBox(height: JiYiSpacing.sm),
         _footprintCard(context, theme),
-        const SizedBox(height: JiYiSpacing.xl),
-        const JiYiSectionHeader(
-          title: '今日记忆',
-          subtitle: '今天主动记下的内容，会在这里留下可以回看的片段。',
-        ),
-        const SizedBox(height: JiYiSpacing.sm),
+        const SizedBox(height: JiYiTodayGeometry.sectionGap),
         _memorySection(context),
-        const SizedBox(height: JiYiSpacing.xl),
-        const JiYiSectionHeader(
-          title: '快速记录',
-          subtitle: '现在想记住的事，不必等到以后。',
-        ),
-        const SizedBox(height: JiYiSpacing.sm),
+        const SizedBox(height: JiYiTodayGeometry.sectionGap),
         _quickCapture(context),
         const SizedBox(height: JiYiSpacing.xl),
-        const JiYiSectionHeader(
-          title: '家庭共享',
-          subtitle: '只有家人明确授权给你的内容才会被读取。',
-        ),
+        const JiYiSectionHeader(title: '家庭共享', subtitle: '只有家人明确授权给你的内容才会被读取。'),
         const SizedBox(height: JiYiSpacing.sm),
         JiYiSectionCard(
           leading: Icon(
@@ -336,16 +454,15 @@ class _TodayExperienceBody extends StatelessWidget {
 
   Widget _footprintCard(BuildContext context, ThemeData theme) {
     if (footprint.visits.isEmpty) {
-      return JiYiSectionCard(
+      return _TodaySurfaceCard(
         key: const ValueKey('today-footprint-empty'),
         leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-        title: '今天还没有形成足迹',
+        title: elderMode ? '今天去了哪里' : '今日足迹',
+        trailing: const Icon(Icons.chevron_right),
         child: JiYiEmptyState(
           icon: Icons.location_off_outlined,
-          title: '还没有足迹',
-          message: elderMode
-              ? '不会用当前位置猜测你去过哪里。'
-              : '形成到访后，会在这里按时间留下今天的足迹。',
+          title: elderMode ? '今天还没有形成足迹' : '今天还没有形成足迹',
+          message: elderMode ? '不会用当前位置猜测你去过哪里。' : '形成到访后，会在这里按时间留下今天的足迹。',
         ),
       );
     }
@@ -367,47 +484,71 @@ class _TodayExperienceBody extends StatelessWidget {
       key: const ValueKey('today-footprint-map-open'),
       behavior: HitTestBehavior.translucent,
       onTap: openFootprintDetail,
-      child: JiYiSectionCard(
+      child: _TodaySurfaceCard(
         key: const ValueKey('today-footprint-loaded'),
-        leading: Icon(Icons.route_outlined, color: theme.colorScheme.primary),
-        title: '${footprint.visits.length} 个地点片段',
-        subtitle: '按今天真实形成的到访记录整理',
+        leading: Icon(
+          Icons.location_on_outlined,
+          color: theme.colorScheme.primary,
+        ),
+        title: elderMode ? '今天去了哪里' : '今日足迹',
+        trailing: const Icon(Icons.chevron_right),
+        fixedHeight: JiYiTodayGeometry.footprintCardHeight,
+        dense: true,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (mapPrivacyAccepted) ...[
-              IgnorePointer(
-                child: JiYiFootprintMap(
-                  visits: footprint.visits,
-                  privacyAccepted: true,
-                  selectedIndex: 0,
-                  onSelected: (_) {},
-                  interactive: false,
-                ),
+            Text(
+              '${footprint.visits.length} 个地点片段',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(height: JiYiSpacing.md),
-            ],
-            if (elderMode)
-              for (var index = 0; index < footprint.visits.length; index++) ...[
-                FootprintVisitRow(
-                  visit: footprint.visits[index],
-                  elderMode: true,
-                ),
-                if (index != footprint.visits.length - 1)
-                  const Divider(height: JiYiSpacing.lg),
-              ]
-            else
-              Wrap(
-                spacing: JiYiSpacing.xs,
-                runSpacing: JiYiSpacing.xs,
-                children: [
-                  for (var index = 0; index < footprint.visits.length; index++)
-                    _TodayVisitPill(
-                      index: index,
-                      visit: footprint.visits[index],
+            ),
+            Text(
+              '按今天真实形成的到访记录整理',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 0),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(JiYiRadius.control),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    IgnorePointer(
+                      child: JiYiFootprintMap(
+                        visits: footprint.visits,
+                        privacyAccepted: mapPrivacyAccepted,
+                        selectedIndex: 0,
+                        onSelected: (_) {},
+                        interactive: false,
+                        height: JiYiTodayGeometry.mapViewportHeight,
+                      ),
                     ),
-                ],
+                    for (
+                      var index = 0;
+                      index < footprint.visits.length && index < 2;
+                      index++
+                    )
+                      Positioned(
+                        top: 10,
+                        left: index == 0 ? 10 : null,
+                        right: index == 1 ? 10 : null,
+                        child: _TodayVisitPill(
+                          index: index,
+                          visit: footprint.visits[index],
+                        ),
+                      ),
+                  ],
+                ),
               ),
+            ),
           ],
         ),
       ),
@@ -416,7 +557,10 @@ class _TodayExperienceBody extends StatelessWidget {
 
   Widget _memorySection(BuildContext context) {
     if (memoryUnavailable) {
-      return const JiYiSectionCard(
+      return const _TodaySurfaceCard(
+        title: '今日记忆',
+        leading: Icon(Icons.photo_library_outlined),
+        trailing: Icon(Icons.chevron_right),
         child: JiYiStatusBanner(
           kind: JiYiStatusKind.warning,
           title: '今日记忆暂时没有整理好',
@@ -425,7 +569,10 @@ class _TodayExperienceBody extends StatelessWidget {
       );
     }
     if (memories.isEmpty) {
-      return const JiYiSectionCard(
+      return const _TodaySurfaceCard(
+        title: '今日记忆',
+        leading: Icon(Icons.photo_library_outlined),
+        trailing: Icon(Icons.chevron_right),
         child: JiYiEmptyState(
           icon: Icons.auto_stories_outlined,
           title: '今天还没有主动记录',
@@ -433,60 +580,78 @@ class _TodayExperienceBody extends StatelessWidget {
         ),
       );
     }
-    return Column(
-      children: [
-        for (var index = 0; index < memories.length; index++) ...[
-          _TodayMemoryCard(
-            api: api,
-            item: memories[index],
-            mediaCache: mediaCache,
-            photoThumbnailBuilder: photoThumbnailBuilder,
-            onTap: () {
-              Navigator.of(context).push<bool>(
-                MaterialPageRoute<bool>(
-                  builder: (_) => MemoryDetailPage(
+    return _TodaySurfaceCard(
+      title: '今日记忆',
+      leading: const Icon(Icons.photo_library_outlined),
+      trailing: const Icon(Icons.chevron_right),
+      fixedHeight: JiYiTodayGeometry.memorySectionHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = (constraints.maxWidth - 8) / 2;
+          return Wrap(
+            spacing: 8,
+            runSpacing: 10,
+            children: [
+              for (final item in memories.take(4))
+                SizedBox(
+                  width: width,
+                  child: _TodayMemoryCard(
                     api: api,
-                    memoryId: memories[index].id,
+                    item: item,
                     mediaCache: mediaCache,
-                    amapPrivacyConsent: amapPrivacyConsent,
+                    photoThumbnailBuilder: photoThumbnailBuilder,
+                    onTap: () {
+                      Navigator.of(context).push<bool>(
+                        MaterialPageRoute<bool>(
+                          builder: (_) => MemoryDetailPage(
+                            api: api,
+                            memoryId: item.id,
+                            mediaCache: mediaCache,
+                            amapPrivacyConsent: amapPrivacyConsent,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
-              );
-            },
-          ),
-          if (index != memories.length - 1)
-            const SizedBox(height: JiYiSpacing.sm),
-        ],
-      ],
+            ],
+          );
+        },
+      ),
     );
   }
 
   Widget _quickCapture(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 360;
         final actions = [
-          (Icons.edit_note_outlined, '写一条', '一句话也可以'),
-          (Icons.photo_camera_outlined, '拍一张', '留住眼前的画面'),
-          (Icons.mic_none_outlined, '录一段', '先说下来再整理'),
+          (Icons.mic_none_outlined, '说一段'),
+          (Icons.edit_note_outlined, '写下来'),
+          (Icons.photo_camera_outlined, '拍张照'),
         ];
-        return Wrap(
-          spacing: JiYiSpacing.sm,
-          runSpacing: JiYiSpacing.sm,
-          children: [
-            for (final action in actions)
-              SizedBox(
-                width: compact
-                    ? constraints.maxWidth
-                    : (constraints.maxWidth - JiYiSpacing.sm * 2) / 3,
-                child: _TodayQuickAction(
-                  icon: action.$1,
-                  title: action.$2,
-                  subtitle: action.$3,
-                  onTap: onCapture,
+        return _TodaySurfaceCard(
+          title: '记一下',
+          leading: const Icon(Icons.edit_outlined),
+          fixedHeight: JiYiTodayGeometry.quickCaptureHeight,
+          child: Row(
+            children: [
+              for (var index = 0; index < actions.length; index++) ...[
+                if (index > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: _TodayQuickAction(
+                    icon: actions[index].$1,
+                    title: actions[index].$2,
+                    onTap: onCapture,
+                    accent: index == 0
+                        ? const Color(0xFF1976E8)
+                        : index == 1
+                        ? const Color(0xFFE59117)
+                        : const Color(0xFF2A9C72),
+                  ),
                 ),
-              ),
-          ],
+              ],
+            ],
+          ),
         );
       },
     );
@@ -514,8 +679,8 @@ class _TodayMemoryCard extends StatelessWidget {
     if (builder != null) {
       return SizedBox(
         key: ValueKey('today-photo-${item.id}'),
-        width: 88,
-        height: 88,
+        width: double.infinity,
+        height: 117,
         child: KeyedSubtree(
           key: ValueKey('local-media-ready-$mediaId'),
           child: builder(context, mediaId, BoxFit.cover),
@@ -527,8 +692,8 @@ class _TodayMemoryCard extends StatelessWidget {
       api: api,
       mediaId: mediaId,
       cache: mediaCache,
-      width: 88,
-      height: 88,
+      width: double.infinity,
+      height: 117,
     );
   }
 
@@ -538,68 +703,69 @@ class _TodayMemoryCard extends StatelessWidget {
     final title = item.title ?? _todayMemoryTypeLabel(item.memoryType);
     return Material(
       color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(JiYiRadius.card),
+      borderRadius: BorderRadius.circular(JiYiRadius.control),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(JiYiRadius.card),
-        child: Padding(
-          padding: const EdgeInsets.all(JiYiSpacing.md),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (item.memoryType == 'PHOTO' && item.mediaId != null)
-                _photoThumbnail(context)
-              else
-                DecoratedBox(
+        borderRadius: BorderRadius.circular(JiYiRadius.control),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (item.memoryType == 'PHOTO' && item.mediaId != null)
+              _photoThumbnail(context)
+            else
+              SizedBox(
+                width: double.infinity,
+                height: 117,
+                child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(JiYiRadius.control),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(JiYiSpacing.sm),
+                  child: Center(
                     child: Icon(
                       _todayMemoryIcon(item.memoryType),
+                      size: JiYiIconSize.large,
                       color: theme.colorScheme.primary,
                     ),
                   ),
                 ),
-              const SizedBox(width: JiYiSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (item.content != null && item.content!.trim().isNotEmpty)
                     Text(
-                      title,
+                      item.content!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (item.content != null && item.content!.trim().isNotEmpty) ...[
-                      const SizedBox(height: JiYiSpacing.xs),
-                      Text(
-                        item.content!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text(
-                      jiyiDisplayTime(item.occurredAt),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.35,
                       ),
                     ),
-                  ],
-                ),
+                  Text(
+                    jiyiDisplayTime(item.occurredAt),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -610,48 +776,43 @@ class _TodayQuickAction extends StatelessWidget {
   const _TodayQuickAction({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.onTap,
+    required this.accent,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
   final VoidCallback? onTap;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(JiYiRadius.card),
+      color: accent.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(JiYiRadius.control),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(JiYiRadius.card),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: JiYiTapTarget.normal + 56),
-          child: Padding(
-            padding: const EdgeInsets.all(JiYiSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(icon, color: theme.colorScheme.primary),
-                const SizedBox(height: JiYiSpacing.sm),
-                Text(
+        borderRadius: BorderRadius.circular(JiYiRadius.control),
+        child: SizedBox(
+          height: 44,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: JiYiIconSize.medium, color: accent),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
                   title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
+                    color: accent,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: JiYiSpacing.xxs),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -660,20 +821,20 @@ class _TodayQuickAction extends StatelessWidget {
 }
 
 String _todayMemoryTypeLabel(String? value) => switch (value) {
-      'VOICE' => '一段语音记忆',
-      'PHOTO' => '一张照片记忆',
-      'PLACE' => '一个地点记忆',
-      'OBJECT_LOCATION' => '一条物品位置',
-      _ => '一段记忆',
-    };
+  'VOICE' => '一段语音记忆',
+  'PHOTO' => '一张照片记忆',
+  'PLACE' => '一个地点记忆',
+  'OBJECT_LOCATION' => '一条物品位置',
+  _ => '一段记忆',
+};
 
 IconData _todayMemoryIcon(String? value) => switch (value) {
-      'VOICE' => Icons.mic_none_outlined,
-      'PHOTO' => Icons.photo_outlined,
-      'PLACE' => Icons.place_outlined,
-      'OBJECT_LOCATION' => Icons.inventory_2_outlined,
-      _ => Icons.auto_stories_outlined,
-    };
+  'VOICE' => Icons.mic_none_outlined,
+  'PHOTO' => Icons.photo_outlined,
+  'PLACE' => Icons.place_outlined,
+  'OBJECT_LOCATION' => Icons.inventory_2_outlined,
+  _ => Icons.auto_stories_outlined,
+};
 
 String _todayHeroSubtitle(Map<String, dynamic>? data) {
   final day = data?['day'];
@@ -684,10 +845,7 @@ String _todayHeroSubtitle(Map<String, dynamic>? data) {
 }
 
 class _TodayVisitPill extends StatelessWidget {
-  const _TodayVisitPill({
-    required this.index,
-    required this.visit,
-  });
+  const _TodayVisitPill({required this.index, required this.visit});
 
   final int index;
   final FootprintVisit visit;
@@ -782,8 +940,8 @@ class FootprintVisitRow extends StatelessWidget {
               elderMode
                   ? Icons.place_outlined
                   : (visit.finalized
-                      ? Icons.location_on_outlined
-                      : Icons.my_location_outlined),
+                        ? Icons.location_on_outlined
+                        : Icons.my_location_outlined),
               color: visit.finalized
                   ? theme.colorScheme.primary
                   : theme.colorScheme.tertiary,
@@ -796,10 +954,11 @@ class FootprintVisitRow extends StatelessWidget {
               children: [
                 Text(
                   visit.placeName,
-                  style: (elderMode
-                          ? theme.textTheme.headlineSmall
-                          : theme.textTheme.titleMedium)
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style:
+                      (elderMode
+                              ? theme.textTheme.headlineSmall
+                              : theme.textTheme.titleMedium)
+                          ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: JiYiSpacing.xxs),
                 Text(

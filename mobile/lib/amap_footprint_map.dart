@@ -5,17 +5,19 @@ import 'package:csp_amap_flutter_map/csp_amap_flutter_map.dart';
 
 import 'footprint_models.dart';
 
-const _amapAndroidKey =
-    String.fromEnvironment('AMAP_ANDROID_SDK_KEY', defaultValue: '');
-const _amapIosKey =
-    String.fromEnvironment('AMAP_IOS_SDK_KEY', defaultValue: '');
+const _amapAndroidKey = String.fromEnvironment(
+  'AMAP_ANDROID_SDK_KEY',
+  defaultValue: '',
+);
+const _amapIosKey = String.fromEnvironment(
+  'AMAP_IOS_SDK_KEY',
+  defaultValue: '',
+);
 const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 
 typedef JiYiAmapPrivacyUpdater = void Function(AMapPrivacyStatement statement);
-typedef JiYiAmapInitializer = void Function(
-  BuildContext context, {
-  required AMapApiKey apiKey,
-});
+typedef JiYiAmapInitializer =
+    void Function(BuildContext context, {required AMapApiKey apiKey});
 
 class JiYiAmapSdkHooks {
   const JiYiAmapSdkHooks({
@@ -79,19 +81,20 @@ class JiYiAmapConfig {
   }
 
   AMapApiKey get apiKey => AMapApiKey(
-        androidKey: androidKey.trim().isEmpty ? null : androidKey.trim(),
-        iosKey: iosKey.trim().isEmpty ? null : iosKey.trim(),
-      );
+    androidKey: androidKey.trim().isEmpty ? null : androidKey.trim(),
+    iosKey: iosKey.trim().isEmpty ? null : iosKey.trim(),
+  );
 }
 
-typedef JiYiAmapNativeBuilder = Widget Function(
-  BuildContext context,
-  JiYiAmapConfig config,
-  List<FootprintVisit> visits,
-  int selectedIndex,
-  ValueChanged<int> onSelected,
-  bool interactive,
-);
+typedef JiYiAmapNativeBuilder =
+    Widget Function(
+      BuildContext context,
+      JiYiAmapConfig config,
+      List<FootprintVisit> visits,
+      int selectedIndex,
+      ValueChanged<int> onSelected,
+      bool interactive,
+    );
 
 class JiYiFootprintMap extends StatelessWidget {
   const JiYiFootprintMap({
@@ -101,6 +104,7 @@ class JiYiFootprintMap extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelected,
     this.interactive = true,
+    this.height,
     this.config = const JiYiAmapConfig(),
     this.nativeBuilder,
   });
@@ -110,6 +114,7 @@ class JiYiFootprintMap extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final bool interactive;
+  final double? height;
   final JiYiAmapConfig config;
   final JiYiAmapNativeBuilder? nativeBuilder;
 
@@ -118,7 +123,9 @@ class JiYiFootprintMap extends StatelessWidget {
     final scope = JiYiAmapPresentationScope.maybeOf(context);
     final effectiveConfig = scope?.config ?? config;
     effectiveConfig.assertProductionConfiguration();
-    final mappable = visits.where((visit) => visit.isMappable).toList(growable: false);
+    final mappable = visits
+        .where((visit) => visit.isMappable)
+        .toList(growable: false);
     if (mappable.isEmpty) {
       return const _MapFallback(
         key: ValueKey('amap-no-coordinate'),
@@ -144,15 +151,16 @@ class JiYiFootprintMap extends StatelessWidget {
       );
     }
 
-    final safeSelected =
-        selectedIndex >= 0 && selectedIndex < mappable.length ? selectedIndex : 0;
+    final safeSelected = selectedIndex >= 0 && selectedIndex < mappable.length
+        ? selectedIndex
+        : 0;
     final builder =
         nativeBuilder ?? scope?.footprintBuilder ?? _defaultNativeBuilder;
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: SizedBox(
         key: const ValueKey('amap-real-surface'),
-        height: interactive ? 360 : 210,
+        height: height ?? (interactive ? 360 : 210),
         child: builder(
           context,
           effectiveConfig,
@@ -318,14 +326,15 @@ class _NativeFootprintMapState extends State<_NativeFootprintMap> {
   }
 }
 
-typedef JiYiPlaceNativeBuilder = Widget Function(
-  BuildContext context,
-  JiYiAmapConfig config,
-  double latitude,
-  double longitude,
-  String name,
-  String? address,
-);
+typedef JiYiPlaceNativeBuilder =
+    Widget Function(
+      BuildContext context,
+      JiYiAmapConfig config,
+      double latitude,
+      double longitude,
+      String name,
+      String? address,
+    );
 
 class JiYiAmapPresentationScope extends InheritedWidget {
   const JiYiAmapPresentationScope({
@@ -386,9 +395,7 @@ class JiYiPlaceMap extends StatelessWidget {
     final effectiveConfig = scope?.config ?? config;
     effectiveConfig.assertProductionConfiguration();
     if (!_validCoordinate) {
-      return const SizedBox.shrink(
-        key: ValueKey('amap-place-no-coordinate'),
-      );
+      return const SizedBox.shrink(key: ValueKey('amap-place-no-coordinate'));
     }
     if (!privacyAccepted) {
       return const _MapFallback(
@@ -464,36 +471,51 @@ class _MapFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      constraints: const BoxConstraints(minHeight: 180),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 32, color: theme.colorScheme.primary),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bounded =
+            constraints.hasBoundedHeight && constraints.maxHeight.isFinite;
+        final compact = bounded && constraints.maxHeight < 180;
+        final iconSize = compact ? 24.0 : 32.0;
+        return Container(
+          constraints: BoxConstraints(minHeight: bounded ? 0 : 180),
+          padding: compact
+              ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+              : const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
-          const SizedBox(height: 6),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: iconSize, color: theme.colorScheme.primary),
+              SizedBox(height: compact ? 6 : 12),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(height: compact ? 4 : 6),
+              Text(
+                message,
+                maxLines: compact ? 3 : null,
+                overflow: compact ? TextOverflow.ellipsis : null,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

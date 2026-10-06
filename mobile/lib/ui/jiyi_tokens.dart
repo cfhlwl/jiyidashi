@@ -13,6 +13,20 @@ abstract final class JiYiSpacing {
   static const double hero = 48;
 }
 
+// Today V3 structure anchors. These values describe the primary 390x844 review
+// viewport; they are geometry anchors, not business or typography tokens.
+abstract final class JiYiTodayGeometry {
+  static const double pageHorizontalPadding = 13;
+  static const double heroHeight = 167;
+  static const double heroFootprintOverlap = 16;
+  static const double footprintCardHeight = 239;
+  static const double mapViewportHeight = 156;
+  static const double sectionGap = 12;
+  static const double memorySectionHeight = 259;
+  static const double quickCaptureHeight = 94;
+  static const double bottomNavigationContentHeight = 48;
+}
+
 // Radius token 只统一视觉曲率，不替代 Material 控件本身的交互/可访问性行为。
 abstract final class JiYiRadius {
   static const double control = 12;
