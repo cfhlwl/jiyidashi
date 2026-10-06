@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -11,11 +13,23 @@ from sqlalchemy import delete, select
 from app.core.db import SessionLocal
 from app.export_models import UserExportJob, UserExportStatus
 from app.main import app
-from app.maintenance_adapters import handle_export
-from app.maintenance_job_models import MaintenanceJob, MaintenanceJobType
+from app.maintenance_adapters import (
+    RetryableMaintenanceError,
+    handle_export,
+)
+from app.maintenance_job_models import (
+    MaintenanceJob,
+    MaintenanceJobStatus,
+    MaintenanceJobType,
+)
+from app.maintenance_worker import MaintenanceWorker
 from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import Memory, MemoryType, ObjectItem, SourceType
-from app.services.maintenance_jobs import claim_next_maintenance_job
+from app.services.maintenance_jobs import (
+    claim_next_maintenance_job,
+    complete_maintenance_job,
+    enqueue_maintenance_job,
+)
 from app.services.object_storage import PresignedTransfer, StoredObject, get_object_storage
 
 
@@ -224,3 +238,239 @@ async def test_expired_export_download_fails_closed(client):
     response = await client.get(f"/v1/export/jobs/{job_id}/download", headers=headers)
     assert response.status_code == 410
     assert response.json()["detail"] == "EXPORT_EXPIRED"
+
+
+class BlockingExportStorage(FakeExportStorage):
+    def __init__(self):
+        super().__init__()
+        self.upload_started = threading.Event()
+        self.release_upload = threading.Event()
+        self.upload_calls = 0
+
+    def upload_file(self, local_path, object_key, content_type, sha256):
+        self.upload_calls += 1
+        self.upload_started.set()
+        assert self.release_upload.wait(timeout=10)
+        return super().upload_file(local_path, object_key, content_type, sha256)
+
+
+def _seed_export_execution(*, max_attempts: int = 10):
+    user_id = uuid4()
+    export_id = uuid4()
+    with SessionLocal() as db:
+        db.add(UserExportJob(
+            id=export_id,
+            owner_user_id=user_id,
+            idempotency_key=uuid4(),
+        ))
+        from app.models import User
+        db.add(User(id=user_id, nickname=f"export-lifecycle-{uuid4().hex[:8]}"))
+        db.flush()
+        job, created = enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.EXPORT,
+            dedupe_key=f"export:{export_id}",
+            owner_user_id=user_id,
+            resource_key=f"user-export:{export_id}",
+            payload={"action": "GENERATE", "export_job_id": str(export_id)},
+            max_attempts=max_attempts,
+        )
+        assert created
+        maintenance_id = job.id
+        db.commit()
+    return user_id, export_id, maintenance_id
+
+
+def test_export_upload_heartbeats_short_lease_and_blocks_reclaim(monkeypatch):
+    with SessionLocal() as db:
+        db.execute(delete(MaintenanceJob))
+        db.commit()
+
+    user_id = uuid4()
+    export_id = uuid4()
+    from app.models import User
+    with SessionLocal() as db:
+        db.add(User(id=user_id, nickname="export-heartbeat"))
+        db.flush()
+        db.add(UserExportJob(
+            id=export_id,
+            owner_user_id=user_id,
+            idempotency_key=uuid4(),
+        ))
+        enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.EXPORT,
+            dedupe_key=f"export:{export_id}",
+            owner_user_id=user_id,
+            resource_key=f"user-export:{export_id}",
+            payload={"action": "GENERATE", "export_job_id": str(export_id)},
+            max_attempts=3,
+        )
+        db.commit()
+
+    storage = BlockingExportStorage()
+    monkeypatch.setattr("app.maintenance_adapters.get_object_storage", lambda: storage)
+
+    with SessionLocal() as db:
+        claim = claim_next_maintenance_job(
+            db,
+            worker_id="heartbeat-worker-a",
+            lease_seconds=1,
+        )
+        assert claim is not None
+        db.commit()
+
+    failures: list[BaseException] = []
+
+    def run_handler():
+        try:
+            handle_export(claim)
+        except BaseException as exc:
+            failures.append(exc)
+
+    thread = threading.Thread(target=run_handler)
+    thread.start()
+    assert storage.upload_started.wait(timeout=10)
+    time.sleep(1.3)
+
+    with SessionLocal() as db:
+        second = claim_next_maintenance_job(
+            db,
+            worker_id="heartbeat-worker-b",
+            lease_seconds=1,
+        )
+        db.rollback()
+    assert second is None
+
+    storage.release_upload.set()
+    thread.join(timeout=10)
+    assert not thread.is_alive()
+    assert failures == []
+    assert storage.upload_calls == 1
+
+    with SessionLocal() as db:
+        complete_maintenance_job(
+            db,
+            job_id=claim.id,
+            claim_token=claim.claim_token,
+        )
+        export = db.get(UserExportJob, export_id)
+        assert export is not None
+        assert export.status == UserExportStatus.COMPLETED.value
+        maintenance = db.get(MaintenanceJob, claim.id)
+        assert maintenance is not None
+        db.commit()
+
+
+def test_export_oserror_terminalizes_public_job_on_final_attempt(monkeypatch):
+    with SessionLocal() as db:
+        db.execute(delete(MaintenanceJob))
+        db.commit()
+
+    user_id = uuid4()
+    export_id = uuid4()
+    from app.models import User
+    with SessionLocal() as db:
+        db.add(User(id=user_id, nickname="export-enospc"))
+        db.flush()
+        db.add(UserExportJob(
+            id=export_id,
+            owner_user_id=user_id,
+            idempotency_key=uuid4(),
+        ))
+        enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.EXPORT,
+            dedupe_key=f"export:{export_id}",
+            owner_user_id=user_id,
+            resource_key=f"user-export:{export_id}",
+            payload={"action": "GENERATE", "export_job_id": str(export_id)},
+            max_attempts=1,
+        )
+        db.commit()
+
+    monkeypatch.setattr(
+        "app.maintenance_adapters.generate_export_file",
+        lambda **_: (_ for _ in ()).throw(OSError(28, "No space left on device")),
+    )
+    worker = MaintenanceWorker(
+        worker_id="export-enospc-worker",
+        handlers={MaintenanceJobType.EXPORT.value: handle_export},
+        lease_seconds=5,
+    )
+    result = worker.run_once()
+    assert result.outcome == "FAILED"
+
+    with SessionLocal() as db:
+        export = db.get(UserExportJob, export_id)
+        assert export is not None
+        assert export.status == UserExportStatus.FAILED.value
+        assert export.error_code == "EXPORT_LOCAL_IO_FAILED"
+        maintenance = db.scalar(
+            select(MaintenanceJob).where(
+                MaintenanceJob.resource_key == f"user-export:{export_id}"
+            )
+        )
+        assert maintenance is not None
+        assert maintenance.status == MaintenanceJobStatus.FAILED.value
+
+
+def test_export_final_crashed_lease_exhaustion_converges_public_job():
+    with SessionLocal() as db:
+        db.execute(delete(MaintenanceJob))
+        db.commit()
+
+    user_id = uuid4()
+    export_id = uuid4()
+    from app.models import User
+    with SessionLocal() as db:
+        db.add(User(id=user_id, nickname="export-crash-final"))
+        db.flush()
+        db.add(UserExportJob(
+            id=export_id,
+            owner_user_id=user_id,
+            idempotency_key=uuid4(),
+            status=UserExportStatus.RUNNING.value,
+            revision=1,
+        ))
+        enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.EXPORT,
+            dedupe_key=f"export:{export_id}",
+            owner_user_id=user_id,
+            resource_key=f"user-export:{export_id}",
+            payload={"action": "GENERATE", "export_job_id": str(export_id)},
+            max_attempts=1,
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        claim = claim_next_maintenance_job(
+            db,
+            worker_id="export-crashed-worker",
+            lease_seconds=1,
+        )
+        assert claim is not None
+        maintenance_id = claim.id
+        job = db.get(MaintenanceJob, maintenance_id)
+        assert job is not None
+        job.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+
+    with SessionLocal() as db:
+        assert claim_next_maintenance_job(
+            db,
+            worker_id="export-reaper",
+            lease_seconds=1,
+        ) is None
+        db.commit()
+
+    with SessionLocal() as db:
+        maintenance = db.get(MaintenanceJob, maintenance_id)
+        export = db.get(UserExportJob, export_id)
+        assert maintenance is not None
+        assert maintenance.status == MaintenanceJobStatus.FAILED.value
+        assert maintenance.last_error_code == "MAINTENANCE_ATTEMPTS_EXHAUSTED"
+        assert export is not None
+        assert export.status == UserExportStatus.FAILED.value
+        assert export.error_code == "MAINTENANCE_ATTEMPTS_EXHAUSTED"
