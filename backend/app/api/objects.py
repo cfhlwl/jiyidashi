@@ -2,8 +2,8 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,18 @@ from app.models import (
     ObjectLocationStatus,
     SourceType,
 )
-from app.schemas import ObjectCreate, ObjectLocationCreate, ObjectLocationRead, ObjectRead
+from app.schemas import (
+    ObjectCreate,
+    ObjectLocationCreate,
+    ObjectLocationRead,
+    ObjectPageResponse,
+    ObjectRead,
+)
+from app.services.api_cursor import (
+    CursorInvalid,
+    decode_object_cursor,
+    encode_object_cursor,
+)
 from app.services.idempotency_service import (
     IdempotencyConflict,
     IdempotencyResourceGone,
@@ -76,15 +87,48 @@ def create_object(payload: ObjectCreate, user_id: CurrentUser, db: DbSession) ->
     return item
 
 
-@router.get("", response_model=list[ObjectRead])
-def list_objects(user_id: CurrentUser, db: DbSession) -> list[ObjectItem]:
-    return list(
+@router.get("", response_model=ObjectPageResponse)
+def list_objects(
+    user_id: CurrentUser,
+    db: DbSession,
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=2048),
+) -> ObjectPageResponse:
+    after = None
+    if cursor is not None:
+        try:
+            after = decode_object_cursor(cursor, owner_user_id=user_id)
+        except CursorInvalid as exc:
+            raise HTTPException(status_code=400, detail=exc.args[0]) from exc
+
+    statement = select(ObjectItem).where(ObjectItem.user_id == user_id)
+    if after is not None:
+        statement = statement.where(
+            or_(
+                ObjectItem.normalized_name > after.normalized_name,
+                and_(
+                    ObjectItem.normalized_name == after.normalized_name,
+                    ObjectItem.id > after.object_id,
+                ),
+            )
+        )
+
+    rows = list(
         db.scalars(
-            select(ObjectItem)
-            .where(ObjectItem.user_id == user_id)
-            .order_by(ObjectItem.name)
-        ).all()
+            statement.order_by(ObjectItem.normalized_name, ObjectItem.id).limit(limit + 1)
+        )
     )
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    next_cursor = None
+    if has_more and items:
+        last = items[-1]
+        next_cursor = encode_object_cursor(
+            owner_user_id=user_id,
+            normalized_name=last.normalized_name,
+            object_id=last.id,
+        )
+    return ObjectPageResponse(items=items, next_cursor=next_cursor)
 
 
 def _latest_invalidation(
