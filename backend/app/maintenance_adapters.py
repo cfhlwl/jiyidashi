@@ -96,9 +96,14 @@ class ClaimAuthority:
         self,
         claim: MaintenanceJobClaim,
         *,
-        lease_seconds: int = DEFAULT_LEASE_SECONDS,
+        lease_seconds: int | None = None,
     ):
         self.claim = claim
+        if lease_seconds is None:
+            remaining = (
+                _as_utc(claim.lease_expires_at) - datetime.now(UTC)
+            ).total_seconds()
+            lease_seconds = max(1, math.ceil(remaining))
         self.lease_seconds = lease_seconds
 
     def check(self) -> None:
