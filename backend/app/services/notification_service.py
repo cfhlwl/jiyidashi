@@ -28,7 +28,6 @@ from app.notification_models import (
     NotificationMessage,
     NotificationTargetPlatform,
     PushPlatform,
-    PushProvider,
 )
 from app.notification_schemas import (
     AdminNotificationCampaignCreate,
