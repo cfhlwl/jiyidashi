@@ -431,6 +431,11 @@ class ObjectRead(ORMModel):
     created_at: datetime
 
 
+class ObjectPageResponse(BaseModel):
+    items: list[ObjectRead] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
 class ObjectLocationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
