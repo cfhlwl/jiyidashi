@@ -111,6 +111,9 @@ REQUIRED_KEYS = {
     "BACKUP_RETENTION_MONTHLY",
     "MEDIA_MAX_IMAGE_BYTES",
     "MEDIA_MAX_AUDIO_BYTES",
+    "EXPORT_BATCH_SIZE",
+    "EXPORT_ARTIFACT_MAX_BYTES",
+    "EXPORT_ARTIFACT_TTL_HOURS",
     "PROVIDER_CONFIG_CACHE_TTL_SECONDS",
     "ASR_PROVIDER",
     "ASR_BASE_URL",
@@ -261,6 +264,9 @@ def main() -> None:
     assert (web_concurrency + 1) * (pool_size + max_overflow) <= connection_budget
     assert values["API_REQUEST_BODY_LIMIT"] == "2MB"
     assert values["STORAGE_ENDPOINT_URL"].startswith("https://")
+    assert 25 <= int(values["EXPORT_BATCH_SIZE"]) <= 1000
+    assert 1024 * 1024 <= int(values["EXPORT_ARTIFACT_MAX_BYTES"]) <= 2 * 1024 * 1024 * 1024
+    assert 1 <= int(values["EXPORT_ARTIFACT_TTL_HOURS"]) <= 168
     assert values["ASR_BASE_URL"].startswith("https://")
     assert values["AI_BASE_URL"].startswith("https://")
     assert int(values["AI_IMAGE_MAX_BYTES"]) < int(values["MEDIA_MAX_IMAGE_BYTES"])
