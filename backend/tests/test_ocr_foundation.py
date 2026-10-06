@@ -788,9 +788,17 @@ async def test_ocr_cancellation_holds_permit_until_decode_thread_physically_exit
         blocking_build,
     )
 
-    request_task = asyncio.create_task(
-        client.post(f"/v1/media/{media_id}/ocr", headers=headers)
-    )
+    async def run_service():
+        with SessionLocal() as db:
+            return await ocr_service_module.extract_ocr(
+                db,
+                user_id=user_id,
+                request=ocr_service_module.OCRRequest(media_id=media_id),
+                storage=storage,
+                gateway=ocr_dependencies[2],
+            )
+
+    request_task = asyncio.create_task(run_service())
     slot_after_cancel = None
     try:
         assert await asyncio.to_thread(worker_entered.wait, 3)

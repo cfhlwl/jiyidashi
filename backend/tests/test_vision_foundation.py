@@ -15,6 +15,7 @@ from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.main import app
 from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import Memory, MemorySource, ObjectItem, Place, Reminder, Visit
+from app.services import vision_service as vision_service_module
 from app.services.ai_gateway import (
     AIGateway,
     AIImageInferenceRequest,
@@ -684,9 +685,17 @@ async def test_vision_cancellation_holds_permit_until_storage_thread_physically_
 
     monkeypatch.setattr(storage, "read_object", blocking_read)
 
-    request_task = asyncio.create_task(
-        client.post(f"/v1/media/{media_id}/vision", headers=headers)
-    )
+    async def run_service():
+        with SessionLocal() as db:
+            return await vision_service_module.observe_vision(
+                db,
+                user_id=user_id,
+                request=vision_service_module.VisionRequest(media_id=media_id),
+                storage=storage,
+                gateway=vision_dependencies[2],
+            )
+
+    request_task = asyncio.create_task(run_service())
     slot_after_cancel = None
     try:
         assert await asyncio.to_thread(worker_entered.wait, 3)
