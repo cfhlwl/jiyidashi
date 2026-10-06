@@ -10,7 +10,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, inspect, select
+from sqlalchemy import delete, func, inspect, select
+from sqlalchemy.exc import IntegrityError
 
 from app import maintenance_adapters
 from app.core.config import get_settings
@@ -19,7 +20,7 @@ from app.data_deletion_models import DataDeletionOperation
 from app.export_models import UserExportJob
 from app.maintenance_adapters import handle_export
 from app.maintenance_job_models import MaintenanceJob, MaintenanceJobType
-from app.models import Memory, MemoryType, SourceType, User
+from app.models import Memory, MemoryType, ObjectItem, SourceType, User
 from app.services.data_deletion_service import delete_all_user_data
 from app.services.export_service import (
     begin_export_attempt,
@@ -48,6 +49,38 @@ def _migration_roundtrip() -> None:
     _alembic("upgrade", "head")
     inspector = inspect(engine)
     assert inspector.has_table("user_export_jobs")
+
+    # API-001 legacy-owner migration must fail closed instead of silently truncating.
+    _alembic("downgrade", "0033_api001_export_jobs")
+    over_limit_user = uuid4()
+    with SessionLocal() as db:
+        db.add(User(id=over_limit_user, nickname="api001-over-limit-migration"))
+        db.flush()
+        db.add_all(
+            ObjectItem(
+                user_id=over_limit_user,
+                name=f"legacy-over-{index:03d}",
+                normalized_name=f"legacy-over-{index:03d}",
+            )
+            for index in range(501)
+        )
+        db.commit()
+
+    failed = subprocess.run(
+        ["alembic", "upgrade", "head"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode != 0
+    assert "OBJECT_OWNER_CAPACITY_EXISTING_DATA_EXCEEDED" in (
+        failed.stdout + failed.stderr
+    )
+
+    with SessionLocal() as db:
+        db.execute(delete(User).where(User.id == over_limit_user))
+        db.commit()
+    _alembic("upgrade", "head")
 
 
 def _seed() -> tuple[UUID, UUID]:
@@ -340,8 +373,78 @@ def _prove_export_delete_handoff_serializes_upload() -> None:
             db.execute(delete(User).where(User.id == user_id))
             db.commit()
 
+
+
+def _prove_object_owner_capacity_trigger_serializes_concurrent_inserts() -> None:
+    user_id = uuid4()
+    with SessionLocal() as db:
+        db.add(User(id=user_id, nickname="api001-object-capacity"))
+        db.flush()
+        db.add_all(
+            ObjectItem(
+                user_id=user_id,
+                name=f"capacity-{index:03d}",
+                normalized_name=f"capacity-{index:03d}",
+            )
+            for index in range(499)
+        )
+        db.commit()
+
+    start = threading.Barrier(2)
+    successes: list[str] = []
+    rejected: list[str] = []
+    errors: list[BaseException] = []
+
+    def insert_one(name: str) -> None:
+        try:
+            with SessionLocal() as db:
+                db.add(
+                    ObjectItem(
+                        user_id=user_id,
+                        name=name,
+                        normalized_name=name,
+                    )
+                )
+                start.wait(timeout=15)
+                try:
+                    db.commit()
+                    successes.append(name)
+                except IntegrityError as exc:
+                    db.rollback()
+                    assert "OBJECT_OWNER_CAPACITY_EXCEEDED" in str(exc.orig)
+                    rejected.append(name)
+        except BaseException as exc:
+            errors.append(exc)
+
+    first = threading.Thread(target=insert_one, args=("capacity-race-a",))
+    second = threading.Thread(target=insert_one, args=("capacity-race-b",))
+    first.start()
+    second.start()
+    first.join(timeout=20)
+    second.join(timeout=20)
+    assert not first.is_alive()
+    assert not second.is_alive()
+    if errors:
+        raise errors[0]
+
+    assert len(successes) == 1
+    assert len(rejected) == 1
+    with SessionLocal() as db:
+        count = int(
+            db.scalar(
+                select(func.count(ObjectItem.id)).where(
+                    ObjectItem.user_id == user_id
+                )
+            )
+            or 0
+        )
+        assert count == 500
+        db.execute(delete(User).where(User.id == user_id))
+        db.commit()
+
 def main() -> None:
     _migration_roundtrip()
+    _prove_object_owner_capacity_trigger_serializes_concurrent_inserts()
     user_id, export_id = _seed()
     try:
         _prove_single_claim(export_id)
