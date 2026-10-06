@@ -37,6 +37,13 @@ orientation/resize/encode, and release of the original byte buffer. OCR and Visi
 the same `AI_IMAGE_PREPROCESS` service class. Provider concurrency remains a separate
 resource budget and is claimed later by AIGateway.
 
+The preprocessing lease is actively renewed while that RAM-heavy section is running.
+Renewal is bound to permit id + secret token digest + service class and only succeeds
+while the current lease is still live; an expired, forged, released, or replaced permit
+cannot be resurrected. Heartbeat failure is fail-closed: the request does not proceed to
+the AI provider. Production uses a 60-second lease with renewals multiple times per lease
+period, so normal expiry cannot silently create an extra preprocessing slot.
+
 ## Derivative pipeline
 
 For JPEG, PNG, and WebP sources:
@@ -85,5 +92,8 @@ Exact-head CI must prove:
 - EXIF metadata is absent from provider-bound bytes;
 - forged MIME and unsafe dimensions fail before provider disclosure;
 - AI Gateway independently rejects bytes over AI_IMAGE_MAX_BYTES;
+- preprocessing heartbeat keeps a real PostgreSQL slot live beyond its original lease;
+- forged, expired, released/replaced permits cannot renew;
+- renewal failure fails closed before provider disclosure;
 - OCR/Vision and deletion/media-change regressions remain green;
 - full backend and production config gates remain green.
