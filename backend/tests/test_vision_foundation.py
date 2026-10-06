@@ -23,7 +23,11 @@ from app.services.ai_gateway import (
     DeterministicAIProvider,
     get_ai_gateway,
 )
-from app.services.concurrency_guard import claim_provider_permit, release_permit
+from app.services.concurrency_guard import (
+    claim_image_preprocess_permit,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorageError,
@@ -574,6 +578,78 @@ async def test_deletion_generation_change_blocks_vision_result(
 
     assert response.status_code == 409
     assert response.json()["detail"] == "DATA_DELETION_REQUEST_STALE"
+
+
+@pytest.mark.asyncio
+async def test_vision_preprocess_saturation_blocks_storage_before_decode(
+    client,
+    vision_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = vision_dependencies
+    user_id, headers = await _new_user(client, "vision-preprocess-saturation")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings(
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.vision_service.get_settings", lambda: settings)
+    occupied = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    try:
+        response = await client.post(
+            f"/v1/media/{media_id}/vision",
+            headers=headers,
+        )
+    finally:
+        assert release_permit(engine, permit=occupied, settings=settings) is True
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "AI_IMAGE_PREPROCESS_SATURATED"
+    assert int(response.headers["Retry-After"]) >= 1
+    assert storage.reads == []
+    assert provider.image_requests == []
+
+
+@pytest.mark.asyncio
+async def test_vision_preprocess_permit_releases_after_decode_failure(
+    client,
+    vision_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = vision_dependencies
+    user_id, headers = await _new_user(client, "vision-preprocess-release")
+    settings = _gateway_settings(
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.vision_service.get_settings", lambda: settings)
+
+    output = BytesIO()
+    Image.new("RGB", (32, 32), (1, 2, 3)).save(output, format="PNG")
+    media_id = _insert_media(
+        storage,
+        user_id=user_id,
+        content_type="image/jpeg",
+        data=output.getvalue(),
+    )
+    response = await client.post(f"/v1/media/{media_id}/vision", headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "VISION_ANALYSIS_AI_IMAGE_TYPE_MISMATCH"
+    assert provider.image_requests == []
+
+    released_slot = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    assert release_permit(engine, permit=released_slot, settings=settings) is True
 
 
 @pytest.mark.asyncio
