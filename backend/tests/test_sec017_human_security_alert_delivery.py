@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -163,9 +163,24 @@ def test_feishu_message_is_allowlisted_and_requires_provider_ack(monkeypatch) ->
 @pytest.mark.parametrize(
     ("response", "delivered", "retryable", "error_code"),
     (
-        (httpx.Response(200, json={"code": 19021, "msg": "secret body"}), False, False, "FEISHU_PROVIDER_19021"),
-        (httpx.Response(200, json={"code": 99999, "msg": "unknown body"}), False, True, "FEISHU_PROVIDER_UNKNOWN"),
-        (httpx.Response(200, content=b"not-json"), False, True, "FEISHU_RESPONSE_INVALID"),
+        (
+            httpx.Response(200, json={"code": 19021, "msg": "secret body"}),
+            False,
+            False,
+            "FEISHU_PROVIDER_19021",
+        ),
+        (
+            httpx.Response(200, json={"code": 99999, "msg": "unknown body"}),
+            False,
+            True,
+            "FEISHU_PROVIDER_UNKNOWN",
+        ),
+        (
+            httpx.Response(200, content=b"not-json"),
+            False,
+            True,
+            "FEISHU_RESPONSE_INVALID",
+        ),
         (httpx.Response(408), False, True, "FEISHU_HTTP_408"),
         (httpx.Response(500), False, True, "FEISHU_HTTP_500"),
     ),
