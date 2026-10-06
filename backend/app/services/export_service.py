@@ -1053,8 +1053,7 @@ def cleanup_export_artifact(
 
     prefix = export_object_prefix(owner_user_id, job_id)
     authority_check()
-    keys = list(storage.iter_object_keys(prefix))
-    for key in keys:
+    for key in storage.iter_object_keys(prefix):
         authority_check()
         storage.delete_object(key)
 
