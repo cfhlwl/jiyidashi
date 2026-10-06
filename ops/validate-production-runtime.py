@@ -215,6 +215,20 @@ def main() -> None:
             "AI_IMAGE_PREPROCESS_USER_CONCURRENCY must be <= global concurrency"
         )
 
+    bounded_int(
+        values, "EXPORT_BATCH_SIZE", minimum=25, maximum=1000, errors=errors
+    )
+    bounded_int(
+        values,
+        "EXPORT_ARTIFACT_MAX_BYTES",
+        minimum=1024 * 1024,
+        maximum=2 * 1024 * 1024 * 1024,
+        errors=errors,
+    )
+    bounded_int(
+        values, "EXPORT_ARTIFACT_TTL_HOURS", minimum=1, maximum=168, errors=errors
+    )
+
     request_body_limit = body_limit_bytes(values.get("API_REQUEST_BODY_LIMIT", ""))
     if request_body_limit is None:
         errors.append("API_REQUEST_BODY_LIMIT must be a bounded byte size")
