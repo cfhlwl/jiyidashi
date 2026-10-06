@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from app.core.db import SessionLocal
 from app.models import Memory, MemorySource
 from app.person_models import Person, PersonAlias
-from tests.export_test_support import export_payload
+from export_test_support import export_payload
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
