@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 import threading
 from datetime import UTC, datetime, timedelta
@@ -13,12 +12,12 @@ from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal, engine
 from app.maintenance_adapters import handle_security_alert_delivery
-from app.maintenance_worker import MaintenanceWorker
 from app.maintenance_job_models import (
     MaintenanceJob,
     MaintenanceJobStatus,
     MaintenanceJobType,
 )
+from app.maintenance_worker import MaintenanceWorker
 from app.security_models import (
     SecurityAlert,
     SecurityAlertDeliveryStatus,
@@ -40,9 +39,6 @@ from app.services.security_alerting import (
     begin_security_alert_delivery_attempt,
     finalize_security_alert_delivery_attempt,
 )
-
-
-DATABASE_URL = os.environ["DATABASE_URL"]
 
 
 def _alembic(*args: str) -> None:
