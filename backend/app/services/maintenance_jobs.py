@@ -10,12 +10,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.export_models import UserExportJob, UserExportStatus
-from app.security_models import SecurityAlert, SecurityAlertDeliveryStatus
 from app.maintenance_job_models import (
     MaintenanceJob,
     MaintenanceJobStatus,
     MaintenanceJobType,
 )
+from app.security_models import SecurityAlert, SecurityAlertDeliveryStatus
 
 DEFAULT_LEASE_SECONDS = 60
 DEFAULT_MAX_ATTEMPTS = 5
