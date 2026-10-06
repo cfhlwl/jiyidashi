@@ -38,6 +38,7 @@ from app.services.data_deletion_service import (
 from app.services.export_service import (
     EXPORT_CONTENT_TYPE,
     ExportExecutionError,
+    assert_export_attempt_current,
     begin_export_attempt,
     cleanup_export_artifact,
     export_attempt_object_key,
@@ -557,6 +558,11 @@ def handle_export(claim: MaintenanceJobClaim) -> None:
             # its committed gate/maintenance fencing must stop this stale attempt
             # before any new export object is written.
             authority.check()
+            assert_export_attempt_current(
+                job_id=export_job_id,
+                owner_user_id=owner_user_id,
+                revision=revision,
+            )
             stored = storage.upload_file(
                 generated.path,
                 object_key,
