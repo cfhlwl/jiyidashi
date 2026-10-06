@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.core.db import SessionLocal
 from app.media_models import MediaAsset, MediaEvidenceLink, MediaKind, MediaStatus
 from app.models import Memory, MemoryEdit, MemorySource, MemoryType, SourceType
-from tests.export_test_support import export_payload
+from export_test_support import export_payload
 
 
 async def _current_user_id(client, headers: dict[str, str]) -> UUID:
