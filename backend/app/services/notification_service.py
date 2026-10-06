@@ -797,14 +797,19 @@ def process_notification_fanout_claim(claim: MaintenanceJobClaim) -> None:
         if campaign.fanout_cursor_device_id is not None:
             conditions.append(Device.id > campaign.fanout_cursor_device_id)
 
-        candidates = list(
-            db.scalars(
-                select(Device)
-                .where(*conditions)
-                .order_by(Device.id)
-                .limit(FANOUT_BATCH_SIZE + 1)
-            )
+        candidate_statement = (
+            select(Device)
+            .where(*conditions)
+            .order_by(Device.id)
+            .limit(FANOUT_BATCH_SIZE + 1)
         )
+        if db.get_bind().dialect.name == "postgresql":
+            # Serialize the selected Device authority with account deletion. A delete
+            # that wins first removes the row before this SELECT can return it; a
+            # fan-out that wins first keeps the Device alive until its Delivery rows
+            # and cursor commit, after which the delete cascade removes both.
+            candidate_statement = candidate_statement.with_for_update()
+        candidates = list(db.scalars(candidate_statement))
         page = candidates[:FANOUT_BATCH_SIZE]
         has_more = len(candidates) > FANOUT_BATCH_SIZE
         page_ids = [row.id for row in page]
