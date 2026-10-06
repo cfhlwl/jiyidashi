@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.export_models import UserExportJob, UserExportStatus
+from app.security_models import SecurityAlert, SecurityAlertDeliveryStatus
 from app.maintenance_job_models import (
     MaintenanceJob,
     MaintenanceJobStatus,
@@ -216,6 +217,35 @@ def _expire_exhausted_running_jobs(db: Session, *, now: datetime) -> int:
         job.lease_expires_at = None
         job.last_error_code = "MAINTENANCE_ATTEMPTS_EXHAUSTED"
         job.updated_at = now
+
+        if job.job_type == MaintenanceJobType.SECURITY_ALERT_DELIVERY.value:
+            raw_alert_id = (job.payload_json or {}).get("alert_id")
+            try:
+                alert_id = UUID(str(raw_alert_id))
+            except (TypeError, ValueError, AttributeError):
+                alert_id = None
+            if alert_id is not None:
+                alert_statement = select(SecurityAlert).where(
+                    SecurityAlert.id == alert_id,
+                    SecurityAlert.delivery_status.not_in(
+                        (
+                            SecurityAlertDeliveryStatus.DELIVERED.value,
+                            SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value,
+                        )
+                    ),
+                )
+                if db.get_bind().dialect.name == "postgresql":
+                    alert_statement = alert_statement.with_for_update()
+                alert = db.scalar(alert_statement)
+                if alert is not None:
+                    alert.delivery_status = (
+                        SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
+                    )
+                    alert.delivery_error_code = "MAINTENANCE_ATTEMPTS_EXHAUSTED"
+                    alert.delivery_attempt_token = None
+                    alert.next_retry_at = None
+                    alert.delivery_revision += 1
+                    alert.updated_at = now
 
         if (
             job.job_type == MaintenanceJobType.EXPORT.value
