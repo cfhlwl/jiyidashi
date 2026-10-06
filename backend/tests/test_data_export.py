@@ -6,7 +6,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.db import SessionLocal
 from app.export_models import UserExportJob, UserExportStatus
@@ -117,6 +117,9 @@ async def test_export_create_retry_and_cross_owner_status_are_safe(client):
 
 @pytest.mark.asyncio
 async def test_worker_builds_private_verified_export_and_signed_download(client, monkeypatch):
+    with SessionLocal() as db:
+        db.execute(delete(MaintenanceJob))
+        db.commit()
     headers, user_id = await _new_user(client, "export-worker")
     storage = FakeExportStorage()
     now = datetime.now(UTC)
