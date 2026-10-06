@@ -377,27 +377,31 @@ def _prove_preprocess_renew_claim_serialization(
     trigger_name = "sec016_test_slow_preprocess_renew"
     function_name = "sec016_test_slow_preprocess_renew_fn"
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                f"""
-                CREATE OR REPLACE FUNCTION {function_name}()
-                RETURNS trigger
-                LANGUAGE plpgsql
-                AS $
-                BEGIN
-                    IF NEW.service_class = 'AI_IMAGE_PREPROCESS' THEN
-                        PERFORM pg_sleep(4);
-                    END IF;
-                    RETURN NEW;
-                END;
-                $;
-                DROP TRIGGER IF EXISTS {trigger_name} ON work_permits;
-                CREATE TRIGGER {trigger_name}
-                AFTER UPDATE OF expires_at ON work_permits
-                FOR EACH ROW
-                EXECUTE FUNCTION {function_name}();
-                """
-            )
+        connection.exec_driver_sql(
+            f"""
+            CREATE OR REPLACE FUNCTION {function_name}()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $func$
+            BEGIN
+                IF NEW.service_class = 'AI_IMAGE_PREPROCESS' THEN
+                    PERFORM pg_sleep(4);
+                END IF;
+                RETURN NEW;
+            END;
+            $func$
+            """
+        )
+        connection.exec_driver_sql(
+            f"DROP TRIGGER IF EXISTS {trigger_name} ON work_permits"
+        )
+        connection.exec_driver_sql(
+            f"""
+            CREATE TRIGGER {trigger_name}
+            AFTER UPDATE OF expires_at ON work_permits
+            FOR EACH ROW
+            EXECUTE FUNCTION {function_name}()
+            """
         )
 
     renew_result: list = []
@@ -462,10 +466,12 @@ def _prove_preprocess_renew_claim_serialization(
             assert active[0].id == first.permit_id
     finally:
         with engine.begin() as connection:
-            connection.execute(
-                text(f"DROP TRIGGER IF EXISTS {trigger_name} ON work_permits")
+            connection.exec_driver_sql(
+                f"DROP TRIGGER IF EXISTS {trigger_name} ON work_permits"
             )
-            connection.execute(text(f"DROP FUNCTION IF EXISTS {function_name}()"))
+            connection.exec_driver_sql(
+                f"DROP FUNCTION IF EXISTS {function_name}()"
+            )
         release_permit(engine, permit=first, settings=settings)
 
 
