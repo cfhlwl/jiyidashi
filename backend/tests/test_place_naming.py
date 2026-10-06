@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from tests.export_test_support import export_payload
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
@@ -256,9 +257,8 @@ async def test_place_naming_export_is_owner_scoped_and_includes_correction_histo
     )
     assert response.status_code == 200
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    location = exported.json()["location"]
+    export_body, exported_text = await export_payload(client, headers_a)
+    location = export_body["location"]
     assert len(location["places"]) == 1
     assert location["places"][0]["id"] == str(place_a)
     assert location["places"][0]["name"] == "A 的家"
