@@ -172,6 +172,7 @@ class AdminNotificationCampaignRead(BaseModel):
     submitted_at: datetime | None
     cancelled_at: datetime | None
     completed_at: datetime | None
+    error_code: str | None
     created_at: datetime
     updated_at: datetime
     eligible_preview: NotificationEligibleCounts
