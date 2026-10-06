@@ -1426,21 +1426,57 @@ class JiYiApiClient {
   }
 
   Future<Map<String, dynamic>> markObjectLocationStale(String objectName) async {
-    // [人工注释][S1-011] 失效操作先从用户自己的 Object 列表精确定位对象，
-    // 不通过 POST 创建一个原本不存在的空对象。
-    final objects = await _jsonListRequest('/objects');
+    // API-001: /objects is now cursor-paginated. Keep the existing product behavior
+    // by walking every page until the exact normalized object name is found.
+    final authSnapshot = _captureAuthenticatedSession();
     final normalized = objectName.trim().toLowerCase();
-    Map<String, dynamic>? matched;
-    for (final object in objects) {
-      if ((object['name']?.toString().trim().toLowerCase() ?? '') == normalized) {
-        matched = object;
-        break;
+    String? cursor;
+    final seenCursors = <String>{};
+
+    while (true) {
+      final query = <String, String>{'limit': '100'};
+      if (cursor != null) query['cursor'] = cursor;
+      final page = await _jsonRequest(
+        'GET',
+        Uri(path: '/objects', queryParameters: query).toString(),
+        authSnapshot: authSnapshot,
+      );
+      _assertAuthenticatedSessionCurrent(authSnapshot);
+
+      final rawItems = page['items'];
+      final rawNextCursor = page['next_cursor'];
+      if (rawItems is! List<dynamic> ||
+          (rawNextCursor != null && rawNextCursor is! String)) {
+        throw ProtocolException('服务端返回格式不正确');
       }
+
+      for (final item in rawItems) {
+        if (item is! Map<String, dynamic>) {
+          throw ProtocolException('服务端返回格式不正确');
+        }
+        final id = item['id'];
+        final name = item['name'];
+        if (id is! String || id.trim().isEmpty || name is! String) {
+          throw ProtocolException('服务端返回格式不正确');
+        }
+        if (name.trim().toLowerCase() == normalized) {
+          return _jsonRequest(
+            'POST',
+            '/objects/$id/location/stale',
+            authSnapshot: authSnapshot,
+          );
+        }
+      }
+
+      if (rawNextCursor == null) break;
+      final next = rawNextCursor.trim();
+      if (next.isEmpty || !seenCursors.add(next)) {
+        throw ProtocolException('服务端返回格式不正确');
+      }
+      cursor = next;
     }
-    if (matched == null) {
-      throw ApiException(404, '没有找到这个物品');
-    }
-    return _jsonRequest('POST', '/objects/${matched['id']}/location/stale');
+
+    throw ApiException(404, '没有找到这个物品');
   }
 
   Future<LocationBatchResult> uploadLocationBatch(
