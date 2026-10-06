@@ -259,6 +259,25 @@ def claim_provider_permit(
     )
 
 
+def claim_image_preprocess_permit(
+    bind: Engine,
+    *,
+    user_id: UUID,
+    settings: Settings | None = None,
+) -> Permit:
+    cfg = settings or get_settings()
+    return claim_permit(
+        bind,
+        service_class="AI_IMAGE_PREPROCESS",
+        global_limit=cfg.ai_image_preprocess_global_concurrency,
+        user_limit=cfg.ai_image_preprocess_user_concurrency,
+        user_id=user_id,
+        lease_seconds=cfg.ai_image_preprocess_permit_lease_seconds,
+        saturated_code="AI_IMAGE_PREPROCESS_SATURATED",
+        settings=cfg,
+    )
+
+
 def claim_argon2_permit(
     bind: Engine,
     *,
