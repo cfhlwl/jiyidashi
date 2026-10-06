@@ -31,6 +31,7 @@ from app.notification_schemas import (
     AdminNotificationCampaignSubmit,
     DevicePushRegistrationRequest,
 )
+from app.services import notification_service
 from app.services.admin_security import hash_admin_password
 from app.services.export_service import generate_export_file, remove_temp_file
 from app.services.notification_provider import (
@@ -44,12 +45,10 @@ from app.services.notification_service import (
     eligible_device_counts,
     enqueue_due_notification_campaigns,
     finalize_notification_delivery_attempt,
-    notification_campaign_projection,
     push_token_digest,
     register_device_push,
     submit_notification_campaign,
 )
-from app.services import notification_service
 
 
 def _reset_notification_jobs() -> None:
@@ -331,7 +330,7 @@ def test_targeting_counts_match_eligible_devices_and_filters():
     actor = _admin()
     user_a = _user("target-a")
     user_b = _user("target-b")
-    ios = _device(
+    _device(
         user_a.id,
         client_uuid=f"ios-{uuid4().hex}",
         platform=PushPlatform.IOS,
@@ -575,7 +574,7 @@ def test_bounded_fanout_worker_delivery_and_stale_attempt_fencing(monkeypatch):
     # Build a second campaign but claim/finalize one delivery manually so the exact
     # revision/token stale-attempt contract is proven independently from worker glue.
     _reset_notification_jobs()
-    second = _create_submitted_campaign(
+    _create_submitted_campaign(
         actor=actor,
         payload=_campaign_payload(
             audience=NotificationAudienceType.DEVICE_IDS,
