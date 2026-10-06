@@ -77,7 +77,8 @@ void main() {
       size: const Size(320, 640),
     );
 
-    expect(find.text('今天好'), findsOneWidget);
+    expect(find.text('今天'), findsOneWidget);
+    expect(find.text('9月30日 · 星期三'), findsOneWidget);
     expect(find.byKey(const ValueKey('today-footprint-loaded')), findsOneWidget);
     expect(find.textContaining('上海办公室'), findsOneWidget);
     expect(tester.takeException(), isNull);

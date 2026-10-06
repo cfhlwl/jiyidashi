@@ -78,7 +78,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('today-footprint-loaded')), findsOneWidget);
     expect(find.text('2 个地点片段'), findsOneWidget);
-    expect(find.text('2026年9月20日'), findsWidgets);
+    expect(find.text('9月20日 · 星期日'), findsOneWidget);
     expect(find.text('07:10 · 家'), findsOneWidget);
     expect(find.text('08:35 · 公司'), findsOneWidget);
     // Verify the explicit accessibility contract on the widget itself.
@@ -208,17 +208,30 @@ void main() {
     );
 
     expect(find.text('今天去了哪里'), findsWidgets);
-    expect(find.text('家'), findsOneWidget);
-    expect(find.text('07:10 - 08:00'), findsOneWidget);
-    expect(find.text('公司'), findsOneWidget);
-    expect(find.text('08:35 起'), findsOneWidget);
+    expect(find.text('07:10 · 家'), findsOneWidget);
+    expect(find.text('08:35 · 公司'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.label == '第 1 个地点，07:10，家，已形成足迹',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.label == '第 2 个地点，08:35，公司，进行中',
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('LOCATION_CLUSTER'), findsNothing);
     expect(find.textContaining('你现在就在'), findsNothing);
     expect(find.textContaining('当前位置是'), findsNothing);
 
-    final homeY = tester.getTopLeft(find.text('家')).dy;
-    final workY = tester.getTopLeft(find.text('公司')).dy;
-    expect(homeY, lessThan(workY));
+    // V3 renders compact pills on the map; visit order is asserted by the
+    // explicit semantic labels above rather than by vertical row placement.
   });
 
   testWidgets('Elder empty footprint is truthful and never claims no outing', (tester) async {
@@ -309,7 +322,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('today-footprint-retry')));
     await tester.pumpAndSettle();
-    expect(find.text('重试成功地点'), findsOneWidget);
+    expect(find.text('09:00 · 重试成功地点'), findsOneWidget);
     expect(api.calls, 2);
   });
 

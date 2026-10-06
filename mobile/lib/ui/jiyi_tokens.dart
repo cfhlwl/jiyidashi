@@ -60,7 +60,7 @@ abstract final class JiYiProductColors {
 // replace server-authoritative data or semantic state colors.
 abstract final class JiYiTodayVisuals {
   static const Color background = Color(0xFFFAF8F3);
-  static const Color card = Color(0xFFFFFEFC);
+  static const Color card = Color(0xFFFEFDFE);
   static const Color navy = Color(0xFF102A50);
   static const Color primaryBlue = Color(0xFF2378E8);
   static const Color secondaryText = Color(0xFF6D829F);

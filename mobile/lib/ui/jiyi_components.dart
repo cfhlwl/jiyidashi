@@ -435,7 +435,7 @@ class TodayHeroBackground extends StatelessWidget {
     this.fit = BoxFit.cover,
   });
 
-  static const defaultAsset = 'assets/brand/jiyi_today_hero.png';
+  static const defaultAsset = 'assets/brand/today_hero_default.png';
 
   final String? assetName;
   final Widget fallback;

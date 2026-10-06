@@ -156,6 +156,7 @@ class _TodayPageState extends State<TodayPage> {
         fullBleed: true,
         height: JiYiTodayGeometry.heroHeight,
         atmospheric: true,
+        heroAsset: TodayHeroBackground.defaultAsset,
         title: elderMode ? '今天去了哪里' : '今天',
         subtitle: '$date\n${elderMode ? '这里只显示已经形成的足迹。' : '把今天留在这里'}',
       ),
@@ -368,11 +369,13 @@ class _TodaySurfaceCard extends StatelessWidget {
     return Material(
       color: JiYiTodayVisuals.card,
       elevation: 0,
+      surfaceTintColor: Colors.transparent,
       shadowColor: Colors.transparent,
       borderRadius: BorderRadius.circular(JiYiRadius.large),
       clipBehavior: Clip.antiAlias,
       child: DecoratedBox(
         decoration: BoxDecoration(
+          color: JiYiTodayVisuals.card,
           borderRadius: BorderRadius.circular(JiYiRadius.large),
           boxShadow: const [
             BoxShadow(
