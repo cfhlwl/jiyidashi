@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from tests.export_test_support import export_payload
 from sqlalchemy import func, select
 
 from app.auth_models import AuthIdentity, AuthProvider
@@ -604,9 +605,7 @@ async def test_full_delete_converges_after_presigned_put_expiry_and_is_owner_iso
             ).scalar_subquery())
         ) == 0
 
-    exported = await client.get("/v1/export/data", headers=owner_headers)
-    assert exported.status_code == 200
-    body = exported.json()
+    body, exported_text = await export_payload(client, owner_headers)
     assert body["profile"]["id"] == str(owner_id)
     assert body["memories"] == []
     assert body["memory_sources"] == []
