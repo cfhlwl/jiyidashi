@@ -48,6 +48,7 @@ def _seed() -> tuple[UUID, UUID]:
     export_id = uuid4()
     with SessionLocal() as db:
         db.add(User(id=user_id, nickname="api001-postgres"))
+        db.flush()
         for index in range(5):
             db.add(
                 Memory(
