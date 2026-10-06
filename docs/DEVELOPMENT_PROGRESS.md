@@ -429,26 +429,69 @@ ADMIN-001
 ### CORE-005 Passive Recording Consumer Trust & Self-Healing — Deferred P0
 
 > **状态边界（2026-10-06）：只登记，不启动代码修改。** 当前本地 Codex 正在重构 Consumer UI，为避免 `mobile/**`、Golden、页面状态组件发生冲突，CORE-005 在 UIUX-P0-002 收口前保持 ⏸。UI 稳定后立即转 🔵，优先级高于普通 P1 增量功能。
+>
+> **跨平台约束：CORE-005 不是“修 iOS 定位”的单端任务，而是 iOS + Android 共用的被动记录可靠性、自愈与消费者信任任务。** 共享 Flutter / Backend authority 必须一次修正，两端原生恢复机制分别实现并最终一起通过真机矩阵。
 
-现场问题与当前判断：
+#### 已确认现状
 
 ```text
 已修：
 transient AUTH / network uncertainty
 → 不再清除 automatic_enabled 用户偏好
 
-仍待修：
+共享待修：
 App resume / authority revalidation
-→ 可能频繁 PAUSED / RECOVERING
+→ 可能把正常 producer 主动 quarantine
+→ 网络瞬断时可能长期停留在 PAUSED / RECOVERING
 
 历史 gap
-→ 目前可能把当前健康状态一起标成 DEGRADED
+→ 目前可能把 Current Health 一起标成 DEGRADED
 
-iOS low-power sparse callbacks
-→ 可能被 20 分钟 gap policy 误判为记录故障
+统一 20 分钟 gap policy
+→ 对 iOS Significant Location Change
+→ 对 Android adaptive/low-power sampling
+均可能产生“低采样 = 故障”的假阳性
+
+真实未采集时段
+→ 当前不会伪造
+→ 此原则继续保持
 ```
 
-消费者目标：
+#### CORE-005-SHARED — iOS / Android 共用修改
+
+| ID | 优先级 | 修改项 | 状态 | 验收重点 |
+| --- | --- | --- | --- | --- |
+| CORE-005-S1 | P0 | Current Runtime Health / Historical Coverage 解耦 | ⬜ | 当前 producer RUNNING + recent fix/ACK 时必须允许显示“自动记录正常”；当天早些时候的 gap 只进入“今日记录完整度/历史覆盖”，不得把当前状态继续标成 DEGRADED。 |
+| CORE-005-S2 | P0 | Authority Revalidation / Quarantine Policy | ⬜ | 审计 `App resumed → initialize → quarantine → privacy fetch` 的共享路径。禁止每次前台恢复都无条件停掉一个已经满足 same-owner + permission + recent authority 的 producer；研究短 TTL Recording Authority Lease / bounded async revalidation。 |
+| CORE-005-S3 | P0 | Gap Taxonomy V2 | ⬜ | 至少区分 `CONFIRMED_OUTAGE`、`LOW_POWER_OBSERVATION_GAP`、`DELIVERY_PENDING`、`PRIVACY_PAUSE`、`PERMISSION_BLOCKED`、`PLATFORM_RESTRICTED`、`UNKNOWN`；不能仅因“相邻样本 >20 分钟”直接判故障。 |
+| CORE-005-S4 | P0 | Self-Healing State Machine | ⬜ | transient network / token refresh / DNS/TLS route rebuild / temporary server failure 优先自动重试；保留 enabled preference；恢复过程 bounded、有 diagnostics，不依赖用户反复点“刷新状态”。 |
+| CORE-005-S5 | P0 UX | Consumer Status Simplification | ⬜ | 普通用户只看“正常 / 正在恢复 / 需要你处理”；隐藏 producer / authority / queue / unknown gap 等工程术语。只有用户能实际处理的状态才显示强提醒和 CTA。 |
+| CORE-005-S6 | P0 | Evidence-backed Gap Recovery | ⬜ | 真实无定位证据时保持 UNKNOWN；可由 Photo / Calendar / Activity / Workout 等 Context 补充“这段时间还有哪些线索”，但不得反向伪造 LocationPoint、Visit 或 route。 |
+| CORE-005-S7 | P0 | Diagnostics / Field Evidence | ⬜ | owner-scoped 记录 pause reason、pause_at、recovery reason、attempt/result/time、last successful RUNNING、permission/services/background restriction、native/SQLite queue、last fix/ACK；不得记录 token/精确敏感 payload 到日志。 |
+
+#### CORE-005-IOS — iOS 专项修改
+
+| ID | 优先级 | 修改项 | 状态 | 验收重点 |
+| --- | --- | --- | --- | --- |
+| CORE-005-I1 | P0 | Resume Quarantine Narrowing | ⬜ | iOS App 前后台切换不得无条件把正常 CoreLocation producer 停掉；Privacy 明确暂停、owner change、权限撤回、authority lease 真正失效时才进入 fail-closed pause。 |
+| CORE-005-I2 | P0 | CoreLocation Relaunch Recovery | ⬜ | Significant Location Change /系统 relaunch 后保留 enabled preference，fresh AUTH + Privacy PASS 后自动恢复 RUNNING；temporary network/server failure 只进入可重试恢复，不转永久 stopped/disabled。 |
+| CORE-005-I3 | P0 | Low-power Sparse Sampling Semantics | ⬜ | stationary + Significant Location Change 下长时间无 callback 不能自动等同采集故障；结合 producer lifecycle、Visit、queue、last significant update、CLVisit（若后续接入）判断 Observability Gap。 |
+| CORE-005-I4 | P0 | Network Handoff Recovery | ⬜ | Wi‑Fi↔5G、短时断网、DNS/TLS route rebuild、access-token expiry/refresh、cold-start/resume 网络暂不可用时不得强制重新登录，也不得让 location producer 长期卡在 PAUSED。 |
+| CORE-005-I5 | P0 Field | iOS 24h / 72h Field Matrix | ⬜ | 真机覆盖锁屏、后台、前后台频繁切换、网络切换、短时断网、权限降级/恢复、系统定位关闭/恢复、设备重启；记录采集覆盖、恢复时长、Battery 与假 gap。 |
+
+#### CORE-005-ANDROID — Android 专项修改
+
+| ID | 优先级 | 修改项 | 状态 | 验收重点 |
+| --- | --- | --- | --- | --- |
+| CORE-005-A1 | P0 | Foreground Service Resume / Quarantine | ⬜ | 共享 revalidation 不能无条件调用 `pause()` 停掉正常 `NativeLocationTrackingService`；需要区分 user pause、authority uncertainty、process/service recreation。 |
+| CORE-005-A2 | P0 | START_STICKY / Process Death Recovery | ⬜ | Service 无 Intent 被系统重建时保持 non-producing quarantine 是安全底线，但恢复链必须尽快经 AUTH + Privacy 后重新启动 producer，且不能因为 process death 清除 enabled owner。 |
+| CORE-005-A3 | P0 | WorkManager Recovery Latency | ⬜ | 审计当前 15 分钟 periodic watchdog、one-shot unique work、CONNECTED constraint 与 15 分钟 exponential backoff；对 producer recovery 不能出现不必要的十几分钟空档。允许 delivery retry 与 producer recovery 使用不同调度策略。 |
+| CORE-005-A4 | P0 | Boot / Package Replace | ⬜ | `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` 后 persisted RUNNING 不能当 authority，但 enabled preference 必须保留；fresh authority PASS 后恢复，失败保持 retryable，不静默永久关闭。 |
+| CORE-005-A5 | P0 | Background Restriction / Battery Optimization | ⬜ | 正确区分系统 background restricted、battery optimization、权限不足、服务启动失败；可指导用户处理时才给 CTA，不把厂商限制统一显示成“App坏了”。 |
+| CORE-005-A6 | P0 | Android Vendor Matrix | ⬜ | 至少覆盖一台接近 AOSP/Pixel 类设备，以及主流国产厂商样本（小米/Redmi、OPPO/一加、vivo/iQOO、荣耀/华为按可用设备分批）；验证锁屏、清后台、系统回收 Service、自启动/省电限制、重启、Wi‑Fi↔移动网络。 |
+| CORE-005-A7 | P0 | Foreground Service UX / Notification | ⬜ | Android 持续定位的前台服务通知必须准确、低干扰且与真实 runtime 一致；recovery quarantine 时不能显示成“正在正常记录”。 |
+
+#### 消费者目标
 
 ```text
 当前正常
@@ -458,22 +501,54 @@ iOS low-power sparse callbacks
 → 只影响“今日记录完整度”
 → 不得误导为“当前记录受限”
 
-短时网络/前后台/令牌刷新
+短时网络 / 前后台 / 令牌刷新
 → 优先无感自愈
 → 不要求用户理解恢复状态机
 
+系统正在自动恢复
+→ 最多轻量显示“正在恢复”
+→ 恢复成功后自动消失
+
 确需用户操作
-→ 才提示“开启始终定位 / 开启系统定位”等明确动作
+→ 才提示“开启始终定位 / 开启系统定位 / 允许后台运行”等明确动作
 ```
 
-验收 Gate：
+#### Gap V2 语义
 
-- 当前 producer RUNNING + fresh fix/ACK 时，即使当天早些时候存在 gap，Current Health 仍必须可显示正常；Historical Coverage 独立展示缺口。
-- iOS 前后台切换不得无必要地产生可观测采集空档；若必须 quarantine，恢复必须 bounded、自动且有 reason/diagnostic。
-- Wi-Fi↔5G、短时断网、DNS/TLS route rebuild、access-token refresh 不得清除 enabled preference，也不得把 transient failure 变成长期 PAUSED。
-- Significant Location Change / adaptive low-power 稀疏回调不能仅因“>20 分钟无 sample”直接判 CONFIRMED_OUTAGE。
-- 真实没有任何采集证据的时间段保持 UNKNOWN，可由 Photo/Calendar/Activity 等其他 Evidence 补充上下文，但不得伪造 Visit/route。
-- 修复完成后必须以最新 exact head 重新执行 CORE-004 的 24h/72h iOS/Android 真机认证。
+```text
+CONFIRMED_OUTAGE
+明确 producer 未运行 / 权限阻断 / 服务停止且无其他采集证据
+
+LOW_POWER_OBSERVATION_GAP
+系统低功耗或采样策略导致证据稀疏，不能证明真实中断
+
+DELIVERY_PENDING
+本地已有 durable sample，但服务器尚未 ACK
+
+PRIVACY_PAUSE
+用户主动暂停，属于已知原因
+
+PERMISSION_BLOCKED
+定位权限不足
+
+PLATFORM_RESTRICTED
+系统/厂商后台限制
+
+UNKNOWN
+有证据表明存在空档，但当前无法确定原因
+```
+
+#### 统一验收 Gate
+
+- Current Runtime Health 与 Historical Coverage 必须使用不同 authority/字段，不能再互相污染状态。
+- iOS / Android 当前 producer RUNNING + fresh fix/ACK 时，即使当天早些时候存在 gap，也允许 Current Health = HEALTHY。
+- App resume 不得无必要地产生采集空档；如果 authority 必须重新验证，恢复过程必须自动、bounded、可诊断。
+- Wi‑Fi↔移动网络、短时断网、DNS/TLS route rebuild、access-token refresh 不能清除 enabled preference，也不能把 transient uncertainty 变成长期 PAUSED。
+- iOS Significant Location Change / Android adaptive low-power 稀疏回调不能单凭“>20 分钟无 sample”判 `CONFIRMED_OUTAGE`。
+- Android WorkManager/Service recovery 必须分别统计“恢复调度延迟”和“真正 producer downtime”，不能只看任务最终成功。
+- 真实完全未采集的时间段保持 UNKNOWN；后续其他 Context 只能补证据，不能插值伪造 Visit/route。
+- 修复后从最新 `main` 建立全新 CORE-004 certification candidate，iOS + Android 均执行 24h/72h 真机认证。
+- CORE-004 certification 报告必须分别给出：Current Healthy Time、Coverage%、Confirmed Outage、Low-power Observation Gap、Recovery Count、P95 Recovery Time、Queue Delivery Lag、Battery impact。
 
 
 ### UIUX-P0-002 Consumer Visual Authority
