@@ -3,11 +3,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.db import get_db
+from app.core.db import get_db, lock_object_owner_capacity
 from app.deps import get_current_user_id
 from app.models import (
     Memory,
@@ -37,6 +37,8 @@ from app.services.idempotency_service import (
 )
 from app.services.memory_service import TrustedMemoryWrite, create_trusted_memory, ensure_utc
 
+OBJECTS_MAX_PER_OWNER = 500
+
 router = APIRouter(prefix="/objects", tags=["objects"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
 DbSession = Annotated[Session, Depends(get_db)]
@@ -58,6 +60,30 @@ def create_object(payload: ObjectCreate, user_id: CurrentUser, db: DbSession) ->
     )
     if existing is not None:
         return existing
+
+    # API-001 legacy /objects can remain a complete array only because object
+    # cardinality is a hard-bounded business domain. PostgreSQL inserts serialize on
+    # the same advisory key used by the DB trigger; SQLite/test keeps the explicit
+    # count guard while production has the trigger as final authority.
+    lock_object_owner_capacity(db, user_id=user_id)
+    existing = db.scalar(
+        select(ObjectItem).where(
+            ObjectItem.user_id == user_id,
+            ObjectItem.normalized_name == normalized,
+        )
+    )
+    if existing is not None:
+        return existing
+
+    object_count = int(
+        db.scalar(
+            select(func.count(ObjectItem.id)).where(ObjectItem.user_id == user_id)
+        )
+        or 0
+    )
+    if object_count >= OBJECTS_MAX_PER_OWNER:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="OBJECT_LIMIT_REACHED")
 
     item = ObjectItem(
         user_id=user_id,
