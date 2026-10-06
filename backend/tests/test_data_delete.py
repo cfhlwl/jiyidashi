@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from tests.export_test_support import export_payload
 from sqlalchemy import func, select
 
 from app.auth_models import AuthIdentity, AuthProvider
@@ -84,6 +83,8 @@ def delete_storage():
     yield storage
     app.dependency_overrides.pop(get_object_storage, None)
 
+
+from tests.export_test_support import export_payload
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     response = await client.post("/v1/auth/dev-token", json={"nickname": nickname})
