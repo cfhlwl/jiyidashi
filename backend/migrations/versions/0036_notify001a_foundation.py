@@ -160,6 +160,7 @@ def upgrade() -> None:
         sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("error_code", sa.String(length=80), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
@@ -183,7 +184,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "status IN ('DRAFT','SCHEDULED','FANOUT','DELIVERING',"
-            "'COMPLETED','CANCELLED')",
+            "'COMPLETED','CANCELLED','FAILED')",
             name="ck_notification_campaigns_status",
         ),
         sa.CheckConstraint(
