@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
+from tests.export_test_support import export_payload
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
@@ -204,17 +205,16 @@ async def test_person_export_is_owner_scoped(client):
     )
     assert person_b.status_code == 201
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    people = exported.json()["people"]
+    export_body, exported_text = await export_payload(client, headers_a)
+    people = export_body["people"]
     assert len(people) == 1
     assert people[0]["id"] == person_a.json()["id"]
     assert people[0]["display_name"] == "妈妈"
     assert people[0]["aliases"] == ["母亲"]
     assert people[0]["revision"] == 0
-    assert "normalized_alias" not in exported.text
-    assert "B secret person" not in exported.text
-    assert "B secret note" not in exported.text
+    assert "normalized_alias" not in exported_text
+    assert "B secret person" not in exported_text
+    assert "B secret note" not in exported_text
 
     with SessionLocal() as db:
         assert db.scalar(select(Person.id).where(Person.user_id == user_a)) is not None
