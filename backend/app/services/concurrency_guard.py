@@ -21,12 +21,12 @@ from app.security_models import SecuritySignalCode
 from app.services.security_alerting import SecurityScope, record_security_signal
 
 
-async def run_blocking_worker[_BlockingResult](
-    func: Callable[..., _BlockingResult],
+async def run_blocking_worker[BlockingResult](
+    func: Callable[..., BlockingResult],
     /,
     *args,
     **kwargs,
-) -> _BlockingResult:
+) -> BlockingResult:
     """Keep an already-started thread alive under its caller's authority.
 
     Cancelling an await of ``asyncio.to_thread`` does not stop the underlying
