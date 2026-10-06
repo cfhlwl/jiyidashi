@@ -481,9 +481,9 @@ def _prove_fanout_crash_reclaim_resumes_from_cursor() -> None:
                 message = db.get(NotificationMessage, message_id)
                 if message is not None:
                     db.delete(message)
-            actor_row = db.get(AdminAccount, actor.id)
-            if actor_row is not None:
-                db.delete(actor_row)
+            # AdminAudit is append-only in PostgreSQL. The actor FK uses SET NULL,
+            # which correctly cannot mutate historical audit rows, so this disposable
+            # integration database intentionally retains its random test admin.
             db.commit()
         _cleanup_users(*(user.id for user in users))
 
@@ -650,9 +650,9 @@ def _prove_two_worker_fanout_unique_and_stale_delivery_fenced() -> None:
                 message = db.get(NotificationMessage, message_id)
                 if message is not None:
                     db.delete(message)
-            actor_row = db.get(AdminAccount, actor.id)
-            if actor_row is not None:
-                db.delete(actor_row)
+            # AdminAudit is append-only in PostgreSQL. The actor FK uses SET NULL,
+            # which correctly cannot mutate historical audit rows, so this disposable
+            # integration database intentionally retains its random test admin.
             db.commit()
         _cleanup_users(*(user.id for user in users))
 
@@ -776,9 +776,9 @@ def _prove_final_account_delete_cascade_cannot_leave_delivery() -> None:
                 message = db.get(NotificationMessage, message_id)
                 if message is not None:
                     db.delete(message)
-            actor_row = db.get(AdminAccount, actor.id)
-            if actor_row is not None:
-                db.delete(actor_row)
+            # AdminAudit is append-only in PostgreSQL. The actor FK uses SET NULL,
+            # which correctly cannot mutate historical audit rows, so this disposable
+            # integration database intentionally retains its random test admin.
             survivor_row = db.get(User, survivor.id)
             if survivor_row is not None:
                 db.delete(survivor_row)
