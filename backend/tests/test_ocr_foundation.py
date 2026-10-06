@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from datetime import UTC, datetime
 from io import BytesIO
 from uuid import UUID, uuid4
@@ -712,6 +713,42 @@ async def test_ocr_preprocess_permit_releases_after_source_too_large(
         settings=settings,
     )
     assert release_permit(engine, permit=released_slot, settings=settings) is True
+
+
+@pytest.mark.asyncio
+async def test_ocr_renewal_failure_fails_closed_before_decode_or_provider(
+    client,
+    ocr_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-preprocess-renewal-loss")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings().model_copy(
+        update={
+            "ai_image_preprocess_global_concurrency": 1,
+            "ai_image_preprocess_user_concurrency": 1,
+            "ai_image_preprocess_permit_lease_seconds": 1,
+        }
+    )
+    monkeypatch.setattr("app.services.ocr_service.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "app.services.concurrency_guard.renew_permit",
+        lambda *args, **kwargs: None,
+    )
+
+    original_read = storage.read_object
+
+    def slow_read(object_key: str, max_bytes: int) -> bytes:
+        time.sleep(1.2)
+        return original_read(object_key, max_bytes)
+
+    monkeypatch.setattr(storage, "read_object", slow_read)
+    response = await client.post(f"/v1/media/{media_id}/ocr", headers=headers)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "AI_IMAGE_PREPROCESS_LEASE_LOST"
+    assert provider.image_requests == []
 
 
 @pytest.mark.asyncio
