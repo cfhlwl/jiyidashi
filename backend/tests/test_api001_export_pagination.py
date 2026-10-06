@@ -15,6 +15,24 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     return {"Authorization": f"Bearer {body['access_token']}"}, UUID(body["user_id"])
 
 
+
+
+@pytest.mark.asyncio
+async def test_legacy_objects_array_contract_remains_client_compatible(client):
+    headers, user_id = await _new_user(client, "api001-legacy-objects")
+    with SessionLocal() as db:
+        for index in range(55):
+            name = f"legacy-{index:03d}"
+            db.add(ObjectItem(user_id=user_id, name=name, normalized_name=name))
+        db.commit()
+
+    response = await client.get("/v1/objects", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body, list)
+    assert len(body) == 55
+    assert body[-1]["name"] == "legacy-054"
+
 @pytest.mark.asyncio
 async def test_objects_default_page_is_bounded_and_stable(client):
     headers, user_id = await _new_user(client, "api001-objects")
@@ -24,7 +42,7 @@ async def test_objects_default_page_is_bounded_and_stable(client):
             db.add(ObjectItem(user_id=user_id, name=name, normalized_name=name))
         db.commit()
 
-    first = await client.get("/v1/objects", headers=headers)
+    first = await client.get("/v1/objects/page-v1", headers=headers)
     assert first.status_code == 200
     body = first.json()
     assert len(body["items"]) == 50
@@ -34,7 +52,7 @@ async def test_objects_default_page_is_bounded_and_stable(client):
     ]
 
     second = await client.get(
-        "/v1/objects",
+        "/v1/objects/page-v1",
         headers=headers,
         params={"cursor": body["next_cursor"]},
     )
@@ -49,24 +67,24 @@ async def test_objects_default_page_is_bounded_and_stable(client):
 async def test_objects_limit_max_and_cursor_tamper_fail_closed(client):
     headers, _ = await _new_user(client, "api001-cursor")
     assert (
-        await client.get("/v1/objects", headers=headers, params={"limit": 101})
+        await client.get("/v1/objects/page-v1", headers=headers, params={"limit": 101})
     ).status_code == 422
 
-    first = await client.get("/v1/objects", headers=headers, params={"limit": 1})
+    first = await client.get("/v1/objects/page-v1", headers=headers, params={"limit": 1})
     assert first.status_code == 200
     # Empty accounts have no cursor, so create one object and retry.
     assert (
-        await client.post("/v1/objects", headers=headers, json={"name": "alpha"})
+        await client.post("/v1/objects/page-v1", headers=headers, json={"name": "alpha"})
     ).status_code == 201
     assert (
-        await client.post("/v1/objects", headers=headers, json={"name": "beta"})
+        await client.post("/v1/objects/page-v1", headers=headers, json={"name": "beta"})
     ).status_code == 201
-    first = await client.get("/v1/objects", headers=headers, params={"limit": 1})
+    first = await client.get("/v1/objects/page-v1", headers=headers, params={"limit": 1})
     cursor = first.json()["next_cursor"]
     assert cursor
     forged = cursor[:-1] + ("A" if cursor[-1] != "A" else "B")
     response = await client.get(
-        "/v1/objects",
+        "/v1/objects/page-v1",
         headers=headers,
         params={"cursor": forged},
     )
@@ -80,12 +98,12 @@ async def test_object_cursor_is_owner_bound(client):
     headers_b, _ = await _new_user(client, "api001-owner-b")
     for name in ("a", "b"):
         assert (
-            await client.post("/v1/objects", headers=headers_a, json={"name": name})
+            await client.post("/v1/objects/page-v1", headers=headers_a, json={"name": name})
         ).status_code == 201
-    first = await client.get("/v1/objects", headers=headers_a, params={"limit": 1})
+    first = await client.get("/v1/objects/page-v1", headers=headers_a, params={"limit": 1})
     cursor = first.json()["next_cursor"]
     response = await client.get(
-        "/v1/objects",
+        "/v1/objects/page-v1",
         headers=headers_b,
         params={"cursor": cursor},
     )
