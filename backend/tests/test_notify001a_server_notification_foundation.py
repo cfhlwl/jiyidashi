@@ -531,7 +531,7 @@ def test_bounded_fanout_worker_delivery_and_stale_attempt_fencing(monkeypatch):
     with SessionLocal() as db:
         created, existing = enqueue_due_notification_campaigns(
             db,
-            now=datetime.now(UTC) + timedelta(seconds=1),
+            now=datetime.now(UTC),
             limit=20,
         )
         assert created == 1
@@ -584,7 +584,7 @@ def test_bounded_fanout_worker_delivery_and_stale_attempt_fencing(monkeypatch):
     with SessionLocal() as db:
         enqueue_due_notification_campaigns(
             db,
-            now=datetime.now(UTC) + timedelta(seconds=1),
+            now=datetime.now(UTC),
             limit=20,
         )
         db.commit()
@@ -665,7 +665,7 @@ def test_terminal_invalid_token_and_provider_exception_are_bounded(monkeypatch):
         with SessionLocal() as db:
             enqueue_due_notification_campaigns(
                 db,
-                now=datetime.now(UTC) + timedelta(seconds=1),
+                now=datetime.now(UTC),
                 limit=20,
             )
             db.commit()
@@ -722,7 +722,7 @@ def test_terminal_invalid_token_and_provider_exception_are_bounded(monkeypatch):
         with SessionLocal() as db:
             enqueue_due_notification_campaigns(
                 db,
-                now=datetime.now(UTC) + timedelta(seconds=1),
+                now=datetime.now(UTC),
                 limit=20,
             )
             db.commit()
@@ -773,7 +773,7 @@ def test_unconfigured_provider_and_expiry_never_false_accept():
     with SessionLocal() as db:
         enqueue_due_notification_campaigns(
             db,
-            now=datetime.now(UTC) + timedelta(seconds=1),
+            now=datetime.now(UTC),
             limit=20,
         )
         db.commit()
@@ -821,7 +821,7 @@ def test_unconfigured_provider_and_expiry_never_false_accept():
         db.commit()
         enqueue_due_notification_campaigns(
             db,
-            now=datetime.now(UTC) + timedelta(seconds=1),
+            now=datetime.now(UTC),
             limit=20,
         )
         db.commit()
