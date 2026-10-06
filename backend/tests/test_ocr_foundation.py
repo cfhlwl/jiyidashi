@@ -26,7 +26,11 @@ from app.services.ai_gateway import (
     OpenAIResponsesProvider,
     get_ai_gateway,
 )
-from app.services.concurrency_guard import claim_provider_permit, release_permit
+from app.services.concurrency_guard import (
+    claim_image_preprocess_permit,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.object_storage import (
     ObjectNotFound,
@@ -598,6 +602,78 @@ async def test_openai_image_adapter_keeps_image_and_credentials_inside_gateway()
     assert result.trust_class == "inference"
     assert result.provenance.provider == "openai"
     assert result.provenance.provider_request_id == "resp_ocr_123"
+
+
+@pytest.mark.asyncio
+async def test_ocr_preprocess_saturation_blocks_storage_before_decode(
+    client,
+    ocr_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-preprocess-saturation")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings(
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.ocr_service.get_settings", lambda: settings)
+    occupied = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    try:
+        response = await client.post(
+            f"/v1/media/{media_id}/ocr",
+            headers=headers,
+        )
+    finally:
+        assert release_permit(engine, permit=occupied, settings=settings) is True
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "AI_IMAGE_PREPROCESS_SATURATED"
+    assert int(response.headers["Retry-After"]) >= 1
+    assert storage.reads == []
+    assert provider.image_requests == []
+
+
+@pytest.mark.asyncio
+async def test_ocr_preprocess_permit_releases_after_decode_failure(
+    client,
+    ocr_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-preprocess-release")
+    settings = _gateway_settings(
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.ocr_service.get_settings", lambda: settings)
+
+    output = BytesIO()
+    Image.new("RGB", (32, 32), (1, 2, 3)).save(output, format="PNG")
+    media_id = _insert_media(
+        storage,
+        user_id=user_id,
+        content_type="image/jpeg",
+        data=output.getvalue(),
+    )
+    response = await client.post(f"/v1/media/{media_id}/ocr", headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "OCR_ANALYSIS_AI_IMAGE_TYPE_MISMATCH"
+    assert provider.image_requests == []
+
+    released_slot = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    assert release_permit(engine, permit=released_slot, settings=settings) is True
 
 
 @pytest.mark.asyncio
