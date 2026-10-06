@@ -49,7 +49,15 @@ def _prove_legacy_sec015_migration_transition() -> None:
     _alembic("downgrade", "0034_api001_object_capacity")
     now = datetime.now(UTC).replace(microsecond=0)
     rows = {
-        "delivered": (uuid4(), "HIGH", "DELIVERED", 3, None, now),
+        "delivered": (
+            uuid4(),
+            "HIGH",
+            "DELIVERED",
+            3,
+            None,
+            now,
+            "SUCCEEDED",
+        ),
         "retryable": (
             uuid4(),
             "HIGH",
@@ -57,12 +65,37 @@ def _prove_legacy_sec015_migration_transition() -> None:
             4,
             now + timedelta(minutes=5),
             None,
+            "RETRY_WAIT",
         ),
-        "terminal": (uuid4(), "CRITICAL", "TERMINAL_FAILURE", 5, None, None),
-        "medium": (uuid4(), "MEDIUM", "DELIVERED", 2, None, now),
+        "terminal": (
+            uuid4(),
+            "CRITICAL",
+            "TERMINAL_FAILURE",
+            5,
+            None,
+            None,
+            "FAILED",
+        ),
+        "medium": (
+            uuid4(),
+            "MEDIUM",
+            "DELIVERED",
+            2,
+            None,
+            now,
+            "SUCCEEDED",
+        ),
     }
     with engine.begin() as connection:
-        for label, (alert_id, severity, status, attempts, retry_at, delivered_at) in rows.items():
+        for label, (
+            alert_id,
+            severity,
+            status,
+            attempts,
+            retry_at,
+            delivered_at,
+            job_status,
+        ) in rows.items():
             connection.execute(
                 text(
                     """
@@ -91,6 +124,46 @@ def _prove_legacy_sec015_migration_transition() -> None:
                     "delivery_attempts": attempts,
                     "next_retry_at": retry_at,
                     "delivered_at": delivered_at,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+            completed_at = (
+                now
+                if job_status in {"SUCCEEDED", "FAILED", "CANCELLED"}
+                else None
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO maintenance_jobs (
+                        id, job_type, dedupe_key, owner_user_id, resource_key,
+                        payload_json, status, attempt_count, max_attempts,
+                        next_attempt_at, claimed_by, claim_token, lease_expires_at,
+                        last_error_code, started_at, completed_at, created_at, updated_at
+                    ) VALUES (
+                        :id, 'SECURITY_ALERT_DELIVERY', :dedupe_key, NULL, :resource_key,
+                        CAST(:payload_json AS JSON), :status, :attempt_count, 10,
+                        :next_attempt_at, NULL, NULL, NULL,
+                        :last_error_code, :started_at, :completed_at, :created_at, :updated_at
+                    )
+                    """
+                ),
+                {
+                    "id": uuid4(),
+                    "dedupe_key": f"security-alert:{alert_id}",
+                    "resource_key": f"security-alert:{alert_id}",
+                    "payload_json": f'{{"alert_id":"{alert_id}"}}',
+                    "status": job_status,
+                    "attempt_count": attempts,
+                    "next_attempt_at": retry_at or now,
+                    "last_error_code": (
+                        "LEGACY_TERMINAL"
+                        if job_status == "FAILED"
+                        else None
+                    ),
+                    "started_at": now,
+                    "completed_at": completed_at,
                     "created_at": now,
                     "updated_at": now,
                 },
@@ -132,7 +205,51 @@ def _prove_legacy_sec015_migration_transition() -> None:
         assert medium.delivery_revision == 0
         assert medium.delivery_provider is None
 
+        for label, (alert_id, *_rest) in rows.items():
+            jobs = list(
+                connection.execute(
+                    text(
+                        """
+                        SELECT status, attempt_count, max_attempts, next_attempt_at,
+                               claimed_by, claim_token, lease_expires_at,
+                               last_error_code, started_at, completed_at
+                        FROM maintenance_jobs
+                        WHERE job_type = 'SECURITY_ALERT_DELIVERY'
+                          AND resource_key = :resource_key
+                        """
+                    ),
+                    {"resource_key": f"security-alert:{alert_id}"},
+                ).mappings()
+            )
+            assert len(jobs) == 1, (label, jobs)
+            job = jobs[0]
+            if label == "medium":
+                assert job.status == "SUCCEEDED"
+                assert job.attempt_count == 2
+                assert job.max_attempts == 10
+                assert job.completed_at is not None
+            else:
+                assert job.status == "PENDING"
+                assert job.attempt_count == 0
+                assert job.max_attempts == 5
+                assert job.next_attempt_at is not None
+                assert job.claimed_by is None
+                assert job.claim_token is None
+                assert job.lease_expires_at is None
+                assert job.last_error_code is None
+                assert job.started_at is None
+                assert job.completed_at is None
+
         for alert_id, *_rest in rows.values():
+            connection.execute(
+                text(
+                    """
+                    DELETE FROM maintenance_jobs
+                    WHERE resource_key = :resource_key
+                    """
+                ),
+                {"resource_key": f"security-alert:{alert_id}"},
+            )
             connection.execute(
                 text("DELETE FROM security_alerts WHERE id = :id"),
                 {"id": alert_id},
