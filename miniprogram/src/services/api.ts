@@ -163,6 +163,10 @@ import {
   type PersonPatchPayload,
   type PersonRead,
 } from './people'
+import {
+  findUserObjectByNamePaginated,
+  type UserObject,
+} from './objectPagination'
 export type {
   TodayFootprintResponse,
   TodayFootprintVisit,
@@ -192,11 +196,6 @@ export type {
   Evidence,
   MemoryQueryResult,
 } from './memoryQuery'
-
-import {
-  findUserObjectByNamePaginated,
-  type UserObject,
-} from './objectPagination'
 export type { UserObject } from './objectPagination'
 
 const TOKEN_KEY = 'jiyi_access_token'
