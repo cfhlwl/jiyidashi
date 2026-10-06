@@ -27,6 +27,7 @@ class MaintenanceJobType(StrEnum):
     SECURITY_ALERT_DELIVERY = "SECURITY_ALERT_DELIVERY"
     ANALYTICS_RETENTION = "ANALYTICS_RETENTION"
     LOCATION_RETENTION = "LOCATION_RETENTION"
+    EXPORT = "EXPORT"
 
 
 class MaintenanceJobStatus(StrEnum):
@@ -54,7 +55,8 @@ class MaintenanceJob(Base):
         ),
         CheckConstraint(
             "job_type IN ('DATA_DELETE', 'ACCOUNT_DELETE', 'MEDIA_PENDING_CLEANUP', "
-            "'SECURITY_ALERT_DELIVERY', 'ANALYTICS_RETENTION', 'LOCATION_RETENTION')",
+            "'SECURITY_ALERT_DELIVERY', 'ANALYTICS_RETENTION', 'LOCATION_RETENTION', "
+            "'EXPORT')",
             name="ck_maintenance_jobs_known_type",
         ),
         CheckConstraint(
