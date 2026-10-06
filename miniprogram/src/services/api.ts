@@ -193,6 +193,12 @@ export type {
   MemoryQueryResult,
 } from './memoryQuery'
 
+import {
+  findUserObjectByNamePaginated,
+  type UserObject,
+} from './objectPagination'
+export type { UserObject } from './objectPagination'
+
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
 const AUTH_OWNER_KEY = 'jiyi_authenticated_user_id'
@@ -207,42 +213,6 @@ export type PrivacyStatus = {
   recording_paused: boolean
   paused_since?: string | null
   paused_until?: string | null
-}
-
-export type UserObject = {
-  id: string
-  name: string
-}
-
-type UserObjectPage = {
-  items: UserObject[]
-  next_cursor: string | null
-}
-
-function parseUserObjectPage(raw: unknown): UserObjectPage {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('服务端返回格式不正确')
-  }
-  const page = raw as { items?: unknown; next_cursor?: unknown }
-  if (!Array.isArray(page.items)) throw new Error('服务端返回格式不正确')
-  if (page.next_cursor !== null && typeof page.next_cursor !== 'string') {
-    throw new Error('服务端返回格式不正确')
-  }
-  const items = page.items.map((item) => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      throw new Error('服务端返回格式不正确')
-    }
-    const candidate = item as { id?: unknown; name?: unknown }
-    if (
-      typeof candidate.id !== 'string' ||
-      !candidate.id.trim() ||
-      typeof candidate.name !== 'string'
-    ) {
-      throw new Error('服务端返回格式不正确')
-    }
-    return { id: candidate.id, name: candidate.name }
-  })
-  return { items, next_cursor: page.next_cursor as string | null }
 }
 
 export function canEditApiBaseUrl(): boolean {
@@ -1196,33 +1166,20 @@ export async function markObjectLocationStale(objectName: string): Promise<void>
     }
   }
 
-  const normalized = objectName.trim().toLocaleLowerCase()
-  let cursor: string | null = null
-  const seenCursors = new Set<string>()
-
-  while (true) {
-    assertCurrentSession()
-    const params = new URLSearchParams({ limit: '100' })
-    if (cursor) params.set('cursor', cursor)
-    const raw = await request<unknown>('GET', `/objects?${params.toString()}`)
-    assertCurrentSession()
-    const page = parseUserObjectPage(raw)
-    const matched = page.items.find(
-      (item) => item.name.trim().toLocaleLowerCase() === normalized,
-    )
-    if (matched) {
-      await request('POST', `/objects/${matched.id}/location/stale`)
+  const matched = await findUserObjectByNamePaginated(
+    objectName,
+    async (cursor) => {
       assertCurrentSession()
-      return
-    }
-    if (page.next_cursor === null) break
-    const next = page.next_cursor.trim()
-    if (!next || seenCursors.has(next)) throw new Error('服务端返回格式不正确')
-    seenCursors.add(next)
-    cursor = next
-  }
-
-  throw new Error('没有找到这个物品')
+      const params = new URLSearchParams({ limit: '100' })
+      if (cursor) params.set('cursor', cursor)
+      const raw = await request<unknown>('GET', `/objects?${params.toString()}`)
+      assertCurrentSession()
+      return raw
+    },
+  )
+  if (!matched) throw new Error('没有找到这个物品')
+  await request('POST', `/objects/${matched.id}/location/stale`)
+  assertCurrentSession()
 }
 
 export async function listPlaces(limit = 25): Promise<PlaceRead[]> {
