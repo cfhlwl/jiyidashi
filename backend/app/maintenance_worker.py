@@ -24,6 +24,7 @@ from app.maintenance_adapters import (
     discover_and_enqueue_maintenance_jobs,
 )
 from app.maintenance_job_models import MaintenanceJobType
+from app.services.export_service import cleanup_stale_local_exports
 from app.services.maintenance_jobs import (
     DEFAULT_LEASE_SECONDS,
     MaintenanceJobClaim,
@@ -300,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     assert_worker_schema_current()
+    cleanup_stale_local_exports()
     worker = MaintenanceWorker(
         worker_id=args.worker_id,
         handlers=default_handlers(),
