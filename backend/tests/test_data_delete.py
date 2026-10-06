@@ -57,6 +57,7 @@ from app.services.object_storage import (
 )
 from tests.export_test_support import export_payload
 
+
 class DeleteTestStorage:
     """Small storage double with LIST, idempotent DELETE and injected failures."""
 
