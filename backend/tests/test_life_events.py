@@ -13,6 +13,7 @@ from app.models import Memory, MemoryType, Place, SourceType
 from app.services.data_deletion_service import USER_DATA_INVENTORY
 from tests.export_test_support import export_payload
 
+
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     response = await client.post("/v1/auth/dev-token", json={"nickname": nickname})
     assert response.status_code == 200
