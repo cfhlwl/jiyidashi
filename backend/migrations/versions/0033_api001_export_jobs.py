@@ -28,7 +28,7 @@ def _job_type_check(values: tuple[str, ...]) -> str:
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("maintenance_jobs", recreate="always") as batch:
+    with op.batch_alter_table("maintenance_jobs", recreate="auto") as batch:
         batch.drop_constraint("ck_maintenance_jobs_known_type", type_="check")
         batch.create_check_constraint(
             "ck_maintenance_jobs_known_type",
@@ -117,7 +117,7 @@ def downgrade() -> None:
     )
     op.drop_table("user_export_jobs")
 
-    with op.batch_alter_table("maintenance_jobs", recreate="always") as batch:
+    with op.batch_alter_table("maintenance_jobs", recreate="auto") as batch:
         batch.drop_constraint("ck_maintenance_jobs_known_type", type_="check")
         batch.create_check_constraint(
             "ck_maintenance_jobs_known_type",
