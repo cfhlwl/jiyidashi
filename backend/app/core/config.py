@@ -62,6 +62,9 @@ class Settings(BaseSettings):
 
     provider_ai_global_concurrency: int = Field(default=8, ge=1, le=1000)
     provider_ai_user_concurrency: int = Field(default=2, ge=1, le=1000)
+    ai_image_preprocess_global_concurrency: int = Field(default=2, ge=1, le=64)
+    ai_image_preprocess_user_concurrency: int = Field(default=1, ge=1, le=64)
+    ai_image_preprocess_permit_lease_seconds: int = Field(default=60, ge=5, le=600)
     provider_asr_global_concurrency: int = Field(default=4, ge=1, le=1000)
     provider_asr_user_concurrency: int = Field(default=1, ge=1, le=1000)
     provider_embedding_global_concurrency: int = Field(default=8, ge=1, le=1000)
@@ -135,6 +138,9 @@ class Settings(BaseSettings):
     ai_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
     ai_max_input_chars: int = Field(default=64000, ge=1, le=1_000_000)
     ai_max_output_tokens: int = Field(default=4096, ge=1, le=65536)
+    ai_image_max_bytes: int = Field(default=2 * 1024 * 1024, ge=64 * 1024, le=8 * 1024 * 1024)
+    ai_image_max_dimension: int = Field(default=2048, ge=256, le=8192)
+    ai_image_max_pixels: int = Field(default=4_000_000, ge=65_536, le=32_000_000)
 
     # [BIZ-001..004] Commercial quota values are server-owned configuration.
     # LEGACY_FULL is intentionally unlimited and does not use this catalog.
@@ -300,6 +306,14 @@ class Settings(BaseSettings):
                     "DB pool connection budget exceeded for WEB_CONCURRENCY + worker"
                 )
 
+        if (
+            self.ai_image_preprocess_user_concurrency
+            > self.ai_image_preprocess_global_concurrency
+        ):
+            raise ValueError(
+                "AI_IMAGE_PREPROCESS_USER_CONCURRENCY must be <= global concurrency"
+            )
+
         concurrency_pairs = (
             (
                 self.provider_ai_user_concurrency,
@@ -388,6 +402,14 @@ class Settings(BaseSettings):
 
         # [人工注释][S3-001] AI provider 选择在服务启动配置期失败关闭；生产 provider
         # endpoint 必须 HTTPS，客户端不会获得 key、base URL 或 provider 选择权。
+        if self.is_production:
+            if self.ai_image_max_bytes >= self.media_max_image_bytes:
+                raise ValueError("AI_IMAGE_MAX_BYTES must be lower than MEDIA_MAX_IMAGE_BYTES")
+            if self.ai_image_max_pixels > self.ai_image_max_dimension * self.ai_image_max_dimension:
+                raise ValueError(
+                    "AI_IMAGE_MAX_PIXELS must not exceed AI_IMAGE_MAX_DIMENSION squared"
+                )
+
         if self.ai_provider not in {"disabled", "openai"}:
             raise ValueError("AI_PROVIDER must be disabled or openai")
         if self.ai_provider == "openai":

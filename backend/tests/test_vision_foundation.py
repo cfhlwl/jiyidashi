@@ -1,9 +1,12 @@
 import asyncio
 import json
+import threading
 from datetime import UTC, datetime
+from io import BytesIO
 from uuid import UUID, uuid4
 
 import pytest
+from PIL import Image
 from sqlalchemy import func, select
 
 from app.core.config import Settings
@@ -12,6 +15,7 @@ from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.main import app
 from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import Memory, MemorySource, ObjectItem, Place, Reminder, Visit
+from app.services import vision_service as vision_service_module
 from app.services.ai_gateway import (
     AIGateway,
     AIImageInferenceRequest,
@@ -21,12 +25,27 @@ from app.services.ai_gateway import (
     DeterministicAIProvider,
     get_ai_gateway,
 )
-from app.services.concurrency_guard import claim_provider_permit, release_permit
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_image_preprocess_permit,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorageError,
     get_object_storage,
 )
+
+
+def _jpeg_bytes(width: int = 640, height: int = 480) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (width, height), (90, 120, 150)).save(
+        output,
+        format="JPEG",
+        quality=90,
+    )
+    return output.getvalue()
 
 
 class FakeVisionStorage:
@@ -93,10 +112,12 @@ def _insert_media(
     kind: MediaKind = MediaKind.IMAGE,
     status: MediaStatus = MediaStatus.READY,
     content_type: str = "image/jpeg",
-    data: bytes = b"\xff\xd8\xffvision-test-image",
+    data: bytes | None = None,
     completed: bool = True,
     recorded_size: int | None = None,
 ) -> UUID:
+    if data is None:
+        data = _jpeg_bytes()
     media_id = uuid4()
     object_key = f"media/{user_id}/{media_id.hex}"
     asset = MediaAsset(
@@ -158,7 +179,7 @@ async def test_explicit_vision_returns_server_owned_labels_without_persistence(
 ):
     storage, provider, _ = vision_dependencies
     user_id, headers = await _new_user(client, "vision-owner")
-    image = b"\xff\xd8\xffprivate-vision-image"
+    image = _jpeg_bytes(1200, 900)
     media_id = _insert_media(storage, user_id=user_id, data=image)
     before = _owner_counts(user_id)
 
@@ -207,8 +228,12 @@ async def test_explicit_vision_returns_server_owned_labels_without_persistence(
     assert len(provider.image_requests) == 1
     request = provider.image_requests[0]
     assert request.purpose == "vision.observe"
-    assert request.image_bytes == image
+    assert request.image_bytes != image
+    assert len(request.image_bytes) <= _gateway_settings().ai_image_max_bytes
     assert request.content_type == "image/jpeg"
+    with Image.open(BytesIO(request.image_bytes)) as derivative:
+        assert max(derivative.size) <= _gateway_settings().ai_image_max_dimension
+        assert derivative.width * derivative.height <= _gateway_settings().ai_image_max_pixels
     assert request.detail == "high"
     assert request.max_output_tokens == 512
     assert "Do not perform OCR" in request.system_instruction
@@ -556,6 +581,160 @@ async def test_deletion_generation_change_blocks_vision_result(
 
     assert response.status_code == 409
     assert response.json()["detail"] == "DATA_DELETION_REQUEST_STALE"
+
+
+@pytest.mark.asyncio
+async def test_vision_preprocess_saturation_blocks_storage_before_decode(
+    client,
+    vision_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = vision_dependencies
+    user_id, headers = await _new_user(client, "vision-preprocess-saturation")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings(
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.vision_service.get_settings", lambda: settings)
+    occupied = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    try:
+        response = await client.post(
+            f"/v1/media/{media_id}/vision",
+            headers=headers,
+        )
+    finally:
+        assert release_permit(engine, permit=occupied, settings=settings) is True
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "AI_IMAGE_PREPROCESS_SATURATED"
+    assert int(response.headers["Retry-After"]) >= 1
+    assert storage.reads == []
+    assert provider.image_requests == []
+
+
+@pytest.mark.asyncio
+async def test_vision_preprocess_permit_releases_after_decode_failure(
+    client,
+    vision_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = vision_dependencies
+    user_id, headers = await _new_user(client, "vision-preprocess-release")
+    settings = _gateway_settings(
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.vision_service.get_settings", lambda: settings)
+
+    output = BytesIO()
+    Image.new("RGB", (32, 32), (1, 2, 3)).save(output, format="PNG")
+    media_id = _insert_media(
+        storage,
+        user_id=user_id,
+        content_type="image/jpeg",
+        data=output.getvalue(),
+    )
+    response = await client.post(f"/v1/media/{media_id}/vision", headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "VISION_ANALYSIS_AI_IMAGE_TYPE_MISMATCH"
+    assert provider.image_requests == []
+
+    released_slot = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    assert release_permit(engine, permit=released_slot, settings=settings) is True
+
+
+@pytest.mark.asyncio
+async def test_vision_cancellation_holds_permit_until_storage_thread_physically_exits(
+    client,
+    vision_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = vision_dependencies
+    user_id, headers = await _new_user(client, "vision-preprocess-cancel")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings().model_copy(
+        update={
+            "ai_image_preprocess_global_concurrency": 1,
+            "ai_image_preprocess_user_concurrency": 1,
+            "ai_image_preprocess_permit_lease_seconds": 2,
+        }
+    )
+    monkeypatch.setattr("app.services.vision_service.get_settings", lambda: settings)
+
+    worker_entered = threading.Event()
+    worker_release = threading.Event()
+    original_read = storage.read_object
+
+    def blocking_read(object_key: str, max_bytes: int) -> bytes:
+        worker_entered.set()
+        if not worker_release.wait(timeout=8):
+            raise AssertionError("blocked Vision storage worker was not released")
+        return original_read(object_key, max_bytes)
+
+    monkeypatch.setattr(storage, "read_object", blocking_read)
+
+    async def run_service():
+        with SessionLocal() as db:
+            return await vision_service_module.observe_vision(
+                db,
+                user_id=user_id,
+                request=vision_service_module.VisionRequest(media_id=media_id),
+                storage=storage,
+                gateway=vision_dependencies[2],
+            )
+
+    request_task = asyncio.create_task(run_service())
+    slot_after_cancel = None
+    try:
+        assert await asyncio.to_thread(worker_entered.wait, 3)
+        request_task.cancel()
+
+        await asyncio.sleep(2.2)
+        assert not request_task.done()
+
+        with pytest.raises(ConcurrencyRejected) as rejected:
+            claim_image_preprocess_permit(
+                engine,
+                user_id=uuid4(),
+                settings=settings,
+            )
+        assert rejected.value.code == "AI_IMAGE_PREPROCESS_SATURATED"
+
+        worker_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await request_task
+
+        assert provider.image_requests == []
+        slot_after_cancel = claim_image_preprocess_permit(
+            engine,
+            user_id=user_id,
+            settings=settings,
+        )
+    finally:
+        worker_release.set()
+        if not request_task.done():
+            try:
+                await request_task
+            except asyncio.CancelledError:
+                pass
+        if slot_after_cancel is not None:
+            assert release_permit(
+                engine,
+                permit=slot_after_cancel,
+                settings=settings,
+            ) is True
 
 
 @pytest.mark.asyncio

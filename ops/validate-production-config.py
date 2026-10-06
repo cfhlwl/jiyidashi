@@ -52,6 +52,9 @@ REQUIRED_KEYS = {
     "API_RATE_WINDOW_SECONDS",
     "PROVIDER_AI_GLOBAL_CONCURRENCY",
     "PROVIDER_AI_USER_CONCURRENCY",
+    "AI_IMAGE_PREPROCESS_GLOBAL_CONCURRENCY",
+    "AI_IMAGE_PREPROCESS_USER_CONCURRENCY",
+    "AI_IMAGE_PREPROCESS_PERMIT_LEASE_SECONDS",
     "PROVIDER_ASR_GLOBAL_CONCURRENCY",
     "PROVIDER_ASR_USER_CONCURRENCY",
     "PROVIDER_EMBEDDING_GLOBAL_CONCURRENCY",
@@ -122,6 +125,9 @@ REQUIRED_KEYS = {
     "AI_TIMEOUT_SECONDS",
     "AI_MAX_INPUT_CHARS",
     "AI_MAX_OUTPUT_TOKENS",
+    "AI_IMAGE_MAX_BYTES",
+    "AI_IMAGE_MAX_DIMENSION",
+    "AI_IMAGE_MAX_PIXELS",
     "EMBEDDING_PROVIDER",
     "EMBEDDING_BASE_URL",
     "EMBEDDING_API_KEY",
@@ -211,6 +217,11 @@ def main() -> None:
     assert int(values["PROVIDER_AI_GLOBAL_CONCURRENCY"]) >= int(
         values["PROVIDER_AI_USER_CONCURRENCY"]
     )
+    assert int(values["AI_IMAGE_PREPROCESS_GLOBAL_CONCURRENCY"]) >= int(
+        values["AI_IMAGE_PREPROCESS_USER_CONCURRENCY"]
+    )
+    assert 1 <= int(values["AI_IMAGE_PREPROCESS_GLOBAL_CONCURRENCY"]) <= 64
+    assert 5 <= int(values["AI_IMAGE_PREPROCESS_PERMIT_LEASE_SECONDS"]) <= 600
     assert int(values["PROVIDER_ASR_GLOBAL_CONCURRENCY"]) >= int(
         values["PROVIDER_ASR_USER_CONCURRENCY"]
     )
@@ -252,6 +263,10 @@ def main() -> None:
     assert values["STORAGE_ENDPOINT_URL"].startswith("https://")
     assert values["ASR_BASE_URL"].startswith("https://")
     assert values["AI_BASE_URL"].startswith("https://")
+    assert int(values["AI_IMAGE_MAX_BYTES"]) < int(values["MEDIA_MAX_IMAGE_BYTES"])
+    assert 256 <= int(values["AI_IMAGE_MAX_DIMENSION"]) <= 8192
+    assert 65_536 <= int(values["AI_IMAGE_MAX_PIXELS"]) <= 32_000_000
+    assert int(values["AI_IMAGE_MAX_PIXELS"]) <= int(values["AI_IMAGE_MAX_DIMENSION"]) ** 2
     assert values["EMBEDDING_BASE_URL"].startswith("https://")
     assert "localhost" not in values["API_DOMAIN"]
     assert "127.0.0.1" not in values["API_DOMAIN"]

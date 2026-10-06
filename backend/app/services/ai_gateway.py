@@ -661,7 +661,7 @@ class AIGateway:
 
         if not isinstance(request.image_bytes, bytes) or not request.image_bytes:
             raise AIPolicyError("AI_IMAGE_EMPTY")
-        if len(request.image_bytes) > self._settings.media_max_image_bytes:
+        if len(request.image_bytes) > self._settings.ai_image_max_bytes:
             raise AIPolicyError("AI_IMAGE_TOO_LARGE")
 
         content_type = request.content_type.split(";", 1)[0].strip().lower()

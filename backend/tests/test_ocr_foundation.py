@@ -1,10 +1,14 @@
 import asyncio
 import json
+import threading
+import time
 from datetime import UTC, datetime
+from io import BytesIO
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from PIL import Image
 from sqlalchemy import func, select
 
 from app.core.config import Settings
@@ -12,6 +16,7 @@ from app.core.db import SessionLocal, engine
 from app.main import app
 from app.media_models import MediaAsset, MediaKind, MediaStatus
 from app.models import Memory, MemorySource, ObjectItem, Place, Reminder, User, Visit
+from app.services import ocr_service as ocr_service_module
 from app.services.ai_gateway import (
     AIGateway,
     AIImageInferenceRequest,
@@ -24,13 +29,28 @@ from app.services.ai_gateway import (
     OpenAIResponsesProvider,
     get_ai_gateway,
 )
-from app.services.concurrency_guard import claim_provider_permit, release_permit
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    claim_image_preprocess_permit,
+    claim_provider_permit,
+    release_permit,
+)
 from app.services.entitlement_service import create_legacy_full_entitlement
 from app.services.object_storage import (
     ObjectNotFound,
     ObjectStorageError,
     get_object_storage,
 )
+
+
+def _jpeg_bytes(width: int = 640, height: int = 480) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (width, height), (90, 120, 150)).save(
+        output,
+        format="JPEG",
+        quality=90,
+    )
+    return output.getvalue()
 
 
 class FakeOCRStorage:
@@ -109,10 +129,12 @@ def _insert_media(
     kind: MediaKind = MediaKind.IMAGE,
     status: MediaStatus = MediaStatus.READY,
     content_type: str = "image/jpeg",
-    data: bytes = b"\xff\xd8\xffocr-test-image",
+    data: bytes | None = None,
     completed: bool = True,
     recorded_size: int | None = None,
 ) -> UUID:
+    if data is None:
+        data = _jpeg_bytes()
     media_id = uuid4()
     object_key = f"media/{user_id}/{media_id.hex}"
     asset = MediaAsset(
@@ -174,7 +196,7 @@ async def test_explicit_ocr_returns_inference_provenance_without_persistence(
 ):
     storage, provider, _ = ocr_dependencies
     user_id, headers = await _new_user(client, "ocr-owner")
-    image = b"\xff\xd8\xffprivate-image-bytes"
+    image = _jpeg_bytes(3200, 2400)
     media_id = _insert_media(storage, user_id=user_id, data=image)
     before = _owner_counts(user_id)
 
@@ -200,8 +222,12 @@ async def test_explicit_ocr_returns_inference_provenance_without_persistence(
     assert len(provider.image_requests) == 1
     request = provider.image_requests[0]
     assert request.purpose == "ocr.extract"
-    assert request.image_bytes == image
+    assert request.image_bytes != image
+    assert len(request.image_bytes) <= _gateway_settings().ai_image_max_bytes
     assert request.content_type == "image/jpeg"
+    with Image.open(BytesIO(request.image_bytes)) as derivative:
+        assert max(derivative.size) <= _gateway_settings().ai_image_max_dimension
+        assert derivative.width * derivative.height <= _gateway_settings().ai_image_max_pixels
     assert request.detail == "high"
     assert storage.reads and storage.reads[0][0].endswith(media_id.hex)
 
@@ -464,7 +490,7 @@ async def test_image_gateway_enforces_wall_clock_timeout_for_provider_seams():
 async def test_image_gateway_rejects_oversized_input_before_provider():
     provider = DeterministicAIProvider(output_text='{"blocks":[]}')
     gateway = AIGateway(
-        _gateway_settings(media_max_image_bytes=4),
+        _gateway_settings(ai_image_max_bytes=64 * 1024),
         provider,
     )
 
@@ -476,7 +502,7 @@ async def test_image_gateway_rejects_oversized_input_before_provider():
                     purpose="ocr.extract",
                     system_instruction="Return OCR JSON.",
                     input_text="Read visible text.",
-                    image_bytes=b"12345",
+                    image_bytes=b"x" * (64 * 1024 + 1),
                     content_type="image/jpeg",
                 ),
                 db=db,
@@ -580,6 +606,240 @@ async def test_openai_image_adapter_keeps_image_and_credentials_inside_gateway()
     assert result.trust_class == "inference"
     assert result.provenance.provider == "openai"
     assert result.provenance.provider_request_id == "resp_ocr_123"
+
+
+@pytest.mark.asyncio
+async def test_ocr_preprocess_saturation_blocks_storage_before_decode(
+    client,
+    ocr_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-preprocess-saturation")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings(
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.ocr_service.get_settings", lambda: settings)
+    occupied = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    try:
+        response = await client.post(
+            f"/v1/media/{media_id}/ocr",
+            headers=headers,
+        )
+    finally:
+        assert release_permit(engine, permit=occupied, settings=settings) is True
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "AI_IMAGE_PREPROCESS_SATURATED"
+    assert int(response.headers["Retry-After"]) >= 1
+    assert storage.reads == []
+    assert provider.image_requests == []
+
+
+@pytest.mark.asyncio
+async def test_ocr_preprocess_permit_releases_after_decode_failure(
+    client,
+    ocr_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-preprocess-release")
+    settings = _gateway_settings(
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.ocr_service.get_settings", lambda: settings)
+
+    output = BytesIO()
+    Image.new("RGB", (32, 32), (1, 2, 3)).save(output, format="PNG")
+    media_id = _insert_media(
+        storage,
+        user_id=user_id,
+        content_type="image/jpeg",
+        data=output.getvalue(),
+    )
+    response = await client.post(f"/v1/media/{media_id}/ocr", headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "OCR_ANALYSIS_AI_IMAGE_TYPE_MISMATCH"
+    assert provider.image_requests == []
+
+    released_slot = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    assert release_permit(engine, permit=released_slot, settings=settings) is True
+
+
+@pytest.mark.asyncio
+async def test_ocr_preprocess_permit_releases_after_source_too_large(
+    client,
+    ocr_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-preprocess-too-large-release")
+    settings = _gateway_settings(
+        ai_image_max_dimension=512,
+        ai_image_max_pixels=250_000,
+        ai_image_preprocess_global_concurrency=1,
+        ai_image_preprocess_user_concurrency=1,
+        ai_image_preprocess_permit_lease_seconds=30,
+    )
+    monkeypatch.setattr("app.services.ocr_service.get_settings", lambda: settings)
+    media_id = _insert_media(
+        storage,
+        user_id=user_id,
+        data=_jpeg_bytes(1200, 1200),
+    )
+
+    response = await client.post(f"/v1/media/{media_id}/ocr", headers=headers)
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == (
+        "OCR_ANALYSIS_AI_IMAGE_SOURCE_DIMENSIONS_UNSAFE"
+    )
+    assert provider.image_requests == []
+
+    released_slot = claim_image_preprocess_permit(
+        engine,
+        user_id=user_id,
+        settings=settings,
+    )
+    assert release_permit(engine, permit=released_slot, settings=settings) is True
+
+
+@pytest.mark.asyncio
+async def test_ocr_renewal_failure_fails_closed_before_decode_or_provider(
+    client,
+    ocr_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-preprocess-renewal-loss")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings().model_copy(
+        update={
+            "ai_image_preprocess_global_concurrency": 1,
+            "ai_image_preprocess_user_concurrency": 1,
+            "ai_image_preprocess_permit_lease_seconds": 1,
+        }
+    )
+    monkeypatch.setattr("app.services.ocr_service.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "app.services.concurrency_guard.renew_permit",
+        lambda *args, **kwargs: None,
+    )
+
+    original_read = storage.read_object
+
+    def slow_read(object_key: str, max_bytes: int) -> bytes:
+        time.sleep(1.2)
+        return original_read(object_key, max_bytes)
+
+    monkeypatch.setattr(storage, "read_object", slow_read)
+    response = await client.post(f"/v1/media/{media_id}/ocr", headers=headers)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "AI_IMAGE_PREPROCESS_LEASE_LOST"
+    assert provider.image_requests == []
+
+
+@pytest.mark.asyncio
+async def test_ocr_cancellation_holds_permit_until_decode_thread_physically_exits(
+    client,
+    ocr_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = ocr_dependencies
+    user_id, headers = await _new_user(client, "ocr-preprocess-cancel")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings().model_copy(
+        update={
+            "ai_image_preprocess_global_concurrency": 1,
+            "ai_image_preprocess_user_concurrency": 1,
+            "ai_image_preprocess_permit_lease_seconds": 2,
+        }
+    )
+    monkeypatch.setattr(ocr_service_module, "get_settings", lambda: settings)
+
+    worker_entered = threading.Event()
+    worker_release = threading.Event()
+    original_build = ocr_service_module.build_analysis_image
+
+    def blocking_build(*args, **kwargs):
+        worker_entered.set()
+        if not worker_release.wait(timeout=8):
+            raise AssertionError("blocked OCR derivative worker was not released")
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(
+        ocr_service_module,
+        "build_analysis_image",
+        blocking_build,
+    )
+
+    async def run_service():
+        with SessionLocal() as db:
+            return await ocr_service_module.extract_ocr(
+                db,
+                user_id=user_id,
+                request=ocr_service_module.OCRRequest(media_id=media_id),
+                storage=storage,
+                gateway=ocr_dependencies[2],
+            )
+
+    request_task = asyncio.create_task(run_service())
+    slot_after_cancel = None
+    try:
+        assert await asyncio.to_thread(worker_entered.wait, 3)
+        request_task.cancel()
+
+        # Stay blocked past the original lease. The cancelled request must still
+        # own the physical worker and heartbeat-renewed preprocessing authority.
+        await asyncio.sleep(2.2)
+        assert not request_task.done()
+
+        with pytest.raises(ConcurrencyRejected) as rejected:
+            claim_image_preprocess_permit(
+                engine,
+                user_id=uuid4(),
+                settings=settings,
+            )
+        assert rejected.value.code == "AI_IMAGE_PREPROCESS_SATURATED"
+
+        worker_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await request_task
+
+        assert provider.image_requests == []
+        slot_after_cancel = claim_image_preprocess_permit(
+            engine,
+            user_id=user_id,
+            settings=settings,
+        )
+    finally:
+        worker_release.set()
+        if not request_task.done():
+            try:
+                await request_task
+            except asyncio.CancelledError:
+                pass
+        if slot_after_cancel is not None:
+            assert release_permit(
+                engine,
+                permit=slot_after_cancel,
+                settings=settings,
+            ) is True
 
 
 @pytest.mark.asyncio

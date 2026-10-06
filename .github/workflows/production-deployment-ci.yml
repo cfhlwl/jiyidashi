@@ -8,6 +8,10 @@ on:
       - "backend/app/main.py"
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
+      - "backend/app/services/image_analysis.py"
+      - "backend/app/services/ocr_service.py"
+      - "backend/app/services/vision_service.py"
+      - "backend/tests/test_media_analysis_derivative.py"
       - "backend/app/services/object_storage.py"
       - "backend/app/offhost_backup.py"
       - "backend/tests/test_offhost_backup.py"
@@ -38,6 +42,7 @@ on:
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - "docs/PRODUCTION_BACKUP.md"
       - "docs/PRODUCTION_RUNTIME_GUARDRAILS.md"
+      - "docs/PRODUCTION_MEDIA_ANALYSIS.md"
       - ".github/workflows/production-deployment-ci.yml"
   push:
     branches:
@@ -48,6 +53,10 @@ on:
       - "backend/app/main.py"
       - "backend/app/core/observability.py"
       - "backend/app/services/ai_gateway.py"
+      - "backend/app/services/image_analysis.py"
+      - "backend/app/services/ocr_service.py"
+      - "backend/app/services/vision_service.py"
+      - "backend/tests/test_media_analysis_derivative.py"
       - "backend/app/services/object_storage.py"
       - "backend/app/offhost_backup.py"
       - "backend/tests/test_offhost_backup.py"
@@ -78,6 +87,7 @@ on:
       - "docs/PRODUCTION_DEPLOYMENT.md"
       - "docs/PRODUCTION_BACKUP.md"
       - "docs/PRODUCTION_RUNTIME_GUARDRAILS.md"
+      - "docs/PRODUCTION_MEDIA_ANALYSIS.md"
       - ".github/workflows/production-deployment-ci.yml"
 
 jobs:
@@ -217,6 +227,12 @@ jobs:
           AI_TIMEOUT_SECONDS=30
           AI_MAX_INPUT_CHARS=64000
           AI_MAX_OUTPUT_TOKENS=4096
+          AI_IMAGE_MAX_BYTES=2097152
+          AI_IMAGE_MAX_DIMENSION=2048
+          AI_IMAGE_MAX_PIXELS=4000000
+          AI_IMAGE_PREPROCESS_GLOBAL_CONCURRENCY=2
+          AI_IMAGE_PREPROCESS_USER_CONCURRENCY=1
+          AI_IMAGE_PREPROCESS_PERMIT_LEASE_SECONDS=60
 
           EMBEDDING_PROVIDER=disabled
           EMBEDDING_BASE_URL=https://api.openai.com/v1
@@ -242,7 +258,7 @@ jobs:
       - name: Reject unsafe actual production environments
         shell: bash
         run: |
-          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'             'BACKUP_OFFHOST_ENABLED=false'             'BACKUP_STORAGE_BUCKET='             'BACKUP_STORAGE_ENDPOINT_URL=http://backup.invalid'             'BACKUP_STORAGE_SECRET_ACCESS_KEY='             'DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/not_the_app_db'             'DATABASE_URL=postgresql+psycopg://other-user:ci-postgres-password@postgres:5432/jiyi_prod_ci'             'DATABASE_URL=postgresql+psycopg://jiyi:wrong-password@postgres:5432/jiyi_prod_ci'             'DB_POOL_SIZE=0'             'DB_MAX_OVERFLOW=-1'             'DB_POOL_TIMEOUT_SECONDS=0'             'DB_POOL_RECYCLE_SECONDS=29'             'DB_CONNECTION_BUDGET=3'             'DB_POOL_SIZE=10'             'DB_MAX_OVERFLOW=10'             'DB_CONNECTION_BUDGET=4'             'API_REQUEST_BODY_LIMIT=unbounded'; do
+          for mutation in             'APP_ENV=development'             'ENABLE_DEV_AUTH=true'             'AUTH_RATE_LIMIT_ENABLED=false'             'AUTO_CREATE_SCHEMA=true'             'AUTH_EMAIL_DELIVERY_MODE=disabled'             'JWT_SECRET=short'             'PROVIDER_CONFIG_MASTER_KEY=invalid'             'BACKUP_OFFHOST_ENABLED=false'             'BACKUP_STORAGE_BUCKET='             'BACKUP_STORAGE_ENDPOINT_URL=http://backup.invalid'             'BACKUP_STORAGE_SECRET_ACCESS_KEY='             'DATABASE_URL=postgresql+psycopg://jiyi:ci-postgres-password@postgres:5432/not_the_app_db'             'DATABASE_URL=postgresql+psycopg://other-user:ci-postgres-password@postgres:5432/jiyi_prod_ci'             'DATABASE_URL=postgresql+psycopg://jiyi:wrong-password@postgres:5432/jiyi_prod_ci'             'DB_POOL_SIZE=0'             'DB_MAX_OVERFLOW=-1'             'DB_POOL_TIMEOUT_SECONDS=0'             'DB_POOL_RECYCLE_SECONDS=29'             'DB_CONNECTION_BUDGET=3'             'DB_POOL_SIZE=10'             'DB_MAX_OVERFLOW=10'             'DB_CONNECTION_BUDGET=4'             'API_REQUEST_BODY_LIMIT=unbounded'             'AI_IMAGE_MAX_BYTES=20971520'             'AI_IMAGE_MAX_DIMENSION=0'             'AI_IMAGE_MAX_PIXELS=99999999'             'AI_IMAGE_PREPROCESS_GLOBAL_CONCURRENCY=0'             'AI_IMAGE_PREPROCESS_USER_CONCURRENCY=3'             'AI_IMAGE_PREPROCESS_PERMIT_LEASE_SECONDS=0'; do
             bad_env="$RUNNER_TEMP/bad-production.env"
             cp "$ENV_FILE" "$bad_env"
             key="${mutation%%=*}"

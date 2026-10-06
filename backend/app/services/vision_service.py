@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -14,6 +13,14 @@ from app.services.ai_gateway import (
     AIGatewayError,
     AIImageInferenceRequest,
 )
+from app.services.concurrency_guard import (
+    ConcurrencyRejected,
+    PermitLeaseLost,
+    claim_image_preprocess_permit,
+    maintain_permit_lease,
+    run_blocking_worker,
+)
+from app.services.image_analysis import AnalysisImageError, build_analysis_image
 from app.services.object_storage import ObjectNotFound, ObjectStorage, ObjectStorageError
 from app.vision_models import (
     VisionObservation,
@@ -204,7 +211,7 @@ async def _read_image(
 ) -> bytes:
     settings = get_settings()
     try:
-        image = await asyncio.to_thread(
+        image = await run_blocking_worker(
             storage.read_object,
             object_key,
             settings.media_max_image_bytes,
@@ -325,11 +332,54 @@ async def observe_vision(
     )
     db.commit()
 
-    image = await _read_image(
-        storage,
-        object_key=snapshot.object_key,
-        size_bytes=snapshot.size_bytes,
-    )
+    settings = get_settings()
+    try:
+        preprocess_permit = claim_image_preprocess_permit(
+            db.get_bind(),
+            user_id=user_id,
+            settings=settings,
+        )
+    except ConcurrencyRejected as exc:
+        raise VisionError(
+            exc.code,
+            429,
+            retry_after=exc.retry_after,
+        ) from exc
+
+    try:
+        async with maintain_permit_lease(
+            db.get_bind(),
+            permit=preprocess_permit,
+            lease_seconds=settings.ai_image_preprocess_permit_lease_seconds,
+            settings=settings,
+        ) as heartbeat:
+            image = await _read_image(
+                storage,
+                object_key=snapshot.object_key,
+                size_bytes=snapshot.size_bytes,
+            )
+            heartbeat.ensure_healthy()
+            try:
+                derivative = await run_blocking_worker(
+                    build_analysis_image,
+                    image,
+                    declared_content_type=snapshot.content_type,
+                    max_bytes=settings.ai_image_max_bytes,
+                    max_dimension=settings.ai_image_max_dimension,
+                    max_pixels=settings.ai_image_max_pixels,
+                )
+                heartbeat.ensure_healthy()
+            except AnalysisImageError as exc:
+                status = 413 if exc.code in {
+                    "AI_IMAGE_SOURCE_DIMENSIONS_UNSAFE",
+                    "AI_IMAGE_DERIVATIVE_TOO_LARGE",
+                } else 422
+                raise VisionError(f"VISION_ANALYSIS_{exc.code}", status) from exc
+            finally:
+                if "image" in locals():
+                    del image
+    except PermitLeaseLost as exc:
+        raise VisionError("AI_IMAGE_PREPROCESS_LEASE_LOST", 503) from exc
 
     try:
         inference = await gateway.infer_image(
@@ -340,8 +390,8 @@ async def observe_vision(
                     "Classify only safe, directly visible scene/object/activity "
                     "candidates using the allowed kind/code vocabulary."
                 ),
-                image_bytes=image,
-                content_type=snapshot.content_type,
+                image_bytes=derivative.image_bytes,
+                content_type=derivative.content_type,
                 detail="high",
                 max_output_tokens=512,
             ),
