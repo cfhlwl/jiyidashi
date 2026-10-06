@@ -81,6 +81,7 @@ class NotificationCampaignStatus(StrEnum):
     DELIVERING = "DELIVERING"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
+    FAILED = "FAILED"
 
 
 class NotificationDeliveryStatus(StrEnum):
@@ -214,6 +215,7 @@ class NotificationCampaign(Base):
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )
