@@ -167,6 +167,12 @@ the exact revision and attempt token, so stale attempts cannot overwrite newer/t
 state. Provider errors are mapped to bounded internal codes. Raw provider response/error
 text is not persisted.
 
+OPS-002 terminal maintenance failure is also part of the public authority contract:
+a final delivery-job crash converges the delivery to TERMINAL_FAILURE and clears any active
+attempt token; a final fan-out-job failure marks the campaign FAILED with a bounded error
+code. Non-final raw delivery failure is fenced into RETRY_WAIT. A maintenance terminal state
+therefore cannot leave notification state stuck indefinitely in RUNNING/FANOUT.
+
 `ACCEPTED` means the provider accepted the request; it is not proof of human receipt/read.
 
 ## Provider phase boundary
