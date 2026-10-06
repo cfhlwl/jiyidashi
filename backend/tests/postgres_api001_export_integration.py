@@ -9,11 +9,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, inspect, select
+from sqlalchemy import delete, inspect
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal, engine
-from app.export_models import UserExportJob, UserExportStatus
+from app.export_models import UserExportJob
 from app.maintenance_job_models import MaintenanceJob, MaintenanceJobType
 from app.models import Memory, MemoryType, SourceType, User
 from app.services.export_service import (
