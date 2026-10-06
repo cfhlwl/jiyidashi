@@ -23,7 +23,7 @@ from app.services.export_service import (
     remove_temp_file,
 )
 from app.services.maintenance_jobs import (
-    ConcurrencyRejected if False else claim_next_maintenance_job,
+    claim_next_maintenance_job,
     enqueue_maintenance_job,
 )
 
