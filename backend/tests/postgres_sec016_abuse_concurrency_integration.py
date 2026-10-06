@@ -183,6 +183,7 @@ def _prove_provider_races(user_a: UUID, user_b: UUID) -> None:
 def _prove_image_preprocess_cross_worker_budget(
     user_a: UUID,
     user_b: UUID,
+    user_c: UUID,
 ) -> None:
     settings = get_settings().model_copy(
         update={
@@ -214,7 +215,7 @@ def _prove_image_preprocess_cross_worker_budget(
             with lock:
                 errors.append(exc)
 
-    users = (user_a, user_b, uuid4())
+    users = (user_a, user_b, user_c)
     threads = [
         Thread(target=worker, args=(user_id,), name=f"media-preprocess-{index}")
         for index, user_id in enumerate(users)
@@ -670,9 +671,10 @@ def main() -> None:
     _prove_migration_roundtrip()
     user_a = _seed_user("a")
     user_b = _seed_user("b")
+    user_c = _seed_user("c")
     try:
         _prove_provider_races(user_a, user_b)
-        _prove_image_preprocess_cross_worker_budget(user_a, user_b)
+        _prove_image_preprocess_cross_worker_budget(user_a, user_b, user_c)
         _prove_preprocess_renewal_token_binding(user_a, user_b)
         asyncio.run(_prove_preprocess_heartbeat_lifecycle(user_a, user_b))
         _prove_preprocess_renew_claim_serialization(user_a, user_b)
@@ -682,7 +684,7 @@ def main() -> None:
         _prove_argon2_global_cap()
         _prove_authenticated_rate_bucket_race(user_a)
     finally:
-        _cleanup(user_a, user_b)
+        _cleanup(user_a, user_b, user_c)
     print("PostgreSQL SEC-016 abuse/concurrency PASS")
 
 
