@@ -370,9 +370,8 @@ async def test_relationship_export_is_owner_scoped(client):
     assert edge_a.status_code == 201
     assert edge_b.status_code == 201
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    rows = exported.json()["person_relationships"]
+    export_body, exported_text = await export_payload(client, headers_a)
+    rows = export_body["person_relationships"]
     assert len(rows) == 1
     assert rows[0]["id"] == edge_a.json()["id"]
     assert rows[0]["relationship_kind"] == "OTHER"
