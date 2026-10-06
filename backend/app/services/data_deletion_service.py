@@ -31,7 +31,6 @@ from app.life_event_models import LifeEvent, LifeEventMemoryLink
 from app.life_stage_models import LifeStage, LifeStageEventLink
 from app.media_models import MediaASRClaim, MediaAsset, MediaEvidenceLink
 from app.memory_feedback_models import MemoryFeedback
-from app.notification_models import NotificationDelivery
 from app.models import (
     Device,
     FamilyMember,
@@ -52,6 +51,7 @@ from app.models import (
     User,
     Visit,
 )
+from app.notification_models import NotificationDelivery
 from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
 from app.person_relationship_models import PersonRelationship
