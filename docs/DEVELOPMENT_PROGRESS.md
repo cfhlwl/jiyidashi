@@ -468,6 +468,8 @@ App resume / authority revalidation
 | CORE-005-S5 | P0 UX | Consumer Status Simplification | ⬜ | 普通用户只看“正常 / 正在恢复 / 需要你处理”；隐藏 producer / authority / queue / unknown gap 等工程术语。只有用户能实际处理的状态才显示强提醒和 CTA。 |
 | CORE-005-S6 | P0 | Evidence-backed Gap Recovery | ⬜ | 真实无定位证据时保持 UNKNOWN；可由 Photo / Calendar / Activity / Workout 等 Context 补充“这段时间还有哪些线索”，但不得反向伪造 LocationPoint、Visit 或 route。 |
 | CORE-005-S7 | P0 | Diagnostics / Field Evidence | ⬜ | owner-scoped 记录 pause reason、pause_at、recovery reason、attempt/result/time、last successful RUNNING、permission/services/background restriction、native/SQLite queue、last fix/ACK；不得记录 token/精确敏感 payload 到日志。 |
+| CORE-005-S8 | P0 UX | Persistent Shell / Stale-while-Revalidate | ⬜ | **禁止 App 启动、前台恢复、AUTH refresh、Privacy refresh、Recording Health refresh 时把整个 App 或整页替换成“正在刷新/加载中”。** 首次无缓存且无可显示数据时才允许页面级 skeleton；已有一次成功数据后，必须保留当前路由、导航栈、页面内容、滚动位置和上一次可信数据，在后台刷新并做局部更新。网络失败时继续展示 stale-but-readable 数据 + 非阻塞状态提示，不得跳空白页/登录页/全屏 spinner。 |
+| CORE-005-S9 | P0 UX | Refresh Scope Separation | ⬜ | 明确区分 app shell state、page data state、background authority state。数据刷新只更新对应数据域；AUTH/Privacy/Location authority revalidation 不得重建整个 Consumer Shell。局部列表、卡片或状态行可以显示 skeleton/spinner，但底部导航、页面骨架、已加载内容和用户当前操作上下文必须保持。 |
 
 #### CORE-005-IOS — iOS 专项修改
 
@@ -509,6 +511,12 @@ App resume / authority revalidation
 → 最多轻量显示“正在恢复”
 → 恢复成功后自动消失
 
+页面/数据正在刷新
+→ 保持当前界面与上一次可用数据
+→ 后台 stale-while-revalidate
+→ 仅局部组件显示更新状态
+→ 禁止整个 App / 整页变成“正在刷新”
+
 确需用户操作
 → 才提示“开启始终定位 / 开启系统定位 / 允许后台运行”等明确动作
 ```
@@ -540,6 +548,8 @@ UNKNOWN
 
 #### 统一验收 Gate
 
+- **Persistent Shell Gate：** 用户已经进入 Consumer Shell 后，前台恢复、token refresh、Privacy/Recording Health refresh、普通 API 数据刷新均不得把整个 App/整页替换成 loading/refresh 页面；必须保持当前 route/navigation/已加载内容，采用 stale-while-revalidate + 局部刷新。
+- **State Continuity Gate：** 后台刷新期间用户正在浏览、滚动或编辑的页面不得被无关 refresh 重建；旧请求晚到不得覆盖更新 session/owner/view epoch 的新状态。
 - Current Runtime Health 与 Historical Coverage 必须使用不同 authority/字段，不能再互相污染状态。
 - iOS / Android 当前 producer RUNNING + fresh fix/ACK 时，即使当天早些时候存在 gap，也允许 Current Health = HEALTHY。
 - App resume 不得无必要地产生采集空档；如果 authority 必须重新验证，恢复过程必须自动、bounded、可诊断。
