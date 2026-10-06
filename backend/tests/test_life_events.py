@@ -5,7 +5,6 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from tests.export_test_support import export_payload
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
@@ -13,6 +12,8 @@ from app.life_event_models import LifeEvent, LifeEventMemoryLink
 from app.models import Memory, MemoryType, Place, SourceType
 from app.services.data_deletion_service import USER_DATA_INVENTORY
 
+
+from tests.export_test_support import export_payload
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     response = await client.post("/v1/auth/dev-token", json={"nickname": nickname})
