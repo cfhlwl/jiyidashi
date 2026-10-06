@@ -195,6 +195,65 @@ def enqueue_maintenance_job(
     return job, True
 
 
+def _security_alert_id_for_job(job: MaintenanceJob) -> UUID | None:
+    if job.job_type != MaintenanceJobType.SECURITY_ALERT_DELIVERY.value:
+        return None
+    raw_alert_id = (job.payload_json or {}).get("alert_id")
+    try:
+        return UUID(str(raw_alert_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _sync_security_alert_delivery_failure(
+    db: Session,
+    *,
+    job: MaintenanceJob,
+    error_code: str,
+    terminal: bool,
+    now: datetime,
+    retry_at: datetime | None = None,
+) -> None:
+    """Keep public SecurityAlert authority aligned with maintenance failure state."""
+
+    alert_id = _security_alert_id_for_job(job)
+    if alert_id is None:
+        return
+
+    statement = select(SecurityAlert).where(SecurityAlert.id == alert_id)
+    if db.get_bind().dialect.name == "postgresql":
+        statement = statement.with_for_update()
+    alert = db.scalar(statement)
+    if alert is None or alert.delivery_status in {
+        SecurityAlertDeliveryStatus.DELIVERED.value,
+        SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value,
+    }:
+        return
+
+    # A classified provider retry may already have finalized the public attempt.
+    # Preserve that provider result on a non-final maintenance retry. Raw failures
+    # after begin_security_alert_delivery_attempt() retain a token and must be fenced.
+    if (
+        not terminal
+        and alert.delivery_status == SecurityAlertDeliveryStatus.RETRYABLE_FAILURE.value
+        and alert.delivery_attempt_token is None
+    ):
+        return
+
+    safe_error = (error_code.strip() or "MAINTENANCE_JOB_FAILED")[:80]
+    alert.delivery_attempt_token = None
+    alert.delivery_error_code = safe_error
+    alert.delivered_at = None
+    alert.delivery_revision += 1
+    alert.updated_at = now
+    if terminal:
+        alert.delivery_status = SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
+        alert.next_retry_at = None
+    else:
+        alert.delivery_status = SecurityAlertDeliveryStatus.RETRYABLE_FAILURE.value
+        alert.next_retry_at = retry_at
+
+
 def _expire_exhausted_running_jobs(db: Session, *, now: datetime) -> int:
     statement = select(MaintenanceJob).where(
         MaintenanceJob.status == MaintenanceJobStatus.RUNNING.value,
@@ -218,34 +277,13 @@ def _expire_exhausted_running_jobs(db: Session, *, now: datetime) -> int:
         job.last_error_code = "MAINTENANCE_ATTEMPTS_EXHAUSTED"
         job.updated_at = now
 
-        if job.job_type == MaintenanceJobType.SECURITY_ALERT_DELIVERY.value:
-            raw_alert_id = (job.payload_json or {}).get("alert_id")
-            try:
-                alert_id = UUID(str(raw_alert_id))
-            except (TypeError, ValueError, AttributeError):
-                alert_id = None
-            if alert_id is not None:
-                alert_statement = select(SecurityAlert).where(
-                    SecurityAlert.id == alert_id,
-                    SecurityAlert.delivery_status.not_in(
-                        (
-                            SecurityAlertDeliveryStatus.DELIVERED.value,
-                            SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value,
-                        )
-                    ),
-                )
-                if db.get_bind().dialect.name == "postgresql":
-                    alert_statement = alert_statement.with_for_update()
-                alert = db.scalar(alert_statement)
-                if alert is not None:
-                    alert.delivery_status = (
-                        SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
-                    )
-                    alert.delivery_error_code = "MAINTENANCE_ATTEMPTS_EXHAUSTED"
-                    alert.delivery_attempt_token = None
-                    alert.next_retry_at = None
-                    alert.delivery_revision += 1
-                    alert.updated_at = now
+        _sync_security_alert_delivery_failure(
+            db,
+            job=job,
+            error_code="MAINTENANCE_ATTEMPTS_EXHAUSTED",
+            terminal=True,
+            now=now,
+        )
 
         if (
             job.job_type == MaintenanceJobType.EXPORT.value
@@ -505,6 +543,18 @@ def fail_maintenance_job(
     job.claim_token = None
     job.lease_expires_at = None
     job.updated_at = observed_at
+    _sync_security_alert_delivery_failure(
+        db,
+        job=job,
+        error_code=normalized_error,
+        terminal=job.status == MaintenanceJobStatus.FAILED.value,
+        now=observed_at,
+        retry_at=(
+            None
+            if job.status == MaintenanceJobStatus.FAILED.value
+            else _as_utc(job.next_attempt_at)
+        ),
+    )
     db.flush()
     return job.status
 

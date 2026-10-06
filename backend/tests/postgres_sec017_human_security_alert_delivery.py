@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import threading
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal, engine
 from app.maintenance_adapters import handle_security_alert_delivery
+from app.maintenance_worker import MaintenanceWorker
 from app.maintenance_job_models import (
     MaintenanceJob,
     MaintenanceJobStatus,
@@ -37,6 +40,107 @@ from app.services.security_alerting import (
     begin_security_alert_delivery_attempt,
     finalize_security_alert_delivery_attempt,
 )
+
+
+DATABASE_URL = os.environ["DATABASE_URL"]
+
+
+def _alembic(*args: str) -> None:
+    subprocess.run(["alembic", *args], check=True)
+
+
+def _prove_legacy_sec015_migration_transition() -> None:
+    _alembic("downgrade", "0034_api001_object_capacity")
+    now = datetime.now(UTC).replace(microsecond=0)
+    rows = {
+        "delivered": (uuid4(), "HIGH", "DELIVERED", 3, None, now),
+        "retryable": (
+            uuid4(),
+            "HIGH",
+            "RETRYABLE_FAILURE",
+            4,
+            now + timedelta(minutes=5),
+            None,
+        ),
+        "terminal": (uuid4(), "CRITICAL", "TERMINAL_FAILURE", 5, None, None),
+        "medium": (uuid4(), "MEDIUM", "DELIVERED", 2, None, now),
+    }
+    with engine.begin() as connection:
+        for label, (alert_id, severity, status, attempts, retry_at, delivered_at) in rows.items():
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO security_alerts (
+                        id, dedupe_key, rule_code, severity, correlation_digest,
+                        scope, window_started_at, window_seconds, signal_count,
+                        delivery_status, delivery_attempts, next_retry_at,
+                        delivered_at, created_at, updated_at
+                    ) VALUES (
+                        :id, :dedupe_key, :rule_code, :severity, :correlation_digest,
+                        :scope, :window_started_at, 900, 5,
+                        :delivery_status, :delivery_attempts, :next_retry_at,
+                        :delivered_at, :created_at, :updated_at
+                    )
+                    """
+                ),
+                {
+                    "id": alert_id,
+                    "dedupe_key": uuid4().hex + uuid4().hex,
+                    "rule_code": SecuritySignalCode.AUTH_LOGIN_FAILURE_BURST.value,
+                    "severity": severity,
+                    "correlation_digest": (label[0] * 64)[:64],
+                    "scope": SecurityScope.AUTH_LOGIN_ACCOUNT_IP.value,
+                    "window_started_at": now,
+                    "delivery_status": status,
+                    "delivery_attempts": attempts,
+                    "next_retry_at": retry_at,
+                    "delivered_at": delivered_at,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+
+    _alembic("upgrade", "head")
+
+    with engine.begin() as connection:
+        migrated = {}
+        for label, (alert_id, *_rest) in rows.items():
+            migrated[label] = connection.execute(
+                text(
+                    """
+                    SELECT delivery_status, delivery_attempts, next_retry_at,
+                           delivered_at, delivery_revision, delivery_attempt_token,
+                           delivery_provider, delivery_error_code
+                    FROM security_alerts
+                    WHERE id = :id
+                    """
+                ),
+                {"id": alert_id},
+            ).mappings().one()
+
+        for label in ("delivered", "retryable", "terminal"):
+            current = migrated[label]
+            assert current.delivery_status == SecurityAlertDeliveryStatus.PENDING.value
+            assert current.delivery_attempts == 0
+            assert current.next_retry_at is None
+            assert current.delivered_at is None
+            assert current.delivery_revision == 0
+            assert current.delivery_attempt_token is None
+            assert current.delivery_provider is None
+            assert current.delivery_error_code is None
+
+        medium = migrated["medium"]
+        assert medium.delivery_status == SecurityAlertDeliveryStatus.DELIVERED.value
+        assert medium.delivery_attempts == 2
+        assert medium.delivered_at is not None
+        assert medium.delivery_revision == 0
+        assert medium.delivery_provider is None
+
+        for alert_id, *_rest in rows.values():
+            connection.execute(
+                text("DELETE FROM security_alerts WHERE id = :id"),
+                {"id": alert_id},
+            )
 
 
 class BlockingAdapter:
@@ -299,10 +403,55 @@ def _prove_exhausted_crash_terminalizes_public_alert() -> None:
         _cleanup(alert.id)
 
 
+def _prove_unexpected_final_worker_failure_terminalizes_public_alert() -> None:
+    alert, job = _seed_alert(max_attempts=1)
+    attempts = []
+
+    def explode(_claim) -> None:
+        attempt = begin_security_alert_delivery_attempt(engine, alert_id=alert.id)
+        assert attempt is not None
+        attempts.append(attempt)
+        raise RuntimeError("UNCLASSIFIED_PROVIDER_RUNTIME_SENTINEL")
+
+    try:
+        worker = MaintenanceWorker(
+            worker_id="sec017-final-runtime-error",
+            handlers={MaintenanceJobType.SECURITY_ALERT_DELIVERY.value: explode},
+            lease_seconds=60,
+        )
+        result = worker.run_once()
+        assert result.outcome == MaintenanceJobStatus.FAILED.value
+        assert len(attempts) == 1
+        abandoned = attempts[0]
+
+        with SessionLocal() as db:
+            maintenance = db.get(MaintenanceJob, job.id)
+            current = db.get(SecurityAlert, alert.id)
+            assert maintenance is not None
+            assert maintenance.status == MaintenanceJobStatus.FAILED.value
+            assert maintenance.last_error_code == "UNEXPECTED_MAINTENANCE_FAILURE"
+            assert current is not None
+            assert current.delivery_status == SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
+            assert current.delivery_attempt_token is None
+            assert current.next_retry_at is None
+            assert current.delivery_error_code == "UNEXPECTED_MAINTENANCE_FAILURE"
+            assert current.delivery_revision == abandoned.revision + 1
+
+        assert not finalize_security_alert_delivery_attempt(
+            engine,
+            attempt=abandoned,
+            result=HumanDeliveryResult(delivered=True, retryable=False),
+        )
+    finally:
+        _cleanup(alert.id)
+
+
 def main() -> None:
+    _prove_legacy_sec015_migration_transition()
     _prove_provider_io_has_no_alert_row_transaction()
     _prove_crash_reclaim_and_stale_attempt_fencing()
     _prove_exhausted_crash_terminalizes_public_alert()
+    _prove_unexpected_final_worker_failure_terminalizes_public_alert()
     print("PostgreSQL SEC-017 human security alert delivery PASS")
 
 

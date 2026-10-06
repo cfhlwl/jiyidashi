@@ -10,10 +10,12 @@ from uuid import uuid4
 import httpx
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import maintenance_worker
 from app.core.db import Base
+from app.maintenance_job_models import MaintenanceJob, MaintenanceJobStatus, MaintenanceJobType
 from app.security_models import (
     SecurityAlert,
     SecurityAlertDeliveryStatus,
@@ -21,6 +23,7 @@ from app.security_models import (
     SecuritySignalCode,
 )
 from app.services import security_alerting
+from app.services.maintenance_jobs import enqueue_maintenance_job
 from app.services.security_alert_human_delivery import (
     FeishuWebhookAdapter,
     HumanDeliveryResult,
@@ -372,3 +375,110 @@ def test_business_signal_does_not_call_human_delivery(monkeypatch) -> None:
             now=datetime.now(UTC) + timedelta(seconds=index),
         )
     assert alert_id is not None
+
+
+def test_unexpected_final_worker_failure_terminalizes_and_fences_alert(monkeypatch) -> None:
+    engine = _engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    row = _alert(engine, severity=SecuritySeverity.HIGH)
+    with factory() as db:
+        job, created = enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.SECURITY_ALERT_DELIVERY,
+            dedupe_key=f"security-alert:{row.id}",
+            resource_key=f"security-alert:{row.id}",
+            payload={"alert_id": str(row.id)},
+            max_attempts=1,
+        )
+        assert created
+        db.commit()
+        job_id = job.id
+
+    attempts = []
+
+    def explode(_claim) -> None:
+        attempt = begin_security_alert_delivery_attempt(engine, alert_id=row.id)
+        assert attempt is not None
+        attempts.append(attempt)
+        raise RuntimeError("UNCLASSIFIED_PROVIDER_RUNTIME_SENTINEL")
+
+    monkeypatch.setattr(maintenance_worker, "SessionLocal", factory)
+    worker = maintenance_worker.MaintenanceWorker(
+        worker_id="sec017-unit-final-failure",
+        handlers={MaintenanceJobType.SECURITY_ALERT_DELIVERY.value: explode},
+    )
+    result = worker.run_once()
+    assert result.outcome == MaintenanceJobStatus.FAILED.value
+    assert len(attempts) == 1
+    abandoned = attempts[0]
+
+    with factory() as db:
+        saved_job = db.get(MaintenanceJob, job_id)
+        current = db.get(SecurityAlert, row.id)
+        assert saved_job is not None
+        assert saved_job.status == MaintenanceJobStatus.FAILED.value
+        assert saved_job.last_error_code == "UNEXPECTED_MAINTENANCE_FAILURE"
+        assert current is not None
+        assert current.delivery_status == SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
+        assert current.delivery_attempt_token is None
+        assert current.next_retry_at is None
+        assert current.delivery_error_code == "UNEXPECTED_MAINTENANCE_FAILURE"
+        assert current.delivery_revision == abandoned.revision + 1
+
+    assert not finalize_security_alert_delivery_attempt(
+        engine,
+        attempt=abandoned,
+        result=HumanDeliveryResult(delivered=True, retryable=False),
+    )
+
+
+def test_unexpected_retry_worker_failure_clears_active_attempt_token(monkeypatch) -> None:
+    engine = _engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    row = _alert(engine, severity=SecuritySeverity.HIGH)
+    with factory() as db:
+        job, created = enqueue_maintenance_job(
+            db,
+            job_type=MaintenanceJobType.SECURITY_ALERT_DELIVERY,
+            dedupe_key=f"security-alert:{row.id}",
+            resource_key=f"security-alert:{row.id}",
+            payload={"alert_id": str(row.id)},
+            max_attempts=2,
+        )
+        assert created
+        db.commit()
+        job_id = job.id
+
+    attempts = []
+
+    def explode(_claim) -> None:
+        attempt = begin_security_alert_delivery_attempt(engine, alert_id=row.id)
+        assert attempt is not None
+        attempts.append(attempt)
+        raise RuntimeError("UNCLASSIFIED_PROVIDER_RUNTIME_SENTINEL")
+
+    monkeypatch.setattr(maintenance_worker, "SessionLocal", factory)
+    worker = maintenance_worker.MaintenanceWorker(
+        worker_id="sec017-unit-retry-failure",
+        handlers={MaintenanceJobType.SECURITY_ALERT_DELIVERY.value: explode},
+    )
+    result = worker.run_once()
+    assert result.outcome == MaintenanceJobStatus.RETRY_WAIT.value
+    abandoned = attempts[0]
+
+    with factory() as db:
+        saved_job = db.get(MaintenanceJob, job_id)
+        current = db.get(SecurityAlert, row.id)
+        assert saved_job is not None
+        assert saved_job.status == MaintenanceJobStatus.RETRY_WAIT.value
+        assert current is not None
+        assert current.delivery_status == SecurityAlertDeliveryStatus.RETRYABLE_FAILURE.value
+        assert current.delivery_attempt_token is None
+        assert current.next_retry_at == saved_job.next_attempt_at
+        assert current.delivery_revision == abandoned.revision + 1
+
+    assert not finalize_security_alert_delivery_attempt(
+        engine,
+        attempt=abandoned,
+        result=HumanDeliveryResult(delivered=True, retryable=False),
+    )

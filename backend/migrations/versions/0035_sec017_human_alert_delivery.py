@@ -41,6 +41,27 @@ def upgrade() -> None:
         )
         batch.alter_column("delivery_revision", server_default=None)
 
+    # SEC-015 used delivery_status/attempts for structured-log flushing only.
+    # SEC-017 reuses these fields as human-delivery authority for HIGH/CRITICAL,
+    # so legacy log ACK/failure state must never be reinterpreted as a human ACK
+    # or consume the new provider attempt budget.
+    op.execute(
+        sa.text(
+            """
+            UPDATE security_alerts
+            SET delivery_status = 'PENDING',
+                delivery_attempts = 0,
+                next_retry_at = NULL,
+                delivered_at = NULL,
+                delivery_revision = 0,
+                delivery_attempt_token = NULL,
+                delivery_provider = NULL,
+                delivery_error_code = NULL
+            WHERE severity IN ('HIGH', 'CRITICAL')
+            """
+        )
+    )
+
 
 def downgrade() -> None:
     with op.batch_alter_table("security_alerts", recreate="auto") as batch:
