@@ -665,6 +665,7 @@ def notification_campaign_projection(
         submitted_at=campaign.submitted_at,
         cancelled_at=campaign.cancelled_at,
         completed_at=campaign.completed_at,
+        error_code=campaign.error_code,
         created_at=campaign.created_at,
         updated_at=campaign.updated_at,
         eligible_preview=preview,
