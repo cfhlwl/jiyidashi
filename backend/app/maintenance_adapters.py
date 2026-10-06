@@ -902,7 +902,6 @@ def discover_and_enqueue_maintenance_jobs(
                     UserExportJob.status == UserExportStatus.COMPLETED.value,
                     UserExportJob.expires_at.is_not(None),
                     UserExportJob.expires_at <= observed_at,
-                    UserExportJob.user_id if False else True,
                 )
                 .order_by(UserExportJob.expires_at.asc(), UserExportJob.id.asc())
                 .limit(SCHEDULER_CATEGORY_LIMIT)
