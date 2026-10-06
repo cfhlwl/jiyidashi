@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -44,6 +45,7 @@ from app.services.export_service import (
 from app.services.maintenance_jobs import (
     DEFAULT_LEASE_SECONDS,
     MaintenanceJobClaim,
+    MaintenanceLeaseLost,
     assert_maintenance_claim_current,
     enqueue_maintenance_job,
     fence_owner_maintenance_jobs_for_deletion,
@@ -118,6 +120,44 @@ class ClaimAuthority:
             )
             db.rollback()
 
+    def run_with_heartbeat(self, operation: Callable[[], object]):
+        self.check()
+        stop = threading.Event()
+        heartbeat_error: list[BaseException] = []
+        interval = max(0.1, min(5.0, self.lease_seconds / 3))
+
+        def heartbeat() -> None:
+            while not stop.wait(interval):
+                try:
+                    self.check()
+                except BaseException as exc:
+                    heartbeat_error.append(exc)
+                    stop.set()
+                    return
+
+        thread = threading.Thread(
+            target=heartbeat,
+            name=f"maintenance-heartbeat-{self.claim.id}",
+            daemon=True,
+        )
+        thread.start()
+        operation_error: BaseException | None = None
+        result = None
+        try:
+            result = operation()
+        except BaseException as exc:
+            operation_error = exc
+        finally:
+            stop.set()
+            thread.join(timeout=max(1.0, interval * 2))
+
+        if heartbeat_error:
+            raise heartbeat_error[0]
+        self.check()
+        if operation_error is not None:
+            raise operation_error
+        return result
+
 
 class ClaimFencedObjectStorage:
     """Wrap object-store I/O with before/after durable claim checks."""
@@ -156,7 +196,7 @@ class ClaimFencedObjectStorage:
         content_type: str,
         sha256: str,
     ) -> StoredObject:
-        return self._call(
+        return self._authority.run_with_heartbeat(
             lambda: self._inner.upload_file(
                 local_path,
                 object_key,
@@ -551,6 +591,46 @@ def handle_export(claim: MaintenanceJobClaim) -> None:
             raise TerminalMaintenanceError("EXPORT_STORAGE_UNAVAILABLE") from exc
         raise RetryableMaintenanceError(
             "EXPORT_STORAGE_UNAVAILABLE",
+            retry_after_seconds=30,
+        ) from exc
+    except MaintenanceLeaseLost as exc:
+        terminal = claim.attempt_count >= claim.max_attempts
+        mark_export_attempt_failed(
+            job_id=export_job_id,
+            owner_user_id=owner_user_id,
+            revision=revision,
+            error_code="EXPORT_MAINTENANCE_LEASE_LOST",
+            terminal=terminal,
+        )
+        raise
+    except OSError as exc:
+        terminal = claim.attempt_count >= claim.max_attempts
+        mark_export_attempt_failed(
+            job_id=export_job_id,
+            owner_user_id=owner_user_id,
+            revision=revision,
+            error_code="EXPORT_LOCAL_IO_FAILED",
+            terminal=terminal,
+        )
+        if terminal:
+            raise TerminalMaintenanceError("EXPORT_LOCAL_IO_FAILED") from exc
+        raise RetryableMaintenanceError(
+            "EXPORT_LOCAL_IO_FAILED",
+            retry_after_seconds=30,
+        ) from exc
+    except Exception as exc:
+        terminal = claim.attempt_count >= claim.max_attempts
+        mark_export_attempt_failed(
+            job_id=export_job_id,
+            owner_user_id=owner_user_id,
+            revision=revision,
+            error_code="EXPORT_EXECUTION_FAILED",
+            terminal=terminal,
+        )
+        if terminal:
+            raise TerminalMaintenanceError("EXPORT_EXECUTION_FAILED") from exc
+        raise RetryableMaintenanceError(
+            "EXPORT_EXECUTION_FAILED",
             retry_after_seconds=30,
         ) from exc
     finally:
