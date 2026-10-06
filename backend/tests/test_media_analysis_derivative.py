@@ -178,6 +178,11 @@ def test_production_analysis_bytes_must_be_lower_than_original_media_limit():
             auth_public_base_url="https://app.example.test/auth",
             auth_smtp_host="smtp.example.test",
             auth_smtp_from="accounts@example.test",
+            security_alert_human_provider="feishu",
+            security_alert_feishu_webhook_url=(
+                "https://open.feishu.cn/open-apis/bot/v2/hook/test-not-live-token"
+            ),
+            security_alert_feishu_secret="test-sec017-signing-secret",
             media_max_image_bytes=2 * 1024 * 1024,
             ai_image_max_bytes=2 * 1024 * 1024,
         )
