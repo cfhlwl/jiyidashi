@@ -105,7 +105,7 @@ API-001 audited production list routes under `backend/app/api/**`.
 
 | Surface | V1 result |
 | --- | --- |
-| `GET /v1/objects` | Legacy released-client array contract preserved unchanged. |
+| `GET /v1/objects` | Legacy released-client array contract preserved unchanged; complete owner domain is hard-bounded to 500 objects. |
 | `GET /v1/objects/page-v1` | New owner-bound HMAC keyset pagination, default 50, max 100, `limit+1`. |
 | Memory timeline | Already bounded by request limit; canonical timeline API already has opaque cursor where required. |
 | Life events / event memories | Existing SQL limits, max 100. |
@@ -123,8 +123,15 @@ API-001 audited production list routes under `backend/app/api/**`.
 The versioned `/objects/page-v1` cursor contains no trusted client authority. It is
 HMAC signed and binds version, endpoint, owner UUID, normalized-name key and object UUID.
 Malformed, tampered, foreign-owner, or version-mismatched cursors return a deterministic
-400. The legacy `/objects` array remains only for compatibility with already-released
-Flutter/Mini clients and is not the pagination contract for new callers.
+400.
+
+The legacy `/objects` array remains only for compatibility with already-released
+Flutter/Mini clients. It is safe to return the complete domain because production
+PostgreSQL enforces `MAX_OBJECTS_PER_OWNER=500` at the database boundary. Normal API
+inserts serialize on the same owner advisory key and return deterministic
+`409 OBJECT_LIMIT_REACHED`; a PostgreSQL BEFORE INSERT trigger is the final authority
+for bypass/concurrent writes. Migration 0034 refuses to upgrade if any existing owner
+already exceeds 500, so deployment never silently truncates or drops object data.
 
 Stable order:
 
@@ -149,6 +156,11 @@ Exact-head CI must prove:
 - TTL download fails closed;
 - PostgreSQL REPEATABLE READ excludes writes committed after snapshot start;
 - migration roundtrip and schema drift pass;
-- legacy `/objects` still returns the released top-level array contract;
+- legacy `/objects` still returns the released top-level array contract and the complete
+  500-object bounded domain;
+- the 501st normal create returns `409 OBJECT_LIMIT_REACHED`;
+- migration 0034 rejects pre-existing >500-owner datasets;
+- a real PostgreSQL 499 + two-way concurrent insert race converges to exactly 500
+  (one commit, one DB-trigger rejection);
 - `/objects/page-v1` default/max/multi-page/tamper/foreign-owner behavior passes;
 - full backend and production deployment gates pass.
