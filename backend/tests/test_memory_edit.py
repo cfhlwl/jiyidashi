@@ -7,15 +7,12 @@ from sqlalchemy import select
 from app.core.db import SessionLocal
 from app.media_models import MediaAsset, MediaEvidenceLink, MediaKind, MediaStatus
 from app.models import Memory, MemoryEdit, MemorySource, MemoryType, SourceType
-
-
 from tests.export_test_support import export_payload
 
 async def _current_user_id(client, headers: dict[str, str]) -> UUID:
     profile = await client.get("/v1/user", headers=headers)
     assert profile.status_code == 200
     return UUID(profile.json()["id"])
-
 
 @pytest.mark.asyncio
 async def test_content_edit_preserves_original_source_and_uses_edit_evidence(
@@ -158,7 +155,6 @@ async def test_content_edit_preserves_original_source_and_uses_edit_evidence(
             ).all()
         ) == 2
 
-
 @pytest.mark.asyncio
 async def test_title_only_edit_does_not_forge_new_content_source(client, auth_headers):
     created = await client.post(
@@ -190,7 +186,6 @@ async def test_title_only_edit_does_not_forge_new_content_source(client, auth_he
         assert audit.changed_title is True
         assert audit.changed_content is False
         assert audit.memory_source_id is None
-
 
 @pytest.mark.asyncio
 async def test_edit_owner_delete_validation_and_structured_memory_fail_closed(
@@ -259,7 +254,6 @@ async def test_edit_owner_delete_validation_and_structured_memory_fail_closed(
     )
     assert structured_edit.status_code == 409
     assert structured_edit.json()["detail"] == "OBJECT_LOCATION_EDIT_REQUIRES_STRUCTURED_FLOW"
-
 
 @pytest.mark.asyncio
 async def test_photo_edit_keeps_original_media_link_but_current_text_uses_user_edit(
