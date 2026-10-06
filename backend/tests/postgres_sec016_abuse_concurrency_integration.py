@@ -8,9 +8,10 @@ import subprocess
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from threading import Barrier, Lock, Thread
+from time import monotonic, sleep
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, inspect, select
+from sqlalchemy import delete, inspect, select, text
 
 from app.abuse_models import ConcurrencyGuard, WorkPermit
 from app.auth_models import AuthRateLimitBucket
@@ -362,6 +363,112 @@ async def _prove_preprocess_heartbeat_lifecycle(
     assert release_permit(engine, permit=second, settings=settings) is True
 
 
+def _prove_preprocess_renew_claim_serialization(
+    user_a: UUID,
+    user_b: UUID,
+) -> None:
+    settings = _preprocess_settings(global_limit=1, user_limit=1, lease_seconds=6)
+    first = claim_image_preprocess_permit(
+        engine,
+        user_id=user_a,
+        settings=settings,
+    )
+
+    trigger_name = "sec016_test_slow_preprocess_renew"
+    function_name = "sec016_test_slow_preprocess_renew_fn"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                f"""
+                CREATE OR REPLACE FUNCTION {function_name}()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $
+                BEGIN
+                    IF NEW.service_class = 'AI_IMAGE_PREPROCESS' THEN
+                        PERFORM pg_sleep(4);
+                    END IF;
+                    RETURN NEW;
+                END;
+                $;
+                DROP TRIGGER IF EXISTS {trigger_name} ON work_permits;
+                CREATE TRIGGER {trigger_name}
+                AFTER UPDATE OF expires_at ON work_permits
+                FOR EACH ROW
+                EXECUTE FUNCTION {function_name}();
+                """
+            )
+        )
+
+    renew_result: list = []
+    renew_errors: list[BaseException] = []
+
+    def renew_worker() -> None:
+        try:
+            renewed = renew_permit(
+                engine,
+                permit=first,
+                lease_seconds=6,
+                settings=settings,
+            )
+            renew_result.append(renewed)
+        except BaseException as exc:  # noqa: BLE001
+            renew_errors.append(exc)
+
+    try:
+        # Start renewal while the original lease is live. The trigger holds the
+        # transaction after UPDATE but before COMMIT while renew still owns the
+        # global/user ConcurrencyGuard rows.
+        sleep(2.5)
+        thread = Thread(target=renew_worker, name="media-preprocess-renew-race")
+        thread.start()
+        sleep(3.8)
+        assert datetime.now(UTC) > first.expires_at
+
+        claim_started = monotonic()
+        try:
+            claim_image_preprocess_permit(
+                engine,
+                user_id=user_b,
+                settings=settings,
+            )
+        except ConcurrencyRejected as exc:
+            claim_elapsed = monotonic() - claim_started
+            assert exc.code == "AI_IMAGE_PREPROCESS_SATURATED"
+            # Admission must have waited for renewal's shared guard transaction.
+            assert claim_elapsed >= 0.2
+        else:
+            raise AssertionError(
+                "renew/admission serialization allowed two active preprocessing permits"
+            )
+
+        thread.join(timeout=15)
+        assert not thread.is_alive()
+        if renew_errors:
+            raise renew_errors[0]
+        assert len(renew_result) == 1
+        assert renew_result[0] is not None
+
+        with SessionLocal() as db:
+            active = list(
+                db.scalars(
+                    select(WorkPermit).where(
+                        WorkPermit.service_class == "AI_IMAGE_PREPROCESS",
+                        WorkPermit.expires_at > datetime.now(UTC),
+                    )
+                )
+            )
+            assert len(active) == 1
+            assert active[0].id == first.permit_id
+    finally:
+        with engine.begin() as connection:
+            connection.execute(
+                text(f"DROP TRIGGER IF EXISTS {trigger_name} ON work_permits")
+            )
+            connection.execute(text(f"DROP FUNCTION IF EXISTS {function_name}()"))
+        release_permit(engine, permit=first, settings=settings)
+
+
 def _prove_stale_recovery_and_token_binding(user_id: UUID) -> None:
     settings = _provider_settings(global_limit=1, user_limit=1)
     first = claim_provider_permit(
@@ -562,6 +669,7 @@ def main() -> None:
         _prove_image_preprocess_cross_worker_budget(user_a, user_b)
         _prove_preprocess_renewal_token_binding(user_a, user_b)
         asyncio.run(_prove_preprocess_heartbeat_lifecycle(user_a, user_b))
+        _prove_preprocess_renew_claim_serialization(user_a, user_b)
         _prove_stale_recovery_and_token_binding(user_a)
         _prove_live_permit_survives_owner_delete(user_a)
         user_a = _seed_user("a-after-delete")
