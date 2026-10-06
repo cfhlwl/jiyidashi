@@ -49,7 +49,7 @@ class SecurityAlertHumanDeliveryAdapter(Protocol):
 
 
 def feishu_signature(*, timestamp: int, secret: str) -> str:
-    string_to_sign = f"{timestamp}\n{secret}".encode("utf-8")
+    string_to_sign = f"{timestamp}\n{secret}".encode()
     digest = hmac.new(string_to_sign, digestmod=hashlib.sha256).digest()
     return base64.b64encode(digest).decode("ascii")
 
