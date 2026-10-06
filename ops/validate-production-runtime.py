@@ -166,7 +166,7 @@ def main() -> None:
 
     security_webhook = values.get("SECURITY_ALERT_FEISHU_WEBHOOK_URL", "").strip()
     try:
-        parsed_security_webhook = urlparse(security_webhook)
+        parsed_security_webhook = urlsplit(security_webhook)
     except ValueError:
         parsed_security_webhook = None
     if (
