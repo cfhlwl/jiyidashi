@@ -189,9 +189,26 @@ def renew_permit(
     settings: Settings | None = None,
 ) -> Permit | None:
     cfg = settings or get_settings()
-    now = datetime.now(UTC)
-    new_expires_at = now + timedelta(seconds=lease_seconds)
+    global_scope = f"global:{permit.service_class}"
+    user_scope = (
+        None
+        if permit.user_id is None
+        else f"user:{permit.service_class}:{permit.user_id}"
+    )
+
     with Session(bind=bind, autoflush=False, expire_on_commit=False) as db:
+        # Renewal and admission serialize on the exact same guard rows, in the
+        # exact same stable order. The lease clock is sampled only after these
+        # locks are acquired so waiting behind another authority cannot revive
+        # a permit that expired while blocked.
+        lock_started_at = datetime.now(UTC)
+        for scope in sorted(
+            x for x in (global_scope, user_scope) if x is not None
+        ):
+            _guard_row(db, scope, lock_started_at)
+
+        now = datetime.now(UTC)
+        new_expires_at = now + timedelta(seconds=lease_seconds)
         result = db.execute(
             update(WorkPermit)
             .where(
@@ -205,6 +222,7 @@ def renew_permit(
         db.commit()
         if not result.rowcount:
             return None
+
     return Permit(
         permit_id=permit.permit_id,
         token=permit.token,
