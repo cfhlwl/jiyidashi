@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from tests.export_test_support import export_payload
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
@@ -408,19 +409,17 @@ async def test_person_memory_link_export_is_owner_scoped_and_excludes_deleted_me
     )
     assert linked_b.status_code == 201
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    rows = exported.json()["person_memory_links"]
+    export_body, exported_text = await export_payload(client, headers_a)
+    rows = export_body["person_memory_links"]
     assert len(rows) == 1
     assert rows[0]["id"] == linked_a.json()["id"]
     assert rows[0]["person_id"] == person_a["id"]
     assert rows[0]["memory_id"] == memory_a["id"]
     assert rows[0]["relation_kind"] == "MET"
-    assert "B secret person" not in exported.text
-    assert "B secret memory" not in exported.text
+    assert "B secret person" not in exported_text
+    assert "B secret memory" not in exported_text
 
     deleted = await client.delete(f"/v1/memories/{memory_a['id']}", headers=headers_a)
     assert deleted.status_code == 204
-    after_delete = await client.get("/v1/export/data", headers=headers_a)
-    assert after_delete.status_code == 200
-    assert after_delete.json()["person_memory_links"] == []
+    after_delete_body, _ = await export_payload(client, headers_a)
+    assert after_delete_body["person_memory_links"] == []
