@@ -160,6 +160,56 @@ def main() -> None:
                 "DB pool connection budget exceeded for WEB_CONCURRENCY + worker"
             )
 
+    security_provider = values.get("SECURITY_ALERT_HUMAN_PROVIDER", "").strip().lower()
+    if security_provider != "feishu":
+        errors.append("SECURITY_ALERT_HUMAN_PROVIDER must be feishu in production")
+
+    security_webhook = values.get("SECURITY_ALERT_FEISHU_WEBHOOK_URL", "").strip()
+    try:
+        parsed_security_webhook = urlparse(security_webhook)
+    except ValueError:
+        parsed_security_webhook = None
+    if (
+        parsed_security_webhook is None
+        or parsed_security_webhook.scheme.lower() != "https"
+        or parsed_security_webhook.hostname != "open.feishu.cn"
+        or parsed_security_webhook.port not in (None, 443)
+        or parsed_security_webhook.username
+        or parsed_security_webhook.password
+        or parsed_security_webhook.query
+        or parsed_security_webhook.fragment
+        or not parsed_security_webhook.path.startswith("/open-apis/bot/v2/hook/")
+        or not parsed_security_webhook.path[len("/open-apis/bot/v2/hook/") :]
+        or "/" in parsed_security_webhook.path[len("/open-apis/bot/v2/hook/") :]
+    ):
+        errors.append(
+            "SECURITY_ALERT_FEISHU_WEBHOOK_URL must be a reviewed Feishu HTTPS webhook"
+        )
+    elif (
+        "CHANGE_ME" in security_webhook.upper()
+        or "PLACEHOLDER" in security_webhook.upper()
+    ):
+        errors.append("SECURITY_ALERT_FEISHU_WEBHOOK_URL must not be a placeholder")
+
+    security_secret = values.get("SECURITY_ALERT_FEISHU_SECRET", "").strip()
+    if (
+        not security_secret
+        or "CHANGE_ME" in security_secret.upper()
+        or "PLACEHOLDER" in security_secret.upper()
+    ):
+        errors.append("SECURITY_ALERT_FEISHU_SECRET must be a non-placeholder secret")
+
+    try:
+        security_timeout = float(
+            values.get("SECURITY_ALERT_DELIVERY_TIMEOUT_SECONDS", "")
+        )
+    except ValueError:
+        security_timeout = 0.0
+    if not 1.0 <= security_timeout <= 15.0:
+        errors.append(
+            "SECURITY_ALERT_DELIVERY_TIMEOUT_SECONDS must be between 1 and 15"
+        )
+
     media_image_max = bounded_int(
         values, "MEDIA_MAX_IMAGE_BYTES", minimum=1, maximum=50 * 1024 * 1024, errors=errors
     )
