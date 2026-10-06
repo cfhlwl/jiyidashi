@@ -87,8 +87,21 @@ def create_object(payload: ObjectCreate, user_id: CurrentUser, db: DbSession) ->
     return item
 
 
-@router.get("", response_model=ObjectPageResponse)
-def list_objects(
+@router.get("", response_model=list[ObjectRead])
+def list_objects(user_id: CurrentUser, db: DbSession) -> list[ObjectItem]:
+    # Compatibility surface for released Flutter/Mini clients. API-001 keeps this
+    # exact top-level array contract while moving new callers to /objects/page-v1.
+    return list(
+        db.scalars(
+            select(ObjectItem)
+            .where(ObjectItem.user_id == user_id)
+            .order_by(ObjectItem.name, ObjectItem.id)
+        ).all()
+    )
+
+
+@router.get("/page-v1", response_model=ObjectPageResponse)
+def list_objects_page_v1(
     user_id: CurrentUser,
     db: DbSession,
     limit: int = Query(default=50, ge=1, le=100),
