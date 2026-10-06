@@ -9,6 +9,7 @@ from app.media_models import MediaAsset, MediaEvidenceLink, MediaKind, MediaStat
 from app.models import Memory, MemoryEdit, MemorySource, MemoryType, SourceType
 from tests.export_test_support import export_payload
 
+
 async def _current_user_id(client, headers: dict[str, str]) -> UUID:
     profile = await client.get("/v1/user", headers=headers)
     assert profile.status_code == 200
