@@ -20,13 +20,13 @@ from app.export_models import UserExportJob
 from app.maintenance_adapters import handle_export
 from app.maintenance_job_models import MaintenanceJob, MaintenanceJobType
 from app.models import Memory, MemoryType, SourceType, User
+from app.services.data_deletion_service import delete_all_user_data
 from app.services.export_service import (
     begin_export_attempt,
     generate_export_file,
     publish_export_artifact,
     remove_temp_file,
 )
-from app.services.data_deletion_service import delete_all_user_data
 from app.services.maintenance_jobs import (
     MaintenanceLeaseLost,
     claim_next_maintenance_job,
