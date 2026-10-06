@@ -10,7 +10,7 @@ from app.core.db import SessionLocal
 from app.models import Memory
 from app.person_memory_models import PersonMemoryLink
 from app.person_relationship_models import PersonRelationship
-from export_test_support import export_payload
+from app.testing_export_support import export_payload
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
