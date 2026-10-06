@@ -32,7 +32,7 @@ verify_backend_service_release() {
   local service="$1"
   local container_id expected_image_id actual_image_id revision
 
-  container_id="$("\${compose[@]}" ps -q "$service")"
+  container_id="$("${compose[@]}" ps -q "$service")"
   if [[ -z "$container_id" ]]; then
     echo "$service container is not running" >&2
     exit 5
@@ -55,29 +55,29 @@ ROOT_DIR="$ROOT_DIR" TARGET_SHA="$TARGET_SHA" \
 python3 "$ROOT_DIR/ops/validate-production-runtime.py" "$ENV_FILE"
 
 echo "[2/11] validate production compose"
-"\${compose[@]}" config --quiet
+"${compose[@]}" config --quiet
 
 echo "[3/11] prepare immutable backend image: $BACKEND_IMAGE"
-RELEASE_IMAGE_STATE_DIR="\${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}" \
+RELEASE_IMAGE_STATE_DIR="${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}" \
   bash "$ROOT_DIR/ops/prepare-release-image.sh" "$BACKEND_IMAGE" "$TARGET_SHA"
 
 echo "[4/11] prepare immutable admin edge image: $EDGE_IMAGE"
-RELEASE_IMAGE_STATE_DIR="\${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}" \
+RELEASE_IMAGE_STATE_DIR="${RELEASE_IMAGE_STATE_DIR:-$ROOT_DIR/.ops-state/release-images}" \
   bash "$ROOT_DIR/ops/prepare-release-image.sh" "$EDGE_IMAGE" "$TARGET_SHA" edge
 
 echo "[5/11] quiesce old worker/API, back up PostgreSQL, then migrate"
 ENV_FILE="$ENV_FILE" \
 COMPOSE_FILE="$COMPOSE_FILE" \
-BACKUP_DIR="\${BACKUP_DIR:-$ROOT_DIR/backups/postgres}" \
-BACKUP_RETENTION_DAYS="\${BACKUP_RETENTION_DAYS:-14}" \
+BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/postgres}" \
+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}" \
   bash "$ROOT_DIR/ops/prepare-production-database.sh"
 
 echo "[6/11] start exact-SHA maintenance worker"
-"\${compose[@]}" up -d --no-deps --force-recreate worker
+"${compose[@]}" up -d --no-deps --force-recreate worker
 worker_health="$(mktemp)"
 trap 'rm -f "$worker_health"' EXIT
 for _ in $(seq 1 30); do
-  if "\${compose[@]}" exec -T worker python -m app.maintenance_worker --health \
+  if "${compose[@]}" exec -T worker python -m app.maintenance_worker --health \
     >"$worker_health" 2>/dev/null; then
     break
   fi
@@ -96,35 +96,35 @@ rm -f "$worker_health"
 trap - EXIT
 
 echo "[7/11] start exact-SHA API without re-running migration dependency"
-"\${compose[@]}" up -d --no-deps --force-recreate api
+"${compose[@]}" up -d --no-deps --force-recreate api
 for _ in $(seq 1 60); do
-  if "\${compose[@]}" exec -T api python -c \
+  if "${compose[@]}" exec -T api python -c \
     "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).read()" \
     >/dev/null 2>&1; then
     break
   fi
   sleep 2
 done
-"\${compose[@]}" exec -T api python -c \
+"${compose[@]}" exec -T api python -c \
   "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).read()" \
   >/dev/null
 verify_backend_service_release api
 
 echo "[8/11] start HTTPS reverse proxy and Admin Console"
-"\${compose[@]}" up -d --no-deps --force-recreate reverse-proxy
+"${compose[@]}" up -d --no-deps --force-recreate reverse-proxy
 
 echo "[9/11] production acceptance smoke"
-if [[ "\${DEPLOY_CI_SKIP_EXTERNAL_SMOKE:-false}" == "true" ]]; then
-  if [[ "\${CI:-}" != "true" ]]; then
+if [[ "${DEPLOY_CI_SKIP_EXTERNAL_SMOKE:-false}" == "true" ]]; then
+  if [[ "${CI:-}" != "true" ]]; then
     echo "DEPLOY_CI_SKIP_EXTERNAL_SMOKE is CI-only" >&2
     exit 2
   fi
   echo "CI-only external smoke bypass; cutover/runtime gates still executed"
 else
   API_BASE_URL="$API_BASE_URL" \
-  SMOKE_ACCESS_TOKEN="\${SMOKE_ACCESS_TOKEN:-}" \
-  SMOKE_EMAIL="\${SMOKE_EMAIL:-}" \
-  SMOKE_PASSWORD="\${SMOKE_PASSWORD:-}" \
+  SMOKE_ACCESS_TOKEN="${SMOKE_ACCESS_TOKEN:-}" \
+  SMOKE_EMAIL="${SMOKE_EMAIL:-}" \
+  SMOKE_PASSWORD="${SMOKE_PASSWORD:-}" \
     bash "$ROOT_DIR/ops/smoke-production.sh"
 fi
 
