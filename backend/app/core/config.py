@@ -62,6 +62,9 @@ class Settings(BaseSettings):
 
     provider_ai_global_concurrency: int = Field(default=8, ge=1, le=1000)
     provider_ai_user_concurrency: int = Field(default=2, ge=1, le=1000)
+    ai_image_preprocess_global_concurrency: int = Field(default=2, ge=1, le=64)
+    ai_image_preprocess_user_concurrency: int = Field(default=1, ge=1, le=64)
+    ai_image_preprocess_permit_lease_seconds: int = Field(default=60, ge=5, le=600)
     provider_asr_global_concurrency: int = Field(default=4, ge=1, le=1000)
     provider_asr_user_concurrency: int = Field(default=1, ge=1, le=1000)
     provider_embedding_global_concurrency: int = Field(default=8, ge=1, le=1000)
@@ -302,6 +305,14 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "DB pool connection budget exceeded for WEB_CONCURRENCY + worker"
                 )
+
+        if (
+            self.ai_image_preprocess_user_concurrency
+            > self.ai_image_preprocess_global_concurrency
+        ):
+            raise ValueError(
+                "AI_IMAGE_PREPROCESS_USER_CONCURRENCY must be <= global concurrency"
+            )
 
         concurrency_pairs = (
             (
