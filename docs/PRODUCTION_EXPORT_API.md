@@ -45,16 +45,27 @@ Attempt object keys include export job revision and maintenance claim token. A s
 attempt cannot publish over a newer revision. Failed unpublished attempt objects are
 best-effort removed and later retries sweep the job prefix before generation.
 
+Blocking artifact upload runs under a database-backed heartbeat for the full physical
+upload duration, not just before/after checks. Lease loss, local I/O failure, storage
+failure, and unexpected execution failure all converge the revision-fenced
+`UserExportJob` out of RUNNING. If a final claimed attempt crashes and its lease
+expires, maintenance housekeeping terminalizes both the internal MaintenanceJob and
+the still-active public export job.
+
 Production defaults:
 
 ```text
 EXPORT_BATCH_SIZE=200
 EXPORT_ARTIFACT_MAX_BYTES=268435456
 EXPORT_ARTIFACT_TTL_HOURS=24
+worker /tmp tmpfs=320MiB
+required temp headroom=64MiB
 ```
 
 Export generation never materializes all sections or the complete JSON artifact in
 one Python object. The artifact hard ceiling fails closed with a bounded error code.
+Production static/runtime preflight requires the 256MiB ceiling to fit inside the
+reviewed 320MiB worker temp budget with 64MiB headroom.
 
 ## Snapshot semantics
 
@@ -123,6 +134,9 @@ Exact-head CI must prove:
 - status/download are owner-isolated;
 - worker generation is bounded and preserves V1 redaction/privacy semantics;
 - remote artifact size/hash/content type are verified before publication;
+- upload heartbeat prevents lease reclaim during a blocking upload;
+- local ENOSPC/OSError cannot leave the public export job RUNNING;
+- exhausted final maintenance lease converges the public export job to FAILED;
 - stale revision cannot publish;
 - TTL download fails closed;
 - PostgreSQL REPEATABLE READ excludes writes committed after snapshot start;
