@@ -8,8 +8,6 @@ from sqlalchemy import func, select
 from app.core.db import SessionLocal
 from app.models import Memory, MemorySource
 from app.person_models import Person, PersonAlias
-
-
 from tests.export_test_support import export_payload
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -18,12 +16,10 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     body = response.json()
     return {"Authorization": f"Bearer {body['access_token']}"}, UUID(body["user_id"])
 
-
 @pytest.mark.asyncio
 async def test_people_require_authentication(client):
     response = await client.get("/v1/people")
     assert response.status_code in {401, 403}
-
 
 @pytest.mark.asyncio
 async def test_person_crud_is_owner_scoped_revision_safe_and_aliases_are_structured(client):
@@ -151,7 +147,6 @@ async def test_person_crud_is_owner_scoped_revision_safe_and_aliases_are_structu
         ) == 0
         assert db.scalar(select(Person.id).where(Person.user_id == user_b)) is not None
 
-
 @pytest.mark.asyncio
 async def test_person_profile_management_creates_no_memory_or_evidence(client):
     headers, user_id = await _new_user(client, "person-no-memory")
@@ -181,7 +176,6 @@ async def test_person_profile_management_creates_no_memory_or_evidence(client):
         after_sources = db.scalar(select(func.count()).select_from(MemorySource))
     assert before_memories == after_memories
     assert before_sources == after_sources
-
 
 @pytest.mark.asyncio
 async def test_person_export_is_owner_scoped(client):
