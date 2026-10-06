@@ -15,8 +15,6 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     return {"Authorization": f"Bearer {body['access_token']}"}, UUID(body["user_id"])
 
 
-
-
 @pytest.mark.asyncio
 async def test_legacy_objects_array_contract_remains_client_compatible(client):
     headers, user_id = await _new_user(client, "api001-legacy-objects")
@@ -74,10 +72,10 @@ async def test_objects_limit_max_and_cursor_tamper_fail_closed(client):
     assert first.status_code == 200
     # Empty accounts have no cursor, so create one object and retry.
     assert (
-        await client.post("/v1/objects/page-v1", headers=headers, json={"name": "alpha"})
+        await client.post("/v1/objects", headers=headers, json={"name": "alpha"})
     ).status_code == 201
     assert (
-        await client.post("/v1/objects/page-v1", headers=headers, json={"name": "beta"})
+        await client.post("/v1/objects", headers=headers, json={"name": "beta"})
     ).status_code == 201
     first = await client.get("/v1/objects/page-v1", headers=headers, params={"limit": 1})
     cursor = first.json()["next_cursor"]
@@ -98,7 +96,7 @@ async def test_object_cursor_is_owner_bound(client):
     headers_b, _ = await _new_user(client, "api001-owner-b")
     for name in ("a", "b"):
         assert (
-            await client.post("/v1/objects/page-v1", headers=headers_a, json={"name": name})
+            await client.post("/v1/objects", headers=headers_a, json={"name": name})
         ).status_code == 201
     first = await client.get("/v1/objects/page-v1", headers=headers_a, params={"limit": 1})
     cursor = first.json()["next_cursor"]
