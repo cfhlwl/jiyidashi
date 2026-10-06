@@ -20,6 +20,7 @@ from app.api import (
     media,
     memories,
     memory_summaries,
+    notifications,
     objects,
     people,
     privacy,
@@ -65,6 +66,8 @@ api_router.include_router(memory_summaries.router)
 # [人工注释][S2-012] Today Footprint 只读消费已合并 Timeline/Visit/Place；
 # 不建立第二套定位、聚类或持久化协议。
 api_router.include_router(today_footprint.router)
+# NOTIFY-001A owns server-side device push registration only; client provider integration is 001B.
+api_router.include_router(notifications.router)
 # [人工注释][S1-025] Reminder 保持独立资源边界；只引用既有 Memory，不把提醒状态塞进 Memory API。
 api_router.include_router(reminders.router)
 api_router.include_router(objects.router)
