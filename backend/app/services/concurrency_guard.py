@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import secrets
@@ -16,6 +17,12 @@ from app.abuse_models import ConcurrencyGuard, WorkPermit
 from app.core.config import Settings, get_settings
 from app.security_models import SecuritySignalCode
 from app.services.security_alerting import SecurityScope, record_security_signal
+
+
+class PermitLeaseLost(RuntimeError):
+    def __init__(self, code: str = "CONCURRENCY_PERMIT_LEASE_LOST"):
+        super().__init__(code)
+        self.code = code
 
 
 class ConcurrencyRejected(RuntimeError):
@@ -204,6 +211,66 @@ def renew_permit(
         user_id=permit.user_id,
         expires_at=new_expires_at,
     )
+
+
+class PermitHeartbeat:
+    def __init__(
+        self,
+        bind: Engine,
+        *,
+        permit: Permit,
+        lease_seconds: int,
+        settings: Settings | None = None,
+    ):
+        self._bind = bind
+        self._permit = permit
+        self._lease_seconds = lease_seconds
+        self._settings = settings or get_settings()
+        self._stop = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+        self._failure: BaseException | None = None
+
+    def start(self) -> None:
+        if self._task is not None:
+            raise RuntimeError("PERMIT_HEARTBEAT_ALREADY_STARTED")
+        self._task = asyncio.create_task(self._run())
+
+    async def _run(self) -> None:
+        interval = max(1.0, self._lease_seconds / 4)
+        while True:
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+                return
+            except TimeoutError:
+                pass
+            try:
+                renewed = await asyncio.to_thread(
+                    renew_permit,
+                    self._bind,
+                    permit=self._permit,
+                    lease_seconds=self._lease_seconds,
+                    settings=self._settings,
+                )
+            except BaseException as exc:  # fail closed; surfaced by ensure_healthy/stop
+                self._failure = exc
+                return
+            if renewed is None:
+                self._failure = PermitLeaseLost()
+                return
+            self._permit = renewed
+
+    def ensure_healthy(self) -> None:
+        if self._failure is None:
+            return
+        if isinstance(self._failure, PermitLeaseLost):
+            raise self._failure
+        raise PermitLeaseLost() from self._failure
+
+    async def stop(self) -> None:
+        self._stop.set()
+        if self._task is not None:
+            await self._task
+        self.ensure_healthy()
 
 
 def release_permit(
