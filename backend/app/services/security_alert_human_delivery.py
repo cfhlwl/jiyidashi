@@ -232,10 +232,10 @@ class FeishuWebhookAdapter:
 
             code = body.get("code")
             legacy_code = body.get("StatusCode")
-            if code == 0 or legacy_code == 0:
+            provider_code = code if isinstance(code, int) else legacy_code
+            if provider_code == 0:
                 return HumanDeliveryResult(delivered=True, retryable=False)
 
-            provider_code = code if isinstance(code, int) else legacy_code
             if isinstance(provider_code, int) and provider_code in _FEISHU_PERMANENT_CODES:
                 return HumanDeliveryResult(
                     delivered=False,
