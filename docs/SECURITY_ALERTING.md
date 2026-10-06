@@ -205,3 +205,80 @@ SEC-015 requires:
 - migration/schema drift clean
 - exact-head Backend CI
 - Production Deployment CI because the production schema changed
+
+
+## SEC-017 — Human Security Alert Delivery V1
+
+HIGH / CRITICAL alerts now require a real human-provider acknowledgement before the
+durable alert can become `DELIVERED`. MEDIUM remains durable + structured-log delivery
+without a mandatory human page.
+
+Production provider:
+
+```text
+SECURITY_ALERT_HUMAN_PROVIDER=feishu
+SECURITY_ALERT_FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/<server-secret-token>
+SECURITY_ALERT_FEISHU_SECRET=<server-only-signing-secret>
+SECURITY_ALERT_DELIVERY_TIMEOUT_SECONDS=5
+```
+
+The committed production template contains placeholders only. Production preflight
+rejects disabled providers, missing/placeholder secrets, non-HTTPS endpoints, non-Feishu
+hosts, unreviewed paths, and timeout values outside 1–15 seconds.
+
+Delivery authority is explicitly split around external HTTP:
+
+```text
+FOR UPDATE alert
+→ validate terminal/due/max-attempt state
+→ increment attempt number + revision
+→ persist random attempt token/provider
+→ COMMIT
+
+outside DB transaction
+→ checked structured event
+→ Feishu HTTP for HIGH/CRITICAL
+→ bounded timeout
+
+FOR UPDATE alert
+→ same revision + attempt token required
+→ ACK => DELIVERED
+→ transient => RETRYABLE_FAILURE
+→ permanent/max attempts => TERMINAL_FAILURE
+→ COMMIT
+```
+
+A stale worker can never finalize over a newer attempt. A process crash after attempt
+claim is reclaimable through OPS-002 maintenance lease semantics. If the final claimed
+maintenance attempt expires after a crash, maintenance housekeeping terminalizes the
+still-active SecurityAlert and increments its revision to fence the stale worker.
+
+Feishu delivery is at-least-once with bounded duplicate risk, not exactly-once. Every
+retry carries the same durable `alert_id`. A provider acceptance followed by response
+loss can therefore yield a duplicate human message, but retries remain bounded.
+
+The human message allowlist is limited to:
+
+```text
+alert_id
+severity
+rule_code
+scope
+signal_count
+window_seconds
+created_at
+correlation_digest
+fixed operator instruction
+```
+
+It never contains raw IP/email/phone/user/family/account IDs, memory text, AI/OCR/ASR
+content, coordinates, credentials, media/object keys, signed URLs, provider URL/secret,
+provider response bodies, or request/response bodies.
+
+Retry classification:
+
+- timeout/network/DNS, HTTP 408/429/5xx, malformed/unknown provider responses: retryable;
+- reviewed permanent Feishu webhook/auth/signature/config rejections: terminal;
+- safely parsed `Retry-After` is capped at 900 seconds and never exceeds the reviewed
+  backoff ceiling;
+- provider exception text and response bodies are never persisted or logged.
