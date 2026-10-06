@@ -8,7 +8,7 @@ import threading
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 
 from app.admin_models import AdminAccount, AdminRole
 from app.core.db import SessionLocal, engine
