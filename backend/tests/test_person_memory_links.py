@@ -11,6 +11,7 @@ from app.models import Memory, MemorySource
 from app.person_memory_models import PersonMemoryLink
 from tests.export_test_support import export_payload
 
+
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     response = await client.post("/v1/auth/dev-token", json={"nickname": nickname})
     assert response.status_code == 200
