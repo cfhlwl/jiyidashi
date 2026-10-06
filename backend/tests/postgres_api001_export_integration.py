@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -10,7 +11,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, func, inspect, select
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import delete, func, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app import maintenance_adapters
@@ -375,6 +378,167 @@ def _prove_export_delete_handoff_serializes_upload() -> None:
 
 
 
+
+
+def _prove_capacity_migration_blocks_legacy_insert_window() -> None:
+    _alembic("downgrade", "0033_api001_export_jobs")
+
+    user_id = uuid4()
+    with SessionLocal() as db:
+        db.add(User(id=user_id, nickname="api001-capacity-install-race"))
+        db.flush()
+        db.add_all(
+            ObjectItem(
+                user_id=user_id,
+                name=f"install-race-{index:03d}",
+                normalized_name=f"install-race-{index:03d}",
+            )
+            for index in range(500)
+        )
+        db.commit()
+
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "0034_api001_object_capacity.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "api001_object_capacity_revision",
+        migration_path,
+    )
+    assert spec is not None and spec.loader is not None
+    revision = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(revision)
+
+    lock_acquired = threading.Event()
+    release_migration = threading.Event()
+    migration_done = threading.Event()
+    insert_started = threading.Event()
+    insert_done = threading.Event()
+    migration_errors: list[BaseException] = []
+    insert_errors: list[BaseException] = []
+    insert_rejected: list[bool] = []
+
+    class BlockingOperations:
+        def __init__(self, inner: Operations):
+            self._inner = inner
+
+        def get_bind(self):
+            return self._inner.get_bind()
+
+        def execute(self, statement, *args, **kwargs):
+            result = self._inner.execute(statement, *args, **kwargs)
+            if (
+                isinstance(statement, str)
+                and statement.strip()
+                == "LOCK TABLE objects IN SHARE ROW EXCLUSIVE MODE"
+            ):
+                lock_acquired.set()
+                if not release_migration.wait(timeout=15):
+                    raise AssertionError("migration lock test was not released")
+            return result
+
+    def run_migration() -> None:
+        try:
+            with engine.connect() as connection:
+                transaction = connection.begin()
+                context = MigrationContext.configure(connection)
+                operations = Operations(context)
+                revision.op = BlockingOperations(operations)
+                revision.upgrade()
+                connection.execute(
+                    text(
+                        "UPDATE alembic_version "
+                        "SET version_num = '0034_api001_object_capacity'"
+                    )
+                )
+                transaction.commit()
+        except BaseException as exc:
+            migration_errors.append(exc)
+        finally:
+            migration_done.set()
+
+    def insert_legacy_501() -> None:
+        try:
+            with SessionLocal() as db:
+                db.add(
+                    ObjectItem(
+                        user_id=user_id,
+                        name="install-race-500",
+                        normalized_name="install-race-500",
+                    )
+                )
+                insert_started.set()
+                try:
+                    db.commit()
+                except IntegrityError as exc:
+                    db.rollback()
+                    assert "OBJECT_OWNER_CAPACITY_EXCEEDED" in str(exc.orig)
+                    insert_rejected.append(True)
+        except BaseException as exc:
+            insert_errors.append(exc)
+        finally:
+            insert_done.set()
+
+    migration_thread = threading.Thread(
+        target=run_migration,
+        name="api001-capacity-migration",
+    )
+    insert_thread = threading.Thread(
+        target=insert_legacy_501,
+        name="api001-legacy-insert",
+    )
+    try:
+        migration_thread.start()
+        assert lock_acquired.wait(timeout=15)
+
+        insert_thread.start()
+        assert insert_started.wait(timeout=15)
+
+        # T2 has started its INSERT after T1 already owns SHARE ROW EXCLUSIVE.
+        # It must remain blocked until the real 0034 upgrade installs the trigger
+        # and commits.
+        assert not insert_done.wait(timeout=0.4)
+
+        release_migration.set()
+        migration_thread.join(timeout=15)
+        insert_thread.join(timeout=15)
+        assert not migration_thread.is_alive()
+        assert not insert_thread.is_alive()
+        if migration_errors:
+            raise migration_errors[0]
+        if insert_errors:
+            raise insert_errors[0]
+        assert insert_rejected == [True]
+
+        with SessionLocal() as db:
+            count = int(
+                db.scalar(
+                    select(func.count(ObjectItem.id)).where(
+                        ObjectItem.user_id == user_id
+                    )
+                )
+                or 0
+            )
+            assert count == 500
+            revision_num = db.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+            assert revision_num == "0034_api001_object_capacity"
+            db.execute(delete(User).where(User.id == user_id))
+            db.commit()
+    finally:
+        release_migration.set()
+        migration_thread.join(timeout=2)
+        insert_thread.join(timeout=2)
+        # Leave the database at head even when an assertion fails, so later gates
+        # report the real failing invariant instead of cascading schema errors.
+        try:
+            _alembic("upgrade", "head")
+        except subprocess.CalledProcessError:
+            pass
+
 def _prove_object_owner_capacity_trigger_serializes_concurrent_inserts() -> None:
     user_id = uuid4()
     with SessionLocal() as db:
@@ -444,6 +608,7 @@ def _prove_object_owner_capacity_trigger_serializes_concurrent_inserts() -> None
 
 def main() -> None:
     _migration_roundtrip()
+    _prove_capacity_migration_blocks_legacy_insert_window()
     _prove_object_owner_capacity_trigger_serializes_concurrent_inserts()
     user_id, export_id = _seed()
     try:
