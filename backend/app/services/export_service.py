@@ -50,6 +50,12 @@ EXPORT_CONTENT_TYPE = "application/json"
 EXPORT_TEMP_PREFIX = "jiyidashi-export-"
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 class ExportExecutionError(RuntimeError):
     def __init__(self, code: str, *, retryable: bool):
         super().__init__(code)
@@ -1042,7 +1048,7 @@ def cleanup_export_artifact(
         if (
             job.status == UserExportStatus.COMPLETED.value
             and job.expires_at is not None
-            and job.expires_at > now
+            and _as_utc(job.expires_at) > now
         ):
             db.rollback()
             raise ExportExecutionError("EXPORT_ARTIFACT_NOT_EXPIRED", retryable=True)
