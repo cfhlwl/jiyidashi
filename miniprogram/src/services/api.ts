@@ -163,10 +163,6 @@ import {
   type PersonPatchPayload,
   type PersonRead,
 } from './people'
-import {
-  findUserObjectByNamePaginated,
-  type UserObject,
-} from './objectPagination'
 export type {
   TodayFootprintResponse,
   TodayFootprintVisit,
@@ -196,7 +192,6 @@ export type {
   Evidence,
   MemoryQueryResult,
 } from './memoryQuery'
-export type { UserObject } from './objectPagination'
 
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
@@ -212,6 +207,11 @@ export type PrivacyStatus = {
   recording_paused: boolean
   paused_since?: string | null
   paused_until?: string | null
+}
+
+export type UserObject = {
+  id: string
+  name: string
 }
 
 export function canEditApiBaseUrl(): boolean {
@@ -1155,30 +1155,12 @@ export async function rememberObjectLocation(objectName: string, locationText: s
 }
 
 export async function markObjectLocationStale(objectName: string): Promise<void> {
-  // API-001: preserve the existing stale-location behavior across cursor pagination.
-  const capturedEpoch = authSessionEpoch
-  const capturedOwner = currentAuthOwner()
-  if (!capturedOwner) throw new Error('请先登录')
-  const assertCurrentSession = (): void => {
-    if (capturedEpoch !== authSessionEpoch || currentAuthOwner() !== capturedOwner) {
-      throw new Error('登录状态已变化，请重试')
-    }
-  }
-
-  const matched = await findUserObjectByNamePaginated(
-    objectName,
-    async (cursor) => {
-      assertCurrentSession()
-      const params = new URLSearchParams({ limit: '100' })
-      if (cursor) params.set('cursor', cursor)
-      const raw = await request<unknown>('GET', `/objects?${params.toString()}`)
-      assertCurrentSession()
-      return raw
-    },
-  )
+  // [人工注释][S1-011] 只从已有 Object 中精确定位，不通过 POST 创建不存在的空对象。
+  const objects = await request<UserObject[]>('GET', '/objects')
+  const normalized = objectName.trim().toLocaleLowerCase()
+  const matched = objects.find((item) => item.name.trim().toLocaleLowerCase() === normalized)
   if (!matched) throw new Error('没有找到这个物品')
   await request('POST', `/objects/${matched.id}/location/stale`)
-  assertCurrentSession()
 }
 
 export async function listPlaces(limit = 25): Promise<PlaceRead[]> {
