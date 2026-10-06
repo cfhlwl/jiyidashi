@@ -17,8 +17,9 @@ from app.services.ai_gateway import (
 )
 from app.services.concurrency_guard import (
     ConcurrencyRejected,
+    PermitLeaseLost,
     claim_image_preprocess_permit,
-    release_permit,
+    maintain_permit_lease,
 )
 from app.services.image_analysis import AnalysisImageError, build_analysis_image
 from app.services.object_storage import ObjectNotFound, ObjectStorage, ObjectStorageError
@@ -252,35 +253,39 @@ async def extract_ocr(
         ) from exc
 
     try:
-        image = await _read_image(
-            storage,
-            object_key=snapshot.object_key,
-            size_bytes=snapshot.size_bytes,
-        )
-        try:
-            derivative = await asyncio.to_thread(
-                build_analysis_image,
-                image,
-                declared_content_type=snapshot.content_type,
-                max_bytes=settings.ai_image_max_bytes,
-                max_dimension=settings.ai_image_max_dimension,
-                max_pixels=settings.ai_image_max_pixels,
-            )
-        except AnalysisImageError as exc:
-            status = 413 if exc.code in {
-                "AI_IMAGE_SOURCE_DIMENSIONS_UNSAFE",
-                "AI_IMAGE_DERIVATIVE_TOO_LARGE",
-            } else 422
-            raise OCRError(f"OCR_ANALYSIS_{exc.code}", status) from exc
-        finally:
-            if "image" in locals():
-                del image
-    finally:
-        release_permit(
+        async with maintain_permit_lease(
             db.get_bind(),
             permit=preprocess_permit,
+            lease_seconds=settings.ai_image_preprocess_permit_lease_seconds,
             settings=settings,
-        )
+        ) as heartbeat:
+            image = await _read_image(
+                storage,
+                object_key=snapshot.object_key,
+                size_bytes=snapshot.size_bytes,
+            )
+            heartbeat.ensure_healthy()
+            try:
+                derivative = await asyncio.to_thread(
+                    build_analysis_image,
+                    image,
+                    declared_content_type=snapshot.content_type,
+                    max_bytes=settings.ai_image_max_bytes,
+                    max_dimension=settings.ai_image_max_dimension,
+                    max_pixels=settings.ai_image_max_pixels,
+                )
+                heartbeat.ensure_healthy()
+            except AnalysisImageError as exc:
+                status = 413 if exc.code in {
+                    "AI_IMAGE_SOURCE_DIMENSIONS_UNSAFE",
+                    "AI_IMAGE_DERIVATIVE_TOO_LARGE",
+                } else 422
+                raise OCRError(f"OCR_ANALYSIS_{exc.code}", status) from exc
+            finally:
+                if "image" in locals():
+                    del image
+    except PermitLeaseLost as exc:
+        raise OCRError("AI_IMAGE_PREPROCESS_LEASE_LOST", 503) from exc
 
     try:
         inference = await gateway.infer_image(
