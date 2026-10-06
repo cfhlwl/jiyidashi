@@ -218,13 +218,20 @@ def main() -> None:
     bounded_int(
         values, "EXPORT_BATCH_SIZE", minimum=25, maximum=1000, errors=errors
     )
-    bounded_int(
+    export_artifact_max = bounded_int(
         values,
         "EXPORT_ARTIFACT_MAX_BYTES",
         minimum=1024 * 1024,
-        maximum=2 * 1024 * 1024 * 1024,
+        maximum=256 * 1024 * 1024,
         errors=errors,
     )
+    if export_artifact_max is not None:
+        export_temp_capacity = 320 * 1024 * 1024
+        export_temp_headroom = 64 * 1024 * 1024
+        if export_artifact_max + export_temp_headroom > export_temp_capacity:
+            errors.append(
+                "EXPORT_ARTIFACT_MAX_BYTES exceeds reviewed worker temp budget"
+            )
     bounded_int(
         values, "EXPORT_ARTIFACT_TTL_HOURS", minimum=1, maximum=168, errors=errors
     )
