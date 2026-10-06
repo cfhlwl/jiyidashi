@@ -11,7 +11,7 @@ from threading import Barrier, Lock, Thread
 from time import monotonic, sleep
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, inspect, select, text
+from sqlalchemy import delete, inspect, select
 
 from app.abuse_models import ConcurrencyGuard, WorkPermit
 from app.auth_models import AuthRateLimitBucket
