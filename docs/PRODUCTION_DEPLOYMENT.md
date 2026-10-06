@@ -17,9 +17,11 @@ api:8000
   └── private S3-compatible COS/OSS via signed URLs
 
 release:
-postgres healthy
+quiesce old worker + API
+→ PostgreSQL healthy + pre-migration backup
 → one-shot migrate: alembic upgrade head
-→ api
+→ exact-SHA worker + schema health
+→ exact-SHA API
 → HTTPS smoke
 ```
 
@@ -123,11 +125,13 @@ The script performs:
 1. verify exact full git SHA and reject **tracked or untracked** release-source changes;
 2. validate the actual production env and production Compose;
 3. export the exact reviewed `backend/` Git tree and `admin/` + `ops/` edge tree with `git archive`, build/tag only from those clean trees, embed the SHA as the OCI revision label, and record/verify their `sha256` image IDs;
-4. start PostgreSQL even if its container was stopped;
-5. wait for PostgreSQL health and **always create the pre-migration backup** from the existing volume/data;
-6. execute `alembic upgrade head` once only after that backup succeeds;
-7. start API without re-running migration dependency and wait for internal `/health/ready` database readiness;
-8. start Caddy with the built Admin Console at `/admin/` and run the external HTTPS/auth acceptance smoke.
+4. gracefully stop the old maintenance worker and API before any migration decision;
+5. start PostgreSQL even if its container was stopped;
+6. wait for PostgreSQL health and **always create the pre-migration backup** from the existing volume/data;
+7. execute `alembic upgrade head` once only after that backup succeeds;
+8. force-recreate the maintenance worker from the exact reviewed backend image, verify its OCI revision/image ID, and require `maintenance_worker --health` to report `schema=current`;
+9. force-recreate the API from the same exact reviewed backend image and wait for internal `/health/ready`;
+10. start Caddy with the built Admin Console at `/admin/` and run the external HTTPS/auth acceptance smoke.
 
 A stopped PostgreSQL container is never treated as proof of a first deployment. Existing volumes
 are brought up and backed up before migration.
@@ -299,6 +303,7 @@ Before production acceptance:
 - stopped existing PostgreSQL volume → start → backup → one-shot Alembic migration;
 - restore of that pre-migration backup with marker-data verification;
 - `alembic check` schema-drift check;
+- execution of the real `ops/deploy.sh` from a running legacy worker/API release, proving quiesce-before-migration, exact-SHA worker/API replacement, no old process residue, and worker `schema=current`;
 - API startup and internal `/health`;
 - production `/v1/auth/dev-token=404`;
 - custom-format backup;
