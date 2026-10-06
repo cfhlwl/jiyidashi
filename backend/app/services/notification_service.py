@@ -130,12 +130,11 @@ def push_token_digest(raw_token: str) -> str:
 
 
 def _push_state(row: Device) -> DevicePushStateRead:
-    provider = None if row.push_provider is None else PushProvider(row.push_provider)
     return DevicePushStateRead(
         id=row.id,
         client_uuid=row.client_uuid,
-        platform=PushPlatform(row.platform),
-        provider=provider,
+        platform=row.platform,
+        provider=row.push_provider,
         push_enabled=row.push_enabled,
         push_token_updated_at=row.push_token_updated_at,
         push_invalidated_at=row.push_invalidated_at,
