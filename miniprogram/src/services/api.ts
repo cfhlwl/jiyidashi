@@ -214,6 +214,37 @@ export type UserObject = {
   name: string
 }
 
+type UserObjectPage = {
+  items: UserObject[]
+  next_cursor: string | null
+}
+
+function parseUserObjectPage(raw: unknown): UserObjectPage {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('服务端返回格式不正确')
+  }
+  const page = raw as { items?: unknown; next_cursor?: unknown }
+  if (!Array.isArray(page.items)) throw new Error('服务端返回格式不正确')
+  if (page.next_cursor !== null && typeof page.next_cursor !== 'string') {
+    throw new Error('服务端返回格式不正确')
+  }
+  const items = page.items.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error('服务端返回格式不正确')
+    }
+    const candidate = item as { id?: unknown; name?: unknown }
+    if (
+      typeof candidate.id !== 'string' ||
+      !candidate.id.trim() ||
+      typeof candidate.name !== 'string'
+    ) {
+      throw new Error('服务端返回格式不正确')
+    }
+    return { id: candidate.id, name: candidate.name }
+  })
+  return { items, next_cursor: page.next_cursor as string | null }
+}
+
 export function canEditApiBaseUrl(): boolean {
   return JIYI_ALLOW_API_BASE_EDIT
 }
@@ -1155,12 +1186,43 @@ export async function rememberObjectLocation(objectName: string, locationText: s
 }
 
 export async function markObjectLocationStale(objectName: string): Promise<void> {
-  // [人工注释][S1-011] 只从已有 Object 中精确定位，不通过 POST 创建不存在的空对象。
-  const objects = await request<UserObject[]>('GET', '/objects')
+  // API-001: preserve the existing stale-location behavior across cursor pagination.
+  const capturedEpoch = authSessionEpoch
+  const capturedOwner = currentAuthOwner()
+  if (!capturedOwner) throw new Error('请先登录')
+  const assertCurrentSession = (): void => {
+    if (capturedEpoch !== authSessionEpoch || currentAuthOwner() !== capturedOwner) {
+      throw new Error('登录状态已变化，请重试')
+    }
+  }
+
   const normalized = objectName.trim().toLocaleLowerCase()
-  const matched = objects.find((item) => item.name.trim().toLocaleLowerCase() === normalized)
-  if (!matched) throw new Error('没有找到这个物品')
-  await request('POST', `/objects/${matched.id}/location/stale`)
+  let cursor: string | null = null
+  const seenCursors = new Set<string>()
+
+  while (true) {
+    assertCurrentSession()
+    const params = new URLSearchParams({ limit: '100' })
+    if (cursor) params.set('cursor', cursor)
+    const raw = await request<unknown>('GET', `/objects?${params.toString()}`)
+    assertCurrentSession()
+    const page = parseUserObjectPage(raw)
+    const matched = page.items.find(
+      (item) => item.name.trim().toLocaleLowerCase() === normalized,
+    )
+    if (matched) {
+      await request('POST', `/objects/${matched.id}/location/stale`)
+      assertCurrentSession()
+      return
+    }
+    if (page.next_cursor === null) break
+    const next = page.next_cursor.trim()
+    if (!next || seenCursors.has(next)) throw new Error('服务端返回格式不正确')
+    seenCursors.add(next)
+    cursor = next
+  }
+
+  throw new Error('没有找到这个物品')
 }
 
 export async function listPlaces(limit = 25): Promise<PlaceRead[]> {
