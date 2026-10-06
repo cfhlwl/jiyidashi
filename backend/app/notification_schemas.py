@@ -53,8 +53,10 @@ class DevicePushRegistrationRequest(BaseModel):
 class DevicePushStateRead(BaseModel):
     id: UUID
     client_uuid: str
-    platform: PushPlatform
-    provider: PushProvider | None
+    # Legacy Device.platform was unconstrained. Registration validates the new write
+    # path, but reads/unregister must not invent IOS/ANDROID provenance for old rows.
+    platform: str
+    provider: str | None
     push_enabled: bool
     push_token_updated_at: datetime | None
     push_invalidated_at: datetime | None
