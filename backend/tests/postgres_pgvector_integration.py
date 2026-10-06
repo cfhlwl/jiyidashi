@@ -56,6 +56,18 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           table_name = 'media_assets'
                           AND column_name = 'upload_capability_expires_at'
                       )
+                      AND NOT (
+                          table_name = 'devices'
+                          AND column_name IN (
+                              'push_provider',
+                              'push_token_digest',
+                              'push_enabled',
+                              'push_token_updated_at',
+                              'push_invalidated_at',
+                              'app_version',
+                              'os_version'
+                          )
+                      )
                       AND table_name NOT IN (
                           'alembic_version',
                           'memory_embeddings',
@@ -94,7 +106,11 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'concurrency_guards',
                           'work_permits',
                           'maintenance_jobs',
-                          'user_export_jobs'
+                          'user_export_jobs',
+                          'notification_messages',
+                          'notification_campaigns',
+                          'notification_campaign_targets',
+                          'notification_deliveries'
                       )
                     ORDER BY table_name, ordinal_position
                     """
