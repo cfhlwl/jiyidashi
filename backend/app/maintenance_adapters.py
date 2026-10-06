@@ -700,6 +700,7 @@ def handle_security_alert_delivery(claim: MaintenanceJobClaim) -> None:
         engine,
         alert_id=str(alert_id),
         authority_check=authority.check,
+        worker_execution=True,
     )
     authority.check()
 
