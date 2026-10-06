@@ -39,7 +39,7 @@ def encode_object_cursor(
     body = json.dumps(
         {
             "v": 1,
-            "e": "objects",
+            "e": "objects-page-v1",
             "o": str(owner_user_id),
             "n": normalized_name,
             "i": str(object_id),
@@ -78,7 +78,7 @@ def decode_object_cursor(
 
     if not isinstance(payload, dict):
         raise CursorInvalid("OBJECT_CURSOR_INVALID")
-    if payload.get("v") != 1 or payload.get("e") != "objects":
+    if payload.get("v") != 1 or payload.get("e") != "objects-page-v1":
         raise CursorInvalid("OBJECT_CURSOR_INVALID")
     if payload.get("o") != str(owner_user_id):
         raise CursorInvalid("OBJECT_CURSOR_INVALID")
