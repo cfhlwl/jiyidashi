@@ -525,7 +525,10 @@ def test_bounded_fanout_worker_delivery_and_stale_attempt_fencing(monkeypatch):
     monkeypatch.setattr(notification_service, "FANOUT_BATCH_SIZE", 2)
     campaign = _create_submitted_campaign(
         actor=actor,
-        payload=_campaign_payload(),
+        payload=_campaign_payload(
+            audience=NotificationAudienceType.USER_IDS,
+            user_ids=[owner.id],
+        ),
     )
 
     with SessionLocal() as db:
