@@ -13,7 +13,7 @@ from app.admin_deps import (
 )
 from app.admin_models import AdminRole
 from app.core.db import get_db
-from app.notification_models import NotificationCampaignStatus
+from app.notification_models import NotificationCampaign, NotificationCampaignStatus
 from app.notification_schemas import (
     AdminNotificationCampaignCancel,
     AdminNotificationCampaignCreate,
@@ -93,8 +93,6 @@ def preview_campaign(
         projection = notification_campaign_projection(db, campaign_id=campaign_id)
         if projection.status != NotificationCampaignStatus.DRAFT:
             raise AdminOperationError("NOTIFICATION_CAMPAIGN_NOT_DRAFT", 409)
-        from app.notification_models import NotificationCampaign
-
         campaign = db.get(NotificationCampaign, campaign_id)
         assert campaign is not None
         return AdminNotificationCampaignPreview(
