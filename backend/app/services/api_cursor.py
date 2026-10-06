@@ -48,8 +48,9 @@ def encode_object_cursor(
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
-    token = body + b"." + _sign(body, cfg)
-    return base64.urlsafe_b64encode(token).decode().rstrip("=")
+    body_token = base64.urlsafe_b64encode(body).decode().rstrip("=")
+    signature_token = base64.urlsafe_b64encode(_sign(body, cfg)).decode().rstrip("=")
+    return f"{body_token}.{signature_token}"
 
 
 def decode_object_cursor(
@@ -62,8 +63,13 @@ def decode_object_cursor(
     if not value or len(value) > 2048:
         raise CursorInvalid("OBJECT_CURSOR_INVALID")
     try:
-        raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-        body, signature = raw.rsplit(b".", 1)
+        body_token, signature_token = value.split(".", 1)
+        body = base64.urlsafe_b64decode(
+            body_token + "=" * (-len(body_token) % 4)
+        )
+        signature = base64.urlsafe_b64decode(
+            signature_token + "=" * (-len(signature_token) % 4)
+        )
         if not hmac.compare_digest(signature, _sign(body, cfg)):
             raise CursorInvalid("OBJECT_CURSOR_INVALID")
         payload = json.loads(body)
