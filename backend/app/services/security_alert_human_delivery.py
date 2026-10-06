@@ -186,6 +186,12 @@ class FeishuWebhookAdapter:
                     retryable=True,
                     error_code="FEISHU_HTTP_ERROR",
                 )
+            except Exception:
+                return HumanDeliveryResult(
+                    delivered=False,
+                    retryable=True,
+                    error_code="FEISHU_TRANSPORT_FAILURE",
+                )
 
             retry_after = _retry_after_seconds(response)
             if response.status_code in {408, 429} or response.status_code >= 500:
