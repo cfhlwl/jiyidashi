@@ -9,6 +9,7 @@ from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.export_models import UserExportJob, UserExportStatus
 from app.maintenance_job_models import (
     MaintenanceJob,
     MaintenanceJobStatus,
@@ -194,27 +195,58 @@ def enqueue_maintenance_job(
 
 
 def _expire_exhausted_running_jobs(db: Session, *, now: datetime) -> int:
-    result = db.execute(
-        update(MaintenanceJob)
-        .where(
-            MaintenanceJob.status == MaintenanceJobStatus.RUNNING.value,
-            MaintenanceJob.lease_expires_at.is_not(None),
-            MaintenanceJob.lease_expires_at <= now,
-            MaintenanceJob.attempt_count >= MaintenanceJob.max_attempts,
-        )
-        .values(
-            status=MaintenanceJobStatus.FAILED.value,
-            completed_at=now,
-            next_attempt_at=now,
-            claimed_by=None,
-            claim_token=None,
-            lease_expires_at=None,
-            last_error_code="MAINTENANCE_ATTEMPTS_EXHAUSTED",
-            updated_at=now,
-        )
+    statement = select(MaintenanceJob).where(
+        MaintenanceJob.status == MaintenanceJobStatus.RUNNING.value,
+        MaintenanceJob.lease_expires_at.is_not(None),
+        MaintenanceJob.lease_expires_at <= now,
+        MaintenanceJob.attempt_count >= MaintenanceJob.max_attempts,
     )
-    rowcount = getattr(result, "rowcount", 0)
-    return int(rowcount) if isinstance(rowcount, int) and rowcount > 0 else 0
+    if db.get_bind().dialect.name == "postgresql":
+        statement = statement.with_for_update(skip_locked=True)
+    else:
+        statement = statement.with_for_update()
+
+    jobs = list(db.scalars(statement))
+    for job in jobs:
+        job.status = MaintenanceJobStatus.FAILED.value
+        job.completed_at = now
+        job.next_attempt_at = now
+        job.claimed_by = None
+        job.claim_token = None
+        job.lease_expires_at = None
+        job.last_error_code = "MAINTENANCE_ATTEMPTS_EXHAUSTED"
+        job.updated_at = now
+
+        if (
+            job.job_type == MaintenanceJobType.EXPORT.value
+            and job.owner_user_id is not None
+        ):
+            raw_export_id = (job.payload_json or {}).get("export_job_id")
+            try:
+                export_job_id = UUID(str(raw_export_id))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            export_statement = select(UserExportJob).where(
+                UserExportJob.id == export_job_id,
+                UserExportJob.owner_user_id == job.owner_user_id,
+                UserExportJob.status.in_(
+                    (
+                        UserExportStatus.PENDING.value,
+                        UserExportStatus.RUNNING.value,
+                    )
+                ),
+            )
+            if db.get_bind().dialect.name == "postgresql":
+                export_statement = export_statement.with_for_update()
+            export_job = db.scalar(export_statement)
+            if export_job is not None:
+                export_job.status = UserExportStatus.FAILED.value
+                export_job.error_code = "MAINTENANCE_ATTEMPTS_EXHAUSTED"
+                export_job.revision += 1
+                export_job.updated_at = now
+
+    db.flush()
+    return len(jobs)
 
 
 def _eligible_job_statement(now: datetime):

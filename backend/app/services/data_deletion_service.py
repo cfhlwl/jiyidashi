@@ -18,6 +18,7 @@ from app.data_deletion_models import (
     DataDeletionOperation,
     DataDeletionStatus,
 )
+from app.export_models import UserExportJob
 from app.family_models import (
     Family,
     FamilyInvite,
@@ -54,6 +55,7 @@ from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
 from app.person_relationship_models import PersonRelationship
 from app.services.embedding_service import delete_owner_memory_embeddings
+from app.services.export_service import export_object_prefix
 from app.services.maintenance_jobs import fence_owner_maintenance_jobs_for_deletion
 from app.services.object_storage import (
     DisabledObjectStorage,
@@ -107,8 +109,10 @@ USER_DATA_INVENTORY = (
     "client_mutations",
     "retrieval_analytics_attempts",
     "product_active_days",
+    "user_export_jobs",
     "object_storage_final_prefix",
     "object_storage_staging_prefix",
+    "object_storage_export_prefix",
 )
 PRESERVED_ACCOUNT_SURFACES = (
     "users",
@@ -167,11 +171,15 @@ def _operation_result(operation: DataDeletionOperation) -> DataDeletionResult:
     )
 
 
-def _storage_prefixes(user_id: UUID) -> tuple[str, str]:
-    # Keep this derivation identical to media_service._object_keys. Prefixes end with '/'
-    # so one user's UUID cannot match another user's object namespace by string prefix.
+def _storage_prefixes(user_id: UUID) -> tuple[str, str, str]:
+    # Keep media derivation identical to media_service._object_keys. Export artifacts
+    # use a separate private namespace, but remain under the same owner deletion authority.
     root = get_settings().storage_object_prefix.strip("/") or "media"
-    return f"{root}/_staging/{user_id}/", f"{root}/{user_id}/"
+    return (
+        f"{root}/_staging/{user_id}/",
+        f"{root}/{user_id}/",
+        export_object_prefix(user_id),
+    )
 
 
 def _storage_staging_prefix(user_id: UUID) -> str:
@@ -748,6 +756,10 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
     )
     counts["client_mutations"] = _delete_count(
         db, delete(ClientMutation).where(ClientMutation.user_id == user_id)
+    )
+    counts["user_export_jobs"] = _delete_count(
+        db,
+        delete(UserExportJob).where(UserExportJob.owner_user_id == user_id),
     )
     counts["privacy_pause_intervals"] = _delete_count(
         db, delete(PrivacyPauseInterval).where(PrivacyPauseInterval.user_id == user_id)

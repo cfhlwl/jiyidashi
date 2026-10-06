@@ -17,7 +17,9 @@ def test_concurrent_duplicate_object_insert_reselects_existing():
         normalized_name="护照",
     )
     db = MagicMock()
-    db.scalar.side_effect = [None, existing]
+    db.get_bind.return_value.dialect.name = "sqlite"
+    # initial lookup -> post-capacity-lock recheck -> count -> post-IntegrityError reselect
+    db.scalar.side_effect = [None, None, 0, existing]
     db.commit.side_effect = IntegrityError("INSERT objects", {}, RuntimeError("unique"))
 
     # [人工注释][S1-FIX-006] 模拟两设备同时首次创建同名 Object；
@@ -26,4 +28,4 @@ def test_concurrent_duplicate_object_insert_reselects_existing():
 
     assert result is existing
     db.rollback.assert_called_once_with()
-    assert db.scalar.call_count == 2
+    assert db.scalar.call_count == 4

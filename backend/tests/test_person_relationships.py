@@ -10,6 +10,7 @@ from app.core.db import SessionLocal
 from app.models import Memory
 from app.person_memory_models import PersonMemoryLink
 from app.person_relationship_models import PersonRelationship
+from app.testing_export_support import export_payload
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -17,7 +18,6 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     assert response.status_code == 200
     body = response.json()
     return {"Authorization": f"Bearer {body['access_token']}"}, UUID(body["user_id"])
-
 
 async def _person(client, headers: dict[str, str], name: str) -> dict:
     response = await client.post(
@@ -27,7 +27,6 @@ async def _person(client, headers: dict[str, str], name: str) -> dict:
     )
     assert response.status_code == 201
     return response.json()
-
 
 @pytest.mark.asyncio
 async def test_relationship_requires_authentication(client):
@@ -40,7 +39,6 @@ async def test_relationship_requires_authentication(client):
         },
     )
     assert response.status_code in {401, 403}
-
 
 @pytest.mark.asyncio
 async def test_relationship_crud_is_owner_scoped_canonical_and_revision_safe(client):
@@ -225,7 +223,6 @@ async def test_relationship_crud_is_owner_scoped_canonical_and_revision_safe(cli
     with SessionLocal() as db:
         assert db.get(PersonRelationship, UUID(edge["id"])) is None
 
-
 @pytest.mark.asyncio
 async def test_relationship_is_independent_from_memory_links(client):
     headers, user_id = await _new_user(client, "relationship-independent")
@@ -306,7 +303,6 @@ async def test_relationship_is_independent_from_memory_links(client):
             select(func.count(Memory.id)).where(Memory.user_id == user_id)
         ) == before_memories == 1
 
-
 @pytest.mark.asyncio
 async def test_person_delete_removes_relationship_but_preserves_other_person(client):
     headers, _ = await _new_user(client, "relationship-person-delete")
@@ -334,7 +330,6 @@ async def test_person_delete_removes_relationship_but_preserves_other_person(cli
     ).status_code == 404
     survivor = await client.get(f"/v1/people/{person_b['id']}", headers=headers)
     assert survivor.status_code == 200
-
 
 @pytest.mark.asyncio
 async def test_relationship_export_is_owner_scoped(client):
@@ -369,12 +364,11 @@ async def test_relationship_export_is_owner_scoped(client):
     assert edge_a.status_code == 201
     assert edge_b.status_code == 201
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    rows = exported.json()["person_relationships"]
+    export_body, exported_text = await export_payload(client, headers_a)
+    rows = export_body["person_relationships"]
     assert len(rows) == 1
     assert rows[0]["id"] == edge_a.json()["id"]
     assert rows[0]["relationship_kind"] == "OTHER"
     assert rows[0]["custom_label"] == "客户"
     assert rows[0]["note"] == "A private edge note"
-    assert "B secret relationship" not in exported.text
+    assert "B secret relationship" not in exported_text

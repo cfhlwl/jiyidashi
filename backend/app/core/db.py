@@ -109,6 +109,27 @@ def _user_data_disclosure_lock_key(user_id: UUID) -> int:
     return int.from_bytes(digest, byteorder="big", signed=True)
 
 
+OBJECT_OWNER_CAPACITY_LOCK_SEED = 214001
+
+
+def lock_object_owner_capacity(db: Session, *, user_id: UUID) -> None:
+    """Serialize object inserts for one owner in production PostgreSQL."""
+
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    db.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended(:user_id, :seed)"
+            ")"
+        ),
+        {
+            "user_id": str(user_id),
+            "seed": OBJECT_OWNER_CAPACITY_LOCK_SEED,
+        },
+    )
+
+
 def lock_user_data_destructive_handoff(db: Session, *, user_id: UUID) -> None:
     """Serialize the first destructive gate commit against provider disclosure.
 
@@ -256,6 +277,7 @@ def create_schema() -> None:
         data_deletion_models,
         embedding_models,
         entitlement_models,
+        export_models,
         family_models,
         idempotency_models,
         life_event_models,

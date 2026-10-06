@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from app.core.db import SessionLocal
 from app.life_stage_models import LifeStageEventLink
 from app.services.data_deletion_service import USER_DATA_INVENTORY
+from app.testing_export_support import export_payload
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -17,7 +18,6 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     assert response.status_code == 200
     body = response.json()
     return {"Authorization": f"Bearer {body['access_token']}"}, UUID(body["user_id"])
-
 
 async def _stage(
     client,
@@ -41,7 +41,6 @@ async def _stage(
     assert response.status_code == 201, response.text
     return response.json()
 
-
 async def _event(
     client,
     headers: dict[str, str],
@@ -61,7 +60,6 @@ async def _event(
     )
     assert response.status_code == 201, response.text
     return response.json()
-
 
 @pytest.mark.asyncio
 async def test_life_stage_requires_authentication_and_forbids_owner_field(client):
@@ -84,7 +82,6 @@ async def test_life_stage_requires_authentication_and_forbids_owner_field(client
         },
     )
     assert forged.status_code == 422
-
 
 @pytest.mark.asyncio
 async def test_exact_six_kinds_and_public_projection(client):
@@ -130,7 +127,6 @@ async def test_exact_six_kinds_and_public_projection(client):
         },
     )
     assert invalid.status_code == 422
-
 
 @pytest.mark.asyncio
 async def test_scalar_other_and_aware_time_contract(client):
@@ -182,7 +178,6 @@ async def test_scalar_other_and_aware_time_contract(client):
     assert point["custom_label"] == "创业期"
     assert point["note"] == "用户声明"
 
-
 @pytest.mark.asyncio
 async def test_overlap_same_kind_same_title_and_multiple_open_stages_are_allowed(client):
     headers, _ = await _new_user(client, "life-stage-overlap")
@@ -228,7 +223,6 @@ async def test_overlap_same_kind_same_title_and_multiple_open_stages_are_allowed
     ids = {item["id"] for item in listed.json()}
     assert {work_a["id"], work_b["id"], family["id"], residence["id"]} <= ids
 
-
 @pytest.mark.asyncio
 async def test_owner_isolation_list_order_and_limit(client):
     headers_a, _ = await _new_user(client, "life-stage-list-a")
@@ -258,7 +252,6 @@ async def test_owner_isolation_list_order_and_limit(client):
     assert denied.status_code == 404
     assert denied.json()["detail"] == "LIFE_STAGE_NOT_FOUND"
     assert (await client.get("/v1/life-stages?limit=101", headers=headers_a)).status_code == 422
-
 
 @pytest.mark.asyncio
 async def test_patch_revision_noop_null_and_other_transitions(client):
@@ -348,7 +341,6 @@ async def test_patch_revision_noop_null_and_other_transitions(client):
     assert invalid_range.status_code == 422
     assert invalid_range.json()["detail"] == "LIFE_STAGE_TIME_RANGE_INVALID"
 
-
 @pytest.mark.asyncio
 async def test_event_evidence_is_explicit_without_time_overlap_or_memory_requirement(client):
     headers, _ = await _new_user(client, "life-stage-event-evidence")
@@ -397,7 +389,6 @@ async def test_event_evidence_is_explicit_without_time_overlap_or_memory_require
                 LifeStageEventLink.life_stage_id == UUID(stage["id"])
             )
         ) == 1
-
 
 @pytest.mark.asyncio
 async def test_duplicate_link_converges_cross_owner_rejected_and_order_is_canonical(client):
@@ -450,7 +441,6 @@ async def test_duplicate_link_converges_cross_owner_rejected_and_order_is_canoni
         headers=headers_a,
     )).status_code == 422
 
-
 @pytest.mark.asyncio
 async def test_unlink_only_removes_link(client):
     headers, _ = await _new_user(client, "life-stage-unlink")
@@ -473,7 +463,6 @@ async def test_unlink_only_removes_link(client):
         headers=headers,
     )).json() == []
 
-
 @pytest.mark.asyncio
 async def test_life_event_delete_cleans_stage_links_but_stage_survives(client):
     headers, _ = await _new_user(client, "life-stage-event-delete")
@@ -491,7 +480,6 @@ async def test_life_event_delete_cleans_stage_links_but_stage_survives(client):
         f"/v1/life-stages/{stage['id']}/events",
         headers=headers,
     )).json() == []
-
 
 @pytest.mark.asyncio
 async def test_life_stage_delete_cleans_links_but_event_survives(client):
@@ -512,7 +500,6 @@ async def test_life_stage_delete_cleans_links_but_event_survives(client):
                 LifeStageEventLink.life_stage_id == UUID(stage["id"])
             )
         ) == 0
-
 
 @pytest.mark.asyncio
 async def test_export_contains_stage_sections_owner_scoped_and_no_memory_duplication(client):
@@ -540,9 +527,7 @@ async def test_export_contains_stage_sections_owner_scoped_and_no_memory_duplica
         headers=headers_b,
     )).status_code == 201
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    body = exported.json()
+    body, exported_text = await export_payload(client, headers_a)
     assert len(body["life_stages"]) == 1
     assert body["life_stages"][0]["id"] == stage_a["id"]
     assert "user_id" not in body["life_stages"][0]
@@ -554,19 +539,17 @@ async def test_export_contains_stage_sections_owner_scoped_and_no_memory_duplica
         "created_at",
     }
     assert "memory_id" not in body["life_stage_event_links"][0]
-    assert "B secret stage" not in exported.text
-    assert "B secret event" not in exported.text
+    assert "B secret stage" not in exported_text
+    assert "B secret event" not in exported_text
 
     deleted_event = await client.delete(
         f"/v1/life-events/{event_a['id']}",
         headers=headers_a,
     )
     assert deleted_event.status_code == 204
-    after = await client.get("/v1/export/data", headers=headers_a)
-    assert after.status_code == 200
-    assert len(after.json()["life_stages"]) == 1
-    assert after.json()["life_stage_event_links"] == []
-
+    after_body, _ = await export_payload(client, headers_a)
+    assert len(after_body["life_stages"]) == 1
+    assert after_body["life_stage_event_links"] == []
 
 def test_inventory_and_no_ai_summary_graph_promotion_scope_locks():
     assert "life_stage_event_links" in USER_DATA_INVENTORY

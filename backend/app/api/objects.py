@@ -2,12 +2,12 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.db import get_db
+from app.core.db import get_db, lock_object_owner_capacity
 from app.deps import get_current_user_id
 from app.models import (
     Memory,
@@ -18,13 +18,26 @@ from app.models import (
     ObjectLocationStatus,
     SourceType,
 )
-from app.schemas import ObjectCreate, ObjectLocationCreate, ObjectLocationRead, ObjectRead
+from app.schemas import (
+    ObjectCreate,
+    ObjectLocationCreate,
+    ObjectLocationRead,
+    ObjectPageResponse,
+    ObjectRead,
+)
+from app.services.api_cursor import (
+    CursorInvalid,
+    decode_object_cursor,
+    encode_object_cursor,
+)
 from app.services.idempotency_service import (
     IdempotencyConflict,
     IdempotencyResourceGone,
     execute_idempotent_mutation,
 )
 from app.services.memory_service import TrustedMemoryWrite, create_trusted_memory, ensure_utc
+
+OBJECTS_MAX_PER_OWNER = 500
 
 router = APIRouter(prefix="/objects", tags=["objects"])
 CurrentUser = Annotated[UUID, Depends(get_current_user_id)]
@@ -47,6 +60,30 @@ def create_object(payload: ObjectCreate, user_id: CurrentUser, db: DbSession) ->
     )
     if existing is not None:
         return existing
+
+    # API-001 legacy /objects can remain a complete array only because object
+    # cardinality is a hard-bounded business domain. PostgreSQL inserts serialize on
+    # the same advisory key used by the DB trigger; SQLite/test keeps the explicit
+    # count guard while production has the trigger as final authority.
+    lock_object_owner_capacity(db, user_id=user_id)
+    existing = db.scalar(
+        select(ObjectItem).where(
+            ObjectItem.user_id == user_id,
+            ObjectItem.normalized_name == normalized,
+        )
+    )
+    if existing is not None:
+        return existing
+
+    object_count = int(
+        db.scalar(
+            select(func.count(ObjectItem.id)).where(ObjectItem.user_id == user_id)
+        )
+        or 0
+    )
+    if object_count >= OBJECTS_MAX_PER_OWNER:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="OBJECT_LIMIT_REACHED")
 
     item = ObjectItem(
         user_id=user_id,
@@ -78,13 +115,59 @@ def create_object(payload: ObjectCreate, user_id: CurrentUser, db: DbSession) ->
 
 @router.get("", response_model=list[ObjectRead])
 def list_objects(user_id: CurrentUser, db: DbSession) -> list[ObjectItem]:
+    # Compatibility surface for released Flutter/Mini clients. API-001 keeps this
+    # exact top-level array contract while moving new callers to /objects/page-v1.
     return list(
         db.scalars(
             select(ObjectItem)
             .where(ObjectItem.user_id == user_id)
-            .order_by(ObjectItem.name)
+            .order_by(ObjectItem.name, ObjectItem.id)
         ).all()
     )
+
+
+@router.get("/page-v1", response_model=ObjectPageResponse)
+def list_objects_page_v1(
+    user_id: CurrentUser,
+    db: DbSession,
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=2048),
+) -> ObjectPageResponse:
+    after = None
+    if cursor is not None:
+        try:
+            after = decode_object_cursor(cursor, owner_user_id=user_id)
+        except CursorInvalid as exc:
+            raise HTTPException(status_code=400, detail=exc.args[0]) from exc
+
+    statement = select(ObjectItem).where(ObjectItem.user_id == user_id)
+    if after is not None:
+        statement = statement.where(
+            or_(
+                ObjectItem.normalized_name > after.normalized_name,
+                and_(
+                    ObjectItem.normalized_name == after.normalized_name,
+                    ObjectItem.id > after.object_id,
+                ),
+            )
+        )
+
+    rows = list(
+        db.scalars(
+            statement.order_by(ObjectItem.normalized_name, ObjectItem.id).limit(limit + 1)
+        )
+    )
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    next_cursor = None
+    if has_more and items:
+        last = items[-1]
+        next_cursor = encode_object_cursor(
+            owner_user_id=user_id,
+            normalized_name=last.normalized_name,
+            object_id=last.id,
+        )
+    return ObjectPageResponse(items=items, next_cursor=next_cursor)
 
 
 def _latest_invalidation(

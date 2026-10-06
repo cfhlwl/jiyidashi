@@ -93,7 +93,8 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'provider_runtime_evidence',
                           'concurrency_guards',
                           'work_permits',
-                          'maintenance_jobs'
+                          'maintenance_jobs',
+                          'user_export_jobs'
                       )
                     ORDER BY table_name, ordinal_position
                     """

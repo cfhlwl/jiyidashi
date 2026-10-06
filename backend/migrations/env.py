@@ -14,6 +14,7 @@ from app import (  # noqa: F401
     data_deletion_models,
     embedding_models,
     entitlement_models,
+    export_models,
     family_models,
     idempotency_models,
     life_event_models,

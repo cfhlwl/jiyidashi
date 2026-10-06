@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -11,8 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
 from app.core.config import get_settings
-from app.core.db import SessionLocal, UserDataRequestStale, engine
+from app.core.db import (
+    SessionLocal,
+    UserDataRequestStale,
+    engine,
+    hold_user_data_disclosure_handoff,
+)
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
+from app.export_models import UserExportJob, UserExportStatus
 from app.maintenance.location_retention import maintain_discovered_location_owner
 from app.maintenance_job_models import MaintenanceJob, MaintenanceJobType
 from app.media_models import MediaAsset, MediaStatus
@@ -28,9 +35,22 @@ from app.services.data_deletion_service import (
     DataDeletionError,
     delete_all_user_data,
 )
+from app.services.export_service import (
+    EXPORT_CONTENT_TYPE,
+    ExportExecutionError,
+    assert_export_attempt_current,
+    begin_export_attempt,
+    cleanup_export_artifact,
+    export_attempt_object_key,
+    export_object_prefix,
+    generate_export_file,
+    mark_export_attempt_failed,
+    publish_export_artifact,
+    remove_temp_file,
+)
 from app.services.maintenance_jobs import (
-    DEFAULT_LEASE_SECONDS,
     MaintenanceJobClaim,
+    MaintenanceLeaseLost,
     assert_maintenance_claim_current,
     enqueue_maintenance_job,
     fence_owner_maintenance_jobs_for_deletion,
@@ -52,6 +72,7 @@ ANALYTICS_RETENTION_BATCH_SIZE = 1000
 MEDIA_CLEANUP_MAX_ATTEMPTS = 20
 DELETION_MAX_ATTEMPTS = 50
 ANALYTICS_MAX_ATTEMPTS = 100
+EXPORT_MAX_ATTEMPTS = 10
 
 
 class RetryableMaintenanceError(RuntimeError):
@@ -80,9 +101,14 @@ class ClaimAuthority:
         self,
         claim: MaintenanceJobClaim,
         *,
-        lease_seconds: int = DEFAULT_LEASE_SECONDS,
+        lease_seconds: int | None = None,
     ):
         self.claim = claim
+        if lease_seconds is None:
+            remaining = (
+                _as_utc(claim.lease_expires_at) - datetime.now(UTC)
+            ).total_seconds()
+            lease_seconds = max(1, math.ceil(remaining))
         self.lease_seconds = lease_seconds
 
     def check(self) -> None:
@@ -103,6 +129,44 @@ class ClaimAuthority:
                 claim_token=self.claim.claim_token,
             )
             db.rollback()
+
+    def run_with_heartbeat(self, operation: Callable[[], object]):
+        self.check()
+        stop = threading.Event()
+        heartbeat_error: list[BaseException] = []
+        interval = max(0.1, min(5.0, self.lease_seconds / 3))
+
+        def heartbeat() -> None:
+            while not stop.wait(interval):
+                try:
+                    self.check()
+                except BaseException as exc:
+                    heartbeat_error.append(exc)
+                    stop.set()
+                    return
+
+        thread = threading.Thread(
+            target=heartbeat,
+            name=f"maintenance-heartbeat-{self.claim.id}",
+            daemon=True,
+        )
+        thread.start()
+        operation_error: BaseException | None = None
+        result = None
+        try:
+            result = operation()
+        except BaseException as exc:
+            operation_error = exc
+        finally:
+            stop.set()
+            thread.join(timeout=max(1.0, interval * 2))
+
+        if heartbeat_error:
+            raise heartbeat_error[0]
+        self.check()
+        if operation_error is not None:
+            raise operation_error
+        return result
 
 
 class ClaimFencedObjectStorage:
@@ -134,6 +198,22 @@ class ClaimFencedObjectStorage:
 
     def read_object(self, object_key: str, max_bytes: int) -> bytes:
         return self._call(lambda: self._inner.read_object(object_key, max_bytes))
+
+    def upload_file(
+        self,
+        local_path: str,
+        object_key: str,
+        content_type: str,
+        sha256: str,
+    ) -> StoredObject:
+        return self._authority.run_with_heartbeat(
+            lambda: self._inner.upload_file(
+                local_path,
+                object_key,
+                content_type,
+                sha256,
+            )
+        )
 
     def promote_object(self, source_key: str, destination_key: str) -> None:
         self._call(lambda: self._inner.promote_object(source_key, destination_key))
@@ -399,6 +479,198 @@ def handle_media_pending_cleanup(claim: MaintenanceJobClaim) -> None:
             ) from exc
 
 
+def handle_export(claim: MaintenanceJobClaim) -> None:
+    owner_user_id = _require_owner(claim)
+    authority = ClaimAuthority(claim)
+    authority.check()
+    try:
+        export_job_id = UUID(str(claim.payload.get("export_job_id")))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise TerminalMaintenanceError("EXPORT_JOB_PAYLOAD_INVALID") from exc
+
+    action = str(claim.payload.get("action") or "GENERATE")
+    raw_storage = get_object_storage()
+    storage = _storage_for_claim(authority)
+
+    if action == "CLEANUP":
+        try:
+            cleanup_export_artifact(
+                job_id=export_job_id,
+                owner_user_id=owner_user_id,
+                storage=storage,
+                authority_check=authority.check,
+            )
+        except ExportExecutionError as exc:
+            if exc.retryable:
+                raise RetryableMaintenanceError(
+                    exc.code,
+                    retry_after_seconds=30,
+                ) from exc
+            raise TerminalMaintenanceError(exc.code) from exc
+        except ObjectStorageError as exc:
+            raise RetryableMaintenanceError(
+                "EXPORT_CLEANUP_STORAGE_UNAVAILABLE",
+                retry_after_seconds=30,
+            ) from exc
+        return
+
+    if action != "GENERATE":
+        raise TerminalMaintenanceError("EXPORT_JOB_ACTION_INVALID")
+
+    revision = begin_export_attempt(
+        job_id=export_job_id,
+        owner_user_id=owner_user_id,
+    )
+    if revision is None:
+        return
+
+    generated = None
+    object_key = None
+    terminal = False
+    try:
+        # A retry first removes stale attempt objects for this job. Only the
+        # currently published key is ever returned to users.
+        prefix = export_object_prefix(owner_user_id, export_job_id)
+        for stale_key in storage.iter_object_keys(prefix):
+            authority.check()
+            storage.delete_object(stale_key)
+
+        generated = generate_export_file(
+            owner_user_id=owner_user_id,
+            authority_check=authority.check,
+        )
+        authority.check()
+        object_key = export_attempt_object_key(
+            owner_user_id=owner_user_id,
+            job_id=export_job_id,
+            revision=revision,
+            attempt_token=claim.claim_token,
+        )
+        # Share the canonical destructive handoff across the entire physical
+        # upload -> verify -> publish boundary. Data/Account Delete takes the matching
+        # exclusive advisory lock before it can establish the destructive gate, so its
+        # final storage inventory cannot run ahead of an in-flight export upload.
+        with hold_user_data_disclosure_handoff(
+            engine,
+            user_id=owner_user_id,
+        ):
+            # Re-check after acquiring the shared handoff. If deletion won the race,
+            # its committed gate/maintenance fencing must stop this stale attempt
+            # before any new export object is written.
+            authority.check()
+            assert_export_attempt_current(
+                job_id=export_job_id,
+                owner_user_id=owner_user_id,
+                revision=revision,
+            )
+            stored = storage.upload_file(
+                generated.path,
+                object_key,
+                EXPORT_CONTENT_TYPE,
+                generated.sha256,
+            )
+            authority.check()
+            if (
+                stored.size_bytes != generated.size_bytes
+                or stored.sha256 != generated.sha256
+                or stored.content_type.split(";", 1)[0].strip().lower()
+                != EXPORT_CONTENT_TYPE
+            ):
+                raise ExportExecutionError(
+                    "EXPORT_ARTIFACT_VERIFICATION_FAILED",
+                    retryable=True,
+                )
+            if not publish_export_artifact(
+                job_id=export_job_id,
+                owner_user_id=owner_user_id,
+                revision=revision,
+                object_key=object_key,
+                size_bytes=generated.size_bytes,
+                sha256=generated.sha256,
+            ):
+                raise ExportExecutionError("EXPORT_AUTHORITY_LOST", retryable=False)
+        object_key = None
+    except ExportExecutionError as exc:
+        terminal = not exc.retryable or claim.attempt_count >= claim.max_attempts
+        mark_export_attempt_failed(
+            job_id=export_job_id,
+            owner_user_id=owner_user_id,
+            revision=revision,
+            error_code=exc.code,
+            terminal=terminal,
+        )
+        if terminal:
+            raise TerminalMaintenanceError(exc.code) from exc
+        raise RetryableMaintenanceError(
+            exc.code,
+            retry_after_seconds=30,
+        ) from exc
+    except ObjectStorageError as exc:
+        terminal = claim.attempt_count >= claim.max_attempts
+        mark_export_attempt_failed(
+            job_id=export_job_id,
+            owner_user_id=owner_user_id,
+            revision=revision,
+            error_code="EXPORT_STORAGE_UNAVAILABLE",
+            terminal=terminal,
+        )
+        if terminal:
+            raise TerminalMaintenanceError("EXPORT_STORAGE_UNAVAILABLE") from exc
+        raise RetryableMaintenanceError(
+            "EXPORT_STORAGE_UNAVAILABLE",
+            retry_after_seconds=30,
+        ) from exc
+    except MaintenanceLeaseLost:
+        terminal = claim.attempt_count >= claim.max_attempts
+        mark_export_attempt_failed(
+            job_id=export_job_id,
+            owner_user_id=owner_user_id,
+            revision=revision,
+            error_code="EXPORT_MAINTENANCE_LEASE_LOST",
+            terminal=terminal,
+        )
+        raise
+    except OSError as exc:
+        terminal = claim.attempt_count >= claim.max_attempts
+        mark_export_attempt_failed(
+            job_id=export_job_id,
+            owner_user_id=owner_user_id,
+            revision=revision,
+            error_code="EXPORT_LOCAL_IO_FAILED",
+            terminal=terminal,
+        )
+        if terminal:
+            raise TerminalMaintenanceError("EXPORT_LOCAL_IO_FAILED") from exc
+        raise RetryableMaintenanceError(
+            "EXPORT_LOCAL_IO_FAILED",
+            retry_after_seconds=30,
+        ) from exc
+    except Exception as exc:
+        terminal = claim.attempt_count >= claim.max_attempts
+        mark_export_attempt_failed(
+            job_id=export_job_id,
+            owner_user_id=owner_user_id,
+            revision=revision,
+            error_code="EXPORT_EXECUTION_FAILED",
+            terminal=terminal,
+        )
+        if terminal:
+            raise TerminalMaintenanceError("EXPORT_EXECUTION_FAILED") from exc
+        raise RetryableMaintenanceError(
+            "EXPORT_EXECUTION_FAILED",
+            retry_after_seconds=30,
+        ) from exc
+    finally:
+        remove_temp_file(None if generated is None else generated.path)
+        if object_key is not None:
+            # Attempt keys are unique to this maintenance claim. Best-effort direct
+            # cleanup cannot delete a newer worker's published artifact.
+            try:
+                raw_storage.delete_object(object_key)
+            except ObjectStorageError:
+                pass
+
+
 def handle_security_alert_delivery(claim: MaintenanceJobClaim) -> None:
     authority = ClaimAuthority(claim)
     authority.check()
@@ -504,6 +776,7 @@ def default_maintenance_handlers() -> dict[str, Callable[[MaintenanceJobClaim], 
         MaintenanceJobType.SECURITY_ALERT_DELIVERY.value: handle_security_alert_delivery,
         MaintenanceJobType.ANALYTICS_RETENTION.value: handle_analytics_retention,
         MaintenanceJobType.LOCATION_RETENTION.value: handle_location_retention,
+        MaintenanceJobType.EXPORT.value: handle_export,
     }
 
 
@@ -728,6 +1001,35 @@ def discover_and_enqueue_maintenance_jobs(
                 scheduled_alert_keys.add(resource_key)
                 if alert_added >= SCHEDULER_CATEGORY_LIMIT:
                     break
+
+        expired_exports = list(
+            db.scalars(
+                select(UserExportJob)
+                .where(
+                    UserExportJob.status == UserExportStatus.COMPLETED.value,
+                    UserExportJob.expires_at.is_not(None),
+                    UserExportJob.expires_at <= observed_at,
+                )
+                .order_by(UserExportJob.expires_at.asc(), UserExportJob.id.asc())
+                .limit(SCHEDULER_CATEGORY_LIMIT)
+            )
+        )
+        for export_job in expired_exports:
+            created = _enqueue(
+                db,
+                job_type=MaintenanceJobType.EXPORT,
+                dedupe_key=f"export-cleanup:{export_job.id}:{export_job.revision}",
+                owner_user_id=export_job.owner_user_id,
+                resource_key=f"user-export:{export_job.id}",
+                payload={
+                    "action": "CLEANUP",
+                    "export_job_id": str(export_job.id),
+                },
+                max_attempts=EXPORT_MAX_ATTEMPTS,
+                next_attempt_at=observed_at,
+            )
+            enqueued += int(created)
+            existing += int(not created)
 
         analytics_key = (
             f"analytics-retention:{observed_at.date().isoformat()}:"

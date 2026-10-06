@@ -11,6 +11,7 @@ from app.core.db import SessionLocal
 from app.life_event_models import LifeEvent, LifeEventMemoryLink
 from app.models import Memory, MemoryType, Place, SourceType
 from app.services.data_deletion_service import USER_DATA_INVENTORY
+from app.testing_export_support import export_payload
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -18,7 +19,6 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     assert response.status_code == 200
     body = response.json()
     return {"Authorization": f"Bearer {body['access_token']}"}, UUID(body["user_id"])
-
 
 async def _memory(
     client,
@@ -40,7 +40,6 @@ async def _memory(
     assert response.status_code == 201
     return response.json()
 
-
 async def _event(
     client,
     headers: dict[str, str],
@@ -59,7 +58,6 @@ async def _event(
     response = await client.post("/v1/life-events", headers=headers, json=payload)
     assert response.status_code == 201, response.text
     return response.json()
-
 
 @pytest.mark.asyncio
 async def test_life_event_requires_authentication_and_forbids_owner_field(client):
@@ -82,7 +80,6 @@ async def test_life_event_requires_authentication_and_forbids_owner_field(client
         },
     )
     assert forged.status_code == 422
-
 
 @pytest.mark.asyncio
 async def test_exact_seven_kinds_and_public_projection(client):
@@ -137,7 +134,6 @@ async def test_exact_seven_kinds_and_public_projection(client):
         },
     )
     assert invalid.status_code == 422
-
 
 @pytest.mark.asyncio
 async def test_title_other_note_and_aware_time_contract(client):
@@ -197,7 +193,6 @@ async def test_title_other_note_and_aware_time_contract(client):
     assert point["custom_label"] == "婚礼"
     assert point["note"] == "家庭聚会"
 
-
 @pytest.mark.asyncio
 async def test_same_title_allowed_list_order_owner_isolation_and_limit(client):
     headers_a, _ = await _new_user(client, "life-event-list-a")
@@ -233,7 +228,6 @@ async def test_same_title_allowed_list_order_owner_isolation_and_limit(client):
     assert denied.json()["detail"] == "LIFE_EVENT_NOT_FOUND"
 
     assert (await client.get("/v1/life-events?limit=101", headers=headers_a)).status_code == 422
-
 
 @pytest.mark.asyncio
 async def test_place_owner_validation_and_clear(client):
@@ -280,7 +274,6 @@ async def test_place_owner_validation_and_clear(client):
     assert cleared.status_code == 200
     assert cleared.json()["place_id"] is None
     assert cleared.json()["revision"] == 1
-
 
 @pytest.mark.asyncio
 async def test_patch_revision_noop_null_and_other_transitions(client):
@@ -363,7 +356,6 @@ async def test_patch_revision_noop_null_and_other_transitions(client):
     assert invalid_range.status_code == 422
     assert invalid_range.json()["detail"] == "LIFE_EVENT_TIME_RANGE_INVALID"
 
-
 @pytest.mark.asyncio
 async def test_evidence_requires_confirmed_owner_memory_and_duplicate_converges(client):
     headers_a, user_a = await _new_user(client, "life-event-evidence-a")
@@ -438,7 +430,6 @@ async def test_evidence_requires_confirmed_owner_memory_and_duplicate_converges(
     )
     assert unconfirmed.status_code == 404
     assert unconfirmed.json()["detail"] == "MEMORY_NOT_FOUND"
-
 
 @pytest.mark.asyncio
 async def test_evidence_order_unlink_and_delete_lifecycle(client):
@@ -516,7 +507,6 @@ async def test_evidence_order_unlink_and_delete_lifecycle(client):
             )
         ) == 0
 
-
 @pytest.mark.asyncio
 async def test_export_contains_life_events_and_never_reexposes_deleted_evidence(client):
     headers_a, _ = await _new_user(client, "life-event-export-a")
@@ -546,27 +536,23 @@ async def test_export_contains_life_events_and_never_reexposes_deleted_evidence(
         headers=headers_b,
     )).status_code == 201
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    body = exported.json()
+    body, exported_text = await export_payload(client, headers_a)
     assert len(body["life_events"]) == 1
     assert body["life_events"][0]["id"] == event_a["id"]
     assert "user_id" not in body["life_events"][0]
     assert len(body["life_event_memory_links"]) == 1
     assert body["life_event_memory_links"][0]["memory_id"] == memory_a["id"]
     assert "user_id" not in body["life_event_memory_links"][0]
-    assert "B secret event" not in exported.text
-    assert "B secret evidence" not in exported.text
+    assert "B secret event" not in exported_text
+    assert "B secret evidence" not in exported_text
 
     assert (await client.delete(
         f"/v1/memories/{memory_a['id']}",
         headers=headers_a,
     )).status_code == 204
-    after = await client.get("/v1/export/data", headers=headers_a)
-    assert after.status_code == 200
-    assert len(after.json()["life_events"]) == 1
-    assert after.json()["life_event_memory_links"] == []
-
+    after_body, _ = await export_payload(client, headers_a)
+    assert len(after_body["life_events"]) == 1
+    assert after_body["life_event_memory_links"] == []
 
 @pytest.mark.asyncio
 async def test_explicit_life_event_writes_do_not_create_or_mutate_memories(client):
@@ -606,7 +592,6 @@ async def test_explicit_life_event_writes_do_not_create_or_mutate_memories(clien
         assert db.scalar(
             select(func.count(LifeEvent.id)).where(LifeEvent.user_id == user_id)
         ) == 1
-
 
 def test_life_event_inventory_graph_and_inference_scope_locks():
     assert "life_events" in USER_DATA_INVENTORY

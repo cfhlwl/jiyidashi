@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from app.core.db import SessionLocal
 from app.models import Memory, MemorySource
 from app.person_memory_models import PersonMemoryLink
+from app.testing_export_support import export_payload
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -16,7 +17,6 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     assert response.status_code == 200
     body = response.json()
     return {"Authorization": f"Bearer {body['access_token']}"}, UUID(body["user_id"])
-
 
 async def _memory(
     client,
@@ -37,7 +37,6 @@ async def _memory(
     assert response.status_code == 201
     return response.json()
 
-
 async def _person(client, headers: dict[str, str], name: str) -> dict:
     response = await client.post(
         "/v1/people",
@@ -46,7 +45,6 @@ async def _person(client, headers: dict[str, str], name: str) -> dict:
     )
     assert response.status_code == 201
     return response.json()
-
 
 @pytest.mark.asyncio
 async def test_person_memory_link_requires_authentication(client):
@@ -57,7 +55,6 @@ async def test_person_memory_link_requires_authentication(client):
         json={"relation_kind": "RELATED"},
     )
     assert response.status_code in {401, 403}
-
 
 @pytest.mark.asyncio
 async def test_explicit_links_are_owner_scoped_duplicate_safe_and_revision_bound(client):
@@ -160,7 +157,6 @@ async def test_explicit_links_are_owner_scoped_duplicate_safe_and_revision_bound
             )
         ) == 1
 
-
 @pytest.mark.asyncio
 async def test_person_timeline_and_interactions_use_memory_occurred_at_only(client):
     headers, _ = await _new_user(client, "link-timeline")
@@ -240,7 +236,6 @@ async def test_person_timeline_and_interactions_use_memory_occurred_at_only(clie
         headers=headers,
     )).status_code == 422
 
-
 @pytest.mark.asyncio
 async def test_memory_edit_preserves_link_but_both_delete_paths_remove_it(client):
     headers, _ = await _new_user(client, "link-memory-lifecycle")
@@ -298,7 +293,6 @@ async def test_memory_edit_preserves_link_but_both_delete_paths_remove_it(client
     with SessionLocal() as db:
         assert db.get(PersonMemoryLink, feedback_link_id) is None
 
-
 @pytest.mark.asyncio
 async def test_person_delete_removes_links_without_deleting_memory(client):
     headers, _ = await _new_user(client, "link-person-delete")
@@ -325,7 +319,6 @@ async def test_person_delete_removes_links_without_deleting_memory(client):
         row = db.get(Memory, UUID(memory["id"]))
         assert row is not None
         assert row.is_deleted is False
-
 
 @pytest.mark.asyncio
 async def test_link_mutations_create_no_memory_or_evidence(client):
@@ -373,7 +366,6 @@ async def test_link_mutations_create_no_memory_or_evidence(client):
     assert before_memory == after_memory == 1
     assert before_source == after_source == 1
 
-
 @pytest.mark.asyncio
 async def test_person_memory_link_export_is_owner_scoped_and_excludes_deleted_memory(client):
     headers_a, _ = await _new_user(client, "link-export-a")
@@ -408,19 +400,17 @@ async def test_person_memory_link_export_is_owner_scoped_and_excludes_deleted_me
     )
     assert linked_b.status_code == 201
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    rows = exported.json()["person_memory_links"]
+    export_body, exported_text = await export_payload(client, headers_a)
+    rows = export_body["person_memory_links"]
     assert len(rows) == 1
     assert rows[0]["id"] == linked_a.json()["id"]
     assert rows[0]["person_id"] == person_a["id"]
     assert rows[0]["memory_id"] == memory_a["id"]
     assert rows[0]["relation_kind"] == "MET"
-    assert "B secret person" not in exported.text
-    assert "B secret memory" not in exported.text
+    assert "B secret person" not in exported_text
+    assert "B secret memory" not in exported_text
 
     deleted = await client.delete(f"/v1/memories/{memory_a['id']}", headers=headers_a)
     assert deleted.status_code == 204
-    after_delete = await client.get("/v1/export/data", headers=headers_a)
-    assert after_delete.status_code == 200
-    assert after_delete.json()["person_memory_links"] == []
+    after_delete_body, _ = await export_payload(client, headers_a)
+    assert after_delete_body["person_memory_links"] == []

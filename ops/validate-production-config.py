@@ -111,6 +111,9 @@ REQUIRED_KEYS = {
     "BACKUP_RETENTION_MONTHLY",
     "MEDIA_MAX_IMAGE_BYTES",
     "MEDIA_MAX_AUDIO_BYTES",
+    "EXPORT_BATCH_SIZE",
+    "EXPORT_ARTIFACT_MAX_BYTES",
+    "EXPORT_ARTIFACT_TTL_HOURS",
     "PROVIDER_CONFIG_CACHE_TTL_SECONDS",
     "ASR_PROVIDER",
     "ASR_BASE_URL",
@@ -261,6 +264,10 @@ def main() -> None:
     assert (web_concurrency + 1) * (pool_size + max_overflow) <= connection_budget
     assert values["API_REQUEST_BODY_LIMIT"] == "2MB"
     assert values["STORAGE_ENDPOINT_URL"].startswith("https://")
+    assert 25 <= int(values["EXPORT_BATCH_SIZE"]) <= 1000
+    export_artifact_max = int(values["EXPORT_ARTIFACT_MAX_BYTES"])
+    assert 1024 * 1024 <= export_artifact_max <= 256 * 1024 * 1024
+    assert 1 <= int(values["EXPORT_ARTIFACT_TTL_HOURS"]) <= 168
     assert values["ASR_BASE_URL"].startswith("https://")
     assert values["AI_BASE_URL"].startswith("https://")
     assert int(values["AI_IMAGE_MAX_BYTES"]) < int(values["MEDIA_MAX_IMAGE_BYTES"])
@@ -322,13 +329,20 @@ def main() -> None:
     assert 'driver: json-file' in compose
     assert 'max-size: "10m"' in compose
     assert 'max-file: "3"' in compose
+    service_bodies: dict[str, str] = {}
     for service in ("postgres", "api", "worker", "reverse-proxy"):
         match = re.search(
             rf"(?ms)^  {re.escape(service)}:\n(?P<body>(?:^    .*\n|^\n)*)",
             compose,
         )
         assert match is not None, service
+        service_bodies[service] = match.group("body")
         assert "logging: *bounded-logging" in match.group("body"), service
+
+    export_temp_capacity = 320 * 1024 * 1024
+    export_temp_headroom = 64 * 1024 * 1024
+    assert "- /tmp:size=320m,mode=1777" in service_bodies["worker"]
+    assert export_artifact_max + export_temp_headroom <= export_temp_capacity
 
     caddy = (ROOT / "ops" / "Caddyfile").read_text(encoding="utf-8")
     assert 'Strict-Transport-Security "max-age=31536000"' in caddy

@@ -120,6 +120,16 @@ class Settings(BaseSettings):
         le=50 * 1024 * 1024,
     )
 
+    # API-001: asynchronous export artifacts are file-backed and bounded independently
+    # from request/media limits.
+    export_batch_size: int = Field(default=200, ge=25, le=1000)
+    export_artifact_max_bytes: int = Field(
+        default=256 * 1024 * 1024,
+        ge=1 * 1024 * 1024,
+        le=256 * 1024 * 1024,
+    )
+    export_artifact_ttl_hours: int = Field(default=24, ge=1, le=168)
+
     # [人工注释][S1-007] ASR 凭证只存在服务端配置。disabled 时语音媒体仍可安全
     # 上传/READY，但 voice-memory 必须 fail closed；openai 模式通过可替换 provider 边界调用转写。
     asr_provider: str = "disabled"

@@ -14,6 +14,7 @@ from app.services.place_naming_service import (
     PlaceNamingError,
     apply_automatic_place_label_candidate,
 )
+from app.testing_export_support import export_payload
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
@@ -21,7 +22,6 @@ async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
     assert response.status_code == 200
     body = response.json()
     return {"Authorization": f"Bearer {body['access_token']}"}, UUID(body["user_id"])
-
 
 def _visit_points(prefix: str) -> list[dict]:
     started = datetime.now(UTC) - timedelta(minutes=20)
@@ -35,7 +35,6 @@ def _visit_points(prefix: str) -> list[dict]:
         for index in range(3)
     ]
 
-
 async def _derive_place(client, headers: dict[str, str], prefix: str) -> tuple[UUID, dict]:
     response = await client.post(
         "/v1/location/batch",
@@ -46,7 +45,6 @@ async def _derive_place(client, headers: dict[str, str], prefix: str) -> tuple[U
     places = (await client.get("/v1/location/places", headers=headers)).json()
     assert len(places) == 1
     return UUID(places[0]["id"]), places[0]
-
 
 @pytest.mark.asyncio
 async def test_place_user_correction_wins_over_automatic_and_clear_falls_back(client):
@@ -138,7 +136,6 @@ async def test_place_user_correction_wins_over_automatic_and_clear_falls_back(cl
         ]
         assert [row.revision for row in corrections] == [2, 4]
 
-
 @pytest.mark.asyncio
 async def test_place_correction_is_owner_scoped_idempotent_and_conflict_safe(client):
     headers_a, user_a = await _new_user(client, "place-owner-a")
@@ -218,7 +215,6 @@ async def test_place_correction_is_owner_scoped_idempotent_and_conflict_safe(cli
             )
         db.rollback()
 
-
 @pytest.mark.asyncio
 async def test_place_naming_export_is_owner_scoped_and_includes_correction_history(client):
     headers_a, user_a = await _new_user(client, "place-export-a")
@@ -256,9 +252,8 @@ async def test_place_naming_export_is_owner_scoped_and_includes_correction_histo
     )
     assert response.status_code == 200
 
-    exported = await client.get("/v1/export/data", headers=headers_a)
-    assert exported.status_code == 200
-    location = exported.json()["location"]
+    export_body, exported_text = await export_payload(client, headers_a)
+    location = export_body["location"]
     assert len(location["places"]) == 1
     assert location["places"][0]["id"] == str(place_a)
     assert location["places"][0]["name"] == "A 的家"
