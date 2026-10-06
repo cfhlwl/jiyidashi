@@ -14,7 +14,7 @@ from app.services.place_naming_service import (
     PlaceNamingError,
     apply_automatic_place_label_candidate,
 )
-from export_test_support import export_payload
+from app.testing_export_support import export_payload
 
 
 async def _new_user(client, nickname: str) -> tuple[dict[str, str], UUID]:
