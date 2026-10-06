@@ -185,6 +185,36 @@ def main() -> None:
     ):
         errors.append("AI_IMAGE_MAX_PIXELS must not exceed AI_IMAGE_MAX_DIMENSION squared")
 
+    preprocess_global = bounded_int(
+        values,
+        "AI_IMAGE_PREPROCESS_GLOBAL_CONCURRENCY",
+        minimum=1,
+        maximum=64,
+        errors=errors,
+    )
+    preprocess_user = bounded_int(
+        values,
+        "AI_IMAGE_PREPROCESS_USER_CONCURRENCY",
+        minimum=1,
+        maximum=64,
+        errors=errors,
+    )
+    bounded_int(
+        values,
+        "AI_IMAGE_PREPROCESS_PERMIT_LEASE_SECONDS",
+        minimum=5,
+        maximum=600,
+        errors=errors,
+    )
+    if (
+        preprocess_global is not None
+        and preprocess_user is not None
+        and preprocess_user > preprocess_global
+    ):
+        errors.append(
+            "AI_IMAGE_PREPROCESS_USER_CONCURRENCY must be <= global concurrency"
+        )
+
     request_body_limit = body_limit_bytes(values.get("API_REQUEST_BODY_LIMIT", ""))
     if request_body_limit is None:
         errors.append("API_REQUEST_BODY_LIMIT must be a bounded byte size")
