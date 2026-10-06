@@ -389,6 +389,10 @@ def test_export_oserror_terminalizes_public_job_on_final_attempt(monkeypatch):
         db.commit()
 
     monkeypatch.setattr(
+        "app.maintenance_adapters.get_object_storage",
+        lambda: FakeExportStorage(),
+    )
+    monkeypatch.setattr(
         "app.maintenance_adapters.generate_export_file",
         lambda **_: (_ for _ in ()).throw(OSError(28, "No space left on device")),
     )
