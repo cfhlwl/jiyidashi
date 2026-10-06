@@ -126,7 +126,7 @@ class Settings(BaseSettings):
     export_artifact_max_bytes: int = Field(
         default=256 * 1024 * 1024,
         ge=1 * 1024 * 1024,
-        le=2 * 1024 * 1024 * 1024,
+        le=256 * 1024 * 1024,
     )
     export_artifact_ttl_hours: int = Field(default=24, ge=1, le=168)
 
