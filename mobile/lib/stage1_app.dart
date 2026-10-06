@@ -1448,21 +1448,20 @@ class _JiYiBottomNavigation extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
 
   static const _destinations = [
-    (Icons.today_outlined, Icons.today, '今天'),
-    (Icons.auto_stories_outlined, Icons.auto_stories, '记忆'),
-    (Icons.route_outlined, Icons.route, '人生'),
-    (Icons.family_restroom_outlined, Icons.family_restroom, '家庭'),
+    (Icons.home_outlined, Icons.home, '今天'),
+    (Icons.photo_library_outlined, Icons.photo_library, '记忆'),
+    (Icons.menu_book_outlined, Icons.menu_book, '人生'),
+    (Icons.people_outline, Icons.people, '家庭'),
     (Icons.person_outline, Icons.person, '我的'),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        boxShadow: const [
+      decoration: const BoxDecoration(
+        color: JiYiTodayVisuals.card,
+        boxShadow: [
           BoxShadow(
             color: Color(0x0D152D4B),
             blurRadius: 14,
@@ -1513,8 +1512,8 @@ class _JiYiBottomNavigationItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = selected
-        ? theme.colorScheme.primary
-        : theme.colorScheme.onSurfaceVariant;
+        ? JiYiTodayVisuals.primaryBlue
+        : JiYiTodayVisuals.secondaryText;
     return Semantics(
       button: true,
       selected: selected,
@@ -1526,7 +1525,7 @@ class _JiYiBottomNavigationItem extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(selected ? selectedIcon : icon, size: 24, color: color),
+              Icon(selected ? selectedIcon : icon, size: 23, color: color),
               const SizedBox(height: 1),
               Text(
                 label,

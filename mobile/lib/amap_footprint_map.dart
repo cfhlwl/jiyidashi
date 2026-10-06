@@ -4,6 +4,7 @@ import 'package:csp_amap_flutter_map/base/csp_amap_flutter_base.dart';
 import 'package:csp_amap_flutter_map/csp_amap_flutter_map.dart';
 
 import 'footprint_models.dart';
+import 'ui/jiyi_tokens.dart';
 
 const _amapAndroidKey = String.fromEnvironment(
   'AMAP_ANDROID_SDK_KEY',
@@ -483,9 +484,8 @@ class _MapFallback extends StatelessWidget {
               ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
               : const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
+            color: JiYiTodayVisuals.mapSurface,
+            borderRadius: BorderRadius.circular(JiYiRadius.card),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

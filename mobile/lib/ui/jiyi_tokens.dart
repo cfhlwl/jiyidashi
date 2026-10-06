@@ -56,6 +56,21 @@ abstract final class JiYiProductColors {
   static const Color media = Color(0xFF4F7D69);
 }
 
+// Today V3 visual roles. These are presentation tokens only; they never
+// replace server-authoritative data or semantic state colors.
+abstract final class JiYiTodayVisuals {
+  static const Color background = Color(0xFFFAF8F3);
+  static const Color card = Color(0xFFFFFEFC);
+  static const Color navy = Color(0xFF102A50);
+  static const Color primaryBlue = Color(0xFF2378E8);
+  static const Color secondaryText = Color(0xFF6D829F);
+  static const Color mapSurface = Color(0xFFEAF3FA);
+  static const Color mapGreen = Color(0xFF35A992);
+  static const Color captureOrange = Color(0xFFE18A14);
+  static const Color captureGreen = Color(0xFF2C9A73);
+  static const Color cardShadow = Color(0x14152D4B);
+}
+
 abstract final class JiYiIconSize {
   static const double small = 18;
   static const double medium = 24;
