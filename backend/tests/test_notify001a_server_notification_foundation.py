@@ -54,17 +54,11 @@ from app.services.notification_service import (
 
 
 def _reset_notification_jobs() -> None:
+    # The test suite shares one disposable SQLite database. MaintenanceWorker claims
+    # globally, so unrelated jobs intentionally left by earlier independent tests
+    # must not be consumed by this file's notification-only handler map.
     with SessionLocal() as db:
-        db.execute(
-            delete(MaintenanceJob).where(
-                MaintenanceJob.job_type.in_(
-                    (
-                        MaintenanceJobType.NOTIFICATION_FANOUT.value,
-                        MaintenanceJobType.NOTIFICATION_DELIVERY.value,
-                    )
-                )
-            )
-        )
+        db.execute(delete(MaintenanceJob))
         db.commit()
 
 
