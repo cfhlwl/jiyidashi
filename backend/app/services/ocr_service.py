@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -20,6 +19,7 @@ from app.services.concurrency_guard import (
     PermitLeaseLost,
     claim_image_preprocess_permit,
     maintain_permit_lease,
+    run_blocking_worker,
 )
 from app.services.image_analysis import AnalysisImageError, build_analysis_image
 from app.services.object_storage import ObjectNotFound, ObjectStorage, ObjectStorageError
@@ -133,7 +133,7 @@ async def _read_image(
 ) -> bytes:
     settings = get_settings()
     try:
-        image = await asyncio.to_thread(
+        image = await run_blocking_worker(
             storage.read_object,
             object_key,
             settings.media_max_image_bytes,
@@ -266,7 +266,7 @@ async def extract_ocr(
             )
             heartbeat.ensure_healthy()
             try:
-                derivative = await asyncio.to_thread(
+                derivative = await run_blocking_worker(
                     build_analysis_image,
                     image,
                     declared_content_type=snapshot.content_type,

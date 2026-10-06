@@ -43,6 +43,10 @@ while the current lease is still live; an expired, forged, released, or replaced
 cannot be resurrected. Heartbeat failure is fail-closed: the request does not proceed to
 the AI provider. Production uses a 60-second lease with renewals multiple times per lease
 period, so normal expiry cannot silently create an extra preprocessing slot.
+Request cancellation also cannot release the slot while an already-started storage or
+Pillow thread is still physically running: those workers are explicitly shielded and
+drained to completion while the heartbeat remains active, and cancellation is propagated
+only after the protected worker has stopped and the permit can be released safely.
 
 ## Derivative pipeline
 
@@ -95,5 +99,6 @@ Exact-head CI must prove:
 - preprocessing heartbeat keeps a real PostgreSQL slot live beyond its original lease;
 - forged, expired, released/replaced permits cannot renew;
 - renewal failure fails closed before provider disclosure;
+- request cancellation keeps the permit/heartbeat alive until blocking storage/decode threads physically exit;
 - OCR/Vision and deletion/media-change regressions remain green;
 - full backend and production config gates remain green.

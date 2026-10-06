@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 from datetime import UTC, datetime
 from io import BytesIO
 from uuid import UUID, uuid4
@@ -24,6 +25,7 @@ from app.services.ai_gateway import (
     get_ai_gateway,
 )
 from app.services.concurrency_guard import (
+    ConcurrencyRejected,
     claim_image_preprocess_permit,
     claim_provider_permit,
     release_permit,
@@ -650,6 +652,80 @@ async def test_vision_preprocess_permit_releases_after_decode_failure(
         settings=settings,
     )
     assert release_permit(engine, permit=released_slot, settings=settings) is True
+
+
+@pytest.mark.asyncio
+async def test_vision_cancellation_holds_permit_until_storage_thread_physically_exits(
+    client,
+    vision_dependencies,
+    monkeypatch,
+):
+    storage, provider, _ = vision_dependencies
+    user_id, headers = await _new_user(client, "vision-preprocess-cancel")
+    media_id = _insert_media(storage, user_id=user_id)
+    settings = _gateway_settings().model_copy(
+        update={
+            "ai_image_preprocess_global_concurrency": 1,
+            "ai_image_preprocess_user_concurrency": 1,
+            "ai_image_preprocess_permit_lease_seconds": 2,
+        }
+    )
+    monkeypatch.setattr("app.services.vision_service.get_settings", lambda: settings)
+
+    worker_entered = threading.Event()
+    worker_release = threading.Event()
+    original_read = storage.read_object
+
+    def blocking_read(object_key: str, max_bytes: int) -> bytes:
+        worker_entered.set()
+        if not worker_release.wait(timeout=8):
+            raise AssertionError("blocked Vision storage worker was not released")
+        return original_read(object_key, max_bytes)
+
+    monkeypatch.setattr(storage, "read_object", blocking_read)
+
+    request_task = asyncio.create_task(
+        client.post(f"/v1/media/{media_id}/vision", headers=headers)
+    )
+    slot_after_cancel = None
+    try:
+        assert await asyncio.to_thread(worker_entered.wait, 3)
+        request_task.cancel()
+
+        await asyncio.sleep(2.2)
+        assert not request_task.done()
+
+        with pytest.raises(ConcurrencyRejected) as rejected:
+            claim_image_preprocess_permit(
+                engine,
+                user_id=uuid4(),
+                settings=settings,
+            )
+        assert rejected.value.code == "AI_IMAGE_PREPROCESS_SATURATED"
+
+        worker_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await request_task
+
+        assert provider.image_requests == []
+        slot_after_cancel = claim_image_preprocess_permit(
+            engine,
+            user_id=user_id,
+            settings=settings,
+        )
+    finally:
+        worker_release.set()
+        if not request_task.done():
+            try:
+                await request_task
+            except asyncio.CancelledError:
+                pass
+        if slot_after_cancel is not None:
+            assert release_permit(
+                engine,
+                permit=slot_after_cancel,
+                settings=settings,
+            ) is True
 
 
 @pytest.mark.asyncio

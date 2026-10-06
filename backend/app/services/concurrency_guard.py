@@ -4,9 +4,11 @@ import asyncio
 import hashlib
 import hmac
 import secrets
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy import delete, func, select, update
@@ -18,6 +20,54 @@ from app.abuse_models import ConcurrencyGuard, WorkPermit
 from app.core.config import Settings, get_settings
 from app.security_models import SecuritySignalCode
 from app.services.security_alerting import SecurityScope, record_security_signal
+
+
+_BlockingResult = TypeVar("_BlockingResult")
+
+
+async def run_blocking_worker(
+    func: Callable[..., _BlockingResult],
+    /,
+    *args,
+    **kwargs,
+) -> _BlockingResult:
+    """Keep an already-started thread alive under its caller's authority.
+
+    Cancelling an await of ``asyncio.to_thread`` does not stop the underlying
+    worker thread.  Shield the explicit task and, once caller cancellation is
+    observed, drain the worker to physical completion before re-propagating the
+    cancellation.  This lets an enclosing permit/lease context keep renewing
+    until the protected storage/decode work has actually stopped.
+    """
+    worker = asyncio.create_task(asyncio.to_thread(func, *args, **kwargs))
+    cancelled: asyncio.CancelledError | None = None
+
+    while True:
+        try:
+            result = await asyncio.shield(worker)
+        except asyncio.CancelledError as exc:
+            if cancelled is None:
+                cancelled = exc
+            if worker.done():
+                # Retrieve the terminal state so a worker exception cannot be
+                # reported as an unobserved Task exception. Caller cancellation
+                # remains the externally visible outcome.
+                try:
+                    worker.result()
+                except BaseException:
+                    pass
+                raise cancelled
+            # A Task can receive cancellation more than once. Keep draining the
+            # shielded worker until the physical thread is no longer running.
+            continue
+        except BaseException:
+            if cancelled is not None:
+                raise cancelled
+            raise
+
+        if cancelled is not None:
+            raise cancelled
+        return result
 
 
 class PermitLeaseLost(RuntimeError):
