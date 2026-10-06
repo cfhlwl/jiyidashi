@@ -43,7 +43,7 @@ from app.models import (
 from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
 from app.person_relationship_models import PersonRelationship
-from app.services.object_storage import ObjectStorage, ObjectStorageError
+from app.services.object_storage import ObjectStorage
 
 EXPORT_FORMAT = "jiyidashi.user-export.v1"
 EXPORT_CONTENT_TYPE = "application/json"
@@ -168,8 +168,7 @@ def _iter_keyset(
         )
         if not rows:
             return
-        for row in rows:
-            yield row
+        yield from rows
         tail = rows[-1]
         last_first = getattr(tail, first_column.key)
         last_id = getattr(tail, id_column.key)
