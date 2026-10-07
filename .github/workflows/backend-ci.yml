@@ -118,6 +118,13 @@ jobs:
         timeout-minutes: 5
         run: pytest -q tests/test_notify001a_server_notification_foundation.py
 
+      - name: NOTIFY-001B focused push provider and logout lifecycle
+        timeout-minutes: 5
+        run: >-
+          pytest -q
+          tests/test_notify001b_push_providers.py
+          tests/test_notify001b_push_lifecycle.py
+
       - name: API-001 focused export and pagination regressions
         timeout-minutes: 5
         run: >-
