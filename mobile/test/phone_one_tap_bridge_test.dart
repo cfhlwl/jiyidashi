@@ -50,6 +50,8 @@ class _FakeExchangeClient implements PhoneOneTapExchangeClient {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('method channel translates only JiYi states and opaque token', () async {
     final channel = const MethodChannel('cn.jiyidashi/phone_one_tap');
     final calls = <String>[];
