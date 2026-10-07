@@ -40,11 +40,11 @@ from app.notification_schemas import (
     NotificationDeliveryCounts,
     NotificationEligibleCounts,
 )
-from app.services.auth_session_service import lock_installation_authority_in_transaction
 from app.services.admin_security import (
     AdminOperationError,
     append_admin_audit,
 )
+from app.services.auth_session_service import lock_installation_authority_in_transaction
 from app.services.maintenance_jobs import (
     MaintenanceJobClaim,
     assert_maintenance_claim_current,
