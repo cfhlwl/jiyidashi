@@ -144,6 +144,20 @@ jobs:
           flutter test test/visual_golden_test.dart \
             --update-goldens --reporter expanded
 
+          # Memory V3 review evidence: candidate-only default and answer states.
+          # The test gate is opt-in so ordinary regression runs never accept or
+          # mutate a Memory V3 baseline implicitly.
+          flutter test test/memory_v3_visual_test.dart \
+            --plain-name "Memory V3 default shell and query surface are truthful" \
+            --update-goldens \
+            --dart-define=MEMORY_V3_GOLDEN_PREVIEW=true \
+            --reporter expanded
+          flutter test test/memory_v3_visual_test.dart \
+            --plain-name "Memory V3 answer and evidence remain server-backed" \
+            --update-goldens \
+            --dart-define=MEMORY_V3_GOLDEN_PREVIEW=true \
+            --reporter expanded
+
           cp test/goldens/*.png /tmp/product-v2-goldens/candidate/
 
           git checkout -- test/goldens

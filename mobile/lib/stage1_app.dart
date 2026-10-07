@@ -3444,11 +3444,6 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               ),
             ),
           ),
-          TextButton(
-            onPressed: null,
-            style: TextButton.styleFrom(foregroundColor: secondary),
-            child: const Text('查看全部'),
-          ),
         ],
       );
     }
@@ -3528,7 +3523,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             ),
             const SizedBox(height: 12),
             Text(
-              answer.isNotEmpty ? answer : fallback,
+              canAnswer && answer.isNotEmpty ? answer : fallback,
               style: TextStyle(color: navy, fontSize: 18, height: 1.5),
             ),
             if (submittedQuestion != null) ...[
@@ -3564,15 +3559,15 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                       ),
                     );
                   })
-                else if (canAnswer && footprintVisits.isEmpty)
+                else if (footprintVisits.isNotEmpty)
                   const Align(
                     alignment: Alignment.centerLeft,
-                    child: Text('没有可展示的参考记录，请谨慎使用这个答案。'),
+                    child: Text('这次回答依据为服务端已形成的足迹记录。'),
                   )
                 else
                   const Align(
                     alignment: Alignment.centerLeft,
-                    child: Text('这次回答依据为服务端已形成的足迹记录。'),
+                    child: Text('没有可展示的参考记录，请谨慎使用这个答案。'),
                   ),
               ],
             ),
@@ -3848,7 +3843,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
           ),
         ],
       ],
-    );
+    ];
 
     return Stack(
       children: [

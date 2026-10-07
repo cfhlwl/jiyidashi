@@ -7,6 +7,16 @@ import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 
+const _memoryV3GoldenPreview = bool.fromEnvironment('MEMORY_V3_GOLDEN_PREVIEW');
+
+Future<void> _expectMemoryV3Golden(WidgetTester tester, String fileName) async {
+  if (!_memoryV3GoldenPreview) return;
+  await expectLater(
+    find.byType(Scaffold),
+    matchesGoldenFile('goldens/$fileName'),
+  );
+}
+
 class _MemoryV3Consent implements AmapPrivacyConsentAuthority {
   bool accepted = false;
 
@@ -145,6 +155,7 @@ void main() {
     expect(find.text('你的记忆会在这里出现'), findsOneWidget);
     expect(find.text('和妈妈的照片'), findsOneWidget);
     expect(api.queryCalls, 0);
+    await _expectMemoryV3Golden(tester, 'memory_v3_default.png');
   });
 
   testWidgets('Memory V3 suggestion populates the real query input', (tester) async {
@@ -183,6 +194,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('这是一条来自真实记录的回答。'), findsOneWidget);
+    await _expectMemoryV3Golden(tester, 'memory_v3_answer.png');
     await tester.tap(find.text('查看这次回答的依据'));
     await tester.pumpAndSettle();
     expect(find.text('真实用户记录摘录'), findsOneWidget);
@@ -198,6 +210,35 @@ void main() {
 
     expect(find.text('没有足够依据'), findsOneWidget);
     expect(find.text('我没有找到能够支持答案的相关记录。'), findsOneWidget);
+  });
+
+  testWidgets('Memory V3 does not render an answer when can_answer is false', (tester) async {
+    final response = <String, dynamic>{
+      ..._noAnswer(),
+      'answer': '不应显示的答案',
+    };
+    final api = _MemoryV3Api(response: response);
+    await _pumpMemory(tester, api);
+    await tester.enterText(find.byType(TextField), '不可信的问题');
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('不应显示的答案'), findsNothing);
+    expect(find.text('没有足够依据'), findsOneWidget);
+    expect(find.text('我没有找到能够支持答案的相关记录。'), findsOneWidget);
+  });
+
+  testWidgets('Memory V3 no-evidence disclosure never claims a footprint', (tester) async {
+    final api = _MemoryV3Api(response: _noAnswer());
+    await _pumpMemory(tester, api);
+    await tester.enterText(find.byType(TextField), '没有证据的问题');
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('查看这次回答的依据'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('这次回答依据为服务端已形成的足迹记录。'), findsNothing);
+    expect(find.text('没有可展示的参考记录，请谨慎使用这个答案。'), findsOneWidget);
   });
 
   testWidgets('Memory V3 day footprint stays real and consent-gated', (tester) async {
