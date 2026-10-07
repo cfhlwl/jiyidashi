@@ -187,6 +187,17 @@ def test_delivery_failure_is_bounded_and_business_signal_still_persists(monkeypa
     with Session(engine) as db:
         alert = db.scalar(select(SecurityAlert))
         assert alert is not None
+        assert alert.delivery_status == SecurityAlertDeliveryStatus.PENDING.value
+        assert alert.delivery_attempts == 0
+
+    assert not security_alerting.deliver_security_alert(
+        engine,
+        alert_id=alert_id,
+        now=datetime(2026, 9, 28, 12, 0, tzinfo=UTC),
+    )
+    with Session(engine) as db:
+        alert = db.scalar(select(SecurityAlert))
+        assert alert is not None
         assert alert.delivery_status == SecurityAlertDeliveryStatus.RETRYABLE_FAILURE.value
         assert alert.delivery_attempts == 1
         assert alert.next_retry_at is not None
@@ -338,7 +349,7 @@ def test_delivery_retry_reaches_terminal_after_five_attempts(monkeypatch) -> Non
     )
     assert alert_id is not None
 
-    for due_seconds in (30, 90, 210, 450):
+    for due_seconds in (0, 30, 90, 210, 450):
         security_alerting.deliver_security_alert(
             engine,
             alert_id=alert_id,
@@ -384,10 +395,15 @@ def test_real_checked_sink_failure_keeps_alert_retryable() -> None:
             scope=SecurityScope.AUTH_REGISTER_IP,
             now=datetime(2026, 9, 28, 20, 0, tzinfo=UTC),
         )
+        assert alert_id is not None
+        assert not security_alerting.deliver_security_alert(
+            engine,
+            alert_id=alert_id,
+            now=datetime(2026, 9, 28, 20, 0, tzinfo=UTC),
+        )
     finally:
         handler.stream = original_stream
 
-    assert alert_id is not None
     with Session(engine) as db:
         alert = db.scalar(
             select(SecurityAlert).where(SecurityAlert.id == UUID(alert_id))

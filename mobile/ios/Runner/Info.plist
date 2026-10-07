@@ -38,7 +38,7 @@
 	<string>只有你明确启用“自动位置记忆”后，迹忆才会申请后台定位，用于系统低频位置更新。</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>cn.jiyidashi.jiyidashi.passive-recovery</string>
+		<string>com.jiyidays.passive-recovery</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

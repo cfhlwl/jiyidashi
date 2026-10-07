@@ -56,6 +56,12 @@ from app.services.maintenance_jobs import (
     fence_owner_maintenance_jobs_for_deletion,
     renew_maintenance_claim,
 )
+from app.services.notification_service import (
+    NotificationExecutionError,
+    enqueue_due_notification_campaigns,
+    process_notification_delivery_claim,
+    process_notification_fanout_claim,
+)
 from app.services.object_storage import (
     DisabledObjectStorage,
     ObjectStorage,
@@ -700,6 +706,7 @@ def handle_security_alert_delivery(claim: MaintenanceJobClaim) -> None:
         engine,
         alert_id=str(alert_id),
         authority_check=authority.check,
+        worker_execution=True,
     )
     authority.check()
 
@@ -717,6 +724,29 @@ def handle_security_alert_delivery(claim: MaintenanceJobClaim) -> None:
         "SECURITY_ALERT_RETRYABLE_FAILURE",
         retry_after_seconds=_retry_delay(retry_at),
     )
+
+
+def _translate_notification_error(exc: NotificationExecutionError) -> None:
+    if exc.retryable:
+        raise RetryableMaintenanceError(
+            exc.code,
+            retry_after_seconds=exc.retry_after_seconds,
+        ) from exc
+    raise TerminalMaintenanceError(exc.code) from exc
+
+
+def handle_notification_fanout(claim: MaintenanceJobClaim) -> None:
+    try:
+        process_notification_fanout_claim(claim)
+    except NotificationExecutionError as exc:
+        _translate_notification_error(exc)
+
+
+def handle_notification_delivery(claim: MaintenanceJobClaim) -> None:
+    try:
+        process_notification_delivery_claim(claim)
+    except NotificationExecutionError as exc:
+        _translate_notification_error(exc)
 
 
 def handle_analytics_retention(claim: MaintenanceJobClaim) -> None:
@@ -777,6 +807,8 @@ def default_maintenance_handlers() -> dict[str, Callable[[MaintenanceJobClaim], 
         MaintenanceJobType.ANALYTICS_RETENTION.value: handle_analytics_retention,
         MaintenanceJobType.LOCATION_RETENTION.value: handle_location_retention,
         MaintenanceJobType.EXPORT.value: handle_export,
+        MaintenanceJobType.NOTIFICATION_FANOUT.value: handle_notification_fanout,
+        MaintenanceJobType.NOTIFICATION_DELIVERY.value: handle_notification_delivery,
     }
 
 
@@ -991,7 +1023,7 @@ def discover_and_enqueue_maintenance_jobs(
                 dedupe_key=f"security-alert:{alert.id}",
                 resource_key=resource_key,
                 payload={"alert_id": str(alert.id)},
-                max_attempts=10,
+                max_attempts=5,
                 next_attempt_at=alert.next_retry_at or observed_at,
             )
             enqueued += int(created)
@@ -1030,6 +1062,16 @@ def discover_and_enqueue_maintenance_jobs(
             )
             enqueued += int(created)
             existing += int(not created)
+
+        notification_created, notification_existing = (
+            enqueue_due_notification_campaigns(
+                db,
+                now=observed_at,
+                limit=SCHEDULER_CATEGORY_LIMIT,
+            )
+        )
+        enqueued += notification_created
+        existing += notification_existing
 
         analytics_key = (
             f"analytics-retention:{observed_at.date().isoformat()}:"

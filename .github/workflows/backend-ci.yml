@@ -107,6 +107,17 @@ jobs:
           tests/test_ocr_foundation.py
           tests/test_vision_foundation.py
 
+      - name: SEC-017 focused human security alert delivery
+        timeout-minutes: 5
+        run: >-
+          pytest -q
+          tests/test_security_alerting.py
+          tests/test_sec017_human_security_alert_delivery.py
+
+      - name: NOTIFY-001A focused server notification foundation
+        timeout-minutes: 5
+        run: pytest -q tests/test_notify001a_server_notification_foundation.py
+
       - name: API-001 focused export and pagination regressions
         timeout-minutes: 5
         run: >-
@@ -459,6 +470,21 @@ jobs:
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_api001_export_integration.py
+
+      - name: PostgreSQL SEC-017 human alert delivery authority
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_sec017_human_security_alert_delivery.py
+
+      - name: PostgreSQL NOTIFY-001A notification authority
+        timeout-minutes: 5
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_notify001a_notification_foundation.py
 
       - name: PostgreSQL schema drift check
         # [人工注释][S1-FIX-001] upgrade 成功不代表 ORM metadata 与 migration head 一致；alembic check 是正式漂移门禁。

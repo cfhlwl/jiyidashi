@@ -158,7 +158,7 @@ class MaintenanceWorker:
         except RetryableMaintenanceError as exc:
             with SessionLocal() as db:
                 try:
-                    fail_maintenance_job(
+                    failure_status = fail_maintenance_job(
                         db,
                         job_id=claim.id,
                         claim_token=claim.claim_token,
@@ -178,14 +178,14 @@ class MaintenanceWorker:
                 claimed=True,
                 job_id=str(claim.id),
                 job_type=claim.job_type,
-                outcome="RETRY_WAIT",
+                outcome=failure_status,
             )
         except Exception:
             # Raw exception text may contain provider/user content. Persist only a
             # bounded category; canonical business state remains the source of truth.
             with SessionLocal() as db:
                 try:
-                    fail_maintenance_job(
+                    failure_status = fail_maintenance_job(
                         db,
                         job_id=claim.id,
                         claim_token=claim.claim_token,
@@ -204,7 +204,7 @@ class MaintenanceWorker:
                 claimed=True,
                 job_id=str(claim.id),
                 job_type=claim.job_type,
-                outcome="RETRY_WAIT",
+                outcome=failure_status,
             )
 
         with SessionLocal() as db:

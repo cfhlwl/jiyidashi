@@ -1,4 +1,4 @@
-package cn.jiyidashi.jiyidashi
+package com.jiyidays
 
 import android.content.Context
 import org.json.JSONArray

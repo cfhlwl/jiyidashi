@@ -335,6 +335,11 @@ def test_production_provider_url_must_be_https():
         auth_smtp_host="smtp.example.com",
         auth_smtp_from="noreply@example.com",
         auth_public_base_url="https://jiyi.example.com",
+        security_alert_human_provider="feishu",
+        security_alert_feishu_webhook_url=(
+            "https://open.feishu.cn/open-apis/bot/v2/hook/test-not-live-token"
+        ),
+        security_alert_feishu_secret="test-sec017-signing-secret",
     )
     with pytest.raises(
         ProviderRuntimeConfigError,

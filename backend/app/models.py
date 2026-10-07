@@ -82,6 +82,18 @@ class Device(Base):
     __tablename__ = "devices"
     __table_args__ = (
         UniqueConstraint("user_id", "client_uuid", name="uq_devices_user_client_uuid"),
+        Index(
+            "uq_devices_active_push_binding",
+            "push_provider",
+            "push_token_digest",
+            unique=True,
+            postgresql_where=text(
+                "push_enabled = true AND push_token_digest IS NOT NULL"
+            ),
+            sqlite_where=text(
+                "push_enabled = 1 AND push_token_digest IS NOT NULL"
+            ),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -93,6 +105,17 @@ class Device(Base):
     device_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     device_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     push_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    push_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    push_token_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    push_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    push_token_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    push_invalidated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    app_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    os_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_active_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

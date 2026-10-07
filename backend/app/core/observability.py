@@ -128,6 +128,8 @@ def _operational_optional_fields(
     window_seconds: int | None = None,
     correlation_id: str | None = None,
     delivery_status: str | None = None,
+    attempt_number: int | None = None,
+    retry_after_seconds: int | None = None,
 ) -> dict[str, object | None]:
     return {
         "method": method,
@@ -156,6 +158,8 @@ def _operational_optional_fields(
         "window_seconds": window_seconds,
         "correlation_id": correlation_id,
         "delivery_status": delivery_status,
+        "attempt_number": attempt_number,
+        "retry_after_seconds": retry_after_seconds,
     }
 
 
@@ -190,6 +194,8 @@ def emit_operational_event(
     window_seconds: int | None = None,
     correlation_id: str | None = None,
     delivery_status: str | None = None,
+    attempt_number: int | None = None,
+    retry_after_seconds: int | None = None,
 ) -> bool:
     """Emit one fail-safe JSON event using only explicitly whitelisted fields."""
 
@@ -225,6 +231,8 @@ def emit_operational_event(
                 window_seconds=window_seconds,
                 correlation_id=correlation_id,
                 delivery_status=delivery_status,
+                attempt_number=attempt_number,
+                retry_after_seconds=retry_after_seconds,
             ),
         )
         logger = logging.getLogger(_OBSERVABILITY_LOGGER_NAME)

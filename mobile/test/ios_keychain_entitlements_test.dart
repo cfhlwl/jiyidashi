@@ -19,10 +19,7 @@ void main() {
         contains('<key>keychain-access-groups</key> <array/>'),
       );
       expect(xml, isNot(contains(r'$(AppIdentifierPrefix)')));
-      expect(
-        xml,
-        isNot(contains('<string>cn.jiyidashi.jiyidashi</string>')),
-      );
+      expect(xml, isNot(contains('<string>com.jiyidays</string>')));
     });
   }
 }

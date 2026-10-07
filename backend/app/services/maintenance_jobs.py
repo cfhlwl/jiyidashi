@@ -15,6 +15,13 @@ from app.maintenance_job_models import (
     MaintenanceJobStatus,
     MaintenanceJobType,
 )
+from app.notification_models import (
+    NotificationCampaign,
+    NotificationCampaignStatus,
+    NotificationDelivery,
+    NotificationDeliveryStatus,
+)
+from app.security_models import SecurityAlert, SecurityAlertDeliveryStatus
 
 DEFAULT_LEASE_SECONDS = 60
 DEFAULT_MAX_ATTEMPTS = 5
@@ -194,6 +201,213 @@ def enqueue_maintenance_job(
     return job, True
 
 
+def _notification_delivery_id_for_job(job: MaintenanceJob) -> UUID | None:
+    if job.job_type != MaintenanceJobType.NOTIFICATION_DELIVERY.value:
+        return None
+    raw_delivery_id = (job.payload_json or {}).get("delivery_id")
+    try:
+        return UUID(str(raw_delivery_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _notification_campaign_id_for_job(job: MaintenanceJob) -> UUID | None:
+    if job.job_type != MaintenanceJobType.NOTIFICATION_FANOUT.value:
+        return None
+    raw_campaign_id = (job.payload_json or {}).get("campaign_id")
+    try:
+        return UUID(str(raw_campaign_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _maybe_complete_notification_campaign(
+    db: Session,
+    *,
+    campaign_id: UUID,
+    now: datetime,
+) -> None:
+    campaign_statement = select(NotificationCampaign).where(
+        NotificationCampaign.id == campaign_id
+    )
+    if db.get_bind().dialect.name == "postgresql":
+        campaign_statement = campaign_statement.with_for_update()
+    campaign = db.scalar(campaign_statement)
+    if (
+        campaign is None
+        or campaign.status != NotificationCampaignStatus.DELIVERING.value
+        or campaign.fanout_completed_at is None
+    ):
+        return
+
+    active = int(
+        db.scalar(
+            select(func.count(NotificationDelivery.id)).where(
+                NotificationDelivery.campaign_id == campaign.id,
+                NotificationDelivery.status.in_(
+                    (
+                        NotificationDeliveryStatus.PENDING.value,
+                        NotificationDeliveryStatus.RUNNING.value,
+                        NotificationDeliveryStatus.RETRY_WAIT.value,
+                    )
+                ),
+            )
+        )
+        or 0
+    )
+    if active == 0:
+        campaign.status = NotificationCampaignStatus.COMPLETED.value
+        campaign.completed_at = now
+        campaign.error_code = None
+        campaign.updated_at = now
+
+
+def _sync_notification_delivery_failure(
+    db: Session,
+    *,
+    job: MaintenanceJob,
+    error_code: str,
+    terminal: bool,
+    now: datetime,
+    retry_at: datetime | None = None,
+) -> None:
+    delivery_id = _notification_delivery_id_for_job(job)
+    if delivery_id is None:
+        return
+
+    statement = select(NotificationDelivery).where(
+        NotificationDelivery.id == delivery_id
+    )
+    if db.get_bind().dialect.name == "postgresql":
+        statement = statement.with_for_update()
+    delivery = db.scalar(statement)
+    if delivery is None or delivery.status in {
+        NotificationDeliveryStatus.ACCEPTED.value,
+        NotificationDeliveryStatus.TERMINAL_FAILURE.value,
+        NotificationDeliveryStatus.CANCELLED.value,
+        NotificationDeliveryStatus.EXPIRED.value,
+    }:
+        return
+
+    # Provider-classified retry state has already finalized its public attempt.
+    # Preserve that result on non-final MaintenanceJob retry.
+    if (
+        not terminal
+        and delivery.status == NotificationDeliveryStatus.RETRY_WAIT.value
+        and delivery.attempt_token is None
+    ):
+        return
+
+    safe_error = (error_code.strip() or "MAINTENANCE_JOB_FAILED")[:80]
+    delivery.attempt_token = None
+    delivery.accepted_at = None
+    delivery.error_code = safe_error
+    delivery.revision += 1
+    delivery.updated_at = now
+    if terminal:
+        delivery.status = NotificationDeliveryStatus.TERMINAL_FAILURE.value
+        delivery.next_retry_at = None
+        _maybe_complete_notification_campaign(
+            db,
+            campaign_id=delivery.campaign_id,
+            now=now,
+        )
+    else:
+        delivery.status = NotificationDeliveryStatus.RETRY_WAIT.value
+        delivery.next_retry_at = retry_at
+
+
+def _sync_notification_fanout_failure(
+    db: Session,
+    *,
+    job: MaintenanceJob,
+    error_code: str,
+    terminal: bool,
+    now: datetime,
+) -> None:
+    if not terminal:
+        return
+    campaign_id = _notification_campaign_id_for_job(job)
+    if campaign_id is None:
+        return
+
+    statement = select(NotificationCampaign).where(
+        NotificationCampaign.id == campaign_id
+    )
+    if db.get_bind().dialect.name == "postgresql":
+        statement = statement.with_for_update()
+    campaign = db.scalar(statement)
+    if campaign is None or campaign.status not in {
+        NotificationCampaignStatus.SCHEDULED.value,
+        NotificationCampaignStatus.FANOUT.value,
+    }:
+        return
+
+    campaign.status = NotificationCampaignStatus.FAILED.value
+    campaign.error_code = (error_code.strip() or "MAINTENANCE_JOB_FAILED")[:80]
+    campaign.revision += 1
+    campaign.updated_at = now
+
+
+def _security_alert_id_for_job(job: MaintenanceJob) -> UUID | None:
+    if job.job_type != MaintenanceJobType.SECURITY_ALERT_DELIVERY.value:
+        return None
+    raw_alert_id = (job.payload_json or {}).get("alert_id")
+    try:
+        return UUID(str(raw_alert_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _sync_security_alert_delivery_failure(
+    db: Session,
+    *,
+    job: MaintenanceJob,
+    error_code: str,
+    terminal: bool,
+    now: datetime,
+    retry_at: datetime | None = None,
+) -> None:
+    """Keep public SecurityAlert authority aligned with maintenance failure state."""
+
+    alert_id = _security_alert_id_for_job(job)
+    if alert_id is None:
+        return
+
+    statement = select(SecurityAlert).where(SecurityAlert.id == alert_id)
+    if db.get_bind().dialect.name == "postgresql":
+        statement = statement.with_for_update()
+    alert = db.scalar(statement)
+    if alert is None or alert.delivery_status in {
+        SecurityAlertDeliveryStatus.DELIVERED.value,
+        SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value,
+    }:
+        return
+
+    # A classified provider retry may already have finalized the public attempt.
+    # Preserve that provider result on a non-final maintenance retry. Raw failures
+    # after begin_security_alert_delivery_attempt() retain a token and must be fenced.
+    if (
+        not terminal
+        and alert.delivery_status == SecurityAlertDeliveryStatus.RETRYABLE_FAILURE.value
+        and alert.delivery_attempt_token is None
+    ):
+        return
+
+    safe_error = (error_code.strip() or "MAINTENANCE_JOB_FAILED")[:80]
+    alert.delivery_attempt_token = None
+    alert.delivery_error_code = safe_error
+    alert.delivered_at = None
+    alert.delivery_revision += 1
+    alert.updated_at = now
+    if terminal:
+        alert.delivery_status = SecurityAlertDeliveryStatus.TERMINAL_FAILURE.value
+        alert.next_retry_at = None
+    else:
+        alert.delivery_status = SecurityAlertDeliveryStatus.RETRYABLE_FAILURE.value
+        alert.next_retry_at = retry_at
+
+
 def _expire_exhausted_running_jobs(db: Session, *, now: datetime) -> int:
     statement = select(MaintenanceJob).where(
         MaintenanceJob.status == MaintenanceJobStatus.RUNNING.value,
@@ -216,6 +430,28 @@ def _expire_exhausted_running_jobs(db: Session, *, now: datetime) -> int:
         job.lease_expires_at = None
         job.last_error_code = "MAINTENANCE_ATTEMPTS_EXHAUSTED"
         job.updated_at = now
+
+        _sync_security_alert_delivery_failure(
+            db,
+            job=job,
+            error_code="MAINTENANCE_ATTEMPTS_EXHAUSTED",
+            terminal=True,
+            now=now,
+        )
+        _sync_notification_delivery_failure(
+            db,
+            job=job,
+            error_code="MAINTENANCE_ATTEMPTS_EXHAUSTED",
+            terminal=True,
+            now=now,
+        )
+        _sync_notification_fanout_failure(
+            db,
+            job=job,
+            error_code="MAINTENANCE_ATTEMPTS_EXHAUSTED",
+            terminal=True,
+            now=now,
+        )
 
         if (
             job.job_type == MaintenanceJobType.EXPORT.value
@@ -475,6 +711,35 @@ def fail_maintenance_job(
     job.claim_token = None
     job.lease_expires_at = None
     job.updated_at = observed_at
+    terminal_failure = job.status == MaintenanceJobStatus.FAILED.value
+    retry_at = (
+        None
+        if terminal_failure
+        else _as_utc(job.next_attempt_at)
+    )
+    _sync_security_alert_delivery_failure(
+        db,
+        job=job,
+        error_code=normalized_error,
+        terminal=terminal_failure,
+        now=observed_at,
+        retry_at=retry_at,
+    )
+    _sync_notification_delivery_failure(
+        db,
+        job=job,
+        error_code=normalized_error,
+        terminal=terminal_failure,
+        now=observed_at,
+        retry_at=retry_at,
+    )
+    _sync_notification_fanout_failure(
+        db,
+        job=job,
+        error_code=normalized_error,
+        terminal=terminal_failure,
+        now=observed_at,
+    )
     db.flush()
     return job.status
 

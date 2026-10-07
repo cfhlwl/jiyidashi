@@ -12,6 +12,12 @@ _PROD_AUTH_EMAIL = {
     "auth_public_base_url": "https://app.example.test/auth",
     "auth_smtp_host": "smtp.example.invalid",
     "auth_smtp_from": "accounts@example.test",
+    "security_alert_human_provider": "feishu",
+    "security_alert_feishu_webhook_url": (
+        "https://open.feishu.cn/open-apis/bot/v2/hook/test-not-live-token"
+    ),
+    "security_alert_feishu_secret": "test-sec017-signing-secret",
+    "security_alert_delivery_timeout_seconds": 5,
 }
 
 
