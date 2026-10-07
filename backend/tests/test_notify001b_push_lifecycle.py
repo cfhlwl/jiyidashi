@@ -36,7 +36,7 @@ async def test_auth_logout_fences_session_device_push_binding(client):
         "/v1/notifications/device",
         headers=headers,
         json={
-            "client_uuid": "notify-switch-installation",
+            "client_uuid": "dev-token",
             "platform": "IOS",
             "provider": "TEST",
             "push_token": "notify-001b-logout-token-123456",
