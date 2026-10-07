@@ -10,6 +10,11 @@ from sqlalchemy.orm import Session
 from app.auth_models import AuthIdentity, AuthProvider
 from app.models import User
 from app.schemas import LoginRequest, RegisterRequest
+from app.services.auth_identity_service import (
+    AuthIdentityError,
+    canonicalize_email_subject,
+    create_user_for_verified_identity,
+)
 from app.services.auth_rate_limit import (
     clear_login_account_penalty,
     consume_login_account_attempt,
@@ -33,7 +38,7 @@ _DUMMY_ARGON2_HASH = (
 
 
 def normalize_email(value: str) -> str:
-    return value.strip().casefold()
+    return canonicalize_email_subject(value)
 
 
 def _argon2_rejected(exc: ConcurrencyRejected) -> HTTPException:
@@ -104,32 +109,34 @@ def register_email_password(
     # mutation state while the anonymous IP gate has already succeeded.
     password_hash = hash_password(payload.password, bind=db.get_bind())
 
-    user = User(
-        nickname=payload.nickname,
-        email=subject,
-        timezone=payload.timezone,
-        locale=payload.locale,
-    )
-    db.add(user)
     try:
-        # [人工注释][S1-001] User.id 是 ORM insert-time default，必须先 flush 后再建立身份外键。
-        db.flush()
-        identity = AuthIdentity(
-            user_id=user.id,
+        creation = create_user_for_verified_identity(
+            db,
             provider=AuthProvider.EMAIL_PASSWORD,
             subject=subject,
             secret_hash=password_hash,
+            nickname=payload.nickname,
+            timezone=payload.timezone,
+            locale=payload.locale,
+            entitlement_creator=create_registration_default_entitlement,
         )
-        db.add(identity)
-        create_registration_default_entitlement(db, user_id=user.id)
+        if not creation.created:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="AUTH_IDENTITY_EXISTS",
+            )
         db.commit()
-    except IntegrityError as exc:
+    except (IntegrityError, AuthIdentityError) as exc:
         db.rollback()
         # [人工注释][S1-001] 并发注册或历史 User.email 冲突统一映射为同一个公开错误。
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="AUTH_IDENTITY_EXISTS",
         ) from exc
+    user = db.get(User, creation.user_id)
+    if user is None:  # pragma: no cover - committed identity always owns a User
+        raise HTTPException(status_code=500, detail="AUTH_IDENTITY_NOT_FOUND")
     db.refresh(user)
     return user
 
@@ -153,36 +160,6 @@ def _lock_login_user_for_authentication(
             detail="INVALID_CREDENTIALS",
         )
     return user
-
-
-def lock_login_for_token_issue(
-    db: Session,
-    user_id,
-) -> tuple[User, bool]:
-    # [人工注释][S1-022-FIX-005] 密码校验内部的 User lock 会在 authenticate() commit 时释放；
-    # 真正签发 token 前必须再次拿 KEY SHARE，并一直持有到 HTTP 请求结束。这样 Account Delete
-    # 的 FOR UPDATE 无法插进“最后一次 User/account-gate 检查 -> TokenResponse”之间。
-    from app.account_deletion_models import AccountDeletionOperation
-
-    user = db.scalar(
-        select(User)
-        .where(User.id == user_id)
-        .with_for_update(read=True, key_share=True)
-    )
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="INVALID_CREDENTIALS",
-        )
-    in_progress = (
-        db.scalar(
-            select(AccountDeletionOperation.id)
-            .where(AccountDeletionOperation.user_id == user_id)
-            .limit(1)
-        )
-        is not None
-    )
-    return user, in_progress
 
 
 def authenticate_email_password(

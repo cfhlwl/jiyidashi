@@ -2,7 +2,17 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -11,6 +21,8 @@ from app.models import utcnow
 
 class AuthProvider(StrEnum):
     EMAIL_PASSWORD = "EMAIL_PASSWORD"
+    PHONE = "PHONE"
+    WECHAT = "WECHAT"
 
 
 class AuthIdentity(Base):
@@ -25,6 +37,20 @@ class AuthIdentity(Base):
             "provider",
             "subject",
             name="uq_auth_identities_provider_subject",
+        ),
+        Index(
+            "uq_auth_identities_user_email_password",
+            "user_id",
+            unique=True,
+            sqlite_where=text("provider = 'EMAIL_PASSWORD'"),
+            postgresql_where=text("provider = 'EMAIL_PASSWORD'"),
+        ),
+        Index(
+            "uq_auth_identities_user_phone",
+            "user_id",
+            unique=True,
+            sqlite_where=text("provider = 'PHONE'"),
+            postgresql_where=text("provider = 'PHONE'"),
         ),
     )
 
