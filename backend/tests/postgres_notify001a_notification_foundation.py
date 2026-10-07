@@ -485,7 +485,7 @@ def _prove_token_rebind_waits_for_provider_disclosure_handoff() -> None:
         assert not rebind_thread.is_alive()
         assert not errors, errors
         assert rebind_done.is_set()
-        assert adapter.calls == [first_claim.payload["delivery_id"]] or len(adapter.calls) == 1
+        assert len(adapter.calls) == 1
 
         with SessionLocal() as db:
             rows = list(
