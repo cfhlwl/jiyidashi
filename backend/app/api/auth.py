@@ -18,6 +18,7 @@ from app.schemas import (
     EmailVerificationResponse,
     ForgotPasswordRequest,
     LoginRequest,
+    PhoneOneTapRequest,
     RefreshRequest,
     RegisterRequest,
     RegistrationResponse,
@@ -48,6 +49,10 @@ from app.services.auth_session_service import (
     revoke_session,
 )
 from app.services.entitlement_service import create_dev_legacy_full_entitlement
+from app.services.phone_one_tap_service import (
+    PhoneOneTapError,
+    exchange_phone_one_tap,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -163,6 +168,35 @@ def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenRespon
     return _token_response(
         issued.tokens,
         account_deletion_in_progress=issued.account_deletion_in_progress,
+    )
+
+
+@router.post("/phone/one-tap", response_model=TokenResponse)
+def phone_one_tap(
+    payload: PhoneOneTapRequest,
+    request: Request,
+    db: DbSession,
+) -> TokenResponse:
+    try:
+        result = exchange_phone_one_tap(
+            db,
+            login_token=payload.login_token,
+            request_id=payload.request_id,
+            device_id=payload.device_id,
+            client_platform=payload.client_platform,
+            device_name=payload.device_name,
+            client_ip=_client_ip(request),
+        )
+    except PhoneOneTapError as exc:
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.code,
+            headers=headers,
+        ) from exc
+    return _token_response(
+        result.tokens,
+        account_deletion_in_progress=result.account_deletion_in_progress,
     )
 
 
