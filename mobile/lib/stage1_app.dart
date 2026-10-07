@@ -948,6 +948,7 @@ class _AuthPageState extends State<AuthPage> {
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: TextButton(
+                      key: const ValueKey('auth-v3-register-entry'),
                       onPressed: loading
                           ? null
                           : () => setState(() {
@@ -3133,6 +3134,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   String? actionMessage;
   String? submittedQuestion;
   bool loading = false;
+  bool _qualifyingTrustedEvidenceAvailable = false;
+  bool _trustedEvidenceShownForCurrentQuery = false;
   int _queryGeneration = 0;
   late int _observedSessionVersion;
   String? _observedOwner;
@@ -3218,6 +3221,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       actionMessage = null;
       result = null;
       submittedQuestion = submitted;
+      _qualifyingTrustedEvidenceAvailable = false;
+      _trustedEvidenceShownForCurrentQuery = false;
     });
     bool isCurrent() =>
         mounted &&
@@ -3227,7 +3232,6 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     try {
       final response = await widget.api.queryMemory(submitted);
       if (!isCurrent()) return;
-      setState(() => result = response);
       final evidence = response['evidence'];
       final memoryIds = response['memory_ids'];
       final requiredMemoryId = widget.requiredEvidenceMemoryId?.trim();
@@ -3235,12 +3239,15 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
           requiredMemoryId.isEmpty ||
           (memoryIds is List<dynamic> &&
               memoryIds.any((value) => value.toString() == requiredMemoryId));
-      if (response['can_answer'] == true &&
+      final qualifyingTrustedEvidenceAvailable = response['can_answer'] == true &&
           evidence is List<dynamic> &&
           evidence.isNotEmpty &&
-          containsRequiredMemory) {
-        widget.onTrustedEvidenceShown?.call();
-      }
+          containsRequiredMemory;
+      setState(() {
+        result = response;
+        _qualifyingTrustedEvidenceAvailable = qualifyingTrustedEvidenceAvailable;
+        _trustedEvidenceShownForCurrentQuery = false;
+      });
     } on ApiException catch (exc) {
       if (!isCurrent()) return;
       setState(() => error = exc.message);
@@ -3633,8 +3640,18 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             ],
             const SizedBox(height: 8),
             ExpansionTile(
+              key: const ValueKey('memory-query-evidence-disclosure'),
               tilePadding: EdgeInsets.zero,
               childrenPadding: EdgeInsets.zero,
+              onExpansionChanged: (expanded) {
+                if (!expanded ||
+                    !_qualifyingTrustedEvidenceAvailable ||
+                    _trustedEvidenceShownForCurrentQuery) {
+                  return;
+                }
+                _trustedEvidenceShownForCurrentQuery = true;
+                widget.onTrustedEvidenceShown?.call();
+              },
               title: const Text('查看这次回答的依据'),
               subtitle: Text('$certaintyLabel · $intentLabel'),
               children: [
@@ -3754,7 +3771,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             label: Text(loading ? '查找中…' : '帮我找'),
           ),
         ),
-      if (!widget.elderMode) ...[
+      if (!widget.elderMode)
         SizedBox(
           height: 44,
           child: ListView(
@@ -3787,50 +3804,6 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             ],
           ),
         ),
-        const SizedBox(height: 34),
-        sectionHeader(
-          '最近记下的',
-          onAction: () {
-            Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => TimelinePage(
-                  api: widget.api,
-                  mediaCache: widget.mediaCache,
-                  elderMode: widget.elderMode,
-                  amapPrivacyConsent: _amapPrivacyConsent,
-                ),
-              ),
-            );
-          },
-          actionTooltip: '时间线',
-        ),
-        const SizedBox(height: 12),
-        emptySurface(
-          icon: Icons.auto_stories_outlined,
-          title: '你的记忆会在这里出现',
-          message: '当前页面只展示真实记录。先记下一段文字、语音或照片，再回来查看。',
-        ),
-        const SizedBox(height: 30),
-        sectionHeader('重要的人'),
-        const SizedBox(height: 12),
-        emptySurface(
-          icon: Icons.people_outline,
-          title: '还没有可展示的人物记录',
-          message: '人物内容需要真实的人物 authority；迹忆不会用设计图头像代替用户数据。',
-        ),
-      ],
-      if (error != null) ...[
-        const SizedBox(height: 16),
-        JiYiStatusBanner(
-          kind: JiYiStatusKind.error,
-          title: '暂时无法查找',
-          message: error!,
-        ),
-      ],
-      if (actionMessage != null) ...[
-        const SizedBox(height: 16),
-        JiYiStatusBanner(kind: JiYiStatusKind.success, message: actionMessage!),
-      ],
       if (result != null) ...[
         const SizedBox(height: 20),
         resultSurface(),
@@ -3954,6 +3927,51 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             ),
           ),
         ],
+      ],
+      if (!widget.elderMode) ...[
+        const SizedBox(height: 34),
+        sectionHeader(
+          '最近记下的',
+          onAction: () {
+            Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => TimelinePage(
+                  api: widget.api,
+                  mediaCache: widget.mediaCache,
+                  elderMode: widget.elderMode,
+                  amapPrivacyConsent: _amapPrivacyConsent,
+                ),
+              ),
+            );
+          },
+          actionTooltip: '时间线',
+        ),
+        const SizedBox(height: 12),
+        emptySurface(
+          icon: Icons.auto_stories_outlined,
+          title: '你的记忆会在这里出现',
+          message: '当前页面只展示真实记录。先记下一段文字、语音或照片，再回来查看。',
+        ),
+        const SizedBox(height: 30),
+        sectionHeader('重要的人'),
+        const SizedBox(height: 12),
+        emptySurface(
+          icon: Icons.people_outline,
+          title: '还没有可展示的人物记录',
+          message: '人物内容需要真实的人物 authority；迹忆不会用设计图头像代替用户数据。',
+        ),
+      ],
+      if (error != null) ...[
+        const SizedBox(height: 16),
+        JiYiStatusBanner(
+          kind: JiYiStatusKind.error,
+          title: '暂时无法查找',
+          message: error!,
+        ),
+      ],
+      if (actionMessage != null) ...[
+        const SizedBox(height: 16),
+        JiYiStatusBanner(kind: JiYiStatusKind.success, message: actionMessage!),
       ],
     ];
 
