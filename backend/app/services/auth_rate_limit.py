@@ -30,6 +30,10 @@ _SECURITY_SCOPE_BY_RATE_SCOPE = {
     "password_reset_confirm": SecurityScope.AUTH_PASSWORD_RESET_CONFIRM,
     "admin_login_ip": SecurityScope.ADMIN_LOGIN_IP,
     "admin_login_account_ip": SecurityScope.ADMIN_LOGIN_ACCOUNT_IP,
+    "phone_one_tap_ip": SecurityScope.AUTH_PHONE_ONE_TAP,
+    "phone_one_tap_device": SecurityScope.AUTH_PHONE_ONE_TAP,
+    "phone_one_tap_request": SecurityScope.AUTH_PHONE_ONE_TAP,
+    "phone_one_tap_token": SecurityScope.AUTH_PHONE_ONE_TAP,
 }
 
 
@@ -304,6 +308,58 @@ def consume_login_account_attempt(db: Session, client_ip: str, subject: str) -> 
             window_seconds=settings.auth_login_window_seconds,
         ),
     )
+
+
+def consume_phone_one_tap_attempt(
+    db: Session,
+    *,
+    client_ip: str,
+    device_id: str,
+    request_id: str,
+    token_fingerprint: str | None = None,
+) -> None:
+    """Consume anonymous one-tap gates before external provider I/O."""
+
+    if not settings.auth_rate_limit_enabled:
+        return
+    window = settings.auth_phone_one_tap_window_seconds
+    _consume(
+        db,
+        scope="phone_one_tap_ip",
+        value=client_ip,
+        policy=RatePolicy(
+            limit=settings.auth_phone_one_tap_ip_limit,
+            window_seconds=window,
+        ),
+    )
+    _consume(
+        db,
+        scope="phone_one_tap_device",
+        value=device_id,
+        policy=RatePolicy(
+            limit=settings.auth_phone_one_tap_device_limit,
+            window_seconds=window,
+        ),
+    )
+    _consume(
+        db,
+        scope="phone_one_tap_request",
+        value=request_id,
+        policy=RatePolicy(
+            limit=settings.auth_phone_one_tap_request_limit,
+            window_seconds=window,
+        ),
+    )
+    if token_fingerprint:
+        _consume(
+            db,
+            scope="phone_one_tap_token",
+            value=token_fingerprint,
+            policy=RatePolicy(
+                limit=settings.auth_phone_one_tap_token_limit,
+                window_seconds=window,
+            ),
+        )
 
 
 def record_login_failure(db: Session, client_ip: str, subject: str) -> None:

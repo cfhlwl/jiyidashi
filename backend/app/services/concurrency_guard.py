@@ -411,6 +411,7 @@ def _record_saturation(
             "AI": SecurityScope.PROVIDER_AI,
             "ASR": SecurityScope.PROVIDER_ASR,
             "EMBEDDING": SecurityScope.PROVIDER_EMBEDDING,
+            "PHONE_ONE_TAP": SecurityScope.AUTH_PHONE_ONE_TAP,
         }.get(service_class)
         if scope is None:
             return
@@ -459,6 +460,24 @@ def claim_provider_permit(
         user_id=user_id,
         lease_seconds=cfg.provider_permit_lease_seconds,
         saturated_code="PROVIDER_CONCURRENCY_SATURATED",
+        settings=cfg,
+    )
+
+
+def claim_phone_one_tap_permit(
+    bind: Engine,
+    *,
+    settings: Settings | None = None,
+) -> Permit:
+    cfg = settings or get_settings()
+    return claim_permit(
+        bind,
+        service_class="PHONE_ONE_TAP",
+        global_limit=cfg.auth_phone_one_tap_global_concurrency,
+        user_limit=None,
+        user_id=None,
+        lease_seconds=cfg.auth_phone_one_tap_permit_lease_seconds,
+        saturated_code="AUTH_RATE_LIMITED",
         settings=cfg,
     )
 
