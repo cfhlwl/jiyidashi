@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.account_deletion_models import AccountDeletionOperation
 from app.admin_models import AdminAccount
 from app.core.config import get_settings
-from app.core.db import SessionLocal
+from app.core.db import SessionLocal, engine
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
 from app.maintenance_job_models import MaintenanceJobType
 from app.models import Device, User
@@ -58,6 +59,7 @@ NOTIFICATION_DELIVERY_MAX_ATTEMPTS = 10
 NOTIFICATION_FANOUT_MAX_ATTEMPTS = 10
 NOTIFICATION_RETRY_MAX_SECONDS = 900
 PUSH_DIGEST_LOCK_SEED = 214003
+PUSH_DISCLOSURE_LOCK_SEED = 214004
 
 _TERMINAL_DELIVERY_STATUSES = {
     NotificationDeliveryStatus.ACCEPTED.value,
@@ -156,6 +158,51 @@ def _lock_push_digest(db: Session, digest: str) -> None:
     )
 
 
+@contextmanager
+def hold_push_disclosure_handoff(*, provider: str, digest: str):
+    """Serialize token ownership transition with provider disclosure.
+
+    PostgreSQL session-level advisory authority intentionally spans provider I/O
+    without keeping an ordinary ORM transaction or Device row lock open.
+    """
+
+    if engine.dialect.name != "postgresql":
+        yield
+        return
+
+    scope = f"{provider}:{digest}"
+    connection = engine.connect()
+    acquired = False
+    try:
+        connection.execute(
+            text(
+                "SELECT pg_advisory_lock("
+                "hashtextextended(:scope, :seed)"
+                ")"
+            ),
+            {"scope": scope, "seed": PUSH_DISCLOSURE_LOCK_SEED},
+        )
+        connection.commit()
+        acquired = True
+        yield
+    finally:
+        if acquired:
+            try:
+                connection.execute(
+                    text(
+                        "SELECT pg_advisory_unlock("
+                        "hashtextextended(:scope, :seed)"
+                        ")"
+                    ),
+                    {"scope": scope, "seed": PUSH_DISCLOSURE_LOCK_SEED},
+                )
+                connection.commit()
+            finally:
+                connection.close()
+        else:
+            connection.close()
+
+
 def register_device_push(
     db: Session,
     *,
@@ -164,78 +211,83 @@ def register_device_push(
 ) -> DevicePushStateRead:
     now = datetime.now(UTC)
     digest = push_token_digest(payload.push_token)
-    _lock_push_digest(db, digest)
 
-    if db.get(User, user_id) is None:
-        raise NotificationDeviceError("USER_NOT_FOUND", 404)
+    with hold_push_disclosure_handoff(
+        provider=payload.provider.value,
+        digest=digest,
+    ):
+        _lock_push_digest(db, digest)
 
-    current_statement = select(Device).where(
-        Device.user_id == user_id,
-        Device.client_uuid == payload.client_uuid,
-    )
-    if db.get_bind().dialect.name == "postgresql":
-        current_statement = current_statement.with_for_update()
-    current = db.scalar(current_statement)
+        if db.get(User, user_id) is None:
+            raise NotificationDeviceError("USER_NOT_FOUND", 404)
 
-    conflicting_statement = select(Device).where(
-        Device.push_enabled.is_(True),
-        Device.push_provider == payload.provider.value,
-        Device.push_token_digest == digest,
-    )
-    if current is not None:
-        conflicting_statement = conflicting_statement.where(Device.id != current.id)
-    if db.get_bind().dialect.name == "postgresql":
-        conflicting_statement = conflicting_statement.with_for_update()
-    conflicts = list(db.scalars(conflicting_statement))
-    for conflict in conflicts:
-        conflict.push_enabled = False
-        conflict.push_token = None
-        conflict.push_token_digest = None
-        conflict.push_invalidated_at = now
-
-    if current is None:
-        current = Device(
-            user_id=user_id,
-            client_uuid=payload.client_uuid,
-            platform=payload.platform.value,
-            push_token=payload.push_token,
-            push_provider=payload.provider.value,
-            push_token_digest=digest,
-            push_enabled=True,
-            push_token_updated_at=now,
-            push_invalidated_at=None,
-            app_version=payload.app_version,
-            os_version=payload.os_version,
-            last_active_at=now,
+        current_statement = select(Device).where(
+            Device.user_id == user_id,
+            Device.client_uuid == payload.client_uuid,
         )
-        db.add(current)
-    else:
-        same_binding = (
-            current.push_enabled
-            and current.platform == payload.platform.value
-            and current.push_provider == payload.provider.value
-            and current.push_token_digest == digest
-            and current.push_token == payload.push_token
-        )
-        current.platform = payload.platform.value
-        current.app_version = payload.app_version
-        current.os_version = payload.os_version
-        current.last_active_at = now
-        if not same_binding:
-            current.push_token = payload.push_token
-            current.push_provider = payload.provider.value
-            current.push_token_digest = digest
-            current.push_enabled = True
-            current.push_token_updated_at = now
-            current.push_invalidated_at = None
+        if db.get_bind().dialect.name == "postgresql":
+            current_statement = current_statement.with_for_update()
+        current = db.scalar(current_statement)
 
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise NotificationDeviceError("PUSH_TOKEN_BINDING_CONFLICT", 409) from exc
-    db.refresh(current)
-    return _push_state(current)
+        conflicting_statement = select(Device).where(
+            Device.push_enabled.is_(True),
+            Device.push_provider == payload.provider.value,
+            Device.push_token_digest == digest,
+        )
+        if current is not None:
+            conflicting_statement = conflicting_statement.where(Device.id != current.id)
+        if db.get_bind().dialect.name == "postgresql":
+            conflicting_statement = conflicting_statement.with_for_update()
+        conflicts = list(db.scalars(conflicting_statement))
+        for conflict in conflicts:
+            conflict.push_enabled = False
+            conflict.push_token = None
+            conflict.push_token_digest = None
+            conflict.push_invalidated_at = now
+
+        if current is None:
+            current = Device(
+                user_id=user_id,
+                client_uuid=payload.client_uuid,
+                platform=payload.platform.value,
+                push_token=payload.push_token,
+                push_provider=payload.provider.value,
+                push_token_digest=digest,
+                push_enabled=True,
+                push_token_updated_at=now,
+                push_invalidated_at=None,
+                app_version=payload.app_version,
+                os_version=payload.os_version,
+                last_active_at=now,
+            )
+            db.add(current)
+        else:
+            same_binding = (
+                current.push_enabled
+                and current.platform == payload.platform.value
+                and current.push_provider == payload.provider.value
+                and current.push_token_digest == digest
+                and current.push_token == payload.push_token
+            )
+            current.platform = payload.platform.value
+            current.app_version = payload.app_version
+            current.os_version = payload.os_version
+            current.last_active_at = now
+            if not same_binding:
+                current.push_token = payload.push_token
+                current.push_provider = payload.provider.value
+                current.push_token_digest = digest
+                current.push_enabled = True
+                current.push_token_updated_at = now
+                current.push_invalidated_at = None
+
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise NotificationDeviceError("PUSH_TOKEN_BINDING_CONFLICT", 409) from exc
+        db.refresh(current)
+        return _push_state(current)
 
 
 def unregister_device_push(
@@ -244,24 +296,64 @@ def unregister_device_push(
     user_id: UUID,
     client_uuid: str,
 ) -> DevicePushStateRead:
-    statement = select(Device).where(
-        Device.user_id == user_id,
-        Device.client_uuid == client_uuid,
-    )
-    if db.get_bind().dialect.name == "postgresql":
-        statement = statement.with_for_update()
-    row = db.scalar(statement)
-    if row is None:
-        raise NotificationDeviceError("PUSH_DEVICE_NOT_FOUND", 404)
+    while True:
+        row = db.scalar(
+            select(Device).where(
+                Device.user_id == user_id,
+                Device.client_uuid == client_uuid,
+            )
+        )
+        if row is None:
+            db.rollback()
+            raise NotificationDeviceError("PUSH_DEVICE_NOT_FOUND", 404)
 
-    if row.push_enabled or row.push_token is not None or row.push_token_digest is not None:
-        row.push_enabled = False
-        row.push_token = None
-        row.push_token_digest = None
-        row.push_invalidated_at = datetime.now(UTC)
-    db.commit()
-    db.refresh(row)
-    return _push_state(row)
+        provider = row.push_provider
+        digest = row.push_token_digest
+        if not row.push_enabled or provider is None or digest is None:
+            statement = select(Device).where(
+                Device.user_id == user_id,
+                Device.client_uuid == client_uuid,
+            )
+            if db.get_bind().dialect.name == "postgresql":
+                statement = statement.with_for_update()
+            row = db.scalar(statement)
+            assert row is not None
+            if row.push_enabled or row.push_token is not None or row.push_token_digest is not None:
+                row.push_enabled = False
+                row.push_token = None
+                row.push_token_digest = None
+                row.push_invalidated_at = datetime.now(UTC)
+            db.commit()
+            db.refresh(row)
+            return _push_state(row)
+
+        # Do not hold the ORM transaction while waiting for an in-flight provider
+        # disclosure to release the token handoff.
+        db.rollback()
+        with hold_push_disclosure_handoff(provider=provider, digest=digest):
+            statement = select(Device).where(
+                Device.user_id == user_id,
+                Device.client_uuid == client_uuid,
+            )
+            if db.get_bind().dialect.name == "postgresql":
+                statement = statement.with_for_update()
+            row = db.scalar(statement)
+            if row is None:
+                db.rollback()
+                raise NotificationDeviceError("PUSH_DEVICE_NOT_FOUND", 404)
+
+            if row.push_provider != provider or row.push_token_digest != digest:
+                db.rollback()
+                continue
+
+            if row.push_enabled or row.push_token is not None or row.push_token_digest is not None:
+                row.push_enabled = False
+                row.push_token = None
+                row.push_token_digest = None
+                row.push_invalidated_at = datetime.now(UTC)
+            db.commit()
+            db.refresh(row)
+            return _push_state(row)
 
 
 def _eligible_conditions(
@@ -567,6 +659,7 @@ def cancel_notification_campaign(
     if campaign.status in {
         NotificationCampaignStatus.CANCELLED.value,
         NotificationCampaignStatus.COMPLETED.value,
+        NotificationCampaignStatus.FAILED.value,
     }:
         raise AdminOperationError("NOTIFICATION_CAMPAIGN_FINAL", 409)
 
@@ -1139,32 +1232,139 @@ def finalize_notification_delivery_attempt(
         return True, retry_after
 
 
+def _cancel_delivery_before_disclosure(
+    db: Session,
+    *,
+    delivery: NotificationDelivery,
+    status: NotificationDeliveryStatus,
+    error_code: str,
+    now: datetime,
+) -> None:
+    delivery.status = status.value
+    delivery.error_code = error_code
+    delivery.attempt_token = None
+    delivery.next_retry_at = None
+    delivery.revision += 1
+    delivery.updated_at = now
+    _refresh_campaign_completion(
+        db,
+        campaign_id=delivery.campaign_id,
+        now=now,
+    )
+
+
+def _deliver_notification_attempt_under_handoff(
+    attempt: NotificationDeliveryAttempt,
+) -> NotificationProviderResult | None:
+    with hold_push_disclosure_handoff(
+        provider=attempt.provider,
+        digest=attempt.token_digest,
+    ):
+        now = datetime.now(UTC)
+        with SessionLocal() as db:
+            statement = select(NotificationDelivery).where(
+                NotificationDelivery.id == attempt.delivery_id
+            )
+            if db.get_bind().dialect.name == "postgresql":
+                statement = statement.with_for_update()
+            delivery = db.scalar(statement)
+            if (
+                delivery is None
+                or delivery.status != NotificationDeliveryStatus.RUNNING.value
+                or delivery.revision != attempt.revision
+                or delivery.attempt_token != attempt.attempt_token
+            ):
+                db.rollback()
+                return None
+
+            campaign = db.get(NotificationCampaign, delivery.campaign_id)
+            message = db.get(NotificationMessage, delivery.message_id)
+            device = db.get(Device, delivery.device_id)
+            if campaign is None or message is None or device is None:
+                _cancel_delivery_before_disclosure(
+                    db,
+                    delivery=delivery,
+                    status=NotificationDeliveryStatus.CANCELLED,
+                    error_code="NOTIFICATION_AUTHORITY_MISSING",
+                    now=now,
+                )
+                db.commit()
+                return None
+
+            if campaign.status == NotificationCampaignStatus.CANCELLED.value:
+                _cancel_delivery_before_disclosure(
+                    db,
+                    delivery=delivery,
+                    status=NotificationDeliveryStatus.CANCELLED,
+                    error_code="NOTIFICATION_CAMPAIGN_CANCELLED",
+                    now=now,
+                )
+                db.commit()
+                return None
+
+            if message.expires_at is not None and _as_utc(message.expires_at) <= now:
+                _cancel_delivery_before_disclosure(
+                    db,
+                    delivery=delivery,
+                    status=NotificationDeliveryStatus.EXPIRED,
+                    error_code="NOTIFICATION_EXPIRED",
+                    now=now,
+                )
+                db.commit()
+                return None
+
+            current_authority = (
+                device.user_id == delivery.owner_user_id
+                and device.push_enabled
+                and device.push_invalidated_at is None
+                and device.push_token == attempt.raw_token
+                and device.push_provider == attempt.provider
+                and device.push_token_digest == attempt.token_digest
+                and device.platform == attempt.platform
+            )
+            if not current_authority:
+                _cancel_delivery_before_disclosure(
+                    db,
+                    delivery=delivery,
+                    status=NotificationDeliveryStatus.CANCELLED,
+                    error_code="DEVICE_PUSH_AUTHORITY_CHANGED",
+                    now=now,
+                )
+                db.commit()
+                return None
+            db.rollback()
+
+        adapter = resolve_notification_provider(
+            platform=attempt.platform,
+            provider=attempt.provider,
+        )
+        try:
+            return adapter.deliver(
+                NotificationProviderRequest(
+                    delivery_id=attempt.delivery_id,
+                    device_id=attempt.device_id,
+                    platform=attempt.platform,
+                    provider=attempt.provider,
+                    raw_token=attempt.raw_token,
+                    title=attempt.title,
+                    body=attempt.body,
+                    payload=attempt.payload,
+                )
+            )
+        except Exception:
+            return NotificationProviderResult.retryable_failure(
+                "NOTIFICATION_PROVIDER_EXCEPTION"
+            )
+
+
 def process_notification_delivery_claim(claim: MaintenanceJobClaim) -> None:
     attempt = begin_notification_delivery_attempt(claim)
     if attempt is None:
         return
 
-    adapter = resolve_notification_provider(
-        platform=attempt.platform,
-        provider=attempt.provider,
-    )
-    try:
-        result = adapter.deliver(
-            NotificationProviderRequest(
-                delivery_id=attempt.delivery_id,
-                device_id=attempt.device_id,
-                platform=attempt.platform,
-                provider=attempt.provider,
-                raw_token=attempt.raw_token,
-                title=attempt.title,
-                body=attempt.body,
-                payload=attempt.payload,
-            )
-        )
-    except Exception:
-        result = NotificationProviderResult.retryable_failure(
-            "NOTIFICATION_PROVIDER_EXCEPTION"
-        )
+    result = _deliver_notification_attempt_under_handoff(attempt)
+    if result is None:
+        return
 
     if (
         not result.accepted
