@@ -21,7 +21,6 @@ import org.json.JSONObject
 internal object NotificationPushRuntime {
     private const val PREFS = "jiyi_push_v1"
     private const val KEY_PROVIDER = "provider"
-    private const val KEY_TOKEN = "token"
     private const val KEY_PERMISSION_REQUESTED = "permission_requested"
     private const val KEY_PENDING_TAP = "pending_tap"
     private const val CHANNEL_ID = "jiyi_general"
@@ -45,19 +44,13 @@ internal object NotificationPushRuntime {
         val selected = selectProvider(context)
         val prefs = prefs(context)
         val storedProvider = prefs.getString(KEY_PROVIDER, null)
-        val storedToken = prefs.getString(KEY_TOKEN, null)
-        val token =
-            if (selected != null && selected == storedProvider && !storedToken.isNullOrBlank()) {
-                storedToken
-            } else {
-                null
-            }
+        val provider = selected ?: storedProvider
         return mapOf(
             "supported" to true,
             "platform" to "ANDROID",
             "permission" to permission(context),
-            "provider" to selected,
-            "token" to token,
+            "provider" to provider,
+            "token" to null,
             "app_version" to BuildConfig.VERSION_NAME,
             "os_version" to Build.VERSION.RELEASE,
         )
@@ -112,7 +105,7 @@ internal object NotificationPushRuntime {
         callback: (Result<Unit>) -> Unit,
     ) {
         val prefs = prefs(context)
-        val provider = prefs.getString(KEY_PROVIDER, null)
+        val provider = prefs.getString(KEY_PROVIDER, null) ?: selectProvider(context)
         when (provider) {
             "FCM" -> {
                 ensureFirebase(context)
@@ -149,7 +142,6 @@ internal object NotificationPushRuntime {
         prefs(context)
             .edit()
             .putString(KEY_PROVIDER, provider)
-            .putString(KEY_TOKEN, token)
             .apply()
     }
 
@@ -157,7 +149,6 @@ internal object NotificationPushRuntime {
         prefs(context)
             .edit()
             .remove(KEY_PROVIDER)
-            .remove(KEY_TOKEN)
             .apply()
     }
 
