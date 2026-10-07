@@ -2257,13 +2257,17 @@ final class PhoneOneTapNativeBridge {
   private func availability(result: @escaping FlutterResult) {
     guard initialized else { result(unavailable("NOT_INITIALIZED").platformMap()); return }
     guard pending == nil else { result(unavailable("REQUEST_IN_PROGRESS").platformMap()); return }
-    beginAsync(result: result) { callback in self.adapter.checkAvailability { callback.complete($0) } }
+    beginAsync(result: result) { callback in
+      self.adapter.checkAvailability { value in _ = callback.complete(value) }
+    }
   }
 
   private func preLogin(result: @escaping FlutterResult) {
     guard initialized else { result(unavailable("NOT_INITIALIZED").platformMap()); return }
     guard pending == nil else { result(unavailable("REQUEST_IN_PROGRESS").platformMap()); return }
-    beginAsync(result: result) { callback in self.adapter.preLogin { callback.complete($0) } }
+    beginAsync(result: result) { callback in
+      self.adapter.preLogin { value in _ = callback.complete(value) }
+    }
   }
 
   private func requestLoginToken(result: @escaping FlutterResult) {
@@ -2271,7 +2275,9 @@ final class PhoneOneTapNativeBridge {
     guard viewControllerAvailable else { result(unavailable("VIEW_CONTROLLER_UNAVAILABLE").platformMap()); return }
     guard pending == nil else { result(unavailable("REQUEST_IN_PROGRESS").platformMap()); return }
     beginAsync(result: result) { callback in
-      self.adapter.requestLoginToken(viewControllerAvailable: true) { callback.complete($0) }
+      self.adapter.requestLoginToken(viewControllerAvailable: true) { value in
+        _ = callback.complete(value)
+      }
     }
   }
 
@@ -2300,7 +2306,7 @@ final class PhoneOneTapNativeBridge {
       self.pending = nil
       current.result(value.platformMap())
     }
-    operation { callback.complete($0) }
+    operation { value in _ = callback.complete(value) }
   }
 
   private func invalidatePending(reason: String) {

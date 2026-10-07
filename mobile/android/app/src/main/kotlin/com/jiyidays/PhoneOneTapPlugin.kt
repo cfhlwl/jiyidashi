@@ -108,7 +108,7 @@ class PhoneOneTapPlugin(
             result.success(unavailable("REQUEST_IN_PROGRESS").toPlatformMap())
             return
         }
-        beginAsync(result) { _, callback -> adapter.checkAvailability { callback.complete(it) } }
+        beginAsync(result) { _, callback -> adapter.checkAvailability { callback.complete(it); Unit } }
     }
 
     private fun preLogin(result: MethodChannel.Result) {
@@ -120,7 +120,7 @@ class PhoneOneTapPlugin(
             result.success(unavailable("REQUEST_IN_PROGRESS").toPlatformMap())
             return
         }
-        beginAsync(result) { _, callback -> adapter.preLogin { callback.complete(it) } }
+        beginAsync(result) { _, callback -> adapter.preLogin { callback.complete(it); Unit } }
     }
 
     private fun requestLoginToken(result: MethodChannel.Result) {
@@ -137,7 +137,7 @@ class PhoneOneTapPlugin(
             return
         }
         beginAsync(result) { _, callback ->
-            adapter.requestLoginToken(activityAvailable = true) { callback.complete(it) }
+            adapter.requestLoginToken(activityAvailable = true) { callback.complete(it); Unit }
         }
     }
 
