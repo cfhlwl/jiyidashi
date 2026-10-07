@@ -10,7 +10,6 @@ from app.embedding_policy import (
     MEMORY_EMBEDDING_MODEL,
 )
 
-
 FROZEN_PRODUCTION_APP_ID = "com.jiyidays"
 
 
