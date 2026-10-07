@@ -110,7 +110,8 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'notification_messages',
                           'notification_campaigns',
                           'notification_campaign_targets',
-                          'notification_deliveries'
+                          'notification_deliveries',
+                          'auth_phone_one_tap_exchanges'
                       )
                     ORDER BY table_name, ordinal_position
                     """

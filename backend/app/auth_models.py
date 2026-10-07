@@ -3,6 +3,7 @@ from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -166,6 +167,90 @@ class AuthRateLimitBucket(Base):
     blocked_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class PhoneOneTapExchangeState(StrEnum):
+    RESERVED = "RESERVED"
+    COMPLETED = "COMPLETED"
+    PROVIDER_REJECTED = "PROVIDER_REJECTED"
+    PROVIDER_UNKNOWN = "PROVIDER_UNKNOWN"
+
+
+class PhoneOneTapRecoveryState(StrEnum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
+class PhoneOneTapExchange(Base):
+    """Durable authority for one provider-token exchange attempt.
+
+    The provider login token itself is never stored. ``token_fingerprint`` is a
+    deployment-keyed digest used only for replay/conflict decisions. Session and
+    user references are nullable so exchange history cannot block account/session
+    deletion.
+    """
+
+    __tablename__ = "auth_phone_one_tap_exchanges"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_phone_one_tap_request_id"),
+        UniqueConstraint("token_fingerprint", name="uq_phone_one_tap_token_fingerprint"),
+        Index("ix_phone_one_tap_state_expires", "state", "expires_at"),
+        Index("ix_phone_one_tap_lease", "state", "lease_expires_at"),
+        Index("ix_phone_one_tap_created", "created_at"),
+        CheckConstraint(
+            "state IN ('RESERVED', 'COMPLETED', 'PROVIDER_REJECTED', 'PROVIDER_UNKNOWN')",
+            name="ck_phone_one_tap_exchange_state",
+        ),
+        CheckConstraint(
+            "recovery_state IN ('OPEN', 'CLOSED')",
+            name="ck_phone_one_tap_recovery_state",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    request_id: Mapped[UUID] = mapped_column(nullable=False)
+    token_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    fingerprint_key_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    state: Mapped[PhoneOneTapExchangeState] = mapped_column(
+        String(32),
+        nullable=False,
+        default=PhoneOneTapExchangeState.RESERVED,
+    )
+    recovery_state: Mapped[PhoneOneTapRecoveryState] = mapped_column(
+        String(16),
+        nullable=False,
+        default=PhoneOneTapRecoveryState.CLOSED,
+    )
+    device_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    client_platform: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    device_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resolved_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("auth_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    replacement_session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("auth_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    recovery_deadline: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    recovery_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

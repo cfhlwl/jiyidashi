@@ -11,11 +11,12 @@ from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
 from app.auth_models import AuthIdentity, AuthProvider
+from app.core.observability import emit_operational_event
 from app.models import User
 from app.services.auth_session_service import (
     PublicAuthError,
     PublicSessionTokens,
-    create_public_session,
+    create_public_session_in_transaction,
 )
 from app.services.entitlement_service import create_registration_default_entitlement
 
@@ -500,7 +501,7 @@ def unlink_identity(
     db.commit()
 
 
-def issue_authenticated_session(
+def issue_authenticated_session_in_transaction(
     db: Session,
     *,
     user_id: UUID,
@@ -526,7 +527,7 @@ def issue_authenticated_session(
         )
         is not None
     )
-    pair = create_public_session(
+    pair = create_public_session_in_transaction(
         db,
         user_id=user_id,
         device_id=device_id,
@@ -537,3 +538,28 @@ def issue_authenticated_session(
         tokens=pair,
         account_deletion_in_progress=account_deletion_in_progress,
     )
+
+
+def issue_authenticated_session(
+    db: Session,
+    *,
+    user_id: UUID,
+    device_id: str,
+    client_platform: str | None = None,
+    device_name: str | None = None,
+) -> AuthenticatedSession:
+    issued = issue_authenticated_session_in_transaction(
+        db,
+        user_id=user_id,
+        device_id=device_id,
+        client_platform=client_platform,
+        device_name=device_name,
+    )
+    db.commit()
+    emit_operational_event(
+        event="auth.session.created",
+        correlation_id=str(issued.tokens.session_id),
+        operation="PUBLIC_AUTH_SESSION",
+        operation_status="CREATED",
+    )
+    return issued
