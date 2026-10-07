@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -365,6 +365,82 @@ def unregister_device_push(
             db.commit()
             db.refresh(row)
             return _push_state(row)
+
+
+def fence_other_owner_push_bindings_for_client_uuid(
+    db: Session,
+    *,
+    user_id: UUID,
+    client_uuid: str,
+) -> None:
+    """Revoke stale push authority before this installation changes owners."""
+
+    while True:
+        candidate = db.scalar(
+            select(Device)
+            .where(
+                Device.client_uuid == client_uuid,
+                Device.user_id != user_id,
+                or_(
+                    Device.push_enabled.is_(True),
+                    Device.push_token.is_not(None),
+                    Device.push_token_digest.is_not(None),
+                ),
+            )
+            .order_by(Device.id)
+        )
+        if candidate is None:
+            db.rollback()
+            return
+
+        candidate_id = candidate.id
+        provider = candidate.push_provider
+        digest = candidate.push_token_digest
+        db.rollback()
+
+        if provider is not None and digest is not None:
+            with hold_push_disclosure_handoff(provider=provider, digest=digest):
+                statement = select(Device).where(
+                    Device.id == candidate_id,
+                    Device.client_uuid == client_uuid,
+                    Device.user_id != user_id,
+                )
+                if db.get_bind().dialect.name == "postgresql":
+                    statement = statement.with_for_update()
+                current = db.scalar(statement)
+                if current is None:
+                    db.rollback()
+                    continue
+                if (
+                    current.push_provider != provider
+                    or current.push_token_digest != digest
+                ):
+                    db.rollback()
+                    continue
+
+                current.push_enabled = False
+                current.push_token = None
+                current.push_token_digest = None
+                current.push_invalidated_at = datetime.now(UTC)
+                db.commit()
+                continue
+
+        statement = select(Device).where(
+            Device.id == candidate_id,
+            Device.client_uuid == client_uuid,
+            Device.user_id != user_id,
+        )
+        if db.get_bind().dialect.name == "postgresql":
+            statement = statement.with_for_update()
+        current = db.scalar(statement)
+        if current is None:
+            db.rollback()
+            continue
+        current.push_enabled = False
+        current.push_token = None
+        current.push_token_digest = None
+        current.push_invalidated_at = datetime.now(UTC)
+        db.commit()
 
 
 def _eligible_conditions(
