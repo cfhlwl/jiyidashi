@@ -196,6 +196,7 @@ class MethodChannelNativeNotificationBridge implements NativeNotificationBridge 
         );
       }
     });
+    await _channel.invokeMethod<void>('ready');
   }
 
   @override
@@ -228,8 +229,8 @@ class MethodChannelNativeNotificationBridge implements NativeNotificationBridge 
   }
 }
 
-class _StoredPushToken {
-  const _StoredPushToken({
+class StoredPushToken {
+  const StoredPushToken({
     required this.platform,
     required this.provider,
     required this.token,
@@ -251,7 +252,7 @@ class _StoredPushToken {
         'retire_pending': retirePending,
       };
 
-  factory _StoredPushToken.fromJson(Map<String, dynamic> data) {
+  factory StoredPushToken.fromJson(Map<String, dynamic> data) {
     final platform = data['platform'];
     final provider = data['provider'];
     final token = data['token'];
@@ -262,7 +263,7 @@ class _StoredPushToken {
       throw const FormatException('invalid push token state');
     }
     final owner = data['registered_owner'];
-    return _StoredPushToken(
+    return StoredPushToken(
       platform: platform as String,
       provider: provider as String,
       token: token.trim(),
@@ -272,12 +273,12 @@ class _StoredPushToken {
     );
   }
 
-  _StoredPushToken copyWith({
+  StoredPushToken copyWith({
     String? registeredOwner,
     bool clearRegisteredOwner = false,
     bool? retirePending,
   }) {
-    return _StoredPushToken(
+    return StoredPushToken(
       platform: platform,
       provider: provider,
       token: token,
@@ -289,8 +290,8 @@ class _StoredPushToken {
 }
 
 abstract interface class NotificationTokenStore {
-  Future<_StoredPushToken?> read();
-  Future<void> write(_StoredPushToken token);
+  Future<StoredPushToken?> read();
+  Future<void> write(StoredPushToken token);
   Future<void> clear();
 }
 
@@ -302,13 +303,13 @@ class SecureNotificationTokenStore implements NotificationTokenStore {
   final FlutterSecureStorage _storage;
 
   @override
-  Future<_StoredPushToken?> read() async {
+  Future<StoredPushToken?> read() async {
     final raw = await _storage.read(key: _key);
     if (raw == null || raw.trim().isEmpty) return null;
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) throw const FormatException();
-      return _StoredPushToken.fromJson(decoded);
+      return StoredPushToken.fromJson(decoded);
     } on FormatException {
       await clear();
       return null;
@@ -316,7 +317,7 @@ class SecureNotificationTokenStore implements NotificationTokenStore {
   }
 
   @override
-  Future<void> write(_StoredPushToken token) {
+  Future<void> write(StoredPushToken token) {
     return _storage.write(key: _key, value: jsonEncode(token.toJson()));
   }
 
@@ -325,13 +326,13 @@ class SecureNotificationTokenStore implements NotificationTokenStore {
 }
 
 class MemoryNotificationTokenStore implements NotificationTokenStore {
-  _StoredPushToken? token;
+  StoredPushToken? token;
 
   @override
-  Future<_StoredPushToken?> read() async => token;
+  Future<StoredPushToken?> read() async => token;
 
   @override
-  Future<void> write(_StoredPushToken value) async {
+  Future<void> write(StoredPushToken value) async {
     token = value;
   }
 
@@ -361,7 +362,7 @@ class NotificationClientService {
   String? provider;
   String? platform;
 
-  _StoredPushToken? _token;
+  StoredPushToken? _token;
   Future<void> _tail = Future<void>.value();
   Future<void> Function(PushRouteIntent intent)? _routeHandler;
   final List<PushRouteIntent> _pendingRoutes = <PushRouteIntent>[];
@@ -550,7 +551,7 @@ class NotificationClientService {
       final same = previous?.token == token &&
           previous?.provider == statusProvider &&
           previous?.platform == status.platform;
-      _token = _StoredPushToken(
+      _token = StoredPushToken(
         platform: status.platform,
         provider: statusProvider,
         token: token,
