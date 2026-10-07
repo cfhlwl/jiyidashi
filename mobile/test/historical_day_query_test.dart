@@ -90,7 +90,7 @@ Future<void> _submitHistoricalQuery(
     ),
   );
   await tester.enterText(find.byType(TextField).first, '我25号去哪了？');
-  await tester.tap(find.text('从我的记录里找'));
+  await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
   await tester.pump();
 }
 
