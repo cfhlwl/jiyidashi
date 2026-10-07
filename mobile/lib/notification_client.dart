@@ -61,7 +61,7 @@ class PushRouteIntent {
       _ => NotificationDestination.home,
     };
     final resourceRaw = raw['resource_id'];
-    final resource = resourceRaw == null ? null : resourceRaw.toString();
+    final resource = resourceRaw?.toString();
     if (resource != null && !_uuid.hasMatch(resource)) {
       return const PushRouteIntent(destination: NotificationDestination.home);
     }
