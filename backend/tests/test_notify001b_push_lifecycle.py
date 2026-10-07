@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from threading import Event
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
 
-from app.auth_models import AuthSession
+from app.auth_models import AuthIdentity, AuthProvider, AuthSession
 from app.core.db import SessionLocal
 from app.models import Device, User
 from app.notification_schemas import DevicePushRegistrationRequest
+from app.services.auth_recovery_service import issue_email_verification
+from app.services.auth_service import hash_password
 from app.services.auth_session_service import (
     create_public_session,
     lock_installation_authority_in_transaction,
@@ -20,6 +23,179 @@ from app.services.notification_service import (
     fence_other_owner_push_bindings_for_client_uuid,
     register_device_push,
 )
+
+
+def _seed_email_identity(
+    *,
+    email: str,
+    password_hash: str,
+    verified: bool,
+) -> UUID:
+    user_id = uuid4()
+    with SessionLocal() as db:
+        db.add(User(id=user_id, nickname="notify-001b-legacy", email=email))
+        db.flush()
+        db.add(
+            AuthIdentity(
+                user_id=user_id,
+                provider=AuthProvider.EMAIL_PASSWORD,
+                subject=email,
+                secret_hash=password_hash,
+                verified_at=datetime.now(UTC) if verified else None,
+            )
+        )
+        db.commit()
+    return user_id
+
+
+async def test_legacy_login_without_device_id_does_not_cross_revoke(client):
+    password = "Notify001B-Legacy-Password!"
+    password_hash = hash_password(password)
+    email_a = f"notify-legacy-login-a-{uuid4().hex}@example.test"
+    email_b = f"notify-legacy-login-b-{uuid4().hex}@example.test"
+    owner_a = _seed_email_identity(
+        email=email_a,
+        password_hash=password_hash,
+        verified=True,
+    )
+    owner_b = _seed_email_identity(
+        email=email_b,
+        password_hash=password_hash,
+        verified=True,
+    )
+
+    login_a = await client.post(
+        "/v1/auth/login",
+        json={"email": email_a, "password": password},
+    )
+    assert login_a.status_code == 200, login_a.text
+    login_b = await client.post(
+        "/v1/auth/login",
+        json={"email": email_b, "password": password},
+    )
+    assert login_b.status_code == 200, login_b.text
+
+    session_a_id = UUID(login_a.json()["session_id"])
+    session_b_id = UUID(login_b.json()["session_id"])
+    with SessionLocal() as db:
+        session_a = db.get(AuthSession, session_a_id)
+        session_b = db.get(AuthSession, session_b_id)
+        assert session_a is not None
+        assert session_b is not None
+        assert session_a.user_id == owner_a
+        assert session_b.user_id == owner_b
+        assert session_a.revoked_at is None
+        assert session_b.revoked_at is None
+        assert session_a.device_id.startswith("legacy-session-")
+        assert session_b.device_id.startswith("legacy-session-")
+        assert session_a.device_id != session_b.device_id
+        assert session_a.device_id != "legacy-client"
+        assert session_b.device_id != "legacy-client"
+
+
+async def test_legacy_verify_email_without_device_id_does_not_cross_revoke(client):
+    password_hash = hash_password("Notify001B-Verify-Password!")
+    email_a = f"notify-legacy-verify-a-{uuid4().hex}@example.test"
+    email_b = f"notify-legacy-verify-b-{uuid4().hex}@example.test"
+    owner_a = _seed_email_identity(
+        email=email_a,
+        password_hash=password_hash,
+        verified=False,
+    )
+    owner_b = _seed_email_identity(
+        email=email_b,
+        password_hash=password_hash,
+        verified=False,
+    )
+
+    with SessionLocal() as db:
+        _, token_a = issue_email_verification(db, user_id=owner_a)
+        _, token_b = issue_email_verification(db, user_id=owner_b)
+
+    verify_a = await client.post("/v1/auth/verify-email", json={"token": token_a})
+    assert verify_a.status_code == 200, verify_a.text
+    verify_b = await client.post("/v1/auth/verify-email", json={"token": token_b})
+    assert verify_b.status_code == 200, verify_b.text
+
+    session_a_id = UUID(verify_a.json()["session"]["session_id"])
+    session_b_id = UUID(verify_b.json()["session"]["session_id"])
+    with SessionLocal() as db:
+        session_a = db.get(AuthSession, session_a_id)
+        session_b = db.get(AuthSession, session_b_id)
+        assert session_a is not None
+        assert session_b is not None
+        assert session_a.user_id == owner_a
+        assert session_b.user_id == owner_b
+        assert session_a.revoked_at is None
+        assert session_b.revoked_at is None
+        assert session_a.device_id.startswith("legacy-session-")
+        assert session_b.device_id.startswith("legacy-session-")
+        assert session_a.device_id != session_b.device_id
+
+
+async def test_explicit_shared_device_id_still_supersedes_prior_owner(client):
+    password = "Notify001B-Explicit-Password!"
+    password_hash = hash_password(password)
+    email_a = f"notify-explicit-a-{uuid4().hex}@example.test"
+    email_b = f"notify-explicit-b-{uuid4().hex}@example.test"
+    _seed_email_identity(email=email_a, password_hash=password_hash, verified=True)
+    _seed_email_identity(email=email_b, password_hash=password_hash, verified=True)
+    client_uuid = f"notify-explicit-{uuid4()}"
+
+    login_a = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": email_a,
+            "password": password,
+            "device_id": client_uuid,
+        },
+    )
+    assert login_a.status_code == 200, login_a.text
+    login_b = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": email_b,
+            "password": password,
+            "device_id": client_uuid,
+        },
+    )
+    assert login_b.status_code == 200, login_b.text
+
+    with SessionLocal() as db:
+        session_a = db.get(AuthSession, UUID(login_a.json()["session_id"]))
+        session_b = db.get(AuthSession, UUID(login_b.json()["session_id"]))
+        assert session_a is not None
+        assert session_a.device_id == client_uuid
+        assert session_a.revoked_at is not None
+        assert session_a.revoke_reason == "INSTALLATION_SUPERSEDED"
+        assert session_b is not None
+        assert session_b.device_id == client_uuid
+        assert session_b.revoked_at is None
+
+
+async def test_push_registration_rejects_session_client_uuid_mismatch(client):
+    auth = await client.post(
+        "/v1/auth/dev-token",
+        json={
+            "nickname": "notify-client-uuid-mismatch",
+            "device_id": "notify-session-installation-c",
+        },
+    )
+    assert auth.status_code == 200, auth.text
+    headers = {"Authorization": f"Bearer {auth.json()['access_token']}"}
+
+    registered = await client.put(
+        "/v1/notifications/device",
+        headers=headers,
+        json={
+            "client_uuid": "notify-push-installation-d",
+            "platform": "ANDROID",
+            "provider": "TEST",
+            "push_token": "notify-client-uuid-mismatch-token-123456",
+        },
+    )
+    assert registered.status_code == 401, registered.text
+    assert registered.json()["detail"] == "PUSH_SESSION_INVALID"
 
 
 async def test_auth_logout_fences_session_device_push_binding(client):
