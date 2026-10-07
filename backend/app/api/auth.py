@@ -52,6 +52,7 @@ from app.services.auth_session_service import (
 from app.services.entitlement_service import create_dev_legacy_full_entitlement
 from app.services.notification_service import (
     NotificationDeviceError,
+    fence_other_owner_push_bindings_for_client_uuid,
     unregister_device_push,
 )
 
@@ -151,6 +152,11 @@ def verify_email(
                 already_verified=True,
                 session=None,
             )
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=result.user_id,
+            client_uuid=payload.device_id,
+        )
         pair = create_public_session(
             db,
             user_id=result.user_id,
@@ -193,6 +199,11 @@ def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenRespon
         user.id,
     )
     try:
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=locked_user.id,
+            client_uuid=payload.device_id,
+        )
         pair = create_public_session(
             db,
             user_id=locked_user.id,
@@ -396,6 +407,11 @@ def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
         db.commit()
 
     try:
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=user_id,
+            client_uuid="dev-token",
+        )
         pair = create_public_session(
             db,
             user_id=user_id,
