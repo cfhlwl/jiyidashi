@@ -4,8 +4,54 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+fun signingInput(propertyName: String, environmentName: String): String? =
+    providers.gradleProperty(propertyName)
+        .orElse(providers.environmentVariable(environmentName))
+        .orNull
+        ?.takeIf(String::isNotBlank)
+
+val releaseStoreFile = signingInput(
+    "android.release.storeFile",
+    "ANDROID_RELEASE_KEYSTORE_PATH",
+)
+val releaseStorePassword = signingInput(
+    "android.release.storePassword",
+    "ANDROID_RELEASE_KEYSTORE_PASSWORD",
+)
+val releaseKeyAlias = signingInput(
+    "android.release.keyAlias",
+    "ANDROID_RELEASE_KEY_ALIAS",
+)
+val releaseKeyPassword = signingInput(
+    "android.release.keyPassword",
+    "ANDROID_RELEASE_KEY_PASSWORD",
+)
+val releaseSigningInputs = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+)
+val releaseSigningConfigured = releaseSigningInputs.all { it != null }
+val releaseSigningPartiallyConfigured = releaseSigningInputs.any { it != null } &&
+    !releaseSigningConfigured
+if (releaseSigningPartiallyConfigured) {
+    throw GradleException(
+        "Android release signing requires keystore path, store password, key alias, and key password together."
+    )
+}
+val productionSigningRequired = providers.gradleProperty("requireProductionSigning")
+    .map(String::toBoolean)
+    .orElse(false)
+    .get()
+if (productionSigningRequired && !releaseSigningConfigured) {
+    throw GradleException(
+        "Production signing is required, but no complete Android release signing configuration was provided."
+    )
+}
+
 android {
-    namespace = "cn.jiyidashi.jiyidashi"
+    namespace = "com.jiyidays"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,8 +61,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "cn.jiyidashi.jiyidashi"
+        applicationId = "com.jiyidays"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
@@ -29,12 +74,47 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(requireNotNull(releaseStoreFile))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Production signing is attached only when all four secret inputs are supplied.
+            // Without them this remains an intentionally unsigned release artifact; it never
+            // falls back to the debug key.
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
+    }
+}
+
+tasks.register("verifyReleaseSigningConfiguration") {
+    doLast {
+        val releaseSigningName = android.buildTypes.getByName("release").signingConfig?.name
+        check(releaseSigningName != "debug") {
+            "Release signing must never use the debug signing key."
+        }
+        if (releaseSigningConfigured) {
+            println("ANDROID_RELEASE_SIGNING=CONFIGURED")
+        } else {
+            println("ANDROID_RELEASE_SIGNING=INFRA READY / KEY MATERIAL PENDING")
+            println("Release verification artifact is intentionally unsigned; production signing is gated.")
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "assembleRelease") {
+        dependsOn("verifyReleaseSigningConfiguration")
     }
 }
 

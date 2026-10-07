@@ -1,4 +1,4 @@
-package cn.jiyidashi.jiyidashi
+package com.jiyidays
 
 enum class NativeMotionState(val wireValue: String) {
     UNKNOWN("unknown"),
