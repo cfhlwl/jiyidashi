@@ -155,6 +155,17 @@ jobs:
           set -euo pipefail
           ./android/gradlew -p android :app:verifyReleaseSigningConfiguration --stacktrace
 
+      - name: Verify production signing fails closed without secrets
+        shell: bash
+        run: |
+          set +e
+          output="$(./android/gradlew -p android :app:verifyReleaseSigningConfiguration --stacktrace -PrequireProductionSigning=true 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -ne 0
+          grep -Fq 'Production signing is required, but no complete Android release signing configuration was provided.' <<<"$output"
+
       - name: Build Android release APK
         # Release build 使用 main manifest，防止 INTERNET 等正式权限被 debug/profile manifest 掩盖。
         run: >-

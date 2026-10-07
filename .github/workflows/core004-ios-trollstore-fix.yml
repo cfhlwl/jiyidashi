@@ -5,6 +5,9 @@ on:
     paths:
       - "mobile/ios/Runner/DebugProfile.entitlements"
       - "mobile/ios/Runner/Release.entitlements"
+      - "mobile/ios/Runner.xcodeproj/project.pbxproj"
+      - "mobile/ios/Runner/Info.plist"
+      - "mobile/ios/Runner/AppDelegate.swift"
       - "mobile/lib/stage1_app.dart"
       - "mobile/test/ios_keychain_entitlements_test.dart"
       - ".github/workflows/core004-ios-trollstore-fix.yml"
