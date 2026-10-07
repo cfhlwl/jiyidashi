@@ -99,6 +99,60 @@ jobs:
           git commit -m "UIUX-P0-002: refresh deterministic CJK golden font"
           git push origin "HEAD:${{ github.head_ref }}"
 
+      # UIUX-V3-03 narrow gates must run before the repository's known analyzer
+      # baseline (Radio deprecation infos) can stop later steps.
+      - name: Test Memory V3 targeted
+        timeout-minutes: 5
+        run: flutter test test/memory_v3_visual_test.dart --reporter expanded
+
+      - name: Test Today V3 targeted
+        timeout-minutes: 5
+        run: >-
+          flutter test
+          test/today_b2_visual_fixture_test.dart
+          test/today_footprint_page_test.dart
+          --reporter expanded
+
+      - name: Test Auth V3 targeted
+        timeout-minutes: 5
+        run: flutter test test/auth_v3_visual_fixture_test.dart --reporter expanded
+
+      - name: Generate Memory V3 review candidates
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/memory-v3-candidates
+          mkdir -p /tmp/memory-v3-candidates
+
+          flutter test test/memory_v3_visual_test.dart \
+            --plain-name "Memory V3 default shell and query surface are truthful" \
+            --update-goldens \
+            --dart-define=MEMORY_V3_GOLDEN_PREVIEW=true \
+            --reporter expanded
+          flutter test test/memory_v3_visual_test.dart \
+            --plain-name "Memory V3 answer and evidence remain server-backed" \
+            --update-goldens \
+            --dart-define=MEMORY_V3_GOLDEN_PREVIEW=true \
+            --reporter expanded
+
+          cp test/goldens/memory_v3_default.png /tmp/memory-v3-candidates/
+          cp test/goldens/memory_v3_answer.png /tmp/memory-v3-candidates/
+
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/memory-v3-candidates/memory_v3_default.png
+          test -s /tmp/memory-v3-candidates/memory_v3_answer.png
+
+      - name: Upload Memory V3 candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-v3-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/memory-v3-candidates/*.png
+
       - name: Analyze
         run: flutter analyze
 
@@ -143,20 +197,6 @@ jobs:
           # silently accepting unrelated baselines.
           flutter test test/visual_golden_test.dart \
             --update-goldens --reporter expanded
-
-          # Memory V3 review evidence: candidate-only default and answer states.
-          # The test gate is opt-in so ordinary regression runs never accept or
-          # mutate a Memory V3 baseline implicitly.
-          flutter test test/memory_v3_visual_test.dart \
-            --plain-name "Memory V3 default shell and query surface are truthful" \
-            --update-goldens \
-            --dart-define=MEMORY_V3_GOLDEN_PREVIEW=true \
-            --reporter expanded
-          flutter test test/memory_v3_visual_test.dart \
-            --plain-name "Memory V3 answer and evidence remain server-backed" \
-            --update-goldens \
-            --dart-define=MEMORY_V3_GOLDEN_PREVIEW=true \
-            --reporter expanded
 
           cp test/goldens/*.png /tmp/product-v2-goldens/candidate/
 
