@@ -18,10 +18,10 @@ Production startup calls `JiYiAmapConfig.assertProductionConfiguration()` before
 
 Current identifiers:
 
-- Android applicationId: `cn.jiyidashi.jiyidashi`
-- iOS Bundle ID: `cn.jiyidashi.jiyidashi`
+- Android applicationId: `com.jiyidays`
+- iOS Bundle ID: `com.jiyidays`
 
-Android release signing is not yet final. A production AMap Android key must be issued against the final release signing certificate before store release; do not bind production authority to the current debug signing configuration.
+Android release signing is infrastructure-ready but key material is pending. A production AMap Android key must be issued against the final release signing certificate before store release; do not bind production authority to an unsigned verification artifact or the debug signing key.
 
 ## Privacy boundary
 

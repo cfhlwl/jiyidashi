@@ -521,10 +521,7 @@ class JiYiHeroHeader extends StatelessWidget {
                   const SizedBox(width: JiYiSpacing.md),
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      color: (theme.brightness == Brightness.dark
-                              ? theme.colorScheme.surface
-                              : Colors.white)
-                          .withValues(alpha: 0.68),
+                      color: theme.colorScheme.surface.withValues(alpha: 0.68),
                       shape: BoxShape.circle,
                     ),
                     child: Padding(

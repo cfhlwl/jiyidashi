@@ -317,9 +317,7 @@ class _TodayExperienceBody extends StatelessWidget {
         JiYiSectionCard(
           leading: Icon(
             Icons.family_restroom_outlined,
-            color: theme.brightness == Brightness.dark
-                ? theme.colorScheme.primary
-                : JiYiProductColors.family,
+            color: theme.colorScheme.primary,
           ),
           title: '家庭内容按授权显示',
           subtitle: '进入家庭后，只读取家人明确授权给你的内容。',

@@ -1,4 +1,4 @@
-package cn.jiyidashi.jiyidashi
+package com.jiyidays
 
 internal object NotificationProviderSelector {
     fun select(

@@ -1,4 +1,4 @@
-package cn.jiyidashi.jiyidashi
+package com.jiyidays
 
 import android.content.Intent
 import android.os.Bundle

@@ -1,4 +1,4 @@
-package cn.jiyidashi.jiyidashi
+package com.jiyidays
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

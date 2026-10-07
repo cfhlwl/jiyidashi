@@ -5,7 +5,7 @@ import UIKit
 import UserNotifications
 
 enum PassiveMemoryBackgroundRecovery {
-  static let identifier = "cn.jiyidashi.jiyidashi.passive-recovery"
+  static let identifier = "com.jiyidays.passive-recovery"
 
   @available(iOS 13.0, *)
   static func schedule(

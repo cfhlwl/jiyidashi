@@ -1,4 +1,4 @@
-package cn.jiyidashi.jiyidashi
+package com.jiyidays
 
 enum class NativeLocationPermissionLevel {
     NOT_DETERMINED,

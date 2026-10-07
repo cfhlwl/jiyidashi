@@ -52,6 +52,9 @@ jobs:
       - name: Verify AMap bridge provenance pin
         run: python3 tool/check_amap_bridge_pin.py
 
+      - name: Verify APP-ID-001 identity gate
+        run: python3 tool/verify_app_identity.py
+
 
       - name: Verify dependency lock
         id: android-lock
@@ -65,6 +68,72 @@ jobs:
           name: auth001-pubspec-lock-${{ github.event.pull_request.head.sha || github.sha }}
           path: mobile/pubspec.lock
           retention-days: 3
+
+      - name: Build Android debug APK
+        # Debug 继续覆盖开发安装包；production dart-define 禁止静默回退 localhost。
+        run: >-
+          flutter build apk --debug
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_ANDROID_SDK_KEY=ci-amap-android-not-a-real-key
+
+      # Flutter's Android migration creates the Gradle wrapper during the first Android
+      # build; the repository intentionally does not commit gradlew. Run JVM policy tests
+      # after debug build so this gate uses the exact Gradle toolchain Flutter selected.
+      - name: Test Android native location policy
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x android/gradlew
+          ./android/gradlew -p android app:testDebugUnitTest --stacktrace
+
+      - name: Verify Android release signing gate without secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./android/gradlew -p android :app:verifyReleaseSigningConfiguration --stacktrace
+
+      - name: Verify production signing fails closed without secrets
+        shell: bash
+        run: |
+          set +e
+          output="$(./android/gradlew -p android :app:verifyReleaseSigningConfiguration --stacktrace -PrequireProductionSigning=true 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -ne 0
+          grep -Fq 'Production signing is required, but no complete Android release signing configuration was provided.' <<<"$output"
+
+      - name: Build Android release APK
+        # Release build 使用 main manifest，防止 INTERNET 等正式权限被 debug/profile manifest 掩盖。
+        run: >-
+          flutter build apk --release
+          --dart-define=APP_ENV=production
+          --dart-define=API_BASE_URL=https://api.example.invalid/v1
+          --dart-define=AMAP_ANDROID_SDK_KEY=ci-amap-android-not-a-real-key
+
+      - name: Verify Android release permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
+          grep -q 'JiYiFirebaseMessagingService' android/app/src/main/AndroidManifest.xml
+          grep -q 'JiYiHmsMessageService' android/app/src/main/AndroidManifest.xml
+          grep -q 'firebase-messaging' android/app/build.gradle.kts
+          grep -q 'com.huawei.hms:push' android/app/build.gradle.kts
+          grep -q 'PassiveMemoryRecoveryReceiver' android/app/src/main/AndroidManifest.xml
+          ! grep -Eq '\.startForegroundService[[:space:]]*\(' android/app/src/main/kotlin/com/jiyidays/PassiveMemoryRecovery.kt
+          grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_COARSE_LOCATION' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_FINE_LOCATION' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_BACKGROUND_LOCATION' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:foregroundServiceType="location"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:allowBackup="false"' android/app/src/main/AndroidManifest.xml
+          grep -q 'minSdk = 24' android/app/build.gradle.kts
 
       - name: Analyze
         run: flutter analyze
@@ -113,55 +182,6 @@ jobs:
       - name: Test
         timeout-minutes: 10
         run: flutter test --reporter expanded
-
-      - name: Verify Android release permissions
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
-          grep -q 'JiYiFirebaseMessagingService' android/app/src/main/AndroidManifest.xml
-          grep -q 'JiYiHmsMessageService' android/app/src/main/AndroidManifest.xml
-          grep -q 'firebase-messaging' android/app/build.gradle.kts
-          grep -q 'com.huawei.hms:push' android/app/build.gradle.kts
-          grep -q 'PassiveMemoryRecoveryReceiver' android/app/src/main/AndroidManifest.xml
-          ! grep -Eq '\.startForegroundService[[:space:]]*\(' android/app/src/main/kotlin/cn/jiyidashi/jiyidashi/PassiveMemoryRecovery.kt
-          grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.ACCESS_COARSE_LOCATION' android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.ACCESS_FINE_LOCATION' android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.ACCESS_BACKGROUND_LOCATION' android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' android/app/src/main/AndroidManifest.xml
-          grep -q 'android:foregroundServiceType="location"' android/app/src/main/AndroidManifest.xml
-          grep -q 'android:allowBackup="false"' android/app/src/main/AndroidManifest.xml
-          grep -q 'minSdk = 24' android/app/build.gradle.kts
-
-      - name: Build Android debug APK
-        # Debug 继续覆盖开发安装包；production dart-define 禁止静默回退 localhost。
-        run: >-
-          flutter build apk --debug
-          --dart-define=APP_ENV=production
-          --dart-define=API_BASE_URL=https://api.example.invalid/v1
-          --dart-define=AMAP_ANDROID_SDK_KEY=ci-amap-android-not-a-real-key
-
-      # Flutter's Android migration creates the Gradle wrapper during the first Android
-      # build; the repository intentionally does not commit gradlew. Run JVM policy tests
-      # after debug build so this gate uses the exact Gradle toolchain Flutter selected.
-      - name: Test Android native location policy
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -x android/gradlew
-          ./android/gradlew -p android app:testDebugUnitTest --stacktrace
-
-      - name: Build Android release APK
-        # Release build 使用 main manifest，防止 INTERNET 等正式权限被 debug/profile manifest 掩盖。
-        run: >-
-          flutter build apk --release
-          --dart-define=APP_ENV=production
-          --dart-define=API_BASE_URL=https://api.example.invalid/v1
-          --dart-define=AMAP_ANDROID_SDK_KEY=ci-amap-android-not-a-real-key
 
   ios:
     runs-on: macos-latest
@@ -236,7 +256,7 @@ jobs:
           grep -q 'NSLocationWhenInUseUsageDescription' ios/Runner/Info.plist
           grep -q 'NSLocationAlwaysAndWhenInUseUsageDescription' ios/Runner/Info.plist
           grep -q 'BGTaskSchedulerPermittedIdentifiers' ios/Runner/Info.plist
-          grep -q 'cn.jiyidashi.jiyidashi.passive-recovery' ios/Runner/Info.plist
+          grep -q 'com.jiyidays.passive-recovery' ios/Runner/Info.plist
           grep -q '<string>fetch</string>' ios/Runner/Info.plist
           grep -q '<string>location</string>' ios/Runner/Info.plist
           grep -q '<key>keychain-access-groups</key>' ios/Runner/DebugProfile.entitlements

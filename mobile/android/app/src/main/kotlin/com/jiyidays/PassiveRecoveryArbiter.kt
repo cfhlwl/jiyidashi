@@ -1,4 +1,4 @@
-package cn.jiyidashi.jiyidashi
+package com.jiyidays
 
 /**
  * One process-wide authority arbiter shared by every Flutter engine in the Android app.
