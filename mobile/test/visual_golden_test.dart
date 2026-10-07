@@ -1461,9 +1461,7 @@ void main() {
         find.byKey(const ValueKey('memory-query-input')),
         '护照在哪里？',
       );
-      final submit = find.byKey(const ValueKey('memory-query-submit'));
-      await tester.ensureVisible(submit);
-      await tester.tap(submit);
+      await tester.testTextInput.receiveAction(TextInputAction.search);
       final disclosure = find.byKey(
         const ValueKey('memory-query-evidence-disclosure'),
         skipOffstage: false,
