@@ -111,7 +111,16 @@ jobs:
 
       - name: Test Auth V3 targeted
         timeout-minutes: 5
-        run: flutter test test/auth_v3_visual_fixture_test.dart --reporter expanded
+        run: >-
+          flutter test test/auth_v3_visual_fixture_test.dart
+          --plain-name "Auth V3 fixture 02 one tap confirmation"
+          --reporter expanded
+          && flutter test test/auth_v3_visual_fixture_test.dart
+          --plain-name "Auth V3 fixture 03 sms otp"
+          --reporter expanded
+          && flutter test test/auth_v3_visual_fixture_test.dart
+          --plain-name "Auth V3 fixture 05 one tap unavailable"
+          --reporter expanded
 
       - name: Generate Memory V3 review candidates
         timeout-minutes: 5
