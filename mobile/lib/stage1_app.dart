@@ -8,6 +8,7 @@ import 'account_delete_section.dart';
 import 'amap_footprint_map.dart';
 import 'amap_privacy_consent.dart';
 import 'api_client.dart';
+import 'auth_v3.dart';
 import 'footprint_models.dart';
 import 'location_sampling_coordinator.dart';
 import 'media_presentation_cache.dart';
@@ -83,7 +84,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       );
 
   bool authenticated = false;
-  bool restoringSession = true;
+  AuthSessionVisualState _sessionState = AuthSessionVisualState.unknown;
   bool startOnboardingAfterAuth = false;
   bool resumeAccountDeletionAfterAuth = false;
   bool elderModeEnabled = false;
@@ -91,6 +92,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   bool _themeModeChangedLocally = false;
   String? restoreMessage;
   Timer? _authorityRefreshTimer;
+  Timer? _sessionRetryTimer;
+  bool _coldRecoveryRetryUsed = false;
   StreamSubscription<void>? _passiveRecoveryRequests;
   final Completer<void> _initialRestoreFinished = Completer<void>();
 
@@ -184,12 +187,15 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   }
 
   Future<void> _restoreServerSession() async {
+    if (mounted) {
+      setState(() => _sessionState = AuthSessionVisualState.refreshing);
+    }
     if (!await _awaitPassiveRecoveryIdle()) {
       if (!mounted) return;
       setState(() {
         authenticated = false;
-        restoringSession = false;
-        restoreMessage = '后台恢复尚未安全结束，请稍后重新打开应用。';
+        _sessionState = AuthSessionVisualState.unknown;
+        restoreMessage = null;
       });
       return;
     }
@@ -201,16 +207,16 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         authenticated = false;
-        restoringSession = false;
-        restoreMessage = '暂时无法读取安全登录状态，请稍后重新打开应用。';
+        _sessionState = AuthSessionVisualState.unknown;
+        restoreMessage = null;
       });
       return;
     } catch (_) {
       if (!mounted) return;
       setState(() {
         authenticated = false;
-        restoringSession = false;
-        restoreMessage = '暂时无法恢复登录状态，请稍后重试。';
+        _sessionState = AuthSessionVisualState.unknown;
+        restoreMessage = null;
       });
       return;
     }
@@ -221,7 +227,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         if (!mounted) return;
         setState(() {
           authenticated = true;
-          restoringSession = false;
+          _sessionState = AuthSessionVisualState.valid;
           restoreMessage = null;
           elderModeEnabled = profile['elder_mode_enabled'] == true;
         });
@@ -232,7 +238,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
             exc.message == 'ACCOUNT_DELETION_IN_PROGRESS') {
           setState(() {
             authenticated = true;
-            restoringSession = false;
+            _sessionState = AuthSessionVisualState.valid;
             startOnboardingAfterAuth = false;
             resumeAccountDeletionAfterAuth = true;
             elderModeEnabled = false;
@@ -248,7 +254,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           if (!mounted) return;
           setState(() {
             authenticated = false;
-            restoringSession = false;
+            _sessionState = AuthSessionVisualState.signedOut;
             restoreMessage = '之前的登录状态已经失效，请重新登录。';
           });
           return;
@@ -260,11 +266,19 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
 
     setState(() {
       authenticated = false;
-      restoringSession = false;
-      restoreMessage = result == AuthRestoreStatus.serverUnavailable
-          ? '暂时无法向服务器确认登录状态，请联网后重新尝试。'
-          : null;
+      _sessionState = result == AuthRestoreStatus.serverUnavailable
+          ? AuthSessionVisualState.unknown
+          : AuthSessionVisualState.signedOut;
+      restoreMessage = null;
     });
+    if (result == AuthRestoreStatus.serverUnavailable &&
+        !_coldRecoveryRetryUsed) {
+      _coldRecoveryRetryUsed = true;
+      _sessionRetryTimer = Timer(const Duration(seconds: 3), () {
+        _sessionRetryTimer = null;
+        unawaited(_restoreServerSession());
+      });
+    }
   }
 
   Future<void> _handleNativePassiveRecoveryRequest() async {
@@ -292,7 +306,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             authenticated = true;
-            restoringSession = false;
+            _sessionState = AuthSessionVisualState.valid;
             startOnboardingAfterAuth = false;
             resumeAccountDeletionAfterAuth = true;
             elderModeEnabled = false;
@@ -308,7 +322,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             authenticated = true;
-            restoringSession = false;
+            _sessionState = AuthSessionVisualState.valid;
             resumeAccountDeletionAfterAuth = false;
             restoreMessage = null;
           });
@@ -347,6 +361,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         if (!mounted) return;
         setState(() {
           authenticated = false;
+          _sessionState = AuthSessionVisualState.signedOut;
           startOnboardingAfterAuth = false;
           resumeAccountDeletionAfterAuth = false;
           elderModeEnabled = false;
@@ -409,6 +424,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           authenticated = false;
+          _sessionState = AuthSessionVisualState.signedOut;
           startOnboardingAfterAuth = false;
           resumeAccountDeletionAfterAuth = false;
           elderModeEnabled = false;
@@ -421,7 +437,11 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_resumeAuthorityAndPassiveMemory());
+      if (_sessionState == AuthSessionVisualState.unknown && !authenticated) {
+        unawaited(_restoreServerSession());
+      } else {
+        unawaited(_resumeAuthorityAndPassiveMemory());
+      }
     }
   }
 
@@ -429,6 +449,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _authorityRefreshTimer?.cancel();
+    _sessionRetryTimer?.cancel();
     unawaited(_passiveRecoveryRequests?.cancel());
     if (widget.offlineQueue == null) {
       unawaited(offlineQueue.close());
@@ -450,16 +471,10 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       theme: JiYiTheme.light(elderMode: elderModeEnabled),
       darkTheme: JiYiTheme.dark(elderMode: elderModeEnabled),
       themeMode: _themeMode,
-      home: restoringSession
-          ? const Scaffold(
-              body: SafeArea(
-                child: Center(
-                  child: CircularProgressIndicator(),
-                ),
-              ),
-            )
-          : authenticated
-              ? AppShell(
+      home: switch (_sessionState) {
+        AuthSessionVisualState.unknown || AuthSessionVisualState.refreshing =>
+          const AuthV3NeutralBootstrap(),
+        AuthSessionVisualState.valid => AppShell(
                   api: api,
                   offlineQueue: offlineQueue,
                   onboardingStore: onboardingStore,
@@ -475,9 +490,10 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                     if (mounted) setState(() => elderModeEnabled = enabled);
                   },
                   onLogout: () => unawaited(_logout()),
-                )
-              : AuthPage(
+                ),
+        AuthSessionVisualState.signedOut => AuthPage(
                   api: api,
+                  capabilities: const AuthCapabilities.emailOnly(),
                   initialMessage: restoreMessage,
                   onRegistrationCompleted: () {
                     startOnboardingAfterAuth = true;
@@ -491,6 +507,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                     if (mounted) {
                       setState(() {
                         authenticated = true;
+                        _sessionState = AuthSessionVisualState.valid;
                         restoreMessage = null;
                       });
                       if (!resumeAccountDeletionAfterAuth) {
@@ -499,6 +516,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                     }
                   },
                 ),
+      },
     );
   }
 }
@@ -508,6 +526,7 @@ class AuthPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.onAuthenticated,
+    this.capabilities = const AuthCapabilities.emailOnly(),
     this.initialMessage,
     this.onRegistrationCompleted,
     this.onAccountDeletionRecovery,
@@ -515,6 +534,7 @@ class AuthPage extends StatefulWidget {
 
   final JiYiApiClient api;
   final VoidCallback onAuthenticated;
+  final AuthCapabilities capabilities;
   final String? initialMessage;
   final VoidCallback? onRegistrationCompleted;
   final VoidCallback? onAccountDeletionRecovery;
@@ -547,6 +567,7 @@ class _AuthPageState extends State<AuthPage> {
   final tokenController = TextEditingController();
   _AuthMode mode = _AuthMode.login;
   bool loading = false;
+  bool obscurePassword = true;
   String? error;
   String? message;
 
@@ -759,8 +780,429 @@ class _AuthPageState extends State<AuthPage> {
         _AuthMode.resetPassword => '重置成功会撤销这个账号现有的全部登录会话。',
       };
 
+  bool get _useAuthV3Shell => widget.capabilities.email;
+
+  Widget _buildEmailLoginV3Surface(BuildContext context) {
+    final compactViewport = MediaQuery.sizeOf(context).height < 700;
+    final fieldBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: const BorderSide(color: Color(0xFFE0E7EF)),
+    );
+    return Scaffold(
+      backgroundColor: JiYiTodayVisuals.background,
+      body: Stack(
+        children: [
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AuthV3Hero(height: 300),
+          ),
+          SafeArea(
+            bottom: false,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                28,
+                compactViewport ? 150 : 218,
+                28,
+                20,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    '邮箱登录',
+                    style: TextStyle(
+                      color: JiYiTodayVisuals.navy,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '请输入邮箱和密码',
+                    style: TextStyle(
+                      color: JiYiTodayVisuals.secondaryText,
+                      fontSize: 16,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      hintText: '请输入邮箱地址',
+                      prefixIcon: const Icon(Icons.mail_outline),
+                      filled: true,
+                      fillColor: JiYiTodayVisuals.card,
+                      enabledBorder: fieldBorder,
+                      focusedBorder: fieldBorder.copyWith(
+                        borderSide: const BorderSide(
+                          color: JiYiTodayVisuals.primaryBlue,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: obscurePassword,
+                    decoration: InputDecoration(
+                      hintText: '请输入密码',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(
+                          () => obscurePassword = !obscurePassword,
+                        ),
+                        icon: Icon(
+                          obscurePassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                      ),
+                      filled: true,
+                      fillColor: JiYiTodayVisuals.card,
+                      enabledBorder: fieldBorder,
+                      focusedBorder: fieldBorder.copyWith(
+                        borderSide: const BorderSide(
+                          color: JiYiTodayVisuals.primaryBlue,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (message != null) ...[
+                    const SizedBox(height: 12),
+                    JiYiStatusBanner(
+                      kind: JiYiStatusKind.info,
+                      title: '提示',
+                      message: message!,
+                    ),
+                  ],
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    JiYiStatusBanner(
+                      kind: JiYiStatusKind.error,
+                      title: '未能继续',
+                      message: error!,
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    height: 56,
+                    child: FilledButton(
+                      onPressed: loading ? null : _submitCredentials,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: JiYiTodayVisuals.primaryBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(loading ? '请稍候…' : '登录'),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: loading
+                        ? null
+                        : () => setState(() {
+                            mode = _AuthMode.forgotPassword;
+                            error = null;
+                            message = null;
+                          }),
+                    child: const Text('忘记密码？'),
+                  ),
+                  SizedBox(height: compactViewport ? 32 : 150),
+                  Container(
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF4F7FB),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: TextButton(
+                      onPressed: loading
+                          ? null
+                          : () => setState(() {
+                              mode = _AuthMode.register;
+                              error = null;
+                              message = null;
+                            }),
+                      child: const Text('没有账号？ 去注册'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            left: 10,
+            child: SafeArea(
+              bottom: false,
+              child: IconButton(
+                onPressed: () {},
+                icon: const Icon(Icons.chevron_left),
+                color: JiYiTodayVisuals.navy,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuthV3Surface(BuildContext context) {
+    if (mode == _AuthMode.login) {
+      return _buildEmailLoginV3Surface(context);
+    }
+    final theme = Theme.of(context);
+    final compactViewport = MediaQuery.sizeOf(context).height < 700;
+    final showPassword = mode == _AuthMode.login ||
+        mode == _AuthMode.register ||
+        mode == _AuthMode.resetPassword;
+    if (!widget.capabilities.email) {
+      return const Scaffold(
+        backgroundColor: JiYiTodayVisuals.background,
+        body: SafeArea(
+          child: Center(
+            child: Text(
+              '当前暂时没有可用的登录方式',
+              style: TextStyle(color: JiYiTodayVisuals.navy, fontSize: 16),
+            ),
+          ),
+        ),
+      );
+    }
+    return Scaffold(
+      backgroundColor: JiYiTodayVisuals.background,
+      body: Stack(
+        children: [
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AuthV3Hero(height: 322),
+          ),
+          SafeArea(
+            bottom: false,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                compactViewport ? 16 : 42,
+                20,
+                22,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(height: compactViewport ? 72 : 118),
+                    AuthV3BrandLockup(compact: compactViewport),
+                    SizedBox(height: compactViewport ? 36 : 92),
+                    AuthV3Card(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            mode == _AuthMode.login ? '邮箱登录' : _title,
+                            style: const TextStyle(
+                              color: JiYiTodayVisuals.navy,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _subtitle,
+                            style: const TextStyle(
+                              color: JiYiTodayVisuals.secondaryText,
+                              fontSize: 15,
+                              height: 1.45,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          if (mode != _AuthMode.resetPassword) ...[
+                            TextField(
+                              controller: emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              decoration: const InputDecoration(
+                                labelText: '邮箱地址',
+                                hintText: 'name@example.com',
+                                prefixIcon: Icon(Icons.mail_outline),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (showPassword)
+                            TextField(
+                              controller: passwordController,
+                              obscureText: true,
+                              decoration: InputDecoration(
+                                labelText: mode == _AuthMode.resetPassword
+                                    ? '新密码'
+                                    : '密码',
+                                prefixIcon: const Icon(Icons.lock_outline),
+                              ),
+                            ),
+                          if (mode == _AuthMode.register) ...[
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: nicknameController,
+                              decoration: const InputDecoration(
+                                labelText: '昵称',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                            ),
+                          ],
+                          if (mode == _AuthMode.verifyEmail ||
+                              mode == _AuthMode.resetPassword) ...[
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: tokenController,
+                              autocorrect: false,
+                              enableSuggestions: false,
+                              decoration: InputDecoration(
+                                labelText: mode == _AuthMode.verifyEmail
+                                    ? '验证凭证'
+                                    : '重置凭证',
+                                prefixIcon: const Icon(Icons.key_outlined),
+                              ),
+                            ),
+                          ],
+                          if (message != null) ...[
+                            const SizedBox(height: 12),
+                            JiYiStatusBanner(
+                              kind: JiYiStatusKind.info,
+                              title: '提示',
+                              message: message!,
+                            ),
+                          ],
+                          if (error != null) ...[
+                            const SizedBox(height: 12),
+                            JiYiStatusBanner(
+                              kind: JiYiStatusKind.error,
+                              title: '未能继续',
+                              message: error!,
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          FilledButton(
+                            onPressed: loading
+                                ? null
+                                : switch (mode) {
+                                    _AuthMode.login ||
+                                    _AuthMode.register =>
+                                      _submitCredentials,
+                                    _AuthMode.verifyEmail => _verifyEmail,
+                                    _AuthMode.forgotPassword => _requestReset,
+                                    _AuthMode.resetPassword => _resetPassword,
+                                  },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: JiYiTodayVisuals.primaryBlue,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size.fromHeight(56),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              loading
+                                  ? '请稍候…'
+                                  : switch (mode) {
+                                      _AuthMode.login => '登录',
+                                      _AuthMode.register => '创建账号',
+                                      _AuthMode.verifyEmail => '完成验证',
+                                      _AuthMode.forgotPassword => '发送重置邮件',
+                                      _AuthMode.resetPassword => '更新密码',
+                                    },
+                            ),
+                          ),
+                          if (mode == _AuthMode.verifyEmail) ...[
+                            const SizedBox(height: 4),
+                            TextButton(
+                              onPressed: loading ? null : _resendVerification,
+                              child: const Text('重新发送验证邮件'),
+                            ),
+                          ],
+                          if (mode == _AuthMode.login) ...[
+                            const SizedBox(height: 4),
+                            TextButton(
+                              onPressed: loading
+                                  ? null
+                                  : () => setState(() {
+                                      mode = _AuthMode.forgotPassword;
+                                      error = null;
+                                      message = null;
+                                    }),
+                              child: const Text('忘记密码？'),
+                            ),
+                          ],
+                          const SizedBox(height: 2),
+                          TextButton(
+                            onPressed: loading
+                                ? null
+                                : () => setState(() {
+                                    mode = mode == _AuthMode.register
+                                        ? _AuthMode.login
+                                        : _AuthMode.register;
+                                    error = null;
+                                    message = null;
+                                    tokenController.clear();
+                                  }),
+                            child: Text(
+                              switch (mode) {
+                                _AuthMode.login => '第一次使用？创建账号',
+                                _AuthMode.register => '已有账号？返回登录',
+                                _ => '返回登录 / 创建账号',
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const AuthV3Agreement(),
+                    if (widget.api.showDevelopmentEndpoint)
+                      Text(
+                        '当前开发环境服务地址：${widget.api.baseUrl}',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: JiYiTodayVisuals.secondaryText,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_useAuthV3Shell) return _buildAuthV3Surface(context);
+    if (!widget.capabilities.email) {
+      return const Scaffold(
+        backgroundColor: JiYiTodayVisuals.background,
+        body: SafeArea(
+          child: Center(
+            child: Text(
+              '当前暂时没有可用的登录方式',
+              style: TextStyle(color: JiYiTodayVisuals.navy, fontSize: 16),
+            ),
+          ),
+        ),
+      );
+    }
     final theme = Theme.of(context);
     final showPassword = mode == _AuthMode.login ||
         mode == _AuthMode.register ||
