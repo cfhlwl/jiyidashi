@@ -1736,13 +1736,13 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
   static let shared = NativeNotificationBridge()
 
   private let channelName = "cn.jiyidashi/notifications"
-  private let tokenKey = "jiyi.push.apns.token.v1"
   private let pendingTapKey = "jiyi.push.pending_tap.v1"
   private let allowedDestinations: Set<String> = [
     "HOME", "REMINDER", "MEMORY", "APP_UPDATE", "FAMILY", "EXPORT",
   ]
   private var channel: FlutterMethodChannel?
   private var dartReady = false
+  private var currentToken: String?
 
   private override init() {
     super.init()
@@ -1790,12 +1790,12 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
 
   func didRegister(deviceToken: Data) {
     let token = deviceToken.map { String(format: "%02x", $0) }.joined()
-    UserDefaults.standard.set(token, forKey: tokenKey)
+    currentToken = token
     emitStatus(method: "token")
   }
 
   func didFailToRegister() {
-    UserDefaults.standard.removeObject(forKey: tokenKey)
+    currentToken = nil
     emitStatus(method: "token")
   }
 
@@ -1842,7 +1842,7 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
       "platform": "IOS",
       "permission": permissionWire(authorization),
       "provider": "APNS",
-      "token": UserDefaults.standard.string(forKey: tokenKey),
+      "token": currentToken,
       "app_version":
         bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
       "os_version": UIDevice.current.systemVersion,
@@ -1901,7 +1901,7 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
   private func unregisterFromPush(result: @escaping FlutterResult) {
     DispatchQueue.main.async {
       UIApplication.shared.unregisterForRemoteNotifications()
-      UserDefaults.standard.removeObject(forKey: self.tokenKey)
+      self.currentToken = nil
       result(nil)
       self.emitStatus(method: "token")
     }
