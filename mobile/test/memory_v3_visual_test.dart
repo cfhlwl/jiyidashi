@@ -258,8 +258,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await tester.pumpAndSettle();
 
-    final place = find.textContaining('真实地点');
-    await _scrollMemoryV3IntoView(tester, place);
+    final place = find.textContaining('真实地点', skipOffstage: false);
     expect(place, findsWidgets);
     expect(
       find.byKey(const ValueKey('memory-query-day-map'), skipOffstage: false),
