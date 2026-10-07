@@ -51,6 +51,7 @@ from app.services.maintenance_jobs import (
 from app.services.notification_provider import (
     NotificationProviderRequest,
     NotificationProviderResult,
+    provider_registration_allowed,
     resolve_notification_provider,
 )
 
@@ -215,6 +216,11 @@ def register_device_push(
     payload: DevicePushRegistrationRequest,
 ) -> DevicePushStateRead:
     now = datetime.now(UTC)
+    if not provider_registration_allowed(
+        platform=payload.platform.value,
+        provider=payload.provider.value,
+    ):
+        raise NotificationDeviceError("PUSH_PROVIDER_UNAVAILABLE", 503)
     digest = push_token_digest(payload.push_token)
 
     with hold_push_disclosure_handoff(
