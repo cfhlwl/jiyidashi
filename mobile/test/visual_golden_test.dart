@@ -1469,6 +1469,11 @@ void main() {
         const ValueKey('memory-query-evidence-disclosure'),
         skipOffstage: false,
       );
+      final scrollable = find.byType(Scrollable).first;
+      for (var attempt = 0; attempt < 6 && disclosure.evaluate().isEmpty; attempt++) {
+        await tester.drag(scrollable, const Offset(0, -500));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
       await _pumpUntilFinder(tester, disclosure);
       await tester.ensureVisible(disclosure);
       await tester.tap(disclosure);
