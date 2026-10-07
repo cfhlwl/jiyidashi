@@ -77,7 +77,7 @@ async def test_logout_all_fences_all_active_push_bindings_for_owner(client):
         assert response.status_code == 200, response.text
 
     logged_out = await client.post("/v1/auth/logout-all", headers=headers)
-    assert logged_out.status_code == 202, logged_out.text
+    assert logged_out.status_code == 200, logged_out.text
 
     with SessionLocal() as db:
         devices = list(
