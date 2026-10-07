@@ -35,12 +35,18 @@ from app.services.maintenance_jobs import (
     complete_maintenance_job,
     enqueue_maintenance_job,
 )
-from app.services.notification_provider import NotificationProviderResult
+from app.services.notification_provider import (
+    NotificationProviderRequest,
+    NotificationProviderResult,
+    set_notification_provider_for_testing,
+)
 from app.services.notification_service import (
+    _deliver_notification_attempt_under_handoff,
     begin_notification_delivery_attempt,
     campaign_confirmation_token,
     create_notification_campaign,
     finalize_notification_delivery_attempt,
+    process_notification_delivery_claim,
     process_notification_fanout_claim,
     push_token_digest,
     register_device_push,
@@ -309,6 +315,254 @@ def _prove_concurrent_token_rebind_has_one_authority() -> None:
             assert count == 1
     finally:
         _cleanup_users(first.id, second.id)
+
+
+class _BlockingDisclosureAdapter:
+    def __init__(
+        self,
+        *,
+        entered: threading.Event,
+        release: threading.Event,
+    ) -> None:
+        self.entered = entered
+        self.release = release
+        self.calls: list[UUID] = []
+
+    def deliver(
+        self,
+        request: NotificationProviderRequest,
+    ) -> NotificationProviderResult:
+        self.calls.append(request.delivery_id)
+        self.entered.set()
+        if not self.release.wait(timeout=15):
+            raise AssertionError("provider disclosure was not released")
+        return NotificationProviderResult.accepted_result()
+
+
+def _prove_token_rebind_waits_for_provider_disclosure_handoff() -> None:
+    actor = _admin()
+    owner_a = _user("handoff-a")
+    owner_b = _user("handoff-b")
+    token = f"notify-pg-handoff-{uuid4().hex}"
+    digest = push_token_digest(token)
+    device_a = _register(
+        owner_a.id,
+        client_uuid=f"handoff-a-{uuid4().hex}",
+        token=token,
+    )
+    campaigns = [
+        _submitted_campaign(actor.id),
+        _submitted_campaign(actor.id),
+    ]
+    provider_entered = threading.Event()
+    provider_release = threading.Event()
+    rebind_done = threading.Event()
+    errors: list[BaseException] = []
+    adapter = _BlockingDisclosureAdapter(
+        entered=provider_entered,
+        release=provider_release,
+    )
+
+    try:
+        with SessionLocal() as db:
+            db.execute(
+                delete(MaintenanceJob).where(
+                    MaintenanceJob.job_type.in_(
+                        (
+                            MaintenanceJobType.NOTIFICATION_FANOUT.value,
+                            MaintenanceJobType.NOTIFICATION_DELIVERY.value,
+                        )
+                    )
+                )
+            )
+            db.commit()
+
+        for index, campaign in enumerate(campaigns):
+            with SessionLocal() as db:
+                job, created = enqueue_maintenance_job(
+                    db,
+                    job_type=MaintenanceJobType.NOTIFICATION_FANOUT,
+                    dedupe_key=f"notify-pg-handoff-fanout:{campaign.id}:{index}",
+                    resource_key=f"notification-campaign:{campaign.id}",
+                    payload={
+                        "campaign_id": str(campaign.id),
+                        "campaign_revision": campaign.revision,
+                    },
+                    max_attempts=3,
+                    next_attempt_at=datetime.now(UTC) - timedelta(seconds=1),
+                )
+                assert created
+                fanout_job_id = job.id
+                db.commit()
+            fanout_claim = _claim_exact_job(
+                fanout_job_id,
+                f"notify-pg-handoff-fanout-{index}-{uuid4().hex}",
+            )
+            process_notification_fanout_claim(fanout_claim)
+            with SessionLocal() as db:
+                assert complete_maintenance_job(
+                    db,
+                    job_id=fanout_claim.id,
+                    claim_token=fanout_claim.claim_token,
+                )
+                db.commit()
+
+        with SessionLocal() as db:
+            delivery_jobs = list(
+                db.scalars(
+                    select(MaintenanceJob)
+                    .where(
+                        MaintenanceJob.job_type
+                        == MaintenanceJobType.NOTIFICATION_DELIVERY.value,
+                        MaintenanceJob.owner_user_id == owner_a.id,
+                    )
+                    .order_by(MaintenanceJob.created_at, MaintenanceJob.id)
+                )
+            )
+            assert len(delivery_jobs) == 2
+            first_job_id = delivery_jobs[0].id
+            second_job_id = delivery_jobs[1].id
+
+        first_claim = _claim_exact_job(
+            first_job_id,
+            f"notify-pg-handoff-first-{uuid4().hex}",
+        )
+        second_claim = _claim_exact_job(
+            second_job_id,
+            f"notify-pg-handoff-second-{uuid4().hex}",
+        )
+        second_attempt = begin_notification_delivery_attempt(second_claim)
+        assert second_attempt is not None
+        assert second_attempt.device_id == device_a.id
+        assert second_attempt.token_digest == digest
+
+        set_notification_provider_for_testing(
+            platform=PushPlatform.IOS,
+            provider=PushProvider.TEST,
+            adapter=adapter,
+        )
+
+        def deliver_first() -> None:
+            try:
+                process_notification_delivery_claim(first_claim)
+            except BaseException as exc:
+                errors.append(exc)
+
+        delivery_thread = threading.Thread(
+            target=deliver_first,
+            name="notify-disclosure-a",
+            daemon=True,
+        )
+        delivery_thread.start()
+        assert provider_entered.wait(timeout=10)
+
+        def rebind_to_b() -> None:
+            try:
+                _register(
+                    owner_b.id,
+                    client_uuid=f"handoff-b-{uuid4().hex}",
+                    token=token,
+                )
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                rebind_done.set()
+
+        rebind_thread = threading.Thread(
+            target=rebind_to_b,
+            name="notify-rebind-b",
+            daemon=True,
+        )
+        rebind_thread.start()
+
+        # Ownership transition must not commit while A is still allowed to disclose T.
+        assert not rebind_done.wait(timeout=0.25)
+
+        provider_release.set()
+        delivery_thread.join(timeout=15)
+        rebind_thread.join(timeout=15)
+        assert not delivery_thread.is_alive()
+        assert not rebind_thread.is_alive()
+        assert not errors, errors
+        assert rebind_done.is_set()
+        assert adapter.calls == [first_claim.payload["delivery_id"]] or len(adapter.calls) == 1
+
+        with SessionLocal() as db:
+            rows = list(
+                db.scalars(
+                    select(Device).where(
+                        Device.user_id.in_((owner_a.id, owner_b.id))
+                    )
+                )
+            )
+            active = [
+                row
+                for row in rows
+                if row.push_enabled
+                and row.push_provider == PushProvider.TEST.value
+                and row.push_token_digest == digest
+            ]
+            assert len(active) == 1
+            assert active[0].user_id == owner_b.id
+            old = db.get(Device, device_a.id)
+            assert old is not None
+            assert old.push_enabled is False
+            assert old.push_token is None
+            assert old.push_token_digest is None
+
+        # This attempt captured A's token before B completed the rebind. The
+        # disclosure handoff must re-check authority and cancel it before provider I/O.
+        result = _deliver_notification_attempt_under_handoff(second_attempt)
+        assert result is None
+        assert len(adapter.calls) == 1
+
+        with SessionLocal() as db:
+            second_delivery = db.get(
+                NotificationDelivery,
+                second_attempt.delivery_id,
+            )
+            assert second_delivery is not None
+            assert second_delivery.status == NotificationDeliveryStatus.CANCELLED.value
+            assert second_delivery.error_code == "DEVICE_PUSH_AUTHORITY_CHANGED"
+            assert second_delivery.attempt_token is None
+            assert second_delivery.revision == second_attempt.revision + 1
+
+        stale, _ = finalize_notification_delivery_attempt(
+            attempt=second_attempt,
+            result=NotificationProviderResult.accepted_result(),
+        )
+        assert stale is False
+    finally:
+        provider_release.set()
+        set_notification_provider_for_testing(
+            platform=PushPlatform.IOS,
+            provider=PushProvider.TEST,
+            adapter=None,
+        )
+        with SessionLocal() as db:
+            db.execute(
+                delete(MaintenanceJob).where(
+                    MaintenanceJob.job_type.in_(
+                        (
+                            MaintenanceJobType.NOTIFICATION_FANOUT.value,
+                            MaintenanceJobType.NOTIFICATION_DELIVERY.value,
+                        )
+                    )
+                )
+            )
+            for campaign in campaigns:
+                saved = db.get(NotificationCampaign, campaign.id)
+                if saved is not None:
+                    message_id = saved.message_id
+                    db.delete(saved)
+                    db.flush()
+                    from app.notification_models import NotificationMessage
+
+                    message = db.get(NotificationMessage, message_id)
+                    if message is not None:
+                        db.delete(message)
+            db.commit()
+        _cleanup_users(owner_a.id, owner_b.id)
 
 
 def _claim_exact_job(job_id: UUID, worker_id: str):
@@ -791,6 +1045,7 @@ def main() -> None:
     _alembic("upgrade", "head")
     _prove_legacy_token_migrates_inactive()
     _prove_concurrent_token_rebind_has_one_authority()
+    _prove_token_rebind_waits_for_provider_disclosure_handoff()
     _prove_fanout_crash_reclaim_resumes_from_cursor()
     _prove_two_worker_fanout_unique_and_stale_delivery_fenced()
     _prove_final_account_delete_cascade_cannot_leave_delivery()
