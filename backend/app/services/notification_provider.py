@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -291,6 +292,10 @@ class _OAuthTokenCache:
         self.expires_at = now + max(60, int(expires_in))
         return token
 
+    def clear(self) -> None:
+        self.token = None
+        self.expires_at = 0.0
+
 
 class FCMNotificationProvider:
     def __init__(
@@ -298,7 +303,7 @@ class FCMNotificationProvider:
         settings: Settings,
         *,
         client: httpx.Client | None = None,
-        clock: callable = time.time,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._settings = settings
         self._client = client or httpx.Client(http2=True, timeout=_http_timeout(settings))
@@ -369,8 +374,12 @@ class FCMNotificationProvider:
             )
         except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError):
             return NotificationProviderResult.retryable_failure("FCM_NETWORK_FAILURE")
-        except httpx.HTTPStatusError:
-            return NotificationProviderResult.retryable_failure("FCM_OAUTH_FAILURE")
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429 or exc.response.status_code >= 500:
+                return NotificationProviderResult.retryable_failure(
+                    "FCM_OAUTH_TRANSIENT"
+                )
+            return NotificationProviderResult.terminal_failure("FCM_OAUTH_REJECTED")
         except Exception:
             return NotificationProviderResult.terminal_failure("FCM_PROVIDER_FAILURE")
 
@@ -394,6 +403,11 @@ class FCMNotificationProvider:
             pass
 
         canonical_error = _safe_error_code(error_code or status or f"HTTP_{response.status_code}")
+        if response.status_code == 401:
+            self._token_cache.clear()
+            return NotificationProviderResult.retryable_failure(
+                "FCM_AUTH_REFRESH_REQUIRED"
+            )
         if (
             response.status_code == 429
             or response.status_code >= 500
@@ -422,7 +436,7 @@ class HMSNotificationProvider:
         settings: Settings,
         *,
         client: httpx.Client | None = None,
-        clock: callable = time.time,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._settings = settings
         self._client = client or httpx.Client(http2=True, timeout=_http_timeout(settings))
@@ -482,8 +496,12 @@ class HMSNotificationProvider:
             )
         except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError):
             return NotificationProviderResult.retryable_failure("HMS_NETWORK_FAILURE")
-        except httpx.HTTPStatusError:
-            return NotificationProviderResult.retryable_failure("HMS_OAUTH_FAILURE")
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429 or exc.response.status_code >= 500:
+                return NotificationProviderResult.retryable_failure(
+                    "HMS_OAUTH_TRANSIENT"
+                )
+            return NotificationProviderResult.terminal_failure("HMS_OAUTH_REJECTED")
         except Exception:
             return NotificationProviderResult.terminal_failure("HMS_PROVIDER_FAILURE")
 
@@ -497,6 +515,11 @@ class HMSNotificationProvider:
 
         if response.status_code == 200 and code == "80000000":
             return NotificationProviderResult.accepted_result()
+        if response.status_code == 401:
+            self._token_cache.clear()
+            return NotificationProviderResult.retryable_failure(
+                "HMS_AUTH_REFRESH_REQUIRED"
+            )
         if response.status_code in {429, 500, 502, 503, 504} or code in {
             "80000001",
             "81000001",
