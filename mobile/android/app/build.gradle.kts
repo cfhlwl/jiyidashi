@@ -46,6 +46,12 @@ android {
         buildConfigField("String", "JIYI_FCM_SENDER_ID", quotedBuildConfig(fcmSenderId))
         buildConfigField("String", "JIYI_HMS_APP_ID", quotedBuildConfig(hmsAppId))
         manifestPlaceholders["JIYI_HMS_APP_ID"] = hmsAppId
+        if (fcmAppId.isNotBlank()) {
+            resValue("string", "google_app_id", fcmAppId)
+            resValue("string", "gcm_defaultSenderId", fcmSenderId)
+            resValue("string", "google_api_key", fcmApiKey)
+            resValue("string", "project_id", fcmProjectId)
+        }
     }
 
     buildTypes {
