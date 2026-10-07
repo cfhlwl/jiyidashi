@@ -191,6 +191,92 @@ def main() -> None:
     ):
         errors.append("SECURITY_ALERT_FEISHU_WEBHOOK_URL must not be a placeholder")
 
+    def _env_true(key: str) -> bool:
+        return values.get(key, "").strip().lower() == "true"
+
+    def _placeholder(value: str) -> bool:
+        upper = value.strip().upper()
+        return not upper or "CHANGE_ME" in upper or "PLACEHOLDER" in upper
+
+    apns_enabled = _env_true("APNS_ENABLED")
+    fcm_enabled = _env_true("FCM_ENABLED")
+    hms_enabled = _env_true("HMS_ENABLED")
+    if apns_enabled or fcm_enabled or hms_enabled:
+        if not _env_true("PUSH_APP_IDENTITY_REVIEWED"):
+            errors.append(
+                "PUSH_APP_IDENTITY_REVIEWED must be true before live push is enabled"
+            )
+
+    if apns_enabled:
+        ios_bundle = values.get("PUSH_IOS_BUNDLE_ID", "").strip()
+        apns_topic = values.get("APNS_TOPIC", "").strip()
+        if _placeholder(ios_bundle) or _placeholder(apns_topic) or ios_bundle != apns_topic:
+            errors.append("APNS_TOPIC must exactly match reviewed PUSH_IOS_BUNDLE_ID")
+        if values.get("APNS_ENVIRONMENT", "").strip().lower() != "production":
+            errors.append("APNS_ENVIRONMENT must be production")
+        for key in ("APNS_TEAM_ID", "APNS_KEY_ID"):
+            if _placeholder(values.get(key, "")):
+                errors.append(f"{key} must be a non-placeholder reviewed value")
+        apns_inline = values.get("APNS_PRIVATE_KEY", "").strip()
+        apns_file = values.get("APNS_PRIVATE_KEY_FILE", "").strip()
+        if bool(apns_inline) == bool(apns_file):
+            errors.append(
+                "configure exactly one of APNS_PRIVATE_KEY or APNS_PRIVATE_KEY_FILE"
+            )
+        if apns_inline and _placeholder(apns_inline):
+            errors.append("APNS_PRIVATE_KEY must not be a placeholder")
+        if apns_file and not apns_file.startswith("/"):
+            errors.append("APNS_PRIVATE_KEY_FILE must be an absolute runtime secret path")
+
+    if fcm_enabled:
+        if _placeholder(values.get("PUSH_ANDROID_APPLICATION_ID", "")):
+            errors.append("PUSH_ANDROID_APPLICATION_ID must be reviewed before FCM")
+        for key in ("FCM_PROJECT_ID", "FCM_CLIENT_EMAIL"):
+            if _placeholder(values.get(key, "")):
+                errors.append(f"{key} must be a non-placeholder reviewed value")
+        fcm_inline = values.get("FCM_PRIVATE_KEY", "").strip()
+        fcm_file = values.get("FCM_PRIVATE_KEY_FILE", "").strip()
+        if bool(fcm_inline) == bool(fcm_file):
+            errors.append(
+                "configure exactly one of FCM_PRIVATE_KEY or FCM_PRIVATE_KEY_FILE"
+            )
+        if fcm_inline and _placeholder(fcm_inline):
+            errors.append("FCM_PRIVATE_KEY must not be a placeholder")
+        if fcm_file and not fcm_file.startswith("/"):
+            errors.append("FCM_PRIVATE_KEY_FILE must be an absolute runtime secret path")
+        if values.get("FCM_TOKEN_URI", "").strip() != "https://oauth2.googleapis.com/token":
+            errors.append("FCM_TOKEN_URI must use the reviewed Google OAuth endpoint")
+
+    if hms_enabled:
+        if _placeholder(values.get("PUSH_ANDROID_APPLICATION_ID", "")):
+            errors.append("PUSH_ANDROID_APPLICATION_ID must be reviewed before HMS")
+        for key in ("HMS_APP_ID", "HMS_CLIENT_ID", "HMS_CLIENT_SECRET"):
+            if _placeholder(values.get(key, "")):
+                errors.append(f"{key} must be a non-placeholder reviewed value")
+        if (
+            values.get("HMS_OAUTH_URL", "").strip()
+            != "https://oauth-login.cloud.huawei.com/oauth2/v3/token"
+        ):
+            errors.append("HMS_OAUTH_URL must use the reviewed Huawei OAuth endpoint")
+        if (
+            values.get("HMS_PUSH_BASE_URL", "").strip().rstrip("/")
+            != "https://push-api.cloud.huawei.com"
+        ):
+            errors.append("HMS_PUSH_BASE_URL must use the reviewed Huawei Push origin")
+
+    for key, minimum, maximum in (
+        ("PUSH_PROVIDER_CONNECT_TIMEOUT_SECONDS", 0.5, 15.0),
+        ("PUSH_PROVIDER_READ_TIMEOUT_SECONDS", 0.5, 30.0),
+        ("PUSH_PROVIDER_WRITE_TIMEOUT_SECONDS", 0.5, 30.0),
+        ("PUSH_PROVIDER_POOL_TIMEOUT_SECONDS", 0.5, 15.0),
+    ):
+        try:
+            value = float(values.get(key, ""))
+        except ValueError:
+            value = 0.0
+        if not minimum <= value <= maximum:
+            errors.append(f"{key} must be between {minimum} and {maximum}")
+
     security_secret = values.get("SECURITY_ALERT_FEISHU_SECRET", "").strip()
     if (
         not security_secret
