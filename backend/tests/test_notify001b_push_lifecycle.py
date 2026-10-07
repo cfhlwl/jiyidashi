@@ -86,3 +86,45 @@ async def test_logout_all_fences_all_active_push_bindings_for_owner(client):
         assert all(not row.push_enabled for row in devices)
         assert all(row.push_token is None for row in devices)
         assert all(row.push_token_digest is None for row in devices)
+
+
+async def test_account_switch_fences_prior_owner_on_same_installation(client):
+    owner_a = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+    owner_b = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+
+    auth_a = await client.post(
+        "/v1/auth/dev-token",
+        json={"user_id": str(owner_a), "nickname": "notify-owner-a"},
+    )
+    assert auth_a.status_code == 200, auth_a.text
+    headers_a = {"Authorization": f"Bearer {auth_a.json()['access_token']}"}
+
+    registered = await client.put(
+        "/v1/notifications/device",
+        headers=headers_a,
+        json={
+            "client_uuid": "dev-token",
+            "platform": "ANDROID",
+            "provider": "TEST",
+            "push_token": "notify-owner-a-provider-token-123456",
+        },
+    )
+    assert registered.status_code == 200, registered.text
+    device_id = UUID(registered.json()["id"])
+
+    auth_b = await client.post(
+        "/v1/auth/dev-token",
+        json={"user_id": str(owner_b), "nickname": "notify-owner-b"},
+    )
+    assert auth_b.status_code == 200, auth_b.text
+    assert UUID(auth_b.json()["user_id"]) == owner_b
+
+    with SessionLocal() as db:
+        prior = db.get(Device, device_id)
+        assert prior is not None
+        assert prior.user_id == owner_a
+        assert prior.client_uuid == "dev-token"
+        assert prior.push_enabled is False
+        assert prior.push_token is None
+        assert prior.push_token_digest is None
+        assert prior.push_invalidated_at is not None
