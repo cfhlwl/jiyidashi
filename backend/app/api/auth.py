@@ -244,18 +244,18 @@ def logout(
     )
     client_uuid = session.device_id if session is not None else None
     db.rollback()
-    if client_uuid:
-        _unregister_push_binding_best_effort(
-            db,
-            user_id=claims.user_id,
-            client_uuid=client_uuid,
-        )
     revoke_session(
         db,
         user_id=claims.user_id,
         session_id=claims.session_id,
         reason="LOGOUT",
     )
+    if client_uuid:
+        _unregister_push_binding_best_effort(
+            db,
+            user_id=claims.user_id,
+            client_uuid=client_uuid,
+        )
     return AuthAcceptedResponse()
 
 
@@ -267,8 +267,8 @@ def logout_all(
     claims: AuthenticatedClaims,
     db: DbSession,
 ) -> AuthAcceptedResponse:
-    _unregister_all_push_bindings(db, user_id=claims.user_id)
     revoke_all_sessions(db, user_id=claims.user_id, reason="LOGOUT_ALL")
+    _unregister_all_push_bindings(db, user_id=claims.user_id)
     return AuthAcceptedResponse()
 
 
@@ -309,12 +309,6 @@ def revoke_own_session(
     )
     client_uuid = session.device_id if session is not None else None
     db.rollback()
-    if client_uuid:
-        _unregister_push_binding_best_effort(
-            db,
-            user_id=claims.user_id,
-            client_uuid=client_uuid,
-        )
     if not revoke_session(
         db,
         user_id=claims.user_id,
@@ -324,6 +318,12 @@ def revoke_own_session(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="AUTH_SESSION_NOT_FOUND",
+        )
+    if client_uuid:
+        _unregister_push_binding_best_effort(
+            db,
+            user_id=claims.user_id,
+            client_uuid=client_uuid,
         )
     return AuthAcceptedResponse()
 
