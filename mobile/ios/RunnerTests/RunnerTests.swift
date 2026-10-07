@@ -6,6 +6,51 @@ import XCTest
 class RunnerTests: XCTestCase {
   private let owner = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
+  func testPhoneOneTapNativeAdapterFailsClosedBeforePNVSConfiguration() {
+    let adapter = FailClosedPhoneOneTapProviderAdapter()
+    XCTAssertEqual(
+      adapter.initialize(privacyConsentGranted: false).state,
+      .unavailable
+    )
+    XCTAssertEqual(
+      adapter.initialize(privacyConsentGranted: false).reason,
+      "PRIVACY_NOT_ACCEPTED"
+    )
+    XCTAssertEqual(
+      adapter.initialize(privacyConsentGranted: true).reason,
+      "PNVS_NOT_CONFIGURED"
+    )
+    XCTAssertEqual(adapter.checkAvailability().state, .unavailable)
+    XCTAssertEqual(
+      adapter.requestLoginToken(viewControllerAvailable: true).state,
+      .unavailable
+    )
+  }
+
+  func testPhoneOneTapRequestGateFencesRepeatedAndLateCallbacks() {
+    let gate = PhoneOneTapRequestGate()
+    let first = gate.begin()
+
+    XCTAssertNotNil(first)
+    XCTAssertNil(gate.begin())
+    XCTAssertTrue(gate.isCurrent(first!))
+    XCTAssertFalse(gate.finish(first! + 1))
+    XCTAssertTrue(gate.hasActiveRequest)
+    XCTAssertTrue(gate.finish(first!))
+    XCTAssertFalse(gate.hasActiveRequest)
+    XCTAssertFalse(gate.finish(first!))
+  }
+
+  func testPhoneOneTapLifecycleInvalidatesOldCallback() {
+    let gate = PhoneOneTapRequestGate()
+    let first = gate.begin()!
+
+    gate.invalidate()
+
+    XCTAssertFalse(gate.isCurrent(first))
+    XCTAssertFalse(gate.finish(first))
+  }
+
   func testRecordingHealthRuntimeProjectionIsTruthful() {
     XCTAssertEqual(
       NativeLocationPolicy.recordingHealthBackgroundRuntime(

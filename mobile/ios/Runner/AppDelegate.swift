@@ -2047,9 +2047,232 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
   }
 }
 
+enum PhoneOneTapNativeState: String {
+  case available = "AVAILABLE"
+  case unavailable = "UNAVAILABLE"
+  case cancelled = "CANCELLED"
+  case timeout = "TIMEOUT"
+  case providerError = "PROVIDER_ERROR"
+  case tokenAcquired = "TOKEN_ACQUIRED"
+}
+
+struct PhoneOneTapNativeResult {
+  let state: PhoneOneTapNativeState
+  let loginToken: String?
+  let reason: String?
+
+  init(
+    state: PhoneOneTapNativeState,
+    loginToken: String? = nil,
+    reason: String? = nil
+  ) {
+    self.state = state
+    self.loginToken = loginToken
+    self.reason = reason
+  }
+
+  func platformMap() -> [String: Any] {
+    var value: [String: Any] = ["state": state.rawValue]
+    if let loginToken {
+      value["login_token"] = loginToken
+    }
+    if let reason {
+      value["reason"] = reason
+    }
+    return value
+  }
+}
+
+/// Provider-neutral lifecycle fence. A callback from an old request is stale.
+final class PhoneOneTapRequestGate {
+  private var nextGeneration: Int64 = 0
+  private var activeGeneration: Int64?
+
+  func begin() -> Int64? {
+    guard activeGeneration == nil else { return nil }
+    nextGeneration += 1
+    activeGeneration = nextGeneration
+    return activeGeneration
+  }
+
+  func isCurrent(_ generation: Int64) -> Bool {
+    activeGeneration == generation
+  }
+
+  @discardableResult
+  func finish(_ generation: Int64) -> Bool {
+    guard activeGeneration == generation else { return false }
+    activeGeneration = nil
+    return true
+  }
+
+  func invalidate() {
+    activeGeneration = nil
+    nextGeneration += 1
+  }
+
+  var hasActiveRequest: Bool { activeGeneration != nil }
+}
+
+protocol PhoneOneTapProviderAdapter {
+  func initialize(privacyConsentGranted: Bool) -> PhoneOneTapNativeResult
+  func checkAvailability() -> PhoneOneTapNativeResult
+  func preLogin() -> PhoneOneTapNativeResult
+  func requestLoginToken(viewControllerAvailable: Bool) -> PhoneOneTapNativeResult
+  func cancel() -> PhoneOneTapNativeResult
+}
+
+/// AUTH-02C deliberately has no guessed PNVS framework/version or scheme.
+final class FailClosedPhoneOneTapProviderAdapter: PhoneOneTapProviderAdapter {
+  private var initialized = false
+
+  func initialize(privacyConsentGranted: Bool) -> PhoneOneTapNativeResult {
+    guard privacyConsentGranted else {
+      initialized = false
+      return PhoneOneTapNativeResult(
+        state: .unavailable,
+        reason: "PRIVACY_NOT_ACCEPTED"
+      )
+    }
+    initialized = false
+    return PhoneOneTapNativeResult(
+      state: .unavailable,
+      reason: "PNVS_NOT_CONFIGURED"
+    )
+  }
+
+  func checkAvailability() -> PhoneOneTapNativeResult {
+    guard initialized else {
+      return PhoneOneTapNativeResult(state: .unavailable, reason: "NOT_INITIALIZED")
+    }
+    return PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED")
+  }
+
+  func preLogin() -> PhoneOneTapNativeResult {
+    PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED")
+  }
+
+  func requestLoginToken(viewControllerAvailable: Bool) -> PhoneOneTapNativeResult {
+    guard viewControllerAvailable else {
+      return PhoneOneTapNativeResult(state: .unavailable, reason: "VIEW_CONTROLLER_UNAVAILABLE")
+    }
+    return PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED")
+  }
+
+  func cancel() -> PhoneOneTapNativeResult {
+    PhoneOneTapNativeResult(state: .cancelled)
+  }
+}
+
+/// Flutter-facing channel. Alibaba SDK objects and raw provider errors stop here.
+final class PhoneOneTapNativeBridge {
+  static let channelName = "cn.jiyidashi/phone_one_tap"
+
+  private let adapter: PhoneOneTapProviderAdapter
+  private let requestGate = PhoneOneTapRequestGate()
+  private var channel: FlutterMethodChannel?
+  private var initialized = false
+  private var viewControllerAvailable = true
+
+  init(adapter: PhoneOneTapProviderAdapter = FailClosedPhoneOneTapProviderAdapter()) {
+    self.adapter = adapter
+  }
+
+  func attach(messenger: FlutterBinaryMessenger) {
+    let nextChannel = FlutterMethodChannel(name: Self.channelName, binaryMessenger: messenger)
+    nextChannel.setMethodCallHandler { [weak self] call, result in
+      self?.handle(call: call, result: result) ?? result(FlutterError(
+        code: "bridge_detached",
+        message: "Phone one-tap bridge is detached",
+        details: nil
+      ))
+    }
+    channel = nextChannel
+  }
+
+  func invalidateForLifecycle() {
+    requestGate.invalidate()
+    _ = adapter.cancel()
+    initialized = false
+  }
+
+  func detach() {
+    requestGate.invalidate()
+    _ = adapter.cancel()
+    initialized = false
+    channel?.setMethodCallHandler(nil)
+    channel = nil
+  }
+
+  private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "initialize":
+      let arguments = call.arguments as? [String: Any]
+      guard arguments?["privacy_consent_granted"] as? Bool == true else {
+        initialized = false
+        result(PhoneOneTapNativeResult(
+          state: .unavailable,
+          reason: "PRIVACY_NOT_ACCEPTED"
+        ).platformMap())
+        return
+      }
+      let initializedResult = adapter.initialize(privacyConsentGranted: true)
+      initialized = initializedResult.state != .unavailable
+      result(initializedResult.platformMap())
+    case "checkAvailability":
+      result(availability().platformMap())
+    case "preLogin":
+      result(preLogin().platformMap())
+    case "requestLoginToken":
+      requestLoginToken(result: result)
+    case "cancel":
+      requestGate.invalidate()
+      result(adapter.cancel().platformMap())
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func availability() -> PhoneOneTapNativeResult {
+    guard initialized else {
+      return PhoneOneTapNativeResult(state: .unavailable, reason: "NOT_INITIALIZED")
+    }
+    guard !requestGate.hasActiveRequest else {
+      return PhoneOneTapNativeResult(state: .unavailable, reason: "REQUEST_IN_PROGRESS")
+    }
+    return adapter.checkAvailability()
+  }
+
+  private func preLogin() -> PhoneOneTapNativeResult {
+    guard initialized else {
+      return PhoneOneTapNativeResult(state: .unavailable, reason: "NOT_INITIALIZED")
+    }
+    guard !requestGate.hasActiveRequest else {
+      return PhoneOneTapNativeResult(state: .unavailable, reason: "REQUEST_IN_PROGRESS")
+    }
+    return adapter.preLogin()
+  }
+
+  private func requestLoginToken(result: @escaping FlutterResult) {
+    guard initialized else {
+      result(PhoneOneTapNativeResult(state: .unavailable, reason: "NOT_INITIALIZED").platformMap())
+      return
+    }
+    guard let generation = requestGate.begin() else {
+      result(PhoneOneTapNativeResult(state: .unavailable, reason: "REQUEST_IN_PROGRESS").platformMap())
+      return
+    }
+    let response = adapter.requestLoginToken(viewControllerAvailable: viewControllerAvailable)
+    guard requestGate.isCurrent(generation) else { return }
+    _ = requestGate.finish(generation)
+    result(response.platformMap())
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var nativeLocationBridge: NativeLocationBridge?
+  private var phoneOneTapBridge: PhoneOneTapNativeBridge?
   private let nativeNotificationBridge = NativeNotificationBridge.shared
   private var activePassiveRecoveryTask: BGAppRefreshTask?
   private var passiveRecoveryCompletionChannel: FlutterMethodChannel?
@@ -2103,6 +2326,10 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
     bridge.attach(messenger: engineBridge.applicationRegistrar.messenger())
     nativeLocationBridge = bridge
 
+    let phoneOneTap = phoneOneTapBridge ?? PhoneOneTapNativeBridge()
+    phoneOneTap.attach(messenger: engineBridge.applicationRegistrar.messenger())
+    phoneOneTapBridge = phoneOneTap
+
     let completionChannel = FlutterMethodChannel(
       name: "cn.jiyidashi/passive_recovery",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
@@ -2124,6 +2351,11 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
       result(nil)
     }
     passiveRecoveryCompletionChannel = completionChannel
+  }
+
+  override func applicationDidEnterBackground(_ application: UIApplication) {
+    phoneOneTapBridge?.invalidateForLifecycle()
+    super.applicationDidEnterBackground(application)
   }
 
   @available(iOS 13.0, *)
