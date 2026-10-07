@@ -21,7 +21,7 @@ Future<void> _scrollMemoryV3IntoView(WidgetTester tester, Finder finder) async {
   await tester.scrollUntilVisible(
     finder,
     400,
-    scrollable: find.byType(ListView).first,
+    scrollable: find.byType(Scrollable).first,
   );
 }
 
