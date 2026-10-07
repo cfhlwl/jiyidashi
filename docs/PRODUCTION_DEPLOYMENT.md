@@ -262,6 +262,20 @@ If storage moves to another endpoint/custom domain/CDN, update the WeChat legal-
 
 See also `docs/MINIPROGRAM_DEPLOYMENT_ACCEPTANCE.md`.
 
+## Mobile push provider credentials
+
+NOTIFY-001B keeps live APNs / FCM / HMS routing disabled until the final app identity is reviewed.
+Do not turn on any mobile push provider while `PUSH_APP_IDENTITY_REVIEWED=false`.
+
+The provider decision matrix, production fail-closed rules, and credential rotation/revocation
+procedures are recorded in `docs/MOBILE_PUSH_PROVIDER_V1.md`. In particular:
+
+- APNs private keys, FCM service-account private keys, and HMS client secrets remain server-only;
+- rotate by installing replacement authority first, restarting provider processes so cached OAuth/JWT
+  state is discarded, proving physical-device delivery, then revoking the superseded credential;
+- on suspected compromise, disable the affected provider route before replacement/revocation work;
+- never bind production credentials to the historical app identifier while APP-ID-001 is unresolved.
+
 ## Security checklist
 
 Before production acceptance:
@@ -276,6 +290,8 @@ Before production acceptance:
 - [ ] API port 8000 has no public host port
 - [ ] private object-storage bucket
 - [ ] provider keys exist only on server
+- [ ] mobile push APP-ID identity review completed before APNs/FCM/HMS enablement
+- [ ] mobile push credential rotation/revocation plan recorded
 - [ ] HTTPS `/health` passes
 - [ ] dev-auth negative smoke passes
 - [ ] authenticated `/v1/user` smoke passes
