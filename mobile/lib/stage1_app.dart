@@ -3276,6 +3276,7 @@ class ProfilePage extends StatelessWidget {
     this.onRevalidateLocationAuthority,
     this.onStartOnboarding,
     this.amapPrivacyConsent,
+    this.notificationClient,
     this.themeMode = ThemeMode.system,
     this.onThemeModeChanged,
   });
@@ -3291,6 +3292,7 @@ class ProfilePage extends StatelessWidget {
   final Future<void> Function()? onRevalidateLocationAuthority;
   final VoidCallback? onStartOnboarding;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
+  final NotificationClientService? notificationClient;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode>? onThemeModeChanged;
 
@@ -3428,6 +3430,10 @@ class ProfilePage extends StatelessWidget {
                 const SizedBox(height: JiYiSpacing.md),
                 _AmapPrivacyControls(authority: amapPrivacyConsent!),
               ],
+              if (notificationClient != null) ...[
+                const SizedBox(height: JiYiSpacing.md),
+                _NotificationControls(client: notificationClient!),
+              ],
               if (nativeLocationController != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 NativeLocationSection(
@@ -3480,6 +3486,83 @@ class ProfilePage extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _NotificationControls extends StatefulWidget {
+  const _NotificationControls({required this.client});
+
+  final NotificationClientService client;
+
+  @override
+  State<_NotificationControls> createState() => _NotificationControlsState();
+}
+
+class _NotificationControlsState extends State<_NotificationControls> {
+  bool busy = false;
+
+  String get permissionLabel => switch (widget.client.permission) {
+        NotificationPermissionState.notDetermined => '尚未询问',
+        NotificationPermissionState.authorized => '已允许',
+        NotificationPermissionState.provisional => '临时允许',
+        NotificationPermissionState.denied => '已拒绝',
+        NotificationPermissionState.unavailable => '当前设备不可用',
+      };
+
+  String get registrationLabel => switch (widget.client.registration) {
+        NotificationRegistrationState.idle => '尚未注册',
+        NotificationRegistrationState.registrationPending => '正在注册',
+        NotificationRegistrationState.registered => '已连接',
+        NotificationRegistrationState.denied => '系统权限已关闭',
+        NotificationRegistrationState.providerUnavailable => '推送服务暂不可用',
+        NotificationRegistrationState.serverUnavailable => '等待联网同步',
+      };
+
+  Future<void> _enable() async {
+    if (busy || widget.client.permission == NotificationPermissionState.denied) {
+      return;
+    }
+    setState(() => busy = true);
+    try {
+      await widget.client.requestPermissionAndRegister();
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final denied =
+        widget.client.permission == NotificationPermissionState.denied;
+    return JiYiSectionCard(
+      leading: const Icon(Icons.notifications_outlined),
+      title: '通知',
+      subtitle: '提醒和系统通知只在你允许后发送到这台设备。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('系统权限'),
+            subtitle: Text(permissionLabel),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('推送连接'),
+            subtitle: Text(registrationLabel),
+          ),
+          if (denied)
+            const Text('系统通知权限已关闭；需要时请前往系统设置重新开启。')
+          else
+            FilledButton.tonalIcon(
+              key: const ValueKey('notification-enable'),
+              onPressed: busy ? null : _enable,
+              icon: const Icon(Icons.notifications_active_outlined),
+              label: Text(busy ? '正在连接…' : '开启通知'),
+            ),
+        ],
       ),
     );
   }
