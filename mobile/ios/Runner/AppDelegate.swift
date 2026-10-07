@@ -1826,9 +1826,12 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
       return "denied"
     case .authorized:
       return "authorized"
-    case .provisional, .ephemeral:
+    case .provisional:
       return "provisional"
     @unknown default:
+      if #available(iOS 14.0, *), status == .ephemeral {
+        return "provisional"
+      }
       return "unavailable"
     }
   }
@@ -1880,10 +1883,16 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
     UNUserNotificationCenter.current().getNotificationSettings { settings in
       let allowed: Bool
       switch settings.authorizationStatus {
-      case .authorized, .provisional, .ephemeral:
+      case .authorized, .provisional:
         allowed = true
       default:
-        allowed = false
+        if #available(iOS 14.0, *),
+           settings.authorizationStatus == .ephemeral
+        {
+          allowed = true
+        } else {
+          allowed = false
+        }
       }
       guard allowed else {
         DispatchQueue.main.async {
