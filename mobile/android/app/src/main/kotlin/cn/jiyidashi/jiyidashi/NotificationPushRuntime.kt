@@ -40,17 +40,21 @@ internal object NotificationPushRuntime {
         val eventId: String = UUID.randomUUID().toString(),
     )
 
-    fun status(context: Context): Map<String, Any?> {
+    fun status(
+        context: Context,
+        tokenOverride: String? = null,
+        providerOverride: String? = null,
+    ): Map<String, Any?> {
         val selected = selectProvider(context)
         val prefs = prefs(context)
         val storedProvider = prefs.getString(KEY_PROVIDER, null)
-        val provider = selected ?: storedProvider
+        val provider = providerOverride ?: selected ?: storedProvider
         return mapOf(
             "supported" to true,
             "platform" to "ANDROID",
             "permission" to permission(context),
             "provider" to provider,
-            "token" to null,
+            "token" to tokenOverride,
             "app_version" to BuildConfig.VERSION_NAME,
             "os_version" to Build.VERSION.RELEASE,
         )
