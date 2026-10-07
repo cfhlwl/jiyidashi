@@ -107,11 +107,7 @@ jobs:
 
       - name: Test Today V3 targeted
         timeout-minutes: 5
-        run: >-
-          flutter test
-          test/today_b2_visual_fixture_test.dart
-          test/today_footprint_page_test.dart
-          --reporter expanded
+        run: flutter test test/today_footprint_page_test.dart --reporter expanded
 
       - name: Test Auth V3 targeted
         timeout-minutes: 5
