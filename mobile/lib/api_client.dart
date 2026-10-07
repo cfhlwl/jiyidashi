@@ -75,6 +75,15 @@ class AccountDeleteSessionBinding {
   String get ownerUserId => _snapshot.userId;
 }
 
+class PushSessionBinding {
+  const PushSessionBinding._(this._snapshot);
+
+  final _AuthenticatedSessionSnapshot _snapshot;
+
+  String get ownerUserId => _snapshot.userId;
+  int get sessionVersion => _snapshot.sessionVersion;
+}
+
 class SignedUploadTarget {
   const SignedUploadTarget({
     required this.method,
@@ -525,6 +534,16 @@ class JiYiApiClient {
   int get sessionVersion => _sessionVersion;
 
   String? get authenticatedSessionId => _sessionId;
+
+  Future<String> canonicalClientUuid() => _sessionStore.readOrCreateInstallationId();
+
+  PushSessionBinding capturePushSession() {
+    return PushSessionBinding._(_captureAuthenticatedSession());
+  }
+
+  void assertPushSessionCurrent(PushSessionBinding binding) {
+    _assertAuthenticatedSessionCurrent(binding._snapshot);
+  }
 
   bool get hasFreshAuthenticatedOwnerAuthority {
     final expiry = _accessExpiresAt;
@@ -1063,6 +1082,64 @@ class JiYiApiClient {
       authSnapshot: snapshot,
     );
     _assertAuthenticatedSessionCurrent(snapshot);
+    return data;
+  }
+
+  Future<Map<String, dynamic>> registerPushDevice({
+    required String clientUuid,
+    required String platform,
+    required String provider,
+    required String pushToken,
+    String? appVersion,
+    String? osVersion,
+    PushSessionBinding? session,
+  }) async {
+    final binding = session ?? capturePushSession();
+    final data = await _jsonRequest(
+      'PUT',
+      '/notifications/device',
+      body: <String, dynamic>{
+        'client_uuid': clientUuid,
+        'platform': platform,
+        'provider': provider,
+        'push_token': pushToken,
+        if (appVersion != null && appVersion.trim().isNotEmpty)
+          'app_version': appVersion.trim(),
+        if (osVersion != null && osVersion.trim().isNotEmpty)
+          'os_version': osVersion.trim(),
+      },
+      authSnapshot: binding._snapshot,
+    );
+    _assertAuthenticatedSessionCurrent(binding._snapshot);
+    final returnedClient = data['client_uuid'];
+    if (returnedClient is! String || returnedClient != clientUuid) {
+      throw ProtocolException('通知设备响应格式不正确');
+    }
+    if (data['push_enabled'] != true) {
+      throw ProtocolException('通知设备未激活');
+    }
+    return data;
+  }
+
+  Future<Map<String, dynamic>> unregisterPushDevice({
+    required String clientUuid,
+    PushSessionBinding? session,
+  }) async {
+    final binding = session ?? capturePushSession();
+    final encoded = Uri.encodeComponent(clientUuid);
+    final data = await _jsonRequest(
+      'DELETE',
+      '/notifications/device/$encoded',
+      authSnapshot: binding._snapshot,
+    );
+    _assertAuthenticatedSessionCurrent(binding._snapshot);
+    final returnedClient = data['client_uuid'];
+    if (returnedClient is! String || returnedClient != clientUuid) {
+      throw ProtocolException('通知设备响应格式不正确');
+    }
+    if (data['push_enabled'] == true) {
+      throw ProtocolException('通知设备注销未生效');
+    }
     return data;
   }
 

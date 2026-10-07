@@ -8,12 +8,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
 from app.admin_models import AdminAccount
+from app.auth_models import AuthSession
 from app.core.config import get_settings
 from app.core.db import SessionLocal, engine
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
@@ -43,6 +44,7 @@ from app.services.admin_security import (
     AdminOperationError,
     append_admin_audit,
 )
+from app.services.auth_session_service import lock_installation_authority_in_transaction
 from app.services.maintenance_jobs import (
     MaintenanceJobClaim,
     assert_maintenance_claim_current,
@@ -51,6 +53,7 @@ from app.services.maintenance_jobs import (
 from app.services.notification_provider import (
     NotificationProviderRequest,
     NotificationProviderResult,
+    provider_registration_allowed,
     resolve_notification_provider,
 )
 
@@ -213,15 +216,42 @@ def register_device_push(
     *,
     user_id: UUID,
     payload: DevicePushRegistrationRequest,
+    session_id: UUID | None = None,
 ) -> DevicePushStateRead:
     now = datetime.now(UTC)
+    if not provider_registration_allowed(
+        platform=payload.platform.value,
+        provider=payload.provider.value,
+    ):
+        raise NotificationDeviceError("PUSH_PROVIDER_UNAVAILABLE", 503)
     digest = push_token_digest(payload.push_token)
 
     with hold_push_disclosure_handoff(
         provider=payload.provider.value,
         digest=digest,
     ):
+        lock_installation_authority_in_transaction(db, payload.client_uuid)
         _lock_push_digest(db, digest)
+
+        if session_id is not None:
+            session_statement = select(AuthSession).where(
+                AuthSession.id == session_id,
+                AuthSession.user_id == user_id,
+            )
+            if db.get_bind().dialect.name == "postgresql":
+                session_statement = session_statement.with_for_update(
+                    read=True,
+                    key_share=True,
+                )
+            session = db.scalar(session_statement)
+            if (
+                session is None
+                or session.revoked_at is not None
+                or _as_utc(session.expires_at) <= now
+                or session.device_id != payload.client_uuid
+            ):
+                db.rollback()
+                raise NotificationDeviceError("PUSH_SESSION_INVALID", 401)
 
         if db.get(User, user_id) is None:
             raise NotificationDeviceError("USER_NOT_FOUND", 404)
@@ -359,6 +389,82 @@ def unregister_device_push(
             db.commit()
             db.refresh(row)
             return _push_state(row)
+
+
+def fence_other_owner_push_bindings_for_client_uuid(
+    db: Session,
+    *,
+    user_id: UUID,
+    client_uuid: str,
+) -> None:
+    """Revoke stale push authority before this installation changes owners."""
+
+    while True:
+        candidate = db.scalar(
+            select(Device)
+            .where(
+                Device.client_uuid == client_uuid,
+                Device.user_id != user_id,
+                or_(
+                    Device.push_enabled.is_(True),
+                    Device.push_token.is_not(None),
+                    Device.push_token_digest.is_not(None),
+                ),
+            )
+            .order_by(Device.id)
+        )
+        if candidate is None:
+            db.rollback()
+            return
+
+        candidate_id = candidate.id
+        provider = candidate.push_provider
+        digest = candidate.push_token_digest
+        db.rollback()
+
+        if provider is not None and digest is not None:
+            with hold_push_disclosure_handoff(provider=provider, digest=digest):
+                statement = select(Device).where(
+                    Device.id == candidate_id,
+                    Device.client_uuid == client_uuid,
+                    Device.user_id != user_id,
+                )
+                if db.get_bind().dialect.name == "postgresql":
+                    statement = statement.with_for_update()
+                current = db.scalar(statement)
+                if current is None:
+                    db.rollback()
+                    continue
+                if (
+                    current.push_provider != provider
+                    or current.push_token_digest != digest
+                ):
+                    db.rollback()
+                    continue
+
+                current.push_enabled = False
+                current.push_token = None
+                current.push_token_digest = None
+                current.push_invalidated_at = datetime.now(UTC)
+                db.commit()
+                continue
+
+        statement = select(Device).where(
+            Device.id == candidate_id,
+            Device.client_uuid == client_uuid,
+            Device.user_id != user_id,
+        )
+        if db.get_bind().dialect.name == "postgresql":
+            statement = statement.with_for_update()
+        current = db.scalar(statement)
+        if current is None:
+            db.rollback()
+            continue
+        current.push_enabled = False
+        current.push_token = None
+        current.push_token_digest = None
+        current.push_invalidated_at = datetime.now(UTC)
+        db.commit()
 
 
 def _eligible_conditions(

@@ -2,12 +2,14 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth_models import AuthSession
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.deps import AuthenticatedClaims
-from app.models import User
+from app.models import Device, User
 from app.schemas import (
     AuthAcceptedResponse,
     AuthSessionRead,
@@ -48,10 +50,50 @@ from app.services.auth_session_service import (
     revoke_session,
 )
 from app.services.entitlement_service import create_dev_legacy_full_entitlement
+from app.services.notification_service import (
+    NotificationDeviceError,
+    fence_other_owner_push_bindings_for_client_uuid,
+    unregister_device_push,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+def _unregister_push_binding_best_effort(
+    db: Session,
+    *,
+    user_id: UUID,
+    client_uuid: str,
+) -> None:
+    try:
+        unregister_device_push(
+            db,
+            user_id=user_id,
+            client_uuid=client_uuid,
+        )
+    except NotificationDeviceError as exc:
+        if exc.code != "PUSH_DEVICE_NOT_FOUND":
+            raise
+
+
+def _unregister_all_push_bindings(db: Session, *, user_id: UUID) -> None:
+    client_uuids = list(
+        db.scalars(
+            select(Device.client_uuid).where(
+                Device.user_id == user_id,
+                Device.push_enabled.is_(True),
+            )
+        )
+    )
+    db.rollback()
+    for client_uuid in client_uuids:
+        _unregister_push_binding_best_effort(
+            db,
+            user_id=user_id,
+            client_uuid=client_uuid,
+        )
 
 
 def _client_ip(request: Request) -> str:
@@ -77,6 +119,17 @@ def _token_response(
         refresh_expires_at=pair.refresh_expires_at,
         account_deletion_in_progress=account_deletion_in_progress,
     )
+
+
+_LEGACY_CLIENT_DEVICE_ID = "legacy-client"
+
+
+def _resolve_session_device_id(device_id: str) -> str:
+    """Never treat the compatibility sentinel as a global installation identity."""
+
+    if device_id == _LEGACY_CLIENT_DEVICE_ID:
+        return f"legacy-session-{uuid4()}"
+    return device_id
 
 
 @router.post(
@@ -110,12 +163,18 @@ def verify_email(
                 already_verified=True,
                 session=None,
             )
+        session_device_id = _resolve_session_device_id(payload.device_id)
         issued = issue_authenticated_session(
             db,
             user_id=result.user_id,
-            device_id=payload.device_id,
+            device_id=session_device_id,
             client_platform=payload.client_platform,
             device_name=payload.device_name,
+        )
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=result.user_id,
+            client_uuid=session_device_id,
         )
         return EmailVerificationResponse(
             verified=True,
@@ -151,12 +210,18 @@ def resend_verification(
 def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenResponse:
     user = authenticate_email_password(db, payload, client_ip=_client_ip(request))
     try:
+        session_device_id = _resolve_session_device_id(payload.device_id)
         issued = issue_authenticated_session(
             db,
             user_id=user.id,
-            device_id=payload.device_id,
+            device_id=session_device_id,
             client_platform=payload.client_platform,
             device_name=payload.device_name,
+        )
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=user.id,
+            client_uuid=session_device_id,
         )
     except PublicAuthError as exc:
         _raise_auth_error(exc)
@@ -183,12 +248,26 @@ def logout(
     claims: AuthenticatedClaims,
     db: DbSession,
 ) -> AuthAcceptedResponse:
+    session = db.scalar(
+        select(AuthSession).where(
+            AuthSession.id == claims.session_id,
+            AuthSession.user_id == claims.user_id,
+        )
+    )
+    client_uuid = session.device_id if session is not None else None
+    db.rollback()
     revoke_session(
         db,
         user_id=claims.user_id,
         session_id=claims.session_id,
         reason="LOGOUT",
     )
+    if client_uuid:
+        _unregister_push_binding_best_effort(
+            db,
+            user_id=claims.user_id,
+            client_uuid=client_uuid,
+        )
     return AuthAcceptedResponse()
 
 
@@ -201,6 +280,7 @@ def logout_all(
     db: DbSession,
 ) -> AuthAcceptedResponse:
     revoke_all_sessions(db, user_id=claims.user_id, reason="LOGOUT_ALL")
+    _unregister_all_push_bindings(db, user_id=claims.user_id)
     return AuthAcceptedResponse()
 
 
@@ -233,6 +313,14 @@ def revoke_own_session(
     claims: AuthenticatedClaims,
     db: DbSession,
 ) -> AuthAcceptedResponse:
+    session = db.scalar(
+        select(AuthSession).where(
+            AuthSession.id == session_id,
+            AuthSession.user_id == claims.user_id,
+        )
+    )
+    client_uuid = session.device_id if session is not None else None
+    db.rollback()
     if not revoke_session(
         db,
         user_id=claims.user_id,
@@ -242,6 +330,12 @@ def revoke_own_session(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="AUTH_SESSION_NOT_FOUND",
+        )
+    if client_uuid:
+        _unregister_push_binding_best_effort(
+            db,
+            user_id=claims.user_id,
+            client_uuid=client_uuid,
         )
     return AuthAcceptedResponse()
 
@@ -324,13 +418,19 @@ def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
         create_dev_legacy_full_entitlement(db, user_id=user.id)
         db.commit()
 
+    session_device_id = payload.device_id or f"dev-token-{uuid4()}"
     try:
         pair = create_public_session(
             db,
             user_id=user_id,
-            device_id="dev-token",
+            device_id=session_device_id,
             client_platform="development",
             device_name="development token",
+        )
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=user_id,
+            client_uuid=session_device_id,
         )
     except PublicAuthError as exc:
         _raise_auth_error(exc)

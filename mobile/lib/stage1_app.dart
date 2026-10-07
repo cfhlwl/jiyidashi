@@ -17,6 +17,7 @@ import 'native_location_bridge.dart';
 import 'native_location_controller.dart';
 import 'native_location_section.dart';
 import 'native_motion_sampling_bridge.dart';
+import 'notification_client.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
 import 'passive_memory_delivery.dart';
@@ -47,6 +48,7 @@ class JiYiApp extends StatefulWidget {
     this.onboardingStore,
     this.locationBridge,
     this.motionSamplingBridge,
+    this.notificationClient,
   });
 
   final JiYiApiClient? api;
@@ -54,6 +56,7 @@ class JiYiApp extends StatefulWidget {
   final OnboardingStateStore? onboardingStore;
   final NativeLocationBridge? locationBridge;
   final NativeMotionSamplingBridge? motionSamplingBridge;
+  final NotificationClientService? notificationClient;
 
   @override
   State<JiYiApp> createState() => _JiYiAppState();
@@ -82,6 +85,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         locationBridge: locationBridge,
         samplingBridge: motionSamplingBridge,
       );
+  late final NotificationClientService notificationClient =
+      widget.notificationClient ?? NotificationClientService(api: api);
 
   bool authenticated = false;
   AuthSessionVisualState _sessionState = AuthSessionVisualState.unknown;
@@ -101,6 +106,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(notificationClient.initialize());
     unawaited(_restoreThemeMode());
     final recoveryBridge = motionSamplingBridge;
     if (recoveryBridge is NativePassiveRecoveryTriggerBridge) {
@@ -231,6 +237,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           restoreMessage = null;
           elderModeEnabled = profile['elder_mode_enabled'] == true;
         });
+        unawaited(notificationClient.onAuthenticated());
         unawaited(_recoverPassiveMemory());
         return;
       } on ApiException catch (exc) {
@@ -244,6 +251,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
             elderModeEnabled = false;
             restoreMessage = null;
           });
+          unawaited(notificationClient.onAuthenticated());
           return;
         }
         if (isTerminalDurableSessionFailure(exc)) {
@@ -251,6 +259,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           if (owner != null && owner.isNotEmpty) {
             await _disableNativeForTerminalAuthLoss(owner);
           }
+          await notificationClient.onTerminalAuthLoss();
           if (!mounted) return;
           setState(() {
             authenticated = false;
@@ -326,6 +335,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
             resumeAccountDeletionAfterAuth = false;
             restoreMessage = null;
           });
+          unawaited(notificationClient.onAuthenticated());
         }
       }
     } catch (_) {
@@ -358,6 +368,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         if (owner != null && owner.isNotEmpty) {
           await _disableNativeForTerminalAuthLoss(owner);
         }
+        await notificationClient.onTerminalAuthLoss();
         if (!mounted) return;
         setState(() {
           authenticated = false;
@@ -412,6 +423,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
 
   Future<void> _resumeAuthorityAndPassiveMemory() async {
     await _refreshServerAuthority();
+    await notificationClient.onAppResumed();
     if (authenticated) {
       await _recoverPassiveMemory();
     }
@@ -419,6 +431,12 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
 
   Future<void> _logout() async {
     try {
+      try {
+        await notificationClient.prepareForLogout();
+      } catch (_) {
+        // Auth logout still executes; server-side logout also fences the canonical
+        // Device binding when the request reaches the backend.
+      }
       await api.logout();
     } finally {
       if (mounted) {
@@ -460,6 +478,9 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     if (widget.motionSamplingBridge == null) {
       unawaited(motionSamplingBridge.close());
     }
+    if (widget.notificationClient == null) {
+      unawaited(notificationClient.close());
+    }
     super.dispose();
   }
 
@@ -486,6 +507,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   sync: sync,
                   themeMode: _themeMode,
                   onThemeModeChanged: _setThemeMode,
+                  notificationClient: notificationClient,
                   onElderModeChanged: (enabled) {
                     if (mounted) setState(() => elderModeEnabled = enabled);
                   },
@@ -510,6 +532,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                         _sessionState = AuthSessionVisualState.valid;
                         restoreMessage = null;
                       });
+                      unawaited(notificationClient.onAuthenticated());
                       if (!resumeAccountDeletionAfterAuth) {
                         unawaited(_recoverPassiveMemory());
                       }
@@ -1427,6 +1450,7 @@ class AppShell extends StatefulWidget {
     this.themeMode = ThemeMode.system,
     this.onThemeModeChanged,
     this.onElderModeChanged,
+    this.notificationClient,
     required this.onLogout,
   });
 
@@ -1444,6 +1468,7 @@ class AppShell extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode>? onThemeModeChanged;
   final ValueChanged<bool>? onElderModeChanged;
+  final NotificationClientService? notificationClient;
   final VoidCallback onLogout;
 
   @override
@@ -1473,6 +1498,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.notificationClient?.setRouteHandler(_handlePushRoute);
     _amapPrivacyConsent.addListener(_amapPrivacyChanged);
     unawaited(
       _amapPrivacyConsent.readAccepted().catchError((_) => false),
@@ -1557,6 +1583,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.notificationClient?.setRouteHandler(null);
     _amapPrivacyConsent.removeListener(_amapPrivacyChanged);
     if (_ownsAmapPrivacyConsent) {
       unawaited(_amapPrivacyConsent.close().catchError((_) {}));
@@ -1665,6 +1692,47 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     await location.refresh();
   }
 
+  Future<void> _handlePushRoute(PushRouteIntent intent) async {
+    if (!mounted || _accountDeletionIntentActive) return;
+
+    switch (intent.destination) {
+      case NotificationDestination.home:
+      case NotificationDestination.appUpdate:
+      case NotificationDestination.export:
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        if (mounted) setState(() => index = 0);
+        return;
+      case NotificationDestination.family:
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        if (mounted) setState(() => index = 3);
+        return;
+      case NotificationDestination.reminder:
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => ReminderPage(api: widget.api),
+          ),
+        );
+        return;
+      case NotificationDestination.memory:
+        final memoryId = intent.resourceId;
+        if (memoryId == null) {
+          if (mounted) setState(() => index = 0);
+          return;
+        }
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => MemoryDetailPage(
+              api: widget.api,
+              memoryId: memoryId,
+              mediaCache: _mediaCache,
+              amapPrivacyConsent: _amapPrivacyConsent,
+            ),
+          ),
+        );
+        return;
+    }
+  }
+
   Future<void> _stopLocationAndLogout() async {
     // Seal sampling first so a late native event cannot enqueue/upload after logout begins.
     await _locationSampling?.suspendForLogout();
@@ -1713,6 +1781,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final offlineQueueIdle =
         widget.offlineQueue.quiesceForAccountDeletion(owner);
     final syncIdle = _sync.quiesceForAccountDeletion(owner);
+
+    try {
+      await widget.notificationClient?.prepareForLogout();
+    } catch (_) {
+      // Native token retirement is retried from secure pending state. The account
+      // deletion backend also removes the canonical Device authority.
+    }
 
     final location = _nativeLocation;
     if (location != null) {
@@ -1780,6 +1855,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       api: widget.api,
       mediaCache: _mediaCache,
       amapPrivacyConsent: _amapPrivacyConsent,
+      notificationClient: widget.notificationClient,
       elderMode: _elderModeEnabled,
       onCapture: () {
         Navigator.of(context).push<void>(
@@ -3033,6 +3109,7 @@ class MemoryQueryPage extends StatefulWidget {
     this.onTrustedEvidenceShown,
     this.mediaCache,
     this.amapPrivacyConsent,
+    this.notificationClient,
   });
 
   final JiYiApiClient api;
@@ -3043,6 +3120,7 @@ class MemoryQueryPage extends StatefulWidget {
   final String? requiredEvidenceMemoryId;
   final VoidCallback? onTrustedEvidenceShown;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
+  final NotificationClientService? notificationClient;
 
   @override
   State<MemoryQueryPage> createState() => _MemoryQueryPageState();
@@ -3284,6 +3362,11 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       );
       if (!mounted || message == null) return;
       setState(() => actionMessage = message);
+      final notifications = widget.notificationClient;
+      if (notifications != null &&
+          notifications.permission == NotificationPermissionState.notDetermined) {
+        unawaited(notifications.requestPermissionAndRegister());
+      }
     } on ApiException catch (exc) {
       if (mounted) setState(() => error = exc.message);
     } catch (_) {
@@ -4374,10 +4457,12 @@ class _ThemeModeOption extends StatelessWidget {
     return RadioListTile<ThemeMode>(
       contentPadding: EdgeInsets.zero,
       value: value,
+      // ignore: deprecated_member_use
       groupValue: groupValue,
+      // ignore: deprecated_member_use
       onChanged: enabled
           ? (next) {
-              if (next != null) onChanged!(next);
+              if (next != null) onChanged?.call(next);
             }
           : null,
       title: Text(title),
