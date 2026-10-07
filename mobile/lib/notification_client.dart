@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -348,7 +349,7 @@ class MemoryNotificationTokenStore implements NotificationTokenStore {
   }
 }
 
-class NotificationClientService {
+class NotificationClientService extends ChangeNotifier {
   NotificationClientService({
     required this.api,
     NativeNotificationBridge? nativeBridge,
@@ -375,6 +376,11 @@ class NotificationClientService {
   String? _lastTapKey;
   DateTime? _lastTapAt;
   bool _initialized = false;
+  bool _closed = false;
+
+  void _publishState() {
+    if (!_closed) notifyListeners();
+  }
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -384,10 +390,12 @@ class NotificationClientService {
     } on MissingPluginException {
       permission = NotificationPermissionState.unavailable;
       registration = NotificationRegistrationState.providerUnavailable;
+      _publishState();
       return;
     } on PlatformException {
       permission = NotificationPermissionState.unavailable;
       registration = NotificationRegistrationState.providerUnavailable;
+      _publishState();
       return;
     }
     _token = await tokenStore.read();
@@ -403,15 +411,18 @@ class NotificationClientService {
       status = const NativePushStatus.unavailable();
     }
     await _consumeStatus(status, synchronize: true);
+    _publishState();
   }
 
   Future<void> requestPermissionAndRegister() async {
     registration = NotificationRegistrationState.registrationPending;
+    _publishState();
     NativePushStatus next;
     try {
       next = await nativeBridge.requestPermission();
     } on MissingPluginException {
       registration = NotificationRegistrationState.providerUnavailable;
+      _publishState();
       return;
     } on PlatformException {
       registration = NotificationRegistrationState.providerUnavailable;
@@ -423,6 +434,7 @@ class NotificationClientService {
           ? NotificationRegistrationState.denied
           : NotificationRegistrationState.providerUnavailable;
       await _retireServerBindingIfPossible();
+      _publishState();
       return;
     }
 
@@ -436,6 +448,7 @@ class NotificationClientService {
       return;
     }
     await _consumeStatus(next, synchronize: true);
+    _publishState();
   }
 
   Future<void> onAuthenticated() => _serial(_ensureAuthorizedOwnerRegistration);
@@ -500,23 +513,25 @@ class NotificationClientService {
   }
 
   Future<void> close() async {
+    if (_closed) return;
     _routeHandler = null;
     _pendingRoutes.clear();
     await nativeBridge.close();
+    _closed = true;
+    dispose();
   }
 
   Future<void> _serial(Future<void> Function() operation) {
-    final completer = Completer<void>();
-    final previous = _tail;
-    _tail = previous.then((_) async {
-      try {
-        await operation();
-        completer.complete();
-      } catch (error, stack) {
-        completer.completeError(error, stack);
-      }
-    });
-    return completer.future;
+    final previous = _tail.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    final current = previous.then((_) => operation());
+    _tail = current.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return current.whenComplete(_publishState);
   }
 
   Future<void> _handleNativeEvent(NativePushEvent event) async {
@@ -585,14 +600,12 @@ class NotificationClientService {
         permission != NotificationPermissionState.provisional) {
       return;
     }
-    if (_token == null) {
-      try {
-        final native = await nativeBridge.registerForPush();
-        await _consumeStatus(native, synchronize: false);
-      } on Object {
-        registration = NotificationRegistrationState.providerUnavailable;
-        return;
-      }
+    try {
+      final native = await nativeBridge.registerForPush();
+      await _consumeStatus(native, synchronize: false);
+    } on Object {
+      registration = NotificationRegistrationState.providerUnavailable;
+      return;
     }
     await _synchronizeCurrentOwner();
   }
