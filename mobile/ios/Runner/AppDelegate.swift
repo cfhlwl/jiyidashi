@@ -2294,7 +2294,7 @@ final class PhoneOneTapNativeBridge {
 
   private func beginAsync(
     result: @escaping FlutterResult,
-    operation: (@escaping (PhoneOneTapNativeResult) -> Bool) -> Void
+    operation: (PhoneOneTapCallbackFence) -> Void
   ) {
     guard let generation = requestGate.begin() else {
       result(unavailable("REQUEST_IN_PROGRESS").platformMap())
@@ -2306,7 +2306,7 @@ final class PhoneOneTapNativeBridge {
       self.pending = nil
       current.result(value.platformMap())
     }
-    operation { value in _ = callback.complete(value) }
+    operation(callback)
   }
 
   private func invalidatePending(reason: String) {
