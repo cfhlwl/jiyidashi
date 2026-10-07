@@ -38,6 +38,8 @@ from app.services.auth_service import (
     lock_login_for_token_issue,
     register_email_password,
 )
+from app.auth_models import AuthSession
+from app.models import Device
 from app.services.auth_session_service import (
     PublicAuthError,
     PublicSessionTokens,
@@ -48,10 +50,49 @@ from app.services.auth_session_service import (
     revoke_session,
 )
 from app.services.entitlement_service import create_dev_legacy_full_entitlement
+from app.services.notification_service import (
+    NotificationDeviceError,
+    unregister_device_push,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+def _unregister_push_binding_best_effort(
+    db: Session,
+    *,
+    user_id: UUID,
+    client_uuid: str,
+) -> None:
+    try:
+        unregister_device_push(
+            db,
+            user_id=user_id,
+            client_uuid=client_uuid,
+        )
+    except NotificationDeviceError as exc:
+        if exc.code != "PUSH_DEVICE_NOT_FOUND":
+            raise
+
+
+def _unregister_all_push_bindings(db: Session, *, user_id: UUID) -> None:
+    client_uuids = list(
+        db.scalars(
+            select(Device.client_uuid).where(
+                Device.user_id == user_id,
+                Device.push_enabled.is_(True),
+            )
+        )
+    )
+    db.rollback()
+    for client_uuid in client_uuids:
+        _unregister_push_binding_best_effort(
+            db,
+            user_id=user_id,
+            client_uuid=client_uuid,
+        )
 
 
 def _client_ip(request: Request) -> str:
@@ -184,6 +225,20 @@ def logout(
     claims: AuthenticatedClaims,
     db: DbSession,
 ) -> AuthAcceptedResponse:
+    session = db.scalar(
+        select(AuthSession).where(
+            AuthSession.id == claims.session_id,
+            AuthSession.user_id == claims.user_id,
+        )
+    )
+    client_uuid = session.device_id if session is not None else None
+    db.rollback()
+    if client_uuid:
+        _unregister_push_binding_best_effort(
+            db,
+            user_id=claims.user_id,
+            client_uuid=client_uuid,
+        )
     revoke_session(
         db,
         user_id=claims.user_id,
@@ -201,6 +256,7 @@ def logout_all(
     claims: AuthenticatedClaims,
     db: DbSession,
 ) -> AuthAcceptedResponse:
+    _unregister_all_push_bindings(db, user_id=claims.user_id)
     revoke_all_sessions(db, user_id=claims.user_id, reason="LOGOUT_ALL")
     return AuthAcceptedResponse()
 
@@ -234,6 +290,20 @@ def revoke_own_session(
     claims: AuthenticatedClaims,
     db: DbSession,
 ) -> AuthAcceptedResponse:
+    session = db.scalar(
+        select(AuthSession).where(
+            AuthSession.id == session_id,
+            AuthSession.user_id == claims.user_id,
+        )
+    )
+    client_uuid = session.device_id if session is not None else None
+    db.rollback()
+    if client_uuid:
+        _unregister_push_binding_best_effort(
+            db,
+            user_id=claims.user_id,
+            client_uuid=client_uuid,
+        )
     if not revoke_session(
         db,
         user_id=claims.user_id,
