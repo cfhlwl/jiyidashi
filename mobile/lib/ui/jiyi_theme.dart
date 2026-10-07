@@ -5,6 +5,7 @@ import 'jiyi_tokens.dart';
 // JiYiTheme 是 Flutter 产品视觉的唯一事实源；页面不得再次复制品牌色、输入框、按钮、Card、Dialog 或底部导航样式。
 abstract final class JiYiTheme {
   static const Color brandSeed = JiYiProductColors.brandPrimary;
+  static const Color appBackground = JiYiProductColors.background;
 
   static ThemeData light({String? fontFamily, bool elderMode = false}) {
     final colorScheme = ColorScheme.fromSeed(
