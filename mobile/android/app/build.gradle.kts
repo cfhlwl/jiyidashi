@@ -4,6 +4,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+fun externalPushValue(name: String): String =
+    providers.gradleProperty(name)
+        .orElse(providers.environmentVariable(name))
+        .orElse("")
+        .get()
+
+fun quotedBuildConfig(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "cn.jiyidashi.jiyidashi"
     compileSdk = flutter.compileSdkVersion
@@ -14,25 +23,34 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // Historical identity remains unchanged until APP-ID-001 is authoritative.
         applicationId = "cn.jiyidashi.jiyidashi"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        val fcmProjectId = externalPushValue("JIYI_FCM_PROJECT_ID")
+        val fcmAppId = externalPushValue("JIYI_FCM_APP_ID")
+        val fcmApiKey = externalPushValue("JIYI_FCM_API_KEY")
+        val fcmSenderId = externalPushValue("JIYI_FCM_SENDER_ID")
+        val hmsAppId = externalPushValue("JIYI_HMS_APP_ID")
+        buildConfigField("String", "JIYI_FCM_PROJECT_ID", quotedBuildConfig(fcmProjectId))
+        buildConfigField("String", "JIYI_FCM_APP_ID", quotedBuildConfig(fcmAppId))
+        buildConfigField("String", "JIYI_FCM_API_KEY", quotedBuildConfig(fcmApiKey))
+        buildConfigField("String", "JIYI_FCM_SENDER_ID", quotedBuildConfig(fcmSenderId))
+        buildConfigField("String", "JIYI_HMS_APP_ID", quotedBuildConfig(hmsAppId))
+        manifestPlaceholders["JIYI_HMS_APP_ID"] = hmsAppId
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Release signing authority remains outside NOTIFY-001B.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -46,6 +64,9 @@ kotlin {
 
 dependencies {
     implementation("androidx.work:work-runtime:2.9.1")
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("com.huawei.hms:push:6.13.0.300")
     testImplementation("junit:junit:4.13.2")
 }
 
