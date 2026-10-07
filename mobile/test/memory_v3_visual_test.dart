@@ -17,6 +17,14 @@ Future<void> _expectMemoryV3Golden(WidgetTester tester, String fileName) async {
   );
 }
 
+Future<void> _scrollMemoryV3IntoView(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    400,
+    scrollable: find.byType(Scrollable),
+  );
+}
+
 class _MemoryV3Consent implements AmapPrivacyConsentAuthority {
   bool accepted = false;
 
@@ -195,7 +203,9 @@ void main() {
 
     expect(find.text('这是一条来自真实记录的回答。'), findsOneWidget);
     await _expectMemoryV3Golden(tester, 'memory_v3_answer.png');
-    await tester.tap(find.text('查看这次回答的依据'));
+    final evidenceDisclosure = find.text('查看这次回答的依据');
+    await _scrollMemoryV3IntoView(tester, evidenceDisclosure);
+    await tester.tap(evidenceDisclosure);
     await tester.pumpAndSettle();
     expect(find.text('真实用户记录摘录'), findsOneWidget);
     expect(find.textContaining('用户编辑'), findsNothing);
@@ -234,7 +244,9 @@ void main() {
     await tester.enterText(find.byType(TextField), '没有证据的问题');
     await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('查看这次回答的依据'));
+    final evidenceDisclosure = find.text('查看这次回答的依据');
+    await _scrollMemoryV3IntoView(tester, evidenceDisclosure);
+    await tester.tap(evidenceDisclosure);
     await tester.pumpAndSettle();
 
     expect(find.text('这次回答依据为服务端已形成的足迹记录。'), findsNothing);
@@ -249,7 +261,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('真实地点'), findsWidgets);
+    final place = find.textContaining('真实地点');
+    await _scrollMemoryV3IntoView(tester, place);
+    expect(place, findsWidgets);
+    await _scrollMemoryV3IntoView(
+      tester,
+      find.byKey(const ValueKey('memory-query-day-map')),
+    );
     expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
     expect(find.byKey(const ValueKey('memory-query-amap-privacy-accept')), findsOneWidget);
     expect(consent.accepted, isFalse);

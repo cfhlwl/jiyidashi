@@ -3426,7 +3426,13 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             ),
           ],
         ),
-        child: Padding(padding: padding, child: child),
+        child: Padding(
+          padding: padding,
+          child: Material(
+            type: MaterialType.transparency,
+            child: child,
+          ),
+        ),
       );
     }
 
