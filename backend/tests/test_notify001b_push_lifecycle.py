@@ -51,8 +51,8 @@ def _seed_email_identity(
 async def test_legacy_login_without_device_id_does_not_cross_revoke(client):
     password = "Notify001B-Legacy-Password!"
     password_hash = hash_password(password)
-    email_a = f"notify-legacy-login-a-{uuid4().hex}@example.test"
-    email_b = f"notify-legacy-login-b-{uuid4().hex}@example.test"
+    email_a = f"notify-legacy-login-a-{uuid4().hex}@jiyidays.cn"
+    email_b = f"notify-legacy-login-b-{uuid4().hex}@jiyidays.cn"
     owner_a = _seed_email_identity(
         email=email_a,
         password_hash=password_hash,
@@ -95,8 +95,8 @@ async def test_legacy_login_without_device_id_does_not_cross_revoke(client):
 
 async def test_legacy_verify_email_without_device_id_does_not_cross_revoke(client):
     password_hash = hash_password("Notify001B-Verify-Password!")
-    email_a = f"notify-legacy-verify-a-{uuid4().hex}@example.test"
-    email_b = f"notify-legacy-verify-b-{uuid4().hex}@example.test"
+    email_a = f"notify-legacy-verify-a-{uuid4().hex}@jiyidays.cn"
+    email_b = f"notify-legacy-verify-b-{uuid4().hex}@jiyidays.cn"
     owner_a = _seed_email_identity(
         email=email_a,
         password_hash=password_hash,
@@ -136,8 +136,8 @@ async def test_legacy_verify_email_without_device_id_does_not_cross_revoke(clien
 async def test_explicit_shared_device_id_still_supersedes_prior_owner(client):
     password = "Notify001B-Explicit-Password!"
     password_hash = hash_password(password)
-    email_a = f"notify-explicit-a-{uuid4().hex}@example.test"
-    email_b = f"notify-explicit-b-{uuid4().hex}@example.test"
+    email_a = f"notify-explicit-a-{uuid4().hex}@jiyidays.cn"
+    email_b = f"notify-explicit-b-{uuid4().hex}@jiyidays.cn"
     _seed_email_identity(email=email_a, password_hash=password_hash, verified=True)
     _seed_email_identity(email=email_b, password_hash=password_hash, verified=True)
     client_uuid = f"notify-explicit-{uuid4()}"
