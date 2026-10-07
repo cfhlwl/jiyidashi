@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import pytest
 from sqlalchemy import select
 
 from app.core.db import SessionLocal
 from app.models import Device
+from app.notification_schemas import DevicePushRegistrationRequest
+from app.services.notification_service import (
+    NotificationDeviceError,
+    register_device_push,
+)
 
 
 async def test_auth_logout_fences_session_device_push_binding(client):
@@ -128,3 +134,43 @@ async def test_account_switch_fences_prior_owner_on_same_installation(client):
         assert prior.push_token is None
         assert prior.push_token_digest is None
         assert prior.push_invalidated_at is not None
+
+
+async def test_revoked_session_cannot_commit_late_push_registration(client):
+    auth = await client.post(
+        "/v1/auth/dev-token",
+        json={"nickname": "notify-late-register"},
+    )
+    assert auth.status_code == 200, auth.text
+    body = auth.json()
+    user_id = UUID(body["user_id"])
+    session_id = UUID(body["session_id"])
+    headers = {"Authorization": f"Bearer {body['access_token']}"}
+
+    logged_out = await client.post("/v1/auth/logout", headers=headers)
+    assert logged_out.status_code == 200, logged_out.text
+
+    payload = DevicePushRegistrationRequest(
+        client_uuid="dev-token",
+        platform="ANDROID",
+        provider="TEST",
+        push_token="notify-late-register-token-123456",
+    )
+    with SessionLocal() as db:
+        with pytest.raises(NotificationDeviceError) as exc_info:
+            register_device_push(
+                db,
+                user_id=user_id,
+                payload=payload,
+                session_id=session_id,
+            )
+        assert exc_info.value.code == "PUSH_SESSION_INVALID"
+        assert exc_info.value.status_code == 401
+
+        row = db.scalar(
+            select(Device).where(
+                Device.user_id == user_id,
+                Device.client_uuid == "dev-token",
+            )
+        )
+        assert row is None or row.push_enabled is False
