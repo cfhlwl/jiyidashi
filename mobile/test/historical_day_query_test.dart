@@ -102,8 +102,17 @@ void main() {
     await _submitHistoricalQuery(tester, api);
     await tester.pumpAndSettle();
 
+    final timeRange = find.text('18:16 - 19:05', skipOffstage: false);
+    final scrollable = find.byType(Scrollable).first;
+    for (var attempt = 0; attempt < 8 && timeRange.evaluate().isEmpty; attempt++) {
+      await tester.drag(scrollable, const Offset(0, -420));
+      await tester.pumpAndSettle();
+    }
+    await tester.ensureVisible(timeRange);
+    await tester.pumpAndSettle();
+
     expect(find.textContaining('公司'), findsWidgets);
-    expect(find.text('18:16 - 19:05'), findsOneWidget);
+    expect(timeRange, findsOneWidget);
     expect(find.text('按日期看足迹'), findsOneWidget);
     expect(find.text('DATE_FOOTPRINT_QUERY'), findsNothing);
     expect(find.text('没有可展示的参考记录'), findsNothing);

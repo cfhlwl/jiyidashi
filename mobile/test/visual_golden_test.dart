@@ -1818,7 +1818,15 @@ void main() {
 
     expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
     expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
-    expect(find.text('为什么这么回答'), findsOneWidget);
+    final disclosure = find.byKey(
+      const ValueKey('memory-query-evidence-disclosure'),
+      skipOffstage: false,
+    );
+    await tester.ensureVisible(disclosure);
+    await tester.tap(disclosure);
+    await _pumpVisualFrames(tester);
+    expect(find.text('查看这次回答的依据'), findsOneWidget);
+    expect(find.textContaining('滨江公园 · 09:00–10:10'), findsOneWidget);
     final map = find.byKey(const ValueKey('amap-real-surface'));
     await tester.ensureVisible(map);
     await _pumpVisualFrames(tester);
