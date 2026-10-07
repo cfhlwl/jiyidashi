@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/amap_privacy_consent.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 
 const _memoryV3GoldenPreview = bool.fromEnvironment('MEMORY_V3_GOLDEN_PREVIEW');
+const _memoryV3FixtureFontFamily = 'Memory V3 Noto Sans SC';
+const _memoryV3FixtureSize = Size(390, 844);
 
 Future<void> _expectMemoryV3Golden(WidgetTester tester, String fileName) async {
   if (!_memoryV3GoldenPreview) return;
@@ -43,6 +48,14 @@ class _MemoryV3Consent implements AmapPrivacyConsentAuthority {
   Future<void> revoke() async => accepted = false;
 }
 
+class _MemoryV3ZeroQueue extends OfflineQueueStore {
+  @override
+  Future<int> countAwaitingDelivery(String ownerUserId) async => 0;
+
+  @override
+  Future<void> close() async {}
+}
+
 class _MemoryV3Api extends JiYiApiClient {
   _MemoryV3Api({this.response, this.pending, this.error})
       : super(baseUrl: 'https://memory-v3.invalid/v1') {
@@ -61,6 +74,24 @@ class _MemoryV3Api extends JiYiApiClient {
     if (error != null) throw error!;
     return pending?.future ?? response ?? _noAnswer();
   }
+
+  @override
+  Future<Map<String, dynamic>> getProfile() async => <String, dynamic>{
+        'elder_mode_enabled': false,
+      };
+
+  @override
+  Future<Map<String, dynamic>> getPrivacyStatus() async => <String, dynamic>{
+        'recording_paused': false,
+        'paused_until': null,
+      };
+
+  @override
+  Future<Map<String, dynamic>> getTodayFootprint() async => <String, dynamic>{
+        'timezone': 'Asia/Shanghai',
+        'day': '2026-09-28',
+        'visits': <Map<String, dynamic>>[],
+      };
 }
 
 Map<String, dynamic> _noAnswer() => <String, dynamic>{
@@ -127,16 +158,21 @@ Future<void> _pumpMemory(
   _MemoryV3Consent? consent,
   double textScale = 1.0,
 }) async {
-  tester.view.physicalSize = const Size(390, 844);
+  tester.view.physicalSize = _memoryV3FixtureSize;
   tester.view.devicePixelRatio = 1.0;
+  tester.binding.platformDispatcher.localeTestValue = const Locale('zh', 'CN');
   addTearDown(() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
+    tester.binding.platformDispatcher.clearLocaleTestValue();
   });
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: JiYiTheme.light(elderMode: elderMode),
+      theme: JiYiTheme.light(
+        elderMode: elderMode,
+        fontFamily: _memoryV3FixtureFontFamily,
+      ),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
           textScaler: TextScaler.linear(textScale),
@@ -157,7 +193,55 @@ Future<void> _pumpMemory(
   await tester.pump();
 }
 
+Future<void> _pumpMemoryProductionShell(
+  WidgetTester tester,
+  _MemoryV3Api api,
+) async {
+  tester.view.physicalSize = _memoryV3FixtureSize;
+  tester.view.devicePixelRatio = 1.0;
+  tester.binding.platformDispatcher.localeTestValue = const Locale('zh', 'CN');
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+    tester.binding.platformDispatcher.clearLocaleTestValue();
+  });
+
+  // The fixture exercises the authenticated production shell/navigation while
+  // keeping native producers out of a visual-only test.
+  api.authenticatedUserId = null;
+  await tester.pumpWidget(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: JiYiTheme.light(fontFamily: _memoryV3FixtureFontFamily),
+      home: AppShell(
+        api: api,
+        offlineQueue: _MemoryV3ZeroQueue(),
+        onLogout: () {},
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('记忆'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _loadMemoryV3Font(String family, String path) async {
+  final bytes = await File(path).readAsBytes();
+  final loader = FontLoader(family)
+    ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+  await loader.load();
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async {
+    await _loadMemoryV3Font(
+      _memoryV3FixtureFontFamily,
+      'test/assets/visual/NotoSansSC-Regular.otf',
+    );
+    await _loadMemoryV3Font('MaterialIcons', 'test/fonts/MaterialIcons-Regular.otf');
+  });
+
   testWidgets('Memory V3 default shell and query surface are truthful', (tester) async {
     final api = _MemoryV3Api();
     await _pumpMemory(tester, api);
@@ -179,6 +263,29 @@ void main() {
 
     expect(find.text('上周去了哪里'), findsWidgets);
     expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('Memory V3 production shell candidate', (tester) async {
+    await _pumpMemoryProductionShell(tester, _MemoryV3Api());
+
+    for (final label in const ['今天', '记忆', '人生', '家庭', '我的']) {
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is Semantics && widget.properties.label == label,
+        ),
+        findsOneWidget,
+      );
+    }
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.label == '记忆' &&
+            widget.properties.selected == true,
+      ),
+      findsOneWidget,
+    );
+    await _expectMemoryV3Golden(tester, 'memory_v3_shell.png');
   });
 
   testWidgets('Memory V3 preserves shell and submitted input during loading', (tester) async {
