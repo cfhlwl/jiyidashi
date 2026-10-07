@@ -518,7 +518,7 @@ S1 receipt + OPEN + count=0 + before deadline
 Concurrent recovery requests are elected by the ledger row lock/unique
 transaction. Only the winner may issue S2. A request after the deadline, a
 request after `recovery_state=CLOSED`, or any further same-request replay fails
-closed as `AUTH_PHONE_ONE_TAP_REPLAYED`; it must acquire a fresh native token
+closed as `AUTH_PHONE_ONE_TAP_TOKEN_REPLAYED`; it must acquire a fresh native token
 and request id. Ledger retention is for replay/audit evidence only and never
 extends the recovery deadline or creates a new authentication opportunity.
 
@@ -633,10 +633,10 @@ After `GetMobile` succeeds:
    AuthIdentity(provider=AuthProvider.PHONE, subject=canonical_e164)
    ```
 
-4. If present, load its `user_id` and preserve that canonical owner.
-5. Re-check `auth_disabled_at` and the account-deletion boundary under the
+5. If present, load its `user_id` and preserve that canonical owner.
+6. Re-check `auth_disabled_at` and the account-deletion boundary under the
    AUTH-01 lock ordering.
-6. Issue the existing provider-neutral session response.
+7. Issue the existing provider-neutral session response.
 
 A client-submitted phone, masked display number, `User.phone` projection, or
 carrier metadata can never participate in this lookup.
@@ -970,13 +970,31 @@ signing identity, request/exchange id, and normalized result.
 | Phase | Scope | Gate |
 | --- | --- | --- |
 | AUTH-02A | This provider/architecture/security specification and repository audit | Narrow review; no production code. |
-| AUTH-02B | Provider-neutral backend adapter, fake provider, `/v1/auth/phone/one-tap`, durable exchange ledger, replay/idempotency, rate/concurrency controls, tests | Official TTL/retry gaps reconciled; no real credential required for fake-provider tests. |
+| AUTH-02B | Provider-neutral interface, fake provider, `/v1/auth/phone/one-tap`, durable exchange ledger, replay/idempotency, rate/concurrency framework, tests | Foundation may start without live Aliyun; see the explicit gate below. |
 | AUTH-02C | Android/iOS native PNVS adapters, provider-neutral bridge, capability and privacy gating | Native SDK version and scheme/key delivery reviewed; still not production-ready without final identities. |
 | AUTH-02D | Auth V3 UI wiring to real capability/fallback | Separate UI scope; no visual-parity work in this phase. |
 | AUTH-02E | Production scheme, final Android certificate, Apple registration, provider account/credentials, physical-device acceptance, operations/retention | Blocked by external identity/signing/provider prerequisites. |
 
 AUTH-03 SMS OTP, AUTH-04 WeChat, push, and other providers are not hidden
 subtasks of these phases.
+
+### AUTH-02B foundation gate
+
+AUTH-02B foundation work may begin with the provider-neutral interface, fake
+provider, API contract, durable ledger, replay/idempotency model,
+rate/concurrency framework, and PostgreSQL tests, provided that:
+
+- no real Alibaba endpoint is called;
+- no real Alibaba credential is configured;
+- live provider capability remains fail closed;
+- provider TTL/retry values exist only behind an explicit test/config seam and
+  are never presented as production defaults or verified live behavior.
+
+Real Aliyun provider adapter activation remains blocked until the official TTL
+conflict, retry semantics, and ambiguous-completion semantics are reconciled
+and reviewed, and the provider configuration/credential is available. AUTH-02E
+continues to retain all other external identity, signing, scheme, billing,
+privacy, and physical-device blockers.
 
 ## Resolved Questions
 
