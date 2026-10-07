@@ -536,6 +536,7 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
 
   String? get authenticatedSessionId => _sessionId;
 
+  @override
   Future<String> canonicalClientUuid() => _sessionStore.readOrCreateInstallationId();
 
   PushSessionBinding capturePushSession() {

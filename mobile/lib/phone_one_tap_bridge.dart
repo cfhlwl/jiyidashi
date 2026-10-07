@@ -236,7 +236,7 @@ class MethodChannelPhoneOneTapBridge implements PhoneOneTapBridge {
     final reason = raw['reason'];
     final safeReason = reason is String ? reason : null;
     return switch (state) {
-      'AVAILABLE' => PhoneOneTapResult(state: PhoneOneTapState.available),
+      'AVAILABLE' => const PhoneOneTapResult(state: PhoneOneTapState.available),
       'UNAVAILABLE' => PhoneOneTapResult.unavailable(safeReason),
       'CANCELLED' => const PhoneOneTapResult.cancelled(),
       'TIMEOUT' => const PhoneOneTapResult.timeout(),
