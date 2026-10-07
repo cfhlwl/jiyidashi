@@ -1907,7 +1907,7 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
     }
   }
 
-  private func canonicalPayload(
+  func canonicalPayload(
     _ userInfo: [AnyHashable: Any]
   ) -> [String: Any]? {
     let version: Int?
