@@ -121,6 +121,17 @@ def _token_response(
     )
 
 
+_LEGACY_CLIENT_DEVICE_ID = "legacy-client"
+
+
+def _resolve_session_device_id(device_id: str) -> str:
+    """Never treat the compatibility sentinel as a global installation identity."""
+
+    if device_id == _LEGACY_CLIENT_DEVICE_ID:
+        return f"legacy-session-{uuid4()}"
+    return device_id
+
+
 @router.post(
     "/register",
     response_model=RegistrationResponse,
@@ -152,17 +163,18 @@ def verify_email(
                 already_verified=True,
                 session=None,
             )
+        session_device_id = _resolve_session_device_id(payload.device_id)
         issued = issue_authenticated_session(
             db,
             user_id=result.user_id,
-            device_id=payload.device_id,
+            device_id=session_device_id,
             client_platform=payload.client_platform,
             device_name=payload.device_name,
         )
         fence_other_owner_push_bindings_for_client_uuid(
             db,
             user_id=result.user_id,
-            client_uuid=payload.device_id,
+            client_uuid=session_device_id,
         )
         return EmailVerificationResponse(
             verified=True,
@@ -198,17 +210,18 @@ def resend_verification(
 def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenResponse:
     user = authenticate_email_password(db, payload, client_ip=_client_ip(request))
     try:
+        session_device_id = _resolve_session_device_id(payload.device_id)
         issued = issue_authenticated_session(
             db,
             user_id=user.id,
-            device_id=payload.device_id,
+            device_id=session_device_id,
             client_platform=payload.client_platform,
             device_name=payload.device_name,
         )
         fence_other_owner_push_bindings_for_client_uuid(
             db,
             user_id=user.id,
-            client_uuid=payload.device_id,
+            client_uuid=session_device_id,
         )
     except PublicAuthError as exc:
         _raise_auth_error(exc)
