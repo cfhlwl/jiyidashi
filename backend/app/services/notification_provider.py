@@ -14,7 +14,7 @@ from uuid import UUID
 import httpx
 import jwt
 
-from app.core.config import Settings, get_settings
+from app.core.config import FROZEN_PRODUCTION_APP_ID, Settings, get_settings
 from app.notification_models import PushPlatform, PushProvider
 
 _MAX_PROVIDER_RETRY_SECONDS = 900
@@ -222,6 +222,11 @@ class APNsNotificationProvider:
             self._cached_jwt_at = now
             return token
 
+    def _invalidate_provider_jwt(self) -> None:
+        with self._jwt_lock:
+            self._cached_jwt = None
+            self._cached_jwt_at = 0.0
+
     def deliver(self, request: NotificationProviderRequest) -> NotificationProviderResult:
         payload = {
             "aps": {
@@ -257,6 +262,12 @@ class APNsNotificationProvider:
         except (ValueError, TypeError):
             pass
         normalized = _safe_error_code(reason or f"HTTP_{response.status_code}")
+
+        if response.status_code == 403 and reason == "ExpiredProviderToken":
+            self._invalidate_provider_jwt()
+            return NotificationProviderResult.retryable_failure(
+                "APNS_EXPIRED_PROVIDER_TOKEN"
+            )
 
         if response.status_code == 429 or response.status_code >= 500:
             return NotificationProviderResult.retryable_failure(
@@ -591,6 +602,12 @@ def provider_registration_allowed(
     if provider == PushProvider.TEST.value:
         return False
     if not settings.push_app_identity_reviewed:
+        return False
+    if (
+        settings.push_ios_bundle_id.strip() != FROZEN_PRODUCTION_APP_ID
+        or settings.apns_topic.strip() != FROZEN_PRODUCTION_APP_ID
+        or settings.push_android_application_id.strip() != FROZEN_PRODUCTION_APP_ID
+    ):
         return False
     if provider == PushProvider.APNS.value:
         return (

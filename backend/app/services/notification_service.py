@@ -40,6 +40,7 @@ from app.notification_schemas import (
     NotificationDeliveryCounts,
     NotificationEligibleCounts,
 )
+from app.services.auth_session_service import lock_installation_authority_in_transaction
 from app.services.admin_security import (
     AdminOperationError,
     append_admin_audit,
@@ -229,6 +230,7 @@ def register_device_push(
         provider=payload.provider.value,
         digest=digest,
     ):
+        lock_installation_authority_in_transaction(db, payload.client_uuid)
         _lock_push_digest(db, digest)
 
         if session_id is not None:
@@ -246,6 +248,7 @@ def register_device_push(
                 session is None
                 or session.revoked_at is not None
                 or _as_utc(session.expires_at) <= now
+                or session.device_id != payload.client_uuid
             ):
                 db.rollback()
                 raise NotificationDeviceError("PUSH_SESSION_INVALID", 401)

@@ -11,6 +11,9 @@ from app.embedding_policy import (
 )
 
 
+FROZEN_PRODUCTION_APP_ID = "com.jiyidays"
+
+
 class Settings(BaseSettings):
     app_env: str = "development"
     app_name: str = "迹忆 API"
@@ -393,10 +396,22 @@ class Settings(BaseSettings):
                 )
 
         push_live_enabled = self.apns_enabled or self.fcm_enabled or self.hms_enabled
-        if push_live_enabled and self.is_production and not self.push_app_identity_reviewed:
-            raise ValueError(
-                "PUSH_APP_IDENTITY_REVIEWED must be true before enabling production push"
-            )
+        if push_live_enabled and self.is_production:
+            if not self.push_app_identity_reviewed:
+                raise ValueError(
+                    "PUSH_APP_IDENTITY_REVIEWED must be true before enabling production push"
+                )
+            canonical_identity = {
+                "PUSH_IOS_BUNDLE_ID": self.push_ios_bundle_id.strip(),
+                "APNS_TOPIC": self.apns_topic.strip(),
+                "PUSH_ANDROID_APPLICATION_ID": self.push_android_application_id.strip(),
+            }
+            for key, value in canonical_identity.items():
+                if value != FROZEN_PRODUCTION_APP_ID:
+                    raise ValueError(
+                        f"{key} must equal frozen APP-ID-001 identity "
+                        f"{FROZEN_PRODUCTION_APP_ID}"
+                    )
 
         def _placeholder(value: str) -> bool:
             upper = value.strip().upper()

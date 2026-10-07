@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+FROZEN_PRODUCTION_APP_ID = "com.jiyidays"
+
 REQUIRED_EXACT = {
     "APP_ENV": "production",
     "ENABLE_DEV_AUTH": "false",
@@ -206,6 +208,16 @@ def main() -> None:
             errors.append(
                 "PUSH_APP_IDENTITY_REVIEWED must be true before live push is enabled"
             )
+        for key in (
+            "PUSH_IOS_BUNDLE_ID",
+            "APNS_TOPIC",
+            "PUSH_ANDROID_APPLICATION_ID",
+        ):
+            if values.get(key, "").strip() != FROZEN_PRODUCTION_APP_ID:
+                errors.append(
+                    f"{key} must equal frozen APP-ID-001 identity "
+                    f"{FROZEN_PRODUCTION_APP_ID}"
+                )
 
     if apns_enabled:
         ios_bundle = values.get("PUSH_IOS_BUNDLE_ID", "").strip()

@@ -152,17 +152,17 @@ def verify_email(
                 already_verified=True,
                 session=None,
             )
-        fence_other_owner_push_bindings_for_client_uuid(
-            db,
-            user_id=result.user_id,
-            client_uuid=payload.device_id,
-        )
         issued = issue_authenticated_session(
             db,
             user_id=result.user_id,
             device_id=payload.device_id,
             client_platform=payload.client_platform,
             device_name=payload.device_name,
+        )
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=result.user_id,
+            client_uuid=payload.device_id,
         )
         return EmailVerificationResponse(
             verified=True,
@@ -197,11 +197,6 @@ def resend_verification(
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenResponse:
     user = authenticate_email_password(db, payload, client_ip=_client_ip(request))
-    fence_other_owner_push_bindings_for_client_uuid(
-        db,
-        user_id=user.id,
-        client_uuid=payload.device_id,
-    )
     try:
         issued = issue_authenticated_session(
             db,
@@ -209,6 +204,11 @@ def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenRespon
             device_id=payload.device_id,
             client_platform=payload.client_platform,
             device_name=payload.device_name,
+        )
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=user.id,
+            client_uuid=payload.device_id,
         )
     except PublicAuthError as exc:
         _raise_auth_error(exc)
@@ -406,17 +406,17 @@ def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
         db.commit()
 
     try:
-        fence_other_owner_push_bindings_for_client_uuid(
-            db,
-            user_id=user_id,
-            client_uuid="dev-token",
-        )
         pair = create_public_session(
             db,
             user_id=user_id,
             device_id="dev-token",
             client_platform="development",
             device_name="development token",
+        )
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=user_id,
+            client_uuid="dev-token",
         )
     except PublicAuthError as exc:
         _raise_auth_error(exc)

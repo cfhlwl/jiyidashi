@@ -89,8 +89,8 @@ def _production_settings(**overrides) -> Settings:
         "auth_smtp_from": "noreply@example.test",
         "enable_dev_auth": False,
         "push_app_identity_reviewed": True,
-        "push_ios_bundle_id": "com.example.jiyi",
-        "push_android_application_id": "com.example.jiyi",
+        "push_ios_bundle_id": "com.jiyidays",
+        "push_android_application_id": "com.jiyidays",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -111,7 +111,7 @@ def test_apns_success_uses_http2_shape_and_cached_provider_jwt():
         apns_team_id="TEAM123456",
         apns_key_id="KEY1234567",
         apns_private_key=key,
-        apns_topic="com.example.jiyi",
+        apns_topic="com.jiyidays",
         apns_environment="sandbox",
     )
     client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -124,7 +124,7 @@ def test_apns_success_uses_http2_shape_and_cached_provider_jwt():
     assert second.accepted is True
     assert len(requests) == 2
     assert requests[0].url.host == "api.sandbox.push.apple.com"
-    assert requests[0].headers["apns-topic"] == "com.example.jiyi"
+    assert requests[0].headers["apns-topic"] == "com.jiyidays"
     assert requests[0].headers["apns-push-type"] == "alert"
     assert authorizations[0] == authorizations[1]
     rendered = requests[0].content.decode("utf-8")
@@ -162,7 +162,7 @@ def test_apns_response_classification(
         apns_team_id="TEAM123456",
         apns_key_id="KEY1234567",
         apns_private_key=key,
-        apns_topic="com.example.jiyi",
+        apns_topic="com.jiyidays",
     )
     provider = APNsNotificationProvider(
         settings,
@@ -175,6 +175,50 @@ def test_apns_response_classification(
     assert result.invalid_token is invalid_token
     if retryable:
         assert result.retry_after_seconds == 17
+
+
+def test_apns_expired_provider_token_clears_cached_jwt_and_retries_with_fresh_authorization():
+    key = _ec_private_key()
+    now = [1_700_000_000.0]
+    authorizations: list[str] = []
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        authorizations.append(request.headers["authorization"])
+        if calls == 1:
+            return httpx.Response(
+                403,
+                request=request,
+                json={"reason": "ExpiredProviderToken"},
+            )
+        return httpx.Response(200, request=request)
+
+    settings = _base_settings(
+        apns_enabled=True,
+        apns_team_id="TEAM123456",
+        apns_key_id="KEY1234567",
+        apns_private_key=key,
+        apns_topic="com.jiyidays",
+        apns_environment="sandbox",
+    )
+    provider = APNsNotificationProvider(
+        settings,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        clock=lambda: now[0],
+    )
+
+    first = provider.deliver(_request(provider=PushProvider.APNS))
+    assert first.accepted is False
+    assert first.retryable is True
+    assert first.error_code == "APNS_EXPIRED_PROVIDER_TOKEN"
+
+    now[0] += 1
+    second = provider.deliver(_request(provider=PushProvider.APNS))
+    assert second.accepted is True
+    assert calls == 2
+    assert authorizations[0] != authorizations[1]
 
 
 def test_apns_429_is_retryable_and_bounded():
@@ -193,7 +237,7 @@ def test_apns_429_is_retryable_and_bounded():
         apns_team_id="TEAM123456",
         apns_key_id="KEY1234567",
         apns_private_key=key,
-        apns_topic="com.example.jiyi",
+        apns_topic="com.jiyidays",
     )
     result = APNsNotificationProvider(
         settings,
@@ -346,8 +390,8 @@ def test_production_provider_registration_requires_reviewed_identity_and_configu
         push_app_identity_reviewed=False,
         apns_enabled=True,
         apns_environment="production",
-        apns_topic="com.example.jiyi",
-        push_ios_bundle_id="com.example.jiyi",
+        apns_topic="com.jiyidays",
+        push_ios_bundle_id="com.jiyidays",
         fcm_enabled=False,
         hms_enabled=False,
     )
@@ -362,9 +406,9 @@ def test_production_provider_registration_requires_reviewed_identity_and_configu
         push_app_identity_reviewed=True,
         apns_enabled=True,
         apns_environment="production",
-        apns_topic="com.example.jiyi",
-        push_ios_bundle_id="com.example.jiyi",
-        push_android_application_id="com.example.jiyi",
+        apns_topic="com.jiyidays",
+        push_ios_bundle_id="com.jiyidays",
+        push_android_application_id="com.jiyidays",
         fcm_enabled=True,
         hms_enabled=True,
     )
@@ -399,7 +443,7 @@ def test_production_apns_requires_identity_review_and_topic_match():
             apns_team_id="TEAM123456",
             apns_key_id="KEY1234567",
             apns_private_key=key,
-            apns_topic="com.example.jiyi",
+            apns_topic="com.jiyidays",
             apns_environment="production",
         )
 
@@ -412,6 +456,43 @@ def test_production_apns_requires_identity_review_and_topic_match():
             apns_topic="com.other.app",
             apns_environment="production",
         )
+
+
+def test_production_push_rejects_noncanonical_app_identity_even_when_reviewed():
+    key = _ec_private_key()
+    with pytest.raises(ValidationError, match="PUSH_IOS_BUNDLE_ID"):
+        _production_settings(
+            apns_enabled=True,
+            apns_team_id="TEAM123456",
+            apns_key_id="KEY1234567",
+            apns_private_key=key,
+            apns_topic="com.wrong.app",
+            push_ios_bundle_id="com.wrong.app",
+            push_android_application_id="com.wrong.app",
+            apns_environment="production",
+        )
+
+    reviewed_wrong = Settings.model_construct(
+        app_env="production",
+        push_app_identity_reviewed=True,
+        apns_enabled=True,
+        apns_environment="production",
+        apns_topic="com.wrong.app",
+        push_ios_bundle_id="com.wrong.app",
+        push_android_application_id="com.wrong.app",
+        fcm_enabled=True,
+        hms_enabled=True,
+    )
+    assert provider_registration_allowed(
+        platform=PushPlatform.IOS.value,
+        provider=PushProvider.APNS.value,
+        settings=reviewed_wrong,
+    ) is False
+    assert provider_registration_allowed(
+        platform=PushPlatform.ANDROID.value,
+        provider=PushProvider.FCM.value,
+        settings=reviewed_wrong,
+    ) is False
 
 
 def test_provider_request_repr_redacts_raw_token():
