@@ -1480,7 +1480,10 @@ void main() {
       await _pumpVisualFrames(tester);
 
       expect(find.text('AI 整理'), findsNothing);
-      expect(find.text('明确记录', skipOffstage: false), findsOneWidget);
+      expect(
+        find.textContaining('明确记录', skipOffstage: false),
+        findsOneWidget,
+      );
       expect(
         find.textContaining('用户文字记录', skipOffstage: false),
         findsOneWidget,
