@@ -495,7 +495,9 @@ void main() {
     final verificationFields = find.byType(TextField);
     expect(verificationFields, findsNWidgets(2));
     await tester.enterText(verificationFields.at(1), 'test-verification-token');
-    await tester.tap(find.widgetWithText(FilledButton, '完成验证'));
+    final completeVerification = find.widgetWithText(FilledButton, '完成验证');
+    await tester.ensureVisible(completeVerification);
+    await tester.tap(completeVerification);
     await _pumpUntil(
       tester,
       () => find.byKey(const ValueKey('onboarding-intro')).evaluate().isNotEmpty,
