@@ -24,6 +24,7 @@ from app.schemas import (
     ResetPasswordRequest,
     TokenResponse,
 )
+from app.services.auth_identity_service import issue_authenticated_session
 from app.services.auth_recovery_service import (
     AuthRecoveryError,
     change_password,
@@ -35,7 +36,6 @@ from app.services.auth_recovery_service import (
 )
 from app.services.auth_service import (
     authenticate_email_password,
-    lock_login_for_token_issue,
     register_email_password,
 )
 from app.services.auth_session_service import (
@@ -110,7 +110,7 @@ def verify_email(
                 already_verified=True,
                 session=None,
             )
-        pair = create_public_session(
+        issued = issue_authenticated_session(
             db,
             user_id=result.user_id,
             device_id=payload.device_id,
@@ -120,7 +120,10 @@ def verify_email(
         return EmailVerificationResponse(
             verified=True,
             already_verified=False,
-            session=_token_response(pair),
+            session=_token_response(
+                issued.tokens,
+                account_deletion_in_progress=issued.account_deletion_in_progress,
+            ),
         )
     except (PublicAuthError, AuthRecoveryError) as exc:
         _raise_auth_error(exc)
@@ -147,14 +150,10 @@ def resend_verification(
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenResponse:
     user = authenticate_email_password(db, payload, client_ip=_client_ip(request))
-    locked_user, account_deletion_in_progress = lock_login_for_token_issue(
-        db,
-        user.id,
-    )
     try:
-        pair = create_public_session(
+        issued = issue_authenticated_session(
             db,
-            user_id=locked_user.id,
+            user_id=user.id,
             device_id=payload.device_id,
             client_platform=payload.client_platform,
             device_name=payload.device_name,
@@ -162,8 +161,8 @@ def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenRespon
     except PublicAuthError as exc:
         _raise_auth_error(exc)
     return _token_response(
-        pair,
-        account_deletion_in_progress=account_deletion_in_progress,
+        issued.tokens,
+        account_deletion_in_progress=issued.account_deletion_in_progress,
     )
 
 
