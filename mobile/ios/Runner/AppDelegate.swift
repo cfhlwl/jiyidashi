@@ -1732,6 +1732,42 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
 }
 
 
+enum NativeNotificationPolicy {
+  static func permissionWire(_ status: UNAuthorizationStatus) -> String {
+    switch status {
+    case .notDetermined:
+      return "notDetermined"
+    case .denied:
+      return "denied"
+    case .authorized:
+      return "authorized"
+    case .provisional:
+      return "provisional"
+    @unknown default:
+      if #available(iOS 14.0, *), status == .ephemeral {
+        return "provisional"
+      }
+      return "unavailable"
+    }
+  }
+
+  static func tokenHex(_ data: Data) -> String {
+    data.map { String(format: "%02x", $0) }.joined()
+  }
+
+  static func mayRegister(_ status: UNAuthorizationStatus) -> Bool {
+    switch status {
+    case .authorized, .provisional:
+      return true
+    default:
+      if #available(iOS 14.0, *), status == .ephemeral {
+        return true
+      }
+      return false
+    }
+  }
+}
+
 final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate {
   static let shared = NativeNotificationBridge()
 
@@ -1789,7 +1825,7 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
   }
 
   func didRegister(deviceToken: Data) {
-    let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+    let token = NativeNotificationPolicy.tokenHex(deviceToken)
     currentToken = token
     emitStatus(method: "token")
   }
@@ -1816,26 +1852,6 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
     )
   }
 
-  private func permissionWire(
-    _ status: UNAuthorizationStatus
-  ) -> String {
-    switch status {
-    case .notDetermined:
-      return "notDetermined"
-    case .denied:
-      return "denied"
-    case .authorized:
-      return "authorized"
-    case .provisional:
-      return "provisional"
-    @unknown default:
-      if #available(iOS 14.0, *), status == .ephemeral {
-        return "provisional"
-      }
-      return "unavailable"
-    }
-  }
-
   private func statusMap(
     authorization: UNAuthorizationStatus
   ) -> [String: Any?] {
@@ -1843,7 +1859,7 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
     return [
       "supported": true,
       "platform": "IOS",
-      "permission": permissionWire(authorization),
+      "permission": NativeNotificationPolicy.permissionWire(authorization),
       "provider": "APNS",
       "token": currentToken,
       "app_version":
@@ -1881,20 +1897,9 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
 
   private func registerForPush(result: @escaping FlutterResult) {
     UNUserNotificationCenter.current().getNotificationSettings { settings in
-      let allowed: Bool
-      switch settings.authorizationStatus {
-      case .authorized, .provisional:
-        allowed = true
-      default:
-        if #available(iOS 14.0, *),
-           settings.authorizationStatus == .ephemeral
-        {
-          allowed = true
-        } else {
-          allowed = false
-        }
-      }
-      guard allowed else {
+      guard NativeNotificationPolicy.mayRegister(
+        settings.authorizationStatus
+      ) else {
         DispatchQueue.main.async {
           result(self.statusMap(authorization: settings.authorizationStatus))
         }
