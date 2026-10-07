@@ -87,6 +87,7 @@ def _production_settings(**overrides) -> Settings:
         "auth_public_base_url": "https://example.test",
         "auth_smtp_host": "smtp.example.test",
         "auth_smtp_from": "noreply@example.test",
+        "enable_dev_auth": False,
         "push_app_identity_reviewed": True,
         "push_ios_bundle_id": "com.example.jiyi",
         "push_android_application_id": "com.example.jiyi",
