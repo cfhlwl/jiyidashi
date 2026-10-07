@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -348,7 +347,7 @@ void main() {
     );
     await service.initialize();
 
-    final tap = NativePushEvent(
+    const tap = NativePushEvent(
       kind: 'tap',
       eventId: 'tap-1',
       payload: {
