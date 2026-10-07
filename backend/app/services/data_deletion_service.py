@@ -51,6 +51,7 @@ from app.models import (
     User,
     Visit,
 )
+from app.notification_models import NotificationDelivery
 from app.person_memory_models import PersonMemoryLink
 from app.person_models import Person, PersonAlias
 from app.person_relationship_models import PersonRelationship
@@ -73,6 +74,7 @@ OBJECT_KEY_DB_BATCH_SIZE = 500
 # 删除服务与测试必须同步扩展；User/AuthIdentity 是 S1-022 的账号身份，不在本阶段删除。
 USER_DATA_INVENTORY = (
     "devices",
+    "notification_deliveries",
     "places",
     "place_name_corrections",
     "visits",
@@ -789,6 +791,15 @@ def _delete_owned_database_rows(db: Session, user_id: UUID) -> dict[str, int]:
         db, delete(ObjectItem).where(ObjectItem.user_id == user_id)
     )
     counts["places"] = _delete_count(db, delete(Place).where(Place.user_id == user_id))
+    # NOTIFY-001A delivery rows are operational user-linked state, not user-visible
+    # notification history. Delete them explicitly before Device cascade so S1-021
+    # reports their removal and no stale provider authority survives a data wipe.
+    counts["notification_deliveries"] = _delete_count(
+        db,
+        delete(NotificationDelivery).where(
+            NotificationDelivery.owner_user_id == user_id
+        ),
+    )
     counts["devices"] = _delete_count(db, delete(Device).where(Device.user_id == user_id))
     return counts
 

@@ -23,6 +23,7 @@ from app import (  # noqa: F401
     media_models,
     memory_feedback_models,
     models,
+    notification_models,
     person_memory_models,
     person_models,
     person_relationship_models,
