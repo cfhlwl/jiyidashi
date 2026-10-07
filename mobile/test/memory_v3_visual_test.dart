@@ -18,11 +18,8 @@ Future<void> _expectMemoryV3Golden(WidgetTester tester, String fileName) async {
 }
 
 Future<void> _scrollMemoryV3IntoView(WidgetTester tester, Finder finder) async {
-  await tester.scrollUntilVisible(
-    finder,
-    400,
-    scrollable: find.byType(Scrollable).first,
-  );
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
 }
 
 class _MemoryV3Consent implements AmapPrivacyConsentAuthority {
