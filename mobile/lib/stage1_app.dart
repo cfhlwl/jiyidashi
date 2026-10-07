@@ -1413,6 +1413,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       api: widget.api,
       mediaCache: _mediaCache,
       amapPrivacyConsent: _amapPrivacyConsent,
+      notificationClient: widget.notificationClient,
       elderMode: _elderModeEnabled,
       initialQuestion: onboardingStep == OnboardingStep.retrieve ||
               onboardingStep == OnboardingStep.trust
@@ -1467,7 +1468,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             ? null
             : () => unawaited(onboarding.restart()),
         amapPrivacyConsent: _amapPrivacyConsent,
-        notificationClient: widget.notificationClient,
         themeMode: widget.themeMode,
         onThemeModeChanged: widget.onThemeModeChanged,
       ),
@@ -2565,6 +2565,7 @@ class MemoryQueryPage extends StatefulWidget {
     this.onTrustedEvidenceShown,
     this.mediaCache,
     this.amapPrivacyConsent,
+    this.notificationClient,
   });
 
   final JiYiApiClient api;
@@ -2574,6 +2575,7 @@ class MemoryQueryPage extends StatefulWidget {
   final String? requiredEvidenceMemoryId;
   final VoidCallback? onTrustedEvidenceShown;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
+  final NotificationClientService? notificationClient;
 
   @override
   State<MemoryQueryPage> createState() => _MemoryQueryPageState();
@@ -2815,6 +2817,11 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       );
       if (!mounted || message == null) return;
       setState(() => actionMessage = message);
+      final notifications = widget.notificationClient;
+      if (notifications != null &&
+          notifications.permission == NotificationPermissionState.notDetermined) {
+        unawaited(notifications.requestPermissionAndRegister());
+      }
     } on ApiException catch (exc) {
       if (mounted) setState(() => error = exc.message);
     } catch (_) {
@@ -3276,7 +3283,6 @@ class ProfilePage extends StatelessWidget {
     this.onRevalidateLocationAuthority,
     this.onStartOnboarding,
     this.amapPrivacyConsent,
-    this.notificationClient,
     this.themeMode = ThemeMode.system,
     this.onThemeModeChanged,
   });
@@ -3292,7 +3298,6 @@ class ProfilePage extends StatelessWidget {
   final Future<void> Function()? onRevalidateLocationAuthority;
   final VoidCallback? onStartOnboarding;
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
-  final NotificationClientService? notificationClient;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode>? onThemeModeChanged;
 
@@ -3430,10 +3435,6 @@ class ProfilePage extends StatelessWidget {
                 const SizedBox(height: JiYiSpacing.md),
                 _AmapPrivacyControls(authority: amapPrivacyConsent!),
               ],
-              if (notificationClient != null) ...[
-                const SizedBox(height: JiYiSpacing.md),
-                _NotificationControls(client: notificationClient!),
-              ],
               if (nativeLocationController != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 NativeLocationSection(
@@ -3486,107 +3487,6 @@ class ProfilePage extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-class _NotificationControls extends StatefulWidget {
-  const _NotificationControls({required this.client});
-
-  final NotificationClientService client;
-
-  @override
-  State<_NotificationControls> createState() => _NotificationControlsState();
-}
-
-class _NotificationControlsState extends State<_NotificationControls> {
-  bool busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.client.addListener(_clientChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant _NotificationControls oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.client == widget.client) return;
-    oldWidget.client.removeListener(_clientChanged);
-    widget.client.addListener(_clientChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.client.removeListener(_clientChanged);
-    super.dispose();
-  }
-
-  void _clientChanged() {
-    if (mounted) setState(() {});
-  }
-
-  String get permissionLabel => switch (widget.client.permission) {
-        NotificationPermissionState.notDetermined => '尚未询问',
-        NotificationPermissionState.authorized => '已允许',
-        NotificationPermissionState.provisional => '临时允许',
-        NotificationPermissionState.denied => '已拒绝',
-        NotificationPermissionState.unavailable => '当前设备不可用',
-      };
-
-  String get registrationLabel => switch (widget.client.registration) {
-        NotificationRegistrationState.idle => '尚未注册',
-        NotificationRegistrationState.registrationPending => '正在注册',
-        NotificationRegistrationState.registered => '已连接',
-        NotificationRegistrationState.denied => '系统权限已关闭',
-        NotificationRegistrationState.providerUnavailable => '推送服务暂不可用',
-        NotificationRegistrationState.serverUnavailable => '等待联网同步',
-      };
-
-  Future<void> _enable() async {
-    if (busy || widget.client.permission == NotificationPermissionState.denied) {
-      return;
-    }
-    setState(() => busy = true);
-    try {
-      await widget.client.requestPermissionAndRegister();
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final denied =
-        widget.client.permission == NotificationPermissionState.denied;
-    return JiYiSectionCard(
-      leading: const Icon(Icons.notifications_outlined),
-      title: '通知',
-      subtitle: '提醒和系统通知只在你允许后发送到这台设备。',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('系统权限'),
-            subtitle: Text(permissionLabel),
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('推送连接'),
-            subtitle: Text(registrationLabel),
-          ),
-          if (denied)
-            const Text('系统通知权限已关闭；需要时请前往系统设置重新开启。')
-          else
-            FilledButton.tonalIcon(
-              key: const ValueKey('notification-enable'),
-              onPressed: busy ? null : _enable,
-              icon: const Icon(Icons.notifications_active_outlined),
-              label: Text(busy ? '正在连接…' : '开启通知'),
-            ),
-        ],
       ),
     );
   }
@@ -3820,19 +3720,19 @@ class _ThemeModeOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RadioGroup<ThemeMode>(
+    return RadioListTile<ThemeMode>(
+      contentPadding: EdgeInsets.zero,
+      value: value,
+      // ignore: deprecated_member_use
       groupValue: groupValue,
-      onChanged: (next) {
-        if (!enabled || next == null) return;
-        onChanged?.call(next);
-      },
-      child: RadioListTile<ThemeMode>(
-        contentPadding: EdgeInsets.zero,
-        value: value,
-        enabled: enabled,
-        title: Text(title),
-        subtitle: Text(subtitle),
-      ),
+      // ignore: deprecated_member_use
+      onChanged: enabled
+          ? (next) {
+              if (next != null) onChanged?.call(next);
+            }
+          : null,
+      title: Text(title),
+      subtitle: Text(subtitle),
     );
   }
 }
