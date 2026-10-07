@@ -1474,8 +1474,11 @@ void main() {
       await _pumpVisualFrames(tester);
 
       expect(find.text('AI 整理'), findsNothing);
-      expect(find.text('明确记录'), findsOneWidget);
-      expect(find.textContaining('用户文字记录'), findsOneWidget);
+      expect(find.text('明确记录', skipOffstage: false), findsOneWidget);
+      expect(
+        find.textContaining('用户文字记录', skipOffstage: false),
+        findsOneWidget,
+      );
       await expectLater(
         find.byKey(key),
         matchesGoldenFile('/tmp/deterministic_memory_query.png'),
