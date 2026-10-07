@@ -103,6 +103,27 @@ def _check_user_available(user: User) -> None:
         raise AuthIdentityError("AUTH_ACCOUNT_UNAVAILABLE", 401)
 
 
+def _validate_identity_material(
+    provider: AuthProvider,
+    *,
+    secret_hash: str | None,
+    verified_at: datetime | None,
+    require_verified: bool = False,
+) -> None:
+    """Keep provider-specific identity invariants at the authority boundary."""
+
+    if require_verified and verified_at is None:
+        raise AuthIdentityError("AUTH_IDENTITY_NOT_VERIFIED", 422)
+    if provider is AuthProvider.EMAIL_PASSWORD:
+        if not secret_hash:
+            raise AuthIdentityError("AUTH_IDENTITY_SECRET_REQUIRED", 422)
+        return
+    if verified_at is None:
+        raise AuthIdentityError("AUTH_IDENTITY_NOT_VERIFIED", 422)
+    if secret_hash is not None:
+        raise AuthIdentityError("AUTH_IDENTITY_SECRET_NOT_ALLOWED", 422)
+
+
 def resolve_auth_identity(
     db: Session,
     *,
@@ -172,6 +193,11 @@ def create_user_for_verified_identity(
     resolving the winner's identity without changing its User.id.
     """
 
+    _validate_identity_material(
+        provider,
+        secret_hash=secret_hash,
+        verified_at=verified_at,
+    )
     canonical_subject = canonicalize_subject(provider, subject)
     existing = db.scalar(
         select(AuthIdentity).where(
@@ -227,6 +253,94 @@ def create_user_for_verified_identity(
     return AuthIdentityCreation(identity=identity, user_id=user.id, created=True)
 
 
+def _lock_user_for_identity_link(db: Session, user_id: UUID) -> User:
+    user = db.scalar(select(User).where(User.id == user_id).with_for_update())
+    if user is None:
+        raise AuthIdentityError("AUTH_ACCOUNT_UNAVAILABLE", 401)
+    _check_user_available(user)
+    deletion_active = db.scalar(
+        select(AccountDeletionOperation.id)
+        .where(AccountDeletionOperation.user_id == user_id)
+        .limit(1)
+    )
+    if deletion_active is not None:
+        raise AuthIdentityError("ACCOUNT_DELETION_IN_PROGRESS", 423)
+    return user
+
+
+def _link_verified_identities_without_commit(
+    db: Session,
+    *,
+    user_id: UUID,
+    provider: AuthProvider,
+    canonical_subjects: list[str],
+    verified_at: datetime | None,
+    secret_hash: str | None,
+    require_verified: bool = True,
+) -> list[AuthIdentity]:
+    """Link identities while leaving transaction ownership with the caller."""
+
+    _validate_identity_material(
+        provider,
+        secret_hash=secret_hash,
+        verified_at=verified_at,
+        require_verified=require_verified,
+    )
+    user = _lock_user_for_identity_link(db, user_id)
+
+    # Query in canonical stable order so a multi-alias link has one lock order.
+    existing_by_subject: dict[str, AuthIdentity] = {}
+    for canonical_subject in sorted(set(canonical_subjects)):
+        identity = db.scalar(
+            select(AuthIdentity)
+            .where(
+                AuthIdentity.provider == provider,
+                AuthIdentity.subject == canonical_subject,
+            )
+            .with_for_update()
+        )
+        if identity is not None:
+            existing_by_subject[canonical_subject] = identity
+
+    for identity in existing_by_subject.values():
+        if identity.user_id != user_id:
+            raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409)
+        if identity.verified_at is None:
+            raise AuthIdentityError("AUTH_IDENTITY_NOT_VERIFIED", 409)
+
+    if provider in {AuthProvider.EMAIL_PASSWORD, AuthProvider.PHONE}:
+        current_provider_identity = _user_provider_identity(
+            db,
+            user_id=user_id,
+            provider=provider,
+        )
+        missing_subjects = [
+            subject
+            for subject in canonical_subjects
+            if subject not in existing_by_subject
+        ]
+        if current_provider_identity is not None and missing_subjects:
+            raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409)
+
+    identities: list[AuthIdentity] = []
+    for canonical_subject in canonical_subjects:
+        identity = existing_by_subject.get(canonical_subject)
+        if identity is None:
+            identity = AuthIdentity(
+                user_id=user_id,
+                provider=provider,
+                subject=canonical_subject,
+                secret_hash=secret_hash,
+                verified_at=verified_at,
+            )
+            db.add(identity)
+        identities.append(identity)
+
+    if canonical_subjects:
+        _apply_projection(user, provider=provider, subject=canonical_subjects[0])
+    return identities
+
+
 def link_verified_identity(
     db: Session,
     *,
@@ -239,58 +353,54 @@ def link_verified_identity(
     """Link an already verified identity without exposing a provider endpoint."""
 
     canonical_subject = canonicalize_subject(provider, subject)
-    user = db.scalar(
-        select(User).where(User.id == user_id).with_for_update()
-    )
-    if user is None:
-        raise AuthIdentityError("AUTH_ACCOUNT_UNAVAILABLE", 401)
-    _check_user_available(user)
-    deletion_active = db.scalar(
-        select(AccountDeletionOperation.id)
-        .where(AccountDeletionOperation.user_id == user_id)
-        .limit(1)
-    )
-    if deletion_active is not None:
-        raise AuthIdentityError("ACCOUNT_DELETION_IN_PROGRESS", 423)
-
-    identity = db.scalar(
-        select(AuthIdentity)
-        .where(
-            AuthIdentity.provider == provider,
-            AuthIdentity.subject == canonical_subject,
-        )
-        .with_for_update()
-    )
-    if identity is not None:
-        if identity.user_id != user_id:
-            raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409)
-        _apply_projection(user, provider=provider, subject=canonical_subject)
-        db.commit()
-        return AuthIdentityResolution(identity=identity, user_id=user_id)
-
-    current_provider_identity = _user_provider_identity(
-        db,
-        user_id=user_id,
-        provider=provider,
-    )
-    if current_provider_identity is not None:
-        raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409)
-
-    identity = AuthIdentity(
-        user_id=user_id,
-        provider=provider,
-        subject=canonical_subject,
-        secret_hash=secret_hash,
-        verified_at=verified_at,
-    )
-    _apply_projection(user, provider=provider, subject=canonical_subject)
-    db.add(identity)
     try:
+        identity = _link_verified_identities_without_commit(
+            db,
+            user_id=user_id,
+            provider=provider,
+            canonical_subjects=[canonical_subject],
+            verified_at=verified_at,
+            secret_hash=secret_hash,
+            require_verified=True,
+        )[0]
         db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
     return AuthIdentityResolution(identity=identity, user_id=user_id)
+
+
+def link_verified_wechat_aliases(
+    db: Session,
+    *,
+    user_id: UUID,
+    aliases: list[str] | tuple[str, ...],
+    verified_at: datetime | None,
+) -> tuple[AuthIdentity, ...]:
+    """Atomically bind all verified WeChat aliases or none of them."""
+
+    canonical_aliases = [
+        canonicalize_subject(AuthProvider.WECHAT, alias) for alias in aliases
+    ]
+    if not canonical_aliases:
+        raise AuthIdentityError("AUTH_WECHAT_ALIAS_REQUIRED", 422)
+    if len(set(canonical_aliases)) != len(canonical_aliases):
+        raise AuthIdentityError("AUTH_WECHAT_ALIAS_DUPLICATE", 422)
+    try:
+        identities = _link_verified_identities_without_commit(
+            db,
+            user_id=user_id,
+            provider=AuthProvider.WECHAT,
+            canonical_subjects=canonical_aliases,
+            verified_at=verified_at,
+            secret_hash=None,
+            require_verified=True,
+        )
+        db.commit()
+    except (AuthIdentityError, IntegrityError):
+        db.rollback()
+        raise
+    return tuple(identities)
 
 
 def unlink_identity(

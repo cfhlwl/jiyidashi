@@ -162,36 +162,6 @@ def _lock_login_user_for_authentication(
     return user
 
 
-def lock_login_for_token_issue(
-    db: Session,
-    user_id,
-) -> tuple[User, bool]:
-    # [人工注释][S1-022-FIX-005] 密码校验内部的 User lock 会在 authenticate() commit 时释放；
-    # 真正签发 token 前必须再次拿 KEY SHARE，并一直持有到 HTTP 请求结束。这样 Account Delete
-    # 的 FOR UPDATE 无法插进“最后一次 User/account-gate 检查 -> TokenResponse”之间。
-    from app.account_deletion_models import AccountDeletionOperation
-
-    user = db.scalar(
-        select(User)
-        .where(User.id == user_id)
-        .with_for_update(read=True, key_share=True)
-    )
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="INVALID_CREDENTIALS",
-        )
-    in_progress = (
-        db.scalar(
-            select(AccountDeletionOperation.id)
-            .where(AccountDeletionOperation.user_id == user_id)
-            .limit(1)
-        )
-        is not None
-    )
-    return user, in_progress
-
-
 def authenticate_email_password(
     db: Session,
     payload: LoginRequest,

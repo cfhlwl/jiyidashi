@@ -19,6 +19,7 @@ from app.services.auth_identity_service import (
     create_user_for_verified_identity,
     issue_authenticated_session,
     link_verified_identity,
+    link_verified_wechat_aliases,
     resolve_auth_identity,
 )
 from app.services.auth_session_service import PublicAuthError
@@ -51,18 +52,10 @@ def test_verified_phone_creation_and_wechat_aliases_share_user():
         assert user is not None
         assert user.phone == "+8613812345678"
 
-        link_verified_identity(
+        link_verified_wechat_aliases(
             db,
             user_id=user.id,
-            provider=AuthProvider.WECHAT,
-            subject="openid:wx-app:O1",
-            verified_at=datetime.now(UTC),
-        )
-        link_verified_identity(
-            db,
-            user_id=user.id,
-            provider=AuthProvider.WECHAT,
-            subject="unionid:wx-group:U1",
+            aliases=("openid:wx-app:O1", "unionid:wx-group:U1"),
             verified_at=datetime.now(UTC),
         )
         aliases = list(
@@ -95,7 +88,7 @@ def test_identity_resolver_never_falls_back_to_user_projection():
         )
 
 
-def test_email_and_phone_cardinality_has_database_guard():
+def test_email_duplicate_same_user_has_database_guard():
     with SessionLocal() as db:
         user = User(nickname="cardinality")
         db.add(user)
@@ -104,14 +97,40 @@ def test_email_and_phone_cardinality_has_database_guard():
             [
                 AuthIdentity(
                     user_id=user.id,
+                    provider=AuthProvider.EMAIL_PASSWORD,
+                    subject=f"cardinality-{user.id}@example.com",
+                    secret_hash="hash-1",
+                ),
+                AuthIdentity(
+                    user_id=user.id,
+                    provider=AuthProvider.EMAIL_PASSWORD,
+                    subject=f"cardinality-2-{user.id}@example.com",
+                    secret_hash="hash-2",
+                ),
+            ]
+        )
+        with pytest.raises(IntegrityError):
+            db.flush()
+        db.rollback()
+
+
+def test_phone_duplicate_same_user_has_database_guard():
+    with SessionLocal() as db:
+        user = User(nickname="phone-cardinality")
+        db.add(user)
+        db.flush()
+        db.add_all(
+            [
+                AuthIdentity(
+                    user_id=user.id,
                     provider=AuthProvider.PHONE,
-                    subject="+8613812345678",
+                    subject="+8613800000001",
                     verified_at=datetime.now(UTC),
                 ),
                 AuthIdentity(
                     user_id=user.id,
                     provider=AuthProvider.PHONE,
-                    subject="+8613912345678",
+                    subject="+8613800000002",
                     verified_at=datetime.now(UTC),
                 ),
             ]
@@ -119,6 +138,139 @@ def test_email_and_phone_cardinality_has_database_guard():
         with pytest.raises(IntegrityError):
             db.flush()
         db.rollback()
+
+
+def test_wechat_multiple_aliases_same_user_are_allowed():
+    with SessionLocal() as db:
+        user = User(nickname="wechat-cardinality")
+        db.add(user)
+        db.flush()
+        db.add_all(
+            [
+                AuthIdentity(
+                    user_id=user.id,
+                    provider=AuthProvider.WECHAT,
+                    subject="openid:cardinality-app:O1",
+                    verified_at=datetime.now(UTC),
+                ),
+                AuthIdentity(
+                    user_id=user.id,
+                    provider=AuthProvider.WECHAT,
+                    subject="unionid:cardinality-group:U1",
+                    verified_at=datetime.now(UTC),
+                ),
+            ]
+        )
+        db.commit()
+
+
+def test_identity_material_invariants_are_enforced():
+    invalid_cases = (
+        {
+            "provider": AuthProvider.PHONE,
+            "subject": "+8613800000011",
+            "secret_hash": None,
+            "verified_at": None,
+            "code": "AUTH_IDENTITY_NOT_VERIFIED",
+        },
+        {
+            "provider": AuthProvider.PHONE,
+            "subject": "+8613800000012",
+            "secret_hash": "not-for-phone",
+            "verified_at": datetime.now(UTC),
+            "code": "AUTH_IDENTITY_SECRET_NOT_ALLOWED",
+        },
+        {
+            "provider": AuthProvider.WECHAT,
+            "subject": "openid:invariant-app:O1",
+            "secret_hash": "not-for-wechat",
+            "verified_at": datetime.now(UTC),
+            "code": "AUTH_IDENTITY_SECRET_NOT_ALLOWED",
+        },
+        {
+            "provider": AuthProvider.EMAIL_PASSWORD,
+            "subject": "missing-secret@example.com",
+            "secret_hash": None,
+            "verified_at": None,
+            "code": "AUTH_IDENTITY_SECRET_REQUIRED",
+        },
+    )
+    with SessionLocal() as db:
+        for case in invalid_cases:
+            with pytest.raises(AuthIdentityError, match=case["code"]):
+                create_user_for_verified_identity(
+                    db,
+                    provider=case["provider"],
+                    subject=case["subject"],
+                    secret_hash=case["secret_hash"],
+                    verified_at=case["verified_at"],
+                    nickname="invalid",
+                )
+            db.rollback()
+
+
+def test_link_rejects_existing_unverified_external_identity():
+    with SessionLocal() as db:
+        user = User(nickname="unverified-external")
+        db.add(user)
+        db.flush()
+        db.add(
+            AuthIdentity(
+                user_id=user.id,
+                provider=AuthProvider.PHONE,
+                subject="+8613800000021",
+                verified_at=None,
+            )
+        )
+        db.commit()
+        with pytest.raises(AuthIdentityError, match="AUTH_IDENTITY_NOT_VERIFIED"):
+            link_verified_identity(
+                db,
+                user_id=user.id,
+                provider=AuthProvider.PHONE,
+                subject="+8613800000021",
+                verified_at=datetime.now(UTC),
+            )
+        db.rollback()
+
+
+def test_wechat_alias_binding_is_atomic_on_cross_user_conflict():
+    with SessionLocal() as db:
+        owner = create_user_for_verified_identity(
+            db,
+            provider=AuthProvider.EMAIL_PASSWORD,
+            subject="wechat-alias-owner@example.com",
+            secret_hash="owner-hash",
+        )
+        db.commit()
+        other = create_user_for_verified_identity(
+            db,
+            provider=AuthProvider.EMAIL_PASSWORD,
+            subject="wechat-alias-other@example.com",
+            secret_hash="other-hash",
+        )
+        db.commit()
+        link_verified_identity(
+            db,
+            user_id=other.user_id,
+            provider=AuthProvider.WECHAT,
+            subject="unionid:atomic-group:U1",
+            verified_at=datetime.now(UTC),
+        )
+
+        with pytest.raises(AuthIdentityError, match="AUTH_IDENTITY_CONFLICT"):
+            link_verified_wechat_aliases(
+                db,
+                user_id=owner.user_id,
+                aliases=("openid:atomic-app:O1", "unionid:atomic-group:U1"),
+                verified_at=datetime.now(UTC),
+            )
+        assert db.scalar(
+            select(AuthIdentity.id).where(
+                AuthIdentity.user_id == owner.user_id,
+                AuthIdentity.subject == "openid:atomic-app:O1",
+            )
+        ) is None
 
 
 def test_identity_conflict_is_fail_closed():
@@ -134,6 +286,7 @@ def test_identity_conflict_is_fail_closed():
             db,
             provider=AuthProvider.EMAIL_PASSWORD,
             subject="second@example.com",
+            secret_hash="second-hash",
             verified_at=datetime.now(UTC),
         )
         db.commit()
@@ -155,6 +308,7 @@ def test_auth_disabled_is_hard_deny_and_deletion_issues_continuation():
             db,
             provider=AuthProvider.EMAIL_PASSWORD,
             subject="session-boundary@example.com",
+            secret_hash="session-boundary-hash",
             verified_at=datetime.now(UTC),
         )
         db.commit()
@@ -193,6 +347,7 @@ def test_link_is_denied_during_account_deletion():
             db,
             provider=AuthProvider.EMAIL_PASSWORD,
             subject="deleting-link@example.com",
+            secret_hash="deleting-link-hash",
             verified_at=datetime.now(UTC),
         )
         db.commit()

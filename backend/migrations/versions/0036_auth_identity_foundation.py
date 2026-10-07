@@ -20,6 +20,28 @@ def upgrade() -> None:
     # AuthProvider is native_enum=False in 0002_stage1_auth. PHONE/WECHAT are
     # therefore Python/domain values that fit the existing varchar column; no
     # artificial PostgreSQL enum operation is generated here.
+    bind = op.get_bind()
+    for provider in ("EMAIL_PASSWORD", "PHONE"):
+        duplicate = bind.execute(
+            sa.text(
+                """
+                SELECT user_id, COUNT(*) AS identity_count
+                FROM auth_identities
+                WHERE provider = :provider
+                GROUP BY user_id
+                HAVING COUNT(*) > 1
+                ORDER BY user_id
+                LIMIT 1
+                """
+            ),
+            {"provider": provider},
+        ).first()
+        if duplicate is not None:
+            raise RuntimeError(
+                "AUTH_IDENTITY_MIGRATION_PREFLIGHT_FAILED: "
+                f"multiple {provider} identities for user_id={duplicate[0]}"
+            )
+
     op.create_index(
         "uq_auth_identities_user_email_password",
         "auth_identities",
