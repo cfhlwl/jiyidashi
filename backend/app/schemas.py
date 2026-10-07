@@ -142,6 +142,16 @@ class LoginRequest(BaseModel):
     device_name: str | None = Field(default=None, max_length=120)
 
 
+class PhoneOneTapRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    login_token: str = Field(min_length=1, max_length=512)
+    request_id: UUID
+    device_id: str = Field(min_length=1, max_length=120)
+    client_platform: str | None = Field(default=None, max_length=32)
+    device_name: str | None = Field(default=None, max_length=120)
+
+
 class RefreshRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     refresh_token: str = Field(min_length=32, max_length=512)

@@ -79,7 +79,7 @@ def _load_active_user_for_update(db: Session, user_id: UUID) -> User:
     return user
 
 
-def create_public_session(
+def create_public_session_in_transaction(
     db: Session,
     *,
     user_id: UUID,
@@ -102,15 +102,33 @@ def create_public_session(
         expires_at=now + timedelta(days=settings.refresh_token_days),
     )
     db.add(row)
+    db.flush()
+    return _session_tokens(row, refresh_token)
+
+
+def create_public_session(
+    db: Session,
+    *,
+    user_id: UUID,
+    device_id: str,
+    client_platform: str | None = None,
+    device_name: str | None = None,
+) -> PublicSessionTokens:
+    pair = create_public_session_in_transaction(
+        db,
+        user_id=user_id,
+        device_id=device_id,
+        client_platform=client_platform,
+        device_name=device_name,
+    )
     db.commit()
-    db.refresh(row)
     emit_operational_event(
         event="auth.session.created",
-        correlation_id=str(row.id),
+        correlation_id=str(pair.session_id),
         operation="PUBLIC_AUTH_SESSION",
         operation_status="CREATED",
     )
-    return _session_tokens(row, refresh_token)
+    return pair
 
 
 def authenticate_access_session(
@@ -283,13 +301,13 @@ def refresh_public_session(
     )
     return _session_tokens(row, successor)
 
-def revoke_session(
+def revoke_session_in_transaction(
     db: Session,
     *,
     user_id: UUID,
     session_id: UUID,
     reason: str,
-) -> bool:
+) -> tuple[bool, bool]:
     row = db.scalar(
         select(AuthSession)
         .where(
@@ -299,10 +317,30 @@ def revoke_session(
         .with_for_update()
     )
     if row is None:
-        return False
+        return False, False
     if row.revoked_at is None:
         row.revoked_at = datetime.now(UTC)
         row.revoke_reason = reason[:64]
+        return True, True
+    return True, False
+
+
+def revoke_session(
+    db: Session,
+    *,
+    user_id: UUID,
+    session_id: UUID,
+    reason: str,
+) -> bool:
+    found, changed = revoke_session_in_transaction(
+        db,
+        user_id=user_id,
+        session_id=session_id,
+        reason=reason,
+    )
+    if not found:
+        return False
+    if changed:
         db.commit()
         emit_operational_event(
             event="auth.session.revoked",

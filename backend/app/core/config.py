@@ -199,6 +199,31 @@ class Settings(BaseSettings):
     auth_password_reset_confirm_limit: int = Field(default=10, ge=1, le=50)
     auth_password_reset_window_seconds: int = Field(default=3600, ge=60, le=86400)
 
+    # AUTH-02B: durable phone one-tap exchange policy. These are JiYi-side
+    # replay/abuse controls, not claims about a live carrier provider's TTL.
+    # The fingerprint secret is intentionally empty by default: the endpoint
+    # fails closed until a deployment supplies a dedicated server-only key.
+    auth_phone_one_tap_fingerprint_secret: str = ""
+    auth_phone_one_tap_fingerprint_key_version: str = "v1"
+    auth_phone_one_tap_exchange_reservation_seconds: int = Field(
+        default=60, ge=5, le=900
+    )
+    auth_phone_one_tap_recovery_deadline_seconds: int = Field(
+        default=60, ge=5, le=900
+    )
+    auth_phone_one_tap_exchange_retention_seconds: int = Field(
+        default=86400, ge=3600, le=2592000
+    )
+    auth_phone_one_tap_ip_limit: int = Field(default=20, ge=1, le=1000)
+    auth_phone_one_tap_device_limit: int = Field(default=10, ge=1, le=500)
+    auth_phone_one_tap_request_limit: int = Field(default=4, ge=1, le=100)
+    auth_phone_one_tap_token_limit: int = Field(default=4, ge=1, le=100)
+    auth_phone_one_tap_window_seconds: int = Field(default=600, ge=60, le=86400)
+    auth_phone_one_tap_global_concurrency: int = Field(default=8, ge=1, le=1000)
+    auth_phone_one_tap_permit_lease_seconds: int = Field(
+        default=120, ge=5, le=1800
+    )
+
     # ADMIN-001 review hardening: privileged login has a separate, stricter
     # namespace/policy so ordinary-user traffic cannot consume or reset Admin buckets.
     admin_login_ip_limit: int = Field(default=30, ge=1, le=100)
