@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from uuid import uuid4
+
 import httpx
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from pydantic import ValidationError
 
 from app.core.config import Settings
@@ -35,10 +37,14 @@ def _rsa_private_key() -> str:
     ).decode("utf-8")
 
 
-def _request(*, provider: PushProvider, token: str = "provider-token-123456789") -> NotificationProviderRequest:
+def _request(
+    *,
+    provider: PushProvider,
+    token: str = "provider-token-123456789",
+) -> NotificationProviderRequest:
     return NotificationProviderRequest(
-        delivery_id=__import__("uuid").uuid4(),
-        device_id=__import__("uuid").uuid4(),
+        delivery_id=uuid4(),
+        device_id=uuid4(),
         platform=(
             PushPlatform.IOS.value
             if provider == PushProvider.APNS
