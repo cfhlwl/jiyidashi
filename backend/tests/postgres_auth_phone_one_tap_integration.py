@@ -293,6 +293,93 @@ def _prove_recovery_race(request_ids: set[UUID], user_ids: set[UUID]) -> None:
         assert len(provider.calls) == 1
 
 
+def _prove_recovery_vs_normal_login(
+    request_ids: set[UUID], user_ids: set[UUID]
+) -> None:
+    device_id = f"pg-recovery-installation-{uuid4()}"
+    provider = FakeProvider({
+        "recovery-installation-token": VerifiedPhoneResult(
+            canonical_phone_subject="+861390001206", verified_at=datetime.now(UTC)
+        )
+    })
+    request_id = uuid4()
+    request_ids.add(request_id)
+    first = _exchange(
+        provider=provider,
+        token="recovery-installation-token",
+        request_id=request_id,
+        device_id=device_id,
+    )
+    assert first[0] == "ok", first
+    user_ids.add(first[1].tokens.user_id)
+    normal_user_id = uuid4()
+    user_ids.add(normal_user_id)
+    with SessionLocal() as db:
+        db.add(User(id=normal_user_id, nickname="normal-login-race"))
+        db.commit()
+
+    barrier = threading.Barrier(2)
+    results: list[tuple[str, str, str | None]] = []
+
+    def recover() -> None:
+        with SessionLocal() as db:
+            try:
+                barrier.wait(timeout=5)
+                recovered = exchange_phone_one_tap(
+                    db,
+                    login_token="recovery-installation-token",
+                    request_id=request_id,
+                    device_id="ignored-after-completion",
+                    client_platform="postgres-integration",
+                    device_name="AUTH-02B recovery race",
+                    client_ip="198.51.100.241",
+                    provider=provider,
+                    settings=settings,
+                )
+                results.append(("recovery", "ok", str(recovered.tokens.session_id)))
+            except PhoneOneTapError as exc:
+                results.append(("recovery", exc.code, None))
+            except Exception as exc:  # pragma: no cover - failure evidence
+                results.append(("recovery", "EXCEPTION", repr(exc)))
+
+    def normal_login() -> None:
+        with SessionLocal() as db:
+            try:
+                barrier.wait(timeout=5)
+                issued = create_public_session(
+                    db,
+                    user_id=normal_user_id,
+                    device_id=device_id,
+                    client_platform="postgres-integration",
+                    device_name="AUTH-02B normal race",
+                )
+                results.append(("normal", "ok", str(issued.session_id)))
+            except Exception as exc:  # pragma: no cover - failure evidence
+                results.append(("normal", "EXCEPTION", repr(exc)))
+
+    threads = [threading.Thread(target=recover), threading.Thread(target=normal_login)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+        assert not thread.is_alive(), "recovery/normal installation race deadlocked"
+    assert sorted((role, status) for role, status, _ in results) in (
+        [("normal", "ok"), ("recovery", "AUTH_PHONE_ONE_TAP_TOKEN_REPLAYED")],
+        [("normal", "ok"), ("recovery", "ok")],
+    ), results
+    with SessionLocal() as db:
+        active = list(db.scalars(select(AuthSession).where(
+            AuthSession.device_id == device_id,
+            AuthSession.revoked_at.is_(None),
+        )))
+        assert len(active) == 1
+        row = db.scalar(select(PhoneOneTapExchange).where(
+            PhoneOneTapExchange.request_id == request_id
+        ))
+        assert row is not None and row.state == PhoneOneTapExchangeState.COMPLETED
+        assert row.recovery_count <= 1
+
+
 def _prove_stale_reserved(request_ids: set[UUID]) -> None:
     token = "stale-token"
     request_id = uuid4()
@@ -452,6 +539,7 @@ def main() -> None:
         _prove_reservation_race(request_ids, user_ids)
         _prove_replay_conflict_and_identity_race(request_ids, user_ids)
         _prove_recovery_race(request_ids, user_ids)
+        _prove_recovery_vs_normal_login(request_ids, user_ids)
         _prove_stale_reserved(request_ids)
         _prove_permit_race()
         _prove_installation_and_push_fence(request_ids, user_ids, client_uuids)

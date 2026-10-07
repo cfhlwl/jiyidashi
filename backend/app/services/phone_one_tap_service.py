@@ -19,6 +19,7 @@ from app.auth_models import (
 )
 from app.core.config import Settings, get_settings
 from app.core.observability import emit_operational_event
+from app.models import User
 from app.services.auth_identity_service import (
     AuthIdentityError,
     create_user_for_verified_identity,
@@ -29,6 +30,7 @@ from app.services.auth_rate_limit import consume_phone_one_tap_attempt
 from app.services.auth_session_service import (
     PublicAuthError,
     PublicSessionTokens,
+    lock_installation_authority_in_transaction,
     revoke_session_in_transaction,
 )
 from app.services.concurrency_guard import (
@@ -171,16 +173,30 @@ def _recover_completed(
         db.rollback()
         raise PhoneOneTapError("AUTH_PHONE_ONE_TAP_TOKEN_REPLAYED", 409)
 
+    # Recovery follows the ordinary session authority order: User -> installation
+    # advisory lock -> AuthSession. The User lock is reacquired by the shared
+    # session issuer in this transaction, which is safe and prevents a reverse
+    # order cycle with a concurrent normal login on this installation.
+    db.scalar(
+        select(User.id)
+        .where(User.id == row.resolved_user_id)
+        .with_for_update(read=True, key_share=True)
+    )
+    lock_installation_authority_in_transaction(db, row.device_id)
     original = db.scalar(
         select(AuthSession)
         .where(
             AuthSession.id == row.session_id,
             AuthSession.user_id == row.resolved_user_id,
+            AuthSession.device_id == row.device_id,
         )
         .with_for_update()
     )
     if (
         original is None
+        or original.id != row.session_id
+        or original.user_id != row.resolved_user_id
+        or original.device_id != row.device_id
         or original.revoked_at is not None
         or _utc(original.expires_at) <= now
         or original.rotation_revision != 0
@@ -512,6 +528,11 @@ def exchange_phone_one_tap(
             settings=cfg,
         )
     finally:
+        # A finalization exception can leave the request transaction failed or
+        # holding provisional identity/session rows. Roll it back before the
+        # independent permit-release transaction touches the same database.
+        if db.in_transaction():
+            db.rollback()
         release_permit(db.get_bind(), permit=permit, settings=cfg)
 
 
