@@ -3503,6 +3503,30 @@ class _NotificationControls extends StatefulWidget {
 class _NotificationControlsState extends State<_NotificationControls> {
   bool busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    widget.client.addListener(_clientChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _NotificationControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.client == widget.client) return;
+    oldWidget.client.removeListener(_clientChanged);
+    widget.client.addListener(_clientChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.client.removeListener(_clientChanged);
+    super.dispose();
+  }
+
+  void _clientChanged() {
+    if (mounted) setState(() {});
+  }
+
   String get permissionLabel => switch (widget.client.permission) {
         NotificationPermissionState.notDetermined => '尚未询问',
         NotificationPermissionState.authorized => '已允许',
