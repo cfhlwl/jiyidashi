@@ -102,6 +102,13 @@ void main() {
     await _submitHistoricalQuery(tester, api);
     await tester.pumpAndSettle();
 
+    // The answer surface and its semantic header are in the initial viewport.
+    // Verify them before scrolling the lazy ListView to the later visit rows.
+    expect(find.text('按日期看足迹'), findsOneWidget);
+    expect(find.textContaining('2026-09-25 的可靠足迹'), findsOneWidget);
+    expect(find.text('DATE_FOOTPRINT_QUERY'), findsNothing);
+    expect(find.text('没有可展示的参考记录'), findsNothing);
+
     final timeRange = find.text('18:16 - 19:05', skipOffstage: false);
     final scrollable = find.byType(Scrollable).first;
     for (var attempt = 0; attempt < 8 && timeRange.evaluate().isEmpty; attempt++) {
@@ -113,13 +120,32 @@ void main() {
 
     expect(find.textContaining('公司'), findsWidgets);
     expect(timeRange, findsOneWidget);
-    expect(find.text('按日期看足迹'), findsOneWidget);
-    expect(find.text('DATE_FOOTPRINT_QUERY'), findsNothing);
-    expect(find.text('没有可展示的参考记录'), findsNothing);
-    expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
-    expect(find.byKey(const ValueKey('amap-privacy-blocked')), findsOneWidget);
+
+    // The map/privacy subtree is later than the visit row.  Keep the check
+    // tied to the real production scrollable rather than changing the layout.
+    final dayMap = find.byKey(
+      const ValueKey('memory-query-day-map'),
+      skipOffstage: false,
+    );
+    for (var attempt = 0; attempt < 8 && dayMap.evaluate().isEmpty; attempt++) {
+      await tester.drag(scrollable, const Offset(0, -420));
+      await tester.pumpAndSettle();
+    }
+    await tester.ensureVisible(dayMap);
+    await tester.pumpAndSettle();
+
+    expect(dayMap, findsOneWidget);
+    // These keys are subtree authority checks; skipOffstage is intentional
+    // because native-map/privacy state is not itself a viewport assertion.
     expect(
-      find.byKey(const ValueKey('memory-query-amap-privacy-accept')),
+      find.byKey(const ValueKey('amap-privacy-blocked'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('memory-query-amap-privacy-accept'),
+        skipOffstage: false,
+      ),
       findsOneWidget,
     );
   });
