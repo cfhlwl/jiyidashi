@@ -18,6 +18,14 @@ Future<void> _expectMemoryV3Golden(WidgetTester tester, String fileName) async {
 }
 
 Future<void> _scrollMemoryV3IntoView(WidgetTester tester, Finder finder) async {
+  if (finder.evaluate().isEmpty) {
+    final scrollable = find.byType(Scrollable).first;
+    for (var attempt = 0; attempt < 4 && finder.evaluate().isEmpty; attempt += 1) {
+      await tester.drag(scrollable, const Offset(0, -420));
+      await tester.pumpAndSettle();
+    }
+  }
+  if (finder.evaluate().isEmpty) return;
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
 }
@@ -258,7 +266,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await tester.pumpAndSettle();
 
-    final place = find.textContaining('真实地点', skipOffstage: false);
+    final place = find.textContaining('真实地点');
+    await _scrollMemoryV3IntoView(tester, place);
     expect(place, findsWidgets);
     expect(
       find.byKey(const ValueKey('memory-query-day-map'), skipOffstage: false),
