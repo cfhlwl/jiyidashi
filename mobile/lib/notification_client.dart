@@ -447,7 +447,12 @@ class NotificationClientService extends ChangeNotifier {
       registration = NotificationRegistrationState.providerUnavailable;
       return;
     }
-    await _consumeStatus(next, synchronize: true);
+    await _consumeStatus(next, synchronize: false);
+    if (next.token != null) {
+      await _synchronizeCurrentOwner();
+    } else {
+      registration = NotificationRegistrationState.registrationPending;
+    }
     _publishState();
   }
 
@@ -610,6 +615,10 @@ class NotificationClientService extends ChangeNotifier {
     try {
       final native = await nativeBridge.registerForPush();
       await _consumeStatus(native, synchronize: false);
+      if (native.token == null) {
+        registration = NotificationRegistrationState.registrationPending;
+        return;
+      }
     } on Object {
       registration = NotificationRegistrationState.providerUnavailable;
       return;
