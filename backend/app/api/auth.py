@@ -405,18 +405,19 @@ def dev_token(payload: DevTokenRequest, db: DbSession) -> TokenResponse:
         create_dev_legacy_full_entitlement(db, user_id=user.id)
         db.commit()
 
+    session_device_id = payload.device_id or f"dev-token-{uuid4()}"
     try:
         pair = create_public_session(
             db,
             user_id=user_id,
-            device_id="dev-token",
+            device_id=session_device_id,
             client_platform="development",
             device_name="development token",
         )
         fence_other_owner_push_bindings_for_client_uuid(
             db,
             user_id=user_id,
-            client_uuid="dev-token",
+            client_uuid=session_device_id,
         )
     except PublicAuthError as exc:
         _raise_auth_error(exc)
