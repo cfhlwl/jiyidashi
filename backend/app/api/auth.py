@@ -256,7 +256,7 @@ def phone_one_tap(
         fence_other_owner_push_bindings_for_client_uuid(
             db,
             user_id=result.tokens.user_id,
-            client_uuid=session_device_id,
+            client_uuid=result.device_id,
         )
     except PhoneOneTapError as exc:
         headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None

@@ -22,6 +22,7 @@ from app.services.auth_identity_service import (
     create_user_for_verified_identity,
     issue_authenticated_session,
 )
+from app.services.notification_service import push_token_digest
 from app.services.phone_one_tap_provider import (
     PhoneOneTapProviderError,
     VerifiedPhoneResult,
@@ -627,3 +628,180 @@ async def test_phone_one_tap_endpoint_fences_old_owner_push_binding(client, monk
         assert old_session is not None and old_session.revoked_at is not None
         assert old_session.revoke_reason == "INSTALLATION_SUPERSEDED"
         assert old_device is not None and old_device.push_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_response_loss_recovery_uses_frozen_device_for_push_fence(client, monkeypatch):
+    _settings(monkeypatch)
+    old_owner = _seed_phone_user("+8613900001251")
+    target_owner = _seed_phone_user("+8613900001252")
+    unrelated_owner = _seed_phone_user("+8613900001253")
+    device_a = f"response-loss-device-a-{uuid4()}"
+    device_b = f"response-loss-device-b-{uuid4()}"
+    provider = FakePhoneOneTapProvider(
+        {
+            "response-loss-token": VerifiedPhoneResult(
+                canonical_phone_subject=target_owner.phone,
+                verified_at=datetime.now(UTC),
+            )
+        }
+    )
+    monkeypatch.setattr(phone_one_tap_service, "get_phone_one_tap_provider", lambda: provider)
+    request_id = uuid4()
+    first_payload = _payload("response-loss-token", request_id)
+    first_payload["device_id"] = device_a
+    first = await client.post("/v1/auth/phone/one-tap", json=first_payload)
+    assert first.status_code == 200, first.text
+
+    with SessionLocal() as db:
+        exchange = db.scalar(
+            select(PhoneOneTapExchange).where(PhoneOneTapExchange.request_id == request_id)
+        )
+        assert exchange is not None
+        assert exchange.state == PhoneOneTapExchangeState.COMPLETED
+        assert exchange.device_id == device_a
+        now = datetime.now(UTC)
+        db.add_all(
+            [
+                Device(
+                    user_id=old_owner.id,
+                    client_uuid=device_a,
+                    platform="ANDROID",
+                    push_token="response-loss-old-push-token",
+                    push_provider="TEST",
+                    push_token_digest=push_token_digest("response-loss-old-push-token"),
+                    push_enabled=True,
+                    push_token_updated_at=now,
+                    last_active_at=now,
+                ),
+                Device(
+                    user_id=unrelated_owner.id,
+                    client_uuid=device_b,
+                    platform="ANDROID",
+                    push_token="response-loss-unrelated-push-token",
+                    push_provider="TEST",
+                    push_token_digest=push_token_digest("response-loss-unrelated-push-token"),
+                    push_enabled=True,
+                    push_token_updated_at=now,
+                    last_active_at=now,
+                ),
+            ]
+        )
+        db.commit()
+
+    retry_payload = _payload("response-loss-token", request_id)
+    retry_payload["device_id"] = device_b
+    retry = await client.post("/v1/auth/phone/one-tap", json=retry_payload)
+    assert retry.status_code == 200, retry.text
+    assert provider.calls == ["response-loss-token"]
+
+    with SessionLocal() as db:
+        exchange = db.scalar(
+            select(PhoneOneTapExchange).where(PhoneOneTapExchange.request_id == request_id)
+        )
+        replacement = db.get(AuthSession, UUID(retry.json()["session_id"]))
+        old_device = db.scalar(
+            select(Device).where(
+                Device.user_id == old_owner.id,
+                Device.client_uuid == device_a,
+            )
+        )
+        unrelated_device = db.scalar(
+            select(Device).where(
+                Device.user_id == unrelated_owner.id,
+                Device.client_uuid == device_b,
+            )
+        )
+        assert exchange is not None and exchange.recovery_count <= 1
+        assert replacement is not None and replacement.device_id == device_a
+        assert old_device is not None and old_device.push_enabled is False
+        assert unrelated_device is not None and unrelated_device.push_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_legacy_client_response_loss_keeps_frozen_device_for_recovery_and_fence(
+    client, monkeypatch
+):
+    _settings(monkeypatch)
+    old_owner = _seed_phone_user("+8613900001254")
+    target_owner = _seed_phone_user("+8613900001255")
+    unrelated_owner = _seed_phone_user("+8613900001256")
+    unrelated_device_id = f"legacy-response-unrelated-{uuid4()}"
+    provider = FakePhoneOneTapProvider(
+        {
+            "legacy-response-token": VerifiedPhoneResult(
+                canonical_phone_subject=target_owner.phone,
+                verified_at=datetime.now(UTC),
+            )
+        }
+    )
+    monkeypatch.setattr(phone_one_tap_service, "get_phone_one_tap_provider", lambda: provider)
+    request_id = uuid4()
+    first_payload = _payload("legacy-response-token", request_id)
+    first_payload["device_id"] = "legacy-client"
+    first = await client.post("/v1/auth/phone/one-tap", json=first_payload)
+    assert first.status_code == 200, first.text
+
+    with SessionLocal() as db:
+        exchange = db.scalar(
+            select(PhoneOneTapExchange).where(PhoneOneTapExchange.request_id == request_id)
+        )
+        assert exchange is not None
+        frozen_device_id = exchange.device_id
+        assert frozen_device_id.startswith("legacy-session-")
+        now = datetime.now(UTC)
+        db.add_all(
+            [
+                Device(
+                    user_id=old_owner.id,
+                    client_uuid=frozen_device_id,
+                    platform="ANDROID",
+                    push_token="legacy-response-old-push-token",
+                    push_provider="TEST",
+                    push_token_digest=push_token_digest("legacy-response-old-push-token"),
+                    push_enabled=True,
+                    push_token_updated_at=now,
+                    last_active_at=now,
+                ),
+                Device(
+                    user_id=unrelated_owner.id,
+                    client_uuid=unrelated_device_id,
+                    platform="ANDROID",
+                    push_token="legacy-response-unrelated-push-token",
+                    push_provider="TEST",
+                    push_token_digest=push_token_digest("legacy-response-unrelated-push-token"),
+                    push_enabled=True,
+                    push_token_updated_at=now,
+                    last_active_at=now,
+                ),
+            ]
+        )
+        db.commit()
+
+    retry_payload = _payload("legacy-response-token", request_id)
+    retry_payload["device_id"] = "legacy-client"
+    retry = await client.post("/v1/auth/phone/one-tap", json=retry_payload)
+    assert retry.status_code == 200, retry.text
+    assert provider.calls == ["legacy-response-token"]
+
+    with SessionLocal() as db:
+        exchange = db.scalar(
+            select(PhoneOneTapExchange).where(PhoneOneTapExchange.request_id == request_id)
+        )
+        replacement = db.get(AuthSession, UUID(retry.json()["session_id"]))
+        old_device = db.scalar(
+            select(Device).where(
+                Device.user_id == old_owner.id,
+                Device.client_uuid == frozen_device_id,
+            )
+        )
+        unrelated_device = db.scalar(
+            select(Device).where(
+                Device.user_id == unrelated_owner.id,
+                Device.client_uuid == unrelated_device_id,
+            )
+        )
+        assert exchange is not None and exchange.recovery_count <= 1
+        assert replacement is not None and replacement.device_id == frozen_device_id
+        assert old_device is not None and old_device.push_enabled is False
+        assert unrelated_device is not None and unrelated_device.push_enabled is True

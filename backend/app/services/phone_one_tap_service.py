@@ -64,6 +64,7 @@ class PhoneOneTapError(RuntimeError):
 class PhoneOneTapExchangeResult:
     tokens: PublicSessionTokens
     account_deletion_in_progress: bool
+    device_id: str
 
 
 @dataclass(frozen=True)
@@ -245,6 +246,7 @@ def _recover_completed(
     return PhoneOneTapExchangeResult(
         tokens=issued.tokens,
         account_deletion_in_progress=issued.account_deletion_in_progress,
+        device_id=row.device_id,
     )
 
 
@@ -410,6 +412,7 @@ def _complete_exchange(
     return PhoneOneTapExchangeResult(
         tokens=issued.tokens,
         account_deletion_in_progress=issued.account_deletion_in_progress,
+        device_id=row.device_id,
     )
 
 
