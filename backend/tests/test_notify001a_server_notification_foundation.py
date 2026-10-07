@@ -33,7 +33,7 @@ from app.notification_schemas import (
 )
 from app.services import notification_service
 from app.services.account_deletion_service import delete_current_account
-from app.services.admin_security import hash_admin_password
+from app.services.admin_security import AdminOperationError, hash_admin_password
 from app.services.export_service import generate_export_file, remove_temp_file
 from app.services.notification_provider import (
     NotificationProviderResult,
@@ -998,6 +998,25 @@ def test_final_worker_failure_converges_fanout_campaign():
         assert saved.status == NotificationCampaignStatus.FAILED.value
         assert saved.error_code == "UNEXPECTED_MAINTENANCE_FAILURE"
         assert saved.revision == campaign.revision + 1
+
+        live_actor = db.get(AdminAccount, actor.id)
+        assert live_actor is not None
+        with pytest.raises(AdminOperationError) as exc_info:
+            cancel_notification_campaign(
+                db,
+                actor=live_actor,
+                campaign_id=saved.id,
+                expected_revision=saved.revision,
+            )
+        assert exc_info.value.code == "NOTIFICATION_CAMPAIGN_FINAL"
+        assert exc_info.value.status_code == 409
+        db.rollback()
+
+        preserved = db.get(NotificationCampaign, campaign.id)
+        assert preserved is not None
+        assert preserved.status == NotificationCampaignStatus.FAILED.value
+        assert preserved.error_code == "UNEXPECTED_MAINTENANCE_FAILURE"
+
 
 class _EmptyAccountDeleteStorage:
     def iter_object_keys(self, prefix: str):
