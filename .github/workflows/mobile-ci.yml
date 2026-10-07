@@ -96,6 +96,10 @@ jobs:
           test/historical_day_query_test.dart
           --reporter expanded
 
+      - name: Test NOTIFY-001B client lifecycle
+        timeout-minutes: 5
+        run: flutter test test/notification_client_test.dart --reporter expanded
+
       # [人工注释][S1-026] Onboarding 先单独跑，失败时能直接定位；全量测试继续作为正式回归门禁。
       - name: Test onboarding
         timeout-minutes: 5
@@ -116,6 +120,11 @@ jobs:
           set -euo pipefail
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
+          grep -q 'JiYiFirebaseMessagingService' android/app/src/main/AndroidManifest.xml
+          grep -q 'JiYiHmsMessageService' android/app/src/main/AndroidManifest.xml
+          grep -q 'firebase-messaging' android/app/build.gradle.kts
+          grep -q 'com.huawei.hms:push' android/app/build.gradle.kts
           grep -q 'PassiveMemoryRecoveryReceiver' android/app/src/main/AndroidManifest.xml
           ! grep -Eq '\.startForegroundService[[:space:]]*\(' android/app/src/main/kotlin/cn/jiyidashi/jiyidashi/PassiveMemoryRecovery.kt
           grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
