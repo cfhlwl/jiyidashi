@@ -13,8 +13,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
-from app.auth_models import AuthSession
 from app.admin_models import AdminAccount
+from app.auth_models import AuthSession
 from app.core.config import get_settings
 from app.core.db import SessionLocal, engine
 from app.data_deletion_models import DataDeletionOperation, DataDeletionStatus
