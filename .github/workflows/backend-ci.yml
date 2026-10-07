@@ -118,6 +118,13 @@ jobs:
         timeout-minutes: 5
         run: pytest -q tests/test_notify001a_server_notification_foundation.py
 
+      - name: NOTIFY-001B focused push provider and logout lifecycle
+        timeout-minutes: 5
+        run: >-
+          pytest -q
+          tests/test_notify001b_push_providers.py
+          tests/test_notify001b_push_lifecycle.py
+
       - name: API-001 focused export and pagination regressions
         timeout-minutes: 5
         run: >-
@@ -138,6 +145,16 @@ jobs:
           ENABLE_DEV_AUTH: "false"
           AUTO_CREATE_SCHEMA: "false"
         run: alembic upgrade head
+
+      - name: PostgreSQL NOTIFY-001B installation handoff race
+        # Real PostgreSQL is mandatory here: this standalone integration script
+        # bypasses pytest conftest's SQLite test harness and fails closed unless
+        # both engine and SessionLocal are actually bound to PostgreSQL.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_notify001b_installation_handoff_integration.py
 
       - name: PostgreSQL Durable Maintenance Job concurrency
         # [OPS-002] Real PostgreSQL validates SKIP LOCKED single-claim authority,

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.deps import get_current_user_id
+from app.deps import AuthenticatedClaims, get_current_user_id
 from app.notification_schemas import (
     DevicePushRegistrationRequest,
     DevicePushStateRead,
@@ -30,6 +30,7 @@ def _raise_device_error(exc: NotificationDeviceError) -> None:
 @router.put("/device", response_model=DevicePushStateRead)
 def put_notification_device(
     payload: DevicePushRegistrationRequest,
+    claims: AuthenticatedClaims,
     user_id: CurrentUser,
     db: DbSession,
 ) -> DevicePushStateRead:
@@ -38,6 +39,7 @@ def put_notification_device(
             db,
             user_id=user_id,
             payload=payload,
+            session_id=claims.session_id,
         )
     except NotificationDeviceError as exc:
         _raise_device_error(exc)

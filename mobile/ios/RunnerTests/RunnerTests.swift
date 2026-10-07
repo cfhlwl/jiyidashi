@@ -326,4 +326,73 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(decoded.clientUuid, sample.clientUuid)
   }
 
+
+  func testNotificationPayloadCanonicalizationFailsClosed() {
+    let bridge = NativeNotificationBridge.shared
+    let memoryId = "22222222-2222-4222-8222-222222222222"
+
+    let memory = bridge.canonicalPayload([
+      "version": 1,
+      "destination": "MEMORY",
+      "resource_id": memoryId,
+      "url": "https://must-not-be-forwarded.example/",
+    ])
+    XCTAssertEqual(memory?["version"] as? Int, 1)
+    XCTAssertEqual(memory?["destination"] as? String, "MEMORY")
+    XCTAssertEqual(memory?["resource_id"] as? String, memoryId)
+    XCTAssertNil(memory?["url"])
+
+    let unknown = bridge.canonicalPayload([
+      "version": 1,
+      "destination": "ARBITRARY_URL",
+      "resource_id": memoryId,
+    ])
+    XCTAssertEqual(unknown?["destination"] as? String, "HOME")
+
+    XCTAssertNil(bridge.canonicalPayload([
+      "version": 2,
+      "destination": "HOME",
+    ]))
+
+    let malformedMemory = bridge.canonicalPayload([
+      "version": 1,
+      "destination": "MEMORY",
+      "resource_id": "not-a-uuid",
+    ])
+    XCTAssertEqual(malformedMemory?["destination"] as? String, "HOME")
+    XCTAssertNil(malformedMemory?["resource_id"])
+  }
+
+
+  func testNotificationPermissionMappingAndRegistrationGate() {
+    XCTAssertEqual(
+      NativeNotificationPolicy.permissionWire(.notDetermined),
+      "notDetermined"
+    )
+    XCTAssertEqual(
+      NativeNotificationPolicy.permissionWire(.denied),
+      "denied"
+    )
+    XCTAssertEqual(
+      NativeNotificationPolicy.permissionWire(.authorized),
+      "authorized"
+    )
+    XCTAssertEqual(
+      NativeNotificationPolicy.permissionWire(.provisional),
+      "provisional"
+    )
+    XCTAssertFalse(NativeNotificationPolicy.mayRegister(.notDetermined))
+    XCTAssertFalse(NativeNotificationPolicy.mayRegister(.denied))
+    XCTAssertTrue(NativeNotificationPolicy.mayRegister(.authorized))
+    XCTAssertTrue(NativeNotificationPolicy.mayRegister(.provisional))
+  }
+
+  func testApnsDeviceTokenByteConversionIsStableLowercaseHex() {
+    let bytes = Data([0x00, 0x0f, 0xa1, 0xff])
+    XCTAssertEqual(
+      NativeNotificationPolicy.tokenHex(bytes),
+      "000fa1ff"
+    )
+  }
+
 }
