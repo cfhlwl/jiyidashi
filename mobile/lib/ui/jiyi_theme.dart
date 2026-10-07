@@ -65,7 +65,9 @@ abstract final class JiYiTheme {
       surfaceContainerHighest: surfaceSoft,
       onSurface: textPrimary,
       onSurfaceVariant: textSecondary,
-      outline: textSecondary,
+      outline: brightness == Brightness.dark
+          ? textSecondary
+          : JiYiProductColors.brandSecondary,
       outlineVariant: border,
     );
     final base = ThemeData(
