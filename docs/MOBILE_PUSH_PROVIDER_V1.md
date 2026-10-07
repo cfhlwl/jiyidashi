@@ -10,8 +10,8 @@ Current code shape:
 - Android with Google Mobile Services: FCM HTTP v1.
 - Android with a configured Huawei Mobile Services runtime: HMS Push Kit.
 - TEST provider: development/test only; production registration rejects it.
-- The historical application identity `cn.jiyidashi.jiyidashi` remains unchanged.
-- Live provider enablement remains blocked until APP-ID-001 establishes the final reviewed app identity.
+- APP-ID-001 freezes the Android application ID, Android namespace, and iOS Bundle ID as `com.jiyidays`.
+- Live provider enablement remains blocked until the matching Apple/Google/Huawei registrations for `com.jiyidays` are reviewed.
 
 This is **not** a declaration that mainland-China Android production coverage is complete.
 Xiaomi / OPPO / vivo-class devices without reliable Google Play Services and without the reviewed
@@ -100,13 +100,15 @@ Current safe routes:
 
 ## App identity gate
 
-Do not provision or accept live APNs/FCM/HMS production bindings against the historical identifier
-until APP-ID-001 resolves the final application identity.
+Provision live APNs/FCM/HMS production bindings only for the frozen APP-ID-001 identity `com.jiyidays`.
 
 Production server configuration remains fail closed behind:
 
 ```text
 PUSH_APP_IDENTITY_REVIEWED=true
+PUSH_IOS_BUNDLE_ID=com.jiyidays
+APNS_TOPIC=com.jiyidays
+PUSH_ANDROID_APPLICATION_ID=com.jiyidays
 ```
 
 APNs additionally requires `APNS_TOPIC == PUSH_IOS_BUNDLE_ID` and the production APNs endpoint.
@@ -172,7 +174,7 @@ Code/CI PASS and provider/physical-device PASS are separate.
 
 Code/CI may PASS with live providers disabled. Production/provider acceptance remains HOLD until:
 
-- APP-ID-001 final identity is authoritative;
+- repository APP-ID-001 identity remains frozen as `com.jiyidays`;
 - real APNs credentials are bound to that identity;
 - real Android provider credentials are bound to the reviewed final identity;
 - physical iOS evidence passes;

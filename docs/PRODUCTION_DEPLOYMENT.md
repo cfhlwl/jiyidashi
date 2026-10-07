@@ -274,7 +274,7 @@ procedures are recorded in `docs/MOBILE_PUSH_PROVIDER_V1.md`. In particular:
 - rotate by installing replacement authority first, restarting provider processes so cached OAuth/JWT
   state is discarded, proving physical-device delivery, then revoking the superseded credential;
 - on suspected compromise, disable the affected provider route before replacement/revocation work;
-- never bind production credentials to the historical app identifier while APP-ID-001 is unresolved.
+- bind production push credentials only to the frozen APP-ID-001 identity `com.jiyidays`.
 
 ## Security checklist
 
@@ -290,7 +290,7 @@ Before production acceptance:
 - [ ] API port 8000 has no public host port
 - [ ] private object-storage bucket
 - [ ] provider keys exist only on server
-- [ ] mobile push APP-ID identity review completed before APNs/FCM/HMS enablement
+- [ ] mobile push IDs and APNs topic all equal frozen APP-ID-001 identity `com.jiyidays` before APNs/FCM/HMS enablement
 - [ ] mobile push credential rotation/revocation plan recorded
 - [ ] HTTPS `/health` passes
 - [ ] dev-auth negative smoke passes
