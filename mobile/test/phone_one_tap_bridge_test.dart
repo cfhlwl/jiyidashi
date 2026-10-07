@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,12 +11,17 @@ import 'package:jiyidashi/phone_one_tap_bridge.dart';
 
 const _jsonHeaders = {'content-type': 'application/json'};
 
-Map<String, dynamic> _sessionPayload() => {
-      'access_token': 'access-phone-one-tap',
-      'refresh_token': 'refresh-phone-one-tap-abcdefghijklmnopqrstuvwxyz',
-      'session_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+Map<String, dynamic> _sessionPayload({
+  String accessToken = 'access-phone-one-tap',
+  String refreshToken = 'refresh-phone-one-tap-abcdefghijklmnopqrstuvwxyz',
+  String sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  String userId = '11111111-1111-4111-8111-111111111111',
+}) => {
+      'access_token': accessToken,
+      'refresh_token': refreshToken,
+      'session_id': sessionId,
       'token_type': 'bearer',
-      'user_id': '11111111-1111-4111-8111-111111111111',
+      'user_id': userId,
       'access_expires_at': '2030-09-30T00:15:00Z',
       'refresh_expires_at': '2030-10-30T00:00:00Z',
       'account_deletion_in_progress': false,
@@ -83,6 +89,29 @@ void main() {
     expect(calls, ['initialize', 'requestLoginToken']);
   });
 
+  test('privacy revocation is sent to native instead of short-circuiting locally', () async {
+    final channel = const MethodChannel('cn.jiyidashi/phone_one_tap');
+    Object? arguments;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      arguments = call.arguments;
+      return <String, Object?>{
+        'state': 'UNAVAILABLE',
+        'reason': 'PRIVACY_NOT_ACCEPTED',
+      };
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final result = await MethodChannelPhoneOneTapBridge(channel: channel)
+        .initialize(privacyConsentGranted: false);
+
+    expect(result.state, PhoneOneTapState.unavailable);
+    expect(arguments, {'privacy_consent_granted': false});
+  });
+
   test('privacy gate returns unavailable without invoking provider', () async {
     final bridge = FakePhoneOneTapBridge(
       initializeResult: const PhoneOneTapResult.available(),
@@ -91,7 +120,7 @@ void main() {
     final result = await bridge.initialize(privacyConsentGranted: false);
 
     expect(result.state, PhoneOneTapState.unavailable);
-    expect(result.reason, 'PRIVACY_NOT_ACCEPTED');
+    expect(result.reason, 'PRIVACY_REVOKED');
   });
 
   test('native states and token success stay provider-neutral', () async {
@@ -125,6 +154,111 @@ void main() {
     expect(client.calls[0], client.calls[1]);
     expect(attempt.requestId, matches(RegExp(r'^[0-9a-f-]{36}$')));
     expect(attempt.toString(), isNot(contains('opaque-token')));
+  });
+
+  test('late one-tap response cannot replace an alternate login session', () async {
+    final store = MemoryAuthSessionStore()..installationId = 'installation-race';
+    final oneTapResponse = Completer<http.Response>();
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        calls += 1;
+        if (calls == 1) {
+          return http.Response(
+            jsonEncode(_sessionPayload(
+              accessToken: 'access-a',
+              refreshToken: 'refresh-a-abcdefghijklmnopqrstuvwxyz',
+            )),
+            200,
+            headers: _jsonHeaders,
+          );
+        }
+        if (calls == 2) {
+          expect(request.url.path, '/v1/auth/phone/one-tap');
+          return oneTapResponse.future;
+        }
+        expect(request.url.path, '/v1/auth/login');
+        return http.Response(
+          jsonEncode(_sessionPayload(
+            accessToken: 'access-b',
+            refreshToken: 'refresh-b-abcdefghijklmnopqrstuvwxyz',
+            sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            userId: '22222222-2222-4222-8222-222222222222',
+          )),
+          200,
+          headers: _jsonHeaders,
+        );
+      }),
+    );
+
+    await api.login(email: 'a@example.test', password: 'password-a');
+    final staleOneTap = api.exchangePhoneOneTap(
+      loginToken: 'opaque-provider-token',
+      requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      deviceId: 'installation-race',
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    await api.login(email: 'b@example.test', password: 'password-b');
+    final bVersion = api.sessionVersion;
+    oneTapResponse.complete(
+      http.Response(
+        jsonEncode(_sessionPayload()),
+        200,
+        headers: _jsonHeaders,
+      ),
+    );
+
+    await expectLater(staleOneTap, throwsA(isA<ProtocolException>()));
+    expect(api.authenticatedUserId, '22222222-2222-4222-8222-222222222222');
+    expect(api.accessToken, 'access-b');
+    expect(api.authenticatedSessionId, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    expect(api.sessionVersion, bVersion);
+    expect(store.session?.refreshToken, 'refresh-b-abcdefghijklmnopqrstuvwxyz');
+    expect(store.session?.sessionId, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+  });
+
+  test('one-tap response loss keeps generation stable and retry succeeds', () async {
+    final store = MemoryAuthSessionStore()..installationId = 'installation-retry';
+    final requestBodies = <String>[];
+    var calls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((request) async {
+        requestBodies.add(request.body);
+        calls += 1;
+        if (calls == 1) throw http.ClientException('response lost');
+        return http.Response(
+          jsonEncode(_sessionPayload()),
+          200,
+          headers: _jsonHeaders,
+        );
+      }),
+    );
+    const requestId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    final before = api.sessionVersion;
+
+    await expectLater(
+      api.exchangePhoneOneTap(
+        loginToken: 'opaque-provider-token',
+        requestId: requestId,
+        deviceId: 'installation-retry',
+      ),
+      throwsA(isA<TransportException>()),
+    );
+    expect(api.sessionVersion, before);
+    await api.exchangePhoneOneTap(
+      loginToken: 'opaque-provider-token',
+      requestId: requestId,
+      deviceId: 'installation-retry',
+    );
+
+    expect(requestBodies, hasLength(2));
+    expect(requestBodies[0], requestBodies[1]);
+    expect(api.sessionVersion, before + 1);
   });
 
   test('backend exchange persists only the existing JiYi session shape', () async {

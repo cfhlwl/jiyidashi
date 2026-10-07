@@ -8,23 +8,21 @@ class RunnerTests: XCTestCase {
 
   func testPhoneOneTapNativeAdapterFailsClosedBeforePNVSConfiguration() {
     let adapter = FailClosedPhoneOneTapProviderAdapter()
+    var result: PhoneOneTapNativeResult?
+    adapter.initialize(privacyConsentGranted: false) { result = $0 }
+    XCTAssertEqual(result?.state, .unavailable)
     XCTAssertEqual(
-      adapter.initialize(privacyConsentGranted: false).state,
-      .unavailable
-    )
-    XCTAssertEqual(
-      adapter.initialize(privacyConsentGranted: false).reason,
+      result?.reason,
       "PRIVACY_NOT_ACCEPTED"
     )
+    adapter.initialize(privacyConsentGranted: true) { result = $0 }
     XCTAssertEqual(
-      adapter.initialize(privacyConsentGranted: true).reason,
+      result?.reason,
       "PNVS_NOT_CONFIGURED"
     )
-    XCTAssertEqual(adapter.checkAvailability().state, .unavailable)
-    XCTAssertEqual(
-      adapter.requestLoginToken(viewControllerAvailable: true).state,
-      .unavailable
-    )
+    adapter.checkAvailability { result = $0 }
+    adapter.requestLoginToken(viewControllerAvailable: true) { result = $0 }
+    XCTAssertEqual(result?.state, .unavailable)
   }
 
   func testPhoneOneTapRequestGateFencesRepeatedAndLateCallbacks() {
@@ -49,6 +47,30 @@ class RunnerTests: XCTestCase {
 
     XCTAssertFalse(gate.isCurrent(first))
     XCTAssertFalse(gate.finish(first))
+  }
+
+  func testPhoneOneTapAsyncCallbackCompletesOnce() {
+    let gate = PhoneOneTapRequestGate()
+    let generation = gate.begin()!
+    var completions = 0
+    let callback = PhoneOneTapCallbackFence(gate: gate, generation: generation) { _ in
+      completions += 1
+    }
+    let value = PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "opaque")
+
+    XCTAssertTrue(callback.complete(value))
+    XCTAssertFalse(callback.complete(value))
+    XCTAssertEqual(completions, 1)
+  }
+
+  func testPhoneOneTapPrivacyRevocationIsFailClosed() {
+    let adapter = FailClosedPhoneOneTapProviderAdapter()
+    var result: PhoneOneTapNativeResult?
+
+    adapter.revokePrivacy { result = $0 }
+
+    XCTAssertEqual(result?.state, .unavailable)
+    XCTAssertEqual(result?.reason, "PRIVACY_REVOKED")
   }
 
   func testRecordingHealthRuntimeProjectionIsTruthful() {

@@ -733,6 +733,7 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
     if (loginToken.trim().isEmpty || requestId.trim().isEmpty) {
       throw ArgumentError('one-tap exchange requires an opaque token and request id');
     }
+    final expectedSessionVersion = _sessionVersion;
     final data = await _jsonRequest(
       'POST',
       '/auth/phone/one-tap',
@@ -745,7 +746,10 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
       },
       authenticated: false,
     );
-    await _establishAuthenticatedSession(data);
+    await _establishAuthenticatedSession(
+      data,
+      expectedSessionVersion: expectedSessionVersion,
+    );
   }
 
   DateTime _requiredServerDateTime(

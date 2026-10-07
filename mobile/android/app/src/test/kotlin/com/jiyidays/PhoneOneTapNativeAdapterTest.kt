@@ -11,27 +11,20 @@ class PhoneOneTapNativeAdapterTest {
     @Test
     fun failClosedAdapterRequiresPrivacyAndConfiguration() {
         val adapter = FailClosedPhoneOneTapProviderAdapter()
+        var result: PhoneOneTapNativeResult? = null
 
-        assertEquals(
-            PhoneOneTapNativeState.UNAVAILABLE,
-            adapter.initialize(privacyConsentGranted = false).state,
-        )
+        adapter.initialize(privacyConsentGranted = false) { result = it }
+        assertEquals(PhoneOneTapNativeState.UNAVAILABLE, result?.state)
         assertEquals(
             "PRIVACY_NOT_ACCEPTED",
-            adapter.initialize(privacyConsentGranted = false).reason,
+            result?.reason,
         )
-        assertEquals(
-            "PNVS_NOT_CONFIGURED",
-            adapter.initialize(privacyConsentGranted = true).reason,
-        )
-        assertEquals(
-            PhoneOneTapNativeState.UNAVAILABLE,
-            adapter.checkAvailability().state,
-        )
-        assertEquals(
-            PhoneOneTapNativeState.UNAVAILABLE,
-            adapter.requestLoginToken(activityAvailable = true).state,
-        )
+        adapter.initialize(privacyConsentGranted = true) { result = it }
+        assertEquals("PNVS_NOT_CONFIGURED", result?.reason)
+        adapter.checkAvailability { result = it }
+        assertEquals(PhoneOneTapNativeState.UNAVAILABLE, result?.state)
+        adapter.requestLoginToken(activityAvailable = true) { result = it }
+        assertEquals(PhoneOneTapNativeState.UNAVAILABLE, result?.state)
     }
 
     @Test
@@ -57,6 +50,31 @@ class PhoneOneTapNativeAdapterTest {
 
         assertFalse(gate.isCurrent(first))
         assertFalse(gate.finish(first))
+    }
+
+    @Test
+    fun asyncProviderCallbackCompletesOnceAndIgnoresLateCallback() {
+        val gate = PhoneOneTapRequestGate()
+        val generation = gate.begin()!!
+        val values = mutableListOf<PhoneOneTapNativeResult>()
+        val callback = PhoneOneTapCallbackFence(gate, generation) { values += it }
+        val token = PhoneOneTapNativeResult(PhoneOneTapNativeState.TOKEN_ACQUIRED, "opaque")
+
+        assertTrue(callback.complete(token))
+        assertFalse(callback.complete(token))
+        assertEquals(1, values.size)
+        assertEquals(PhoneOneTapNativeState.TOKEN_ACQUIRED, values.single().state)
+    }
+
+    @Test
+    fun privacyRevocationDoesNotInitializeFailClosedProvider() {
+        val adapter = FailClosedPhoneOneTapProviderAdapter()
+        var result: PhoneOneTapNativeResult? = null
+
+        adapter.revokePrivacy { result = it }
+
+        assertEquals(PhoneOneTapNativeState.UNAVAILABLE, result?.state)
+        assertEquals("PRIVACY_REVOKED", result?.reason)
     }
 
     @Test

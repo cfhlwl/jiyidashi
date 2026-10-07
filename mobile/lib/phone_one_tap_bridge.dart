@@ -70,6 +70,8 @@ abstract interface class PhoneOneTapBridge {
   Future<PhoneOneTapResult> requestLoginToken();
 
   Future<PhoneOneTapResult> cancel();
+
+  Future<PhoneOneTapResult> revokePrivacy();
 }
 
 /// Backend surface required by the one-tap coordinator.
@@ -189,14 +191,14 @@ class MethodChannelPhoneOneTapBridge implements PhoneOneTapBridge {
   @override
   Future<PhoneOneTapResult> initialize({
     required bool privacyConsentGranted,
-  }) async {
-    if (!privacyConsentGranted) {
-      return const PhoneOneTapResult.unavailable('PRIVACY_NOT_ACCEPTED');
-    }
-    return _invoke('initialize', <String, Object?>{
-      'privacy_consent_granted': true,
-    });
-  }
+  }) => _invoke('initialize', <String, Object?>{
+    'privacy_consent_granted': privacyConsentGranted,
+  });
+
+  @override
+  Future<PhoneOneTapResult> revokePrivacy() => _invoke('initialize', <String, Object?>{
+        'privacy_consent_granted': false,
+      });
 
   @override
   Future<PhoneOneTapResult> checkAvailability() => _invoke('checkAvailability');
@@ -205,8 +207,7 @@ class MethodChannelPhoneOneTapBridge implements PhoneOneTapBridge {
   Future<PhoneOneTapResult> preLogin() => _invoke('preLogin');
 
   @override
-  Future<PhoneOneTapResult> requestLoginToken() =>
-      _invoke('requestLoginToken');
+  Future<PhoneOneTapResult> requestLoginToken() => _invoke('requestLoginToken');
 
   @override
   Future<PhoneOneTapResult> cancel() => _invoke('cancel');
@@ -267,6 +268,9 @@ class FakePhoneOneTapBridge implements PhoneOneTapBridge {
     this.preLoginResult = const PhoneOneTapResult.available(),
     this.loginResult = const PhoneOneTapResult.cancelled(),
     this.cancelResult = const PhoneOneTapResult.cancelled(),
+    this.revokePrivacyResult = const PhoneOneTapResult.unavailable(
+      'PRIVACY_REVOKED',
+    ),
   });
 
   PhoneOneTapResult initializeResult;
@@ -274,16 +278,24 @@ class FakePhoneOneTapBridge implements PhoneOneTapBridge {
   PhoneOneTapResult preLoginResult;
   PhoneOneTapResult loginResult;
   PhoneOneTapResult cancelResult;
+  PhoneOneTapResult revokePrivacyResult;
+  int initializeCalls = 0;
+  int revokePrivacyCalls = 0;
   int requestLoginTokenCalls = 0;
 
   @override
   Future<PhoneOneTapResult> initialize({
     required bool privacyConsentGranted,
   }) async {
-    if (!privacyConsentGranted) {
-      return const PhoneOneTapResult.unavailable('PRIVACY_NOT_ACCEPTED');
-    }
+    initializeCalls += 1;
+    if (!privacyConsentGranted) return revokePrivacy();
     return initializeResult;
+  }
+
+  @override
+  Future<PhoneOneTapResult> revokePrivacy() async {
+    revokePrivacyCalls += 1;
+    return revokePrivacyResult;
   }
 
   @override
