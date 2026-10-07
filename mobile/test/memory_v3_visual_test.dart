@@ -261,12 +261,17 @@ void main() {
     final place = find.textContaining('真实地点');
     await _scrollMemoryV3IntoView(tester, place);
     expect(place, findsWidgets);
-    await _scrollMemoryV3IntoView(
-      tester,
-      find.byKey(const ValueKey('memory-query-day-map')),
+    expect(
+      find.byKey(const ValueKey('memory-query-day-map'), skipOffstage: false),
+      findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
-    expect(find.byKey(const ValueKey('memory-query-amap-privacy-accept')), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('memory-query-amap-privacy-accept'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
     expect(consent.accepted, isFalse);
   });
 
