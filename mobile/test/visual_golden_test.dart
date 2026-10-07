@@ -1461,7 +1461,10 @@ void main() {
         find.byKey(const ValueKey('memory-query-input')),
         '护照在哪里？',
       );
-      await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+      final submit = find.byKey(const ValueKey('memory-query-submit'));
+      await tester.ensureVisible(submit);
+      await tester.tap(submit);
+      await _pumpUntilFinder(tester, find.text('明确记录'));
       await _pumpVisualFrames(tester);
 
       expect(find.text('AI 整理'), findsNothing);
