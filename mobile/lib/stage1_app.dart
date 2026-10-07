@@ -1498,7 +1498,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       MaterialPageRoute(builder: (_) => capturePage),
                     );
                   },
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Icons.edit_outlined),
                   label: const Text('记一下'),
                 ),
       bottomNavigationBar: onboardingStep != null || _accountDeletionIntentActive
