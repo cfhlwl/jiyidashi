@@ -30,7 +30,14 @@ class NotificationPushPlugin :
 
         fun publishToken(context: Context, provider: String, token: String) {
             NotificationPushRuntime.storeToken(context, provider, token)
-            emit("token", NotificationPushRuntime.status(context))
+            emit(
+                "token",
+                NotificationPushRuntime.status(
+                    context,
+                    tokenOverride = token,
+                    providerOverride = provider,
+                ),
+            )
         }
 
         fun publishNotification(payload: Map<String, Any>, eventId: String) {
@@ -140,9 +147,16 @@ class NotificationPushPlugin :
         NotificationPushRuntime.obtainToken(context) { tokenResult ->
             mainHandler.post {
                 tokenResult.fold(
-                    onSuccess = {
-                        result.success(NotificationPushRuntime.status(context))
-                        emit("token", NotificationPushRuntime.status(context))
+                    onSuccess = { token ->
+                        val provider = NotificationPushRuntime.selectProvider(context)
+                        val status =
+                            NotificationPushRuntime.status(
+                                context,
+                                tokenOverride = token,
+                                providerOverride = provider,
+                            )
+                        result.success(status)
+                        emit("token", status)
                     },
                     onFailure = {
                         result.error(
