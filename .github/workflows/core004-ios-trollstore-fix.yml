@@ -115,7 +115,7 @@ jobs:
           flutter build ios --release --no-codesign             --dart-define=APP_ENV=production             --dart-define=API_BASE_URL="$API_BASE_URL"             --dart-define=AMAP_IOS_SDK_KEY=ci-amap-ios-not-a-real-key
           test -d build/ios/iphoneos/Runner.app
           test -f build/ios/iphoneos/Runner.app/Info.plist
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = "cn.jiyidashi.jiyidashi"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = "com.jiyidays"
 
       - name: Package TrollStore test IPA
         shell: bash
@@ -141,7 +141,7 @@ jobs:
             echo "artifact=$ipa_name"
             echo "git_head=$EXPECTED_SHA"
             echo "app_version=$version"
-            echo "bundle_id=cn.jiyidashi.jiyidashi"
+            echo "bundle_id=com.jiyidays"
             echo "app_env=production"
             echo "api_base_url=$API_BASE_URL"
             echo "health_url=https://jiyi.ccwl.net.cn/health"

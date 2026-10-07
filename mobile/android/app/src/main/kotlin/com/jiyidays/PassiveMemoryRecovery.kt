@@ -1,4 +1,4 @@
-package cn.jiyidashi.jiyidashi
+package com.jiyidays
 
 import android.content.BroadcastReceiver
 import android.content.Context

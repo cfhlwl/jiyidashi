@@ -1,4 +1,4 @@
-package cn.jiyidashi.jiyidashi
+package com.jiyidays
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -340,7 +340,7 @@ class NativeLocationTrackingService : Service(), LocationListener {
     companion object {
         const val EXTRA_OWNER_USER_ID = "owner_user_id"
         const val ACTION_UPDATE_SAMPLING =
-            "cn.jiyidashi.jiyidashi.action.UPDATE_LOCATION_SAMPLING"
+            "com.jiyidays.action.UPDATE_LOCATION_SAMPLING"
 
         private const val NOTIFICATION_CHANNEL_ID = "native_location_tracking"
         private const val NOTIFICATION_ID = 2301
