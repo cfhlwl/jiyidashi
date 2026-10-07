@@ -1464,7 +1464,13 @@ void main() {
       final submit = find.byKey(const ValueKey('memory-query-submit'));
       await tester.ensureVisible(submit);
       await tester.tap(submit);
-      await _pumpUntilFinder(tester, find.text('明确记录'));
+      final disclosure = find.byKey(
+        const ValueKey('memory-query-evidence-disclosure'),
+        skipOffstage: false,
+      );
+      await _pumpUntilFinder(tester, disclosure);
+      await tester.ensureVisible(disclosure);
+      await tester.tap(disclosure);
       await _pumpVisualFrames(tester);
 
       expect(find.text('AI 整理'), findsNothing);
