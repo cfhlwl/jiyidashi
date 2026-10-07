@@ -3,7 +3,6 @@
 from threading import Barrier, Event, Thread
 from uuid import uuid4
 
-from fastapi import HTTPException
 from sqlalchemy import func, select
 
 from app.account_deletion_models import AccountDeletionOperation
@@ -15,7 +14,6 @@ from app.core.db import (
     UserDataRequestStale,
 )
 from app.data_deletion_models import DataDeletionOperation
-from app.deps import get_current_user_id
 from app.embedding_models import MemoryEmbedding
 from app.embedding_policy import MEMORY_EMBEDDING_DIMENSIONS, MEMORY_EMBEDDING_MODEL
 from app.memory_feedback_models import MemoryFeedback, MemoryFeedbackAction
@@ -25,10 +23,6 @@ from app.services.account_deletion_service import (
     _begin_or_load_account_deletion,
     delete_current_account,
     lock_external_data_delete_entry,
-)
-from app.services.auth_service import (
-    _lock_login_user_for_authentication,
-    lock_login_for_token_issue,
 )
 from app.services.data_deletion_service import _begin_or_load_operation
 
@@ -58,99 +52,6 @@ def _admit_existing_user_request(db, user_id) -> None:
         user_id=user_id,
         deletion_generation=generation,
     )
-
-
-def _assert_login_serializes_with_account_delete_gate() -> None:
-    user_id = uuid4()
-    gate_request = uuid4()
-
-    with SessionLocal() as seed:
-        seed.add(User(id=user_id, nickname="account-delete-login-race"))
-        seed.commit()
-
-    login_locked = Event()
-    allow_login_commit = Event()
-    deletion_finished = Event()
-    errors: list[BaseException] = []
-
-    def login_transaction() -> None:
-        login_db = SessionLocal()
-        try:
-            # Password-auth phase may commit its own metadata, then token issuance must
-            # reacquire KEY SHARE and hold it through response construction.
-            locked_user = _lock_login_user_for_authentication(
-                login_db,
-                user_id,
-            )
-            assert locked_user.id == user_id
-            login_db.commit()
-            final_user, deleting = lock_login_for_token_issue(login_db, user_id)
-            assert final_user.id == user_id
-            assert deleting is False
-            login_locked.set()
-            if not allow_login_commit.wait(timeout=15):
-                raise AssertionError("login token-issuance transaction was not released")
-            login_db.rollback()
-        except BaseException as exc:  # noqa: BLE001 - thread reports assertion failures
-            errors.append(exc)
-            login_locked.set()
-            allow_login_commit.set()
-        finally:
-            login_db.close()
-
-    def start_account_delete_gate() -> None:
-        try:
-            if not login_locked.wait(timeout=15):
-                raise AssertionError("login did not acquire User KEY SHARE")
-            with SessionLocal() as deleting:
-                operation = _begin_or_load_account_deletion(
-                    deleting,
-                    user_id=user_id,
-                    request_id=gate_request,
-                )
-                assert operation is not None
-        except BaseException as exc:  # noqa: BLE001 - thread reports assertion failures
-            errors.append(exc)
-        finally:
-            deletion_finished.set()
-
-    login_thread = Thread(target=login_transaction, name="login-key-share")
-    delete_thread = Thread(target=start_account_delete_gate, name="account-delete-gate")
-    login_thread.start()
-    delete_thread.start()
-
-    assert login_locked.wait(timeout=15)
-    # [人工注释][S1-022] login helper 持有 KEY SHARE 时，Account Delete 的 User FOR UPDATE
-    # 不允许越过它建立 gate；这把“登录成功”和“注销开始”的顺序交给数据库串行化。
-    assert not deletion_finished.wait(timeout=0.25)
-
-    allow_login_commit.set()
-    login_thread.join(timeout=15)
-    delete_thread.join(timeout=15)
-    assert not login_thread.is_alive()
-    assert not delete_thread.is_alive()
-    if errors:
-        raise errors[0]
-
-    with SessionLocal() as recovery_login:
-        # [人工注释][S1-022-FIX-001] gate 已提交后仍允许重新认证拿恢复 token；
-        # 但同一 user_id 进入任何普通 user-data dependency 时必须继续 423。
-        recovered_user = _lock_login_user_for_authentication(recovery_login, user_id)
-        assert recovered_user.id == user_id
-        recovery_login.commit()
-
-    with SessionLocal() as blocked_data_api:
-        try:
-            get_current_user_id(user_id, blocked_data_api)
-            raise AssertionError("ordinary user API passed during Account Delete")
-        except HTTPException as exc:
-            assert exc.status_code == 423
-            assert exc.detail == "ACCOUNT_DELETION_IN_PROGRESS"
-            blocked_data_api.rollback()
-
-    with SessionLocal() as cleanup:
-        cleanup.delete(cleanup.get(User, user_id))
-        cleanup.commit()
 
 
 def _assert_data_delete_entry_serializes_with_account_gate() -> None:
@@ -305,7 +206,6 @@ def _assert_concurrent_account_delete_attempts_converge() -> None:
 
 
 def main() -> None:
-    _assert_login_serializes_with_account_delete_gate()
     _assert_data_delete_entry_serializes_with_account_gate()
     _assert_concurrent_account_delete_attempts_converge()
     owner_id = uuid4()

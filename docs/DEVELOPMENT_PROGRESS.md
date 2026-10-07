@@ -1,4 +1,5 @@
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
+<!-- AUTH-01 / PR #222 已完成 exact-head Gate 并合并 main=1ba028059905a2dd6dc8c62d76c3c60729ebb3ae；AUTH-01 CLOSED。Today V3 与 AUTH-UI-01 已完成并纳入 UI V3 已完成子里程碑；AUTH-02 尚未启动。 -->
 <!-- PR #179 / #167 SEC-014 Sensitive Operation Confirmation Standard V1 已完成两轮正式 security review 并合并 main=2080174f。2026-09-30 production-launch audit 进一步确认：公开注册仍创建 LEGACY_FULL、用户认证仍为 7-day bearer-only、删除 durable state machine 缺少服务端自动 progression、备份默认同机、普通认证 API/AI provider 缺少统一瞬时滥用/并发门禁，并存在同步大导出、stale PENDING media、Security Alert 无人类通知、运行资源边界与真实容量 Gate 等上线前缺口。当前主线保持 ADMIN-001；其后先完成 Production Launch Hardening，再做 #136 最终真实生产验收。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
@@ -39,13 +40,20 @@
 <!-- Stage 3S：Annual Summary / Issue #91 / PR #93 已完成 complete-year snapshot、512+1/256+1 bounded inventory、all-raw S3-013 authority、strict Y-slot provider boundary、provider 前后完整重验与 PostgreSQL Annual Gate，并合并 main=dd558913；S3-017 转 ✅，Stage 3 S3-001~S3-019 正式收口。 -->
 # 迹忆开发进度总表
 
-> 最后更新：2026-10-05  
+> 最后更新：2026-10-07
 > Stage 1「记得住」：✅ complete  
 > Stage 2「自动记」：✅ complete  
 > Stage 3「懂生活 / AI Memory」：✅ complete  
 > Stage 4「连接家庭 / Elder V1」：✅ complete  
 > Stage 4 final production baseline：`9576c7ad912823115e83e67608fdab408e484f1f`（PR #125 merge；before docs-only Stage 4 closeout）  
 > 当前阶段：**UIUX-P0-002 / JiYi Consumer Visual Fidelity V1（Issue #204）**。SEC-016 / PR #203 已正式审查并合并；当前开始按 2026-09-29 用户确认的 8 张高保真参考图重构消费者端视觉，并同步收口真实高德地图体验与 owner-scoped 本机媒体缓存。Flutter 为首要视觉目标，Mini 同步视觉语言。CORE-004 真机长期认证继续暂缓，待视觉与客户端行为稳定后重新发起。
+
+### UI V3 已完成子里程碑
+
+| ID | 范围 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| TODAY-V3 | Today Consumer Visual Parity V3 | ✅ | Today V3 已 CLOSED；正式 Hero、锁定几何、真实 AMap/Visit/Place、Memory 双卡、Quick Capture、Bottom Navigation 与 surface correction 已完成最终视觉验收。 |
+| AUTH-UI-01 | Auth UX V3 | ✅ | Auth Design Authority、架构/Session Shell 与最终视觉审查已通过；AUTH UI scope 已 CLOSED。 |
 
 ## 状态规则
 
@@ -379,6 +387,7 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | ID | 优先级 | 功能 / 风险 | 状态 | 冻结结论 |
 | --- | --- | --- | --- | --- |
 | AUTH-001 | P0 | Public Auth & Persistent Session Hardening | ✅ | Issue #182 / PR #183 已完成正式安全审查并合并；merge `d20617973499c2a04cede58016999f31d331bdfc`。durable server session、15 分钟短 JWT、opaque refresh rotation/replay revoke、logout/logout-all/revoke、邮箱验证/密码恢复、Keychain/Keystore secure persistence、cold-start server-authoritative restore、并发 refresh exactly-one-success 与 stale-refresh/logout/account-switch 竞态均已收口。 |
+| AUTH-01 | P0 | Canonical Identity Foundation | ✅ | PR #222 已完成 exact-head GitHub Gate 并合并；reviewed HEAD `0f59e62d2320421d2e2af980eee930b250f9bd24`，merge `1ba028059905a2dd6dc8c62d76c3c60729ebb3ae`。User.id 保持 canonical account authority，AuthIdentity 成为 provider-neutral authority；PHONE/EMAIL/WECHAT identity guards、provider-neutral session issuance、Account Delete continuation 与 PostgreSQL concurrency A-H 均已验收。无 provider route；AUTH-02 NOT INCLUDED。 |
 | AUTH-002 | P0* | WeChat Mini Program Identity | ⬜ | 若微信小程序作为正式主入口，则在公开发布前加入 `WECHAT_MINIPROGRAM` AuthIdentity：`wx.login → code2session → stable provider subject → User`；微信 secret 仅服务端。若小程序不是首发主入口，可降为 P1。 |
 | AUTH-003 | P0* | Phone Number + SMS OTP Login | ⬜ | 当前只有邮箱+密码认证；`users.phone` 仅是资料字段，尚未接入手机号 AuthIdentity、短信验证码发送/校验、过期/重放/频率限制、阿里云 SMS 服务端凭证和 Flutter/小程序登录入口。若手机号是正式主登录方式，公开发布前必须完成；短信密钥只能放服务端。 |
 | AUTH-004 | P0* | Native WeChat Login for Flutter Android/iOS | ⏸ | 后期配置，当前不阻塞主线开发。届时需完成 Android/iOS SDK 注册、`wxlogin` 回调、服务端 `code → openid/unionid → AuthIdentity → session`，并配置 Android 包签名、iOS Universal Link、微信 AppID；微信 secret 仅服务端。 |
