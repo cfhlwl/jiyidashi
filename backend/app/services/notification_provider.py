@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -185,7 +186,7 @@ class APNsNotificationProvider:
         settings: Settings,
         *,
         client: httpx.Client | None = None,
-        clock: callable = time.time,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._settings = settings
         self._client = client or httpx.Client(http2=True, timeout=_http_timeout(settings))
