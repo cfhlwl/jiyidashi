@@ -422,7 +422,7 @@ class NotificationClientService {
     await _consumeStatus(next, synchronize: true);
   }
 
-  Future<void> onAuthenticated() => _serial(_synchronizeCurrentOwner);
+  Future<void> onAuthenticated() => _serial(_ensureAuthorizedOwnerRegistration);
 
   Future<void> onAppResumed() => _serial(() async {
         NativePushStatus current;
@@ -432,7 +432,8 @@ class NotificationClientService {
           registration = NotificationRegistrationState.providerUnavailable;
           return;
         }
-        await _consumeStatus(current, synchronize: true);
+        await _consumeStatus(current, synchronize: false);
+        await _ensureAuthorizedOwnerRegistration();
       });
 
   Future<void> onTerminalAuthLoss() => _serial(() async {
@@ -560,6 +561,24 @@ class NotificationClientService {
       await tokenStore.write(_token!);
     }
     if (synchronize) await _synchronizeCurrentOwner();
+  }
+
+  Future<void> _ensureAuthorizedOwnerRegistration() async {
+    if (api.authenticatedUserId == null) return;
+    if (permission != NotificationPermissionState.authorized &&
+        permission != NotificationPermissionState.provisional) {
+      return;
+    }
+    if (_token == null) {
+      try {
+        final native = await nativeBridge.registerForPush();
+        await _consumeStatus(native, synchronize: false);
+      } on Object {
+        registration = NotificationRegistrationState.providerUnavailable;
+        return;
+      }
+    }
+    await _synchronizeCurrentOwner();
   }
 
   Future<void> _synchronizeCurrentOwner() async {
