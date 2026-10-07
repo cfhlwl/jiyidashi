@@ -602,7 +602,6 @@ void main() {
     expect(api.queriedQuestion, memory);
     expect(find.textContaining('第 2 步'), findsOneWidget);
     expect(find.text('查看这次回答的依据'), findsOneWidget);
-    expect(find.textContaining('用户文字记录'), findsOneWidget);
     expect(onboarding.values[owner], OnboardingStatus.inProgress);
 
     final evidenceDisclosure = find.byKey(
@@ -616,6 +615,7 @@ void main() {
       reason: 'opened qualifying Evidence disclosure',
     );
     expect(find.textContaining('第 3 步'), findsOneWidget);
+    expect(find.textContaining('用户文字记录'), findsOneWidget);
 
     final complete = find.byKey(const ValueKey('onboarding-complete'));
     await tester.ensureVisible(complete);

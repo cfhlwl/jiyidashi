@@ -518,8 +518,12 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   capabilities: const AuthCapabilities.emailOnly(),
                   initialMessage: restoreMessage,
                   onRegistrationCompleted: () {
-                    startOnboardingAfterAuth = true;
-                    resumeAccountDeletionAfterAuth = false;
+                    if (mounted) {
+                      setState(() {
+                        startOnboardingAfterAuth = true;
+                        resumeAccountDeletionAfterAuth = false;
+                      });
+                    }
                   },
                   onAccountDeletionRecovery: () {
                     resumeAccountDeletionAfterAuth = true;
