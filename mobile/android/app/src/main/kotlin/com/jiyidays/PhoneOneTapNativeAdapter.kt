@@ -71,7 +71,7 @@ interface PhoneOneTapProviderAdapter {
     fun initialize(privacyConsentGranted: Boolean, completion: PhoneOneTapCompletion)
     fun checkAvailability(completion: PhoneOneTapCompletion)
     fun preLogin(completion: PhoneOneTapCompletion)
-    fun requestLoginToken(activityAvailable: Boolean, completion: PhoneOneTapCompletion)
+    fun requestLoginToken(activity: Activity, completion: PhoneOneTapCompletion)
     fun cancel(completion: PhoneOneTapCompletion)
     fun revokePrivacy(completion: PhoneOneTapCompletion)
 }
@@ -120,13 +120,9 @@ class FailClosedPhoneOneTapProviderAdapter : PhoneOneTapProviderAdapter {
     override fun preLogin(completion: PhoneOneTapCompletion) = completion(unavailable())
 
     override fun requestLoginToken(
-        activityAvailable: Boolean,
+        activity: Activity,
         completion: PhoneOneTapCompletion,
     ) {
-        if (!activityAvailable) {
-            completion(unavailable("ACTIVITY_UNAVAILABLE"))
-            return
-        }
         completion(unavailable())
     }
 

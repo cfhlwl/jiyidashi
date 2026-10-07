@@ -128,7 +128,8 @@ class PhoneOneTapPlugin(
             result.success(unavailable("NOT_INITIALIZED").toPlatformMap())
             return
         }
-        if (activity == null) {
+        val requestActivity = activity
+        if (requestActivity == null) {
             result.success(unavailable("ACTIVITY_UNAVAILABLE").toPlatformMap())
             return
         }
@@ -137,7 +138,7 @@ class PhoneOneTapPlugin(
             return
         }
         beginAsync(result) { _, callback ->
-            adapter.requestLoginToken(activityAvailable = true) { callback.complete(it); Unit }
+            adapter.requestLoginToken(activity = requestActivity) { callback.complete(it); Unit }
         }
     }
 

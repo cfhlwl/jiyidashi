@@ -2114,7 +2114,7 @@ protocol PhoneOneTapProviderAdapter {
   func initialize(privacyConsentGranted: Bool, completion: @escaping PhoneOneTapCompletion)
   func checkAvailability(completion: @escaping PhoneOneTapCompletion)
   func preLogin(completion: @escaping PhoneOneTapCompletion)
-  func requestLoginToken(viewControllerAvailable: Bool, completion: @escaping PhoneOneTapCompletion)
+  func requestLoginToken(viewController: UIViewController, completion: @escaping PhoneOneTapCompletion)
   func cancel(completion: @escaping PhoneOneTapCompletion)
   func revokePrivacy(completion: @escaping PhoneOneTapCompletion)
 }
@@ -2145,11 +2145,7 @@ final class FailClosedPhoneOneTapProviderAdapter: PhoneOneTapProviderAdapter {
     completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
   }
 
-  func requestLoginToken(viewControllerAvailable: Bool, completion: @escaping PhoneOneTapCompletion) {
-    guard viewControllerAvailable else {
-      completion(PhoneOneTapNativeResult(state: .unavailable, reason: "VIEW_CONTROLLER_UNAVAILABLE"))
-      return
-    }
+  func requestLoginToken(viewController: UIViewController, completion: @escaping PhoneOneTapCompletion) {
     completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
   }
 
@@ -2200,14 +2196,22 @@ final class PhoneOneTapNativeBridge {
   private let requestGate = PhoneOneTapRequestGate()
   private var channel: FlutterMethodChannel?
   private var initialized = false
-  private var viewControllerAvailable = true
+  private var viewControllerProvider: () -> UIViewController? = { nil }
   private var pending: (generation: Int64, result: FlutterResult)?
 
-  init(adapter: PhoneOneTapProviderAdapter = FailClosedPhoneOneTapProviderAdapter()) {
+  init(
+    adapter: PhoneOneTapProviderAdapter = FailClosedPhoneOneTapProviderAdapter(),
+    viewControllerProvider: @escaping () -> UIViewController? = { nil }
+  ) {
     self.adapter = adapter
+    self.viewControllerProvider = viewControllerProvider
   }
 
-  func attach(messenger: FlutterBinaryMessenger) {
+  func attach(
+    messenger: FlutterBinaryMessenger,
+    viewControllerProvider: @escaping () -> UIViewController?
+  ) {
+    self.viewControllerProvider = viewControllerProvider
     let nextChannel = FlutterMethodChannel(name: Self.channelName, binaryMessenger: messenger)
     nextChannel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call: call, result: result) ?? result(FlutterError(
@@ -2229,7 +2233,7 @@ final class PhoneOneTapNativeBridge {
     channel = nil
   }
 
-  private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
+  func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "initialize":
       let arguments = call.arguments as? [String: Any]
@@ -2272,10 +2276,13 @@ final class PhoneOneTapNativeBridge {
 
   private func requestLoginToken(result: @escaping FlutterResult) {
     guard initialized else { result(unavailable("NOT_INITIALIZED").platformMap()); return }
-    guard viewControllerAvailable else { result(unavailable("VIEW_CONTROLLER_UNAVAILABLE").platformMap()); return }
+    guard let viewController = viewControllerProvider() else {
+      result(unavailable("VIEW_CONTROLLER_UNAVAILABLE").platformMap())
+      return
+    }
     guard pending == nil else { result(unavailable("REQUEST_IN_PROGRESS").platformMap()); return }
     beginAsync(result: result) { callback in
-      self.adapter.requestLoginToken(viewControllerAvailable: true) { value in
+      self.adapter.requestLoginToken(viewController: viewController) { value in
         _ = callback.complete(value)
       }
     }
@@ -2391,7 +2398,14 @@ final class PhoneOneTapNativeBridge {
     nativeLocationBridge = bridge
 
     let phoneOneTap = phoneOneTapBridge ?? PhoneOneTapNativeBridge()
-    phoneOneTap.attach(messenger: engineBridge.applicationRegistrar.messenger())
+    let applicationRegistrar = engineBridge.applicationRegistrar
+    let pluginRegistry = engineBridge.pluginRegistry
+    phoneOneTap.attach(
+      messenger: applicationRegistrar.messenger(),
+      viewControllerProvider: {
+        pluginRegistry.registrar(forPlugin: "PhoneOneTapNativeBridge")?.viewController
+      }
+    )
     phoneOneTapBridge = phoneOneTap
 
     let completionChannel = FlutterMethodChannel(
