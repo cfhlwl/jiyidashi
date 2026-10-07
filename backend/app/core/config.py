@@ -10,6 +10,8 @@ from app.embedding_policy import (
     MEMORY_EMBEDDING_MODEL,
 )
 
+FROZEN_PRODUCTION_APP_ID = "com.jiyidays"
+
 
 class Settings(BaseSettings):
     app_env: str = "development"
@@ -83,6 +85,39 @@ class Settings(BaseSettings):
         ge=1.0,
         le=15.0,
     )
+
+    # NOTIFY-001B: production push provider authority. Live providers stay disabled
+    # until APP-ID identity review is explicitly completed.
+    push_app_identity_reviewed: bool = False
+    push_ios_bundle_id: str = ""
+    push_android_application_id: str = ""
+    push_provider_connect_timeout_seconds: float = Field(default=3.0, ge=0.5, le=15.0)
+    push_provider_read_timeout_seconds: float = Field(default=5.0, ge=0.5, le=30.0)
+    push_provider_write_timeout_seconds: float = Field(default=5.0, ge=0.5, le=30.0)
+    push_provider_pool_timeout_seconds: float = Field(default=3.0, ge=0.5, le=15.0)
+
+    apns_enabled: bool = False
+    apns_team_id: str = ""
+    apns_key_id: str = ""
+    apns_private_key: str = ""
+    apns_private_key_file: str = ""
+    apns_topic: str = ""
+    apns_environment: str = "sandbox"
+    apns_jwt_refresh_minutes: int = Field(default=50, ge=5, le=55)
+
+    fcm_enabled: bool = False
+    fcm_project_id: str = ""
+    fcm_client_email: str = ""
+    fcm_private_key: str = ""
+    fcm_private_key_file: str = ""
+    fcm_token_uri: str = "https://oauth2.googleapis.com/token"
+
+    hms_enabled: bool = False
+    hms_app_id: str = ""
+    hms_client_id: str = ""
+    hms_client_secret: str = ""
+    hms_oauth_url: str = "https://oauth-login.cloud.huawei.com/oauth2/v3/token"
+    hms_push_base_url: str = "https://push-api.cloud.huawei.com"
 
     enable_dev_auth: bool = False
     auto_create_schema: bool = False
@@ -383,6 +418,119 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "SECURITY_ALERT Feishu production credentials must not be placeholders"
                 )
+
+        push_live_enabled = self.apns_enabled or self.fcm_enabled or self.hms_enabled
+        if push_live_enabled and self.is_production:
+            if not self.push_app_identity_reviewed:
+                raise ValueError(
+                    "PUSH_APP_IDENTITY_REVIEWED must be true before enabling production push"
+                )
+            canonical_identity = {
+                "PUSH_IOS_BUNDLE_ID": self.push_ios_bundle_id.strip(),
+                "APNS_TOPIC": self.apns_topic.strip(),
+                "PUSH_ANDROID_APPLICATION_ID": self.push_android_application_id.strip(),
+            }
+            for key, value in canonical_identity.items():
+                if value != FROZEN_PRODUCTION_APP_ID:
+                    raise ValueError(
+                        f"{key} must equal frozen APP-ID-001 identity "
+                        f"{FROZEN_PRODUCTION_APP_ID}"
+                    )
+
+        def _placeholder(value: str) -> bool:
+            upper = value.strip().upper()
+            return not upper or "CHANGE_ME" in upper or "PLACEHOLDER" in upper
+
+        if self.apns_environment not in {"sandbox", "production"}:
+            raise ValueError("APNS_ENVIRONMENT must be sandbox or production")
+        if self.apns_enabled:
+            if not all(
+                (
+                    self.apns_team_id.strip(),
+                    self.apns_key_id.strip(),
+                    self.apns_topic.strip(),
+                )
+            ):
+                raise ValueError("APNS team/key/topic configuration is incomplete")
+            if bool(self.apns_private_key.strip()) == bool(self.apns_private_key_file.strip()):
+                raise ValueError(
+                    "Configure exactly one of APNS_PRIVATE_KEY or APNS_PRIVATE_KEY_FILE"
+                )
+            if self.is_production:
+                if self.apns_environment != "production":
+                    raise ValueError("Production APNS must use APNS_ENVIRONMENT=production")
+                if self.apns_topic.strip() != self.push_ios_bundle_id.strip():
+                    raise ValueError("APNS_TOPIC must match PUSH_IOS_BUNDLE_ID")
+                for value in (
+                    self.push_ios_bundle_id,
+                    self.apns_team_id,
+                    self.apns_key_id,
+                    self.apns_topic,
+                ):
+                    if _placeholder(value):
+                        raise ValueError("Production APNS identity values must not be placeholders")
+
+        if self.fcm_enabled:
+            if not all(
+                (
+                    self.fcm_project_id.strip(),
+                    self.fcm_client_email.strip(),
+                )
+            ):
+                raise ValueError("FCM project/service-account configuration is incomplete")
+            if bool(self.fcm_private_key.strip()) == bool(self.fcm_private_key_file.strip()):
+                raise ValueError(
+                    "Configure exactly one of FCM_PRIVATE_KEY or FCM_PRIVATE_KEY_FILE"
+                )
+            parsed_fcm_token = urlparse(self.fcm_token_uri.strip())
+            if (
+                parsed_fcm_token.scheme.lower() != "https"
+                or parsed_fcm_token.hostname != "oauth2.googleapis.com"
+                or parsed_fcm_token.path != "/token"
+            ):
+                raise ValueError("FCM_TOKEN_URI must be the reviewed Google OAuth HTTPS endpoint")
+            if self.is_production:
+                if _placeholder(self.push_android_application_id):
+                    raise ValueError("PUSH_ANDROID_APPLICATION_ID must be reviewed for FCM")
+                if any(
+                    _placeholder(value)
+                    for value in (self.fcm_project_id, self.fcm_client_email)
+                ):
+                    raise ValueError("Production FCM identity values must not be placeholders")
+
+        if self.hms_enabled:
+            if not all(
+                (
+                    self.hms_app_id.strip(),
+                    self.hms_client_id.strip(),
+                    self.hms_client_secret.strip(),
+                )
+            ):
+                raise ValueError("HMS app/client credentials are incomplete")
+            parsed_hms_oauth = urlparse(self.hms_oauth_url.strip())
+            parsed_hms_push = urlparse(self.hms_push_base_url.strip())
+            if (
+                parsed_hms_oauth.scheme.lower() != "https"
+                or parsed_hms_oauth.hostname != "oauth-login.cloud.huawei.com"
+                or parsed_hms_oauth.path != "/oauth2/v3/token"
+            ):
+                raise ValueError("HMS_OAUTH_URL must be the reviewed Huawei OAuth HTTPS endpoint")
+            if (
+                parsed_hms_push.scheme.lower() != "https"
+                or parsed_hms_push.hostname != "push-api.cloud.huawei.com"
+                or parsed_hms_push.path.rstrip("/")
+            ):
+                raise ValueError(
+                    "HMS_PUSH_BASE_URL must be the reviewed Huawei Push HTTPS origin"
+                )
+            if self.is_production:
+                if _placeholder(self.push_android_application_id):
+                    raise ValueError("PUSH_ANDROID_APPLICATION_ID must be reviewed for HMS")
+                if any(
+                    _placeholder(value)
+                    for value in (self.hms_app_id, self.hms_client_id, self.hms_client_secret)
+                ):
+                    raise ValueError("Production HMS credentials must not be placeholders")
 
         if self.is_production:
             process_count = self.web_concurrency + 1

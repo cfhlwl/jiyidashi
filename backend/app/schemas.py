@@ -190,6 +190,7 @@ class ChangePasswordRequest(BaseModel):
 class DevTokenRequest(BaseModel):
     user_id: UUID | None = None
     nickname: str = Field(default="测试用户", min_length=1, max_length=80)
+    device_id: str | None = Field(default=None, min_length=1, max_length=120)
 
 
 class RegistrationResponse(BaseModel):

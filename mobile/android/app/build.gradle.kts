@@ -4,6 +4,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+fun externalPushValue(name: String): String =
+    providers.gradleProperty(name)
+        .orElse(providers.environmentVariable(name))
+        .orElse("")
+        .get()
+
+fun quotedBuildConfig(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 fun signingInput(propertyName: String, environmentName: String): String? =
     providers.gradleProperty(propertyName)
         .orElse(providers.environmentVariable(environmentName))
@@ -60,6 +69,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.jiyidays"
         // You can update the following values to match your application needs.
@@ -72,6 +85,24 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        val fcmProjectId = externalPushValue("JIYI_FCM_PROJECT_ID")
+        val fcmAppId = externalPushValue("JIYI_FCM_APP_ID")
+        val fcmApiKey = externalPushValue("JIYI_FCM_API_KEY")
+        val fcmSenderId = externalPushValue("JIYI_FCM_SENDER_ID")
+        val hmsAppId = externalPushValue("JIYI_HMS_APP_ID")
+        buildConfigField("String", "JIYI_FCM_PROJECT_ID", quotedBuildConfig(fcmProjectId))
+        buildConfigField("String", "JIYI_FCM_APP_ID", quotedBuildConfig(fcmAppId))
+        buildConfigField("String", "JIYI_FCM_API_KEY", quotedBuildConfig(fcmApiKey))
+        buildConfigField("String", "JIYI_FCM_SENDER_ID", quotedBuildConfig(fcmSenderId))
+        buildConfigField("String", "JIYI_HMS_APP_ID", quotedBuildConfig(hmsAppId))
+        manifestPlaceholders["JIYI_HMS_APP_ID"] = hmsAppId
+        if (fcmAppId.isNotBlank()) {
+            resValue("string", "google_app_id", fcmAppId)
+            resValue("string", "gcm_defaultSenderId", fcmSenderId)
+            resValue("string", "google_api_key", fcmApiKey)
+            resValue("string", "project_id", fcmProjectId)
+        }
     }
 
     signingConfigs {
@@ -93,6 +124,10 @@ android {
             if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
@@ -126,6 +161,9 @@ kotlin {
 
 dependencies {
     implementation("androidx.work:work-runtime:2.9.1")
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("com.huawei.hms:push:6.13.0.300")
     testImplementation("junit:junit:4.13.2")
 }
 

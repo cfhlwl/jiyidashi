@@ -2,6 +2,7 @@ import BackgroundTasks
 import CoreLocation
 import Flutter
 import UIKit
+import UserNotifications
 
 enum PassiveMemoryBackgroundRecovery {
   static let identifier = "com.jiyidays.passive-recovery"
@@ -1730,9 +1731,326 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
   }
 }
 
+
+enum NativeNotificationPolicy {
+  static func permissionWire(_ status: UNAuthorizationStatus) -> String {
+    switch status {
+    case .notDetermined:
+      return "notDetermined"
+    case .denied:
+      return "denied"
+    case .authorized:
+      return "authorized"
+    case .provisional:
+      return "provisional"
+    @unknown default:
+      if #available(iOS 14.0, *), status == .ephemeral {
+        return "provisional"
+      }
+      return "unavailable"
+    }
+  }
+
+  static func tokenHex(_ data: Data) -> String {
+    data.map { String(format: "%02x", $0) }.joined()
+  }
+
+  static func mayRegister(_ status: UNAuthorizationStatus) -> Bool {
+    switch status {
+    case .authorized, .provisional:
+      return true
+    default:
+      if #available(iOS 14.0, *), status == .ephemeral {
+        return true
+      }
+      return false
+    }
+  }
+}
+
+final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate {
+  static let shared = NativeNotificationBridge()
+
+  private let channelName = "cn.jiyidashi/notifications"
+  private let pendingTapKey = "jiyi.push.pending_tap.v1"
+  private let allowedDestinations: Set<String> = [
+    "HOME", "REMINDER", "MEMORY", "APP_UPDATE", "FAMILY", "EXPORT",
+  ]
+  private var channel: FlutterMethodChannel?
+  private var dartReady = false
+  private var currentToken: String?
+
+  private override init() {
+    super.init()
+  }
+
+  func installNotificationCenterDelegate() {
+    UNUserNotificationCenter.current().delegate = self
+  }
+
+  func attach(messenger: FlutterBinaryMessenger) {
+    let methodChannel = FlutterMethodChannel(
+      name: channelName,
+      binaryMessenger: messenger
+    )
+    methodChannel.setMethodCallHandler { [weak self] call, result in
+      guard let self else {
+        result(
+          FlutterError(
+            code: "push_bridge_unavailable",
+            message: "Push bridge is unavailable",
+            details: nil
+          )
+        )
+        return
+      }
+      switch call.method {
+      case "ready":
+        self.dartReady = true
+        self.deliverPendingTapIfNeeded()
+        result(nil)
+      case "status":
+        self.status(result: result)
+      case "requestPermission":
+        self.requestPermission(result: result)
+      case "registerForPush":
+        self.registerForPush(result: result)
+      case "unregisterFromPush":
+        self.unregisterFromPush(result: result)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    channel = methodChannel
+  }
+
+  func didRegister(deviceToken: Data) {
+    let token = NativeNotificationPolicy.tokenHex(deviceToken)
+    currentToken = token
+    emitStatus(method: "token")
+  }
+
+  func didFailToRegister() {
+    currentToken = nil
+    emitStatus(method: "token")
+  }
+
+  func captureLaunchTap(_ userInfo: [AnyHashable: Any]) {
+    guard let payload = canonicalPayload(userInfo) else { return }
+    persistPendingTap(
+      payload: payload,
+      eventId: UUID().uuidString
+    )
+  }
+
+  func captureSceneTap(_ response: UNNotificationResponse) {
+    let payload = response.notification.request.content.userInfo
+    guard let canonical = canonicalPayload(payload) else { return }
+    publishTap(
+      payload: canonical,
+      eventId: response.notification.request.identifier
+    )
+  }
+
+  private func statusMap(
+    authorization: UNAuthorizationStatus
+  ) -> [String: Any?] {
+    let bundle = Bundle.main
+    return [
+      "supported": true,
+      "platform": "IOS",
+      "permission": NativeNotificationPolicy.permissionWire(authorization),
+      "provider": "APNS",
+      "token": currentToken,
+      "app_version":
+        bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+      "os_version": UIDevice.current.systemVersion,
+    ]
+  }
+
+  private func status(result: @escaping FlutterResult) {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      DispatchQueue.main.async {
+        result(self.statusMap(authorization: settings.authorizationStatus))
+      }
+    }
+  }
+
+  private func emitStatus(method: String) {
+    guard dartReady else { return }
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      let body = self.statusMap(authorization: settings.authorizationStatus)
+      DispatchQueue.main.async {
+        self.channel?.invokeMethod(method, arguments: body)
+      }
+    }
+  }
+
+  private func requestPermission(result: @escaping FlutterResult) {
+    UNUserNotificationCenter.current().requestAuthorization(
+      options: [.alert, .badge, .sound]
+    ) { _, _ in
+      self.emitStatus(method: "permission")
+      self.status(result: result)
+    }
+  }
+
+  private func registerForPush(result: @escaping FlutterResult) {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      guard NativeNotificationPolicy.mayRegister(
+        settings.authorizationStatus
+      ) else {
+        DispatchQueue.main.async {
+          result(self.statusMap(authorization: settings.authorizationStatus))
+        }
+        return
+      }
+      DispatchQueue.main.async {
+        UIApplication.shared.registerForRemoteNotifications()
+        result(self.statusMap(authorization: settings.authorizationStatus))
+      }
+    }
+  }
+
+  private func unregisterFromPush(result: @escaping FlutterResult) {
+    DispatchQueue.main.async {
+      UIApplication.shared.unregisterForRemoteNotifications()
+      self.currentToken = nil
+      result(nil)
+      self.emitStatus(method: "token")
+    }
+  }
+
+  func canonicalPayload(
+    _ userInfo: [AnyHashable: Any]
+  ) -> [String: Any]? {
+    let version: Int?
+    if let raw = userInfo["version"] as? NSNumber {
+      version = raw.intValue
+    } else if let raw = userInfo["version"] as? String {
+      version = Int(raw)
+    } else {
+      version = nil
+    }
+    guard version == 1 else { return nil }
+
+    var destination = (userInfo["destination"] as? String)?.uppercased() ?? "HOME"
+    if !allowedDestinations.contains(destination) {
+      destination = "HOME"
+    }
+
+    var resourceId: String?
+    if let raw = userInfo["resource_id"] as? String, !raw.isEmpty {
+      guard UUID(uuidString: raw) != nil else {
+        return [
+          "version": 1,
+          "destination": "HOME",
+        ]
+      }
+      resourceId = raw
+    }
+    if destination == "MEMORY" && resourceId == nil {
+      destination = "HOME"
+    }
+
+    var result: [String: Any] = [
+      "version": 1,
+      "destination": destination,
+    ]
+    if let resourceId {
+      result["resource_id"] = resourceId
+    }
+    return result
+  }
+
+  private func persistPendingTap(
+    payload: [String: Any],
+    eventId: String
+  ) {
+    UserDefaults.standard.set(
+      [
+        "payload": payload,
+        "event_id": eventId,
+      ],
+      forKey: pendingTapKey
+    )
+  }
+
+  private func publishTap(
+    payload: [String: Any],
+    eventId: String
+  ) {
+    guard dartReady, let channel else {
+      persistPendingTap(payload: payload, eventId: eventId)
+      return
+    }
+    channel.invokeMethod(
+      "tap",
+      arguments: [
+        "payload": payload,
+        "event_id": eventId,
+      ]
+    )
+  }
+
+  private func deliverPendingTapIfNeeded() {
+    guard
+      dartReady,
+      let pending = UserDefaults.standard.dictionary(forKey: pendingTapKey),
+      let payload = pending["payload"] as? [String: Any],
+      let eventId = pending["event_id"] as? String
+    else {
+      return
+    }
+    UserDefaults.standard.removeObject(forKey: pendingTapKey)
+    channel?.invokeMethod(
+      "tap",
+      arguments: [
+        "payload": payload,
+        "event_id": eventId,
+      ]
+    )
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler:
+      @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    if
+      let payload = canonicalPayload(notification.request.content.userInfo),
+      dartReady
+    {
+      channel?.invokeMethod(
+        "notification",
+        arguments: [
+          "payload": payload,
+          "event_id": notification.request.identifier,
+        ]
+      )
+    }
+    if #available(iOS 14.0, *) {
+      completionHandler([.banner, .sound, .badge])
+    } else {
+      completionHandler([.alert, .sound, .badge])
+    }
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    captureSceneTap(response)
+    completionHandler()
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var nativeLocationBridge: NativeLocationBridge?
+  private let nativeNotificationBridge = NativeNotificationBridge.shared
   private var activePassiveRecoveryTask: BGAppRefreshTask?
   private var passiveRecoveryCompletionChannel: FlutterMethodChannel?
 
@@ -1740,6 +2058,11 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    nativeNotificationBridge.installNotificationCenterDelegate()
+    if let remote = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
+      nativeNotificationBridge.captureLaunchTap(remote)
+    }
+
     if #available(iOS 13.0, *) {
       BGTaskScheduler.shared.register(
         forTaskWithIdentifier: PassiveMemoryBackgroundRecovery.identifier,
@@ -1769,6 +2092,9 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    nativeNotificationBridge.attach(
+      messenger: engineBridge.applicationRegistrar.messenger()
+    )
 
     let bridge = nativeLocationBridge ?? NativeLocationBridge()
     bridge.onPassiveRecoveryReady = { [weak self] in
@@ -1824,6 +2150,28 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     // Keep the BG task alive until that handshake or expiration; never treat "not ready"
     // as permission to skip the AUTH/Privacy recovery check.
     _ = nativeLocationBridge?.requestPassiveRecoveryWakeup()
+  }
+
+  override func application(
+    _ application: UIApplication,
+    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+  ) {
+    nativeNotificationBridge.didRegister(deviceToken: deviceToken)
+    super.application(
+      application,
+      didRegisterForRemoteNotificationsWithDeviceToken: deviceToken
+    )
+  }
+
+  override func application(
+    _ application: UIApplication,
+    didFailToRegisterForRemoteNotificationsWithError error: Error
+  ) {
+    nativeNotificationBridge.didFailToRegister()
+    super.application(
+      application,
+      didFailToRegisterForRemoteNotificationsWithError: error
+    )
   }
 
   private func finishPassiveRecoveryTask(

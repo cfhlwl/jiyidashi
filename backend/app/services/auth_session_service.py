@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from app.auth_models import AuthRefreshTokenReceipt, AuthSession
@@ -79,6 +79,27 @@ def _load_active_user_for_update(db: Session, user_id: UUID) -> User:
     return user
 
 
+AUTH_INSTALLATION_LOCK_SEED = 214006
+
+
+def lock_installation_authority_in_transaction(
+    db: Session,
+    client_uuid: str,
+) -> None:
+    """Serialize the current AuthSession generation for one app installation."""
+
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    db.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended(:client_uuid, :seed)"
+            ")"
+        ),
+        {"client_uuid": client_uuid, "seed": AUTH_INSTALLATION_LOCK_SEED},
+    )
+
+
 def create_public_session_in_transaction(
     db: Session,
     *,
@@ -88,7 +109,19 @@ def create_public_session_in_transaction(
     device_name: str | None = None,
 ) -> PublicSessionTokens:
     _load_active_user_for_update(db, user_id)
+    lock_installation_authority_in_transaction(db, device_id)
     now = datetime.now(UTC)
+    db.execute(
+        update(AuthSession)
+        .where(
+            AuthSession.device_id == device_id,
+            AuthSession.revoked_at.is_(None),
+        )
+        .values(
+            revoked_at=now,
+            revoke_reason="INSTALLATION_SUPERSEDED",
+        )
+    )
     refresh_token = _new_refresh_token()
     row = AuthSession(
         user_id=user_id,

@@ -199,9 +199,13 @@ async def test_device_push_registration_rotation_rebind_unregister_and_redaction
     client,
     caplog,
 ):
+    first_client_uuid = f"ios-{uuid4().hex}"
     first = await client.post(
         "/v1/auth/dev-token",
-        json={"nickname": "notify-owner-one"},
+        json={
+            "nickname": "notify-owner-one",
+            "device_id": first_client_uuid,
+        },
     )
     assert first.status_code == 200
     first_body = first.json()
@@ -210,7 +214,7 @@ async def test_device_push_registration_rotation_rebind_unregister_and_redaction
 
     token_one = f"notify-token-{uuid4().hex}"
     payload = {
-        "client_uuid": f"ios-{uuid4().hex}",
+        "client_uuid": first_client_uuid,
         "platform": "IOS",
         "provider": "TEST",
         "push_token": token_one,
@@ -265,9 +269,13 @@ async def test_device_push_registration_rotation_rebind_unregister_and_redaction
         assert row.push_token_digest == push_token_digest(token_two)
         assert row.push_token_digest != push_token_digest(token_one)
 
+    second_client_uuid = f"android-{uuid4().hex}"
     second = await client.post(
         "/v1/auth/dev-token",
-        json={"nickname": "notify-owner-two"},
+        json={
+            "nickname": "notify-owner-two",
+            "device_id": second_client_uuid,
+        },
     )
     assert second.status_code == 200
     second_body = second.json()
@@ -284,7 +292,7 @@ async def test_device_push_registration_rotation_rebind_unregister_and_redaction
         headers=second_headers,
         json={
             **rotated_payload,
-            "client_uuid": f"android-{uuid4().hex}",
+            "client_uuid": second_client_uuid,
             "platform": "ANDROID",
         },
     )
