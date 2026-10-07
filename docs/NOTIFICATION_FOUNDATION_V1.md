@@ -41,6 +41,14 @@ The same provider token may have only one active binding. PostgreSQL registratio
 digest-scoped advisory transaction lock before retiring an old binding and activating the
 new one, and the partial unique index is the final database invariant.
 
+Provider disclosure and token ownership transition share a second
+`provider + token_digest` session-level advisory handoff. Delivery acquires that handoff,
+re-checks owner/provider/raw-token/digest/platform authority, closes the short database
+transaction, performs provider I/O while only the session advisory handoff remains held,
+then releases it. Rebind and unregister must acquire the same handoff before changing
+ownership. A rebind therefore cannot complete while an old owner is still allowed to
+disclose notification content to that token.
+
 Re-registering the same owner/device/token is idempotent. Rotation atomically replaces the
 token authority. Unregister clears active token authority without deleting the Device row
 or unrelated device/location history:
@@ -135,6 +143,9 @@ schedule and cancel produce AdminAudit entries without raw push tokens.
 
 Cancellation fences future fan-out and changes PENDING/RETRY_WAIT delivery rows to
 CANCELLED. An already in-flight provider request is not falsely described as recallable.
+FAILED, COMPLETED and CANCELLED campaigns are final and reject later cancel mutations with
+`NOTIFICATION_CAMPAIGN_FINAL`; historical failure cannot be rewritten as administrator
+cancellation.
 
 ## Durable execution
 
@@ -162,10 +173,11 @@ PENDING
    EXPIRED
 ```
 
-Provider I/O occurs only after RUNNING attempt authority is committed. Finalization requires
-the exact revision and attempt token, so stale attempts cannot overwrite newer/terminal
-state. Provider errors are mapped to bounded internal codes. Raw provider response/error
-text is not persisted.
+Provider I/O occurs only after RUNNING attempt authority is committed and the disclosure
+handoff has re-confirmed the current Device binding. Finalization requires the exact
+revision and attempt token, so stale attempts cannot overwrite newer/terminal state.
+Provider errors are mapped to bounded internal codes. Raw provider response/error text is
+not persisted.
 
 OPS-002 terminal maintenance failure is also part of the public authority contract:
 a final delivery-job crash converges the delivery to TERMINAL_FAILURE and clears any active
