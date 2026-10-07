@@ -91,7 +91,7 @@ Future<void> _openEditDialog(
     ),
   );
   await tester.enterText(find.byType(TextField).first, '测试记忆');
-  await tester.tap(find.text('从我的记录里找'));
+  await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
   await tester.pumpAndSettle();
   await tester.ensureVisible(find.byKey(const ValueKey('memory-edit-open')));
   // ensureVisible 会驱动滚动位置；等布局稳定后再 hit-test，避免测试点击旧坐标。
@@ -141,7 +141,7 @@ void main() {
       ),
     );
     await tester.enterText(find.byType(TextField).first, '护照在哪里');
-    await tester.tap(find.text('从我的记录里找'));
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('memory-edit-open')), findsNothing);
