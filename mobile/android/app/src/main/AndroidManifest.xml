@@ -2,6 +2,7 @@
     <!-- 正式包需要主动声明网络能力；debug/profile manifest 不能替代 release 权限。 -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- 录音只在用户主动点击后开启；没有此权限时语音入口必须 fail closed。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- 定位权限按用户动作分阶段请求；声明权限不等于启动采集。 -->
@@ -37,6 +38,26 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <service
+            android:name=".JiYiFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".JiYiHmsMessageService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.huawei.push.action.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
+
+        <meta-data
+            android:name="com.huawei.hms.client.appid"
+            android:value="appid=${JIYI_HMS_APP_ID}"/>
+
         <!-- 后台定位只由 NativeLocationPlugin 在已授权、已明确启用后启动。 -->
         <service
             android:name=".NativeLocationTrackingService"
