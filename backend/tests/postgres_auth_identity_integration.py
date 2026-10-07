@@ -20,10 +20,15 @@ from app.services.auth_identity_service import (
     create_user_for_verified_identity,
     issue_authenticated_session,
     link_verified_identity,
+    link_verified_wechat_aliases,
 )
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 _THREAD_TIMEOUT = 30
+
+
+def _unique_phone_subject() -> str:
+    return f"+861{uuid4().int % 10_000_000_000:010d}"
 
 
 def _seed_user() -> User:
@@ -142,6 +147,7 @@ def _prove_link_first_then_delete() -> None:
     release_link = Event()
     deletion_finished = Event()
     errors: list[BaseException] = []
+    subject = _unique_phone_subject()
     real_projection = auth_identity_service._apply_projection
 
     def blocked_projection(*args, **kwargs):
@@ -158,7 +164,7 @@ def _prove_link_first_then_delete() -> None:
                         db,
                         user_id=user.id,
                         provider=AuthProvider.PHONE,
-                        subject="+8613812345678",
+                        subject=subject,
                         verified_at=datetime.now(UTC),
                     )
                 except BaseException as exc:  # noqa: BLE001
@@ -192,7 +198,7 @@ def _prove_link_first_then_delete() -> None:
                 select(AuthIdentity.id).where(
                     AuthIdentity.user_id == user.id,
                     AuthIdentity.provider == AuthProvider.PHONE,
-                    AuthIdentity.subject == "+8613812345678",
+                    AuthIdentity.subject == subject,
                 )
             ) is not None
             assert db.scalar(
@@ -228,7 +234,7 @@ def _prove_delete_first_blocks_link() -> None:
                     linking,
                     user_id=user.id,
                     provider=AuthProvider.PHONE,
-                    subject="+8613912345678",
+                    subject=_unique_phone_subject(),
                     verified_at=datetime.now(UTC),
                 )
                 raise AssertionError("identity link passed after deletion gate commit")
@@ -252,7 +258,7 @@ def _prove_delete_first_blocks_link() -> None:
 def _prove_concurrent_phone_first_creation() -> None:
     """D: two PostgreSQL sessions converge on one phone identity and User."""
 
-    subject = "+8613812345679"
+    subject = _unique_phone_subject()
     barrier = Barrier(2)
     results = []
     errors: list[BaseException] = []
@@ -305,12 +311,241 @@ def _prove_concurrent_phone_first_creation() -> None:
     _cleanup(user_id)
 
 
+def _run_concurrent_calls(targets: list[Thread], errors: list[BaseException]) -> None:
+    for target in targets:
+        target.start()
+    _join_or_fail(*targets)
+    assert errors == []
+
+
+def _prove_same_user_phone_link_converges() -> None:
+    """E: same User concurrent PHONE links both become logical success."""
+
+    user = _seed_user()
+    subject = _unique_phone_subject()
+    barrier = Barrier(2)
+    successes = []
+    errors: list[BaseException] = []
+
+    def link() -> None:
+        with SessionLocal() as db:
+            try:
+                barrier.wait(timeout=_THREAD_TIMEOUT)
+                successes.append(
+                    link_verified_identity(
+                        db,
+                        user_id=user.id,
+                        provider=AuthProvider.PHONE,
+                        subject=subject,
+                        verified_at=datetime.now(UTC),
+                    )
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+    _run_concurrent_calls(
+        [
+            Thread(target=link, name="auth-01-same-user-phone-1"),
+            Thread(target=link, name="auth-01-same-user-phone-2"),
+        ],
+        errors,
+    )
+    assert len(successes) == 2
+    with SessionLocal() as db:
+        assert db.scalar(
+            select(func.count(AuthIdentity.id)).where(
+                AuthIdentity.user_id == user.id,
+                AuthIdentity.provider == AuthProvider.PHONE,
+                AuthIdentity.subject == subject,
+            )
+        ) == 1
+    _cleanup(user.id)
+
+
+def _prove_cross_user_phone_link_conflicts() -> None:
+    """F: concurrent cross-user PHONE links elect one owner and hide DB errors."""
+
+    users = (_seed_user(), _seed_user())
+    subject = _unique_phone_subject()
+    barrier = Barrier(2)
+    successes = []
+    conflicts = []
+    errors: list[BaseException] = []
+
+    def link(user: User) -> None:
+        with SessionLocal() as db:
+            try:
+                barrier.wait(timeout=_THREAD_TIMEOUT)
+                successes.append(
+                    link_verified_identity(
+                        db,
+                        user_id=user.id,
+                        provider=AuthProvider.PHONE,
+                        subject=subject,
+                        verified_at=datetime.now(UTC),
+                    )
+                )
+            except auth_identity_service.AuthIdentityError as exc:
+                conflicts.append(exc.code)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+    _run_concurrent_calls(
+        [
+            Thread(
+                target=link,
+                args=(users[0],),
+                name="auth-01-cross-user-phone-1",
+            ),
+            Thread(
+                target=link,
+                args=(users[1],),
+                name="auth-01-cross-user-phone-2",
+            ),
+        ],
+        errors,
+    )
+    assert len(successes) == 1
+    assert conflicts == ["AUTH_IDENTITY_CONFLICT"]
+    with SessionLocal() as db:
+        assert db.scalar(
+            select(func.count(AuthIdentity.id)).where(
+                AuthIdentity.provider == AuthProvider.PHONE,
+                AuthIdentity.subject == subject,
+            )
+        ) == 1
+    for user in users:
+        _cleanup(user.id)
+
+
+def _prove_same_user_wechat_aliases_converge() -> None:
+    """G: same User concurrent alias binding is idempotent."""
+
+    user = _seed_user()
+    aliases = (
+        f"openid:converge-app:{uuid4().hex[:12]}",
+        f"unionid:converge-group:{uuid4().hex[:12]}",
+    )
+    barrier = Barrier(2)
+    successes = []
+    errors: list[BaseException] = []
+
+    def link() -> None:
+        with SessionLocal() as db:
+            try:
+                barrier.wait(timeout=_THREAD_TIMEOUT)
+                successes.append(
+                    link_verified_wechat_aliases(
+                        db,
+                        user_id=user.id,
+                        aliases=aliases,
+                        verified_at=datetime.now(UTC),
+                    )
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+    _run_concurrent_calls(
+        [
+            Thread(target=link, name="auth-01-same-user-wechat-1"),
+            Thread(target=link, name="auth-01-same-user-wechat-2"),
+        ],
+        errors,
+    )
+    assert len(successes) == 2
+    with SessionLocal() as db:
+        assert db.scalar(
+            select(func.count(AuthIdentity.id)).where(
+                AuthIdentity.user_id == user.id,
+                AuthIdentity.provider == AuthProvider.WECHAT,
+            )
+        ) == 2
+    _cleanup(user.id)
+
+
+def _prove_cross_user_wechat_aliases_conflict_without_partial_write() -> None:
+    """H: cross-user alias conflict leaves the losing User with zero aliases."""
+
+    users = (_seed_user(), _seed_user())
+    aliases = (
+        f"openid:cross-app:{uuid4().hex[:12]}",
+        f"unionid:cross-group:{uuid4().hex[:12]}",
+    )
+    barrier = Barrier(2)
+    successes = []
+    conflicts = []
+    errors: list[BaseException] = []
+
+    def link(user: User) -> None:
+        with SessionLocal() as db:
+            try:
+                barrier.wait(timeout=_THREAD_TIMEOUT)
+                successes.append(
+                    link_verified_wechat_aliases(
+                        db,
+                        user_id=user.id,
+                        aliases=aliases,
+                        verified_at=datetime.now(UTC),
+                    )
+                )
+            except auth_identity_service.AuthIdentityError as exc:
+                conflicts.append((user.id, exc.code))
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+    _run_concurrent_calls(
+        [
+            Thread(
+                target=link,
+                args=(users[0],),
+                name="auth-01-cross-user-wechat-1",
+            ),
+            Thread(
+                target=link,
+                args=(users[1],),
+                name="auth-01-cross-user-wechat-2",
+            ),
+        ],
+        errors,
+    )
+    assert len(successes) == 1
+    assert len(conflicts) == 1
+    assert conflicts[0][1] == "AUTH_IDENTITY_CONFLICT"
+    owner_id = successes[0][0].user_id
+    loser_id = conflicts[0][0]
+    with SessionLocal() as db:
+        assert db.scalar(
+            select(func.count(AuthIdentity.id)).where(
+                AuthIdentity.provider == AuthProvider.WECHAT,
+                AuthIdentity.subject.in_(aliases),
+            )
+        ) == 2
+        assert db.scalar(
+            select(func.count(AuthIdentity.id)).where(
+                AuthIdentity.user_id == owner_id,
+                AuthIdentity.provider == AuthProvider.WECHAT,
+            )
+        ) == 2
+        assert db.scalar(
+            select(func.count(AuthIdentity.id)).where(
+                AuthIdentity.user_id == loser_id,
+                AuthIdentity.provider == AuthProvider.WECHAT,
+            )
+        ) == 0
+    for user in users:
+        _cleanup(user.id)
+
+
 def main() -> None:
     assert DATABASE_URL.startswith("postgresql")
     _prove_issuance_first_then_delete()
     _prove_link_first_then_delete()
     _prove_delete_first_blocks_link()
     _prove_concurrent_phone_first_creation()
+    _prove_same_user_phone_link_converges()
+    _prove_cross_user_phone_link_conflicts()
+    _prove_same_user_wechat_aliases_converge()
+    _prove_cross_user_wechat_aliases_conflict_without_partial_write()
     print("PostgreSQL AUTH-01 identity/session/deletion concurrency PASS")
 
 

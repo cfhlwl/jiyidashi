@@ -150,6 +150,11 @@ def resolve_auth_identity(
         raise AuthIdentityError("AUTH_IDENTITY_NOT_FOUND", 401)
     if user.auth_disabled_at is not None:
         raise AuthIdentityError("AUTH_ACCOUNT_UNAVAILABLE", 401)
+    if (
+        provider in {AuthProvider.PHONE, AuthProvider.WECHAT}
+        and identity.verified_at is None
+    ):
+        raise AuthIdentityError("AUTH_IDENTITY_NOT_VERIFIED", 401)
     return AuthIdentityResolution(identity=identity, user_id=user.id)
 
 
@@ -366,6 +371,20 @@ def link_verified_identity(
         db.commit()
     except IntegrityError as exc:
         db.rollback()
+        winner = db.scalar(
+            select(AuthIdentity).where(
+                AuthIdentity.provider == provider,
+                AuthIdentity.subject == canonical_subject,
+            )
+        )
+        if winner is not None and winner.user_id == user_id:
+            if winner.verified_at is None:
+                raise AuthIdentityError("AUTH_IDENTITY_NOT_VERIFIED", 409) from exc
+            if provider is AuthProvider.EMAIL_PASSWORD and not winner.secret_hash:
+                raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
+            if provider in {AuthProvider.PHONE, AuthProvider.WECHAT} and winner.secret_hash:
+                raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
+            return AuthIdentityResolution(identity=winner, user_id=user_id)
         raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
     return AuthIdentityResolution(identity=identity, user_id=user_id)
 
@@ -397,9 +416,29 @@ def link_verified_wechat_aliases(
             require_verified=True,
         )
         db.commit()
-    except (AuthIdentityError, IntegrityError):
+    except AuthIdentityError:
         db.rollback()
         raise
+    except IntegrityError as exc:
+        db.rollback()
+        reconciled = [
+            db.scalar(
+                select(AuthIdentity).where(
+                    AuthIdentity.provider == AuthProvider.WECHAT,
+                    AuthIdentity.subject == canonical_subject,
+                )
+            )
+            for canonical_subject in sorted(canonical_aliases)
+        ]
+        if any(identity is not None and identity.user_id != user_id for identity in reconciled):
+            raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
+        if any(identity is None for identity in reconciled):
+            raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
+        if any(identity.verified_at is None for identity in reconciled):
+            raise AuthIdentityError("AUTH_IDENTITY_NOT_VERIFIED", 409) from exc
+        if any(identity.secret_hash is not None for identity in reconciled):
+            raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
+        return tuple(reconciled)
     return tuple(identities)
 
 

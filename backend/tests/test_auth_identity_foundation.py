@@ -234,6 +234,28 @@ def test_link_rejects_existing_unverified_external_identity():
         db.rollback()
 
 
+def test_resolver_fails_closed_for_unverified_external_identity():
+    with SessionLocal() as db:
+        user = User(nickname="resolver-unverified-external")
+        db.add(user)
+        db.flush()
+        db.add(
+            AuthIdentity(
+                user_id=user.id,
+                provider=AuthProvider.WECHAT,
+                subject="openid:resolver-app:O1",
+                verified_at=None,
+            )
+        )
+        db.commit()
+        with pytest.raises(AuthIdentityError, match="AUTH_IDENTITY_NOT_VERIFIED"):
+            resolve_auth_identity(
+                db,
+                provider=AuthProvider.WECHAT,
+                subject="openid:resolver-app:O1",
+            )
+
+
 def test_wechat_alias_binding_is_atomic_on_cross_user_conflict():
     with SessionLocal() as db:
         owner = create_user_for_verified_identity(
