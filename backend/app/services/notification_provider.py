@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Callable
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
