@@ -1008,6 +1008,7 @@ class AppShell extends StatefulWidget {
     this.themeMode = ThemeMode.system,
     this.onThemeModeChanged,
     this.onElderModeChanged,
+    this.notificationClient,
     required this.onLogout,
   });
 
@@ -1025,6 +1026,7 @@ class AppShell extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode>? onThemeModeChanged;
   final ValueChanged<bool>? onElderModeChanged;
+  final NotificationClientService? notificationClient;
   final VoidCallback onLogout;
 
   @override
@@ -1054,6 +1056,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.notificationClient?.setRouteHandler(_handlePushRoute);
     _amapPrivacyConsent.addListener(_amapPrivacyChanged);
     unawaited(
       _amapPrivacyConsent.readAccepted().catchError((_) => false),
@@ -1138,6 +1141,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.notificationClient?.setRouteHandler(null);
     _amapPrivacyConsent.removeListener(_amapPrivacyChanged);
     if (_ownsAmapPrivacyConsent) {
       unawaited(_amapPrivacyConsent.close().catchError((_) {}));
@@ -1246,6 +1250,47 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     await location.refresh();
   }
 
+  Future<void> _handlePushRoute(PushRouteIntent intent) async {
+    if (!mounted || _accountDeletionIntentActive) return;
+
+    switch (intent.destination) {
+      case NotificationDestination.home:
+      case NotificationDestination.appUpdate:
+      case NotificationDestination.export:
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        if (mounted) setState(() => index = 0);
+        return;
+      case NotificationDestination.family:
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        if (mounted) setState(() => index = 3);
+        return;
+      case NotificationDestination.reminder:
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => ReminderPage(api: widget.api),
+          ),
+        );
+        return;
+      case NotificationDestination.memory:
+        final memoryId = intent.resourceId;
+        if (memoryId == null) {
+          if (mounted) setState(() => index = 0);
+          return;
+        }
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => MemoryDetailPage(
+              api: widget.api,
+              memoryId: memoryId,
+              mediaCache: _mediaCache,
+              amapPrivacyConsent: _amapPrivacyConsent,
+            ),
+          ),
+        );
+        return;
+    }
+  }
+
   Future<void> _stopLocationAndLogout() async {
     // Seal sampling first so a late native event cannot enqueue/upload after logout begins.
     await _locationSampling?.suspendForLogout();
@@ -1294,6 +1339,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final offlineQueueIdle =
         widget.offlineQueue.quiesceForAccountDeletion(owner);
     final syncIdle = _sync.quiesceForAccountDeletion(owner);
+
+    try {
+      await widget.notificationClient?.prepareForLogout();
+    } catch (_) {
+      // Native token retirement is retried from secure pending state. The account
+      // deletion backend also removes the canonical Device authority.
+    }
 
     final location = _nativeLocation;
     if (location != null) {
@@ -1415,6 +1467,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             ? null
             : () => unawaited(onboarding.restart()),
         amapPrivacyConsent: _amapPrivacyConsent,
+        notificationClient: widget.notificationClient,
         themeMode: widget.themeMode,
         onThemeModeChanged: widget.onThemeModeChanged,
       ),
