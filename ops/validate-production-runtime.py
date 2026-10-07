@@ -264,14 +264,14 @@ def main() -> None:
         ):
             errors.append("HMS_PUSH_BASE_URL must use the reviewed Huawei Push origin")
 
-    for key, minimum, maximum in (
-        ("PUSH_PROVIDER_CONNECT_TIMEOUT_SECONDS", 0.5, 15.0),
-        ("PUSH_PROVIDER_READ_TIMEOUT_SECONDS", 0.5, 30.0),
-        ("PUSH_PROVIDER_WRITE_TIMEOUT_SECONDS", 0.5, 30.0),
-        ("PUSH_PROVIDER_POOL_TIMEOUT_SECONDS", 0.5, 15.0),
+    for key, default, minimum, maximum in (
+        ("PUSH_PROVIDER_CONNECT_TIMEOUT_SECONDS", 3.0, 0.5, 15.0),
+        ("PUSH_PROVIDER_READ_TIMEOUT_SECONDS", 5.0, 0.5, 30.0),
+        ("PUSH_PROVIDER_WRITE_TIMEOUT_SECONDS", 5.0, 0.5, 30.0),
+        ("PUSH_PROVIDER_POOL_TIMEOUT_SECONDS", 3.0, 0.5, 15.0),
     ):
         try:
-            value = float(values.get(key, ""))
+            value = float(values.get(key, str(default)))
         except ValueError:
             value = 0.0
         if not minimum <= value <= maximum:
