@@ -196,7 +196,13 @@ class MethodChannelNativeNotificationBridge implements NativeNotificationBridge 
         );
       }
     });
-    await _channel.invokeMethod<void>('ready');
+    try {
+      await _channel.invokeMethod<void>('ready');
+    } on MissingPluginException {
+      // Unit/widget tests and unsupported platforms have no native push bridge.
+    } on PlatformException {
+      // A native bridge that cannot become ready remains provider-unavailable.
+    }
   }
 
   @override
@@ -373,7 +379,17 @@ class NotificationClientService {
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
-    await nativeBridge.attach(_handleNativeEvent);
+    try {
+      await nativeBridge.attach(_handleNativeEvent);
+    } on MissingPluginException {
+      permission = NotificationPermissionState.unavailable;
+      registration = NotificationRegistrationState.providerUnavailable;
+      return;
+    } on PlatformException {
+      permission = NotificationPermissionState.unavailable;
+      registration = NotificationRegistrationState.providerUnavailable;
+      return;
+    }
     _token = await tokenStore.read();
     if (_token?.retirePending == true) {
       await _retryPendingRetirement();
