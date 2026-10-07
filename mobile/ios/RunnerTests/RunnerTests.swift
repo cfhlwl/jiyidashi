@@ -363,4 +363,36 @@ class RunnerTests: XCTestCase {
     XCTAssertNil(malformedMemory?["resource_id"])
   }
 
+
+  func testNotificationPermissionMappingAndRegistrationGate() {
+    XCTAssertEqual(
+      NativeNotificationPolicy.permissionWire(.notDetermined),
+      "notDetermined"
+    )
+    XCTAssertEqual(
+      NativeNotificationPolicy.permissionWire(.denied),
+      "denied"
+    )
+    XCTAssertEqual(
+      NativeNotificationPolicy.permissionWire(.authorized),
+      "authorized"
+    )
+    XCTAssertEqual(
+      NativeNotificationPolicy.permissionWire(.provisional),
+      "provisional"
+    )
+    XCTAssertFalse(NativeNotificationPolicy.mayRegister(.notDetermined))
+    XCTAssertFalse(NativeNotificationPolicy.mayRegister(.denied))
+    XCTAssertTrue(NativeNotificationPolicy.mayRegister(.authorized))
+    XCTAssertTrue(NativeNotificationPolicy.mayRegister(.provisional))
+  }
+
+  func testApnsDeviceTokenByteConversionIsStableLowercaseHex() {
+    let bytes = Data([0x00, 0x0f, 0xa1, 0xff])
+    XCTAssertEqual(
+      NativeNotificationPolicy.tokenHex(bytes),
+      "000fa1ff"
+    )
+  }
+
 }
