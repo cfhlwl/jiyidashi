@@ -373,8 +373,9 @@ class NotificationClientService extends ChangeNotifier {
   Future<void> _tail = Future<void>.value();
   Future<void> Function(PushRouteIntent intent)? _routeHandler;
   final List<PushRouteIntent> _pendingRoutes = <PushRouteIntent>[];
-  String? _lastTapKey;
-  DateTime? _lastTapAt;
+  final List<String> _consumedTapEventIds = <String>[];
+  String? _lastTapFallbackKey;
+  DateTime? _lastTapFallbackAt;
   bool _initialized = false;
   bool _closed = false;
 
@@ -550,17 +551,25 @@ class NotificationClientService extends ChangeNotifier {
     if (event.kind == 'tap') {
       final intent = PushRouteIntent.parse(event.payload);
       if (intent == null) return;
-      final key = event.eventId?.trim().isNotEmpty == true
-          ? event.eventId!.trim()
-          : '${intent.destination.name}:${intent.resourceId ?? '-'}';
-      final now = DateTime.now().toUtc();
-      if (_lastTapKey == key &&
-          _lastTapAt != null &&
-          now.difference(_lastTapAt!) < const Duration(seconds: 3)) {
-        return;
+      final eventId = event.eventId?.trim();
+      if (eventId != null && eventId.isNotEmpty) {
+        if (_consumedTapEventIds.contains(eventId)) return;
+        _consumedTapEventIds.add(eventId);
+        if (_consumedTapEventIds.length > 64) {
+          _consumedTapEventIds.removeAt(0);
+        }
+      } else {
+        final key =
+            '${intent.destination.name}:${intent.resourceId ?? '-'}';
+        final now = DateTime.now().toUtc();
+        if (_lastTapFallbackKey == key &&
+            _lastTapFallbackAt != null &&
+            now.difference(_lastTapFallbackAt!) < const Duration(seconds: 3)) {
+          return;
+        }
+        _lastTapFallbackKey = key;
+        _lastTapFallbackAt = now;
       }
-      _lastTapKey = key;
-      _lastTapAt = now;
       await _publishRoute(intent);
     }
   }
