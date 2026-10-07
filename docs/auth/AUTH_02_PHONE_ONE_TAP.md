@@ -30,11 +30,14 @@ SMS OTP/AUTH-03, WeChat/AUTH-04, push, and every other provider.
 Baseline:
 
 ```text
-origin/main: b2f3d92aeb9afde8b4e6118664359cd49504f045
-branch: codex/auth-02a-phone-one-tap-spec-20261007
-HEAD: b2f3d92aeb9afde8b4e6118664359cd49504f045
-merge-base: b2f3d92aeb9afde8b4e6118664359cd49504f045
+Audit base / origin/main at audit start: b2f3d92aeb9afde8b4e6118664359cd49504f045
+Audit-start HEAD: 7af0b4ead85b0025d4a061f8ba5dc02f5a809517
+Audit-start merge-base: b2f3d92aeb9afde8b4e6118664359cd49504f045
 ```
+
+The audit-start HEAD is recorded for reproducibility only. It is not the
+current branch HEAD after this review commit, and the branch HEAD must not be
+treated as the audit base.
 
 The audit was read-only. The only file authorized for this phase is this
 document.
@@ -405,8 +408,26 @@ cross this boundary into the domain or client contract.
    after the provider call/receipt path completes.
 4. JiYi calls GetMobile only from the server, over the official endpoint/client
    path, using server-only credentials.
-5. The verified provider number is canonicalized to E.164 before identity
-   resolution.
+5. The provider adapter validates `GetMobileResultDTO.Mobile`, then performs
+   the only provider-specific normalization permitted in this flow:
+
+   ```text
+   Alibaba GetMobile Mobile
+     -> provider response validation
+     -> Aliyun mainland-number normalization
+     -> canonicalize_phone_subject()
+     -> AuthProvider.PHONE
+   ```
+
+   For the reviewed mainland PNVS contract, an unmasked national 11-digit
+   mobile value such as `13900001234` becomes `+8613900001234`. This is not
+   generic country-code guessing: only the Aliyun PNVS mainland provider
+   adapter may apply the reviewed `+86` rule. The client never participates in
+   or supplies this authority. A masked, malformed, wrong-length, whitespace,
+   non-digit, or unexpectedly already-prefixed value such as
+   `+8613900001234` fails closed until the provider contract explicitly
+   documents that representation. The normalized result is then passed to the
+   unchanged AUTH-01 `canonicalize_phone_subject()` helper.
 6. The raw token is never persisted or logged. Only a keyed fingerprint and
    exchange metadata are retained.
 7. Because the official TTL evidence conflicts for China Unicom, no hard-coded
@@ -428,33 +449,78 @@ unexpired ledger rows, or migrate fingerprints without exposing raw tokens.
 
 ## Replay / Idempotency Model
 
-The exchange is a durable state machine, not an in-memory map:
+The exchange is a durable state machine, not an in-memory map. Provider success
+is deliberately transient until the short identity/session transaction commits;
+there is no durable `PROVIDER_SUCCEEDED` state that would require a stored phone
+number for crash recovery:
 
 ```text
 RESERVED
-  -> PROVIDER_SUCCEEDED
-  -> IDENTITY_RESOLVED
-  -> COMPLETED
+  -> COMPLETED       (provider success + short identity/session transaction)
 
 RESERVED -> PROVIDER_REJECTED
 RESERVED -> PROVIDER_UNKNOWN
 ```
+
+`RESERVED` has a lease deadline that is longer than the configured provider
+timeout plus a reviewed crash/commit grace period. A worker or sweeper that
+observes an expired `RESERVED` row transitions it to `PROVIDER_UNKNOWN` under a
+row lock. It never calls GetMobile again with that token, even if the worker may
+have died before sending the request: the provider consumption state is not
+provable, so a fresh native token and new request id are required.
+
+`COMPLETED` is recoverable from its persisted fields: it has the resolved
+`user_id`, initial session receipt `S1`, and bounded response-loss recovery
+metadata. No later state depends on recovering a clear-text phone or a raw
+provider result.
 
 Required request semantics:
 
 | Input relationship | Required result |
 | --- | --- |
 | Same token + same `request_id` while in progress | Return a bounded in-progress/retry-safe response; never run a second provider call concurrently. |
-| Same token + same `request_id` after `COMPLETED` | Do not call GetMobile again. Reuse the recorded user/exchange result and issue a normal JiYi session response without creating another User. Raw token is not recovered. |
+| Same token + same `request_id` after `COMPLETED` | Do not call GetMobile again. Use the bounded response-loss recovery oracle below; never mint an unlimited number of JiYi sessions. Raw token is not recovered. |
 | Same token + different `request_id` | Fail closed as `AUTH_PHONE_ONE_TAP_TOKEN_REPLAYED`. |
 | Same `request_id` + different token | Fail closed as `AUTH_PHONE_ONE_TAP_CONFLICT`. |
-| Provider success + HTTP response lost | A later same-request retry uses the durable receipt; it never calls GetMobile again and cannot create another User. |
+| Provider success + HTTP response lost | A later same-request retry uses the durable receipt and at most one replacement-session recovery; it never calls GetMobile again and cannot create another User. |
 | Provider token consumed + provider response lost before JiYi sees success | Mark/return `PROVIDER_UNKNOWN` or `AUTH_PHONE_ONE_TAP_TIMEOUT`; do not guess success and do not retry the consumed token. A new native token and new request id may be attempted. |
 
 The exact same access/refresh strings need not be returned after an HTTP
 response loss: raw refresh material is intentionally not stored server-side.
 The safe deterministic guarantee is the same exchange outcome/user authority,
-provider non-reuse, and a newly issued standard JiYi session when policy allows.
+provider non-reuse, and at most one reviewed replacement session.
+
+### Completed-exchange session recovery oracle
+
+The ledger must persist these additional bounded-recovery fields:
+
+```text
+session_id             initial successful session S1
+recovery_state         OPEN or CLOSED
+recovery_deadline      short reviewed response-loss recovery deadline
+recovery_count         0 or 1
+replacement_session_id S2 when the one replacement is used
+```
+
+Initial success issues S1 and commits `COMPLETED` with `recovery_state=OPEN`
+and `recovery_count=0`. A same-request retry that arrives before the deadline
+locks the ledger row and may consume the one recovery exactly once:
+
+```text
+S1 receipt + OPEN + count=0 + before deadline
+  -> atomically revoke/replace S1 as policy requires
+  -> issue replacement S2
+  -> store replacement_session_id=S2
+  -> recovery_count=1, recovery_state=CLOSED
+  -> return the standard TokenResponse for S2
+```
+
+Concurrent recovery requests are elected by the ledger row lock/unique
+transaction. Only the winner may issue S2. A request after the deadline, a
+request after `recovery_state=CLOSED`, or any further same-request replay fails
+closed as `AUTH_PHONE_ONE_TAP_REPLAYED`; it must acquire a fresh native token
+and request id. Ledger retention is for replay/audit evidence only and never
+extends the recovery deadline or creates a new authentication opportunity.
 
 `request_id` and token fingerprint uniqueness must be enforced under database
 transaction/unique-key authority, not only in a process-local cache.
@@ -484,18 +550,23 @@ Conceptual ledger fields (design only; no migration in AUTH-02A):
 id                    durable exchange id
 request_id            unique client idempotency key
 token_fingerprint     HMAC digest; never raw token
-state                 RESERVED / PROVIDER_SUCCEEDED / IDENTITY_RESOLVED /
-                      COMPLETED / PROVIDER_REJECTED / PROVIDER_UNKNOWN
+state                 RESERVED / COMPLETED / PROVIDER_REJECTED /
+                      PROVIDER_UNKNOWN
 client_platform       normalized metadata
 device_fingerprint    optional HMAC install/device signal, not authority
 provider_request_id   provider receipt id when available
 resolved_user_id      canonical User.id when resolved
-session_id            JiYi session receipt id when issued; not a bearer token
+session_id            initial JiYi session receipt id; not a bearer token
+recovery_state        OPEN / CLOSED
+recovery_deadline     bounded response-loss recovery deadline
+recovery_count        0 / 1
+replacement_session_id replacement JiYi session receipt id, if used
 verified_at           provider verification time when available
 error_code            normalized JiYi/provider outcome
 created_at
 updated_at
-expires_at            reviewed reservation/retention deadline
+lease_expires_at      stale RESERVED transition deadline
+expires_at            reviewed ledger retention deadline
 completed_at
 ```
 
@@ -536,10 +607,12 @@ internal transaction-aware orchestration seam so the exchange receipt and
 identity/session outcome have a crash-safe boundary. It must not create a
 second session authority or copy provider-specific account creation logic.
 
-If a worker dies after provider success but before finalization, the ledger
-must remain in a recoverable state. A same-request retry may finalize from the
-recorded provider result; if the result was never received, it must return the
-safe unknown state and require a newly obtained provider token.
+If a worker dies after provider success but before the short transaction commits,
+the provider result is not durable and the `RESERVED` lease eventually becomes
+`PROVIDER_UNKNOWN`. A same-request retry receives the safe unknown state; it
+cannot retry GetMobile with the same token. If the short transaction commits,
+the `COMPLETED` receipt and bounded session recovery fields are sufficient to
+recover without the phone value or provider token.
 
 ## Identity Resolution
 
@@ -547,9 +620,14 @@ After `GetMobile` succeeds:
 
 1. Validate the provider response shape and reject masked, malformed, or
    non-canonical values.
-2. Canonicalize the verified provider number to E.164 using
-   `canonicalize_phone_subject()`.
-3. Resolve only:
+2. In the Aliyun PNVS mainland adapter only, normalize an unmasked national
+   11-digit `Mobile` value to `+86` plus the national number. Do not accept a
+   generic local number, guess a country code, or let the client perform this
+   conversion. An unexpected `+` representation, masked value, non-digit value,
+   or invalid length fails closed.
+3. Pass the adapter output to the unchanged AUTH-01
+   `canonicalize_phone_subject()` helper.
+4. Resolve only:
 
    ```text
    AuthIdentity(provider=AuthProvider.PHONE, subject=canonical_e164)
@@ -683,7 +761,7 @@ recovery API:
 | Provider 429/maintenance | Record normalized failure; bounded backoff only at JiYi gate | Retry only with policy permission and a fresh token if the token may be consumed. |
 | Provider 5xx | Treat consumption as unknown unless the transport proves no request was sent; no automatic replay of the same token. | Obtain a fresh token/new request id after bounded backoff. |
 | Network timeout/connection reset | `PROVIDER_UNKNOWN`/timeout receipt; no blind same-token GetMobile retry | Fresh token/new request id. Same request can safely query its existing receipt. |
-| JiYi response lost after completed receipt | Do not call provider | Retry same request id; server reuses the recorded user/exchange outcome and issues a standard JiYi session according to policy. |
+| JiYi response lost after completed receipt | Do not call provider | Retry same request id; server consumes the one bounded recovery opportunity, atomically replaces S1 if required, and issues S2. Further replay is closed. |
 
 An implementation may retry an operation only when its transport layer proves
 the request was never sent. That proof must be testable; an ordinary HTTP 5xx
@@ -829,7 +907,12 @@ AUTH-02B fake-provider/backend tests must cover:
 - same token + same request retry;
 - same token + different request replay;
 - same request + different token conflict;
+- Aliyun national `Mobile` normalization to `+86` E.164;
+- malformed, masked, invalid-length, and unexpectedly prefixed `Mobile`;
 - response loss after provider success;
+- repeated same completed request must not create N active sessions;
+- concurrent recovery elects one replacement session;
+- recovery after deadline fails closed;
 - provider-consumed token with unknown response;
 - concurrent same-token reservation;
 - concurrent first-ever same-phone login with different valid tokens;
