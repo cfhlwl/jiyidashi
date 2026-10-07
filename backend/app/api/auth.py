@@ -2,12 +2,14 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth_models import AuthSession
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.deps import AuthenticatedClaims
-from app.models import User
+from app.models import Device, User
 from app.schemas import (
     AuthAcceptedResponse,
     AuthSessionRead,
@@ -38,8 +40,6 @@ from app.services.auth_service import (
     lock_login_for_token_issue,
     register_email_password,
 )
-from app.auth_models import AuthSession
-from app.models import Device
 from app.services.auth_session_service import (
     PublicAuthError,
     PublicSessionTokens,
