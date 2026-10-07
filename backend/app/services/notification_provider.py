@@ -349,6 +349,8 @@ class FCMNotificationProvider:
     def deliver(self, request: NotificationProviderRequest) -> NotificationProviderResult:
         canonical = _canonical_payload(request.payload)
         data = {key: str(value) for key, value in canonical.items()}
+        data["title"] = request.title[:160]
+        data["body"] = request.body[:1000]
         try:
             access_token = self._access_token()
             response = self._client.post(
@@ -456,6 +458,11 @@ class HMSNotificationProvider:
 
     def deliver(self, request: NotificationProviderRequest) -> NotificationProviderResult:
         canonical = _canonical_payload(request.payload)
+        client_data = {
+            **canonical,
+            "title": request.title[:160],
+            "body": request.body[:1000],
+        }
         try:
             access_token = self._access_token()
             response = self._client.post(
@@ -467,7 +474,7 @@ class HMSNotificationProvider:
                 json={
                     "validate_only": False,
                     "message": {
-                        "data": json.dumps(canonical, separators=(",", ":")),
+                        "data": json.dumps(client_data, separators=(",", ":")),
                         "android": {"urgency": "HIGH", "ttl": "86400s"},
                         "token": [request.raw_token],
                     },
