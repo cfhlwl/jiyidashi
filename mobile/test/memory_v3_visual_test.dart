@@ -1,0 +1,239 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:jiyidashi/amap_privacy_consent.dart';
+import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/stage1_app.dart';
+import 'package:jiyidashi/ui/jiyi_theme.dart';
+
+class _MemoryV3Consent implements AmapPrivacyConsentAuthority {
+  bool accepted = false;
+
+  @override
+  Future<void> accept() async => accepted = true;
+
+  @override
+  Future<bool> readAccepted() async => accepted;
+
+  @override
+  Future<void> revoke() async => accepted = false;
+}
+
+class _MemoryV3Api extends JiYiApiClient {
+  _MemoryV3Api({this.response, this.pending, this.error})
+      : super(baseUrl: 'https://memory-v3.invalid/v1') {
+    accessToken = 'memory-v3-token';
+    authenticatedUserId = '11111111-1111-4111-8111-111111111111';
+  }
+
+  final Map<String, dynamic>? response;
+  final Completer<Map<String, dynamic>>? pending;
+  final Object? error;
+  int queryCalls = 0;
+
+  @override
+  Future<Map<String, dynamic>> queryMemory(String question) async {
+    queryCalls += 1;
+    if (error != null) throw error!;
+    return pending?.future ?? response ?? _noAnswer();
+  }
+}
+
+Map<String, dynamic> _noAnswer() => <String, dynamic>{
+      'answer': null,
+      'can_answer': false,
+      'certainty': 'unknown',
+      'reason': 'NO_EVIDENCE',
+      'intent': 'FIND_EVENT',
+      'evidence': <Map<String, dynamic>>[],
+      'memory_ids': <String>[],
+    };
+
+Map<String, dynamic> _answered() => <String, dynamic>{
+      'answer': '这是一条来自真实记录的回答。',
+      'can_answer': true,
+      'certainty': 'confirmed',
+      'reason': null,
+      'intent': 'FIND_EVENT',
+      'evidence': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 'MEMORY',
+          'id': 'evidence-1',
+          'source_type': 'USER_TEXT',
+          'memory_source_id': 'memory-1',
+          'occurred_at': '2026-09-28T10:00:00Z',
+          'excerpt': '真实用户记录摘录',
+          'confidence': 1.0,
+        },
+      ],
+      'memory_ids': <String>['memory-1'],
+    };
+
+Map<String, dynamic> _dayFootprint() => <String, dynamic>{
+      ..._answered(),
+      'intent': 'DATE_FOOTPRINT_QUERY',
+      'evidence': <Map<String, dynamic>>[],
+      'memory_ids': <String>[],
+      'day_footprint': <String, dynamic>{
+        'timezone': 'Asia/Shanghai',
+        'day': '2026-09-28',
+        'visits': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'visit-1',
+            'place_id': 'place-1',
+            'place_name': '真实地点',
+            'place_latitude': 39.9042,
+            'place_longitude': 116.4074,
+            'arrived_at': '2026-09-28T02:00:00Z',
+            'left_at': '2026-09-28T03:00:00Z',
+            'arrived_at_local': '2026-09-28T10:00:00+08:00',
+            'left_at_local': '2026-09-28T11:00:00+08:00',
+            'confidence': 0.95,
+            'visit_source': 'LOCATION_CLUSTER',
+            'visit_finalized': true,
+          },
+        ],
+      },
+    };
+
+Future<void> _pumpMemory(
+  WidgetTester tester,
+  _MemoryV3Api api, {
+  bool elderMode = false,
+  _MemoryV3Consent? consent,
+  double textScale = 1.0,
+}) async {
+  tester.view.physicalSize = const Size(390, 844);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+  await tester.pumpWidget(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: JiYiTheme.light(elderMode: elderMode),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(textScale),
+        ),
+        child: child!,
+      ),
+      home: Scaffold(
+        body: SafeArea(
+          child: MemoryQueryPage(
+            api: api,
+            elderMode: elderMode,
+            amapPrivacyConsent: consent,
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+}
+
+void main() {
+  testWidgets('Memory V3 default shell and query surface are truthful', (tester) async {
+    final api = _MemoryV3Api();
+    await _pumpMemory(tester, api);
+
+    expect(find.text('记忆'), findsOneWidget);
+    expect(find.text('想找哪段回忆？'), findsOneWidget);
+    expect(find.text('最近记下的'), findsOneWidget);
+    expect(find.text('你的记忆会在这里出现'), findsOneWidget);
+    expect(find.text('和妈妈的照片'), findsOneWidget);
+    expect(api.queryCalls, 0);
+  });
+
+  testWidgets('Memory V3 suggestion populates the real query input', (tester) async {
+    await _pumpMemory(tester, _MemoryV3Api());
+
+    await tester.tap(find.text('上周去了哪里'));
+    await tester.pump();
+
+    expect(find.text('上周去了哪里'), findsWidgets);
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('Memory V3 preserves shell and submitted input during loading', (tester) async {
+    final pending = Completer<Map<String, dynamic>>();
+    final api = _MemoryV3Api(pending: pending);
+    await _pumpMemory(tester, api);
+
+    await tester.enterText(find.byKey(const ValueKey('memory-query-input')), '我的记录');
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pump();
+
+    expect(find.text('记忆'), findsOneWidget);
+    expect(find.text('查找中…'), findsOneWidget);
+    expect(find.text('我的记录'), findsOneWidget);
+    expect(api.queryCalls, 1);
+
+    pending.complete(_noAnswer());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('Memory V3 answer and evidence remain server-backed', (tester) async {
+    final api = _MemoryV3Api(response: _answered());
+    await _pumpMemory(tester, api);
+    await tester.enterText(find.byType(TextField), '查找真实记录');
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('这是一条来自真实记录的回答。'), findsOneWidget);
+    await tester.tap(find.text('查看这次回答的依据'));
+    await tester.pumpAndSettle();
+    expect(find.text('真实用户记录摘录'), findsOneWidget);
+    expect(find.textContaining('用户编辑'), findsNothing);
+  });
+
+  testWidgets('Memory V3 no-answer is explicit and does not guess', (tester) async {
+    final api = _MemoryV3Api(response: _noAnswer());
+    await _pumpMemory(tester, api);
+    await tester.enterText(find.byType(TextField), '没有记录的问题');
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('没有足够依据'), findsOneWidget);
+    expect(find.text('我没有找到能够支持答案的相关记录。'), findsOneWidget);
+  });
+
+  testWidgets('Memory V3 day footprint stays real and consent-gated', (tester) async {
+    final consent = _MemoryV3Consent();
+    final api = _MemoryV3Api(response: _dayFootprint());
+    await _pumpMemory(tester, api, consent: consent);
+    await tester.enterText(find.byType(TextField), '我那天去了哪里');
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('真实地点'), findsWidgets);
+    expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
+    expect(find.byKey(const ValueKey('memory-query-amap-privacy-accept')), findsOneWidget);
+    expect(consent.accepted, isFalse);
+  });
+
+  testWidgets('Memory V3 API error is local and recoverable', (tester) async {
+    final api = _MemoryV3Api(error: ApiException(503, '服务暂时不可用'));
+    await _pumpMemory(tester, api);
+    await tester.enterText(find.byType(TextField), '错误状态');
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂时无法查找'), findsOneWidget);
+    expect(find.text('服务暂时不可用'), findsOneWidget);
+    expect(find.text('记忆'), findsOneWidget);
+  });
+
+  testWidgets('Memory V3 elder mode keeps the existing no-guess entry', (tester) async {
+    await _pumpMemory(tester, _MemoryV3Api(), elderMode: true, textScale: 1.3);
+
+    expect(find.text('我想找东西'), findsOneWidget);
+    expect(find.text('帮我找'), findsOneWidget);
+    expect(find.text('最近记下的'), findsNothing);
+    expect(tester.getSize(find.byKey(const ValueKey('memory-query-submit'))).height,
+        greaterThanOrEqualTo(56));
+    expect(tester.takeException(), isNull);
+  });
+}
