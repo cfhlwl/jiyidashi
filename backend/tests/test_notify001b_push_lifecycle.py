@@ -25,7 +25,7 @@ from app.services.notification_service import (
 async def test_auth_logout_fences_session_device_push_binding(client):
     auth = await client.post(
         "/v1/auth/dev-token",
-        json={"nickname": "notify-001b-logout"},
+        json={"nickname": "notify-001b-logout", "device_id": "dev-token"},
     )
     assert auth.status_code == 200, auth.text
     body = auth.json()
@@ -36,7 +36,7 @@ async def test_auth_logout_fences_session_device_push_binding(client):
         "/v1/notifications/device",
         headers=headers,
         json={
-            "client_uuid": "dev-token",
+            "client_uuid": "notify-switch-installation",
             "platform": "IOS",
             "provider": "TEST",
             "push_token": "notify-001b-logout-token-123456",
@@ -62,29 +62,54 @@ async def test_auth_logout_fences_session_device_push_binding(client):
 
 
 async def test_logout_all_fences_all_active_push_bindings_for_owner(client):
-    auth = await client.post(
+    auth_a = await client.post(
         "/v1/auth/dev-token",
-        json={"nickname": "notify-001b-logout-all"},
+        json={
+            "nickname": "notify-001b-logout-all",
+            "device_id": "logout-all-a",
+        },
     )
-    assert auth.status_code == 200, auth.text
-    body = auth.json()
-    user_id = UUID(body["user_id"])
-    headers = {"Authorization": f"Bearer {body['access_token']}"}
+    assert auth_a.status_code == 200, auth_a.text
+    body_a = auth_a.json()
+    user_id = UUID(body_a["user_id"])
+    headers_a = {"Authorization": f"Bearer {body_a['access_token']}"}
 
-    for suffix in ("a", "b"):
-        response = await client.put(
-            "/v1/notifications/device",
-            headers=headers,
-            json={
-                "client_uuid": f"logout-all-{suffix}",
-                "platform": "ANDROID",
-                "provider": "TEST",
-                "push_token": f"notify-001b-logout-all-token-{suffix}-123456",
-            },
-        )
-        assert response.status_code == 200, response.text
+    registered_a = await client.put(
+        "/v1/notifications/device",
+        headers=headers_a,
+        json={
+            "client_uuid": "logout-all-a",
+            "platform": "ANDROID",
+            "provider": "TEST",
+            "push_token": "notify-001b-logout-all-token-a-123456",
+        },
+    )
+    assert registered_a.status_code == 200, registered_a.text
 
-    logged_out = await client.post("/v1/auth/logout-all", headers=headers)
+    auth_b = await client.post(
+        "/v1/auth/dev-token",
+        json={
+            "user_id": str(user_id),
+            "nickname": "notify-001b-logout-all",
+            "device_id": "logout-all-b",
+        },
+    )
+    assert auth_b.status_code == 200, auth_b.text
+    headers_b = {"Authorization": f"Bearer {auth_b.json()['access_token']}"}
+
+    registered_b = await client.put(
+        "/v1/notifications/device",
+        headers=headers_b,
+        json={
+            "client_uuid": "logout-all-b",
+            "platform": "ANDROID",
+            "provider": "TEST",
+            "push_token": "notify-001b-logout-all-token-b-123456",
+        },
+    )
+    assert registered_b.status_code == 200, registered_b.text
+
+    logged_out = await client.post("/v1/auth/logout-all", headers=headers_b)
     assert logged_out.status_code == 200, logged_out.text
 
     with SessionLocal() as db:
@@ -108,7 +133,11 @@ async def test_account_switch_fences_prior_owner_on_same_installation(client):
 
     auth_a = await client.post(
         "/v1/auth/dev-token",
-        json={"user_id": str(owner_a), "nickname": "notify-owner-a"},
+        json={
+            "user_id": str(owner_a),
+            "nickname": "notify-owner-a",
+            "device_id": "notify-switch-installation",
+        },
     )
     assert auth_a.status_code == 200, auth_a.text
     headers_a = {"Authorization": f"Bearer {auth_a.json()['access_token']}"}
@@ -117,7 +146,7 @@ async def test_account_switch_fences_prior_owner_on_same_installation(client):
         "/v1/notifications/device",
         headers=headers_a,
         json={
-            "client_uuid": "dev-token",
+            "client_uuid": "notify-switch-installation",
             "platform": "ANDROID",
             "provider": "TEST",
             "push_token": "notify-owner-a-provider-token-123456",
@@ -128,7 +157,11 @@ async def test_account_switch_fences_prior_owner_on_same_installation(client):
 
     auth_b = await client.post(
         "/v1/auth/dev-token",
-        json={"user_id": str(owner_b), "nickname": "notify-owner-b"},
+        json={
+            "user_id": str(owner_b),
+            "nickname": "notify-owner-b",
+            "device_id": "notify-switch-installation",
+        },
     )
     assert auth_b.status_code == 200, auth_b.text
     assert UUID(auth_b.json()["user_id"]) == owner_b
@@ -137,7 +170,7 @@ async def test_account_switch_fences_prior_owner_on_same_installation(client):
         "/v1/notifications/device",
         headers=headers_a,
         json={
-            "client_uuid": "dev-token",
+            "client_uuid": "notify-switch-installation",
             "platform": "ANDROID",
             "provider": "TEST",
             "push_token": "notify-owner-a-resurrection-token-123456",
@@ -149,7 +182,7 @@ async def test_account_switch_fences_prior_owner_on_same_installation(client):
         prior = db.get(Device, device_id)
         assert prior is not None
         assert prior.user_id == owner_a
-        assert prior.client_uuid == "dev-token"
+        assert prior.client_uuid == "notify-switch-installation"
         assert prior.push_enabled is False
         assert prior.push_token is None
         assert prior.push_token_digest is None
@@ -159,7 +192,7 @@ async def test_account_switch_fences_prior_owner_on_same_installation(client):
 async def test_revoked_session_cannot_commit_late_push_registration(client):
     auth = await client.post(
         "/v1/auth/dev-token",
-        json={"nickname": "notify-late-register"},
+        json={"nickname": "notify-late-register", "device_id": "notify-late-register"},
     )
     assert auth.status_code == 200, auth.text
     body = auth.json()
@@ -171,7 +204,7 @@ async def test_revoked_session_cannot_commit_late_push_registration(client):
     assert logged_out.status_code == 200, logged_out.text
 
     payload = DevicePushRegistrationRequest(
-        client_uuid="dev-token",
+        client_uuid="notify-late-register",
         platform="ANDROID",
         provider="TEST",
         push_token="notify-late-register-token-123456",
@@ -190,7 +223,7 @@ async def test_revoked_session_cannot_commit_late_push_registration(client):
         row = db.scalar(
             select(Device).where(
                 Device.user_id == user_id,
-                Device.client_uuid == "dev-token",
+                Device.client_uuid == "notify-late-register",
             )
         )
         assert row is None or row.push_enabled is False
