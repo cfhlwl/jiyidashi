@@ -3822,11 +3822,10 @@ class _ThemeModeOption extends StatelessWidget {
   Widget build(BuildContext context) {
     return RadioGroup<ThemeMode>(
       groupValue: groupValue,
-      onChanged: enabled
-          ? (next) {
-              if (next != null) onChanged!(next);
-            }
-          : null,
+      onChanged: (next) {
+        if (!enabled || next == null) return;
+        onChanged?.call(next);
+      },
       child: RadioListTile<ThemeMode>(
         contentPadding: EdgeInsets.zero,
         value: value,
