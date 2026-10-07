@@ -197,6 +197,11 @@ def hold_push_disclosure_handoff(*, provider: str, digest: str):
                     {"scope": scope, "seed": PUSH_DISCLOSURE_LOCK_SEED},
                 )
                 connection.commit()
+            except BaseException:
+                # A session-level advisory lock survives transaction rollback.
+                # Never return a connection with an uncertain lock state to the pool.
+                connection.invalidate()
+                raise
             finally:
                 connection.close()
         else:
