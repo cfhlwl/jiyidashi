@@ -121,7 +121,7 @@ void main() {
     final submit = find.byKey(const ValueKey('memory-query-submit'));
     await tester.ensureVisible(submit);
     await tester.pumpAndSettle();
-    expect(find.text('从我的记录里找'), findsOneWidget);
+    expect(find.text('从我的记录里找'), findsNothing);
     expect(tester.getSize(submit).height, greaterThanOrEqualTo(48));
     expect(tester.takeException(), isNull);
   });

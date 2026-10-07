@@ -3519,7 +3519,11 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       );
     }
 
-    Widget sectionHeader(String title) {
+    Widget sectionHeader(
+      String title, {
+      VoidCallback? onAction,
+      String? actionTooltip,
+    }) {
       return Row(
         children: [
           Expanded(
@@ -3533,6 +3537,14 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               ),
             ),
           ),
+          if (onAction != null)
+            IconButton(
+              key: const ValueKey('memory-timeline-open'),
+              tooltip: actionTooltip,
+              onPressed: onAction,
+              icon: const Icon(Icons.timeline_outlined),
+              color: secondary,
+            ),
         ],
       );
     }
@@ -3706,30 +3718,42 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
             enabledBorder: InputBorder.none,
             focusedBorder: InputBorder.none,
             contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            suffixIcon: widget.elderMode
+                ? null
+                : IconButton(
+                    key: const ValueKey('memory-query-submit'),
+                    tooltip: loading ? '查找中' : '提交查询',
+                    onPressed: loading ? null : query,
+                    icon: loading
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.arrow_forward_rounded),
+                  ),
           ),
         ),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       ),
-      Align(
-        alignment: Alignment.centerRight,
-        child: TextButton.icon(
-          key: const ValueKey('memory-query-submit'),
-          onPressed: loading ? null : query,
-          style: TextButton.styleFrom(
-            minimumSize: Size.fromHeight(widget.elderMode ? 56 : 48),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-          ),
-          icon: loading
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.arrow_forward_rounded, size: 18),
-          label: Text(
-            loading ? '查找中…' : (widget.elderMode ? '帮我找' : '从我的记录里找'),
+      if (widget.elderMode)
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            key: const ValueKey('memory-query-submit'),
+            onPressed: loading ? null : query,
+            style: TextButton.styleFrom(
+              minimumSize: const Size.fromHeight(56),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            icon: loading
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.arrow_forward_rounded, size: 18),
+            label: Text(loading ? '查找中…' : '帮我找'),
           ),
         ),
-      ),
       if (!widget.elderMode) ...[
         SizedBox(
           height: 44,
@@ -3764,7 +3788,22 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
           ),
         ),
         const SizedBox(height: 34),
-        sectionHeader('最近记下的'),
+        sectionHeader(
+          '最近记下的',
+          onAction: () {
+            Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => TimelinePage(
+                  api: widget.api,
+                  mediaCache: widget.mediaCache,
+                  elderMode: widget.elderMode,
+                  amapPrivacyConsent: _amapPrivacyConsent,
+                ),
+              ),
+            );
+          },
+          actionTooltip: '时间线',
+        ),
         const SizedBox(height: 12),
         emptySurface(
           icon: Icons.auto_stories_outlined,
@@ -3778,22 +3817,6 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
           icon: Icons.people_outline,
           title: '还没有可展示的人物记录',
           message: '人物内容需要真实的人物 authority；迹忆不会用设计图头像代替用户数据。',
-        ),
-        TextButton.icon(
-          onPressed: () {
-            Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => TimelinePage(
-                  api: widget.api,
-                  mediaCache: widget.mediaCache,
-                  elderMode: widget.elderMode,
-                  amapPrivacyConsent: _amapPrivacyConsent,
-                ),
-              ),
-            );
-          },
-          icon: const Icon(Icons.timeline_outlined),
-          label: const Text('打开时间线'),
         ),
       ],
       if (error != null) ...[
@@ -3953,6 +3976,11 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
               onPressed: widget.onCapture,
               backgroundColor: JiYiTodayVisuals.primaryBlue,
               foregroundColor: Colors.white,
+              shape: const CircleBorder(),
+              elevation: 2,
+              focusElevation: 2,
+              hoverElevation: 2,
+              highlightElevation: 1,
               child: const Icon(Icons.edit_outlined),
             ),
           ),

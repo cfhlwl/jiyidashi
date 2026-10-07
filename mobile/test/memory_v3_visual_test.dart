@@ -252,6 +252,9 @@ void main() {
     expect(find.text('最近记下的'), findsOneWidget);
     expect(find.text('你的记忆会在这里出现'), findsOneWidget);
     expect(find.text('和妈妈的照片'), findsOneWidget);
+    expect(find.text('从我的记录里找'), findsNothing);
+    expect(find.text('打开时间线'), findsNothing);
+    expect(find.byKey(const ValueKey('memory-timeline-open')), findsOneWidget);
     expect(api.queryCalls, 0);
     await _expectMemoryV3Golden(tester, 'memory_v3_default.png');
   });
@@ -286,6 +289,10 @@ void main() {
       ),
       findsOneWidget,
     );
+    final capture = tester.widget<FloatingActionButton>(
+      find.byKey(const ValueKey('memory-capture')),
+    );
+    expect(capture.shape, isA<CircleBorder>());
     await _expectMemoryV3Golden(tester, 'memory_v3_shell.png');
   });
 
@@ -299,7 +306,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('记忆'), findsOneWidget);
-    expect(find.text('查找中…'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('我的记录'), findsOneWidget);
     expect(api.queryCalls, 1);
 
