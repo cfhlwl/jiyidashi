@@ -123,8 +123,10 @@ internal object NotificationPushRuntime {
         when (provider) {
             "FCM" -> {
                 ensureFirebase(context)
-                FirebaseMessaging.getInstance().deleteToken().addOnCompleteListener { task ->
+                val messaging = FirebaseMessaging.getInstance()
+                messaging.deleteToken().addOnCompleteListener { task ->
                     if (task.isSuccessful) {
+                        messaging.isAutoInitEnabled = false
                         clearToken(context)
                         callback(Result.success(Unit))
                     } else {
@@ -278,7 +280,9 @@ internal object NotificationPushRuntime {
     ) {
         try {
             ensureFirebase(context)
-            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            val messaging = FirebaseMessaging.getInstance()
+            messaging.isAutoInitEnabled = true
+            messaging.token.addOnCompleteListener { task ->
                 val token = task.result
                 if (task.isSuccessful && !token.isNullOrBlank()) {
                     storeToken(context, "FCM", token)
