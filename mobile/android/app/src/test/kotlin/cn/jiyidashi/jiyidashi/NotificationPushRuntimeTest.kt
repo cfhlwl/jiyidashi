@@ -56,4 +56,41 @@ class NotificationPushRuntimeTest {
         assertEquals("HOME", invalid.payload["destination"])
         assertNull(invalid.payload["resource_id"])
     }
+
+    @Test
+    fun android13PermissionStateIsTruthful() {
+        assertEquals(
+            "authorized",
+            NotificationPermissionPolicy.wireState(
+                sdkInt = 32,
+                granted = false,
+                requestedBefore = false,
+            ),
+        )
+        assertEquals(
+            "notDetermined",
+            NotificationPermissionPolicy.wireState(
+                sdkInt = 33,
+                granted = false,
+                requestedBefore = false,
+            ),
+        )
+        assertEquals(
+            "denied",
+            NotificationPermissionPolicy.wireState(
+                sdkInt = 33,
+                granted = false,
+                requestedBefore = true,
+            ),
+        )
+        assertEquals(
+            "authorized",
+            NotificationPermissionPolicy.wireState(
+                sdkInt = 33,
+                granted = true,
+                requestedBefore = true,
+            ),
+        )
+    }
+
 }
