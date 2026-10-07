@@ -1,9 +1,10 @@
-from datetime import UTC, datetime
-from uuid import uuid4
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
 
+from app.account_deletion_models import AccountDeletionOperation
 from app.auth_models import (
     AuthIdentity,
     AuthProvider,
@@ -13,11 +14,15 @@ from app.auth_models import (
     PhoneOneTapRecoveryState,
 )
 from app.core.db import SessionLocal
+from app.models import User
 from app.services import phone_one_tap_service
+from app.services.auth_identity_service import create_user_for_verified_identity
 from app.services.phone_one_tap_provider import (
     PhoneOneTapProviderError,
     VerifiedPhoneResult,
+    normalize_aliyun_mainland_mobile,
 )
+from app.services.phone_one_tap_service import purge_expired_phone_one_tap_exchanges
 
 
 class FakePhoneOneTapProvider:
@@ -50,6 +55,10 @@ def _settings(monkeypatch):
     monkeypatch.setattr(settings, "auth_phone_one_tap_fingerprint_secret", "test-phone-key")
     monkeypatch.setattr(settings, "auth_phone_one_tap_exchange_reservation_seconds", 60)
     monkeypatch.setattr(settings, "auth_phone_one_tap_recovery_deadline_seconds", 60)
+    monkeypatch.setattr(settings, "auth_phone_one_tap_ip_limit", 1000)
+    monkeypatch.setattr(settings, "auth_phone_one_tap_device_limit", 1000)
+    monkeypatch.setattr(settings, "auth_phone_one_tap_request_limit", 1000)
+    monkeypatch.setattr(settings, "auth_phone_one_tap_token_limit", 1000)
     return settings
 
 
@@ -61,6 +70,155 @@ def _payload(token: str, request_id=None) -> dict[str, object]:
         "client_platform": "android",
         "device_name": "AUTH-02B test",
     }
+
+
+def _seed_phone_user(phone: str, *, disabled: bool = False) -> User:
+    with SessionLocal() as db:
+        created = create_user_for_verified_identity(
+            db,
+            provider=AuthProvider.PHONE,
+            subject=phone,
+            verified_at=datetime.now(UTC),
+        )
+        user = db.get(User, created.user_id)
+        assert user is not None
+        if disabled:
+            user.auth_disabled_at = datetime.now(UTC)
+        db.commit()
+        return user
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("13900001234", "+8613900001234"),
+        ("+8613900001234", None),
+        ("139****1234", None),
+        (" 13900001234", None),
+        ("1390000123a", None),
+        ("1390000123", None),
+        ("8613900001234", None),
+    ],
+)
+def test_aliyun_national_mobile_normalization(raw, expected):
+    if expected is None:
+        with pytest.raises(PhoneOneTapProviderError):
+            normalize_aliyun_mainland_mobile(raw)
+    else:
+        assert normalize_aliyun_mainland_mobile(raw) == expected
+
+
+@pytest.mark.asyncio
+async def test_production_default_provider_is_fail_closed(client, monkeypatch):
+    settings = _settings(monkeypatch)
+    monkeypatch.setattr(settings, "auth_phone_one_tap_fingerprint_secret", "")
+    response = await client.post(
+        "/v1/auth/phone/one-tap", json=_payload("production-disabled-token")
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "AUTH_PHONE_ONE_TAP_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_existing_phone_identity_is_resolved_without_new_user(client, monkeypatch):
+    _settings(monkeypatch)
+    existing = _seed_phone_user("+8613900001240")
+    provider = FakePhoneOneTapProvider(
+        {
+            "existing-token": VerifiedPhoneResult(
+                canonical_phone_subject=existing.phone,
+                verified_at=datetime.now(UTC),
+            )
+        }
+    )
+    monkeypatch.setattr(phone_one_tap_service, "get_phone_one_tap_provider", lambda: provider)
+    response = await client.post(
+        "/v1/auth/phone/one-tap", json=_payload("existing-token")
+    )
+    assert response.status_code == 200
+    assert response.json()["user_id"] == str(existing.id)
+
+
+@pytest.mark.asyncio
+async def test_legacy_user_phone_projection_is_not_login_authority(client, monkeypatch):
+    _settings(monkeypatch)
+    with SessionLocal() as db:
+        legacy = User(nickname="legacy-phone-projection", phone="+8613900001241")
+        db.add(legacy)
+        db.commit()
+        legacy_id = legacy.id
+    provider = FakePhoneOneTapProvider(
+        {
+            "projection-token": VerifiedPhoneResult(
+                canonical_phone_subject="+8613900001241",
+                verified_at=datetime.now(UTC),
+            )
+        }
+    )
+    monkeypatch.setattr(phone_one_tap_service, "get_phone_one_tap_provider", lambda: provider)
+    response = await client.post(
+        "/v1/auth/phone/one-tap", json=_payload("projection-token")
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "AUTH_IDENTITY_CONFLICT"
+    with SessionLocal() as db:
+        assert db.scalar(select(AuthSession).where(AuthSession.user_id == legacy_id)) is None
+
+
+@pytest.mark.asyncio
+async def test_auth_disabled_phone_terminalizes_provider_token(client, monkeypatch):
+    _settings(monkeypatch)
+    disabled = _seed_phone_user("+8613900001242", disabled=True)
+    provider = FakePhoneOneTapProvider(
+        {
+            "disabled-token": VerifiedPhoneResult(
+                canonical_phone_subject=disabled.phone,
+                verified_at=datetime.now(UTC),
+            )
+        }
+    )
+    monkeypatch.setattr(phone_one_tap_service, "get_phone_one_tap_provider", lambda: provider)
+    request_id = uuid4()
+    response = await client.post(
+        "/v1/auth/phone/one-tap", json=_payload("disabled-token", request_id)
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "AUTH_ACCOUNT_UNAVAILABLE"
+    retry = await client.post(
+        "/v1/auth/phone/one-tap", json=_payload("disabled-token", request_id)
+    )
+    assert retry.status_code == 401
+    assert retry.json()["detail"] == "AUTH_ACCOUNT_UNAVAILABLE"
+    assert provider.calls == ["disabled-token"]
+
+
+@pytest.mark.asyncio
+async def test_active_account_deletion_returns_continuation_session(client, monkeypatch):
+    _settings(monkeypatch)
+    deleting = _seed_phone_user("+8613900001243")
+    with SessionLocal() as db:
+        db.add(
+            AccountDeletionOperation(
+                user_id=deleting.id,
+                request_id=uuid4(),
+                data_deletion_request_id=uuid4(),
+            )
+        )
+        db.commit()
+    provider = FakePhoneOneTapProvider(
+        {
+            "deletion-token": VerifiedPhoneResult(
+                canonical_phone_subject=deleting.phone,
+                verified_at=datetime.now(UTC),
+            )
+        }
+    )
+    monkeypatch.setattr(phone_one_tap_service, "get_phone_one_tap_provider", lambda: provider)
+    response = await client.post(
+        "/v1/auth/phone/one-tap", json=_payload("deletion-token")
+    )
+    assert response.status_code == 200
+    assert response.json()["account_deletion_in_progress"] is True
 
 
 @pytest.mark.asyncio
@@ -199,3 +357,54 @@ async def test_phone_field_is_not_an_accepted_auth_authority(client, monkeypatch
     payload["phone"] = "+8613900001234"
     response = await client.post("/v1/auth/phone/one-tap", json=payload)
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_phone_one_tap_purge_is_bounded_and_preserves_account_authority(
+    client, monkeypatch
+):
+    _settings(monkeypatch)
+    provider = FakePhoneOneTapProvider(
+        {
+            "purge-token": VerifiedPhoneResult(
+                canonical_phone_subject="+8613900001236",
+                verified_at=datetime.now(UTC),
+            )
+        }
+    )
+    monkeypatch.setattr(phone_one_tap_service, "get_phone_one_tap_provider", lambda: provider)
+    request_id = uuid4()
+    response = await client.post(
+        "/v1/auth/phone/one-tap", json=_payload("purge-token", request_id)
+    )
+    assert response.status_code == 200
+
+    with SessionLocal() as db:
+        row = db.scalar(
+            select(PhoneOneTapExchange).where(
+                PhoneOneTapExchange.request_id == request_id
+            )
+        )
+        assert row is not None
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+
+        assert purge_expired_phone_one_tap_exchanges(db, batch_size=1) == 1
+        assert (
+            db.scalar(
+                select(AuthIdentity).where(
+                    AuthIdentity.user_id == row.resolved_user_id,
+                    AuthIdentity.provider == AuthProvider.PHONE,
+                )
+            )
+            is not None
+        )
+        assert db.get(AuthSession, UUID(response.json()["session_id"])) is not None
+        assert (
+            db.scalar(
+                select(PhoneOneTapExchange).where(
+                    PhoneOneTapExchange.request_id == request_id
+                )
+            )
+            is None
+        )

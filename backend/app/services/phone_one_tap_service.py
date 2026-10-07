@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -62,6 +62,12 @@ class PhoneOneTapError(RuntimeError):
 class PhoneOneTapExchangeResult:
     tokens: PublicSessionTokens
     account_deletion_in_progress: bool
+
+
+@dataclass(frozen=True)
+class ReservationResult:
+    row: PhoneOneTapExchange
+    owns_provider_call: bool
 
 
 _PUBLIC_PROVIDER_CODES = {
@@ -255,7 +261,7 @@ def _reserve_exchange(
     client_platform: str | None,
     device_name: str | None,
     settings: Settings,
-) -> PhoneOneTapExchange:
+) -> ReservationResult:
     now = datetime.now(UTC)
     row = PhoneOneTapExchange(
         request_id=request_id,
@@ -283,8 +289,8 @@ def _reserve_exchange(
         )
         if existing is None:
             raise PhoneOneTapError("AUTH_PHONE_ONE_TAP_CONFLICT", 409) from exc
-        return existing
-    return row
+        return ReservationResult(row=existing, owns_provider_call=False)
+    return ReservationResult(row=row, owns_provider_call=True)
 
 
 def _finalize_provider_failure(
@@ -443,7 +449,7 @@ def exchange_phone_one_tap(
         ) from exc
 
     try:
-        row = _reserve_exchange(
+        reservation = _reserve_exchange(
             db,
             request_id=request_id,
             token_fingerprint=token_fingerprint,
@@ -452,8 +458,13 @@ def exchange_phone_one_tap(
             device_name=device_name,
             settings=cfg,
         )
-        if row.state != PhoneOneTapExchangeState.RESERVED:
+        row = reservation.row
+        if not reservation.owns_provider_call:
             return _resolve_existing_exchange(db, row, settings=cfg)
+
+        if db.in_transaction():
+            db.rollback()
+            raise PhoneOneTapError("AUTH_PHONE_ONE_TAP_PROVIDER_ERROR", 502)
 
         try:
             provider_result = selected_provider.exchange_login_token(
@@ -502,3 +513,35 @@ def exchange_phone_one_tap(
         )
     finally:
         release_permit(db.get_bind(), permit=permit, settings=cfg)
+
+
+def purge_expired_phone_one_tap_exchanges(
+    db: Session,
+    *,
+    batch_size: int = 100,
+    now: datetime | None = None,
+) -> int:
+    """Delete only bounded, expired exchange receipts.
+
+    This is a maintenance seam, not a scheduler. It deliberately targets only
+    ledger rows and cannot delete users, identities, or sessions.
+    """
+
+    bounded_batch = max(1, min(int(batch_size), 1000))
+    cutoff = now or datetime.now(UTC)
+    ids = list(
+        db.scalars(
+            select(PhoneOneTapExchange.id)
+            .where(PhoneOneTapExchange.expires_at <= cutoff)
+            .order_by(PhoneOneTapExchange.expires_at, PhoneOneTapExchange.id)
+            .limit(bounded_batch)
+        )
+    )
+    if not ids:
+        db.rollback()
+        return 0
+    result = db.execute(
+        delete(PhoneOneTapExchange).where(PhoneOneTapExchange.id.in_(ids))
+    )
+    db.commit()
+    return int(result.rowcount or 0)
