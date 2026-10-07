@@ -854,7 +854,9 @@ class _AnnualTimelineRow extends StatelessWidget {
                 height: 10,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: theme.colorScheme.primary,
+                  color: theme.brightness == Brightness.dark
+                      ? theme.colorScheme.primary
+                      : JiYiProductColors.location,
                 ),
               ),
               if (!isLast)
