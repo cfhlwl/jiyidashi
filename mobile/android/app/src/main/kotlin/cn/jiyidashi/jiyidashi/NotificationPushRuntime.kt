@@ -18,6 +18,18 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject
 
+internal object NotificationPermissionPolicy {
+    fun wireState(
+        sdkInt: Int,
+        granted: Boolean,
+        requestedBefore: Boolean,
+    ): String {
+        if (sdkInt < 33) return "authorized"
+        if (granted) return "authorized"
+        return if (requestedBefore) "denied" else "notDetermined"
+    }
+}
+
 internal object NotificationPushRuntime {
     private const val PREFS = "jiyi_push_v1"
     private const val KEY_PROVIDER = "provider"
@@ -65,17 +77,15 @@ internal object NotificationPushRuntime {
     }
 
     fun permission(context: Context): String {
-        if (Build.VERSION.SDK_INT < 33) return "authorized"
-        if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            return "authorized"
-        }
-        return if (prefs(context).getBoolean(KEY_PERMISSION_REQUESTED, false)) {
-            "denied"
-        } else {
-            "notDetermined"
-        }
+        val granted =
+            Build.VERSION.SDK_INT < 33 ||
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        return NotificationPermissionPolicy.wireState(
+            sdkInt = Build.VERSION.SDK_INT,
+            granted = granted,
+            requestedBefore = prefs(context).getBoolean(KEY_PERMISSION_REQUESTED, false),
+        )
     }
 
     fun selectProvider(context: Context): String? {
