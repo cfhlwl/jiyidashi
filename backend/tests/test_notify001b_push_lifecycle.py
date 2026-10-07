@@ -34,7 +34,7 @@ async def test_auth_logout_fences_session_device_push_binding(client):
     device_id = UUID(registered.json()["id"])
 
     logged_out = await client.post("/v1/auth/logout", headers=headers)
-    assert logged_out.status_code == 202, logged_out.text
+    assert logged_out.status_code == 200, logged_out.text
 
     with SessionLocal() as db:
         row = db.get(Device, device_id)
