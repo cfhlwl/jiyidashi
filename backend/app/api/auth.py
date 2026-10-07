@@ -194,16 +194,16 @@ def resend_verification(
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenResponse:
     user = authenticate_email_password(db, payload, client_ip=_client_ip(request))
+    fence_other_owner_push_bindings_for_client_uuid(
+        db,
+        user_id=user.id,
+        client_uuid=payload.device_id,
+    )
     locked_user, account_deletion_in_progress = lock_login_for_token_issue(
         db,
         user.id,
     )
     try:
-        fence_other_owner_push_bindings_for_client_uuid(
-            db,
-            user_id=locked_user.id,
-            client_uuid=payload.device_id,
-        )
         pair = create_public_session(
             db,
             user_id=locked_user.id,
