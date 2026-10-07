@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.account_deletion_models import AccountDeletionOperation
+from app.auth_models import AuthSession
 from app.admin_models import AdminAccount
 from app.core.config import get_settings
 from app.core.db import SessionLocal, engine
@@ -214,6 +215,7 @@ def register_device_push(
     *,
     user_id: UUID,
     payload: DevicePushRegistrationRequest,
+    session_id: UUID | None = None,
 ) -> DevicePushStateRead:
     now = datetime.now(UTC)
     if not provider_registration_allowed(
@@ -228,6 +230,25 @@ def register_device_push(
         digest=digest,
     ):
         _lock_push_digest(db, digest)
+
+        if session_id is not None:
+            session_statement = select(AuthSession).where(
+                AuthSession.id == session_id,
+                AuthSession.user_id == user_id,
+            )
+            if db.get_bind().dialect.name == "postgresql":
+                session_statement = session_statement.with_for_update(
+                    read=True,
+                    key_share=True,
+                )
+            session = db.scalar(session_statement)
+            if (
+                session is None
+                or session.revoked_at is not None
+                or _as_utc(session.expires_at) <= now
+            ):
+                db.rollback()
+                raise NotificationDeviceError("PUSH_SESSION_INVALID", 401)
 
         if db.get(User, user_id) is None:
             raise NotificationDeviceError("USER_NOT_FOUND", 404)
