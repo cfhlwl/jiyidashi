@@ -600,6 +600,13 @@ class NotificationClientService extends ChangeNotifier {
         permission != NotificationPermissionState.provisional) {
       return;
     }
+    if (_token?.retirePending == true) {
+      await _retryPendingRetirement();
+      if (_token?.retirePending == true) {
+        registration = NotificationRegistrationState.providerUnavailable;
+        return;
+      }
+    }
     try {
       final native = await nativeBridge.registerForPush();
       await _consumeStatus(native, synchronize: false);
