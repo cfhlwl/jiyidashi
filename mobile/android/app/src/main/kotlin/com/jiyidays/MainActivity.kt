@@ -21,5 +21,6 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         flutterEngine.plugins.add(NativeLocationPlugin())
         flutterEngine.plugins.add(NotificationPushPlugin())
+        flutterEngine.plugins.add(PhoneOneTapPlugin())
     }
 }
