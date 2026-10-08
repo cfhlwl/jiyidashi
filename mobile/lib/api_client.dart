@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'auth_session_store.dart';
+import 'phone_one_tap_bridge.dart';
 
 const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
@@ -501,7 +502,7 @@ class AuthDiagnosticEvent {
 typedef AuthDiagnosticSink = void Function(AuthDiagnosticEvent event);
 
 
-class JiYiApiClient {
+class JiYiApiClient implements PhoneOneTapExchangeClient {
   JiYiApiClient({
     http.Client? httpClient,
     String? baseUrl,
@@ -535,6 +536,7 @@ class JiYiApiClient {
 
   String? get authenticatedSessionId => _sessionId;
 
+  @override
   Future<String> canonicalClientUuid() => _sessionStore.readOrCreateInstallationId();
 
   PushSessionBinding capturePushSession() {
@@ -718,6 +720,36 @@ class JiYiApiClient {
     );
     await _establishAuthenticatedSession(data);
     return data;
+  }
+
+  @override
+  Future<void> exchangePhoneOneTap({
+    required String loginToken,
+    required String requestId,
+    required String deviceId,
+    String? clientPlatform,
+    String? deviceName,
+  }) async {
+    if (loginToken.trim().isEmpty || requestId.trim().isEmpty) {
+      throw ArgumentError('one-tap exchange requires an opaque token and request id');
+    }
+    final expectedSessionVersion = _sessionVersion;
+    final data = await _jsonRequest(
+      'POST',
+      '/auth/phone/one-tap',
+      body: {
+        'login_token': loginToken,
+        'request_id': requestId,
+        'device_id': deviceId,
+        if (clientPlatform != null) 'client_platform': clientPlatform,
+        if (deviceName != null) 'device_name': deviceName,
+      },
+      authenticated: false,
+    );
+    await _establishAuthenticatedSession(
+      data,
+      expectedSessionVersion: expectedSessionVersion,
+    );
   }
 
   DateTime _requiredServerDateTime(

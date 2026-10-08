@@ -2047,9 +2047,311 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
   }
 }
 
+enum PhoneOneTapNativeState: String {
+  case available = "AVAILABLE"
+  case unavailable = "UNAVAILABLE"
+  case cancelled = "CANCELLED"
+  case timeout = "TIMEOUT"
+  case providerError = "PROVIDER_ERROR"
+  case tokenAcquired = "TOKEN_ACQUIRED"
+}
+
+struct PhoneOneTapNativeResult {
+  let state: PhoneOneTapNativeState
+  let loginToken: String?
+  let reason: String?
+
+  init(
+    state: PhoneOneTapNativeState,
+    loginToken: String? = nil,
+    reason: String? = nil
+  ) {
+    self.state = state
+    self.loginToken = loginToken
+    self.reason = reason
+  }
+
+  func platformMap() -> [String: Any] {
+    var value: [String: Any] = ["state": state.rawValue]
+    if let loginToken { value["login_token"] = loginToken }
+    if let reason { value["reason"] = reason }
+    return value
+  }
+}
+
+/// Provider-neutral lifecycle fence. A callback from an old request is stale.
+final class PhoneOneTapRequestGate {
+  private var nextGeneration: Int64 = 0
+  private var activeGeneration: Int64?
+
+  func begin() -> Int64? {
+    guard activeGeneration == nil else { return nil }
+    nextGeneration += 1
+    activeGeneration = nextGeneration
+    return activeGeneration
+  }
+
+  func isCurrent(_ generation: Int64) -> Bool { activeGeneration == generation }
+
+  @discardableResult
+  func finish(_ generation: Int64) -> Bool {
+    guard activeGeneration == generation else { return false }
+    activeGeneration = nil
+    return true
+  }
+
+  func invalidate() {
+    activeGeneration = nil
+    nextGeneration += 1
+  }
+
+  var hasActiveRequest: Bool { activeGeneration != nil }
+}
+
+typealias PhoneOneTapCompletion = (PhoneOneTapNativeResult) -> Void
+
+protocol PhoneOneTapProviderAdapter {
+  func initialize(privacyConsentGranted: Bool, completion: @escaping PhoneOneTapCompletion)
+  func checkAvailability(completion: @escaping PhoneOneTapCompletion)
+  func preLogin(completion: @escaping PhoneOneTapCompletion)
+  func requestLoginToken(viewController: UIViewController, completion: @escaping PhoneOneTapCompletion)
+  func cancel(completion: @escaping PhoneOneTapCompletion)
+  func revokePrivacy(completion: @escaping PhoneOneTapCompletion)
+}
+
+/// AUTH-02C deliberately has no guessed PNVS framework/version or scheme.
+final class FailClosedPhoneOneTapProviderAdapter: PhoneOneTapProviderAdapter {
+  private var initialized = false
+
+  func initialize(privacyConsentGranted: Bool, completion: @escaping PhoneOneTapCompletion) {
+    guard privacyConsentGranted else {
+      initialized = false
+      completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PRIVACY_NOT_ACCEPTED"))
+      return
+    }
+    initialized = false
+    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
+  }
+
+  func checkAvailability(completion: @escaping PhoneOneTapCompletion) {
+    guard initialized else {
+      completion(PhoneOneTapNativeResult(state: .unavailable, reason: "NOT_INITIALIZED"))
+      return
+    }
+    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
+  }
+
+  func preLogin(completion: @escaping PhoneOneTapCompletion) {
+    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
+  }
+
+  func requestLoginToken(viewController: UIViewController, completion: @escaping PhoneOneTapCompletion) {
+    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
+  }
+
+  func cancel(completion: @escaping PhoneOneTapCompletion) {
+    completion(PhoneOneTapNativeResult(state: .cancelled))
+  }
+
+  func revokePrivacy(completion: @escaping PhoneOneTapCompletion) {
+    initialized = false
+    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PRIVACY_REVOKED"))
+  }
+}
+
+/// Guards a provider callback and makes duplicate or stale callbacks harmless.
+final class PhoneOneTapCallbackFence {
+  private let gate: PhoneOneTapRequestGate
+  private let generation: Int64
+  private let completion: PhoneOneTapCompletion
+  private var completed = false
+  private let lock = NSLock()
+
+  init(gate: PhoneOneTapRequestGate, generation: Int64, completion: @escaping PhoneOneTapCompletion) {
+    self.gate = gate
+    self.generation = generation
+    self.completion = completion
+  }
+
+  @discardableResult
+  func complete(_ value: PhoneOneTapNativeResult) -> Bool {
+    lock.lock()
+    guard !completed else {
+      lock.unlock()
+      return false
+    }
+    completed = true
+    lock.unlock()
+    guard gate.finish(generation) else { return false }
+    completion(value)
+    return true
+  }
+}
+
+/// Flutter-facing channel. Alibaba SDK objects and raw provider errors stop here.
+final class PhoneOneTapNativeBridge {
+  static let channelName = "cn.jiyidashi/phone_one_tap"
+
+  private let adapter: PhoneOneTapProviderAdapter
+  private let requestGate = PhoneOneTapRequestGate()
+  private var channel: FlutterMethodChannel?
+  private var initialized = false
+  private var viewControllerProvider: () -> UIViewController? = { nil }
+  private var pending: (generation: Int64, result: FlutterResult)?
+
+  init(
+    adapter: PhoneOneTapProviderAdapter = FailClosedPhoneOneTapProviderAdapter(),
+    viewControllerProvider: @escaping () -> UIViewController? = { nil }
+  ) {
+    self.adapter = adapter
+    self.viewControllerProvider = viewControllerProvider
+  }
+
+  func attach(
+    messenger: FlutterBinaryMessenger,
+    viewControllerProvider: @escaping () -> UIViewController?
+  ) {
+    self.viewControllerProvider = viewControllerProvider
+    let nextChannel = FlutterMethodChannel(name: Self.channelName, binaryMessenger: messenger)
+    nextChannel.setMethodCallHandler { [weak self] call, result in
+      self?.handle(call: call, result: result) ?? result(FlutterError(
+        code: "bridge_detached", message: "Phone one-tap bridge is detached", details: nil
+      ))
+    }
+    channel = nextChannel
+  }
+
+  func invalidateForLifecycle(reason: String = "LIFECYCLE_INVALIDATED") {
+    invalidatePending(reason: reason)
+    initialized = false
+    adapter.cancel { _ in }
+  }
+
+  func detach() {
+    invalidateForLifecycle(reason: "ENGINE_DETACHED")
+    channel?.setMethodCallHandler(nil)
+    channel = nil
+  }
+
+  func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "initialize":
+      let arguments = call.arguments as? [String: Any]
+      guard arguments?["privacy_consent_granted"] as? Bool == true else {
+        revokePrivacy(result: result)
+        return
+      }
+      guard pending == nil else {
+        result(unavailable("REQUEST_IN_PROGRESS").platformMap())
+        return
+      }
+      beginAsync(result: result) { callback in
+        self.adapter.initialize(privacyConsentGranted: true) { value in
+          if callback.complete(value) { self.initialized = value.state != .unavailable }
+        }
+      }
+    case "checkAvailability": availability(result: result)
+    case "preLogin": preLogin(result: result)
+    case "requestLoginToken": requestLoginToken(result: result)
+    case "cancel": cancel(result: result)
+    default: result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func availability(result: @escaping FlutterResult) {
+    guard initialized else { result(unavailable("NOT_INITIALIZED").platformMap()); return }
+    guard pending == nil else { result(unavailable("REQUEST_IN_PROGRESS").platformMap()); return }
+    beginAsync(result: result) { callback in
+      self.adapter.checkAvailability { value in _ = callback.complete(value) }
+    }
+  }
+
+  private func preLogin(result: @escaping FlutterResult) {
+    guard initialized else { result(unavailable("NOT_INITIALIZED").platformMap()); return }
+    guard pending == nil else { result(unavailable("REQUEST_IN_PROGRESS").platformMap()); return }
+    beginAsync(result: result) { callback in
+      self.adapter.preLogin { value in _ = callback.complete(value) }
+    }
+  }
+
+  private func requestLoginToken(result: @escaping FlutterResult) {
+    guard initialized else { result(unavailable("NOT_INITIALIZED").platformMap()); return }
+    guard let viewController = viewControllerProvider() else {
+      result(unavailable("VIEW_CONTROLLER_UNAVAILABLE").platformMap())
+      return
+    }
+    guard pending == nil else { result(unavailable("REQUEST_IN_PROGRESS").platformMap()); return }
+    beginAsync(result: result) { callback in
+      self.adapter.requestLoginToken(viewController: viewController) { value in
+        guard let currentController = self.viewControllerProvider() else {
+          _ = callback.complete(self.unavailable("VIEW_CONTROLLER_UNAVAILABLE"))
+          return
+        }
+        guard currentController === viewController else {
+          _ = callback.complete(self.unavailable("VIEW_CONTROLLER_CHANGED"))
+          return
+        }
+        _ = callback.complete(value)
+      }
+    }
+  }
+
+  private func cancel(result: @escaping FlutterResult) {
+    invalidatePending(reason: "USER_CANCELLED")
+    completeAdapterOperationOnce(result: result) { self.adapter.cancel(completion: $0) }
+  }
+
+  private func revokePrivacy(result: @escaping FlutterResult) {
+    invalidatePending(reason: "PRIVACY_REVOKED")
+    initialized = false
+    completeAdapterOperationOnce(result: result) { self.adapter.revokePrivacy(completion: $0) }
+  }
+
+  private func beginAsync(
+    result: @escaping FlutterResult,
+    operation: (PhoneOneTapCallbackFence) -> Void
+  ) {
+    guard let generation = requestGate.begin() else {
+      result(unavailable("REQUEST_IN_PROGRESS").platformMap())
+      return
+    }
+    pending = (generation, result)
+    let callback = PhoneOneTapCallbackFence(gate: requestGate, generation: generation) { [weak self] value in
+      guard let self, let current = self.pending, current.generation == generation else { return }
+      self.pending = nil
+      current.result(value.platformMap())
+    }
+    operation(callback)
+  }
+
+  private func invalidatePending(reason: String) {
+    requestGate.invalidate()
+    let current = pending
+    pending = nil
+    current?.result(PhoneOneTapNativeResult(state: .cancelled, reason: reason).platformMap())
+  }
+
+  private func completeAdapterOperationOnce(
+    result: @escaping FlutterResult,
+    operation: (@escaping PhoneOneTapCompletion) -> Void
+  ) {
+    var completed = false
+    operation { value in
+      guard !completed else { return }
+      completed = true
+      result(value.platformMap())
+    }
+  }
+
+  private func unavailable(_ reason: String) -> PhoneOneTapNativeResult {
+    PhoneOneTapNativeResult(state: .unavailable, reason: reason)
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var nativeLocationBridge: NativeLocationBridge?
+  private var phoneOneTapBridge: PhoneOneTapNativeBridge?
   private let nativeNotificationBridge = NativeNotificationBridge.shared
   private var activePassiveRecoveryTask: BGAppRefreshTask?
   private var passiveRecoveryCompletionChannel: FlutterMethodChannel?
@@ -2103,6 +2405,17 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
     bridge.attach(messenger: engineBridge.applicationRegistrar.messenger())
     nativeLocationBridge = bridge
 
+    let phoneOneTap = phoneOneTapBridge ?? PhoneOneTapNativeBridge()
+    let applicationRegistrar = engineBridge.applicationRegistrar
+    let pluginRegistry = engineBridge.pluginRegistry
+    phoneOneTap.attach(
+      messenger: applicationRegistrar.messenger(),
+      viewControllerProvider: {
+        pluginRegistry.registrar(forPlugin: "PhoneOneTapNativeBridge")?.viewController
+      }
+    )
+    phoneOneTapBridge = phoneOneTap
+
     let completionChannel = FlutterMethodChannel(
       name: "cn.jiyidashi/passive_recovery",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
@@ -2124,6 +2437,13 @@ final class NativeNotificationBridge: NSObject, UNUserNotificationCenterDelegate
       result(nil)
     }
     passiveRecoveryCompletionChannel = completionChannel
+  }
+
+  override func applicationDidEnterBackground(_ application: UIApplication) {
+    // This is the process-level background event. Authorization-page
+    // transitions do not call this method, so they do not cancel PNVS auth.
+    phoneOneTapBridge?.invalidateForLifecycle(reason: "APP_BACKGROUND")
+    super.applicationDidEnterBackground(application)
   }
 
   @available(iOS 13.0, *)

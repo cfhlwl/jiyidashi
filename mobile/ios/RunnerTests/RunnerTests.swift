@@ -6,6 +6,311 @@ import XCTest
 class RunnerTests: XCTestCase {
   private let owner = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
+  func testPhoneOneTapNativeAdapterFailsClosedBeforePNVSConfiguration() {
+    let adapter = FailClosedPhoneOneTapProviderAdapter()
+    var result: PhoneOneTapNativeResult?
+    adapter.initialize(privacyConsentGranted: false) { result = $0 }
+    XCTAssertEqual(result?.state, .unavailable)
+    XCTAssertEqual(
+      result?.reason,
+      "PRIVACY_NOT_ACCEPTED"
+    )
+    adapter.initialize(privacyConsentGranted: true) { result = $0 }
+    XCTAssertEqual(
+      result?.reason,
+      "PNVS_NOT_CONFIGURED"
+    )
+    adapter.checkAvailability { result = $0 }
+    adapter.requestLoginToken(viewController: UIViewController()) { result = $0 }
+    XCTAssertEqual(result?.state, .unavailable)
+  }
+
+  func testPhoneOneTapRequestGateFencesRepeatedAndLateCallbacks() {
+    let gate = PhoneOneTapRequestGate()
+    let first = gate.begin()
+
+    XCTAssertNotNil(first)
+    XCTAssertNil(gate.begin())
+    XCTAssertTrue(gate.isCurrent(first!))
+    XCTAssertFalse(gate.finish(first! + 1))
+    XCTAssertTrue(gate.hasActiveRequest)
+    XCTAssertTrue(gate.finish(first!))
+    XCTAssertFalse(gate.hasActiveRequest)
+    XCTAssertFalse(gate.finish(first!))
+  }
+
+  func testPhoneOneTapLifecycleInvalidatesOldCallback() {
+    let gate = PhoneOneTapRequestGate()
+    let first = gate.begin()!
+
+    gate.invalidate()
+
+    XCTAssertFalse(gate.isCurrent(first))
+    XCTAssertFalse(gate.finish(first))
+  }
+
+  func testPhoneOneTapAsyncCallbackCompletesOnce() {
+    let gate = PhoneOneTapRequestGate()
+    let generation = gate.begin()!
+    var completions = 0
+    let callback = PhoneOneTapCallbackFence(gate: gate, generation: generation) { _ in
+      completions += 1
+    }
+    let value = PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "opaque")
+
+    XCTAssertTrue(callback.complete(value))
+    XCTAssertFalse(callback.complete(value))
+    XCTAssertEqual(completions, 1)
+  }
+
+  func testPhoneOneTapPrivacyRevocationIsFailClosed() {
+    let adapter = FailClosedPhoneOneTapProviderAdapter()
+    var result: PhoneOneTapNativeResult?
+
+    adapter.revokePrivacy { result = $0 }
+
+    XCTAssertEqual(result?.state, .unavailable)
+    XCTAssertEqual(result?.reason, "PRIVACY_REVOKED")
+  }
+
+  func testPhoneOneTapBridgeUsesRequestScopedControllerAndFencesAsyncLifecycle() {
+    let adapter = DelayedPhoneOneTapAdapter()
+    var host: UIViewController? = UIViewController()
+    let bridge = PhoneOneTapNativeBridge(
+      adapter: adapter,
+      viewControllerProvider: { host }
+    )
+
+    var initializeResult: [String: Any]?
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": true]
+      ),
+      result: { value in initializeResult = value as? [String: Any] }
+    )
+    adapter.initializeCompletion?(
+      PhoneOneTapNativeResult(state: .available)
+    )
+    XCTAssertEqual(initializeResult?["state"] as? String, "AVAILABLE")
+
+    let controllerA = host!
+    var firstResult: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestLoginToken", arguments: nil),
+      result: { value in if let value = value as? [String: Any] { firstResult.append(value) } }
+    )
+    XCTAssertTrue(adapter.requestedControllers.last === controllerA)
+
+    bridge.invalidateForLifecycle(reason: "VIEW_CONTROLLER_REPLACED")
+    adapter.requestCompletions.last?(
+      PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "late-a")
+    )
+    XCTAssertEqual(firstResult.count, 1)
+    XCTAssertEqual(firstResult.first?["reason"] as? String, "VIEW_CONTROLLER_REPLACED")
+
+    host = UIViewController()
+    var reinitializeResult: [String: Any]?
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": true]
+      ),
+      result: { value in reinitializeResult = value as? [String: Any] }
+    )
+    adapter.initializeCompletion?(
+      PhoneOneTapNativeResult(state: .available)
+    )
+    XCTAssertEqual(reinitializeResult?["state"] as? String, "AVAILABLE")
+
+    var secondResult: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestLoginToken", arguments: nil),
+      result: { value in if let value = value as? [String: Any] { secondResult.append(value) } }
+    )
+    XCTAssertTrue(adapter.requestedControllers.last === host)
+    adapter.requestCompletions.last?(
+      PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "token-b")
+    )
+    adapter.requestCompletions.last?(
+      PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "duplicate-b")
+    )
+    XCTAssertEqual(secondResult.count, 1)
+    XCTAssertEqual(secondResult.first?["login_token"] as? String, "token-b")
+  }
+
+  func testPhoneOneTapBridgePrivacyRevocationCancelsPendingAndIgnoresLateCallback() {
+    let adapter = DelayedPhoneOneTapAdapter()
+    let host = UIViewController()
+    let bridge = PhoneOneTapNativeBridge(
+      adapter: adapter,
+      viewControllerProvider: { host }
+    )
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": true]
+      ),
+      result: { _ in }
+    )
+    adapter.initializeCompletion?(
+      PhoneOneTapNativeResult(state: .available)
+    )
+
+    var requestResults: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestLoginToken", arguments: nil),
+      result: { value in if let value = value as? [String: Any] { requestResults.append(value) } }
+    )
+    var privacyResult: [String: Any]?
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": false]
+      ),
+      result: { value in privacyResult = value as? [String: Any] }
+    )
+    adapter.requestCompletions.last?(
+      PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "late")
+    )
+
+    XCTAssertEqual(requestResults.first?["reason"] as? String, "PRIVACY_REVOKED")
+    XCTAssertEqual(privacyResult?["reason"] as? String, "PRIVACY_REVOKED")
+    XCTAssertEqual(requestResults.count, 1)
+    XCTAssertEqual(adapter.revokePrivacyCount, 1)
+  }
+
+  func testPhoneOneTapBridgeMissingControllerFailsClosedWithoutProviderCall() {
+    let adapter = DelayedPhoneOneTapAdapter()
+    let bridge = PhoneOneTapNativeBridge(adapter: adapter)
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": true]
+      ),
+      result: { _ in }
+    )
+    adapter.initializeCompletion?(
+      PhoneOneTapNativeResult(state: .available)
+    )
+
+    var result: [String: Any]?
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestLoginToken", arguments: nil),
+      result: { value in result = value as? [String: Any] }
+    )
+
+    XCTAssertEqual(result?["reason"] as? String, "VIEW_CONTROLLER_UNAVAILABLE")
+    XCTAssertTrue(adapter.requestedControllers.isEmpty)
+  }
+
+  func testPhoneOneTapBridgeControllerIdentityFenceRejectsReplacementAndNil() {
+    let adapter = DelayedPhoneOneTapAdapter()
+    var host: UIViewController? = UIViewController()
+    let bridge = PhoneOneTapNativeBridge(
+      adapter: adapter,
+      viewControllerProvider: { host }
+    )
+    initializePhoneOneTapBridge(bridge, adapter: adapter)
+
+    var replacementResult: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestLoginToken", arguments: nil),
+      result: { value in if let value = value as? [String: Any] { replacementResult.append(value) } }
+    )
+    host = UIViewController()
+    adapter.requestCompletions.last?(
+      PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "rejected-replacement")
+    )
+    XCTAssertEqual(replacementResult.first?["reason"] as? String, "VIEW_CONTROLLER_CHANGED")
+    XCTAssertNil(replacementResult.first?["login_token"])
+
+    initializePhoneOneTapBridge(bridge, adapter: adapter)
+    var nilHostResult: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestLoginToken", arguments: nil),
+      result: { value in if let value = value as? [String: Any] { nilHostResult.append(value) } }
+    )
+    host = nil
+    adapter.requestCompletions.last?(
+      PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "rejected-nil")
+    )
+    XCTAssertEqual(nilHostResult.first?["reason"] as? String, "VIEW_CONTROLLER_UNAVAILABLE")
+    XCTAssertNil(nilHostResult.first?["login_token"])
+  }
+
+  func testPhoneOneTapBridgeExplicitCancelFencesLateProviderToken() {
+    let adapter = DelayedPhoneOneTapAdapter()
+    let host = UIViewController()
+    let bridge = PhoneOneTapNativeBridge(
+      adapter: adapter,
+      viewControllerProvider: { host }
+    )
+    initializePhoneOneTapBridge(bridge, adapter: adapter)
+
+    var requestResults: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestLoginToken", arguments: nil),
+      result: { value in if let value = value as? [String: Any] { requestResults.append(value) } }
+    )
+    var cancelResults: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "cancel", arguments: nil),
+      result: { value in if let value = value as? [String: Any] { cancelResults.append(value) } }
+    )
+    adapter.requestCompletions.last?(
+      PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "late-cancel-token")
+    )
+
+    XCTAssertEqual(requestResults.count, 1)
+    XCTAssertEqual(requestResults.first?["reason"] as? String, "USER_CANCELLED")
+    XCTAssertNil(requestResults.first?["login_token"])
+    XCTAssertEqual(cancelResults.count, 1)
+    XCTAssertEqual(cancelResults.first?["state"] as? String, "CANCELLED")
+    XCTAssertEqual(adapter.cancelCount, 1)
+  }
+
+  func testPhoneOneTapBridgeAppBackgroundFencesLateProviderToken() {
+    let adapter = DelayedPhoneOneTapAdapter()
+    let host = UIViewController()
+    let bridge = PhoneOneTapNativeBridge(
+      adapter: adapter,
+      viewControllerProvider: { host }
+    )
+    initializePhoneOneTapBridge(bridge, adapter: adapter)
+
+    var requestResults: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestLoginToken", arguments: nil),
+      result: { value in if let value = value as? [String: Any] { requestResults.append(value) } }
+    )
+    bridge.invalidateForLifecycle(reason: "APP_BACKGROUND")
+    adapter.requestCompletions.last?(
+      PhoneOneTapNativeResult(state: .tokenAcquired, loginToken: "late-background-token")
+    )
+
+    XCTAssertEqual(requestResults.count, 1)
+    XCTAssertEqual(requestResults.first?["reason"] as? String, "APP_BACKGROUND")
+    XCTAssertNil(requestResults.first?["login_token"])
+    XCTAssertEqual(adapter.cancelCount, 1)
+  }
+
+  private func initializePhoneOneTapBridge(
+    _ bridge: PhoneOneTapNativeBridge,
+    adapter: DelayedPhoneOneTapAdapter
+  ) {
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": true]
+      ),
+      result: { _ in }
+    )
+    adapter.initializeCompletion?(
+      PhoneOneTapNativeResult(state: .available)
+    )
+  }
+
   func testRecordingHealthRuntimeProjectionIsTruthful() {
     XCTAssertEqual(
       NativeLocationPolicy.recordingHealthBackgroundRuntime(
@@ -395,4 +700,37 @@ class RunnerTests: XCTestCase {
     )
   }
 
+}
+
+private final class DelayedPhoneOneTapAdapter: PhoneOneTapProviderAdapter {
+  var initializeCompletion: PhoneOneTapCompletion?
+  var requestedControllers: [UIViewController] = []
+  var requestCompletions: [PhoneOneTapCompletion] = []
+  var revokePrivacyCount = 0
+  var cancelCount = 0
+
+  func initialize(privacyConsentGranted: Bool, completion: @escaping PhoneOneTapCompletion) {
+    initializeCompletion = completion
+  }
+
+  func checkAvailability(completion: @escaping PhoneOneTapCompletion) {}
+  func preLogin(completion: @escaping PhoneOneTapCompletion) {}
+
+  func requestLoginToken(
+    viewController: UIViewController,
+    completion: @escaping PhoneOneTapCompletion
+  ) {
+    requestedControllers.append(viewController)
+    requestCompletions.append(completion)
+  }
+
+  func cancel(completion: @escaping PhoneOneTapCompletion) {
+    cancelCount += 1
+    completion(PhoneOneTapNativeResult(state: .cancelled))
+  }
+
+  func revokePrivacy(completion: @escaping PhoneOneTapCompletion) {
+    revokePrivacyCount += 1
+    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PRIVACY_REVOKED"))
+  }
 }
