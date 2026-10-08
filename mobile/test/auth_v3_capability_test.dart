@@ -360,11 +360,13 @@ void main() {
       onAuthenticated: () => authenticated += 1,
     );
     await tester.tap(find.byKey(const ValueKey('auth-v3-phone-one-tap')));
+    await tester.pump();
     await requestStarted.future;
     final fallback = find.byKey(const ValueKey('auth-v3-email-fallback'));
     await tester.ensureVisible(fallback);
     await tester.tap(fallback);
     await tester.pump();
+    expect(bridge.cancelCalls, 1);
     response.complete(
       http.Response(
         jsonEncode(_sessionResponse()),
