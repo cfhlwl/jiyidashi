@@ -525,6 +525,7 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
   // authoritative only after login/verification/refresh returns from the server.
   String? authenticatedUserId;
   int _sessionVersion = 0;
+  int _unauthenticatedAuthGeneration = 0;
   Future<void>? _refreshInFlight;
   int? _refreshInFlightVersion;
   String? _refreshInFlightSessionId;
@@ -533,6 +534,19 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
 
   // 登录、注册和退出都会推进会话版本；后台同步用它检测账号切换。
   int get sessionVersion => _sessionVersion;
+
+  /// Captures the current unauthenticated authentication attempt authority.
+  ///
+  /// One-tap login is allowed to establish a session only while this binding
+  /// remains current. UI abandonment invalidates it before awaiting any native
+  /// cleanup, so a late HTTP response cannot commit a session.
+  int captureUnauthenticatedAuthGeneration() =>
+      _unauthenticatedAuthGeneration;
+
+  /// Invalidates every in-flight unauthenticated auth exchange.
+  void invalidateUnauthenticatedAuthGeneration() {
+    _unauthenticatedAuthGeneration += 1;
+  }
 
   String? get authenticatedSessionId => _sessionId;
 
@@ -734,6 +748,8 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
       throw ArgumentError('one-tap exchange requires an opaque token and request id');
     }
     final expectedSessionVersion = _sessionVersion;
+    final expectedUnauthenticatedAuthGeneration =
+        captureUnauthenticatedAuthGeneration();
     final data = await _jsonRequest(
       'POST',
       '/auth/phone/one-tap',
@@ -749,6 +765,8 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
     await _establishAuthenticatedSession(
       data,
       expectedSessionVersion: expectedSessionVersion,
+      expectedUnauthenticatedAuthGeneration:
+          expectedUnauthenticatedAuthGeneration,
     );
   }
 
@@ -801,6 +819,17 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
     }
   }
 
+  void _assertUnauthenticatedAuthGeneration(int? expectedGeneration) {
+    if (expectedGeneration != null &&
+        _unauthenticatedAuthGeneration != expectedGeneration) {
+      _emitAuthDiagnostic(
+        AuthDiagnosticKind.authorityGenerationMismatch,
+        code: 'UNAUTHENTICATED_AUTH_GENERATION_MISMATCH',
+      );
+      throw ProtocolException('登录操作已取消，请重试');
+    }
+  }
+
   void _emitAuthDiagnostic(
     AuthDiagnosticKind kind, {
     required String code,
@@ -829,6 +858,7 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
     int? expectedSessionVersion,
     String? expectedLocalSessionId,
     String? expectedLocalRefreshToken,
+    int? expectedUnauthenticatedAuthGeneration,
   }) async {
     final token = data['access_token'];
     final refresh = data['refresh_token'];
@@ -855,11 +885,17 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
       expectedLocalSessionId: expectedLocalSessionId,
       expectedLocalRefreshToken: expectedLocalRefreshToken,
     );
+    _assertUnauthenticatedAuthGeneration(
+      expectedUnauthenticatedAuthGeneration,
+    );
     await _runSessionStoreMutation(() async {
       _assertSessionGeneration(
         expectedSessionVersion,
         expectedLocalSessionId: expectedLocalSessionId,
         expectedLocalRefreshToken: expectedLocalRefreshToken,
+      );
+      _assertUnauthenticatedAuthGeneration(
+        expectedUnauthenticatedAuthGeneration,
       );
       await _sessionStore.writeSession(
         PersistedAuthSession(
@@ -872,6 +908,9 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
       expectedSessionVersion,
       expectedLocalSessionId: expectedLocalSessionId,
       expectedLocalRefreshToken: expectedLocalRefreshToken,
+    );
+    _assertUnauthenticatedAuthGeneration(
+      expectedUnauthenticatedAuthGeneration,
     );
 
     final sameOwnerSession =

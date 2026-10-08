@@ -126,10 +126,7 @@ class AuthCapabilityAuthority {
         PhoneOneTapState.unavailable ||
         PhoneOneTapState.tokenAcquired => AuthCapabilityStatus.unavailable,
       };
-      return baseline.copyWith(
-        emailStatus: AuthCapabilityStatus.available,
-        phoneOneTapStatus: phoneStatus,
-      );
+      return baseline.copyWith(phoneOneTapStatus: phoneStatus);
     } catch (_) {
       return baseline.copyWith(
         phoneOneTapStatus: AuthCapabilityStatus.unavailable,

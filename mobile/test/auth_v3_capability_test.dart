@@ -25,6 +25,7 @@ class _TestPhoneBridge implements PhoneOneTapBridge {
   int revokePrivacyCalls = 0;
   int requestCalls = 0;
   Completer<PhoneOneTapResult>? pendingLogin;
+  Completer<void>? pendingCancel;
 
   @override
   Future<PhoneOneTapResult> initialize({
@@ -54,6 +55,7 @@ class _TestPhoneBridge implements PhoneOneTapBridge {
   @override
   Future<PhoneOneTapResult> cancel() async {
     cancelCalls += 1;
+    if (pendingCancel != null) await pendingCancel!.future;
     return const PhoneOneTapResult.cancelled();
   }
 
@@ -65,15 +67,27 @@ class _TestPhoneBridge implements PhoneOneTapBridge {
 }
 
 AuthCapabilities _capabilities({
+  AuthCapabilityStatus email = AuthCapabilityStatus.available,
   AuthCapabilityStatus phone = AuthCapabilityStatus.disabled,
   AuthCapabilityStatus sms = AuthCapabilityStatus.disabled,
+  AuthCapabilityStatus wechat = AuthCapabilityStatus.disabled,
 }) {
   return AuthCapabilities.statuses(
-    emailStatus: AuthCapabilityStatus.available,
+    emailStatus: email,
     phoneOneTapStatus: phone,
     smsOtpStatus: sms,
+    wechatStatus: wechat,
   );
 }
+
+Map<String, dynamic> _sessionResponse() => {
+      'access_token': 'access-token',
+      'refresh_token': 'refresh-token-abcdefghijklmnopqrstuvwxyz',
+      'session_id': 'session-one-tap',
+      'user_id': 'user-one-tap',
+      'access_expires_at': '2030-01-01T00:00:00Z',
+      'account_deletion_in_progress': false,
+    };
 
 JiYiApiClient _api({
   required Future<http.Response> Function(http.Request) handler,
@@ -143,6 +157,35 @@ void main() {
         AuthCapabilityStatus.unavailable);
   });
 
+  test('phone probe preserves every non-phone capability status', () async {
+    final bridge = _TestPhoneBridge();
+    final baseline = _capabilities(
+      email: AuthCapabilityStatus.planned,
+      phone: AuthCapabilityStatus.disabled,
+      sms: AuthCapabilityStatus.planned,
+      wechat: AuthCapabilityStatus.unsupported,
+    );
+    final result = await AuthCapabilityAuthority(
+      phoneOneTapBridge: bridge,
+    ).probe(privacyConsentGranted: true, baseline: baseline);
+
+    expect(result.emailStatus, AuthCapabilityStatus.planned);
+    expect(result.phoneOneTapStatus, AuthCapabilityStatus.available);
+    expect(result.smsOtpStatus, AuthCapabilityStatus.planned);
+    expect(result.wechatStatus, AuthCapabilityStatus.unsupported);
+
+    final disabledEmail = await AuthCapabilityAuthority(
+      phoneOneTapBridge: _TestPhoneBridge(
+        availability: const PhoneOneTapResult.providerError('PROVIDER'),
+      ),
+    ).probe(
+      privacyConsentGranted: true,
+      baseline: _capabilities(email: AuthCapabilityStatus.unavailable),
+    );
+    expect(disabledEmail.emailStatus, AuthCapabilityStatus.unavailable);
+    expect(disabledEmail.phoneOneTapStatus, AuthCapabilityStatus.unavailable);
+  });
+
   test('capability statuses keep planned and disabled providers hidden', () {
     const capabilities = AuthCapabilities.statuses(
       emailStatus: AuthCapabilityStatus.available,
@@ -189,14 +232,7 @@ void main() {
       handler: (request) async {
         requests.add(request);
         return http.Response(
-          jsonEncode({
-            'access_token': 'access-token',
-            'refresh_token': 'refresh-token-abcdefghijklmnopqrstuvwxyz',
-            'session_id': 'session-one-tap',
-            'user_id': 'user-one-tap',
-            'access_expires_at': '2030-01-01T00:00:00Z',
-            'account_deletion_in_progress': false,
-          }),
+          jsonEncode(_sessionResponse()),
           200,
           headers: {'content-type': 'application/json'},
         );
@@ -296,6 +332,191 @@ void main() {
     expect(bridge.revokePrivacyCalls, 1);
     expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
     expect(find.text('邮箱登录'), findsOneWidget);
+  });
+
+  testWidgets('cancel during exchange fences the late backend session',
+      (tester) async {
+    final bridge = _TestPhoneBridge(
+      loginResult: const PhoneOneTapResult.tokenAcquired('opaque-token'),
+    );
+    final requestStarted = Completer<void>();
+    final response = Completer<http.Response>();
+    final store = MemoryAuthSessionStore();
+    final api = JiYiApiClient(
+      baseUrl: 'https://auth-v3.test/v1',
+      httpClient: MockClient((request) async {
+        requestStarted.complete();
+        return response.future;
+      }),
+      sessionStore: store,
+    );
+    var authenticated = 0;
+
+    await _pumpAuthPage(
+      tester,
+      api: api,
+      bridge: bridge,
+      capabilities: _capabilities(phone: AuthCapabilityStatus.available),
+      onAuthenticated: () => authenticated += 1,
+    );
+    await tester.tap(find.byKey(const ValueKey('auth-v3-phone-one-tap')));
+    await requestStarted.future;
+    final fallback = find.byKey(const ValueKey('auth-v3-email-fallback'));
+    await tester.ensureVisible(fallback);
+    await tester.tap(fallback);
+    response.complete(
+      http.Response(
+        jsonEncode(_sessionResponse()),
+        200,
+        headers: {'content-type': 'application/json'},
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(authenticated, 0);
+    expect(api.authenticatedUserId, isNull);
+    expect(api.accessToken, isNull);
+    expect(api.authenticatedSessionId, isNull);
+    expect(store.session, isNull);
+  });
+
+  testWidgets('privacy revoke during exchange fences the late backend session',
+      (tester) async {
+    final bridge = _TestPhoneBridge(
+      loginResult: const PhoneOneTapResult.tokenAcquired('opaque-token'),
+    );
+    final requestStarted = Completer<void>();
+    final response = Completer<http.Response>();
+    final store = MemoryAuthSessionStore();
+    final api = JiYiApiClient(
+      baseUrl: 'https://auth-v3.test/v1',
+      httpClient: MockClient((request) async {
+        requestStarted.complete();
+        return response.future;
+      }),
+      sessionStore: store,
+    );
+
+    await _pumpAuthPage(
+      tester,
+      api: api,
+      bridge: bridge,
+      capabilities: _capabilities(phone: AuthCapabilityStatus.available),
+    );
+    await tester.tap(find.byKey(const ValueKey('auth-v3-phone-one-tap')));
+    await requestStarted.future;
+    final consent = find.byKey(const ValueKey('auth-v3-privacy-consent'));
+    await tester.ensureVisible(consent);
+    await tester.tap(consent);
+    expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
+    response.complete(
+      http.Response(
+        jsonEncode(_sessionResponse()),
+        200,
+        headers: {'content-type': 'application/json'},
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(api.authenticatedUserId, isNull);
+    expect(api.accessToken, isNull);
+    expect(api.authenticatedSessionId, isNull);
+    expect(store.session, isNull);
+  });
+
+  testWidgets('privacy revoke hides capability before slow native cancel completes',
+      (tester) async {
+    final bridge = _TestPhoneBridge(
+      loginResult: const PhoneOneTapResult.tokenAcquired('opaque-token'),
+    )..pendingLogin = Completer<PhoneOneTapResult>();
+    final cancelDone = Completer<void>();
+    bridge.pendingCancel = cancelDone;
+    final api = _api(handler: (_) async => http.Response('{}', 200));
+
+    await _pumpAuthPage(
+      tester,
+      api: api,
+      bridge: bridge,
+      capabilities: _capabilities(phone: AuthCapabilityStatus.available),
+    );
+    await tester.tap(find.byKey(const ValueKey('auth-v3-phone-one-tap')));
+    await tester.pump();
+    final consent = find.byKey(const ValueKey('auth-v3-privacy-consent'));
+    await tester.ensureVisible(consent);
+    await tester.tap(consent);
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
+    expect(bridge.cancelCalls, 1);
+    expect(bridge.requestCalls, 1);
+
+    cancelDone.complete();
+    bridge.pendingLogin!.complete(
+      const PhoneOneTapResult.tokenAcquired('late-token'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('late-token'), findsNothing);
+  });
+
+  testWidgets('phone-only capability renders without email controls',
+      (tester) async {
+    final bridge = _TestPhoneBridge();
+    final api = _api(handler: (_) async => http.Response('{}', 200));
+    await _pumpAuthPage(
+      tester,
+      api: api,
+      bridge: bridge,
+      capabilities: _capabilities(
+        email: AuthCapabilityStatus.disabled,
+        phone: AuthCapabilityStatus.available,
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsOneWidget);
+    expect(find.byKey(const ValueKey('auth-v3-email-fallback')), findsNothing);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('邮箱登录'), findsNothing);
+  });
+
+  testWidgets('SMS-only capability renders its callback seam', (tester) async {
+    final bridge = _TestPhoneBridge();
+    final api = _api(handler: (_) async => http.Response('{}', 200));
+    var smsAttempts = 0;
+    await _pumpAuthPage(
+      tester,
+      api: api,
+      bridge: bridge,
+      privacyConsentGranted: false,
+      capabilities: _capabilities(
+        email: AuthCapabilityStatus.disabled,
+        sms: AuthCapabilityStatus.available,
+      ),
+      onSmsOtp: () => smsAttempts += 1,
+    );
+
+    expect(find.byKey(const ValueKey('auth-v3-sms-fallback')), findsOneWidget);
+    expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('邮箱登录'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('auth-v3-sms-fallback')));
+    expect(smsAttempts, 1);
+  });
+
+  testWidgets('all unavailable capabilities render the neutral empty state',
+      (tester) async {
+    final api = _api(handler: (_) async => http.Response('{}', 200));
+    await _pumpAuthPage(
+      tester,
+      api: api,
+      bridge: _TestPhoneBridge(),
+      privacyConsentGranted: false,
+      capabilities: _capabilities(email: AuthCapabilityStatus.disabled),
+    );
+
+    expect(find.text('当前暂时没有可用的登录方式'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
+    expect(find.byKey(const ValueKey('auth-v3-sms-fallback')), findsNothing);
   });
 
   testWidgets('provider error exposes consumer-safe fallback only', (tester) async {

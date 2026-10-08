@@ -641,6 +641,7 @@ class _AuthPageState extends State<AuthPage> {
   void dispose() {
     _authSurfaceGeneration += 1;
     if (_phoneOneTapPending) {
+      widget.api.invalidateUnauthenticatedAuthGeneration();
       unawaited(
         widget.phoneOneTapBridge?.cancel().then<void>((_) {}) ??
             Future<void>.value(),
@@ -668,8 +669,13 @@ class _AuthPageState extends State<AuthPage> {
   Future<void> _setPrivacyConsent(bool granted) async {
     if (granted == _privacyConsentGranted) return;
     if (!granted) {
-      await _cancelPhoneOneTap();
+      // The local authority is revoked before any native await. A provider
+      // callback or backend response that arrives during cleanup is stale.
+      _authSurfaceGeneration += 1;
       _capabilityGeneration += 1;
+      final wasPending = _phoneOneTapPending;
+      _phoneOneTapPending = false;
+      widget.api.invalidateUnauthenticatedAuthGeneration();
       if (mounted) {
         setState(() {
           _privacyConsentGranted = false;
@@ -677,6 +683,13 @@ class _AuthPageState extends State<AuthPage> {
             phoneOneTapStatus: AuthCapabilityStatus.unavailable,
           );
         });
+      }
+      if (wasPending) {
+        try {
+          await widget.phoneOneTapBridge?.cancel();
+        } catch (_) {
+          // Privacy revocation remains fail closed even if native cleanup fails.
+        }
       }
       try {
         await widget.phoneOneTapBridge?.revokePrivacy();
@@ -691,10 +704,12 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   Future<void> _cancelPhoneOneTap() async {
-    if (!_phoneOneTapPending) return;
     _authSurfaceGeneration += 1;
+    widget.api.invalidateUnauthenticatedAuthGeneration();
+    final wasPending = _phoneOneTapPending;
     _phoneOneTapPending = false;
     if (mounted) setState(() {});
+    if (!wasPending) return;
     try {
       await widget.phoneOneTapBridge?.cancel();
     } catch (_) {
@@ -971,7 +986,10 @@ class _AuthPageState extends State<AuthPage> {
         _AuthMode.resetPassword => '重置成功会撤销这个账号现有的全部登录会话。',
       };
 
-  bool get _useAuthV3Shell => _capabilities.email;
+  bool get _useAuthV3Shell =>
+      _capabilities.email ||
+      _capabilities.phoneOneTap ||
+      (_capabilities.smsOtp && widget.onSmsOtp != null);
 
   Widget _buildPhoneOneTapEntry() {
     if (!_capabilities.phoneOneTap) return const SizedBox.shrink();
@@ -984,12 +1002,14 @@ class _AuthPageState extends State<AuthPage> {
           icon: Icons.phone_iphone,
           onPressed: _phoneOneTapPending ? null : _startPhoneOneTap,
         ),
-        const SizedBox(height: 8),
-        TextButton(
-          key: const ValueKey('auth-v3-email-fallback'),
-          onPressed: _phoneOneTapPending ? _switchToEmail : null,
-          child: const Text('使用邮箱登录'),
-        ),
+        if (_capabilities.email) ...[
+          const SizedBox(height: 8),
+          TextButton(
+            key: const ValueKey('auth-v3-email-fallback'),
+            onPressed: _phoneOneTapPending ? _switchToEmail : null,
+            child: const Text('使用邮箱登录'),
+          ),
+        ],
       ],
     );
   }
@@ -1003,6 +1023,48 @@ class _AuthPageState extends State<AuthPage> {
       label: '手机号验证码登录',
       icon: Icons.sms_outlined,
       onPressed: _phoneOneTapPending ? null : widget.onSmsOtp,
+    );
+  }
+
+  Widget _buildProviderOnlySurface() {
+    final hasPhone = _capabilities.phoneOneTap;
+    final hasSms = _capabilities.smsOtp && widget.onSmsOtp != null;
+    return Scaffold(
+      backgroundColor: JiYiTodayVisuals.background,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(28, 180, 28, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                '手机号登录',
+                style: TextStyle(
+                  color: JiYiTodayVisuals.navy,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                '请选择当前可用的手机号认证方式。',
+                style: TextStyle(
+                  color: JiYiTodayVisuals.secondaryText,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 28),
+              if (hasPhone) _buildPhoneOneTapEntry(),
+              if (hasPhone && hasSms) const SizedBox(height: 12),
+              if (hasSms) _buildSmsFallbackEntry(),
+              AuthV3Agreement(
+                accepted: _privacyConsentGranted,
+                onChanged: _setPrivacyConsent,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1189,6 +1251,7 @@ class _AuthPageState extends State<AuthPage> {
 
   Widget _buildAuthV3Surface(BuildContext context) {
     if (mode == _AuthMode.login) {
+      if (!_capabilities.email) return _buildProviderOnlySurface();
       return _buildEmailLoginV3Surface(context);
     }
     final theme = Theme.of(context);
