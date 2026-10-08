@@ -214,6 +214,25 @@ jobs:
           test -s /tmp/memory-v3-candidates/memory_v3_answer.png
           test -s /tmp/memory-v3-candidates/memory_v3_shell.png
 
+      - name: Generate PRODUCTION AUTH EMAIL candidate
+        if: always()
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/product-v2-goldens
+          mkdir -p /tmp/product-v2-goldens/candidate
+          flutter test test/visual_golden_test.dart \
+            --plain-name "golden: login" \
+            --update-goldens \
+            --dart-define=UIUX_V3_PRODUCTION_AUTH_CANDIDATE_MODE=true \
+            --reporter expanded
+          cp test/goldens/production_auth_email.png /tmp/product-v2-goldens/candidate/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/product-v2-goldens/candidate/production_auth_email.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -257,8 +276,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/product-v2-goldens
           mkdir -p /tmp/product-v2-goldens/candidate
+
+          cleanup_goldens() {
+            git checkout -- test/goldens
+            git clean -f -- test/goldens
+          }
+          trap cleanup_goldens EXIT
 
           # Generate the complete deterministic visual suite in one Flutter
           # process. This is candidate-only: every PNG is copied to the review
