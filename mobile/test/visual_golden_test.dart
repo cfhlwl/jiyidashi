@@ -33,6 +33,8 @@ const _goldenSize = Size(390, 844);
 const _goldenFontFamily = 'JiYi Golden CJK';
 const _captureDeterministicQueryPreview =
     bool.fromEnvironment('DETERMINISTIC_QUERY_VISUAL_PREVIEW');
+const _captureProductionAuthCandidate =
+    bool.fromEnvironment('UIUX_V3_PRODUCTION_AUTH_CANDIDATE_MODE');
 
 const _goldenCacheVersion =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -389,6 +391,21 @@ Future<void> _loadMaterialIconsFont() async {
   final loader = FontLoader('MaterialIcons')
     ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
   await loader.load();
+}
+
+Future<void> _precacheProductionAuthAssets(WidgetTester tester) async {
+  final context = tester.element(find.byType(MaterialApp));
+  await precacheImage(
+    const AssetImage('assets/brand/today_hero_default.png'),
+    context,
+  );
+  await precacheImage(
+    const AssetImage('assets/brand/jiyi_logo_primary.png'),
+    context,
+  );
+  // precacheImage completes after the codec is ready; this pump lets the image
+  // stream deliver its first frame before the RepaintBoundary is rasterized.
+  await tester.pump();
 }
 
 // Golden 复用生产 Theme；这里只注入仓库固定 CJK 测试字体，禁止再次复制产品色/布局 token。
@@ -1222,12 +1239,23 @@ void main() {
     // [人工注释][CI-005] 登录页使用真实 AuthPage 静态初始态，禁止网络调用和截图后处理。
     final key = await _pumpSurface(
       tester,
-      AuthPage(api: _GoldenApi(), onAuthenticated: () {}),
+      AuthPage(
+        api: _GoldenApi(),
+        capabilities: const AuthCapabilities.emailOnly(),
+        onAuthenticated: () {},
+      ),
     );
+    await _precacheProductionAuthAssets(tester);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/auth_login.png'),
     );
+    if (_captureProductionAuthCandidate) {
+      await expectLater(
+        find.byKey(key),
+        matchesGoldenFile('goldens/production_auth_email.png'),
+      );
+    }
   });
 
   testWidgets('golden: onboarding intro', (tester) async {
