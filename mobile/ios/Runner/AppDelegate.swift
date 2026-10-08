@@ -2283,6 +2283,14 @@ final class PhoneOneTapNativeBridge {
     guard pending == nil else { result(unavailable("REQUEST_IN_PROGRESS").platformMap()); return }
     beginAsync(result: result) { callback in
       self.adapter.requestLoginToken(viewController: viewController) { value in
+        guard let currentController = self.viewControllerProvider() else {
+          _ = callback.complete(self.unavailable("VIEW_CONTROLLER_UNAVAILABLE"))
+          return
+        }
+        guard currentController === viewController else {
+          _ = callback.complete(self.unavailable("VIEW_CONTROLLER_CHANGED"))
+          return
+        }
         _ = callback.complete(value)
       }
     }

@@ -146,7 +146,9 @@ class FailClosedPhoneOneTapProviderAdapter : PhoneOneTapProviderAdapter {
  */
 class PhoneOneTapApplicationLifecycleFence(
     private val onRealBackgrounded: () -> Unit,
-    private val handler: Handler = Handler(Looper.getMainLooper()),
+    private val handler: Handler? = null,
+    private val scheduleBackgroundCheck: ((Long, () -> Unit) -> Unit)? = null,
+    private val isChangingConfigurations: (Activity) -> Boolean = { it.isChangingConfigurations },
 ) : Application.ActivityLifecycleCallbacks {
     private var startedActivityCount = 0
     private var generation = 0L
@@ -167,13 +169,16 @@ class PhoneOneTapApplicationLifecycleFence(
 
     override fun onActivityStopped(activity: Activity) {
         startedActivityCount = (startedActivityCount - 1).coerceAtLeast(0)
-        if (startedActivityCount != 0 || activity.isChangingConfigurations) return
+        if (startedActivityCount != 0 || isChangingConfigurations(activity)) return
         val scheduledGeneration = ++generation
-        handler.postDelayed({
+        val schedule = scheduleBackgroundCheck ?: { delay: Long, task: () -> Unit ->
+            (handler ?: Handler(Looper.getMainLooper())).postDelayed(task, delay)
+        }
+        schedule(300L) {
             if (scheduledGeneration == generation && startedActivityCount == 0) {
                 onRealBackgrounded()
             }
-        }, 300L)
+        }
     }
 
     override fun onActivityCreated(activity: Activity, state: android.os.Bundle?) = Unit

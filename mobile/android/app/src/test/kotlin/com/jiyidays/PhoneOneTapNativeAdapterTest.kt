@@ -166,12 +166,81 @@ class PhoneOneTapNativeAdapterTest {
         assertEquals("PRIVACY_REVOKED", thirdRequest.value["reason"])
         assertEquals("PRIVACY_REVOKED", privacyRevocation.value["reason"])
         assertEquals(1, thirdRequest.callCount)
+
+        setPrivateActivity(plugin, activityB)
+        val reinitializeAfterCancel = RecordingResult()
+        plugin.onMethodCall(
+            MethodCall("initialize", mapOf("privacy_consent_granted" to true)),
+            reinitializeAfterCancel,
+        )
+        adapter.initializeCallback!!.invoke(
+            PhoneOneTapNativeResult(PhoneOneTapNativeState.AVAILABLE),
+        )
+        val cancelRequest = RecordingResult()
+        plugin.onMethodCall(MethodCall("requestLoginToken", null), cancelRequest)
+        val cancelCallback = adapter.requestCallbacks.last()
+        val cancelResult = RecordingResult()
+        val cancelCountBefore = adapter.cancelCount
+        plugin.onMethodCall(MethodCall("cancel", null), cancelResult)
+        cancelCallback(PhoneOneTapNativeResult(
+            PhoneOneTapNativeState.TOKEN_ACQUIRED,
+            loginToken = "late-after-cancel",
+        ))
+        assertEquals("USER_CANCELLED", cancelRequest.value["reason"])
+        assertEquals("CANCELLED", cancelResult.value["state"])
+        assertEquals(cancelCountBefore + 1, adapter.cancelCount)
+        assertEquals(1, cancelRequest.callCount)
+    }
+
+    @Test
+    fun applicationBackgroundFenceCancelsPluginRequestExactlyOnce() {
+        val adapter = DelayedPhoneOneTapAdapter()
+        val plugin = PhoneOneTapPlugin(adapter)
+        val activity = Activity()
+        setPrivateActivity(plugin, activity)
+        val initialize = RecordingResult()
+        plugin.onMethodCall(
+            MethodCall("initialize", mapOf("privacy_consent_granted" to true)),
+            initialize,
+        )
+        adapter.initializeCallback!!.invoke(
+            PhoneOneTapNativeResult(PhoneOneTapNativeState.AVAILABLE),
+        )
+        val request = RecordingResult()
+        plugin.onMethodCall(MethodCall("requestLoginToken", null), request)
+        val providerCallback = adapter.requestCallbacks.single()
+
+        val fence = PhoneOneTapApplicationLifecycleFence(
+            onRealBackgrounded = { invokeLifecycleInvalidation(plugin) },
+            scheduleBackgroundCheck = { _, task -> task() },
+            isChangingConfigurations = { false },
+        )
+        fence.onActivityStarted(activity)
+        fence.onActivityStopped(activity)
+        providerCallback(PhoneOneTapNativeResult(
+            PhoneOneTapNativeState.TOKEN_ACQUIRED,
+            loginToken = "late-background-token",
+        ))
+
+        assertEquals("APP_BACKGROUND", request.value["reason"])
+        assertEquals("CANCELLED", request.value["state"])
+        assertEquals(1, adapter.cancelCount)
+        assertEquals(1, request.callCount)
     }
 
     private fun setPrivateActivity(plugin: PhoneOneTapPlugin, activity: Activity) {
         val field = PhoneOneTapPlugin::class.java.getDeclaredField("activity")
         field.isAccessible = true
         field.set(plugin, activity)
+    }
+
+    private fun invokeLifecycleInvalidation(plugin: PhoneOneTapPlugin) {
+        val method = PhoneOneTapPlugin::class.java.getDeclaredMethod(
+            "invalidateForLifecycle",
+            String::class.java,
+        )
+        method.isAccessible = true
+        method.invoke(plugin, "APP_BACKGROUND")
     }
 
     private class RecordingResult : MethodChannel.Result {
@@ -194,6 +263,7 @@ class PhoneOneTapNativeAdapterTest {
         var initializeCallback: PhoneOneTapCompletion? = null
         val requestedActivities = mutableListOf<Activity>()
         val requestCallbacks = mutableListOf<PhoneOneTapCompletion>()
+        var cancelCount = 0
 
         override fun initialize(privacyConsentGranted: Boolean, completion: PhoneOneTapCompletion) {
             initializeCallback = completion
@@ -208,6 +278,7 @@ class PhoneOneTapNativeAdapterTest {
         }
 
         override fun cancel(completion: PhoneOneTapCompletion) {
+            cancelCount += 1
             completion(PhoneOneTapNativeResult(PhoneOneTapNativeState.CANCELLED))
         }
 
