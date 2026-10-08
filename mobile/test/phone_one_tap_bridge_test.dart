@@ -59,6 +59,7 @@ class _DelayedAuthSessionStore implements AuthSessionStore {
   final writeStarted = Completer<void>();
   final allowWrite = Completer<void>();
   PersistedAuthSession? session;
+  int clearCalls = 0;
 
   @override
   Future<PersistedAuthSession?> readSession() async => session;
@@ -72,6 +73,7 @@ class _DelayedAuthSessionStore implements AuthSessionStore {
 
   @override
   Future<void> clearSession() async {
+    clearCalls += 1;
     session = null;
   }
 
@@ -313,6 +315,7 @@ void main() {
     expect(api.authenticatedUserId, isNull);
     expect(api.accessToken, isNull);
     expect(api.authenticatedSessionId, isNull);
+    expect(store.clearCalls, 1);
     expect(await store.readSession(), isNull);
   });
 
