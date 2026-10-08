@@ -223,7 +223,7 @@ jobs:
           rm -rf /tmp/product-v2-goldens
           mkdir -p /tmp/product-v2-goldens/candidate
           flutter test test/visual_golden_test.dart \
-            --plain-name "golden: login" \
+            --plain-name "candidate: production auth email" \
             --update-goldens \
             --dart-define=UIUX_V3_PRODUCTION_AUTH_CANDIDATE_MODE=true \
             --reporter expanded

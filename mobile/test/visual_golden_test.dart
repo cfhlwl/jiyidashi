@@ -1252,12 +1252,23 @@ void main() {
       find.byKey(key),
       matchesGoldenFile('goldens/auth_login.png'),
     );
-    if (_captureProductionAuthCandidate) {
-      await expectLater(
-        find.byKey(key),
-        matchesGoldenFile('goldens/production_auth_email.png'),
-      );
-    }
+  });
+
+  testWidgets('candidate: production auth email', (tester) async {
+    if (!_captureProductionAuthCandidate) return;
+    final key = await _pumpSurface(
+      tester,
+      AuthPage(
+        api: _GoldenApi(),
+        capabilities: const AuthCapabilities.emailOnly(),
+        onAuthenticated: () {},
+      ),
+    );
+    await _precacheProductionAuthAssets(tester);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/production_auth_email.png'),
+    );
   });
 
   testWidgets('golden: onboarding intro', (tester) async {
