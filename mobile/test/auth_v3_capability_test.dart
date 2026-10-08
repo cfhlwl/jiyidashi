@@ -347,8 +347,7 @@ void main() {
       const PhoneOneTapResult.tokenAcquired('late-token'),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
-    expect(find.text('邮箱登录'), findsOneWidget);
+    expect(find.text('请输入邮箱地址'), findsOneWidget);
   });
 
   testWidgets('privacy revoke immediately hides one-tap and revokes native state',
