@@ -903,6 +903,26 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
           sessionId: sessionId,
         ),
       );
+      try {
+        _assertSessionGeneration(
+          expectedSessionVersion,
+          expectedLocalSessionId: expectedLocalSessionId,
+          expectedLocalRefreshToken: expectedLocalRefreshToken,
+        );
+        _assertUnauthenticatedAuthGeneration(
+          expectedUnauthenticatedAuthGeneration,
+        );
+      } catch (_) {
+        // This runs inside the serialized mutation. No later legitimate
+        // session write can race the cleanup of this stale candidate.
+        try {
+          await _sessionStore.clearSession();
+        } catch (_) {
+          // Preserve the authority failure; a stale session never becomes
+          // in-memory authority even if secure-storage cleanup fails.
+        }
+        rethrow;
+      }
     });
     _assertSessionGeneration(
       expectedSessionVersion,

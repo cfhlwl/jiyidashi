@@ -311,6 +311,46 @@ void main() {
     expect(find.text('late-token'), findsNothing);
   });
 
+  testWidgets('email fallback keeps one-tap disabled during slow native cancel',
+      (tester) async {
+    final bridge = _TestPhoneBridge(
+      loginResult: const PhoneOneTapResult.tokenAcquired('late-token'),
+    )
+      ..pendingLogin = Completer<PhoneOneTapResult>()
+      ..pendingCancel = Completer<void>();
+    final api = _api(handler: (_) async => http.Response('{}', 200));
+
+    await _pumpAuthPage(
+      tester,
+      api: api,
+      bridge: bridge,
+      capabilities: _capabilities(phone: AuthCapabilityStatus.available),
+    );
+    final phone = find.byKey(const ValueKey('auth-v3-phone-one-tap'));
+    await tester.tap(phone);
+    await tester.pump();
+    expect(bridge.requestCalls, 1);
+
+    await tester.tap(find.byKey(const ValueKey('auth-v3-email-fallback')));
+    await tester.pump();
+    expect(bridge.cancelCalls, 1);
+    expect(
+      tester.widget<AuthV3PrimaryAction>(phone).onPressed,
+      isNull,
+    );
+    await tester.tap(phone, warnIfMissed: false);
+    await tester.pump();
+    expect(bridge.requestCalls, 1);
+
+    bridge.pendingCancel!.complete();
+    bridge.pendingLogin!.complete(
+      const PhoneOneTapResult.tokenAcquired('late-token'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
+    expect(find.text('邮箱登录'), findsOneWidget);
+  });
+
   testWidgets('privacy revoke immediately hides one-tap and revokes native state',
       (tester) async {
     final bridge = _TestPhoneBridge();

@@ -615,6 +615,7 @@ class _AuthPageState extends State<AuthPage> {
   bool obscurePassword = true;
   String? error;
   String? message;
+  bool _phoneOneTapCancelling = false;
 
   @override
   void initState() {
@@ -675,6 +676,7 @@ class _AuthPageState extends State<AuthPage> {
       _capabilityGeneration += 1;
       final wasPending = _phoneOneTapPending;
       _phoneOneTapPending = false;
+      _phoneOneTapCancelling = wasPending;
       widget.api.invalidateUnauthenticatedAuthGeneration();
       if (mounted) {
         setState(() {
@@ -696,6 +698,7 @@ class _AuthPageState extends State<AuthPage> {
       } catch (_) {
         // Privacy revocation remains fail closed even if native cleanup fails.
       }
+      if (mounted) setState(() => _phoneOneTapCancelling = false);
       return;
     }
 
@@ -708,12 +711,15 @@ class _AuthPageState extends State<AuthPage> {
     widget.api.invalidateUnauthenticatedAuthGeneration();
     final wasPending = _phoneOneTapPending;
     _phoneOneTapPending = false;
+    _phoneOneTapCancelling = wasPending;
     if (mounted) setState(() {});
     if (!wasPending) return;
     try {
       await widget.phoneOneTapBridge?.cancel();
     } catch (_) {
       // Cancellation is best effort; the generation fence still rejects late results.
+    } finally {
+      if (mounted) setState(() => _phoneOneTapCancelling = false);
     }
   }
 
@@ -731,7 +737,11 @@ class _AuthPageState extends State<AuthPage> {
   };
 
   Future<void> _startPhoneOneTap() async {
-    if (_phoneOneTapPending || !_capabilities.phoneOneTap) return;
+    if (_phoneOneTapPending ||
+        _phoneOneTapCancelling ||
+        !_capabilities.phoneOneTap) {
+      return;
+    }
     final bridge = widget.phoneOneTapBridge;
     if (bridge == null || !_privacyConsentGranted) {
       setState(() => error = '请先同意隐私政策后使用本机号码登录。');
@@ -1000,7 +1010,9 @@ class _AuthPageState extends State<AuthPage> {
           key: const ValueKey('auth-v3-phone-one-tap'),
           label: _phoneOneTapPending ? '正在验证本机号码…' : '本机号码一键登录',
           icon: Icons.phone_iphone,
-          onPressed: _phoneOneTapPending ? null : _startPhoneOneTap,
+          onPressed: _phoneOneTapPending || _phoneOneTapCancelling
+              ? null
+              : _startPhoneOneTap,
         ),
         if (_capabilities.email) ...[
           const SizedBox(height: 8),
