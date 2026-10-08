@@ -364,6 +364,7 @@ void main() {
     final fallback = find.byKey(const ValueKey('auth-v3-email-fallback'));
     await tester.ensureVisible(fallback);
     await tester.tap(fallback);
+    await tester.pump();
     response.complete(
       http.Response(
         jsonEncode(_sessionResponse()),
@@ -408,6 +409,7 @@ void main() {
     final consent = find.byKey(const ValueKey('auth-v3-privacy-consent'));
     await tester.ensureVisible(consent);
     await tester.tap(consent);
+    await tester.pump();
     expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
     response.complete(
       http.Response(
