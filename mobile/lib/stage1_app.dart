@@ -1162,6 +1162,10 @@ class _AuthPageState extends State<AuthPage> {
                       child: const Text('没有账号？ 去注册'),
                     ),
                   ),
+                  AuthV3Agreement(
+                    accepted: _privacyConsentGranted,
+                    onChanged: _setPrivacyConsent,
+                  ),
                 ],
               ),
             ),
