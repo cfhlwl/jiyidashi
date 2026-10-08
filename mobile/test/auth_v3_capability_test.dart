@@ -142,7 +142,7 @@ void main() {
   });
 
   test('capability statuses keep planned and disabled providers hidden', () {
-    final capabilities = AuthCapabilities.statuses(
+    const capabilities = AuthCapabilities.statuses(
       emailStatus: AuthCapabilityStatus.available,
       phoneOneTapStatus: AuthCapabilityStatus.planned,
       smsOtpStatus: AuthCapabilityStatus.disabled,
