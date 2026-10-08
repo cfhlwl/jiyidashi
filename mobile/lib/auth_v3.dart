@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'phone_one_tap_bridge.dart';
 import 'ui/jiyi_tokens.dart';
 
 /// Provider capabilities are the single visibility authority for Auth V3.
@@ -15,31 +16,63 @@ enum AuthV3Screen {
   oneTapUnavailable,
 }
 
+enum AuthCapabilityStatus { available, planned, disabled, unavailable, unsupported }
+
 @immutable
 class AuthCapabilities {
   const AuthCapabilities({
-    required this.email,
-    required this.phoneOneTap,
-    required this.smsOtp,
-    required this.wechat,
+    required bool email,
+    required bool phoneOneTap,
+    required bool smsOtp,
+    required bool wechat,
+  }) : emailStatus = email
+           ? AuthCapabilityStatus.available
+           : AuthCapabilityStatus.disabled,
+       phoneOneTapStatus = phoneOneTap
+           ? AuthCapabilityStatus.available
+           : AuthCapabilityStatus.disabled,
+       smsOtpStatus = smsOtp
+           ? AuthCapabilityStatus.available
+           : AuthCapabilityStatus.disabled,
+       wechatStatus = wechat
+           ? AuthCapabilityStatus.available
+           : AuthCapabilityStatus.disabled;
+
+  const AuthCapabilities.statuses({
+    this.emailStatus = AuthCapabilityStatus.disabled,
+    this.phoneOneTapStatus = AuthCapabilityStatus.disabled,
+    this.smsOtpStatus = AuthCapabilityStatus.disabled,
+    this.wechatStatus = AuthCapabilityStatus.disabled,
   });
 
   const AuthCapabilities.emailOnly()
-    : email = true,
-      phoneOneTap = false,
-      smsOtp = false,
-      wechat = false;
+    : this.statuses(emailStatus: AuthCapabilityStatus.available);
 
   const AuthCapabilities.allEnabled()
-    : email = true,
-      phoneOneTap = true,
-      smsOtp = true,
-      wechat = true;
+    : this.statuses(
+        emailStatus: AuthCapabilityStatus.available,
+        phoneOneTapStatus: AuthCapabilityStatus.available,
+        smsOtpStatus: AuthCapabilityStatus.available,
+        wechatStatus: AuthCapabilityStatus.available,
+      );
 
-  final bool email;
-  final bool phoneOneTap;
-  final bool smsOtp;
-  final bool wechat;
+  final AuthCapabilityStatus emailStatus;
+  final AuthCapabilityStatus phoneOneTapStatus;
+  final AuthCapabilityStatus smsOtpStatus;
+  final AuthCapabilityStatus wechatStatus;
+
+  bool get email => emailStatus == AuthCapabilityStatus.available;
+  bool get phoneOneTap =>
+      phoneOneTapStatus == AuthCapabilityStatus.available;
+  bool get smsOtp => smsOtpStatus == AuthCapabilityStatus.available;
+  bool get wechat => wechatStatus == AuthCapabilityStatus.available;
+
+  AuthCapabilityStatus status(AuthV3Provider provider) => switch (provider) {
+    AuthV3Provider.email => emailStatus,
+    AuthV3Provider.phoneOneTap => phoneOneTapStatus,
+    AuthV3Provider.smsOtp => smsOtpStatus,
+    AuthV3Provider.wechat => wechatStatus,
+  };
 
   bool supports(AuthV3Provider provider) => switch (provider) {
     AuthV3Provider.email => email,
@@ -47,6 +80,59 @@ class AuthCapabilities {
     AuthV3Provider.smsOtp => smsOtp,
     AuthV3Provider.wechat => wechat,
   };
+
+  AuthCapabilities copyWith({
+    AuthCapabilityStatus? emailStatus,
+    AuthCapabilityStatus? phoneOneTapStatus,
+    AuthCapabilityStatus? smsOtpStatus,
+    AuthCapabilityStatus? wechatStatus,
+  }) => AuthCapabilities.statuses(
+    emailStatus: emailStatus ?? this.emailStatus,
+    phoneOneTapStatus: phoneOneTapStatus ?? this.phoneOneTapStatus,
+    smsOtpStatus: smsOtpStatus ?? this.smsOtpStatus,
+    wechatStatus: wechatStatus ?? this.wechatStatus,
+  );
+}
+
+/// The only Auth V3 provider capability authority. It performs no pre-login
+/// work when privacy has not been explicitly accepted.
+class AuthCapabilityAuthority {
+  const AuthCapabilityAuthority({required this.phoneOneTapBridge});
+
+  final PhoneOneTapBridge phoneOneTapBridge;
+
+  Future<AuthCapabilities> probe({
+    required bool privacyConsentGranted,
+    AuthCapabilities baseline = const AuthCapabilities.emailOnly(),
+  }) async {
+    if (!privacyConsentGranted) {
+      return baseline.copyWith(
+        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+      );
+    }
+
+    try {
+      var result = await phoneOneTapBridge.initialize(
+        privacyConsentGranted: true,
+      );
+      if (result.isAvailable) {
+        result = await phoneOneTapBridge.checkAvailability();
+      }
+      final phoneStatus = switch (result.state) {
+        PhoneOneTapState.available => AuthCapabilityStatus.available,
+        PhoneOneTapState.providerError => AuthCapabilityStatus.unavailable,
+        PhoneOneTapState.cancelled ||
+        PhoneOneTapState.timeout ||
+        PhoneOneTapState.unavailable ||
+        PhoneOneTapState.tokenAcquired => AuthCapabilityStatus.unavailable,
+      };
+      return baseline.copyWith(phoneOneTapStatus: phoneStatus);
+    } catch (_) {
+      return baseline.copyWith(
+        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+      );
+    }
+  }
 }
 
 enum AuthSessionVisualState { unknown, refreshing, valid, signedOut }
@@ -332,7 +418,14 @@ class AuthV3MethodDivider extends StatelessWidget {
 }
 
 class AuthV3Agreement extends StatelessWidget {
-  const AuthV3Agreement({super.key});
+  const AuthV3Agreement({
+    super.key,
+    this.accepted = false,
+    this.onChanged,
+  });
+
+  final bool accepted;
+  final ValueChanged<bool>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -345,20 +438,32 @@ class AuthV3Agreement extends StatelessWidget {
       fontWeight: FontWeight.w400,
     );
     final linkStyle = base.copyWith(color: link, fontWeight: FontWeight.w600);
+    final consent = GestureDetector(
+      key: const ValueKey('auth-v3-privacy-consent'),
+      onTap: onChanged == null ? null : () => onChanged!(!accepted),
+      child: Container(
+        width: 17,
+        height: 17,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: accepted ? link : null,
+          border: Border.all(
+            color: accepted ? link : muted,
+            width: 1.3,
+          ),
+        ),
+        child: accepted
+            ? const Icon(Icons.check, size: 12, color: Colors.white)
+            : null,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 17,
-            height: 17,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: muted, width: 1.3),
-            ),
-          ),
+          consent,
           const SizedBox(width: 7),
           Flexible(
             child: Text.rich(

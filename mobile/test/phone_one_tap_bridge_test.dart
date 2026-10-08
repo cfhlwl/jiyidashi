@@ -55,6 +55,32 @@ class _FakeExchangeClient implements PhoneOneTapExchangeClient {
   }
 }
 
+class _DelayedAuthSessionStore implements AuthSessionStore {
+  final writeStarted = Completer<void>();
+  final allowWrite = Completer<void>();
+  PersistedAuthSession? session;
+  int clearCalls = 0;
+
+  @override
+  Future<PersistedAuthSession?> readSession() async => session;
+
+  @override
+  Future<void> writeSession(PersistedAuthSession value) async {
+    if (!writeStarted.isCompleted) writeStarted.complete();
+    await allowWrite.future;
+    session = value;
+  }
+
+  @override
+  Future<void> clearSession() async {
+    clearCalls += 1;
+    session = null;
+  }
+
+  @override
+  Future<String> readOrCreateInstallationId() async => 'delayed-installation';
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -259,6 +285,38 @@ void main() {
     expect(requestBodies, hasLength(2));
     expect(requestBodies[0], requestBodies[1]);
     expect(api.sessionVersion, before + 1);
+  });
+
+  test('stale one-tap generation cleans a session written before invalidation',
+      () async {
+    final store = _DelayedAuthSessionStore();
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      sessionStore: store,
+      httpClient: MockClient((_) async {
+        return http.Response(
+          jsonEncode(_sessionPayload()),
+          200,
+          headers: _jsonHeaders,
+        );
+      }),
+    );
+
+    final exchange = api.exchangePhoneOneTap(
+      loginToken: 'opaque-provider-token',
+      requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      deviceId: 'delayed-installation',
+    );
+    await store.writeStarted.future;
+    api.invalidateUnauthenticatedAuthGeneration();
+    store.allowWrite.complete();
+
+    await expectLater(exchange, throwsA(isA<ProtocolException>()));
+    expect(api.authenticatedUserId, isNull);
+    expect(api.accessToken, isNull);
+    expect(api.authenticatedSessionId, isNull);
+    expect(store.clearCalls, 1);
+    expect(await store.readSession(), isNull);
   });
 
   test('backend exchange persists only the existing JiYi session shape', () async {
