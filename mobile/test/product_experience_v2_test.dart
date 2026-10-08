@@ -181,10 +181,13 @@ void main() {
     for (final section in [
       '今日足迹',
       '今日记忆',
-      '快速记录',
+      '记一下',
       '家庭共享',
     ]) {
       expect(today, contains(section));
+    }
+    for (final action in ['说一段', '写下来', '拍张照']) {
+      expect(today, contains(action));
     }
     expect(today, contains('getTimelineEvents('));
     expect(today, contains('进入家庭后，只读取家人明确授权给你的内容。'));
