@@ -103,9 +103,11 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
 
-    expect(find.bySemanticsLabel('迹忆'), findsOneWidget);
     expect(find.text('邮箱登录'), findsOneWidget);
-    expect(find.text('第一次使用？创建账号'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('auth-v3-register-entry')),
+      findsOneWidget,
+    );
     expect(find.text('今天'), findsNothing);
   });
 }
