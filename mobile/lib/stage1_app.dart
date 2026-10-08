@@ -21,6 +21,7 @@ import 'notification_client.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
 import 'passive_memory_delivery.dart';
+import 'phone_one_tap_bridge.dart';
 import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
@@ -49,6 +50,7 @@ class JiYiApp extends StatefulWidget {
     this.locationBridge,
     this.motionSamplingBridge,
     this.notificationClient,
+    this.phoneOneTapBridge,
   });
 
   final JiYiApiClient? api;
@@ -57,6 +59,7 @@ class JiYiApp extends StatefulWidget {
   final NativeLocationBridge? locationBridge;
   final NativeMotionSamplingBridge? motionSamplingBridge;
   final NotificationClientService? notificationClient;
+  final PhoneOneTapBridge? phoneOneTapBridge;
 
   @override
   State<JiYiApp> createState() => _JiYiAppState();
@@ -87,6 +90,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       );
   late final NotificationClientService notificationClient =
       widget.notificationClient ?? NotificationClientService(api: api);
+  late final PhoneOneTapBridge phoneOneTapBridge =
+      widget.phoneOneTapBridge ?? MethodChannelPhoneOneTapBridge();
 
   bool authenticated = false;
   AuthSessionVisualState _sessionState = AuthSessionVisualState.unknown;
@@ -516,6 +521,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         AuthSessionVisualState.signedOut => AuthPage(
                   api: api,
                   capabilities: const AuthCapabilities.emailOnly(),
+                  phoneOneTapBridge: phoneOneTapBridge,
                   initialMessage: restoreMessage,
                   onRegistrationCompleted: () {
                     if (mounted) {
@@ -554,6 +560,8 @@ class AuthPage extends StatefulWidget {
     required this.api,
     required this.onAuthenticated,
     this.capabilities = const AuthCapabilities.emailOnly(),
+    this.phoneOneTapBridge,
+    this.privacyConsentGranted = false,
     this.initialMessage,
     this.onRegistrationCompleted,
     this.onAccountDeletionRecovery,
@@ -562,6 +570,8 @@ class AuthPage extends StatefulWidget {
   final JiYiApiClient api;
   final VoidCallback onAuthenticated;
   final AuthCapabilities capabilities;
+  final PhoneOneTapBridge? phoneOneTapBridge;
+  final bool privacyConsentGranted;
   final String? initialMessage;
   final VoidCallback? onRegistrationCompleted;
   final VoidCallback? onAccountDeletionRecovery;
@@ -592,8 +602,14 @@ class _AuthPageState extends State<AuthPage> {
   final passwordController = TextEditingController();
   final nicknameController = TextEditingController();
   final tokenController = TextEditingController();
+  late AuthCapabilities _capabilities;
+  late bool _privacyConsentGranted;
+  AuthCapabilityAuthority? _capabilityAuthority;
+  int _capabilityGeneration = 0;
+  int _authSurfaceGeneration = 0;
   _AuthMode mode = _AuthMode.login;
   bool loading = false;
+  bool _phoneOneTapPending = false;
   bool obscurePassword = true;
   String? error;
   String? message;
@@ -601,11 +617,33 @@ class _AuthPageState extends State<AuthPage> {
   @override
   void initState() {
     super.initState();
+    _capabilities = widget.capabilities.copyWith(
+      phoneOneTapStatus: widget.phoneOneTapBridge == null
+          ? AuthCapabilityStatus.unavailable
+          : widget.privacyConsentGranted
+          ? widget.capabilities.phoneOneTapStatus
+          : AuthCapabilityStatus.unavailable,
+    );
+    _privacyConsentGranted = widget.privacyConsentGranted;
+    final phoneBridge = widget.phoneOneTapBridge;
+    if (phoneBridge != null) {
+      _capabilityAuthority = AuthCapabilityAuthority(
+        phoneOneTapBridge: phoneBridge,
+      );
+      if (_privacyConsentGranted) unawaited(_probeCapabilities());
+    }
     message = widget.initialMessage;
   }
 
   @override
   void dispose() {
+    _authSurfaceGeneration += 1;
+    if (_phoneOneTapPending) {
+      unawaited(
+        widget.phoneOneTapBridge?.cancel().then<void>((_) {}) ??
+            Future<void>.value(),
+      );
+    }
     emailController.dispose();
     passwordController.dispose();
     nicknameController.dispose();
@@ -613,7 +651,130 @@ class _AuthPageState extends State<AuthPage> {
     super.dispose();
   }
 
+  Future<void> _probeCapabilities() async {
+    final authority = _capabilityAuthority;
+    if (authority == null || !_privacyConsentGranted) return;
+    final generation = ++_capabilityGeneration;
+    final capabilities = await authority.probe(
+      privacyConsentGranted: _privacyConsentGranted,
+    );
+    if (!mounted || generation != _capabilityGeneration) return;
+    setState(() => _capabilities = capabilities);
+  }
+
+  Future<void> _setPrivacyConsent(bool granted) async {
+    if (granted == _privacyConsentGranted) return;
+    if (!granted) {
+      await _cancelPhoneOneTap();
+      _capabilityGeneration += 1;
+      if (mounted) {
+        setState(() {
+          _privacyConsentGranted = false;
+          _capabilities = _capabilities.copyWith(
+            phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+          );
+        });
+      }
+      try {
+        await widget.phoneOneTapBridge?.revokePrivacy();
+      } catch (_) {
+        // Privacy revocation remains fail closed even if native cleanup fails.
+      }
+      return;
+    }
+
+    setState(() => _privacyConsentGranted = true);
+    await _probeCapabilities();
+  }
+
+  Future<void> _cancelPhoneOneTap() async {
+    if (!_phoneOneTapPending) return;
+    _authSurfaceGeneration += 1;
+    _phoneOneTapPending = false;
+    if (mounted) setState(() {});
+    try {
+      await widget.phoneOneTapBridge?.cancel();
+    } catch (_) {
+      // Cancellation is best effort; the generation fence still rejects late results.
+    }
+  }
+
+  bool _isCurrentAuthOperation(int generation) {
+    return mounted && generation == _authSurfaceGeneration;
+  }
+
+  String _phoneOneTapError(PhoneOneTapState state) => switch (state) {
+    PhoneOneTapState.cancelled => '',
+    PhoneOneTapState.timeout => '本机号码登录响应超时，请使用邮箱登录。',
+    PhoneOneTapState.unavailable => '当前暂时无法使用本机号码，请使用邮箱登录。',
+    PhoneOneTapState.providerError => '本机号码登录暂时不可用，请使用邮箱登录。',
+    PhoneOneTapState.available || PhoneOneTapState.tokenAcquired =>
+      '暂时无法完成本机号码登录，请使用邮箱登录。',
+  };
+
+  Future<void> _startPhoneOneTap() async {
+    if (_phoneOneTapPending || !_capabilities.phoneOneTap) return;
+    final bridge = widget.phoneOneTapBridge;
+    if (bridge == null || !_privacyConsentGranted) {
+      setState(() => error = '请先同意隐私政策后使用本机号码登录。');
+      return;
+    }
+    final generation = ++_authSurfaceGeneration;
+    setState(() {
+      _phoneOneTapPending = true;
+      error = null;
+      message = null;
+    });
+    final coordinator = PhoneOneTapLoginCoordinator(
+      bridge: bridge,
+      exchangeClient: widget.api,
+      clientPlatform: 'flutter',
+    );
+    try {
+      final attempt = await coordinator.requestAttempt();
+      if (!_isCurrentAuthOperation(generation)) return;
+      await coordinator.exchange(attempt);
+      if (!_isCurrentAuthOperation(generation)) return;
+      widget.onAuthenticated();
+    } on PhoneOneTapNativeException catch (exception) {
+      if (!_isCurrentAuthOperation(generation)) return;
+      final productError = _phoneOneTapError(exception.result.state);
+      if (productError.isNotEmpty) setState(() => error = productError);
+    } on ApiException catch (exception) {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => error = _authProductMessage(exception.message));
+      }
+    } on TransportException {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => error = '暂时无法连接服务器，请使用邮箱登录或稍后重试。');
+      }
+    } on ProtocolException {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => error = '认证服务暂时不可用，请使用邮箱登录。');
+      }
+    } catch (_) {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => error = '暂时无法完成本机号码登录，请使用邮箱登录。');
+      }
+    } finally {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => _phoneOneTapPending = false);
+      }
+    }
+  }
+
+  Future<void> _switchToEmail() async {
+    await _cancelPhoneOneTap();
+    if (!mounted) return;
+    setState(() {
+      mode = _AuthMode.login;
+      error = null;
+      message = null;
+    });
+  }
+
   Future<void> _submitCredentials() async {
+    if (_phoneOneTapPending) await _cancelPhoneOneTap();
     if (emailController.text.trim().isEmpty || passwordController.text.isEmpty) {
       setState(() => error = '请输入邮箱和密码');
       return;
@@ -807,7 +968,7 @@ class _AuthPageState extends State<AuthPage> {
         _AuthMode.resetPassword => '重置成功会撤销这个账号现有的全部登录会话。',
       };
 
-  bool get _useAuthV3Shell => widget.capabilities.email;
+  bool get _useAuthV3Shell => _capabilities.email;
 
   Widget _buildEmailLoginV3Surface(BuildContext context) {
     final compactViewport = MediaQuery.sizeOf(context).height < 700;
@@ -993,7 +1154,7 @@ class _AuthPageState extends State<AuthPage> {
     final showPassword = mode == _AuthMode.login ||
         mode == _AuthMode.register ||
         mode == _AuthMode.resetPassword;
-    if (!widget.capabilities.email) {
+    if (!_capabilities.email) {
       return const Scaffold(
         backgroundColor: JiYiTodayVisuals.background,
         body: SafeArea(
@@ -1196,7 +1357,31 @@ class _AuthPageState extends State<AuthPage> {
                         ],
                       ),
                     ),
-                    const AuthV3Agreement(),
+                    if (_capabilities.phoneOneTap) ...[
+                      AuthV3PrimaryAction(
+                        key: const ValueKey('auth-v3-phone-one-tap'),
+                        label: _phoneOneTapPending
+                            ? '正在验证本机号码…'
+                            : '本机号码一键登录',
+                        icon: Icons.phone_iphone,
+                        onPressed: _phoneOneTapPending
+                            ? null
+                            : _startPhoneOneTap,
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        key: const ValueKey('auth-v3-email-fallback'),
+                        onPressed: _phoneOneTapPending
+                            ? _switchToEmail
+                            : null,
+                        child: const Text('使用邮箱登录'),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    AuthV3Agreement(
+                      accepted: _privacyConsentGranted,
+                      onChanged: _setPrivacyConsent,
+                    ),
                     if (widget.api.showDevelopmentEndpoint)
                       Text(
                         '当前开发环境服务地址：${widget.api.baseUrl}',
@@ -1218,7 +1403,7 @@ class _AuthPageState extends State<AuthPage> {
   @override
   Widget build(BuildContext context) {
     if (_useAuthV3Shell) return _buildAuthV3Surface(context);
-    if (!widget.capabilities.email) {
+    if (!_capabilities.email) {
       return const Scaffold(
         backgroundColor: JiYiTodayVisuals.background,
         body: SafeArea(
