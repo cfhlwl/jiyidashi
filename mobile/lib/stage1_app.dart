@@ -8,6 +8,7 @@ import 'account_delete_section.dart';
 import 'amap_footprint_map.dart';
 import 'amap_privacy_consent.dart';
 import 'api_client.dart';
+import 'auth_v3.dart';
 import 'footprint_models.dart';
 import 'location_sampling_coordinator.dart';
 import 'media_presentation_cache.dart';
@@ -88,7 +89,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       widget.notificationClient ?? NotificationClientService(api: api);
 
   bool authenticated = false;
-  bool restoringSession = true;
+  AuthSessionVisualState _sessionState = AuthSessionVisualState.unknown;
   bool startOnboardingAfterAuth = false;
   bool resumeAccountDeletionAfterAuth = false;
   bool elderModeEnabled = false;
@@ -96,6 +97,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   bool _themeModeChangedLocally = false;
   String? restoreMessage;
   Timer? _authorityRefreshTimer;
+  Timer? _sessionRetryTimer;
+  bool _coldRecoveryRetryUsed = false;
   StreamSubscription<void>? _passiveRecoveryRequests;
   final Completer<void> _initialRestoreFinished = Completer<void>();
 
@@ -190,12 +193,15 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   }
 
   Future<void> _restoreServerSession() async {
+    if (mounted) {
+      setState(() => _sessionState = AuthSessionVisualState.refreshing);
+    }
     if (!await _awaitPassiveRecoveryIdle()) {
       if (!mounted) return;
       setState(() {
         authenticated = false;
-        restoringSession = false;
-        restoreMessage = '后台恢复尚未安全结束，请稍后重新打开应用。';
+        _sessionState = AuthSessionVisualState.unknown;
+        restoreMessage = null;
       });
       return;
     }
@@ -207,16 +213,16 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         authenticated = false;
-        restoringSession = false;
-        restoreMessage = '暂时无法读取安全登录状态，请稍后重新打开应用。';
+        _sessionState = AuthSessionVisualState.unknown;
+        restoreMessage = null;
       });
       return;
     } catch (_) {
       if (!mounted) return;
       setState(() {
         authenticated = false;
-        restoringSession = false;
-        restoreMessage = '暂时无法恢复登录状态，请稍后重试。';
+        _sessionState = AuthSessionVisualState.unknown;
+        restoreMessage = null;
       });
       return;
     }
@@ -227,7 +233,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         if (!mounted) return;
         setState(() {
           authenticated = true;
-          restoringSession = false;
+          _sessionState = AuthSessionVisualState.valid;
           restoreMessage = null;
           elderModeEnabled = profile['elder_mode_enabled'] == true;
         });
@@ -239,7 +245,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
             exc.message == 'ACCOUNT_DELETION_IN_PROGRESS') {
           setState(() {
             authenticated = true;
-            restoringSession = false;
+            _sessionState = AuthSessionVisualState.valid;
             startOnboardingAfterAuth = false;
             resumeAccountDeletionAfterAuth = true;
             elderModeEnabled = false;
@@ -257,7 +263,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           if (!mounted) return;
           setState(() {
             authenticated = false;
-            restoringSession = false;
+            _sessionState = AuthSessionVisualState.signedOut;
             restoreMessage = '之前的登录状态已经失效，请重新登录。';
           });
           return;
@@ -269,11 +275,19 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
 
     setState(() {
       authenticated = false;
-      restoringSession = false;
-      restoreMessage = result == AuthRestoreStatus.serverUnavailable
-          ? '暂时无法向服务器确认登录状态，请联网后重新尝试。'
-          : null;
+      _sessionState = result == AuthRestoreStatus.serverUnavailable
+          ? AuthSessionVisualState.unknown
+          : AuthSessionVisualState.signedOut;
+      restoreMessage = null;
     });
+    if (result == AuthRestoreStatus.serverUnavailable &&
+        !_coldRecoveryRetryUsed) {
+      _coldRecoveryRetryUsed = true;
+      _sessionRetryTimer = Timer(const Duration(seconds: 3), () {
+        _sessionRetryTimer = null;
+        unawaited(_restoreServerSession());
+      });
+    }
   }
 
   Future<void> _handleNativePassiveRecoveryRequest() async {
@@ -301,7 +315,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             authenticated = true;
-            restoringSession = false;
+            _sessionState = AuthSessionVisualState.valid;
             startOnboardingAfterAuth = false;
             resumeAccountDeletionAfterAuth = true;
             elderModeEnabled = false;
@@ -317,7 +331,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             authenticated = true;
-            restoringSession = false;
+            _sessionState = AuthSessionVisualState.valid;
             resumeAccountDeletionAfterAuth = false;
             restoreMessage = null;
           });
@@ -358,6 +372,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
         if (!mounted) return;
         setState(() {
           authenticated = false;
+          _sessionState = AuthSessionVisualState.signedOut;
           startOnboardingAfterAuth = false;
           resumeAccountDeletionAfterAuth = false;
           elderModeEnabled = false;
@@ -427,6 +442,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           authenticated = false;
+          _sessionState = AuthSessionVisualState.signedOut;
           startOnboardingAfterAuth = false;
           resumeAccountDeletionAfterAuth = false;
           elderModeEnabled = false;
@@ -439,7 +455,11 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_resumeAuthorityAndPassiveMemory());
+      if (_sessionState == AuthSessionVisualState.unknown && !authenticated) {
+        unawaited(_restoreServerSession());
+      } else {
+        unawaited(_resumeAuthorityAndPassiveMemory());
+      }
     }
   }
 
@@ -447,6 +467,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _authorityRefreshTimer?.cancel();
+    _sessionRetryTimer?.cancel();
     unawaited(_passiveRecoveryRequests?.cancel());
     if (widget.offlineQueue == null) {
       unawaited(offlineQueue.close());
@@ -471,16 +492,10 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       theme: JiYiTheme.light(elderMode: elderModeEnabled),
       darkTheme: JiYiTheme.dark(elderMode: elderModeEnabled),
       themeMode: _themeMode,
-      home: restoringSession
-          ? const Scaffold(
-              body: SafeArea(
-                child: Center(
-                  child: CircularProgressIndicator(),
-                ),
-              ),
-            )
-          : authenticated
-              ? AppShell(
+      home: switch (_sessionState) {
+        AuthSessionVisualState.unknown || AuthSessionVisualState.refreshing =>
+          const AuthV3NeutralBootstrap(),
+        AuthSessionVisualState.valid => AppShell(
                   api: api,
                   offlineQueue: offlineQueue,
                   onboardingStore: onboardingStore,
@@ -497,13 +512,18 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                     if (mounted) setState(() => elderModeEnabled = enabled);
                   },
                   onLogout: () => unawaited(_logout()),
-                )
-              : AuthPage(
+                ),
+        AuthSessionVisualState.signedOut => AuthPage(
                   api: api,
+                  capabilities: const AuthCapabilities.emailOnly(),
                   initialMessage: restoreMessage,
                   onRegistrationCompleted: () {
-                    startOnboardingAfterAuth = true;
-                    resumeAccountDeletionAfterAuth = false;
+                    if (mounted) {
+                      setState(() {
+                        startOnboardingAfterAuth = true;
+                        resumeAccountDeletionAfterAuth = false;
+                      });
+                    }
                   },
                   onAccountDeletionRecovery: () {
                     resumeAccountDeletionAfterAuth = true;
@@ -513,6 +533,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                     if (mounted) {
                       setState(() {
                         authenticated = true;
+                        _sessionState = AuthSessionVisualState.valid;
                         restoreMessage = null;
                       });
                       unawaited(notificationClient.onAuthenticated());
@@ -522,6 +543,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                     }
                   },
                 ),
+      },
     );
   }
 }
@@ -531,6 +553,7 @@ class AuthPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.onAuthenticated,
+    this.capabilities = const AuthCapabilities.emailOnly(),
     this.initialMessage,
     this.onRegistrationCompleted,
     this.onAccountDeletionRecovery,
@@ -538,6 +561,7 @@ class AuthPage extends StatefulWidget {
 
   final JiYiApiClient api;
   final VoidCallback onAuthenticated;
+  final AuthCapabilities capabilities;
   final String? initialMessage;
   final VoidCallback? onRegistrationCompleted;
   final VoidCallback? onAccountDeletionRecovery;
@@ -570,6 +594,7 @@ class _AuthPageState extends State<AuthPage> {
   final tokenController = TextEditingController();
   _AuthMode mode = _AuthMode.login;
   bool loading = false;
+  bool obscurePassword = true;
   String? error;
   String? message;
 
@@ -782,8 +807,430 @@ class _AuthPageState extends State<AuthPage> {
         _AuthMode.resetPassword => '重置成功会撤销这个账号现有的全部登录会话。',
       };
 
+  bool get _useAuthV3Shell => widget.capabilities.email;
+
+  Widget _buildEmailLoginV3Surface(BuildContext context) {
+    final compactViewport = MediaQuery.sizeOf(context).height < 700;
+    final fieldBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: const BorderSide(color: Color(0xFFE0E7EF)),
+    );
+    return Scaffold(
+      backgroundColor: JiYiTodayVisuals.background,
+      body: Stack(
+        children: [
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AuthV3Hero(height: 300),
+          ),
+          SafeArea(
+            bottom: false,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                28,
+                compactViewport ? 150 : 218,
+                28,
+                20,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    '邮箱登录',
+                    style: TextStyle(
+                      color: JiYiTodayVisuals.navy,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '请输入邮箱和密码',
+                    style: TextStyle(
+                      color: JiYiTodayVisuals.secondaryText,
+                      fontSize: 16,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      hintText: '请输入邮箱地址',
+                      prefixIcon: const Icon(Icons.mail_outline),
+                      filled: true,
+                      fillColor: JiYiTodayVisuals.card,
+                      enabledBorder: fieldBorder,
+                      focusedBorder: fieldBorder.copyWith(
+                        borderSide: const BorderSide(
+                          color: JiYiTodayVisuals.primaryBlue,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: obscurePassword,
+                    decoration: InputDecoration(
+                      hintText: '请输入密码',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(
+                          () => obscurePassword = !obscurePassword,
+                        ),
+                        icon: Icon(
+                          obscurePassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                      ),
+                      filled: true,
+                      fillColor: JiYiTodayVisuals.card,
+                      enabledBorder: fieldBorder,
+                      focusedBorder: fieldBorder.copyWith(
+                        borderSide: const BorderSide(
+                          color: JiYiTodayVisuals.primaryBlue,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (message != null) ...[
+                    const SizedBox(height: 12),
+                    JiYiStatusBanner(
+                      kind: JiYiStatusKind.info,
+                      title: '提示',
+                      message: message!,
+                    ),
+                  ],
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    JiYiStatusBanner(
+                      kind: JiYiStatusKind.error,
+                      title: '未能继续',
+                      message: error!,
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    height: 56,
+                    child: FilledButton(
+                      onPressed: loading ? null : _submitCredentials,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: JiYiTodayVisuals.primaryBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(loading ? '请稍候…' : '登录'),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: loading
+                        ? null
+                        : () => setState(() {
+                            mode = _AuthMode.forgotPassword;
+                            error = null;
+                            message = null;
+                          }),
+                    child: const Text('忘记密码？'),
+                  ),
+                  SizedBox(height: compactViewport ? 32 : 150),
+                  Container(
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF4F7FB),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: TextButton(
+                      key: const ValueKey('auth-v3-register-entry'),
+                      onPressed: loading
+                          ? null
+                          : () => setState(() {
+                              mode = _AuthMode.register;
+                              error = null;
+                              message = null;
+                            }),
+                      child: const Text('没有账号？ 去注册'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            left: 10,
+            child: SafeArea(
+              bottom: false,
+              child: IconButton(
+                onPressed: () {},
+                icon: const Icon(Icons.chevron_left),
+                color: JiYiTodayVisuals.navy,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuthV3Surface(BuildContext context) {
+    if (mode == _AuthMode.login) {
+      return _buildEmailLoginV3Surface(context);
+    }
+    final theme = Theme.of(context);
+    final compactViewport = MediaQuery.sizeOf(context).height < 700;
+    final showPassword = mode == _AuthMode.login ||
+        mode == _AuthMode.register ||
+        mode == _AuthMode.resetPassword;
+    if (!widget.capabilities.email) {
+      return const Scaffold(
+        backgroundColor: JiYiTodayVisuals.background,
+        body: SafeArea(
+          child: Center(
+            child: Text(
+              '当前暂时没有可用的登录方式',
+              style: TextStyle(color: JiYiTodayVisuals.navy, fontSize: 16),
+            ),
+          ),
+        ),
+      );
+    }
+    return Scaffold(
+      backgroundColor: JiYiTodayVisuals.background,
+      body: Stack(
+        children: [
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AuthV3Hero(height: 322),
+          ),
+          SafeArea(
+            bottom: false,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                compactViewport ? 16 : 42,
+                20,
+                22,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(height: compactViewport ? 72 : 118),
+                    AuthV3BrandLockup(compact: compactViewport),
+                    SizedBox(height: compactViewport ? 36 : 92),
+                    AuthV3Card(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            mode == _AuthMode.login ? '邮箱登录' : _title,
+                            style: const TextStyle(
+                              color: JiYiTodayVisuals.navy,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _subtitle,
+                            style: const TextStyle(
+                              color: JiYiTodayVisuals.secondaryText,
+                              fontSize: 15,
+                              height: 1.45,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          if (mode != _AuthMode.resetPassword) ...[
+                            TextField(
+                              controller: emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              decoration: const InputDecoration(
+                                labelText: '邮箱地址',
+                                hintText: 'name@example.com',
+                                prefixIcon: Icon(Icons.mail_outline),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (showPassword)
+                            TextField(
+                              controller: passwordController,
+                              obscureText: true,
+                              decoration: InputDecoration(
+                                labelText: mode == _AuthMode.resetPassword
+                                    ? '新密码'
+                                    : '密码',
+                                prefixIcon: const Icon(Icons.lock_outline),
+                              ),
+                            ),
+                          if (mode == _AuthMode.register) ...[
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: nicknameController,
+                              decoration: const InputDecoration(
+                                labelText: '昵称',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                            ),
+                          ],
+                          if (mode == _AuthMode.verifyEmail ||
+                              mode == _AuthMode.resetPassword) ...[
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: tokenController,
+                              autocorrect: false,
+                              enableSuggestions: false,
+                              decoration: InputDecoration(
+                                labelText: mode == _AuthMode.verifyEmail
+                                    ? '验证凭证'
+                                    : '重置凭证',
+                                prefixIcon: const Icon(Icons.key_outlined),
+                              ),
+                            ),
+                          ],
+                          if (message != null) ...[
+                            const SizedBox(height: 12),
+                            JiYiStatusBanner(
+                              kind: JiYiStatusKind.info,
+                              title: '提示',
+                              message: message!,
+                            ),
+                          ],
+                          if (error != null) ...[
+                            const SizedBox(height: 12),
+                            JiYiStatusBanner(
+                              kind: JiYiStatusKind.error,
+                              title: '未能继续',
+                              message: error!,
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          FilledButton(
+                            onPressed: loading
+                                ? null
+                                : switch (mode) {
+                                    _AuthMode.login ||
+                                    _AuthMode.register =>
+                                      _submitCredentials,
+                                    _AuthMode.verifyEmail => _verifyEmail,
+                                    _AuthMode.forgotPassword => _requestReset,
+                                    _AuthMode.resetPassword => _resetPassword,
+                                  },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: JiYiTodayVisuals.primaryBlue,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size.fromHeight(56),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              loading
+                                  ? '请稍候…'
+                                  : switch (mode) {
+                                      _AuthMode.login => '登录',
+                                      _AuthMode.register => '创建账号',
+                                      _AuthMode.verifyEmail => '完成验证',
+                                      _AuthMode.forgotPassword => '发送重置邮件',
+                                      _AuthMode.resetPassword => '更新密码',
+                                    },
+                            ),
+                          ),
+                          if (mode == _AuthMode.verifyEmail) ...[
+                            const SizedBox(height: 4),
+                            TextButton(
+                              onPressed: loading ? null : _resendVerification,
+                              child: const Text('重新发送验证邮件'),
+                            ),
+                          ],
+                          if (mode == _AuthMode.login) ...[
+                            const SizedBox(height: 4),
+                            TextButton(
+                              onPressed: loading
+                                  ? null
+                                  : () => setState(() {
+                                      mode = _AuthMode.forgotPassword;
+                                      error = null;
+                                      message = null;
+                                    }),
+                              child: const Text('忘记密码？'),
+                            ),
+                          ],
+                          const SizedBox(height: 2),
+                          TextButton(
+                            onPressed: loading
+                                ? null
+                                : () => setState(() {
+                                    mode = mode == _AuthMode.register
+                                        ? _AuthMode.login
+                                        : _AuthMode.register;
+                                    error = null;
+                                    message = null;
+                                    tokenController.clear();
+                                  }),
+                            child: Text(
+                              switch (mode) {
+                                _AuthMode.login => '第一次使用？创建账号',
+                                _AuthMode.register => '已有账号？返回登录',
+                                _ => '返回登录 / 创建账号',
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const AuthV3Agreement(),
+                    if (widget.api.showDevelopmentEndpoint)
+                      Text(
+                        '当前开发环境服务地址：${widget.api.baseUrl}',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: JiYiTodayVisuals.secondaryText,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_useAuthV3Shell) return _buildAuthV3Surface(context);
+    if (!widget.capabilities.email) {
+      return const Scaffold(
+        backgroundColor: JiYiTodayVisuals.background,
+        body: SafeArea(
+          child: Center(
+            child: Text(
+              '当前暂时没有可用的登录方式',
+              style: TextStyle(color: JiYiTodayVisuals.navy, fontSize: 16),
+            ),
+          ),
+        ),
+      );
+    }
     final theme = Theme.of(context);
     final showPassword = mode == _AuthMode.login ||
         mode == _AuthMode.register ||
@@ -1415,6 +1862,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       amapPrivacyConsent: _amapPrivacyConsent,
       notificationClient: widget.notificationClient,
       elderMode: _elderModeEnabled,
+      onCapture: () {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute(builder: (_) => capturePage),
+        );
+      },
       initialQuestion: onboardingStep == OnboardingStep.retrieve ||
               onboardingStep == OnboardingStep.trust
           ? onboarding?.querySeed
@@ -1472,25 +1924,31 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         onThemeModeChanged: widget.onThemeModeChanged,
       ),
     ];
+    final onboardingExperience = OnboardingExperience(
+      step: _accountDeletionIntentActive ? null : onboardingStep,
+      onStart: onboarding?.startFlow ?? () {},
+      onSkip: () {
+        if (onboarding != null) unawaited(onboarding.skip());
+      },
+      onComplete: () {
+        if (onboarding != null) unawaited(onboarding.complete());
+      },
+      child: onboardingStep == OnboardingStep.capture
+          ? capturePage
+          : pages[index],
+    );
+    final todayVisualShell =
+        onboardingStep == null && !_accountDeletionIntentActive && index == 0;
     return Scaffold(
-      body: SafeArea(
-        child: OnboardingExperience(
-          step: _accountDeletionIntentActive ? null : onboardingStep,
-          onStart: onboarding?.startFlow ?? () {},
-          onSkip: () {
-            if (onboarding != null) unawaited(onboarding.skip());
-          },
-          onComplete: () {
-            if (onboarding != null) unawaited(onboarding.complete());
-          },
-          child: onboardingStep == OnboardingStep.capture
-              ? capturePage
-              : pages[index],
-        ),
-      ),
+      body: todayVisualShell
+          ? onboardingExperience
+          : SafeArea(child: onboardingExperience),
       // [人工注释][S1-026] 引导进行时由 GuideBar 提供唯一退出入口；隐藏而不是保留“看得见但点不动”的底部导航。
       floatingActionButton:
-          onboardingStep != null || _accountDeletionIntentActive
+          onboardingStep != null ||
+                  _accountDeletionIntentActive ||
+                  index == 0 ||
+                  index == 1
               ? null
               : FloatingActionButton.extended(
                   onPressed: () {
@@ -1503,37 +1961,127 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 ),
       bottomNavigationBar: onboardingStep != null || _accountDeletionIntentActive
           ? null
-          : NavigationBar(
+          : _JiYiBottomNavigation(
               selectedIndex: index,
               onDestinationSelected: (value) => setState(() => index = value),
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.today_outlined),
-                  selectedIcon: Icon(Icons.today),
-                  label: '今天',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.auto_stories_outlined),
-                  selectedIcon: Icon(Icons.auto_stories),
-                  label: '记忆',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.route_outlined),
-                  selectedIcon: Icon(Icons.route),
-                  label: '人生',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.family_restroom_outlined),
-                  selectedIcon: Icon(Icons.family_restroom),
-                  label: '家庭',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
-                  label: '我的',
-                ),
-              ],
             ),
+    );
+  }
+}
+
+class _JiYiBottomNavigation extends StatelessWidget {
+  const _JiYiBottomNavigation({
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+
+  static const _destinations = [
+    (Icons.home_outlined, Icons.home, '今天'),
+    (Icons.photo_library_outlined, Icons.photo_library, '记忆'),
+    (Icons.menu_book_outlined, Icons.menu_book, '人生'),
+    (Icons.people_outline, Icons.people, '家庭'),
+    (Icons.person_outline, Icons.person, '我的'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: JiYiTodayVisuals.card,
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x0D152D4B),
+            blurRadius: 14,
+            offset: Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: SizedBox(
+          height: JiYiTodayGeometry.bottomNavigationContentHeight,
+          child: Row(
+            children: [
+              for (var index = 0; index < _destinations.length; index++)
+                Expanded(
+                  child: _JiYiBottomNavigationItem(
+                    icon: _destinations[index].$1,
+                    selectedIcon: _destinations[index].$2,
+                    label: _destinations[index].$3,
+                    selected: selectedIndex == index,
+                    onTap: () => onDestinationSelected(index),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _JiYiBottomNavigationItem extends StatelessWidget {
+  const _JiYiBottomNavigationItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = selected
+        ? JiYiTodayVisuals.primaryBlue
+        : JiYiTodayVisuals.secondaryText;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(selected ? selectedIcon : icon, size: 23, color: color),
+              const SizedBox(height: 1),
+              Text(
+                label,
+                maxLines: 1,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: color,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 2),
+              AnimatedContainer(
+                duration: JiYiMotion.fast,
+                curve: JiYiMotion.easing,
+                width: selected ? 28 : 0,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2560,6 +3108,7 @@ class MemoryQueryPage extends StatefulWidget {
     super.key,
     required this.api,
     this.elderMode = false,
+    this.onCapture,
     this.initialQuestion,
     this.requiredEvidenceMemoryId,
     this.onTrustedEvidenceShown,
@@ -2571,6 +3120,7 @@ class MemoryQueryPage extends StatefulWidget {
   final JiYiApiClient api;
   final LocalMediaCache? mediaCache;
   final bool elderMode;
+  final VoidCallback? onCapture;
   final String? initialQuestion;
   final String? requiredEvidenceMemoryId;
   final VoidCallback? onTrustedEvidenceShown;
@@ -2588,6 +3138,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   String? actionMessage;
   String? submittedQuestion;
   bool loading = false;
+  bool _qualifyingTrustedEvidenceAvailable = false;
+  bool _trustedEvidenceShownForCurrentQuery = false;
   int _queryGeneration = 0;
   late int _observedSessionVersion;
   String? _observedOwner;
@@ -2673,6 +3225,8 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
       actionMessage = null;
       result = null;
       submittedQuestion = submitted;
+      _qualifyingTrustedEvidenceAvailable = false;
+      _trustedEvidenceShownForCurrentQuery = false;
     });
     bool isCurrent() =>
         mounted &&
@@ -2682,7 +3236,6 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     try {
       final response = await widget.api.queryMemory(submitted);
       if (!isCurrent()) return;
-      setState(() => result = response);
       final evidence = response['evidence'];
       final memoryIds = response['memory_ids'];
       final requiredMemoryId = widget.requiredEvidenceMemoryId?.trim();
@@ -2690,12 +3243,15 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
           requiredMemoryId.isEmpty ||
           (memoryIds is List<dynamic> &&
               memoryIds.any((value) => value.toString() == requiredMemoryId));
-      if (response['can_answer'] == true &&
+      final qualifyingTrustedEvidenceAvailable = response['can_answer'] == true &&
           evidence is List<dynamic> &&
           evidence.isNotEmpty &&
-          containsRequiredMemory) {
-        widget.onTrustedEvidenceShown?.call();
-      }
+          containsRequiredMemory;
+      setState(() {
+        result = response;
+        _qualifyingTrustedEvidenceAvailable = qualifyingTrustedEvidenceAvailable;
+        _trustedEvidenceShownForCurrentQuery = false;
+      });
     } on ApiException catch (exc) {
       if (!isCurrent()) return;
       setState(() => error = exc.message);
@@ -2914,9 +3470,7 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // G4 仅重排 Query/Evidence/删除入口的展示层；答案、Evidence、memory_ids 都继续直接使用服务端真实返回。
+  Widget _buildMemoryV3(BuildContext context) {
     final theme = Theme.of(context);
     final evidence = (result?['evidence'] as List<dynamic>? ?? const [])
         .where((item) =>
@@ -2946,324 +3500,554 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
     }
     final certaintyLabel = _queryCertaintyLabel(certainty);
     final intentLabel = _queryIntentLabel(intent);
-    // FIND_OBJECT 的 backing Memory 受结构化 ObjectLocation 状态约束，
-    // 通用编辑会被后端拒绝，因此 UI 直接隐藏编辑入口而不是让用户走到 409。
     final canEditFirstMemory = memoryIds.isNotEmpty && intent != 'FIND_OBJECT';
+    final navy = JiYiTodayVisuals.navy;
+    final secondary = JiYiTodayVisuals.secondaryText;
 
-    return JiYiPageFrame(
-      title: widget.elderMode ? '我想找东西' : '记忆',
-      subtitle: widget.elderMode
-          ? '只从你自己的可信记录里找；没有可靠记录时，我不会猜。'
-          : '从自己的记录里找回过去发生的事；找不到时不会猜。',
-      hero: widget.elderMode
-          ? null
-          : const JiYiHeroHeader(
-              atmospheric: true,
-              eyebrow: '迹忆 · 记忆',
-              title: '记忆',
-              subtitle: '从自己的记录里查找过去，也可以打开时间线慢慢回看。',
-              icon: Icons.auto_stories_outlined,
+    Widget surface(
+      Widget child, {
+      EdgeInsetsGeometry padding = const EdgeInsets.all(16),
+    }) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: JiYiTodayVisuals.card,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [
+            BoxShadow(
+              color: JiYiTodayVisuals.cardShadow,
+              blurRadius: 10,
+              offset: Offset(0, 2),
             ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+          ],
+        ),
+        child: Padding(
+          padding: padding,
+          child: Material(
+            type: MaterialType.transparency,
+            child: child,
+          ),
+        ),
+      );
+    }
+
+    Widget sectionHeader(
+      String title, {
+      VoidCallback? onAction,
+      String? actionTooltip,
+    }) {
+      return Row(
         children: [
-          JiYiSectionCard(
-            leading: Icon(
-              Icons.psychology_alt_outlined,
-              color: theme.colorScheme.primary,
-            ),
-            title: widget.elderMode ? '你要找什么？' : '问一个问题',
-            subtitle: widget.elderMode
-                ? '输入物品名称或问题，再点“帮我找”。'
-                : '找不到可靠依据时，迹忆会明确告诉你，而不是猜一个答案。',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  key: const ValueKey('memory-query-input'),
-                  controller: controller,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: loading ? null : (_) => query(),
-                  decoration: InputDecoration(
-                    labelText: widget.elderMode ? '物品名称或问题' : '你想回忆什么？',
-                    hintText: widget.elderMode
-                        ? '例如：护照、钥匙，或“我的护照在哪里？”'
-                        : '例如：我的护照在哪里？',
-                    prefixIcon: const Icon(Icons.search),
-                  ),
-                ),
-                const SizedBox(height: JiYiSpacing.md),
-                FilledButton.icon(
-                  key: const ValueKey('memory-query-submit'),
-                  onPressed: loading ? null : query,
-                  icon: loading
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.manage_search_outlined),
-                  label: Text(
-                    loading ? '查找中…' : (widget.elderMode ? '帮我找' : '从我的记录里找'),
-                  ),
-                ),
-              ],
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                color: navy,
+                fontSize: 28,
+                height: 1.2,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
-          if (!widget.elderMode) ...[
-            const SizedBox(height: JiYiSpacing.md),
-            JiYiActionCard(
-              icon: Icons.timeline_outlined,
-              title: '时间线',
-              message: '按时间查看已经形成的地点和记录。',
-              onTap: () {
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute(
-                    builder: (_) => TimelinePage(
-                      api: widget.api,
-                      mediaCache: widget.mediaCache,
-                      elderMode: widget.elderMode,
-                      amapPrivacyConsent: _amapPrivacyConsent,
-                    ),
-                  ),
-                );
-              },
+          if (onAction != null)
+            IconButton(
+              key: const ValueKey('memory-timeline-open'),
+              tooltip: actionTooltip,
+              onPressed: onAction,
+              icon: const Icon(Icons.timeline_outlined),
+              color: secondary,
             ),
-          ],
-          if (error != null) ...[
-            const SizedBox(height: JiYiSpacing.md),
-            JiYiStatusBanner(
-              kind: JiYiStatusKind.error,
-              title: '暂时无法查找',
-              message: error!,
-            ),
-          ],
-          if (actionMessage != null) ...[
-            const SizedBox(height: JiYiSpacing.md),
-            JiYiStatusBanner(
-              kind: JiYiStatusKind.success,
-              message: actionMessage!,
-            ),
-          ],
-          if (result != null) ...[
-            const SizedBox(height: JiYiSpacing.md),
-            JiYiSectionCard(
-              leading: Icon(
-                canAnswer ? Icons.lightbulb_outline : Icons.search_off_outlined,
-                color: canAnswer
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
+        ],
+      );
+    }
+
+    Widget emptySurface({
+      required IconData icon,
+      required String title,
+      required String message,
+    }) {
+      return surface(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DecoratedBox(
+              decoration: const BoxDecoration(
+                color: JiYiProductColors.surfaceSoft,
+                shape: BoxShape.circle,
               ),
-              title: canAnswer
-                  ? (intent == 'DATE_FOOTPRINT_QUERY' &&
-                          footprintVisits.isNotEmpty
-                      ? (widget.elderMode ? '找到了这天的足迹' : '这天的足迹')
-                      : (widget.elderMode ? '找到了可信记录' : '找到相关记忆'))
-                  : (widget.elderMode ? '我还不知道它在哪里' : '没有足够依据'),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Icon(icon, color: JiYiTodayVisuals.primaryBlue),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    answer.isNotEmpty
-                        ? answer
-                        : (widget.elderMode
-                            ? '没有找到足够可靠的记录。你可以先用“帮我记一下”告诉我放在哪里。'
-                            : '我没有找到能够支持答案的相关记录。'),
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  if (submittedQuestion != null) ...[
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text(
-                      '本次查找：$submittedQuestion',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                    title,
+                    style: TextStyle(
+                      color: navy,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
                     ),
-                  ],
-                  const SizedBox(height: JiYiSpacing.sm),
-                  Wrap(
-                    spacing: JiYiSpacing.xs,
-                    runSpacing: JiYiSpacing.xs,
-                    children: [
-                      Chip(
-                        avatar: const Icon(Icons.verified_outlined, size: 18),
-                        label: Text(certaintyLabel),
-                      ),
-                      Chip(
-                        avatar: const Icon(Icons.category_outlined, size: 18),
-                        label: Text(intentLabel),
-                      ),
-                    ],
                   ),
+                  const SizedBox(height: 4),
+                  Text(message, style: TextStyle(color: secondary, height: 1.45)),
                 ],
               ),
             ),
-            if (footprintVisits.isNotEmpty) ...[
-              const SizedBox(height: JiYiSpacing.lg),
-              if (canonicalFootprint != null &&
-                  canonicalFootprint.mappableVisits.isNotEmpty) ...[
-                JiYiFootprintMap(
-                  key: const ValueKey('memory-query-day-map'),
-                  visits: canonicalFootprint.visits,
-                  privacyAccepted: _mapPrivacyAccepted,
-                  selectedIndex: 0,
-                  onSelected: (_) {},
-                  interactive: true,
+          ],
+        ),
+      );
+    }
+
+    Widget resultSurface() {
+      final fallback = widget.elderMode
+          ? '没有找到足够可靠的记录。你可以先用“帮我记一下”告诉我放在哪里。'
+          : '我没有找到能够支持答案的相关记录。';
+      return surface(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  canAnswer ? Icons.auto_awesome_outlined : Icons.search_off_outlined,
+                  color: canAnswer ? JiYiTodayVisuals.primaryBlue : secondary,
                 ),
-                if (!_mapPrivacyAccepted) ...[
-                  const SizedBox(height: JiYiSpacing.sm),
-                  OutlinedButton.icon(
-                    key: const ValueKey('memory-query-amap-privacy-accept'),
-                    onPressed: _acceptMapPrivacy,
-                    icon: const Icon(Icons.map_outlined),
-                    label: const Text('同意地图服务隐私说明并启用地图'),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    canAnswer
+                        ? (intent == 'DATE_FOOTPRINT_QUERY' && footprintVisits.isNotEmpty
+                            ? (widget.elderMode ? '找到了这天的足迹' : '这天的足迹')
+                            : (widget.elderMode ? '找到了可信记录' : '找到相关记忆'))
+                        : (widget.elderMode ? '我还不知道它在哪里' : '没有足够依据'),
+                    style: TextStyle(
+                      color: navy,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ],
-                const SizedBox(height: JiYiSpacing.md),
+                ),
               ],
-              JiYiSectionCard(
-                leading: const Icon(Icons.place_outlined),
-                title: footprintDay == null ? '当天足迹' : '$footprintDay 足迹',
-                subtitle: '只显示服务端已形成的地点访问记录。',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: footprintVisits.map((visit) {
-                    final placeName = visit['place_name']?.toString() ?? '未命名地点';
-                    final range = _queryFootprintTimeRange(visit);
+            ),
+            const SizedBox(height: 12),
+            Text(
+              canAnswer && answer.isNotEmpty ? answer : fallback,
+              style: TextStyle(color: navy, fontSize: 18, height: 1.5),
+            ),
+            if (submittedQuestion != null) ...[
+              const SizedBox(height: 8),
+              Text('本次查找：$submittedQuestion', style: TextStyle(color: secondary)),
+            ],
+            const SizedBox(height: 8),
+            ExpansionTile(
+              key: const ValueKey('memory-query-evidence-disclosure'),
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              onExpansionChanged: (expanded) {
+                if (!expanded ||
+                    !_qualifyingTrustedEvidenceAvailable ||
+                    _trustedEvidenceShownForCurrentQuery) {
+                  return;
+                }
+                _trustedEvidenceShownForCurrentQuery = true;
+                widget.onTrustedEvidenceShown?.call();
+              },
+              title: const Text('查看这次回答的依据'),
+              subtitle: Text('$certaintyLabel · $intentLabel'),
+              children: [
+                if (evidence.isNotEmpty)
+                  ...evidence.map((item) {
+                    final e = item as Map<String, dynamic>;
+                    final sourceLabel =
+                        _evidenceSourceLabel(e['source_type']?.toString());
+                    final provenance = e['provenance']?.toString();
+                    final displayedSource = provenance == 'USER_EDIT'
+                        ? '$sourceLabel · 用户编辑'
+                        : sourceLabel;
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.location_on_outlined, size: 20),
-                          const SizedBox(width: JiYiSpacing.sm),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(placeName, style: theme.textTheme.titleSmall),
-                                Text(
-                                  range,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: JiYiEvidenceCard(
+                        excerpt: e['excerpt']?.toString() ?? '',
+                        source: displayedSource,
+                        evidenceType: _queryEvidenceKindLabel(
+                          e['kind']?.toString() ?? '',
+                        ),
+                        occurredAt: e['occurred_at']?.toString() ?? '时间未知',
+                        confidence: '',
                       ),
                     );
-                  }).toList(growable: false),
-                ),
-              ),
-            ],
-            if (evidence.isNotEmpty) ...[
-              const SizedBox(height: JiYiSpacing.lg),
-              Text('为什么这么回答', style: theme.textTheme.titleMedium),
-              const SizedBox(height: JiYiSpacing.xs),
-              Text(
-                '下面是这次回答参考的记录。',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: JiYiSpacing.sm),
-              ...evidence.map((item) {
-                final e = item as Map<String, dynamic>;
-                final sourceLabel =
-                    _evidenceSourceLabel(e['source_type']?.toString());
-                final provenance = e['provenance']?.toString();
-                // USER_EDIT 明确告诉用户当前文字来自后续手工修正，不能继续伪装成原始媒体证明。
-                final displayedSource = provenance == 'USER_EDIT'
-                    ? '$sourceLabel · 用户编辑'
-                    : sourceLabel;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: JiYiSpacing.sm),
-                  child: JiYiEvidenceCard(
-                    excerpt: e['excerpt']?.toString() ?? '',
-                    source: displayedSource,
-                    evidenceType: _queryEvidenceKindLabel(
-                      e['kind']?.toString() ?? '',
-                    ),
-                    occurredAt: e['occurred_at']?.toString() ?? '时间未知',
-                    confidence: '',
+                  })
+                else if (footprintVisits.isNotEmpty)
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('这次回答依据为服务端已形成的足迹记录。'),
+                  )
+                else
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('没有可展示的参考记录，请谨慎使用这个答案。'),
                   ),
-                );
-              }),
-            ] else if (canAnswer && footprintVisits.isEmpty) ...[
-              const SizedBox(height: JiYiSpacing.md),
-              // 若服务端声称可回答却没有可展示 Evidence，UI 明确暴露该异常事实，不用美化层隐藏。
-              const JiYiStatusBanner(
-                kind: JiYiStatusKind.warning,
-                title: '没有可展示的参考记录',
-                message: '这次没有返回可查看的参考记录，请谨慎使用这个答案。',
-              ),
-            ],
-            if (memoryIds.isNotEmpty) ...[
-              const SizedBox(height: JiYiSpacing.md),
-              JiYiSectionCard(
-                leading: Icon(
-                  Icons.delete_outline,
-                  color: theme.colorScheme.error,
-                ),
-                title: '管理这条记忆',
-                subtitle: '可设置提醒；编辑会保留原始记录，删除会影响后续查找。',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    FilledButton.tonalIcon(
-                      key: const ValueKey('memory-detail-open'),
-                      onPressed: loading ? null : openFirstMemoryDetail,
-                      icon: const Icon(Icons.open_in_new),
-                      label: const Text('查看完整记忆'),
-                    ),
-                    const SizedBox(height: JiYiSpacing.sm),
-                    FilledButton.tonalIcon(
-                      key: const ValueKey('memory-reminder-open'),
-                      onPressed: loading ? null : createReminderForFirstMemory,
-                      icon: const Icon(Icons.alarm_add_outlined),
-                      label: const Text('为这条记忆设置提醒'),
-                    ),
-                    const SizedBox(height: JiYiSpacing.sm),
-                    OutlinedButton.icon(
-                      key: const ValueKey('open-reminder-management'),
-                      onPressed: loading
-                          ? null
-                          : () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => ReminderPage(api: widget.api),
-                                ),
-                              );
-                            },
-                      icon: const Icon(Icons.alarm_outlined),
-                      label: const Text('查看提醒管理'),
-                    ),
-                    const SizedBox(height: JiYiSpacing.sm),
-                    if (canEditFirstMemory) ...[
-                      FilledButton.tonalIcon(
-                        key: const ValueKey('memory-edit-open'),
-                        onPressed: loading ? null : editFirstMemory,
-                        icon: const Icon(Icons.edit_outlined),
-                        label: const Text('编辑最相关记忆'),
-                      ),
-                      const SizedBox(height: JiYiSpacing.sm),
-                    ],
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: theme.colorScheme.error,
-                        side: BorderSide(color: theme.colorScheme.error),
-                      ),
-                      onPressed: loading ? null : deleteFirstMemory,
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('删除最相关记忆'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ],
+        ),
+      );
+    }
+
+    final children = <Widget>[
+      if (widget.elderMode)
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 12),
+          child: Text(
+            '我想找东西',
+            style: TextStyle(color: navy, fontSize: 30, fontWeight: FontWeight.w800),
+          ),
+        )
+      else ...[
+        const SizedBox(height: 10),
+        Text(
+          '记忆',
+          style: TextStyle(
+            color: navy,
+            fontSize: 38,
+            height: 1.05,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '从你留下的记录里找回来',
+          style: TextStyle(color: secondary, fontSize: 19, height: 1.35),
+        ),
+        const SizedBox(height: 28),
+      ],
+      surface(
+        TextField(
+          key: const ValueKey('memory-query-input'),
+          controller: controller,
+          textInputAction: TextInputAction.search,
+          onSubmitted: loading ? null : (_) => query(),
+          decoration: InputDecoration(
+            hintText: widget.elderMode ? '物品名称或问题' : '想找哪段回忆？',
+            prefixIcon: Icon(Icons.search, color: secondary, size: 30),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            suffixIcon: widget.elderMode
+                ? null
+                : IconButton(
+                    key: const ValueKey('memory-query-submit'),
+                    tooltip: loading ? '查找中' : '提交查询',
+                    onPressed: loading ? null : query,
+                    icon: loading
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.arrow_forward_rounded),
+                  ),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      ),
+      if (widget.elderMode)
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            key: const ValueKey('memory-query-submit'),
+            onPressed: loading ? null : query,
+            style: TextButton.styleFrom(
+              minimumSize: const Size.fromHeight(56),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            icon: loading
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.arrow_forward_rounded, size: 18),
+            label: Text(loading ? '查找中…' : '帮我找'),
+          ),
+        ),
+      if (!widget.elderMode)
+        SizedBox(
+          height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _MemorySuggestionChip(
+                icon: Icons.location_on_outlined,
+                label: '上周去了哪里',
+                color: const Color(0xFFE7F1FF),
+                onPressed: () => _setQueryPrompt('上周去了哪里'),
+              ),
+              _MemorySuggestionChip(
+                icon: Icons.photo_outlined,
+                label: '和妈妈的照片',
+                color: const Color(0xFFFFEDE5),
+                onPressed: () => _setQueryPrompt('和妈妈的照片'),
+              ),
+              _MemorySuggestionChip(
+                icon: Icons.calendar_month_outlined,
+                label: '这个月的回忆',
+                color: const Color(0xFFE8F1FF),
+                onPressed: () => _setQueryPrompt('这个月的回忆'),
+              ),
+              _MemorySuggestionChip(
+                icon: Icons.sell_outlined,
+                label: '找一找物品',
+                color: const Color(0xFFFFF0DE),
+                onPressed: () => _setQueryPrompt('找一找物品'),
+              ),
+            ],
+          ),
+        ),
+      if (result != null) ...[
+        const SizedBox(height: 20),
+        resultSurface(),
+        if (footprintVisits.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          if (canonicalFootprint != null && canonicalFootprint.mappableVisits.isNotEmpty) ...[
+            JiYiFootprintMap(
+              key: const ValueKey('memory-query-day-map'),
+              visits: canonicalFootprint.visits,
+              privacyAccepted: _mapPrivacyAccepted,
+              selectedIndex: 0,
+              onSelected: (_) {},
+              interactive: true,
+            ),
+            if (!_mapPrivacyAccepted) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('memory-query-amap-privacy-accept'),
+                onPressed: _acceptMapPrivacy,
+                icon: const Icon(Icons.map_outlined),
+                label: const Text('同意地图服务隐私说明并启用地图'),
+              ),
+            ],
+            const SizedBox(height: 12),
+          ],
+          surface(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  footprintDay == null ? '当天足迹' : '$footprintDay 足迹',
+                  style: TextStyle(color: navy, fontSize: 19, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                Text('只显示服务端已形成的地点访问记录。', style: TextStyle(color: secondary)),
+                const SizedBox(height: 12),
+                ...footprintVisits.map((visit) {
+                  final placeName = visit['place_name']?.toString() ?? '未命名地点';
+                  final range = _queryFootprintTimeRange(visit);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.location_on_outlined),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(placeName, style: TextStyle(color: navy, fontWeight: FontWeight.w700)),
+                              Text(range, style: TextStyle(color: secondary)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
         ],
+        if (memoryIds.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          surface(
+            ExpansionTile(
+              initiallyExpanded: true,
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.more_horiz),
+              title: const Text('进一步操作'),
+              subtitle: const Text('查看、编辑、提醒或删除这条真实记忆'),
+              children: [
+                FilledButton.tonalIcon(
+                  key: const ValueKey('memory-detail-open'),
+                  onPressed: loading ? null : openFirstMemoryDetail,
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('查看完整记忆'),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  key: const ValueKey('memory-reminder-open'),
+                  onPressed: loading ? null : createReminderForFirstMemory,
+                  icon: const Icon(Icons.alarm_add_outlined),
+                  label: const Text('为这条记忆设置提醒'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  key: const ValueKey('open-reminder-management'),
+                  onPressed: loading
+                      ? null
+                      : () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => ReminderPage(api: widget.api)),
+                          );
+                        },
+                  icon: const Icon(Icons.alarm_outlined),
+                  label: const Text('查看提醒管理'),
+                ),
+                if (canEditFirstMemory) ...[
+                  const SizedBox(height: 8),
+                  FilledButton.tonalIcon(
+                    key: const ValueKey('memory-edit-open'),
+                    onPressed: loading ? null : editFirstMemory,
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('编辑最相关记忆'),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    side: BorderSide(color: theme.colorScheme.error),
+                  ),
+                  onPressed: loading ? null : deleteFirstMemory,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('删除最相关记忆'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+      if (!widget.elderMode) ...[
+        const SizedBox(height: 34),
+        sectionHeader(
+          '最近记下的',
+          onAction: () {
+            Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => TimelinePage(
+                  api: widget.api,
+                  mediaCache: widget.mediaCache,
+                  elderMode: widget.elderMode,
+                  amapPrivacyConsent: _amapPrivacyConsent,
+                ),
+              ),
+            );
+          },
+          actionTooltip: '时间线',
+        ),
+        const SizedBox(height: 12),
+        emptySurface(
+          icon: Icons.auto_stories_outlined,
+          title: '你的记忆会在这里出现',
+          message: '当前页面只展示真实记录。先记下一段文字、语音或照片，再回来查看。',
+        ),
+        const SizedBox(height: 30),
+        sectionHeader('重要的人'),
+        const SizedBox(height: 12),
+        emptySurface(
+          icon: Icons.people_outline,
+          title: '还没有可展示的人物记录',
+          message: '人物内容需要真实的人物 authority；迹忆不会用设计图头像代替用户数据。',
+        ),
+      ],
+      if (error != null) ...[
+        const SizedBox(height: 16),
+        JiYiStatusBanner(
+          kind: JiYiStatusKind.error,
+          title: '暂时无法查找',
+          message: error!,
+        ),
+      ],
+      if (actionMessage != null) ...[
+        const SizedBox(height: 16),
+        JiYiStatusBanner(kind: JiYiStatusKind.success, message: actionMessage!),
+      ],
+    ];
+
+    return Stack(
+      children: [
+        DecoratedBox(
+          decoration: const BoxDecoration(color: JiYiTodayVisuals.background),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 92),
+            children: children,
+          ),
+        ),
+        if (!widget.elderMode && widget.onCapture != null)
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton(
+              key: const ValueKey('memory-capture'),
+              tooltip: '记一下',
+              onPressed: widget.onCapture,
+              backgroundColor: JiYiTodayVisuals.primaryBlue,
+              foregroundColor: Colors.white,
+              shape: const CircleBorder(),
+              elevation: 2,
+              focusElevation: 2,
+              hoverElevation: 2,
+              highlightElevation: 1,
+              child: const Icon(Icons.edit_outlined),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _setQueryPrompt(String prompt) {
+    controller
+      ..text = prompt
+      ..selection = TextSelection.collapsed(offset: prompt.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _buildMemoryV3(context);
+  }
+}
+
+class _MemorySuggestionChip extends StatelessWidget {
+  const _MemorySuggestionChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ActionChip(
+        onPressed: onPressed,
+        avatar: Icon(icon, size: 18, color: JiYiTodayVisuals.primaryBlue),
+        label: Text(label),
+        backgroundColor: color,
+        side: BorderSide.none,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
       ),
     );
   }

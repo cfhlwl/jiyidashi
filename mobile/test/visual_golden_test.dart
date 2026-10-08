@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/amap_footprint_map.dart';
 import 'package:jiyidashi/amap_privacy_consent.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/auth_v3.dart';
 import 'package:jiyidashi/footprint_models.dart';
 import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/memory_detail_page.dart';
@@ -33,6 +34,8 @@ const _goldenSize = Size(390, 844);
 const _goldenFontFamily = 'JiYi Golden CJK';
 const _captureDeterministicQueryPreview =
     bool.fromEnvironment('DETERMINISTIC_QUERY_VISUAL_PREVIEW');
+const _captureProductionAuthCandidate =
+    bool.fromEnvironment('UIUX_V3_PRODUCTION_AUTH_CANDIDATE_MODE');
 
 const _goldenCacheVersion =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -389,6 +392,23 @@ Future<void> _loadMaterialIconsFont() async {
   final loader = FontLoader('MaterialIcons')
     ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
   await loader.load();
+}
+
+Future<void> _precacheProductionAuthAssets(WidgetTester tester) async {
+  final context = tester.element(find.byType(MaterialApp));
+  await tester.runAsync(() async {
+    await precacheImage(
+      const AssetImage('assets/brand/today_hero_default.png'),
+      context,
+    );
+    await precacheImage(
+      const AssetImage('assets/brand/jiyi_logo_primary.png'),
+      context,
+    );
+  });
+  // precacheImage completes after the codec is ready; this pump lets the image
+  // stream deliver its first frame before the RepaintBoundary is rasterized.
+  await tester.pump();
 }
 
 // Golden 复用生产 Theme；这里只注入仓库固定 CJK 测试字体，禁止再次复制产品色/布局 token。
@@ -1222,11 +1242,33 @@ void main() {
     // [人工注释][CI-005] 登录页使用真实 AuthPage 静态初始态，禁止网络调用和截图后处理。
     final key = await _pumpSurface(
       tester,
-      AuthPage(api: _GoldenApi(), onAuthenticated: () {}),
+      AuthPage(
+        api: _GoldenApi(),
+        capabilities: const AuthCapabilities.emailOnly(),
+        onAuthenticated: () {},
+      ),
     );
+    await _precacheProductionAuthAssets(tester);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/auth_login.png'),
+    );
+  });
+
+  testWidgets('candidate: production auth email', (tester) async {
+    if (!_captureProductionAuthCandidate) return;
+    final key = await _pumpSurface(
+      tester,
+      AuthPage(
+        api: _GoldenApi(),
+        capabilities: const AuthCapabilities.emailOnly(),
+        onAuthenticated: () {},
+      ),
+    );
+    await _precacheProductionAuthAssets(tester);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/production_auth_email.png'),
     );
   });
 
@@ -1461,12 +1503,33 @@ void main() {
         find.byKey(const ValueKey('memory-query-input')),
         '护照在哪里？',
       );
-      await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
+      final submit = tester.widget<IconButton>(
+        find.byKey(const ValueKey('memory-query-submit')),
+      );
+      submit.onPressed!();
+      final disclosure = find.byKey(
+        const ValueKey('memory-query-evidence-disclosure'),
+        skipOffstage: false,
+      );
+      final scrollable = find.byType(Scrollable).first;
+      for (var attempt = 0; attempt < 6 && disclosure.evaluate().isEmpty; attempt++) {
+        await tester.drag(scrollable, const Offset(0, -500));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await _pumpUntilFinder(tester, disclosure);
+      await tester.ensureVisible(disclosure);
+      await tester.tap(disclosure);
       await _pumpVisualFrames(tester);
 
       expect(find.text('AI 整理'), findsNothing);
-      expect(find.text('明确记录'), findsOneWidget);
-      expect(find.textContaining('用户文字记录'), findsOneWidget);
+      expect(
+        find.textContaining('明确记录', skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('用户文字记录', skipOffstage: false),
+        findsOneWidget,
+      );
       await expectLater(
         find.byKey(key),
         matchesGoldenFile('/tmp/deterministic_memory_query.png'),
@@ -1797,7 +1860,15 @@ void main() {
 
     expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
     expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
-    expect(find.text('为什么这么回答'), findsOneWidget);
+    final disclosure = find.byKey(
+      const ValueKey('memory-query-evidence-disclosure'),
+      skipOffstage: false,
+    );
+    await tester.ensureVisible(disclosure);
+    await tester.tap(disclosure);
+    await _pumpVisualFrames(tester);
+    expect(find.text('查看这次回答的依据'), findsOneWidget);
+    expect(find.textContaining('滨江公园 · 09:00–10:10'), findsOneWidget);
     final map = find.byKey(const ValueKey('amap-real-surface'));
     await tester.ensureVisible(map);
     await _pumpVisualFrames(tester);

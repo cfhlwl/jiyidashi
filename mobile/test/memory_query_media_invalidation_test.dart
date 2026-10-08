@@ -127,7 +127,7 @@ void main() {
       ),
     );
     await tester.enterText(find.byType(TextField).first, '找照片');
-    await tester.tap(find.text('从我的记录里找'));
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await _pumpUntil(
       tester,
       () => find.text('删除最相关记忆').evaluate().isNotEmpty,
@@ -176,7 +176,7 @@ void main() {
       ),
     );
     await tester.enterText(find.byType(TextField).first, '找照片');
-    await tester.tap(find.text('从我的记录里找'));
+    await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await _pumpUntil(
       tester,
       () => find.text('删除最相关记忆').evaluate().isNotEmpty,

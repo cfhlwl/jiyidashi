@@ -474,11 +474,11 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => find.text('第一次使用？创建账号').evaluate().isNotEmpty,
+      () => find.byKey(const ValueKey('auth-v3-register-entry')).evaluate().isNotEmpty,
       reason: 'auth page after cold-start restore',
     );
 
-    await tester.tap(find.text('第一次使用？创建账号'));
+    await tester.tap(find.byKey(const ValueKey('auth-v3-register-entry')));
     await tester.pump();
     final fields = find.byType(TextField);
     expect(fields, findsNWidgets(3));
@@ -495,7 +495,9 @@ void main() {
     final verificationFields = find.byType(TextField);
     expect(verificationFields, findsNWidgets(2));
     await tester.enterText(verificationFields.at(1), 'test-verification-token');
-    await tester.tap(find.widgetWithText(FilledButton, '完成验证'));
+    final completeVerification = find.widgetWithText(FilledButton, '完成验证');
+    await tester.ensureVisible(completeVerification);
+    await tester.tap(completeVerification);
     await _pumpUntil(
       tester,
       () => find.byKey(const ValueKey('onboarding-intro')).evaluate().isNotEmpty,
@@ -593,15 +595,29 @@ void main() {
     await tester.tap(queryButton);
     await _pumpUntil(
       tester,
-      () => find.textContaining('第 3 步').evaluate().isNotEmpty,
-      reason: 'query returned target Memory with Evidence',
+      () => find.byKey(const ValueKey('memory-query-evidence-disclosure'))
+          .evaluate()
+          .isNotEmpty,
+      reason: 'query returned target Memory with collapsed Evidence disclosure',
     );
 
     expect(api.queriedQuestion, memory);
-    expect(find.textContaining('第 3 步'), findsOneWidget);
-    expect(find.text('为什么这么回答'), findsOneWidget);
-    expect(find.textContaining('用户文字记录'), findsOneWidget);
+    expect(find.textContaining('第 2 步'), findsOneWidget);
+    expect(find.text('查看这次回答的依据'), findsOneWidget);
     expect(onboarding.values[owner], OnboardingStatus.inProgress);
+
+    final evidenceDisclosure = find.byKey(
+      const ValueKey('memory-query-evidence-disclosure'),
+    );
+    await tester.ensureVisible(evidenceDisclosure);
+    await tester.tap(evidenceDisclosure);
+    await _pumpUntil(
+      tester,
+      () => find.textContaining('第 3 步').evaluate().isNotEmpty,
+      reason: 'opened qualifying Evidence disclosure',
+    );
+    expect(find.textContaining('第 3 步'), findsOneWidget);
+    expect(find.textContaining('用户文字记录'), findsOneWidget);
 
     final complete = find.byKey(const ValueKey('onboarding-complete'));
     await tester.ensureVisible(complete);
@@ -615,7 +631,7 @@ void main() {
 
     expect(onboarding.values[owner], OnboardingStatus.completed);
     expect(find.byType(OnboardingGuideBar), findsNothing);
-    expect(find.text('为什么这么回答'), findsOneWidget);
+    expect(find.text('查看这次回答的依据'), findsOneWidget);
   });
 
 
@@ -649,13 +665,24 @@ void main() {
     await tester.tap(queryButton);
     await _pumpUntil(
       tester,
-      () => find.text('为什么这么回答').evaluate().isNotEmpty,
+      () => find.byKey(const ValueKey('memory-query-evidence-disclosure'))
+          .evaluate()
+          .isNotEmpty,
       reason: 'unrelated Evidence rendered without advancing step',
     );
 
     expect(find.textContaining('第 2 步'), findsOneWidget);
-    expect(find.text('为什么这么回答'), findsOneWidget);
+    expect(find.text('查看这次回答的依据'), findsOneWidget);
     expect(find.byKey(const ValueKey('onboarding-complete')), findsNothing);
+
+    final evidenceDisclosure = find.byKey(
+      const ValueKey('memory-query-evidence-disclosure'),
+    );
+    await tester.ensureVisible(evidenceDisclosure);
+    await tester.tap(evidenceDisclosure);
+    await tester.pump();
+    expect(find.textContaining('第 2 步'), findsOneWidget);
+    expect(find.textContaining('第 3 步'), findsNothing);
   });
 
   testWidgets('skip persists and profile provides deterministic re-entry', (tester) async {

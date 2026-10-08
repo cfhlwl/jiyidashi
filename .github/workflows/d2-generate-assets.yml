@@ -99,6 +99,148 @@ jobs:
           git commit -m "UIUX-P0-002: refresh deterministic CJK golden font"
           git push origin "HEAD:${{ github.head_ref }}"
 
+      # UIUX-V3-03 narrow gates must run before the repository's known analyzer
+      # baseline (Radio deprecation infos) can stop later steps.
+      - name: Test Memory V3 targeted
+        timeout-minutes: 5
+        run: flutter test test/memory_v3_visual_test.dart --reporter expanded
+
+      - name: Test Today V3 targeted
+        timeout-minutes: 5
+        run: flutter test test/today_footprint_page_test.dart --reporter expanded
+
+      - name: Test Auth V3 targeted
+        timeout-minutes: 5
+        run: >-
+          flutter test test/auth_v3_visual_fixture_test.dart
+          --plain-name "Auth V3 fixture 02 one tap confirmation"
+          --reporter expanded
+          && flutter test test/auth_v3_visual_fixture_test.dart
+          --plain-name "Auth V3 fixture 03 sms otp"
+          --reporter expanded
+          && flutter test test/auth_v3_visual_fixture_test.dart
+          --plain-name "Auth V3 fixture 05 one tap unavailable"
+          --reporter expanded
+
+      - name: Generate Today V3 authority candidate
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/today-v3-candidates
+          rm -rf test/uiux_v3_candidates
+          mkdir -p /tmp/today-v3-candidates
+          flutter test test/today_b2_visual_fixture_test.dart \
+            --update-goldens \
+            --dart-define=UIUX_V3_CANDIDATE_MODE=true \
+            --reporter expanded
+          cp test/uiux_v3_candidates/today_v3.png /tmp/today-v3-candidates/today_v3.png
+          rm -rf test/uiux_v3_candidates
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -z "$(git status --porcelain -- test/uiux_v3_candidates)"
+          test -s /tmp/today-v3-candidates/today_v3.png
+
+      - name: Generate Auth V3 authority candidates
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/auth-v3-candidates
+          rm -rf test/uiux_v3_candidates
+          mkdir -p /tmp/auth-v3-candidates
+          flutter test test/auth_v3_visual_fixture_test.dart \
+            --update-goldens \
+            --dart-define=UIUX_V3_CANDIDATE_MODE=true \
+            --reporter expanded
+          cp test/uiux_v3_candidates/auth/*.png /tmp/auth-v3-candidates/
+          rm -rf test/uiux_v3_candidates
+          for candidate in \
+            01_main_login.png \
+            02_phone_one_tap.png \
+            03_sms_otp.png \
+            04_email_login.png \
+            05_one_tap_unavailable.png; do
+            test -s "/tmp/auth-v3-candidates/$candidate"
+          done
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -z "$(git status --porcelain -- test/uiux_v3_candidates)"
+
+      - name: Upload Today and Auth authority candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-authority-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            /tmp/today-v3-candidates/today_v3.png
+            /tmp/auth-v3-candidates/*.png
+
+      - name: Generate Memory V3 review candidates
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/memory-v3-candidates
+          mkdir -p /tmp/memory-v3-candidates
+
+          flutter test test/memory_v3_visual_test.dart \
+            --plain-name "Memory V3 default shell and query surface are truthful" \
+            --update-goldens \
+            --dart-define=MEMORY_V3_GOLDEN_PREVIEW=true \
+            --reporter expanded
+          flutter test test/memory_v3_visual_test.dart \
+            --plain-name "Memory V3 answer and evidence remain server-backed" \
+            --update-goldens \
+            --dart-define=MEMORY_V3_GOLDEN_PREVIEW=true \
+            --reporter expanded
+          flutter test test/memory_v3_visual_test.dart \
+            --plain-name "Memory V3 production shell candidate" \
+            --update-goldens \
+            --dart-define=MEMORY_V3_GOLDEN_PREVIEW=true \
+            --reporter expanded
+
+          cp test/goldens/memory_v3_default.png /tmp/memory-v3-candidates/
+          cp test/goldens/memory_v3_answer.png /tmp/memory-v3-candidates/
+          cp test/goldens/memory_v3_shell.png /tmp/memory-v3-candidates/
+
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/memory-v3-candidates/memory_v3_default.png
+          test -s /tmp/memory-v3-candidates/memory_v3_answer.png
+          test -s /tmp/memory-v3-candidates/memory_v3_shell.png
+
+      - name: Generate PRODUCTION AUTH EMAIL candidate
+        if: always()
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/product-v2-goldens
+          mkdir -p /tmp/product-v2-goldens/candidate
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: production auth email" \
+            --update-goldens \
+            --dart-define=UIUX_V3_PRODUCTION_AUTH_CANDIDATE_MODE=true \
+            --reporter expanded
+          cp test/goldens/production_auth_email.png /tmp/product-v2-goldens/candidate/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/product-v2-goldens/candidate/production_auth_email.png
+
+      - name: Upload Memory V3 candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-v3-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/memory-v3-candidates/*.png
+
       - name: Analyze
         run: flutter analyze
 
@@ -129,12 +271,18 @@ jobs:
       # The runner restores committed goldens before normal validation, so a visual change
       # still fails closed until the reviewed PNGs are deliberately committed.
       - name: Generate candidate Product Experience goldens
+        if: always()
         timeout-minutes: 10
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/product-v2-goldens
           mkdir -p /tmp/product-v2-goldens/candidate
+
+          cleanup_goldens() {
+            git checkout -- test/goldens
+            git clean -f -- test/goldens
+          }
+          trap cleanup_goldens EXIT
 
           # Generate the complete deterministic visual suite in one Flutter
           # process. This is candidate-only: every PNG is copied to the review
@@ -142,7 +290,9 @@ jobs:
           # Reviewing the full set catches global token/layout effects without
           # silently accepting unrelated baselines.
           flutter test test/visual_golden_test.dart \
-            --update-goldens --reporter expanded
+            --update-goldens \
+            --dart-define=UIUX_V3_PRODUCTION_AUTH_CANDIDATE_MODE=true \
+            --reporter expanded
 
           cp test/goldens/*.png /tmp/product-v2-goldens/candidate/
 
@@ -154,6 +304,7 @@ jobs:
       # baseline gates remain fail-closed, but reviewers no longer have to wait
       # for the entire Flutter suite before inspecting UIUX-P0-002 evidence.
       - name: Upload Product Experience candidates
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: uiux-p0-002-candidates-${{ github.event.pull_request.head.sha || github.sha }}
@@ -161,6 +312,99 @@ jobs:
           retention-days: 14
           path: |
             /tmp/product-v2-goldens/candidate/*.png
+
+      - name: Generate Design Authority audit package
+        if: always()
+        timeout-minutes: 10
+        shell: bash
+        env:
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pillow==11.3.0
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from PIL import Image, ImageChops, ImageEnhance
+
+          head = os.environ['EXACT_HEAD']
+          root = Path('/tmp') / f'uiux-v3-design-authority-audit-{head}'
+          for name in ('authority', 'candidate', 'side-by-side', 'overlay', 'diff'):
+              (root / name).mkdir(parents=True, exist_ok=True)
+
+          cases = {
+              'today': ('design_reference/v3/01_today.png', '/tmp/today-v3-candidates/today_v3.png', 44, 22),
+              'memory_default': ('design_reference/v3/02_memory.png', '/tmp/memory-v3-candidates/memory_v3_default.png', 43, 31),
+              'memory_answer': ('design_reference/v3/02_memory.png', '/tmp/memory-v3-candidates/memory_v3_answer.png', 43, 31),
+              'memory_shell': ('design_reference/v3/02_memory.png', '/tmp/memory-v3-candidates/memory_v3_shell.png', 43, 31),
+              'auth_main_login': ('design_reference/v3/auth/derived/01_main_login.png', '/tmp/auth-v3-candidates/01_main_login.png', 44, 22),
+              'auth_phone_one_tap': ('design_reference/v3/auth/derived/02_phone_one_tap.png', '/tmp/auth-v3-candidates/02_phone_one_tap.png', 44, 22),
+              'auth_sms_otp': ('design_reference/v3/auth/derived/03_sms_otp.png', '/tmp/auth-v3-candidates/03_sms_otp.png', 44, 22),
+              'auth_email_login': ('design_reference/v3/auth/derived/04_email_login.png', '/tmp/auth-v3-candidates/04_email_login.png', 44, 22),
+              'auth_one_tap_unavailable': ('design_reference/v3/auth/derived/05_one_tap_unavailable.png', '/tmp/auth-v3-candidates/05_one_tap_unavailable.png', 44, 22),
+              'production_auth_email': ('design_reference/v3/auth/derived/04_email_login.png', '/tmp/product-v2-goldens/candidate/production_auth_email.png', 44, 22),
+          }
+
+          def normalize(authority, size):
+              target_w, target_h = size
+              scale = min(target_w / authority.width, target_h / authority.height)
+              resized = authority.resize((round(authority.width * scale), round(authority.height * scale)), Image.Resampling.LANCZOS)
+              canvas = Image.new('RGBA', size, (250, 249, 247, 255))
+              x = (target_w - resized.width) // 2
+              y = (target_h - resized.height) // 2
+              canvas.alpha_composite(resized, (x, y))
+              return canvas
+
+          report = [
+              f'# UIUX-V3-03 Design Authority Audit ({head})',
+              '',
+              'Review-only package. Design Authority PNGs are copied, never modified.',
+              '',
+              'PRODUCTION AUTH EMAIL: sourced from the real JiYiApp/AuthPage with AuthCapabilities.emailOnly().',
+              'FUTURE DESIGN PREVIEW: phone one-tap, SMS OTP, WeChat, and unavailable states are fixture previews only; they are not current production acceptance.',
+              '',
+              '| Surface | Authority | Candidate | Authority px | Candidate px | Chrome mask |',
+              '|---|---|---|---:|---:|---|',
+          ]
+          for name, (authority_path, candidate_path, top_mask, bottom_mask) in cases.items():
+              authority = Image.open(authority_path).convert('RGBA')
+              candidate = Image.open(candidate_path).convert('RGBA')
+              authority.save(root / 'authority' / f'{name}.png')
+              candidate.save(root / 'candidate' / f'{name}.png')
+              normalized = normalize(authority, candidate.size)
+              masked = normalized.copy()
+              # Candidate is a Flutter-level capture without native chrome.
+              # Replace only those reference regions with candidate pixels before diff.
+              for y in list(range(min(top_mask, candidate.height))) + list(range(max(0, candidate.height - bottom_mask), candidate.height)):
+                  masked.paste(candidate.crop((0, y, candidate.width, y + 1)), (0, y))
+              side = Image.new('RGBA', (candidate.width * 2, candidate.height))
+              side.paste(normalized, (0, 0))
+              side.paste(candidate, (candidate.width, 0))
+              side.save(root / 'side-by-side' / f'{name}.png')
+              Image.blend(masked, candidate, 0.5).save(root / 'overlay' / f'{name}.png')
+              diff = ImageChops.difference(masked, candidate).convert('L')
+              diff = ImageEnhance.Contrast(diff).enhance(2.0)
+              diff.save(root / 'diff' / f'{name}.png')
+              report.append(f'| {name} | `{authority_path}` | `{candidate_path}` | {authority.size[0]}x{authority.size[1]} | {candidate.size[0]}x{candidate.size[1]} | top {top_mask}px / bottom {bottom_mask}px |')
+
+          (root / 'audit.md').write_text('\n'.join(report) + '\n\nAutomated images are evidence only; visual severity remains subject to independent review.\n', encoding='utf-8')
+          manifest = [
+              'PRODUCTION AUTH EMAIL: production_auth_email',
+              'FUTURE DESIGN PREVIEW: auth_main_login, auth_phone_one_tap, auth_sms_otp, auth_email_login, auth_one_tap_unavailable',
+              '',
+          ]
+          manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())
+          (root / 'manifest.txt').write_text('\n'.join(manifest) + '\n', encoding='utf-8')
+          print(root)
+
+      - name: Upload Design Authority audit package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-design-authority-audit-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/uiux-v3-design-authority-audit-${{ github.event.pull_request.head.sha || github.sha }}/
 
       - name: Run Flutter tests including committed goldens
         timeout-minutes: 10

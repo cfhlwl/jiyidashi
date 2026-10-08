@@ -90,7 +90,7 @@ Future<void> _submitHistoricalQuery(
     ),
   );
   await tester.enterText(find.byType(TextField).first, '我25号去哪了？');
-  await tester.tap(find.text('从我的记录里找'));
+  await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
   await tester.pump();
 }
 
@@ -102,15 +102,60 @@ void main() {
     await _submitHistoricalQuery(tester, api);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('公司'), findsWidgets);
-    expect(find.text('18:16 - 19:05'), findsOneWidget);
-    expect(find.text('按日期看足迹'), findsOneWidget);
+    // The answer surface and its semantic header are in the initial viewport.
+    // The V3 contract renders the mapped intent in the disclosure subtitle,
+    // while the result surface uses the human-facing day title.
+    expect(find.text('这天的足迹'), findsOneWidget);
+    expect(find.textContaining('2026-09-25 的可靠足迹'), findsOneWidget);
     expect(find.text('DATE_FOOTPRINT_QUERY'), findsNothing);
     expect(find.text('没有可展示的参考记录'), findsNothing);
-    expect(find.byKey(const ValueKey('memory-query-day-map')), findsOneWidget);
-    expect(find.byKey(const ValueKey('amap-privacy-blocked')), findsOneWidget);
+    final disclosure = find.byKey(
+      const ValueKey('memory-query-evidence-disclosure'),
+      skipOffstage: false,
+    );
+    expect(disclosure, findsOneWidget);
     expect(
-      find.byKey(const ValueKey('memory-query-amap-privacy-accept')),
+      find.textContaining('明确记录 · 按日期看足迹', skipOffstage: false),
+      findsOneWidget,
+    );
+
+    final timeRange = find.text('18:16 - 19:05', skipOffstage: false);
+    final scrollable = find.byType(Scrollable).first;
+    for (var attempt = 0; attempt < 8 && timeRange.evaluate().isEmpty; attempt++) {
+      await tester.drag(scrollable, const Offset(0, -420));
+      await tester.pumpAndSettle();
+    }
+    await tester.ensureVisible(timeRange);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('公司'), findsWidgets);
+    expect(timeRange, findsOneWidget);
+
+    // The map/privacy subtree is later than the visit row.  Keep the check
+    // tied to the real production scrollable rather than changing the layout.
+    final dayMap = find.byKey(
+      const ValueKey('memory-query-day-map'),
+      skipOffstage: false,
+    );
+    for (var attempt = 0; attempt < 8 && dayMap.evaluate().isEmpty; attempt++) {
+      await tester.drag(scrollable, const Offset(0, -420));
+      await tester.pumpAndSettle();
+    }
+    await tester.ensureVisible(dayMap);
+    await tester.pumpAndSettle();
+
+    expect(dayMap, findsOneWidget);
+    // These keys are subtree authority checks; skipOffstage is intentional
+    // because native-map/privacy state is not itself a viewport assertion.
+    expect(
+      find.byKey(const ValueKey('amap-privacy-blocked'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('memory-query-amap-privacy-accept'),
+        skipOffstage: false,
+      ),
       findsOneWidget,
     );
   });

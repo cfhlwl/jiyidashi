@@ -13,6 +13,20 @@ abstract final class JiYiSpacing {
   static const double hero = 48;
 }
 
+// Today V3 structure anchors. These values describe the primary 390x844 review
+// viewport; they are geometry anchors, not business or typography tokens.
+abstract final class JiYiTodayGeometry {
+  static const double pageHorizontalPadding = 13;
+  static const double heroHeight = 167;
+  static const double heroFootprintOverlap = 16;
+  static const double footprintCardHeight = 239;
+  static const double mapViewportHeight = 156;
+  static const double sectionGap = 12;
+  static const double memorySectionHeight = 259;
+  static const double quickCaptureHeight = 94;
+  static const double bottomNavigationContentHeight = 48;
+}
+
 // Radius token 只统一视觉曲率，不替代 Material 控件本身的交互/可访问性行为。
 abstract final class JiYiRadius {
   static const double control = 12;
@@ -40,6 +54,21 @@ abstract final class JiYiProductColors {
   static const Color family = Color(0xFF7A6395);
   static const Color location = Color(0xFFBD7544);
   static const Color media = Color(0xFF4F7D69);
+}
+
+// Today V3 visual roles. These are presentation tokens only; they never
+// replace server-authoritative data or semantic state colors.
+abstract final class JiYiTodayVisuals {
+  static const Color background = Color(0xFFFAF8F3);
+  static const Color card = Color(0xFFFEFDFE);
+  static const Color navy = Color(0xFF102A50);
+  static const Color primaryBlue = Color(0xFF2378E8);
+  static const Color secondaryText = Color(0xFF6D829F);
+  static const Color mapSurface = Color(0xFFEAF3FA);
+  static const Color mapGreen = Color(0xFF35A992);
+  static const Color captureOrange = Color(0xFFE18A14);
+  static const Color captureGreen = Color(0xFF2C9A73);
+  static const Color cardShadow = Color(0x14152D4B);
 }
 
 abstract final class JiYiIconSize {

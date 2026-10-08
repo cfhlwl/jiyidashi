@@ -424,6 +424,68 @@ class _EvidenceMeta extends StatelessWidget {
 }
 
 
+/// Production Hero asset boundary. A bundled asset can be supplied later
+/// without changing the Today shell; a failed asset load falls back locally.
+class TodayHeroBackground extends StatelessWidget {
+  const TodayHeroBackground({
+    super.key,
+    this.assetName,
+    required this.fallback,
+    this.alignment = Alignment.center,
+    this.fit = BoxFit.cover,
+  });
+
+  static const defaultAsset = 'assets/brand/today_hero_default.png';
+
+  final String? assetName;
+  final Widget fallback;
+  final Alignment alignment;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    final asset = assetName?.trim();
+    if (asset == null || asset.isEmpty) return fallback;
+    return Image.asset(
+      asset,
+      fit: fit,
+      alignment: alignment,
+      errorBuilder: (context, error, stackTrace) => fallback,
+    );
+  }
+}
+
+class _TodayHeroFallback extends StatelessWidget {
+  const _TodayHeroFallback({required this.atmospheric});
+
+  final bool atmospheric;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: theme.brightness == Brightness.dark
+                  ? const [Color(0xFF1B304A), Color(0xFF15243A)]
+                  : const [Color(0xFFEFF6FB), Color(0xFFFFF4E4)],
+            ),
+          ),
+        ),
+        if (atmospheric && theme.brightness == Brightness.light)
+          const IgnorePointer(
+            child: CustomPaint(painter: _JiYiHeroLandscapePainter()),
+          ),
+      ],
+    );
+  }
+}
+
 class JiYiHeroHeader extends StatelessWidget {
   const JiYiHeroHeader({
     super.key,
@@ -432,6 +494,11 @@ class JiYiHeroHeader extends StatelessWidget {
     this.subtitle,
     this.icon,
     this.atmospheric = false,
+    this.fullBleed = false,
+    this.height,
+    this.heroAsset,
+    this.heroAlignment = Alignment.center,
+    this.heroFit = BoxFit.cover,
   });
 
   final String title;
@@ -439,35 +506,72 @@ class JiYiHeroHeader extends StatelessWidget {
   final String? subtitle;
   final IconData? icon;
   final bool atmospheric;
+  final bool fullBleed;
+  final double? height;
+  final String? heroAsset;
+  final Alignment heroAlignment;
+  final BoxFit heroFit;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    if (fullBleed) {
+      return SizedBox(
+        height: height ?? JiYiTodayGeometry.heroHeight,
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: TodayHeroBackground(
+                assetName: heroAsset,
+                alignment: heroAlignment,
+                fit: heroFit,
+                fallback: _TodayHeroFallback(atmospheric: atmospheric),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: const [0.50, 0.86, 1],
+                      colors: [
+                        Colors.transparent,
+                        theme.brightness == Brightness.dark
+                            ? const Color(0x33101F32)
+                            : const Color(0x18FFFDF8),
+                        theme.brightness == Brightness.dark
+                            ? const Color(0xFF0D1828)
+                            : JiYiTodayVisuals.background,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 36, 20, 0),
+              child: _buildHeroContent(context),
+            ),
+          ],
+        ),
+      );
+    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(JiYiRadius.large),
       child: Stack(
         children: [
           Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: theme.brightness == Brightness.dark
-                      ? const [Color(0xFF1B304A), Color(0xFF15243A)]
-                      : const [Color(0xFFEAF4FC), Color(0xFFFFF4E5)],
-                ),
-              ),
+            child: TodayHeroBackground(
+              assetName: heroAsset,
+              alignment: heroAlignment,
+              fit: heroFit,
+              fallback: _TodayHeroFallback(atmospheric: atmospheric),
             ),
           ),
-          if (atmospheric && theme.brightness == Brightness.light)
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _JiYiHeroLandscapePainter(),
-                ),
-              ),
-            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               JiYiSpacing.xl,
@@ -475,70 +579,129 @@ class JiYiHeroHeader extends StatelessWidget {
               JiYiSpacing.xl,
               JiYiSpacing.xxl,
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (eyebrow != null) ...[
-                        Text(
-                          eyebrow!,
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                        const SizedBox(height: JiYiSpacing.sm),
-                      ],
-                      Text(
-                        title,
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          color: theme.colorScheme.onSurface,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.6,
-                        ),
-                      ),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: JiYiSpacing.sm),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 280),
-                          child: Text(
-                            subtitle!,
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              height: 1.55,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (icon != null) ...[
-                  const SizedBox(width: JiYiSpacing.md),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface.withValues(alpha: 0.68),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(JiYiSpacing.sm),
-                      child: Icon(
-                        icon,
-                        size: JiYiIconSize.hero,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            child: _buildHeroContent(context),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildHeroContent(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (eyebrow != null) ...[
+                Text(
+                  eyebrow!,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: JiYiSpacing.sm),
+              ],
+              Text(
+                title,
+                style: fullBleed
+                    ? const TextStyle(
+                        color: JiYiTodayVisuals.navy,
+                        fontSize: 42,
+                        fontWeight: FontWeight.w800,
+                        height: 1.0,
+                        letterSpacing: -1.2,
+                      )
+                    : theme.textTheme.headlineMedium?.copyWith(
+                        color: theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.6,
+                      ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 8),
+                if (fullBleed)
+                  _TodayHeroSubtitle(subtitle: subtitle!)
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 280),
+                    child: Text(
+                      subtitle!,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.55,
+                      ),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+        if (icon != null) ...[
+          const SizedBox(width: JiYiSpacing.md),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface.withValues(alpha: 0.68),
+              shape: BoxShape.circle,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(JiYiSpacing.sm),
+              child: Icon(
+                icon,
+                size: JiYiIconSize.hero,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _TodayHeroSubtitle extends StatelessWidget {
+  const _TodayHeroSubtitle({required this.subtitle});
+
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = subtitle.split('\n');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          lines.first,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: JiYiTodayVisuals.navy,
+            fontSize: 20,
+            fontWeight: FontWeight.w500,
+            height: 1.1,
+            fontFamilyFallback: ['Microsoft YaHei', 'PingFang SC'],
+          ),
+        ),
+        if (lines.length > 1) ...[
+          const SizedBox(height: 4),
+          Text(
+            lines.skip(1).join('\n'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: JiYiTodayVisuals.secondaryText,
+              fontSize: 20,
+              fontWeight: FontWeight.w400,
+              height: 1.1,
+              fontFamilyFallback: ['Microsoft YaHei', 'PingFang SC'],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -559,7 +722,7 @@ class _JiYiHeroLandscapePainter extends CustomPainter {
     );
 
     final far = Paint()
-      ..color = const Color(0xFFBFD7E7).withValues(alpha: 0.42);
+      ..color = const Color(0xFFB7CFE0).withValues(alpha: 0.54);
     final farPath = Path()
       ..moveTo(0, size.height * 0.68)
       ..lineTo(size.width * 0.18, size.height * 0.46)
@@ -573,8 +736,29 @@ class _JiYiHeroLandscapePainter extends CustomPainter {
       ..close();
     canvas.drawPath(farPath, far);
 
+    final haze = Paint()
+      ..color = const Color(0xFFEFF5F2).withValues(alpha: 0.74);
+    final hazePath = Path()
+      ..moveTo(0, size.height * 0.70)
+      ..quadraticBezierTo(
+        size.width * 0.26,
+        size.height * 0.56,
+        size.width * 0.52,
+        size.height * 0.69,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.78,
+        size.height * 0.81,
+        size.width,
+        size.height * 0.63,
+      )
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(hazePath, haze);
+
     final near = Paint()
-      ..color = const Color(0xFF86AFC8).withValues(alpha: 0.28);
+      ..color = const Color(0xFF789DB2).withValues(alpha: 0.34);
     final nearPath = Path()
       ..moveTo(0, size.height * 0.8)
       ..lineTo(size.width * 0.22, size.height * 0.63)
@@ -586,6 +770,27 @@ class _JiYiHeroLandscapePainter extends CustomPainter {
       ..lineTo(0, size.height)
       ..close();
     canvas.drawPath(nearPath, near);
+
+    final lake = Paint()
+      ..color = const Color(0xFFB7D9E7).withValues(alpha: 0.36);
+    final lakePath = Path()
+      ..moveTo(0, size.height * 0.79)
+      ..quadraticBezierTo(
+        size.width * 0.28,
+        size.height * 0.73,
+        size.width * 0.56,
+        size.height * 0.80,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.78,
+        size.height * 0.86,
+        size.width,
+        size.height * 0.76,
+      )
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(lakePath, lake);
   }
 
   @override

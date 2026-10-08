@@ -28,3 +28,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/brand/today_hero_default.png
+    - assets/brand/jiyi_logo_primary.png

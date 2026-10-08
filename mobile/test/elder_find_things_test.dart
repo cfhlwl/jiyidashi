@@ -51,7 +51,9 @@ void main() {
     await tester.pump();
 
     expect(find.text('记忆'), findsOneWidget);
-    expect(find.text('从我的记录里找'), findsOneWidget);
+    expect(find.byKey(const ValueKey('memory-query-input')), findsOneWidget);
+    expect(find.text('想找哪段回忆？'), findsOneWidget);
+    expect(find.byKey(const ValueKey('memory-query-submit')), findsOneWidget);
     expect(find.text('我想找东西'), findsNothing);
     expect(find.text('帮我找'), findsNothing);
     expect(api.queryCalls, 0);
@@ -87,7 +89,21 @@ void main() {
     expect(api.lastQuestion, '护照');
     expect(find.text('我还不知道它在哪里'), findsOneWidget);
     expect(find.textContaining('没有找到足够可靠的记录'), findsOneWidget);
-    expect(find.text('没有足够记录'), findsOneWidget);
+    final disclosure = find.byKey(
+      const ValueKey('memory-query-evidence-disclosure'),
+      skipOffstage: false,
+    );
+    await tester.ensureVisible(disclosure);
+    await tester.tap(disclosure);
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('没有足够记录 · 查找物品', skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.text('没有可展示的参考记录，请谨慎使用这个答案。'),
+      findsOneWidget,
+    );
     expect(find.textContaining('可能在'), findsNothing);
     expect(find.textContaining('应该在'), findsNothing);
     expect(find.textContaining('大概在'), findsNothing);
@@ -125,9 +141,20 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('memory-query-submit')));
     await tester.pumpAndSettle();
 
+    final disclosure = find.byKey(
+      const ValueKey('memory-query-evidence-disclosure'),
+      skipOffstage: false,
+    );
+    await tester.ensureVisible(disclosure);
+    await tester.tap(disclosure);
+    await tester.pumpAndSettle();
+
     expect(find.text('护照在书房抽屉。'), findsOneWidget);
     expect(find.text('AI 整理'), findsNothing);
-    expect(find.text('明确记录'), findsOneWidget);
+    expect(
+      find.textContaining('明确记录 · 查找物品', skipOffstage: false),
+      findsOneWidget,
+    );
     expect(find.text('书房抽屉'), findsOneWidget);
     expect(find.text('模型猜测的厨房'), findsNothing);
     expect(find.textContaining('用户文字记录'), findsOneWidget);
@@ -228,7 +255,7 @@ void main() {
 
     expect(find.text('旧账号答案'), findsWidgets);
     expect(find.text('AI 整理'), findsNothing);
-    expect(find.text('明确记录'), findsOneWidget);
+    expect(find.textContaining('明确记录 · 查找物品'), findsOneWidget);
 
     api.logout();
     api.accessToken = 'token-b';
@@ -237,7 +264,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('旧账号答案'), findsNothing);
-    expect(find.text('明确记录'), findsNothing);
+    expect(find.textContaining('明确记录 · 查找物品'), findsNothing);
   });
 
   testWidgets('Elder find query has no write, media, or location side effects', (tester) async {
