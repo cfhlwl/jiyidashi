@@ -562,6 +562,7 @@ class AuthPage extends StatefulWidget {
     this.capabilities = const AuthCapabilities.emailOnly(),
     this.phoneOneTapBridge,
     this.privacyConsentGranted = false,
+    this.onSmsOtp,
     this.initialMessage,
     this.onRegistrationCompleted,
     this.onAccountDeletionRecovery,
@@ -572,6 +573,7 @@ class AuthPage extends StatefulWidget {
   final AuthCapabilities capabilities;
   final PhoneOneTapBridge? phoneOneTapBridge;
   final bool privacyConsentGranted;
+  final VoidCallback? onSmsOtp;
   final String? initialMessage;
   final VoidCallback? onRegistrationCompleted;
   final VoidCallback? onAccountDeletionRecovery;
@@ -657,6 +659,7 @@ class _AuthPageState extends State<AuthPage> {
     final generation = ++_capabilityGeneration;
     final capabilities = await authority.probe(
       privacyConsentGranted: _privacyConsentGranted,
+      baseline: _capabilities,
     );
     if (!mounted || generation != _capabilityGeneration) return;
     setState(() => _capabilities = capabilities);
@@ -991,6 +994,18 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 
+  Widget _buildSmsFallbackEntry() {
+    if (!_capabilities.smsOtp || widget.onSmsOtp == null) {
+      return const SizedBox.shrink();
+    }
+    return AuthV3ProviderRow(
+      key: const ValueKey('auth-v3-sms-fallback'),
+      label: '手机号验证码登录',
+      icon: Icons.sms_outlined,
+      onPressed: _phoneOneTapPending ? null : widget.onSmsOtp,
+    );
+  }
+
   Widget _buildEmailLoginV3Surface(BuildContext context) {
     final compactViewport = MediaQuery.sizeOf(context).height < 700;
     final fieldBorder = OutlineInputBorder(
@@ -1126,6 +1141,7 @@ class _AuthPageState extends State<AuthPage> {
                     child: const Text('忘记密码？'),
                   ),
                   _buildPhoneOneTapEntry(),
+                  _buildSmsFallbackEntry(),
                   SizedBox(height: compactViewport ? 32 : 150),
                   Container(
                     height: 48,

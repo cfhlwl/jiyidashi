@@ -92,6 +92,7 @@ Future<void> _pumpAuthPage(
   required AuthCapabilities capabilities,
   bool privacyConsentGranted = true,
   VoidCallback? onAuthenticated,
+  VoidCallback? onSmsOtp,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -101,6 +102,7 @@ Future<void> _pumpAuthPage(
         phoneOneTapBridge: bridge,
         privacyConsentGranted: privacyConsentGranted,
         onAuthenticated: onAuthenticated ?? () {},
+        onSmsOtp: onSmsOtp,
       ),
     ),
   );
@@ -153,6 +155,27 @@ void main() {
     expect(capabilities.phoneOneTap, isFalse);
     expect(capabilities.smsOtp, isFalse);
     expect(capabilities.wechat, isFalse);
+  });
+
+  testWidgets('SMS fallback remains capability-gated and invokes its callback',
+      (tester) async {
+    final bridge = _TestPhoneBridge();
+    final api = _api(handler: (_) async => http.Response('{}', 200));
+    var smsAttempts = 0;
+
+    await _pumpAuthPage(
+      tester,
+      api: api,
+      bridge: bridge,
+      privacyConsentGranted: false,
+      capabilities: _capabilities(sms: AuthCapabilityStatus.available),
+      onSmsOtp: () => smsAttempts += 1,
+    );
+
+    expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
+    expect(find.byKey(const ValueKey('auth-v3-sms-fallback')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('auth-v3-sms-fallback')));
+    expect(smsAttempts, 1);
   });
 
   testWidgets('available one-tap is visible and exchanges a transient token',
@@ -290,5 +313,35 @@ void main() {
 
     expect(find.text('ALIYUN_RAW_500'), findsNothing);
     expect(find.text('本机号码登录暂时不可用，请使用邮箱登录。'), findsOneWidget);
+  });
+
+  testWidgets('cancelled and timeout states remain consumer-safe', (tester) async {
+    for (final result in <PhoneOneTapResult>[
+      const PhoneOneTapResult.cancelled(),
+      const PhoneOneTapResult.timeout(),
+    ]) {
+      final bridge = _TestPhoneBridge(loginResult: result);
+      final api = _api(handler: (_) async => http.Response('{}', 200));
+
+      await _pumpAuthPage(
+        tester,
+        api: api,
+        bridge: bridge,
+        capabilities: _capabilities(phone: AuthCapabilityStatus.available),
+      );
+      await tester.tap(find.byKey(const ValueKey('auth-v3-phone-one-tap')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('opaque-token'), findsNothing);
+      expect(find.textContaining('ALIYUN'), findsNothing);
+      if (result.state == PhoneOneTapState.cancelled) {
+        expect(find.text('本机号码登录响应超时，请使用邮箱登录。'), findsNothing);
+      } else {
+        expect(find.text('本机号码登录响应超时，请使用邮箱登录。'), findsOneWidget);
+      }
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
   });
 }

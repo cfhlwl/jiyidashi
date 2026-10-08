@@ -101,8 +101,15 @@ class AuthCapabilityAuthority {
 
   final PhoneOneTapBridge phoneOneTapBridge;
 
-  Future<AuthCapabilities> probe({required bool privacyConsentGranted}) async {
-    if (!privacyConsentGranted) return const AuthCapabilities.emailOnly();
+  Future<AuthCapabilities> probe({
+    required bool privacyConsentGranted,
+    AuthCapabilities baseline = const AuthCapabilities.emailOnly(),
+  }) async {
+    if (!privacyConsentGranted) {
+      return baseline.copyWith(
+        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+      );
+    }
 
     try {
       var result = await phoneOneTapBridge.initialize(
@@ -119,13 +126,12 @@ class AuthCapabilityAuthority {
         PhoneOneTapState.unavailable ||
         PhoneOneTapState.tokenAcquired => AuthCapabilityStatus.unavailable,
       };
-      return AuthCapabilities.statuses(
+      return baseline.copyWith(
         emailStatus: AuthCapabilityStatus.available,
         phoneOneTapStatus: phoneStatus,
       );
     } catch (_) {
-      return const AuthCapabilities.statuses(
-        emailStatus: AuthCapabilityStatus.available,
+      return baseline.copyWith(
         phoneOneTapStatus: AuthCapabilityStatus.unavailable,
       );
     }
