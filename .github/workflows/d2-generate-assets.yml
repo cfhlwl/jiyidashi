@@ -128,15 +128,19 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf /tmp/today-v3-candidates
+          rm -rf test/uiux_v3_candidates
           mkdir -p /tmp/today-v3-candidates
           flutter test test/today_b2_visual_fixture_test.dart \
             --update-goldens \
-            --dart-define=UIUX_V3_CANDIDATE_DIR=/tmp/today-v3-candidates \
+            --dart-define=UIUX_V3_CANDIDATE_MODE=true \
             --reporter expanded
-          test -s /tmp/today-v3-candidates/today_v3.png
+          cp test/uiux_v3_candidates/today_v3.png /tmp/today-v3-candidates/today_v3.png
+          rm -rf test/uiux_v3_candidates
           git checkout -- test/goldens
           git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
+          test -z "$(git status --porcelain -- test/uiux_v3_candidates)"
+          test -s /tmp/today-v3-candidates/today_v3.png
 
       - name: Generate Auth V3 authority candidates
         timeout-minutes: 5
@@ -144,11 +148,14 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf /tmp/auth-v3-candidates
+          rm -rf test/uiux_v3_candidates
           mkdir -p /tmp/auth-v3-candidates
           flutter test test/auth_v3_visual_fixture_test.dart \
             --update-goldens \
-            --dart-define=UIUX_V3_CANDIDATE_DIR=/tmp/auth-v3-candidates \
+            --dart-define=UIUX_V3_CANDIDATE_MODE=true \
             --reporter expanded
+          cp test/uiux_v3_candidates/auth/*.png /tmp/auth-v3-candidates/
+          rm -rf test/uiux_v3_candidates
           for candidate in \
             01_main_login.png \
             02_phone_one_tap.png \
@@ -160,6 +167,7 @@ jobs:
           git checkout -- test/goldens
           git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
+          test -z "$(git status --porcelain -- test/uiux_v3_candidates)"
 
       - name: Upload Today and Auth authority candidates
         uses: actions/upload-artifact@v4

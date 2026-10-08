@@ -15,7 +15,7 @@ void main() {
     // Cold start resolves server-authoritative restore before showing the formal auth
     // entry. With no persisted refresh session, personal owner UI must stay hidden.
     expect(find.bySemanticsLabel('迹忆'), findsOneWidget);
-    expect(find.text('登录'), findsOneWidget);
+    expect(find.text('邮箱登录'), findsOneWidget);
     expect(find.text('第一次使用？创建账号'), findsOneWidget);
     expect(find.text('今天'), findsNothing);
   });

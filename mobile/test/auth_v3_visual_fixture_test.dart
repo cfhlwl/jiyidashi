@@ -1,8 +1,6 @@
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/auth_v3.dart';
@@ -12,8 +10,10 @@ import 'package:jiyidashi/ui/jiyi_tokens.dart';
 const _canvasKey = ValueKey<String>('auth-v3-fixture-canvas');
 const _fixtureSize = Size(390, 844);
 const _fixtureFontFamily = 'AuthFixtureNotoSansSC';
-const _reviewDir = r'D:\jiyi-visual-review\auth-v3-a3';
-const _candidateDir = String.fromEnvironment('UIUX_V3_CANDIDATE_DIR');
+const _candidateMode = bool.fromEnvironment(
+  'UIUX_V3_CANDIDATE_MODE',
+  defaultValue: false,
+);
 late ImageProvider<Object> _fixtureHeroImage;
 
 class _AuthV3Fixture extends StatelessWidget {
@@ -385,33 +385,6 @@ Future<void> _loadAuthMaterialIcons() async {
   await loader.load();
 }
 
-Future<void> _writeFixturePng(
-  WidgetTester tester,
-  String directory,
-  String filename,
-) async {
-  final boundary = tester.renderObject<RenderRepaintBoundary>(
-    find.byKey(_canvasKey),
-  );
-  final image = await boundary.toImage(pixelRatio: 1.0);
-  final data = await image.toByteData(format: ui.ImageByteFormat.png);
-  Directory(directory).createSync(recursive: true);
-  File('$directory/$filename').writeAsBytesSync(data!.buffer.asUint8List());
-  image.dispose();
-}
-
-Future<void> _captureFixtureIfRequested(
-  WidgetTester tester,
-  String filename,
-) async {
-  if (Platform.environment['JIYI_AUTH_CAPTURE'] == '1') {
-    await _writeFixturePng(tester, _reviewDir, filename);
-  }
-  if (_candidateDir.isNotEmpty) {
-    await _writeFixturePng(tester, _candidateDir, filename);
-  }
-}
-
 Future<void> _pumpAuthFixture(WidgetTester tester, AuthV3Screen screen) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -462,42 +435,69 @@ void main() {
     await _pumpAuthFixture(tester, AuthV3Screen.mainLogin);
     expect(find.text('本机号码一键登录'), findsOneWidget);
     expect(find.text('邮箱登录'), findsOneWidget);
-    await _captureFixtureIfRequested(tester, '01_main_login.png');
     await expectLater(
       find.byKey(_canvasKey),
       matchesGoldenFile('goldens/auth_v3_main_login.png'),
     );
+    if (_candidateMode) {
+      await expectLater(
+        find.byKey(_canvasKey),
+        matchesGoldenFile('uiux_v3_candidates/auth/01_main_login.png'),
+      );
+    }
   });
 
   testWidgets('Auth V3 fixture 02 one tap confirmation', (tester) async {
     await configureViewport(tester);
     await _pumpAuthFixture(tester, AuthV3Screen.phoneOneTap);
     expect(find.text('138 **** 8888'), findsOneWidget);
-    await _captureFixtureIfRequested(tester, '02_phone_one_tap.png');
+    if (_candidateMode) {
+      await expectLater(
+        find.byKey(_canvasKey),
+        matchesGoldenFile('uiux_v3_candidates/auth/02_phone_one_tap.png'),
+      );
+    }
   });
 
   testWidgets('Auth V3 fixture 03 sms otp', (tester) async {
     await configureViewport(tester);
     await _pumpAuthFixture(tester, AuthV3Screen.smsOtp);
     expect(find.text('获取验证码'), findsOneWidget);
-    await _captureFixtureIfRequested(tester, '03_sms_otp.png');
+    if (_candidateMode) {
+      await expectLater(
+        find.byKey(_canvasKey),
+        matchesGoldenFile('uiux_v3_candidates/auth/03_sms_otp.png'),
+      );
+    }
   });
 
   testWidgets('Auth V3 fixture 04 email', (tester) async {
     await configureViewport(tester);
     await _pumpAuthFixture(tester, AuthV3Screen.emailLogin);
     expect(find.text('邮箱登录'), findsOneWidget);
-    await _captureFixtureIfRequested(tester, '04_email_login.png');
     await expectLater(
       find.byKey(_canvasKey),
       matchesGoldenFile('goldens/auth_v3_email_login.png'),
     );
+    if (_candidateMode) {
+      await expectLater(
+        find.byKey(_canvasKey),
+        matchesGoldenFile('uiux_v3_candidates/auth/04_email_login.png'),
+      );
+    }
   });
 
   testWidgets('Auth V3 fixture 05 one tap unavailable', (tester) async {
     await configureViewport(tester);
     await _pumpAuthFixture(tester, AuthV3Screen.oneTapUnavailable);
     expect(find.text('暂时无法获取本机号码'), findsOneWidget);
-    await _captureFixtureIfRequested(tester, '05_one_tap_unavailable.png');
+    if (_candidateMode) {
+      await expectLater(
+        find.byKey(_canvasKey),
+        matchesGoldenFile(
+          'uiux_v3_candidates/auth/05_one_tap_unavailable.png',
+        ),
+      );
+    }
   });
 }

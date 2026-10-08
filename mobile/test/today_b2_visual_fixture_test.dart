@@ -1,8 +1,6 @@
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/amap_footprint_map.dart';
@@ -17,8 +15,10 @@ const _fixtureFontFamily = 'B2 Noto Sans SC';
 const _fixtureUserId = '00000000-0000-4000-8000-000000000001';
 const _leftMediaId = '11111111-1111-4111-8111-111111111111';
 const _rightMediaId = '22222222-2222-4222-8222-222222222222';
-const _canvasKey = ValueKey<String>('today-v3-candidate-canvas');
-const _candidateDir = String.fromEnvironment('UIUX_V3_CANDIDATE_DIR');
+const _candidateMode = bool.fromEnvironment(
+  'UIUX_V3_CANDIDATE_MODE',
+  defaultValue: false,
+);
 
 class _B2Consent implements AmapPrivacyConsentAuthority {
   @override
@@ -353,19 +353,6 @@ Future<void> _loadB2MaterialIcons() async {
   await loader.load();
 }
 
-Future<void> _captureTodayCandidate(WidgetTester tester) async {
-  if (_candidateDir.isEmpty) return;
-  final boundary = tester.renderObject<RenderRepaintBoundary>(
-    find.byKey(_canvasKey),
-  );
-  final image = await boundary.toImage(pixelRatio: 1.0);
-  final data = await image.toByteData(format: ui.ImageByteFormat.png);
-  Directory(_candidateDir).createSync(recursive: true);
-  File('$_candidateDir/today_v3.png')
-      .writeAsBytesSync(data!.buffer.asUint8List());
-  image.dispose();
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
@@ -389,9 +376,7 @@ void main() {
     final rightImage = MemoryImage(right);
     final api = _B2Api();
     await tester.pumpWidget(
-      RepaintBoundary(
-        key: _canvasKey,
-        child: MaterialApp(
+      MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: _b2Theme(),
           home: JiYiAmapPresentationScope(
@@ -416,7 +401,6 @@ void main() {
             body: child,
             bottomNavigationBar: const _B2BottomNavigation(),
           ),
-        ),
       ),
     );
     await tester.runAsync(() async {
@@ -441,6 +425,11 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/design_authority_today.png'),
     );
-    await _captureTodayCandidate(tester);
+    if (_candidateMode) {
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('uiux_v3_candidates/today_v3.png'),
+      );
+    }
   });
 }
