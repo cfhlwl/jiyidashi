@@ -55,6 +55,20 @@ jobs:
       - name: Verify APP-ID-001 identity gate
         run: python3 tool/verify_app_identity.py
 
+      - name: Verify AUTH-02E production configuration seam
+        run: python3 tool/verify_auth_02e_production_config.py
+
+      - name: Verify AUTH-02E production configuration fails closed without external inputs
+        shell: bash
+        run: |
+          set +e
+          output="$(python3 tool/verify_auth_02e_production_config.py --require-production 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -ne 0
+          grep -Fq 'AUTH-02E production gate blocked: missing required external/configuration input' <<<"$output"
+
 
       - name: Verify dependency lock
         id: android-lock
@@ -104,6 +118,17 @@ jobs:
           printf '%s\n' "$output"
           test "$status" -ne 0
           grep -Fq 'Production signing is required, but no complete Android release signing configuration was provided.' <<<"$output"
+
+      - name: Verify Android phone one-tap production gate fails closed without provider config
+        shell: bash
+        run: |
+          set +e
+          output="$(./android/gradlew -p android :app:verifyPhoneOneTapProductionConfiguration -PrequireProductionPhoneOneTap=true --stacktrace 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -ne 0
+          grep -Fq 'Production phone one-tap requires JIYI_PNVS_SCHEME_ID' <<<"$output"
 
       - name: Build Android release APK
         # Release build 使用 main manifest，防止 INTERNET 等正式权限被 debug/profile manifest 掩盖。

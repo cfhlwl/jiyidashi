@@ -77,11 +77,36 @@ interface PhoneOneTapProviderAdapter {
 }
 
 /**
+ * Provider-issued client configuration only. This is deliberately not an
+ * Alibaba server credential or an assertion of live provider availability.
+ */
+data class PhoneOneTapProviderConfiguration(
+    val schemeIdentifier: String?,
+    val productionRequired: Boolean,
+) {
+    val hasSchemeIdentifier: Boolean
+        get() = !schemeIdentifier?.trim().isNullOrEmpty()
+
+    fun missingConfigurationReason(): String =
+        if (productionRequired && !hasSchemeIdentifier) {
+            "PNVS_CONFIGURATION_MISSING"
+        } else {
+            "PNVS_NOT_CONFIGURED"
+        }
+}
+
+/**
  * AUTH-02C deliberately ships no guessed Alibaba AAR/version/configuration.
  * Until the console-provided official SDK and final scheme are reviewed, every
  * live capability is unavailable.
  */
-class FailClosedPhoneOneTapProviderAdapter : PhoneOneTapProviderAdapter {
+class FailClosedPhoneOneTapProviderAdapter(
+    private val configuration: PhoneOneTapProviderConfiguration =
+        PhoneOneTapProviderConfiguration(
+            schemeIdentifier = BuildConfig.JIYI_PNVS_SCHEME_ID,
+            productionRequired = BuildConfig.JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED,
+        ),
+) : PhoneOneTapProviderAdapter {
     private var initialized = false
 
     override fun initialize(
@@ -99,7 +124,7 @@ class FailClosedPhoneOneTapProviderAdapter : PhoneOneTapProviderAdapter {
         initialized = false
         completion(PhoneOneTapNativeResult(
             PhoneOneTapNativeState.UNAVAILABLE,
-            reason = "PNVS_NOT_CONFIGURED",
+            reason = configuration.missingConfigurationReason(),
         ))
     }
 
@@ -113,7 +138,7 @@ class FailClosedPhoneOneTapProviderAdapter : PhoneOneTapProviderAdapter {
         }
         completion(PhoneOneTapNativeResult(
             PhoneOneTapNativeState.UNAVAILABLE,
-            reason = "PNVS_NOT_CONFIGURED",
+            reason = configuration.missingConfigurationReason(),
         ))
     }
 
@@ -134,7 +159,7 @@ class FailClosedPhoneOneTapProviderAdapter : PhoneOneTapProviderAdapter {
         completion(unavailable("PRIVACY_REVOKED"))
     }
 
-    private fun unavailable(reason: String = "PNVS_NOT_CONFIGURED") =
+    private fun unavailable(reason: String = configuration.missingConfigurationReason()) =
         PhoneOneTapNativeResult(PhoneOneTapNativeState.UNAVAILABLE, reason = reason)
 }
 

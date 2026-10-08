@@ -25,6 +25,36 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(result?.state, .unavailable)
   }
 
+  func testPhoneOneTapProductionConfigurationMissingFailsClosed() {
+    let adapter = FailClosedPhoneOneTapProviderAdapter(
+      configuration: PhoneOneTapProviderConfiguration(
+        schemeIdentifier: nil,
+        productionRequired: true
+      )
+    )
+    var result: PhoneOneTapNativeResult?
+
+    adapter.initialize(privacyConsentGranted: true) { result = $0 }
+
+    XCTAssertEqual(result?.state, .unavailable)
+    XCTAssertEqual(result?.reason, "PNVS_CONFIGURATION_MISSING")
+  }
+
+  func testConfiguredSchemeDoesNotEnableUnavailableProvider() {
+    let adapter = FailClosedPhoneOneTapProviderAdapter(
+      configuration: PhoneOneTapProviderConfiguration(
+        schemeIdentifier: "test-scheme-id",
+        productionRequired: true
+      )
+    )
+    var result: PhoneOneTapNativeResult?
+
+    adapter.initialize(privacyConsentGranted: true) { result = $0 }
+
+    XCTAssertEqual(result?.state, .unavailable)
+    XCTAssertEqual(result?.reason, "PNVS_NOT_CONFIGURED")
+  }
+
   func testPhoneOneTapRequestGateFencesRepeatedAndLateCallbacks() {
     let gate = PhoneOneTapRequestGate()
     let first = gate.begin()

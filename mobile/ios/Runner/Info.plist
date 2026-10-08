@@ -24,6 +24,10 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>JIYI_PNVS_SCHEME_ID</key>
+	<string>$(JIYI_PNVS_SCHEME_ID)</string>
+	<key>JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED</key>
+	<string>$(JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

@@ -31,6 +31,38 @@ class PhoneOneTapNativeAdapterTest {
     }
 
     @Test
+    fun productionConfigurationMissingFailsClosedWithoutExposingProviderTypes() {
+        val adapter = FailClosedPhoneOneTapProviderAdapter(
+            PhoneOneTapProviderConfiguration(
+                schemeIdentifier = null,
+                productionRequired = true,
+            ),
+        )
+        var result: PhoneOneTapNativeResult? = null
+
+        adapter.initialize(privacyConsentGranted = true) { result = it }
+
+        assertEquals(PhoneOneTapNativeState.UNAVAILABLE, result?.state)
+        assertEquals("PNVS_CONFIGURATION_MISSING", result?.reason)
+    }
+
+    @Test
+    fun configuredSchemeDoesNotEnableUnavailableProvider() {
+        val adapter = FailClosedPhoneOneTapProviderAdapter(
+            PhoneOneTapProviderConfiguration(
+                schemeIdentifier = "test-scheme-id",
+                productionRequired = true,
+            ),
+        )
+        var result: PhoneOneTapNativeResult? = null
+
+        adapter.initialize(privacyConsentGranted = true) { result = it }
+
+        assertEquals(PhoneOneTapNativeState.UNAVAILABLE, result?.state)
+        assertEquals("PNVS_NOT_CONFIGURED", result?.reason)
+    }
+
+    @Test
     fun requestGateFencesRepeatedAndLateCallbacks() {
         val gate = PhoneOneTapRequestGate()
         val first = gate.begin()

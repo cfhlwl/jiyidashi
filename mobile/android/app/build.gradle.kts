@@ -59,6 +59,20 @@ if (productionSigningRequired && !releaseSigningConfigured) {
     )
 }
 
+val pnvsSchemeIdentifier = externalPushValue("JIYI_PNVS_SCHEME_ID")
+val productionPhoneOneTapRequired = providers.gradleProperty("requireProductionPhoneOneTap")
+    .map(String::toBoolean)
+    .orElse(providers.environmentVariable("JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED")
+        .map(String::toBoolean))
+    .orElse(productionSigningRequired)
+    .orElse(false)
+    .get()
+if (productionPhoneOneTapRequired && pnvsSchemeIdentifier.isBlank()) {
+    throw GradleException(
+        "Production phone one-tap requires JIYI_PNVS_SCHEME_ID; no provider scheme is configured."
+    )
+}
+
 android {
     namespace = "com.jiyidays"
     compileSdk = flutter.compileSdkVersion
@@ -96,6 +110,14 @@ android {
         buildConfigField("String", "JIYI_FCM_API_KEY", quotedBuildConfig(fcmApiKey))
         buildConfigField("String", "JIYI_FCM_SENDER_ID", quotedBuildConfig(fcmSenderId))
         buildConfigField("String", "JIYI_HMS_APP_ID", quotedBuildConfig(hmsAppId))
+        // This is a provider-issued client configuration identifier, never a server credential.
+        // The default is intentionally empty; the native adapter remains fail closed.
+        buildConfigField("String", "JIYI_PNVS_SCHEME_ID", quotedBuildConfig(pnvsSchemeIdentifier))
+        buildConfigField(
+            "Boolean",
+            "JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED",
+            productionPhoneOneTapRequired.toString(),
+        )
         manifestPlaceholders["JIYI_HMS_APP_ID"] = hmsAppId
         if (fcmAppId.isNotBlank()) {
             resValue("string", "google_app_id", fcmAppId)
@@ -147,9 +169,29 @@ tasks.register("verifyReleaseSigningConfiguration") {
     }
 }
 
+tasks.register("verifyPhoneOneTapProductionConfiguration") {
+    doLast {
+        check(android.defaultConfig.applicationId == "com.jiyidays") {
+            "Phone one-tap production requires Android applicationId com.jiyidays."
+        }
+        if (productionPhoneOneTapRequired) {
+            check(pnvsSchemeIdentifier.isNotBlank()) {
+                "Production phone one-tap requires JIYI_PNVS_SCHEME_ID; no provider scheme is configured."
+            }
+            check(releaseSigningConfigured) {
+                "Production phone one-tap requires complete Android release signing configuration."
+            }
+            println("ANDROID_PHONE_ONE_TAP_PRODUCTION_CONFIG=READY_FOR_EXTERNAL_PROVIDER_REVIEW")
+        } else {
+            println("ANDROID_PHONE_ONE_TAP_PRODUCTION_CONFIG=FAIL_CLOSED_UNTIL_EXPLICITLY_REQUIRED")
+        }
+    }
+}
+
 tasks.configureEach {
     if (name == "assembleRelease") {
         dependsOn("verifyReleaseSigningConfiguration")
+        dependsOn("verifyPhoneOneTapProductionConfiguration")
     }
 }
 
