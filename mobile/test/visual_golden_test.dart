@@ -395,14 +395,16 @@ Future<void> _loadMaterialIconsFont() async {
 
 Future<void> _precacheProductionAuthAssets(WidgetTester tester) async {
   final context = tester.element(find.byType(MaterialApp));
-  await precacheImage(
-    const AssetImage('assets/brand/today_hero_default.png'),
-    context,
-  );
-  await precacheImage(
-    const AssetImage('assets/brand/jiyi_logo_primary.png'),
-    context,
-  );
+  await tester.runAsync(() async {
+    await precacheImage(
+      const AssetImage('assets/brand/today_hero_default.png'),
+      context,
+    );
+    await precacheImage(
+      const AssetImage('assets/brand/jiyi_logo_primary.png'),
+      context,
+    );
+  });
   // precacheImage completes after the codec is ready; this pump lets the image
   // stream deliver its first frame before the RepaintBoundary is rasterized.
   await tester.pump();
