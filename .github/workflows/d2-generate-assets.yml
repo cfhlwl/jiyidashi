@@ -252,6 +252,7 @@ jobs:
       # The runner restores committed goldens before normal validation, so a visual change
       # still fails closed until the reviewed PNGs are deliberately committed.
       - name: Generate candidate Product Experience goldens
+        if: always()
         timeout-minutes: 10
         shell: bash
         run: |
@@ -279,6 +280,7 @@ jobs:
       # baseline gates remain fail-closed, but reviewers no longer have to wait
       # for the entire Flutter suite before inspecting UIUX-P0-002 evidence.
       - name: Upload Product Experience candidates
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: uiux-p0-002-candidates-${{ github.event.pull_request.head.sha || github.sha }}
@@ -288,6 +290,7 @@ jobs:
             /tmp/product-v2-goldens/candidate/*.png
 
       - name: Generate Design Authority audit package
+        if: always()
         timeout-minutes: 10
         shell: bash
         env:
@@ -371,6 +374,7 @@ jobs:
           print(root)
 
       - name: Upload Design Authority audit package
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: uiux-v3-design-authority-audit-${{ github.event.pull_request.head.sha || github.sha }}
