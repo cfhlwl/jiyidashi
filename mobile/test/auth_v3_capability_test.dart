@@ -288,7 +288,9 @@ void main() {
     );
     expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('auth-v3-privacy-consent')));
+    final consent = find.byKey(const ValueKey('auth-v3-privacy-consent'));
+    await tester.ensureVisible(consent);
+    await tester.tap(consent);
     await tester.pumpAndSettle();
 
     expect(bridge.revokePrivacyCalls, 1);
