@@ -103,11 +103,21 @@ void main() {
     await tester.pumpAndSettle();
 
     // The answer surface and its semantic header are in the initial viewport.
-    // Verify them before scrolling the lazy ListView to the later visit rows.
-    expect(find.text('按日期看足迹'), findsOneWidget);
+    // The V3 contract renders the mapped intent in the disclosure subtitle,
+    // while the result surface uses the human-facing day title.
+    expect(find.text('这天的足迹'), findsOneWidget);
     expect(find.textContaining('2026-09-25 的可靠足迹'), findsOneWidget);
     expect(find.text('DATE_FOOTPRINT_QUERY'), findsNothing);
     expect(find.text('没有可展示的参考记录'), findsNothing);
+    final disclosure = find.byKey(
+      const ValueKey('memory-query-evidence-disclosure'),
+      skipOffstage: false,
+    );
+    expect(disclosure, findsOneWidget);
+    expect(
+      find.textContaining('明确记录 · 按日期看足迹', skipOffstage: false),
+      findsOneWidget,
+    );
 
     final timeRange = find.text('18:16 - 19:05', skipOffstage: false);
     final scrollable = find.byType(Scrollable).first;

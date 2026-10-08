@@ -13,6 +13,16 @@ class _UiCopyLeak {
   String toString() => '$path: $reason -> "$value"';
 }
 
+RegExp _directRawUiExpressionPattern() => RegExp(
+      r'''(?:Text(?:\.[A-Za-z]+)?\(|(?:title|subtitle|message|label|eyebrow|hintText|helperText|errorText|tooltip|semanticLabel|text)\s*:)\s*(?:(?:[A-Za-z_]\w*\.)+(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)|(?:certainty|memoryType|visitSource|stageKind|relationKind))\b''',
+      multiLine: true,
+    );
+
+RegExp _interpolatedRawUiValuePattern() => RegExp(
+      r'''(?:\$|\$\{)\s*(?:(?:[A-Za-z_]\w*\.)+(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)|(?:certainty|memoryType|visitSource|stageKind|relationKind))(?![A-Za-z0-9_])\s*\}?''',
+      caseSensitive: false,
+    );
+
 List<File> _productionUiFiles() {
   final files = Directory('lib')
       .listSync(recursive: true)
@@ -80,14 +90,8 @@ List<_UiCopyLeak> _productionLanguageLeaks() {
   final rawEnums = RegExp(
     r'\b(?:UNKNOWN|CONFIRMED|INFERRED|UNAVAILABLE|READY|FAILED|ERROR|LOADING|ACTIVE|PAUSED|PENDING|DENIED|GRANTED|ALLOWED|BLOCKED|REVOKED|EXPIRED|STALE|NOTE|VOICE|PHOTO|PLACE|OBJECT_LOCATION|REMINDER|EVENT|VISIT|MEMORY|PERSON|LIFE_EVENT|LIFE_STAGE)\b',
   );
-  final directRawUiExpression = RegExp(
-    r'''(?:Text(?:\.[A-Za-z]+)?\(|(?:title|subtitle|message|label|eyebrow|hintText|helperText|errorText|tooltip|semanticLabel|text)\s*:)\s*(?:(?:[A-Za-z_]\w*\.)+(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)|(?:certainty|memoryType|visitSource|stageKind|relationKind))\b''',
-    multiLine: true,
-  );
-  final interpolatedRawUiValue = RegExp(
-    r'''(?:\$|\$\{)\s*(?:(?:[A-Za-z_]\w*\.)+(?:status|state|trust|certainty|memoryType|visitSource|stageKind|relationKind)|(?:certainty|memoryType|visitSource|stageKind|relationKind))\s*\}?''',
-    caseSensitive: false,
-  );
+  final directRawUiExpression = _directRawUiExpressionPattern();
+  final interpolatedRawUiValue = _interpolatedRawUiValuePattern();
 
   for (final file in _productionUiFiles()) {
     final source = file.readAsStringSync();
@@ -128,6 +132,18 @@ List<_UiCopyLeak> _productionLanguageLeaks() {
 }
 
 void main() {
+  test('raw authority scanner distinguishes mapped labels from raw values', () {
+    final interpolated = _interpolatedRawUiValuePattern();
+    expect(interpolated.hasMatch(r'\$certainty'), isTrue);
+    expect(interpolated.hasMatch(r'\${certainty}'), isTrue);
+    expect(interpolated.hasMatch(r'\$certaintyLabel'), isFalse);
+    expect(interpolated.hasMatch(r'\$intentLabel'), isFalse);
+
+    final direct = _directRawUiExpressionPattern();
+    expect(direct.hasMatch('Text(certainty)'), isTrue);
+    expect(direct.hasMatch(r"Text('\$certaintyLabel')"), isFalse);
+  });
+
   test('Flutter Product Experience V2 uses human-facing People and Life language', () {
     final people = File('lib/v2/people_page.dart').readAsStringSync();
     final life = File('lib/v2/life_page.dart').readAsStringSync();
