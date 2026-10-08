@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/amap_footprint_map.dart';
 import 'package:jiyidashi/amap_privacy_consent.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/auth_v3.dart';
 import 'package:jiyidashi/footprint_models.dart';
 import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/memory_detail_page.dart';
