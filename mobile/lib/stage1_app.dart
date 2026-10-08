@@ -970,6 +970,27 @@ class _AuthPageState extends State<AuthPage> {
 
   bool get _useAuthV3Shell => _capabilities.email;
 
+  Widget _buildPhoneOneTapEntry() {
+    if (!_capabilities.phoneOneTap) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AuthV3PrimaryAction(
+          key: const ValueKey('auth-v3-phone-one-tap'),
+          label: _phoneOneTapPending ? '正在验证本机号码…' : '本机号码一键登录',
+          icon: Icons.phone_iphone,
+          onPressed: _phoneOneTapPending ? null : _startPhoneOneTap,
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          key: const ValueKey('auth-v3-email-fallback'),
+          onPressed: _phoneOneTapPending ? _switchToEmail : null,
+          child: const Text('使用邮箱登录'),
+        ),
+      ],
+    );
+  }
+
   Widget _buildEmailLoginV3Surface(BuildContext context) {
     final compactViewport = MediaQuery.sizeOf(context).height < 700;
     final fieldBorder = OutlineInputBorder(
@@ -1104,6 +1125,7 @@ class _AuthPageState extends State<AuthPage> {
                           }),
                     child: const Text('忘记密码？'),
                   ),
+                  _buildPhoneOneTapEntry(),
                   SizedBox(height: compactViewport ? 32 : 150),
                   Container(
                     height: 48,
@@ -1357,27 +1379,6 @@ class _AuthPageState extends State<AuthPage> {
                         ],
                       ),
                     ),
-                    if (_capabilities.phoneOneTap) ...[
-                      AuthV3PrimaryAction(
-                        key: const ValueKey('auth-v3-phone-one-tap'),
-                        label: _phoneOneTapPending
-                            ? '正在验证本机号码…'
-                            : '本机号码一键登录',
-                        icon: Icons.phone_iphone,
-                        onPressed: _phoneOneTapPending
-                            ? null
-                            : _startPhoneOneTap,
-                      ),
-                      const SizedBox(height: 8),
-                      TextButton(
-                        key: const ValueKey('auth-v3-email-fallback'),
-                        onPressed: _phoneOneTapPending
-                            ? _switchToEmail
-                            : null,
-                        child: const Text('使用邮箱登录'),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
                     AuthV3Agreement(
                       accepted: _privacyConsentGranted,
                       onChanged: _setPrivacyConsent,
