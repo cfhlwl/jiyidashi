@@ -95,6 +95,14 @@ Future<void> _pumpAt(
   await tester.pumpAndSettle();
 }
 
+Future<void> _pumpReminderDialogFrame(WidgetTester tester) async {
+  // The detail page keeps its busy indicator active while the dialog is open;
+  // advance the route animation deterministically instead of settling a
+  // continuously animated background frame.
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
 void main() {
   testWidgets('Timeline renders trusted records and remains navigable on small screens',
       (tester) async {
@@ -117,12 +125,12 @@ void main() {
     final entry = find.byKey(const ValueKey('memory-reminder-entry'));
     expect(entry, findsOneWidget);
     await tester.tap(entry);
-    await tester.pumpAndSettle();
+    await _pumpReminderDialogFrame(tester);
 
     expect(find.text('为这条记忆设置提醒'), findsOneWidget);
     expect(find.textContaining('绑定这条原始记忆'), findsOneWidget);
     await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
+    await _pumpReminderDialogFrame(tester);
     expect(api.reminderMemoryIds, isEmpty);
   });
 
@@ -132,11 +140,11 @@ void main() {
     await _pumpAt(tester, MemoryDetailPage(api: api, memoryId: _batch3Memory));
 
     await tester.tap(find.byKey(const ValueKey('memory-reminder-entry')));
-    await tester.pumpAndSettle();
+    await _pumpReminderDialogFrame(tester);
     expect(find.text('为这条记忆设置提醒'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('reminder-save')));
-    await tester.pumpAndSettle();
+    await _pumpReminderDialogFrame(tester);
 
     expect(api.reminderMemoryIds, [_batch3Memory]);
     expect(api.reminderMemoryIds, hasLength(1));
