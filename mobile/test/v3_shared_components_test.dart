@@ -191,11 +191,27 @@ void main() {
       ),
     );
     expect(find.bySemanticsLabel('暂无内容：暂无记录。没有可展示的内容。'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: const V3StateSurface(
+          variant: V3StateSurfaceVariant.error,
+          title: '加载失败',
+          message: '暂时无法读取内容。',
+        ),
+      ),
+    );
+    expect(
+      find.bySemanticsLabel('加载失败：加载失败。暂时无法读取内容。'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('V3StateSurface actions are explicit and reachable',
       (tester) async {
-    var retried = false;
+    var retried = 0;
+    var deferred = 0;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -206,13 +222,24 @@ void main() {
           message: '请重试。',
           primaryAction: V3StateAction(
             label: '重试',
-            onPressed: () => retried = true,
+            onPressed: () => retried += 1,
+          ),
+          secondaryAction: V3StateAction(
+            label: '稍后',
+            onPressed: () => deferred += 1,
           ),
         ),
       ),
     );
 
+    expect(find.bySemanticsLabel('加载失败：加载失败。请重试。'), findsOneWidget);
+    expect(find.bySemanticsLabel('重试'), findsOneWidget);
+    expect(find.bySemanticsLabel('稍后'), findsOneWidget);
     await tester.tap(find.text('重试'));
-    expect(retried, isTrue);
+    expect(retried, 1);
+    expect(deferred, 0);
+    await tester.tap(find.text('稍后'));
+    expect(retried, 1);
+    expect(deferred, 1);
   });
 }

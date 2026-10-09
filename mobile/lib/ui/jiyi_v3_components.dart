@@ -234,10 +234,16 @@ class V3SurfaceCard extends StatelessWidget {
             ),
     );
 
+    if (onTap == null) {
+      return Semantics(label: semanticLabel, child: surface);
+    }
+
     return Semantics(
-      button: onTap != null,
+      container: true,
+      button: true,
       label: semanticLabel,
-      child: surface,
+      onTap: onTap,
+      child: ExcludeSemantics(child: surface),
     );
   }
 }
@@ -391,49 +397,56 @@ class V3StateSurface extends StatelessWidget {
         ),
     ];
 
-    return Semantics(
-      container: true,
-      liveRegion: variant == V3StateSurfaceVariant.loading,
-      label: semanticsLabel ?? '$_variantSemantics：$title。$message',
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: JiYiSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon ?? _defaultIcon,
-              size: JiYiIconSize.large,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: JiYiSpacing.sm),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontSize: JiYiTypography.titleSection,
-                fontWeight: FontWeight.w700,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: JiYiSpacing.xl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            container: true,
+            liveRegion: variant == V3StateSurfaceVariant.loading,
+            label: semanticsLabel ?? '$_variantSemantics：$title。$message',
+            child: ExcludeSemantics(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon ?? _defaultIcon,
+                    size: JiYiIconSize.large,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: JiYiSpacing.sm),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontSize: JiYiTypography.titleSection,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: JiYiSpacing.xs),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: JiYiTypography.bodySecondary,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: JiYiSpacing.xs),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: JiYiTypography.bodySecondary,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: JiYiSpacing.md),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: JiYiSpacing.sm,
+              runSpacing: JiYiSpacing.xs,
+              children: actions,
             ),
-            if (actions.isNotEmpty) ...[
-              const SizedBox(height: JiYiSpacing.md),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: JiYiSpacing.sm,
-                runSpacing: JiYiSpacing.xs,
-                children: actions,
-              ),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
