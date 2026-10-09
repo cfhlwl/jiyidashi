@@ -184,6 +184,67 @@ class PhoneOneTapRecoveryState(StrEnum):
     CLOSED = "CLOSED"
 
 
+class AuthSmsOtpChallengeState(StrEnum):
+    PENDING = "PENDING"
+    VERIFIED = "VERIFIED"
+    EXPIRED = "EXPIRED"
+    LOCKED = "LOCKED"
+    PROVIDER_ERROR = "PROVIDER_ERROR"
+
+
+class AuthSmsOtpChallenge(Base):
+    """Durable SMS OTP challenge authority without storing the raw OTP."""
+
+    __tablename__ = "auth_sms_otp_challenges"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_auth_sms_otp_request_id"),
+        UniqueConstraint("active_key", name="uq_auth_sms_otp_active_key"),
+        Index("ix_auth_sms_otp_state_expires", "state", "expires_at"),
+        Index("ix_auth_sms_otp_phone_created", "phone_subject", "created_at"),
+        CheckConstraint(
+            "state IN ('PENDING', 'VERIFIED', 'EXPIRED', 'LOCKED', 'PROVIDER_ERROR')",
+            name="ck_auth_sms_otp_state",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    request_id: Mapped[UUID] = mapped_column(nullable=False)
+    active_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    phone_subject: Mapped[str] = mapped_column(String(32), nullable=False)
+    code_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    code_key_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    client_platform: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    device_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    state: Mapped[AuthSmsOtpChallengeState] = mapped_column(
+        String(32),
+        nullable=False,
+        default=AuthSmsOtpChallengeState.PENDING,
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resolved_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("auth_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    cooldown_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class PhoneOneTapExchange(Base):
     """Durable authority for one provider-token exchange attempt.
 

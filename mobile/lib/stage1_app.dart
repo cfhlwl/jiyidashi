@@ -22,6 +22,7 @@ import 'offline_queue.dart';
 import 'offline_sync.dart';
 import 'passive_memory_delivery.dart';
 import 'phone_one_tap_bridge.dart';
+import 'sms_otp.dart';
 import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
@@ -522,6 +523,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   api: api,
                   capabilities: const AuthCapabilities.emailOnly(),
                   phoneOneTapBridge: phoneOneTapBridge,
+                  smsOtpGateway: api,
                   initialMessage: restoreMessage,
                   onRegistrationCompleted: () {
                     if (mounted) {
@@ -563,6 +565,7 @@ class AuthPage extends StatefulWidget {
     this.phoneOneTapBridge,
     this.privacyConsentGranted = false,
     this.onSmsOtp,
+    this.smsOtpGateway,
     this.initialMessage,
     this.onRegistrationCompleted,
     this.onAccountDeletionRecovery,
@@ -574,6 +577,7 @@ class AuthPage extends StatefulWidget {
   final PhoneOneTapBridge? phoneOneTapBridge;
   final bool privacyConsentGranted;
   final VoidCallback? onSmsOtp;
+  final SmsOtpGateway? smsOtpGateway;
   final String? initialMessage;
   final VoidCallback? onRegistrationCompleted;
   final VoidCallback? onAccountDeletionRecovery;
@@ -999,7 +1003,8 @@ class _AuthPageState extends State<AuthPage> {
   bool get _useAuthV3Shell =>
       _capabilities.email ||
       _capabilities.phoneOneTap ||
-      (_capabilities.smsOtp && widget.onSmsOtp != null);
+      (_capabilities.smsOtp &&
+          (widget.onSmsOtp != null || widget.smsOtpGateway != null));
 
   Widget _buildPhoneOneTapEntry() {
     if (!_capabilities.phoneOneTap) return const SizedBox.shrink();
@@ -1027,20 +1032,49 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   Widget _buildSmsFallbackEntry() {
-    if (!_capabilities.smsOtp || widget.onSmsOtp == null) {
+    if (!_capabilities.smsOtp ||
+        (widget.onSmsOtp == null && widget.smsOtpGateway == null)) {
       return const SizedBox.shrink();
     }
     return AuthV3ProviderRow(
       key: const ValueKey('auth-v3-sms-fallback'),
       label: '手机号验证码登录',
       icon: Icons.sms_outlined,
-      onPressed: _phoneOneTapPending ? null : widget.onSmsOtp,
+      onPressed: _phoneOneTapPending
+          ? null
+          : widget.smsOtpGateway != null
+              ? _openSmsOtp
+              : widget.onSmsOtp,
+    );
+  }
+
+  void _openSmsOtp() {
+    final gateway = widget.smsOtpGateway;
+    if (gateway == null) {
+      widget.onSmsOtp?.call();
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SmsOtpPage(
+          gateway: gateway,
+          privacyConsentGranted: _privacyConsentGranted,
+          onAuthenticated: () {
+            widget.onAuthenticated();
+            if (mounted) Navigator.of(context).pop();
+          },
+          onCancel: () {
+            if (mounted) Navigator.of(context).pop();
+          },
+        ),
+      ),
     );
   }
 
   Widget _buildProviderOnlySurface() {
     final hasPhone = _capabilities.phoneOneTap;
-    final hasSms = _capabilities.smsOtp && widget.onSmsOtp != null;
+    final hasSms = _capabilities.smsOtp &&
+        (widget.onSmsOtp != null || widget.smsOtpGateway != null);
     return Scaffold(
       backgroundColor: JiYiTodayVisuals.background,
       body: SafeArea(

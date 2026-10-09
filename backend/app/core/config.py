@@ -234,6 +234,22 @@ class Settings(BaseSettings):
     auth_password_reset_confirm_limit: int = Field(default=10, ge=1, le=50)
     auth_password_reset_window_seconds: int = Field(default=3600, ge=60, le=86400)
 
+    # AUTH-03: provider-neutral SMS OTP. The default is disabled; a fake provider
+    # is test/development-only and production remains fail closed until a later
+    # provider activation supplies server-side delivery credentials.
+    auth_sms_otp_provider: str = "disabled"
+    auth_sms_otp_code_secret: str = ""
+    auth_sms_otp_code_key_version: str = "v1"
+    auth_sms_otp_code_ttl_seconds: int = Field(default=300, ge=60, le=900)
+    auth_sms_otp_cooldown_seconds: int = Field(default=60, ge=15, le=900)
+    auth_sms_otp_max_attempts: int = Field(default=5, ge=1, le=10)
+    auth_sms_otp_ip_limit: int = Field(default=10, ge=1, le=100)
+    auth_sms_otp_device_limit: int = Field(default=5, ge=1, le=50)
+    auth_sms_otp_phone_limit: int = Field(default=5, ge=1, le=50)
+    auth_sms_otp_verify_ip_limit: int = Field(default=20, ge=1, le=200)
+    auth_sms_otp_verify_request_limit: int = Field(default=10, ge=1, le=100)
+    auth_sms_otp_window_seconds: int = Field(default=600, ge=60, le=86400)
+
     # AUTH-02B: durable phone one-tap exchange policy. These are JiYi-side
     # replay/abuse controls, not claims about a live carrier provider's TTL.
     # The fingerprint secret is intentionally empty by default: the endpoint

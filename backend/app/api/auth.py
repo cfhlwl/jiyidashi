@@ -25,6 +25,9 @@ from app.schemas import (
     RegisterRequest,
     RegistrationResponse,
     ResetPasswordRequest,
+    SmsOtpRequest,
+    SmsOtpRequestResponse,
+    SmsOtpVerifyRequest,
     TokenResponse,
 )
 from app.services.auth_identity_service import issue_authenticated_session
@@ -59,6 +62,12 @@ from app.services.notification_service import (
 from app.services.phone_one_tap_service import (
     PhoneOneTapError,
     exchange_phone_one_tap,
+)
+from app.services.sms_otp_provider import get_sms_otp_provider
+from app.services.sms_otp_service import (
+    SmsOtpError,
+    request_sms_otp,
+    verify_sms_otp,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -265,6 +274,64 @@ def phone_one_tap(
             detail=exc.code,
             headers=headers,
         ) from exc
+    return _token_response(
+        result.tokens,
+        account_deletion_in_progress=result.account_deletion_in_progress,
+    )
+
+
+@router.post("/phone/sms/request", response_model=SmsOtpRequestResponse)
+def request_phone_sms_otp(
+    payload: SmsOtpRequest,
+    request: Request,
+    db: DbSession,
+) -> SmsOtpRequestResponse:
+    try:
+        result = request_sms_otp(
+            db,
+            phone=payload.phone,
+            device_id=_resolve_session_device_id(payload.device_id),
+            client_platform=payload.client_platform,
+            device_name=payload.device_name,
+            client_ip=_client_ip(request),
+            provider=get_sms_otp_provider(),
+        )
+    except SmsOtpError as exc:
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        raise HTTPException(status_code=exc.status_code, detail=exc.code, headers=headers) from exc
+    return SmsOtpRequestResponse(
+        request_id=result.request_id,
+        expires_at=result.expires_at,
+        cooldown_until=result.cooldown_until,
+    )
+
+
+@router.post("/phone/sms/verify", response_model=TokenResponse)
+def verify_phone_sms_otp(
+    payload: SmsOtpVerifyRequest,
+    request: Request,
+    db: DbSession,
+) -> TokenResponse:
+    try:
+        result = verify_sms_otp(
+            db,
+            request_id=payload.request_id,
+            code=payload.code,
+            device_id=_resolve_session_device_id(payload.device_id),
+            client_platform=payload.client_platform,
+            device_name=payload.device_name,
+            client_ip=_client_ip(request),
+        )
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=result.tokens.user_id,
+            client_uuid=result.device_id,
+        )
+    except SmsOtpError as exc:
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        raise HTTPException(status_code=exc.status_code, detail=exc.code, headers=headers) from exc
+    except PublicAuthError as exc:
+        _raise_auth_error(exc)
     return _token_response(
         result.tokens,
         account_deletion_in_progress=result.account_deletion_in_progress,

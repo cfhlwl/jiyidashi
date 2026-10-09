@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import 'auth_session_store.dart';
 import 'phone_one_tap_bridge.dart';
+import 'sms_otp.dart';
 
 const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
@@ -502,7 +503,7 @@ class AuthDiagnosticEvent {
 typedef AuthDiagnosticSink = void Function(AuthDiagnosticEvent event);
 
 
-class JiYiApiClient implements PhoneOneTapExchangeClient {
+class JiYiApiClient implements PhoneOneTapExchangeClient, SmsOtpGateway {
   JiYiApiClient({
     http.Client? httpClient,
     String? baseUrl,
@@ -768,6 +769,55 @@ class JiYiApiClient implements PhoneOneTapExchangeClient {
       expectedUnauthenticatedAuthGeneration:
           expectedUnauthenticatedAuthGeneration,
     );
+  }
+
+  @override
+  Future<SmsOtpRequestResult> requestSmsOtp({required String phone}) async {
+    final installationId = await _sessionStore.readOrCreateInstallationId();
+    final data = await _jsonRequest(
+      'POST',
+      '/auth/phone/sms/request',
+      body: {
+        'phone': phone.trim(),
+        'device_id': installationId,
+        'client_platform': 'flutter',
+      },
+      authenticated: false,
+    );
+    return SmsOtpRequestResult.fromJson(data);
+  }
+
+  @override
+  Future<void> verifySmsOtp({required String requestId, required String code}) async {
+    if (requestId.trim().isEmpty || code.trim().length != 6) {
+      throw ArgumentError('SMS OTP verification requires a request id and six-digit code');
+    }
+    final installationId = await _sessionStore.readOrCreateInstallationId();
+    final expectedSessionVersion = _sessionVersion;
+    final expectedUnauthenticatedAuthGeneration =
+        captureUnauthenticatedAuthGeneration();
+    final data = await _jsonRequest(
+      'POST',
+      '/auth/phone/sms/verify',
+      body: {
+        'request_id': requestId,
+        'code': code.trim(),
+        'device_id': installationId,
+        'client_platform': 'flutter',
+      },
+      authenticated: false,
+    );
+    await _establishAuthenticatedSession(
+      data,
+      expectedSessionVersion: expectedSessionVersion,
+      expectedUnauthenticatedAuthGeneration:
+          expectedUnauthenticatedAuthGeneration,
+    );
+  }
+
+  @override
+  Future<void> cancel() async {
+    invalidateUnauthenticatedAuthGeneration();
   }
 
   DateTime _requiredServerDateTime(
