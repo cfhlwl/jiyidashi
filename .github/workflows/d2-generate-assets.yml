@@ -122,6 +122,10 @@ jobs:
           --plain-name "Auth V3 fixture 05 one tap unavailable"
           --reporter expanded
 
+      - name: Test Batch 3 Timeline and Memory Detail targeted
+        timeout-minutes: 5
+        run: flutter test test/timeline_memory_detail_v3_test.dart --reporter expanded
+
       - name: Generate Today V3 authority candidate
         timeout-minutes: 5
         shell: bash
