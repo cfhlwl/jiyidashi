@@ -6,8 +6,10 @@ import 'amap_footprint_map.dart';
 import 'amap_privacy_consent.dart';
 import 'api_client.dart';
 import 'media_presentation_cache.dart';
+import 'reminder_page.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
+import 'ui/jiyi_v3_components.dart';
 
 typedef LocalPhotoRenderer = Widget Function(File file, Key key);
 
@@ -45,6 +47,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
   late final LocalMediaCache _mediaCache;
   bool loading = true;
   bool mutating = false;
+  bool reminderBusy = false;
   String? error;
   String? status;
 
@@ -455,51 +458,90 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
     }
   }
 
+  Future<void> _createReminder() async {
+    final current = memory;
+    final owner = widget.api.authenticatedUserId;
+    if (current == null || reminderBusy || owner == null || owner.trim().isEmpty) {
+      return;
+    }
+    final version = widget.api.sessionVersion;
+    setState(() {
+      reminderBusy = true;
+      error = null;
+      status = null;
+    });
+    try {
+      final message = await showMemoryReminderCreateFlow(
+        context: context,
+        api: widget.api,
+        memoryId: current.id,
+      );
+      if (!_sessionCurrent(version, owner) || !mounted) return;
+      if (message != null) {
+        setState(() => status = message);
+      }
+    } on ApiException catch (exc) {
+      if (!_sessionCurrent(version, owner)) return;
+      setState(() => error = exc.message);
+    } catch (_) {
+      if (!_sessionCurrent(version, owner)) return;
+      setState(() => error = '暂时无法打开提醒创建流程');
+    } finally {
+      if (_sessionCurrent(version, owner)) {
+        setState(() => reminderBusy = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final current = memory;
-    return Scaffold(
-      appBar: AppBar(title: const Text('记忆详情')),
-      body: SafeArea(
-        child: JiYiPageFrame(
-          title: '记忆详情',
-          subtitle: '回看你当时留下的内容。',
-          hero: current == null
-              ? null
-              : JiYiHeroHeader(
-                  atmospheric: true,
-                  eyebrow: '迹忆 · 记忆',
-                  title: current.title ?? '一段记忆',
-                  subtitle: _formatDateTime(current.occurredAt),
-                  icon: _memoryIcon(current.memoryType),
-                ),
-          child: loading
-              ? const Center(child: CircularProgressIndicator())
-              : error != null && current == null
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        JiYiStatusBanner(
-                          kind: JiYiStatusKind.error,
-                          message: error!,
-                        ),
-                        const SizedBox(height: JiYiSpacing.md),
-                        OutlinedButton.icon(
-                          onPressed: _load,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('重新打开'),
-                        ),
-                      ],
-                    )
-                  : current == null
-                      ? const JiYiEmptyState(
-                          icon: Icons.auto_stories_outlined,
-                          title: '这条记忆不可用',
-                          message: '可以返回记忆页重新查找。',
-                        )
-                      : _ready(current),
-        ),
+    return V3PageScaffold(
+      topBar: V3TopBar(
+        title: '记忆详情',
+        subtitle: current?.title ?? '回看你当时留下的内容。',
+        onBack: () => Navigator.of(context).maybePop(),
+        trailing: current == null
+            ? null
+            : IconButton(
+                key: const ValueKey('memory-detail-more'),
+                onPressed: mutating ? null : _delete,
+                tooltip: '更多操作',
+                icon: const Icon(Icons.more_horiz),
+              ),
       ),
+      child: loading
+          ? const V3StateSurface(
+              variant: V3StateSurfaceVariant.loading,
+              title: '正在打开记忆…',
+              message: '正在读取这条记忆的真实内容。',
+              icon: Icons.auto_stories_outlined,
+            )
+          : error != null && current == null
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    V3StateSurface(
+                      variant: V3StateSurfaceVariant.error,
+                      title: '这条记忆暂时不可用',
+                      message: error!,
+                      icon: Icons.auto_stories_outlined,
+                      primaryAction: V3StateAction(
+                        label: '重新打开',
+                        icon: Icons.refresh,
+                        onPressed: _load,
+                      ),
+                    ),
+                  ],
+                )
+              : current == null
+                  ? const V3StateSurface(
+                      variant: V3StateSurfaceVariant.empty,
+                      icon: Icons.auto_stories_outlined,
+                      title: '这条记忆不可用',
+                      message: '可以返回记忆页重新查找。',
+                    )
+                  : _ready(current),
     );
   }
 
@@ -561,22 +603,30 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         JiYiSectionCard(
           title: '管理',
           subtitle: '编辑会保留原始记录；删除会影响后续查找。',
-          child: Row(
+          child: Wrap(
+            spacing: JiYiSpacing.sm,
+            runSpacing: JiYiSpacing.xs,
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: mutating ? null : _edit,
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('编辑'),
-                ),
+              OutlinedButton.icon(
+                onPressed: mutating ? null : _edit,
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('编辑'),
               ),
-              const SizedBox(width: JiYiSpacing.sm),
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: mutating ? null : _delete,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('删除'),
-                ),
+              OutlinedButton.icon(
+                key: const ValueKey('memory-reminder-entry'),
+                onPressed: mutating || reminderBusy ? null : _createReminder,
+                icon: reminderBusy
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.notifications_none_outlined),
+                label: Text(reminderBusy ? '打开提醒…' : '设置提醒'),
+              ),
+              TextButton.icon(
+                onPressed: mutating ? null : _delete,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('删除'),
               ),
             ],
           ),

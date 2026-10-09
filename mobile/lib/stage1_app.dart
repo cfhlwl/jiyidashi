@@ -40,6 +40,7 @@ import 'unified_capture_section.dart';
 import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
+import 'ui/jiyi_v3_components.dart';
 import 'v2/family_page.dart';
 import 'v2/life_page.dart';
 import 'v2/v2_home_page.dart';
@@ -2728,37 +2729,52 @@ class _TimelinePageState extends State<TimelinePage> {
 
   @override
   Widget build(BuildContext context) {
-    return JiYiPageFrame(
+    return V3PageScaffold(
       title: '时间线',
-      subtitle: '按时间回看已经形成的地点和记忆线索。',
-      hero: const JiYiHeroHeader(
-        atmospheric: true,
-        eyebrow: '迹忆 · 记忆',
-        title: '时间线',
-        subtitle: '把你记录的事和已经形成的到访按时间串在一起。',
-        icon: Icons.timeline_outlined,
-      ),
+      subtitle: '按时间回看生活里的片段。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (_loading)
-            const JiYiLoadingState(message: '正在整理时间线…')
+            const V3StateSurface(
+              variant: V3StateSurfaceVariant.loading,
+              title: '正在整理时间线…',
+              message: '正在读取已经形成的真实记录。',
+              icon: Icons.timeline_outlined,
+            )
           else if (_offline)
-            JiYiOfflineState(onRetry: _loadInitial)
+            V3StateSurface(
+              variant: V3StateSurfaceVariant.offline,
+              title: '当前离线',
+              message: '网络连接后可以继续读取时间线。',
+              icon: Icons.cloud_off_outlined,
+              primaryAction: V3StateAction(
+                label: '重新连接',
+                icon: Icons.refresh,
+                onPressed: _loadInitial,
+              ),
+            )
           else if (_error != null && _items.isEmpty)
-            JiYiErrorState(
+            V3StateSurface(
+              variant: V3StateSurfaceVariant.error,
               title: '时间线暂时不可用',
               message: _error!,
-              onRetry: _loadInitial,
+              icon: Icons.timeline_outlined,
+              primaryAction: V3StateAction(
+                label: '重新打开',
+                icon: Icons.refresh,
+                onPressed: _loadInitial,
+              ),
             )
           else if (_items.isEmpty)
-            const JiYiEmptyState(
+            const V3StateSurface(
+              variant: V3StateSurfaceVariant.empty,
               icon: Icons.timeline_outlined,
               title: '还没有时间线记录',
               message: '记下一件事或形成到访后，这里会按时间慢慢串起来。',
             )
           else ...[
-            const JiYiSectionHeader(
+            const V3SectionHeader(
               title: '最近的记录',
               subtitle: '按时间从新到旧排列。',
             ),
@@ -2835,14 +2851,18 @@ class _TimelineEntry extends StatelessWidget {
   final bool isLast;
   final VoidCallback onTap;
 
-  Widget _photoThumbnail(BuildContext context) {
+  Widget _photoThumbnail(
+    BuildContext context, {
+    double width = 72,
+    double height = 72,
+  }) {
     final mediaId = item.mediaId!;
     final builder = photoThumbnailBuilder;
     if (builder != null) {
       return SizedBox(
         key: ValueKey('timeline-photo-${item.id}'),
-        width: 72,
-        height: 72,
+        width: width,
+        height: height,
         child: KeyedSubtree(
           key: ValueKey('local-media-ready-$mediaId'),
           child: builder(context, mediaId, BoxFit.cover),
@@ -2854,8 +2874,8 @@ class _TimelineEntry extends StatelessWidget {
       api: api,
       mediaId: mediaId,
       cache: mediaCache,
-      width: 72,
-      height: 72,
+      width: width,
+      height: height,
     );
   }
 
@@ -2941,18 +2961,77 @@ class _TimelineEntry extends StatelessWidget {
               ),
               const SizedBox(width: JiYiSpacing.sm),
               Expanded(
-                child: JiYiSectionCard(
-                  leading: item.memoryType == 'PHOTO' && item.mediaId != null
-                      ? _photoThumbnail(context)
-                      : Icon(icon),
-                  title: title,
-                  subtitle: item.placeName != null && item.isMemory
-                      ? item.placeName
-                      : null,
-                  child: Text(
-                    message,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                child: V3SurfaceCard(
+                  padding: const EdgeInsets.all(JiYiSpacing.cardPadding),
+                  semanticLabel: '$day $time $title',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (item.memoryType == 'PHOTO' && item.mediaId != null) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(JiYiRadius.control),
+                          child: _photoThumbnail(
+                            context,
+                            width: double.infinity,
+                            height: 156,
+                          ),
+                        ),
+                        const SizedBox(height: JiYiSpacing.sm),
+                      ] else ...[
+                        Row(
+                          children: [
+                            Icon(icon, color: theme.colorScheme.primary),
+                            const SizedBox(width: JiYiSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: JiYiSpacing.xs),
+                      ],
+                      if (item.memoryType == 'PHOTO' && item.mediaId != null)
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      const SizedBox(height: JiYiSpacing.xxs),
+                      Wrap(
+                        spacing: JiYiSpacing.xs,
+                        runSpacing: JiYiSpacing.xxs,
+                        children: [
+                          Text(
+                            '$day · $time',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          if (item.placeName != null)
+                            Chip(
+                              avatar: const Icon(Icons.place_outlined, size: 18),
+                              label: Text(item.placeName!),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: JiYiSpacing.xs),
+                      Text(
+                        message,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyLarge?.copyWith(height: 1.45),
+                      ),
+                    ],
                   ),
                 ),
               ),
