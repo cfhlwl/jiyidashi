@@ -1,1 +1,8 @@
 #include "Generated.xcconfig"
+
+// Provider-issued client configuration is injected by the production release
+// environment. Empty/NO keeps the native bridge fail closed during CI and tests.
+JIYI_PNVS_SCHEME_ID =
+JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED = NO
+JIYI_APPLE_DEVELOPMENT_TEAM =
+DEVELOPMENT_TEAM = $(JIYI_APPLE_DEVELOPMENT_TEAM)

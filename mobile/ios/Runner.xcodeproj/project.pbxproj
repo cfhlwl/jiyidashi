@@ -152,6 +152,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
+				A02E00000000000000000001 /* AUTH-02E Production Gate */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
@@ -235,6 +236,22 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A02E00000000000000000001 /* AUTH-02E Production Gate */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../tool/verify_auth_02e_ios_release_config.py",
+			);
+			name = "AUTH-02E Production Gate";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$CONFIGURATION\" = \"Release\" ]; then\n  /usr/bin/python3 \"$SRCROOT/../tool/verify_auth_02e_ios_release_config.py\" \\\n    --required \"$JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED\" \\\n    --bundle-id \"$PRODUCT_BUNDLE_IDENTIFIER\" \\\n    --scheme-id \"$JIYI_PNVS_SCHEME_ID\" \\\n    --team-id \"$DEVELOPMENT_TEAM\" \\\n    --expected-team-id \"$JIYI_APPLE_DEVELOPMENT_TEAM\"\nfi";
+		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

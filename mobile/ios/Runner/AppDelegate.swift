@@ -1,5 +1,6 @@
 import BackgroundTasks
 import CoreLocation
+import Foundation
 import Flutter
 import UIKit
 import UserNotifications
@@ -2119,9 +2120,47 @@ protocol PhoneOneTapProviderAdapter {
   func revokePrivacy(completion: @escaping PhoneOneTapCompletion)
 }
 
+/// Provider-issued client configuration only. Server credentials never cross
+/// into the iOS target. Missing configuration always keeps the bridge closed.
+struct PhoneOneTapProviderConfiguration {
+  let schemeIdentifier: String?
+  let productionRequired: Bool
+
+  var hasSchemeIdentifier: Bool {
+    guard let schemeIdentifier else { return false }
+    let value = schemeIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    return !value.isEmpty && !value.contains("$(")
+  }
+
+  func missingConfigurationReason() -> String {
+    productionRequired && !hasSchemeIdentifier
+      ? "PNVS_CONFIGURATION_MISSING"
+      : "PNVS_NOT_CONFIGURED"
+  }
+
+  static func from(bundle: Bundle = .main) -> PhoneOneTapProviderConfiguration {
+    let scheme = bundle.object(forInfoDictionaryKey: "JIYI_PNVS_SCHEME_ID") as? String
+    let requiredValue = (bundle.object(
+      forInfoDictionaryKey: "JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED"
+    ) as? String)?.lowercased()
+    let required = requiredValue == "yes" || requiredValue == "true" || requiredValue == "1"
+    return PhoneOneTapProviderConfiguration(
+      schemeIdentifier: scheme,
+      productionRequired: required
+    )
+  }
+}
+
 /// AUTH-02C deliberately has no guessed PNVS framework/version or scheme.
 final class FailClosedPhoneOneTapProviderAdapter: PhoneOneTapProviderAdapter {
+  private let configuration: PhoneOneTapProviderConfiguration
   private var initialized = false
+
+  init(
+    configuration: PhoneOneTapProviderConfiguration = .from()
+  ) {
+    self.configuration = configuration
+  }
 
   func initialize(privacyConsentGranted: Bool, completion: @escaping PhoneOneTapCompletion) {
     guard privacyConsentGranted else {
@@ -2130,7 +2169,10 @@ final class FailClosedPhoneOneTapProviderAdapter: PhoneOneTapProviderAdapter {
       return
     }
     initialized = false
-    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
+    completion(PhoneOneTapNativeResult(
+      state: .unavailable,
+      reason: configuration.missingConfigurationReason()
+    ))
   }
 
   func checkAvailability(completion: @escaping PhoneOneTapCompletion) {
@@ -2138,15 +2180,24 @@ final class FailClosedPhoneOneTapProviderAdapter: PhoneOneTapProviderAdapter {
       completion(PhoneOneTapNativeResult(state: .unavailable, reason: "NOT_INITIALIZED"))
       return
     }
-    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
+    completion(PhoneOneTapNativeResult(
+      state: .unavailable,
+      reason: configuration.missingConfigurationReason()
+    ))
   }
 
   func preLogin(completion: @escaping PhoneOneTapCompletion) {
-    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
+    completion(PhoneOneTapNativeResult(
+      state: .unavailable,
+      reason: configuration.missingConfigurationReason()
+    ))
   }
 
   func requestLoginToken(viewController: UIViewController, completion: @escaping PhoneOneTapCompletion) {
-    completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PNVS_NOT_CONFIGURED"))
+    completion(PhoneOneTapNativeResult(
+      state: .unavailable,
+      reason: configuration.missingConfigurationReason()
+    ))
   }
 
   func cancel(completion: @escaping PhoneOneTapCompletion) {
