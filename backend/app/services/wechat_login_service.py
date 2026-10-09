@@ -258,8 +258,25 @@ def _resolve_verified_identity(
         verified_at=now,
     )
     user_id = created.user_id
-    if created.created:
-        for subject in subjects[1:]:
+    user = db.get(User, user_id)
+    if user is None or user.auth_disabled_at is not None:
+        raise AuthIdentityError("AUTH_ACCOUNT_UNAVAILABLE", 401)
+    reconciled = list(
+        db.scalars(
+            select(AuthIdentity)
+            .where(
+                AuthIdentity.provider == AuthProvider.WECHAT,
+                AuthIdentity.subject.in_(subjects),
+            )
+            .with_for_update()
+        )
+    )
+    owners = {identity.user_id for identity in reconciled}
+    if owners != {user_id}:
+        raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409)
+    by_subject = {identity.subject: identity for identity in reconciled}
+    for subject in subjects[1:]:
+        if subject not in by_subject:
             db.add(
                 AuthIdentity(
                     user_id=user_id,
@@ -268,6 +285,8 @@ def _resolve_verified_identity(
                     verified_at=now,
                 )
             )
+        else:
+            by_subject[subject].last_login_at = datetime.now(UTC)
     return user_id, subjects[0]
 
 
