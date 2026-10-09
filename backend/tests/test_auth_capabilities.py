@@ -25,6 +25,7 @@ async def test_auth_capabilities_expose_only_provider_neutral_available_state(
 ):
     import app.api.auth as auth_api
 
+    monkeypatch.setattr(auth_api.settings, "auth_sms_otp_provider", "aliyun")
     monkeypatch.setattr(auth_api, "get_sms_otp_provider", lambda: _AvailableProvider())
     monkeypatch.setattr(
         auth_api,
@@ -43,6 +44,20 @@ async def test_auth_capabilities_expose_only_provider_neutral_available_state(
     }
     assert "aliyun" not in response.text.lower()
     assert "credential" not in response.text.lower()
+
+
+async def test_auth_capabilities_never_expose_fake_provider_as_available(
+    client, monkeypatch
+):
+    import app.api.auth as auth_api
+
+    monkeypatch.setattr(auth_api.settings, "auth_sms_otp_provider", "fake")
+    monkeypatch.setattr(auth_api, "get_sms_otp_provider", lambda: _AvailableProvider())
+
+    response = await client.get("/v1/auth/capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["sms_otp"] == "UNAVAILABLE"
 
 
 async def test_auth_capabilities_provider_factory_failure_is_fail_closed(

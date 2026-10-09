@@ -151,10 +151,15 @@ def auth_capabilities() -> AuthCapabilitiesResponse:
     response. Any factory/configuration failure fails closed for that capability.
     """
 
-    try:
-        sms_available = bool(get_sms_otp_provider().available)
-    except Exception:
-        sms_available = False
+    sms_available = False
+    # The fake provider is a test/development delivery seam, never a capability
+    # that production clients may discover. The selected live adapter must also
+    # report complete server-side configuration through its existing factory.
+    if settings.auth_sms_otp_provider.strip().lower() == "aliyun":
+        try:
+            sms_available = bool(get_sms_otp_provider().available)
+        except Exception:
+            sms_available = False
     try:
         phone_one_tap_available = bool(get_phone_one_tap_provider().available)
     except Exception:
