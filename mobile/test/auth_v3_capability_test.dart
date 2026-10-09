@@ -10,6 +10,7 @@ import 'package:jiyidashi/auth_session_store.dart';
 import 'package:jiyidashi/auth_v3.dart';
 import 'package:jiyidashi/phone_one_tap_bridge.dart';
 import 'package:jiyidashi/stage1_app.dart';
+import 'package:jiyidashi/wechat_auth_bridge.dart';
 
 class _TestPhoneBridge implements PhoneOneTapBridge {
   _TestPhoneBridge({
