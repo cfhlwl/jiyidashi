@@ -210,16 +210,9 @@ void _expectBottomDestination(
   expect(finder, findsOneWidget);
   final node = tester.getSemantics(finder);
   expect(node.label, label);
+  expect(node.getSemanticsData().flagsCollection.isButton, isTrue);
   expect(
-    node.getSemanticsData().flagsCollection.contains(
-      ui.SemanticsFlag.isButton,
-    ),
-    isTrue,
-  );
-  expect(
-    node.getSemanticsData().flagsCollection.contains(
-      ui.SemanticsFlag.isSelected,
-    ),
+    node.getSemanticsData().flagsCollection.isSelected == ui.Tristate.isTrue,
     selected,
   );
   expect(tester.getSize(finder).height, greaterThanOrEqualTo(48));
