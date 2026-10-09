@@ -152,6 +152,18 @@ class PhoneOneTapRequest(BaseModel):
     device_name: str | None = Field(default=None, max_length=120)
 
 
+class WechatLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # This is an opaque, transient provider credential (normally the native SDK
+    # authorization code). It is never a JiYi bearer token or identity claim.
+    credential: str = Field(min_length=1, max_length=512)
+    request_id: UUID
+    device_id: str = Field(min_length=1, max_length=120)
+    client_platform: str | None = Field(default=None, max_length=32)
+    device_name: str | None = Field(default=None, max_length=120)
+
+
 class SmsOtpRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

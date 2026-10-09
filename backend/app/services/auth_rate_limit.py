@@ -34,6 +34,10 @@ _SECURITY_SCOPE_BY_RATE_SCOPE = {
     "phone_one_tap_device": SecurityScope.AUTH_PHONE_ONE_TAP,
     "phone_one_tap_request": SecurityScope.AUTH_PHONE_ONE_TAP,
     "phone_one_tap_token": SecurityScope.AUTH_PHONE_ONE_TAP,
+    "wechat_ip": SecurityScope.AUTH_PHONE_ONE_TAP,
+    "wechat_device": SecurityScope.AUTH_PHONE_ONE_TAP,
+    "wechat_request": SecurityScope.AUTH_PHONE_ONE_TAP,
+    "wechat_credential": SecurityScope.AUTH_PHONE_ONE_TAP,
     "sms_otp_ip": SecurityScope.AUTH_LOGIN_IP,
     "sms_otp_device": SecurityScope.AUTH_LOGIN_IP,
     "sms_otp_phone": SecurityScope.AUTH_LOGIN_ACCOUNT_IP,
@@ -364,6 +368,34 @@ def consume_phone_one_tap_attempt(
                 limit=settings.auth_phone_one_tap_token_limit,
                 window_seconds=window,
             ),
+        )
+
+
+def consume_wechat_attempt(
+    db: Session,
+    *,
+    client_ip: str,
+    device_id: str,
+    request_id: str,
+    credential_fingerprint: str | None = None,
+) -> None:
+    """Consume anonymous WeChat exchange gates before provider I/O."""
+
+    if not settings.auth_rate_limit_enabled:
+        return
+    window = settings.auth_wechat_window_seconds
+    for scope, value, limit in (
+        ("wechat_ip", client_ip, settings.auth_wechat_ip_limit),
+        ("wechat_device", device_id, settings.auth_wechat_device_limit),
+        ("wechat_request", request_id, settings.auth_wechat_request_limit),
+    ):
+        _consume(db, scope=scope, value=value, policy=RatePolicy(limit, window))
+    if credential_fingerprint:
+        _consume(
+            db,
+            scope="wechat_credential",
+            value=credential_fingerprint,
+            policy=RatePolicy(settings.auth_wechat_credential_limit, window),
         )
 
 

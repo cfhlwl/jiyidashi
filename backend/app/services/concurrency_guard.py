@@ -412,6 +412,7 @@ def _record_saturation(
             "ASR": SecurityScope.PROVIDER_ASR,
             "EMBEDDING": SecurityScope.PROVIDER_EMBEDDING,
             "PHONE_ONE_TAP": SecurityScope.AUTH_PHONE_ONE_TAP,
+            "WECHAT_LOGIN": SecurityScope.AUTH_PHONE_ONE_TAP,
         }.get(service_class)
         if scope is None:
             return
@@ -477,6 +478,24 @@ def claim_phone_one_tap_permit(
         user_limit=None,
         user_id=None,
         lease_seconds=cfg.auth_phone_one_tap_permit_lease_seconds,
+        saturated_code="AUTH_RATE_LIMITED",
+        settings=cfg,
+    )
+
+
+def claim_wechat_login_permit(
+    bind: Engine,
+    *,
+    settings: Settings | None = None,
+) -> Permit:
+    cfg = settings or get_settings()
+    return claim_permit(
+        bind,
+        service_class="WECHAT_LOGIN",
+        global_limit=cfg.auth_wechat_global_concurrency,
+        user_limit=None,
+        user_id=None,
+        lease_seconds=cfg.auth_wechat_permit_lease_seconds,
         saturated_code="AUTH_RATE_LIMITED",
         settings=cfg,
     )

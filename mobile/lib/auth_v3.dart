@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'phone_one_tap_bridge.dart';
+import 'wechat_auth_bridge.dart';
 import 'ui/jiyi_tokens.dart';
 
 /// Provider capabilities are the single visibility authority for Auth V3.
@@ -129,10 +130,12 @@ class AuthCapabilities {
 class AuthCapabilityAuthority {
   const AuthCapabilityAuthority({
     this.phoneOneTapBridge,
+    this.wechatAuthGateway,
     this.serverCapabilityLoader,
   });
 
   final PhoneOneTapBridge? phoneOneTapBridge;
+  final WechatAuthGateway? wechatAuthGateway;
   final AuthCapabilityLoader? serverCapabilityLoader;
 
   Future<AuthCapabilities> probe({
@@ -158,30 +161,58 @@ class AuthCapabilityAuthority {
     final bridge = phoneOneTapBridge;
     if (bridge == null ||
         (serverCapabilityLoader != null && !serverCapabilities.phoneOneTap)) {
-      return serverCapabilities.copyWith(
+      serverCapabilities = serverCapabilities.copyWith(
         phoneOneTapStatus: AuthCapabilityStatus.unavailable,
       );
+    } else {
+      try {
+        var result = await bridge.initialize(privacyConsentGranted: true);
+        if (result.isAvailable) result = await bridge.checkAvailability();
+        final phoneStatus = switch (result.state) {
+          PhoneOneTapState.available => AuthCapabilityStatus.available,
+          PhoneOneTapState.providerError => AuthCapabilityStatus.unavailable,
+          PhoneOneTapState.cancelled ||
+          PhoneOneTapState.timeout ||
+          PhoneOneTapState.unavailable ||
+          PhoneOneTapState.tokenAcquired => AuthCapabilityStatus.unavailable,
+        };
+        serverCapabilities = serverCapabilities.copyWith(
+          phoneOneTapStatus: phoneStatus,
+        );
+      } catch (_) {
+        serverCapabilities = serverCapabilities.copyWith(
+          phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+        );
+      }
     }
 
-    try {
-      var result = await bridge.initialize(
-        privacyConsentGranted: true,
+    final wechat = wechatAuthGateway;
+    if (wechat == null) {
+      // Preserve injected non-phone baseline states when this authority is
+      // only probing the phone surface. Once a server capability loader is
+      // present, a missing native gateway must fail closed.
+      return serverCapabilityLoader == null
+          ? serverCapabilities
+          : serverCapabilities.copyWith(
+              wechatStatus: AuthCapabilityStatus.unavailable,
+            );
+    }
+    if (serverCapabilityLoader != null && !serverCapabilities.wechat) {
+      return serverCapabilities.copyWith(
+        wechatStatus: AuthCapabilityStatus.unavailable,
       );
-      if (result.isAvailable) {
-        result = await bridge.checkAvailability();
-      }
-      final phoneStatus = switch (result.state) {
-        PhoneOneTapState.available => AuthCapabilityStatus.available,
-        PhoneOneTapState.providerError => AuthCapabilityStatus.unavailable,
-        PhoneOneTapState.cancelled ||
-        PhoneOneTapState.timeout ||
-        PhoneOneTapState.unavailable ||
-        PhoneOneTapState.tokenAcquired => AuthCapabilityStatus.unavailable,
-      };
-      return serverCapabilities.copyWith(phoneOneTapStatus: phoneStatus);
+    }
+    try {
+      var result = await wechat.initialize(privacyConsentGranted: true);
+      if (result.isAvailable) result = await wechat.checkAvailability();
+      return serverCapabilities.copyWith(
+        wechatStatus: result.state == WechatAuthState.available
+            ? AuthCapabilityStatus.available
+            : AuthCapabilityStatus.unavailable,
+      );
     } catch (_) {
       return serverCapabilities.copyWith(
-        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+        wechatStatus: AuthCapabilityStatus.unavailable,
       );
     }
   }
