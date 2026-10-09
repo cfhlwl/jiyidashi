@@ -152,6 +152,25 @@ class PhoneOneTapRequest(BaseModel):
     device_name: str | None = Field(default=None, max_length=120)
 
 
+class SmsOtpRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    phone: str = Field(min_length=1, max_length=32)
+    device_id: str = Field(default="legacy-client", min_length=1, max_length=120)
+    client_platform: str | None = Field(default=None, max_length=32)
+    device_name: str | None = Field(default=None, max_length=120)
+
+
+class SmsOtpVerifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    device_id: str = Field(default="legacy-client", min_length=1, max_length=120)
+    client_platform: str | None = Field(default=None, max_length=32)
+    device_name: str | None = Field(default=None, max_length=120)
+
+
 class RefreshRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     refresh_token: str = Field(min_length=32, max_length=512)
@@ -209,6 +228,12 @@ class TokenResponse(BaseModel):
     refresh_expires_at: datetime
     # 注销恢复导航提示，不是授权位。
     account_deletion_in_progress: bool = False
+
+
+class SmsOtpRequestResponse(BaseModel):
+    request_id: UUID
+    expires_at: datetime
+    cooldown_until: datetime
 
 
 class EmailVerificationResponse(BaseModel):

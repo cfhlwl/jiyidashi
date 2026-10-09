@@ -34,6 +34,11 @@ _SECURITY_SCOPE_BY_RATE_SCOPE = {
     "phone_one_tap_device": SecurityScope.AUTH_PHONE_ONE_TAP,
     "phone_one_tap_request": SecurityScope.AUTH_PHONE_ONE_TAP,
     "phone_one_tap_token": SecurityScope.AUTH_PHONE_ONE_TAP,
+    "sms_otp_ip": SecurityScope.AUTH_LOGIN_IP,
+    "sms_otp_device": SecurityScope.AUTH_LOGIN_IP,
+    "sms_otp_phone": SecurityScope.AUTH_LOGIN_ACCOUNT_IP,
+    "sms_otp_verify_ip": SecurityScope.AUTH_LOGIN_IP,
+    "sms_otp_verify_request": SecurityScope.AUTH_LOGIN_ACCOUNT_IP,
 }
 
 
@@ -360,6 +365,59 @@ def consume_phone_one_tap_attempt(
                 window_seconds=window,
             ),
         )
+
+
+def consume_sms_otp_request_attempt(
+    db: Session,
+    *,
+    client_ip: str,
+    device_id: str,
+    phone_subject: str,
+) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+    window = settings.auth_sms_otp_window_seconds
+    _consume(
+        db,
+        scope="sms_otp_ip",
+        value=client_ip,
+        policy=RatePolicy(settings.auth_sms_otp_ip_limit, window),
+    )
+    _consume(
+        db,
+        scope="sms_otp_device",
+        value=device_id,
+        policy=RatePolicy(settings.auth_sms_otp_device_limit, window),
+    )
+    _consume(
+        db,
+        scope="sms_otp_phone",
+        value=phone_subject,
+        policy=RatePolicy(settings.auth_sms_otp_phone_limit, window),
+    )
+
+
+def consume_sms_otp_verify_attempt(
+    db: Session,
+    *,
+    client_ip: str,
+    request_id: str,
+) -> None:
+    if not settings.auth_rate_limit_enabled:
+        return
+    window = settings.auth_sms_otp_window_seconds
+    _consume(
+        db,
+        scope="sms_otp_verify_ip",
+        value=client_ip,
+        policy=RatePolicy(settings.auth_sms_otp_verify_ip_limit, window),
+    )
+    _consume(
+        db,
+        scope="sms_otp_verify_request",
+        value=request_id,
+        policy=RatePolicy(settings.auth_sms_otp_verify_request_limit, window),
+    )
 
 
 def record_login_failure(db: Session, client_ip: str, subject: str) -> None:
