@@ -95,6 +95,14 @@ class AuthCapabilities {
     wechatStatus: wechatStatus ?? this.wechatStatus,
   );
 
+  /// Email is the local fallback; every other provider must fail closed when
+  /// privacy or capability authority is unavailable.
+  AuthCapabilities failClosedNonEmail() => copyWith(
+    phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+    smsOtpStatus: AuthCapabilityStatus.unavailable,
+    wechatStatus: AuthCapabilityStatus.unavailable,
+  );
+
   factory AuthCapabilities.fromJson(Map<String, dynamic> json) {
     AuthCapabilityStatus parse(String key) {
       return switch (json[key]) {
@@ -132,9 +140,7 @@ class AuthCapabilityAuthority {
     AuthCapabilities baseline = const AuthCapabilities.emailOnly(),
   }) async {
     if (!privacyConsentGranted) {
-      return baseline.copyWith(
-        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
-      );
+      return baseline.failClosedNonEmail();
     }
 
     var serverCapabilities = baseline;
@@ -144,12 +150,9 @@ class AuthCapabilityAuthority {
         serverCapabilities = await loader();
       }
     } catch (_) {
-      // A pre-login capability network failure must hide SMS and phone login;
-      // email remains the local fallback authority.
-      return baseline.copyWith(
-        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
-        smsOtpStatus: AuthCapabilityStatus.unavailable,
-      );
+      // A pre-login capability network failure must hide every non-email
+      // provider; email remains the local fallback authority.
+      return baseline.failClosedNonEmail();
     }
 
     final bridge = phoneOneTapBridge;

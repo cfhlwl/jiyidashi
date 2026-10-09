@@ -689,6 +689,7 @@ class _AuthPageState extends State<AuthPage> {
           _capabilities = _capabilities.copyWith(
             phoneOneTapStatus: AuthCapabilityStatus.unavailable,
             smsOtpStatus: AuthCapabilityStatus.unavailable,
+            wechatStatus: AuthCapabilityStatus.unavailable,
           );
         });
       }
