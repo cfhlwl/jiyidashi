@@ -4,6 +4,32 @@ import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/ui/jiyi_v3_components.dart';
 
 void main() {
+  testWidgets('V3PageScaffold supports the canonical 390x844 viewport',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: const V3PageScaffold(
+          title: '今天',
+          child: V3SurfaceCard(
+            child: SizedBox(
+              width: double.infinity,
+              child: Text('390 内容'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('今天'), findsOneWidget);
+    expect(find.text('390 内容'), findsOneWidget);
+  });
+
   testWidgets('V3PageScaffold and section header reflow on a small viewport',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 568));
@@ -134,6 +160,30 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('当前操作受到权限限制。'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: const V3StateSurface(
+          variant: V3StateSurfaceVariant.loading,
+          title: '正在加载',
+          message: '请稍候。',
+        ),
+      ),
+    );
+    expect(find.bySemanticsLabel('正在加载：正在加载。请稍候。'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: const V3StateSurface(
+          variant: V3StateSurfaceVariant.empty,
+          title: '暂无记录',
+          message: '没有可展示的内容。',
+        ),
+      ),
+    );
+    expect(find.bySemanticsLabel('暂无内容：暂无记录。没有可展示的内容。'), findsOneWidget);
   });
 
   testWidgets('V3StateSurface actions are explicit and reachable',
