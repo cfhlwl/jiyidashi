@@ -257,6 +257,25 @@ class AuthAcceptedResponse(BaseModel):
     accepted: bool = True
 
 
+class AuthCapabilityStatus(StrEnum):
+    """Provider-neutral login capability exposed before authentication."""
+
+    AVAILABLE = "AVAILABLE"
+    PLANNED = "PLANNED"
+    DISABLED = "DISABLED"
+    UNAVAILABLE = "UNAVAILABLE"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class AuthCapabilitiesResponse(BaseModel):
+    """Server-owned capability state; no provider configuration is exposed."""
+
+    email: AuthCapabilityStatus
+    sms_otp: AuthCapabilityStatus
+    phone_one_tap: AuthCapabilityStatus
+    wechat: AuthCapabilityStatus
+
+
 class UserRead(ORMModel):
     id: UUID
     nickname: str

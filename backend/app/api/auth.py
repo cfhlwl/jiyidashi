@@ -12,6 +12,8 @@ from app.deps import AuthenticatedClaims
 from app.models import Device, User
 from app.schemas import (
     AuthAcceptedResponse,
+    AuthCapabilitiesResponse,
+    AuthCapabilityStatus,
     AuthSessionRead,
     ChangePasswordRequest,
     DevTokenRequest,
@@ -59,6 +61,7 @@ from app.services.notification_service import (
     fence_other_owner_push_bindings_for_client_uuid,
     unregister_device_push,
 )
+from app.services.phone_one_tap_provider import get_phone_one_tap_provider
 from app.services.phone_one_tap_service import (
     PhoneOneTapError,
     exchange_phone_one_tap,
@@ -136,6 +139,45 @@ def _token_response(
 
 
 _LEGACY_CLIENT_DEVICE_ID = "legacy-client"
+
+
+@router.get("/capabilities", response_model=AuthCapabilitiesResponse)
+def auth_capabilities() -> AuthCapabilitiesResponse:
+    """Return the server-owned, provider-neutral pre-login capability state.
+
+    Provider construction is deliberately behind the existing factories. Their
+    ``available`` bit is the only external-provider fact crossing this boundary;
+    configuration, credentials, SDK failures, and provider names never enter the
+    response. Any factory/configuration failure fails closed for that capability.
+    """
+
+    sms_available = False
+    # The fake provider is a test/development delivery seam, never a capability
+    # that production clients may discover. The selected live adapter must also
+    # report complete server-side configuration through its existing factory.
+    if settings.auth_sms_otp_provider.strip().lower() == "aliyun":
+        try:
+            sms_available = bool(get_sms_otp_provider().available)
+        except Exception:
+            sms_available = False
+    try:
+        phone_one_tap_available = bool(get_phone_one_tap_provider().available)
+    except Exception:
+        phone_one_tap_available = False
+    return AuthCapabilitiesResponse(
+        email=AuthCapabilityStatus.AVAILABLE,
+        sms_otp=(
+            AuthCapabilityStatus.AVAILABLE
+            if sms_available
+            else AuthCapabilityStatus.UNAVAILABLE
+        ),
+        phone_one_tap=(
+            AuthCapabilityStatus.AVAILABLE
+            if phone_one_tap_available
+            else AuthCapabilityStatus.UNAVAILABLE
+        ),
+        wechat=AuthCapabilityStatus.DISABLED,
+    )
 
 
 def _resolve_session_device_id(device_id: str) -> str:

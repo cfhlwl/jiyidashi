@@ -52,6 +52,69 @@ the disabled provider cannot make SMS available. The live adapter remains
 server-side, supplies delivery credentials through deployment secret
 management, and preserves the same request/verify contract.
 
+AUTH-03P-B adds the single pre-login capability authority:
+`GET /v1/auth/capabilities`. It returns only the provider-neutral statuses for
+`email`, `sms_otp`, `phone_one_tap`, and `wechat`. It never returns Alibaba
+configuration, credential state, SDK errors, endpoint, signature, or template
+details. `sms_otp` is `AVAILABLE` only when the server-selected provider is
+available and its complete production configuration is valid; provider factory
+or network/configuration failures return `UNAVAILABLE`.
+
+Flutter combines that server response with the native phone-one-tap probe and
+the current privacy consent. A missing gateway, a capability request failure,
+or revoked privacy hides SMS and preserves the email fallback. There is no
+second local visibility authority and no cached `AVAILABLE` state that can
+survive a failed refresh.
+
+## AUTH-03P-B production readiness
+
+The repository is `CODE READY / FIELD PENDING`, not `DONE`. The production
+selector remains `disabled` until Alibaba service activation, billing/quota,
+approved signature/template, least-privilege server credential delivery,
+production backend access, and controlled mainland test devices/numbers are
+confirmed outside Git. No real credential, OTP, or complete phone number is
+part of this repository.
+
+The safe activation contract is:
+
+```text
+AUTH_SMS_OTP_PROVIDER=aliyun
+AUTH_SMS_OTP_ALIYUN_ENDPOINT=dysmsapi.aliyuncs.com
+AUTH_SMS_OTP_ALIYUN_REGION=<approved region>
+AUTH_SMS_OTP_ALIYUN_SIGN_NAME=<approved signature>
+AUTH_SMS_OTP_ALIYUN_TEMPLATE_CODE=<approved template>
+AUTH_SMS_OTP_ALIYUN_CREDENTIAL_SOURCE=environment
+AUTH_SMS_OTP_ALIYUN_TIMEOUT_SECONDS=<bounded reviewed value>
+```
+
+The two AccessKey values, if the deployment has not yet moved to an approved
+RAM-role/secret-manager delivery, are server-only environment or secret-manager
+inputs. They are never passed to Flutter, stored in Git, printed, or returned by
+the capability endpoint. In production, selecting `aliyun` with incomplete or
+invalid configuration remains unavailable and cannot fall back to the fake
+provider.
+
+Rollback is configuration-only: set
+`AUTH_SMS_OTP_PROVIDER=disabled`, restart/reload the backend, and the capability
+endpoint hides SMS while preserving email and existing sessions. No migration
+rollback is required.
+
+## AUTH-03P-B field acceptance record
+
+Real activation requires both an iOS physical-device run and an Android
+physical-device run. Each run must record only a test-run ID, masked phone,
+app/backend SHA, platform, timestamp, normalized JiYi result, provider request
+ID, arrival yes/no, and bounded arrival latency. It must prove request, receipt,
+verify, canonical `AuthIdentity(provider=PHONE, subject=E.164)`, canonical
+session, restart recovery, logout, and relogin. Invalid/expired OTP, cooldown,
+provider failure, privacy revoke, late response, and email fallback remain
+release-blocking regressions.
+
+Until those external and physical-device conditions are evidenced, the
+classification is `CODE READY / FIELD PENDING` with the external prerequisites
+listed as `EXTERNAL BLOCKED`; no SMS `AVAILABLE` or AUTH-03 `DONE` claim is
+permitted in release documentation.
+
 ## AUTH-03P-A Alibaba Cloud adapter
 
 The selected production adapter is Alibaba Cloud domestic SMS `SendSms` from
