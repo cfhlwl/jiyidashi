@@ -213,6 +213,10 @@ def verify_sms_otp(
             else "AUTH_SMS_OTP_ALREADY_USED",
             410 if row is None or row.state == AuthSmsOtpChallengeState.EXPIRED else 409,
         )
+    if device_id != row.device_id:
+        # The installation captured at request time is the challenge authority.
+        # Keep the challenge pending so the original installation can retry.
+        raise SmsOtpError("AUTH_SMS_OTP_CHALLENGE_MISMATCH", 409)
     if _utc(row.expires_at) <= now:
         row.state = AuthSmsOtpChallengeState.EXPIRED
         row.active_key = None

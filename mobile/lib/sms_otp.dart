@@ -90,11 +90,19 @@ class _SmsOtpPageState extends State<SmsOtpPage> {
 
   @override
   void dispose() {
-    _generation += 1;
-    _cooldownTimer?.cancel();
+    _abandonAttempt();
     phoneController.dispose();
     codeController.dispose();
     super.dispose();
+  }
+
+  void _abandonAttempt() {
+    if (_cancelled) return;
+    _cancelled = true;
+    _generation += 1;
+    _cooldownTimer?.cancel();
+    codeController.clear();
+    unawaited(widget.gateway.cancel());
   }
 
   Future<void> _requestCode() async {
@@ -148,12 +156,8 @@ class _SmsOtpPageState extends State<SmsOtpPage> {
 
   Future<void> _cancel() async {
     if (_cancelled) return;
-    _cancelled = true;
-    ++_generation;
-    _cooldownTimer?.cancel();
-    codeController.clear();
+    _abandonAttempt();
     if (mounted) setState(() {});
-    await widget.gateway.cancel();
     if (mounted) widget.onCancel?.call();
   }
 

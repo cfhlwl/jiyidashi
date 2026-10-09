@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.auth_models import (
     AuthIdentity,
     AuthProvider,
+    AuthSession,
     AuthSmsOtpChallenge,
     AuthSmsOtpChallengeState,
 )
@@ -85,6 +86,50 @@ async def test_sms_otp_server_cooldown_blocks_double_request(client, monkeypatch
     assert first.status_code == 200
     assert second.status_code == 429
     assert second.json()["detail"] == "AUTH_SMS_OTP_COOLDOWN"
+
+
+@pytest.mark.asyncio
+async def test_sms_otp_challenge_device_binding_preserves_original_authority(
+    client, monkeypatch
+):
+    _settings(monkeypatch)
+    provider = _provider()
+    requested = await client.post(
+        "/v1/auth/phone/sms/request",
+        json={"phone": "+8613800000005", "device_id": "DEVICE-A"},
+    )
+    assert requested.status_code == 200
+    request_id = requested.json()["request_id"]
+    code = provider.sent[next(iter(provider.sent))]
+
+    mismatch = await client.post(
+        "/v1/auth/phone/sms/verify",
+        json={"request_id": request_id, "code": code, "device_id": "DEVICE-B"},
+    )
+    assert mismatch.status_code == 409
+    assert mismatch.json()["detail"] == "AUTH_SMS_OTP_CHALLENGE_MISMATCH"
+    assert "access_token" not in mismatch.json()
+    assert "refresh_token" not in mismatch.json()
+
+    with SessionLocal() as db:
+        row = db.scalar(
+            select(AuthSmsOtpChallenge).where(AuthSmsOtpChallenge.request_id == UUID(request_id))
+        )
+        assert row is not None
+        assert row.state == AuthSmsOtpChallengeState.PENDING
+        assert row.session_id is None
+        assert row.resolved_user_id is None
+
+    retry = await client.post(
+        "/v1/auth/phone/sms/verify",
+        json={"request_id": request_id, "code": code, "device_id": "DEVICE-A"},
+    )
+    assert retry.status_code == 200
+    session_id = UUID(retry.json()["session_id"])
+    with SessionLocal() as db:
+        session = db.get(AuthSession, session_id)
+        assert session is not None
+        assert session.device_id == "DEVICE-A"
 
 
 @pytest.mark.asyncio
