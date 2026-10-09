@@ -627,13 +627,13 @@ class _AuthPageState extends State<AuthPage> {
   @override
   void initState() {
     super.initState();
-    _capabilities = widget.capabilities.copyWith(
-      phoneOneTapStatus: widget.phoneOneTapBridge == null
-          ? AuthCapabilityStatus.unavailable
-          : widget.privacyConsentGranted
-          ? widget.capabilities.phoneOneTapStatus
-          : AuthCapabilityStatus.unavailable,
-    );
+    _capabilities = widget.privacyConsentGranted
+        ? widget.capabilities.copyWith(
+            phoneOneTapStatus: widget.phoneOneTapBridge == null
+                ? AuthCapabilityStatus.unavailable
+                : widget.capabilities.phoneOneTapStatus,
+          )
+        : widget.capabilities.failClosedNonEmail();
     _privacyConsentGranted = widget.privacyConsentGranted;
     _capabilityAuthority = AuthCapabilityAuthority(
       phoneOneTapBridge: widget.phoneOneTapBridge,

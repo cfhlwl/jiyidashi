@@ -303,7 +303,7 @@ void main() {
     expect(find.byKey(const ValueKey('auth-v3-register-entry')), findsOneWidget);
   });
 
-  testWidgets('SMS fallback remains capability-gated and invokes its callback',
+  testWidgets('SMS fallback requires privacy and server capability approval',
       (tester) async {
     final bridge = _TestPhoneBridge();
     final api = _api(handler: (_) async => http.Response('{}', 200));
@@ -313,8 +313,13 @@ void main() {
       tester,
       api: api,
       bridge: bridge,
-      privacyConsentGranted: false,
-      capabilities: _capabilities(sms: AuthCapabilityStatus.available),
+      capabilities: const AuthCapabilities.emailOnly(),
+      authCapabilityLoader: () async => const AuthCapabilities.statuses(
+        emailStatus: AuthCapabilityStatus.available,
+        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+        smsOtpStatus: AuthCapabilityStatus.available,
+        wechatStatus: AuthCapabilityStatus.disabled,
+      ),
       onSmsOtp: () => smsAttempts += 1,
     );
 
@@ -637,10 +642,14 @@ void main() {
       tester,
       api: api,
       bridge: bridge,
-      privacyConsentGranted: false,
-      capabilities: _capabilities(
-        email: AuthCapabilityStatus.disabled,
-        sms: AuthCapabilityStatus.available,
+      capabilities: const AuthCapabilities.statuses(
+        emailStatus: AuthCapabilityStatus.disabled,
+      ),
+      authCapabilityLoader: () async => const AuthCapabilities.statuses(
+        emailStatus: AuthCapabilityStatus.disabled,
+        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+        smsOtpStatus: AuthCapabilityStatus.available,
+        wechatStatus: AuthCapabilityStatus.disabled,
       ),
       onSmsOtp: () => smsAttempts += 1,
     );
@@ -649,6 +658,48 @@ void main() {
     expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
     expect(find.byType(TextField), findsNothing);
     expect(find.text('邮箱登录'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('auth-v3-sms-fallback')));
+    expect(smsAttempts, 1);
+  });
+
+  testWidgets('privacy false cold start hides injected non-email capabilities',
+      (tester) async {
+    final bridge = _TestPhoneBridge();
+    final api = _api(handler: (_) async => http.Response('{}', 200));
+    var loaderCalls = 0;
+    var smsAttempts = 0;
+
+    await _pumpAuthPage(
+      tester,
+      api: api,
+      bridge: bridge,
+      privacyConsentGranted: false,
+      capabilities: const AuthCapabilities.allEnabled(),
+      authCapabilityLoader: () async {
+        loaderCalls += 1;
+        return const AuthCapabilities.statuses(
+          emailStatus: AuthCapabilityStatus.available,
+          phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+          smsOtpStatus: AuthCapabilityStatus.available,
+          wechatStatus: AuthCapabilityStatus.disabled,
+        );
+      },
+      onSmsOtp: () => smsAttempts += 1,
+    );
+
+    expect(find.byKey(const ValueKey('auth-v3-phone-one-tap')), findsNothing);
+    expect(find.byKey(const ValueKey('auth-v3-sms-fallback')), findsNothing);
+    expect(find.byKey(const ValueKey('auth-v3-register-entry')), findsOneWidget);
+    expect(find.text('邮箱登录'), findsOneWidget);
+    expect(loaderCalls, 0);
+    expect(bridge.initializeCalls, 0);
+    expect(bridge.checkAvailabilityCalls, 0);
+
+    await tester.tap(find.byKey(const ValueKey('auth-v3-privacy-consent')));
+    await tester.pumpAndSettle();
+
+    expect(loaderCalls, 1);
+    expect(find.byKey(const ValueKey('auth-v3-sms-fallback')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('auth-v3-sms-fallback')));
     expect(smsAttempts, 1);
   });
