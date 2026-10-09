@@ -2505,6 +2505,7 @@ class _JiYiBottomNavigationItem extends StatelessWidget {
         ? JiYiTodayVisuals.primaryBlue
         : JiYiTodayVisuals.secondaryText;
     return Semantics(
+      key: ValueKey<String>('bottom-nav-$label'),
       container: true,
       button: true,
       selected: selected,
