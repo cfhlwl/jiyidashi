@@ -883,9 +883,9 @@ class _AuthPageState extends State<AuthPage> {
         final productError = _wechatError(exception.result.state);
         if (productError.isNotEmpty) setState(() => error = productError);
       }
-    } on ApiException catch (exception) {
+    } on ApiException {
       if (_isCurrentAuthOperation(generation)) {
-        setState(() => error = _authProductMessage(exception.message));
+        setState(() => error = '暂时无法完成微信登录，请使用邮箱登录。');
       }
     } on TransportException {
       if (_isCurrentAuthOperation(generation)) {
