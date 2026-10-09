@@ -56,7 +56,9 @@ def upgrade() -> None:
         "ix_auth_sms_otp_phone_created", "auth_sms_otp_challenges", ["phone_subject", "created_at"]
     )
     op.create_index(
-        "ix_auth_sms_otp_challenges_resolved_user_id", "auth_sms_otp_challenges", ["resolved_user_id"]
+        "ix_auth_sms_otp_challenges_resolved_user_id",
+        "auth_sms_otp_challenges",
+        ["resolved_user_id"],
     )
     op.create_index(
         "ix_auth_sms_otp_challenges_session_id", "auth_sms_otp_challenges", ["session_id"]
@@ -65,7 +67,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_auth_sms_otp_challenges_session_id", table_name="auth_sms_otp_challenges")
-    op.drop_index("ix_auth_sms_otp_challenges_resolved_user_id", table_name="auth_sms_otp_challenges")
+    op.drop_index(
+        "ix_auth_sms_otp_challenges_resolved_user_id",
+        table_name="auth_sms_otp_challenges",
+    )
     op.drop_index("ix_auth_sms_otp_phone_created", table_name="auth_sms_otp_challenges")
     op.drop_index("ix_auth_sms_otp_state_expires", table_name="auth_sms_otp_challenges")
     op.drop_table("auth_sms_otp_challenges")
