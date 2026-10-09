@@ -32,6 +32,7 @@ import 'recording_health_section.dart';
 import 'reminder_page.dart';
 import 'today_footprint_page.dart';
 import 'timeline_models.dart';
+import 'navigation/jiyi_navigation.dart';
 import 'ui/jiyi_format.dart';
 
 // [人工注释][S1-026] AppShell 只接线 Onboarding；首次自动触发仅来自注册成功，老账号不会因缺少本地状态被误判为新用户。
@@ -1958,7 +1959,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     _accountDeletionIntentActive = widget.resumeAccountDeletion;
     if (_accountDeletionIntentActive) {
-      index = 4;
+      index = JiYiDestination.profile.index;
     }
     final store = widget.onboardingStore;
     final owner = widget.api.authenticatedUserId?.trim();
@@ -2153,33 +2154,31 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       case NotificationDestination.appUpdate:
       case NotificationDestination.export:
         Navigator.of(context).popUntil((route) => route.isFirst);
-        if (mounted) setState(() => index = 0);
+        if (mounted) setState(() => index = JiYiDestination.today.index);
         return;
       case NotificationDestination.family:
         Navigator.of(context).popUntil((route) => route.isFirst);
-        if (mounted) setState(() => index = 3);
+        if (mounted) setState(() => index = JiYiDestination.family.index);
         return;
       case NotificationDestination.reminder:
-        await Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => ReminderPage(api: widget.api),
-          ),
+        await JiYiNavigator.push<void>(
+          context,
+          builder: (_) => ReminderPage(api: widget.api),
         );
         return;
       case NotificationDestination.memory:
         final memoryId = intent.resourceId;
         if (memoryId == null) {
-          if (mounted) setState(() => index = 0);
+          if (mounted) setState(() => index = JiYiDestination.today.index);
           return;
         }
-        await Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => MemoryDetailPage(
-              api: widget.api,
-              memoryId: memoryId,
-              mediaCache: _mediaCache,
-              amapPrivacyConsent: _amapPrivacyConsent,
-            ),
+        await JiYiNavigator.pushDetail<void>(
+          context,
+          builder: (_) => MemoryDetailPage(
+            api: widget.api,
+            memoryId: memoryId,
+            mediaCache: _mediaCache,
+            amapPrivacyConsent: _amapPrivacyConsent,
           ),
         );
         return;
@@ -2223,7 +2222,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         // [人工注释][S1-022-FIX-002] 一旦用户确认不可逆注销，立即封住普通导航与新的自动同步；
         // 即使后续服务端返回 202/网络失败，也不能重新进入会产生本地数据的普通工作流。
         _accountDeletionIntentActive = true;
-        index = 4;
+        index = JiYiDestination.profile.index;
       });
     }
     // [人工注释][S1-022][S2-004/005] 注销确认后的所有 owner-local producer gate
@@ -2311,8 +2310,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       notificationClient: widget.notificationClient,
       elderMode: _elderModeEnabled,
       onCapture: () {
-        Navigator.of(context).push<void>(
-          MaterialPageRoute(builder: (_) => capturePage),
+        unawaited(
+          JiYiNavigator.push<void>(
+            context,
+            builder: (_) => capturePage,
+          ),
         );
       },
       initialQuestion: onboardingStep == OnboardingStep.retrieve ||
@@ -2327,31 +2329,34 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           ? onboarding?.trustedEvidenceShown
           : null,
     );
-    final pages = <Widget>[
-      TodayPage(
+    final pagesByDestination = <JiYiDestination, Widget>{
+      JiYiDestination.today: TodayPage(
         key: ValueKey('today-map-consent-${_amapPrivacyConsent.accepted}'),
         api: widget.api,
         mediaCache: _mediaCache,
         amapPrivacyConsent: _amapPrivacyConsent,
         elderMode: _elderModeEnabled,
         onCapture: () {
-          Navigator.of(context).push<void>(
-            MaterialPageRoute(builder: (_) => capturePage),
+          unawaited(
+            JiYiNavigator.push<void>(
+              context,
+              builder: (_) => capturePage,
+            ),
           );
         },
-        onOpenFamily: () => setState(() => index = 3),
+        onOpenFamily: () => setState(() => index = JiYiDestination.family.index),
       ),
-      memoryPage,
-      LifePage(
+      JiYiDestination.memory: memoryPage,
+      JiYiDestination.life: LifePage(
         api: widget.api,
         mediaCache: _mediaCache,
       ),
-      FamilyPage(
+      JiYiDestination.family: FamilyPage(
         api: widget.api,
         mediaCache: _mediaCache,
         amapPrivacyConsent: _amapPrivacyConsent,
       ),
-      ProfilePage(
+      JiYiDestination.profile: ProfilePage(
         api: widget.api,
         onElderModeChanged: (enabled) {
           setState(() => _elderModeEnabled = enabled);
@@ -2371,7 +2376,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         themeMode: widget.themeMode,
         onThemeModeChanged: widget.onThemeModeChanged,
       ),
-    ];
+    };
+    final pages = JiYiDestinationCatalog.buildPages(
+      (destination) => pagesByDestination[destination]!,
+    );
     final onboardingExperience = OnboardingExperience(
       step: _accountDeletionIntentActive ? null : onboardingStep,
       onStart: onboarding?.startFlow ?? () {},
@@ -2386,7 +2394,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           : pages[index],
     );
     final todayVisualShell =
-        onboardingStep == null && !_accountDeletionIntentActive && index == 0;
+        onboardingStep == null &&
+            !_accountDeletionIntentActive &&
+            index == JiYiDestination.today.index;
     return Scaffold(
       body: todayVisualShell
           ? onboardingExperience
@@ -2395,19 +2405,25 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       floatingActionButton:
           onboardingStep != null ||
                   _accountDeletionIntentActive ||
-                  index == 0 ||
-                  index == 1
+                  index == JiYiDestination.today.index ||
+                  index == JiYiDestination.memory.index
               ? null
               : FloatingActionButton.extended(
                   onPressed: () {
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute(builder: (_) => capturePage),
+                    unawaited(
+                      JiYiNavigator.push<void>(
+                        context,
+                        builder: (_) => capturePage,
+                      ),
                     );
                   },
                   icon: const Icon(Icons.edit_outlined),
                   label: const Text('记一下'),
                 ),
-      bottomNavigationBar: onboardingStep != null || _accountDeletionIntentActive
+      bottomNavigationBar: !JiYiShellPolicy.showBottomNavigation(
+        onboardingActive: onboardingStep != null,
+        accountDeletionActive: _accountDeletionIntentActive,
+      )
           ? null
           : _JiYiBottomNavigation(
               selectedIndex: index,
@@ -2425,14 +2441,6 @@ class _JiYiBottomNavigation extends StatelessWidget {
 
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
-
-  static const _destinations = [
-    (Icons.home_outlined, Icons.home, '今天'),
-    (Icons.photo_library_outlined, Icons.photo_library, '记忆'),
-    (Icons.menu_book_outlined, Icons.menu_book, '人生'),
-    (Icons.people_outline, Icons.people, '家庭'),
-    (Icons.person_outline, Icons.person, '我的'),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -2454,14 +2462,17 @@ class _JiYiBottomNavigation extends StatelessWidget {
           height: JiYiTodayGeometry.bottomNavigationContentHeight,
           child: Row(
             children: [
-              for (var index = 0; index < _destinations.length; index++)
+              for (final descriptor in JiYiDestinationCatalog.descriptors)
                 Expanded(
                   child: _JiYiBottomNavigationItem(
-                    icon: _destinations[index].$1,
-                    selectedIcon: _destinations[index].$2,
-                    label: _destinations[index].$3,
-                    selected: selectedIndex == index,
-                    onTap: () => onDestinationSelected(index),
+                    icon: descriptor.icon,
+                    selectedIcon: descriptor.selectedIcon,
+                    label: descriptor.label,
+                    selected: JiYiDestinationCatalog.isSelected(
+                      descriptor.destination,
+                      selectedIndex,
+                    ),
+                    onTap: () => onDestinationSelected(descriptor.index),
                   ),
                 ),
             ],
@@ -2494,39 +2505,43 @@ class _JiYiBottomNavigationItem extends StatelessWidget {
         ? JiYiTodayVisuals.primaryBlue
         : JiYiTodayVisuals.secondaryText;
     return Semantics(
+      container: true,
       button: true,
       selected: selected,
       label: label,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(selected ? selectedIcon : icon, size: 23, color: color),
-              const SizedBox(height: 1),
-              Text(
-                label,
-                maxLines: 1,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: color,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  height: 1,
+      onTap: onTap,
+      child: ExcludeSemantics(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(selected ? selectedIcon : icon, size: 23, color: color),
+                const SizedBox(height: 1),
+                Text(
+                  label,
+                  maxLines: 1,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: color,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    height: 1,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              AnimatedContainer(
-                duration: JiYiMotion.fast,
-                curve: JiYiMotion.easing,
-                width: selected ? 28 : 0,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(999),
+                const SizedBox(height: 2),
+                AnimatedContainer(
+                  duration: JiYiMotion.fast,
+                  curve: JiYiMotion.easing,
+                  width: selected ? 28 : 0,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -2683,8 +2698,9 @@ class _TimelinePageState extends State<TimelinePage> {
 
   void _openItem(TimelineReadItem item) {
     if (item.isMemory) {
-      Navigator.of(context).push<bool>(
-        MaterialPageRoute<bool>(
+      unawaited(
+        JiYiNavigator.pushDetail<bool>(
+          context,
           builder: (_) => MemoryDetailPage(
             api: widget.api,
             memoryId: item.id,
@@ -2697,8 +2713,9 @@ class _TimelinePageState extends State<TimelinePage> {
     }
     final placeId = item.placeId;
     if (placeId == null) return;
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
+    unawaited(
+      JiYiNavigator.pushDetail<void>(
+        context,
         builder: (_) => PlaceDetailPage(
           api: widget.api,
           placeId: placeId,
@@ -2782,8 +2799,9 @@ class _TimelinePageState extends State<TimelinePage> {
               title: '重要的人和人生故事',
               message: '查看你记录的重要的人、人生阶段和重要经历。',
               onTap: () {
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
+                unawaited(
+                  JiYiNavigator.pushDetail<void>(
+                    context,
                     builder: (_) => V2HomePage(
                       api: widget.api,
                       mediaCache: widget.mediaCache,
@@ -3790,14 +3808,13 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
   Future<void> openFirstMemoryDetail() async {
     final ids = result?['memory_ids'] as List<dynamic>? ?? const [];
     if (ids.isEmpty || !mounted) return;
-    await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => MemoryDetailPage(
-          api: widget.api,
-          memoryId: ids.first.toString(),
-          mediaCache: widget.mediaCache,
-          amapPrivacyConsent: _amapPrivacyConsent,
-        ),
+    await JiYiNavigator.pushDetail<bool>(
+      context,
+      builder: (_) => MemoryDetailPage(
+        api: widget.api,
+        memoryId: ids.first.toString(),
+        mediaCache: widget.mediaCache,
+        amapPrivacyConsent: _amapPrivacyConsent,
       ),
     );
   }
@@ -4349,8 +4366,11 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
                   onPressed: loading
                       ? null
                       : () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => ReminderPage(api: widget.api)),
+                          unawaited(
+                            JiYiNavigator.push<void>(
+                              context,
+                              builder: (_) => ReminderPage(api: widget.api),
+                            ),
                           );
                         },
                   icon: const Icon(Icons.alarm_outlined),
@@ -4385,8 +4405,9 @@ class _MemoryQueryPageState extends State<MemoryQueryPage> {
         sectionHeader(
           '最近记下的',
           onAction: () {
-            Navigator.of(context).push<void>(
-              MaterialPageRoute(
+            unawaited(
+              JiYiNavigator.pushDetail<void>(
+                context,
                 builder: (_) => TimelinePage(
                   api: widget.api,
                   mediaCache: widget.mediaCache,
