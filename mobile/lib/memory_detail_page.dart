@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -503,11 +504,31 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
         onBack: () => Navigator.of(context).maybePop(),
         trailing: current == null
             ? null
-            : IconButton(
+            : PopupMenuButton<String>(
                 key: const ValueKey('memory-detail-more'),
-                onPressed: mutating ? null : _delete,
                 tooltip: '更多操作',
                 icon: const Icon(Icons.more_horiz),
+                enabled: !mutating,
+                onSelected: (action) {
+                  switch (action) {
+                    case 'edit':
+                      unawaited(_edit());
+                    case 'delete':
+                      unawaited(_delete());
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem<String>(
+                    key: ValueKey('memory-detail-more-edit'),
+                    value: 'edit',
+                    child: Text('编辑'),
+                  ),
+                  PopupMenuItem<String>(
+                    key: ValueKey('memory-detail-more-delete'),
+                    value: 'delete',
+                    child: Text('删除'),
+                  ),
+                ],
               ),
       ),
       child: loading

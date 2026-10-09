@@ -150,6 +150,19 @@ void main() {
     expect(api.reminderMemoryIds, hasLength(1));
   });
 
+  testWidgets('Memory Detail more menu does not delete on open',
+      (tester) async {
+    final api = _Batch3Api();
+    await _pumpAt(tester, MemoryDetailPage(api: api, memoryId: _batch3Memory));
+
+    await tester.tap(find.byKey(const ValueKey('memory-detail-more')));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('memory-detail-more-edit')), findsOneWidget);
+    expect(find.byKey(const ValueKey('memory-detail-more-delete')), findsOneWidget);
+    expect(find.text('删除这条记忆？'), findsNothing);
+  });
+
   testWidgets('Memory Detail keeps primary actions reachable with large text',
       (tester) async {
     final api = _Batch3Api();

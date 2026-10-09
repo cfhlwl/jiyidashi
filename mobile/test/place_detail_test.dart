@@ -6,6 +6,8 @@ import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 
+const _timelinePlaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
 class _PlaceApi extends JiYiApiClient {
   _PlaceApi({
     this.detail,
@@ -52,7 +54,7 @@ class _PlaceApi extends JiYiApiClient {
           'id': '11111111-1111-4111-8111-111111111111',
           'occurred_at': '2026-09-20T08:00:00Z',
           'ended_at': '2026-09-20T09:00:00Z',
-          'place_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          'place_id': _timelinePlaceId,
           'place_name': place['name'],
           'memory_type': null,
           'title': null,
@@ -109,7 +111,7 @@ Map<String, dynamic> _place({
 }) {
   return {
     'place': {
-      'id': 'place-1',
+      'id': _timelinePlaceId,
       'name': '家',
       'name_source': 'USER',
       'address': '测试地址',

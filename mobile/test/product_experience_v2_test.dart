@@ -259,7 +259,13 @@ void main() {
     expect(components, contains('class JiYiLoadingState'));
     expect(components, contains('class JiYiErrorState'));
     expect(components, contains('class JiYiOfflineState'));
-    expect(shell, contains('JiYiOfflineState(onRetry: _loadInitial)'));
+    // Timeline is now on the accepted V3 state surface. The legacy shared
+    // states remain available to unmigrated V2 pages, but this route must not
+    // regress to the pre-V3 presentation contract.
+    expect(shell, contains('V3StateSurfaceVariant.loading'));
+    expect(shell, contains('V3StateSurfaceVariant.offline'));
+    expect(shell, contains('V3StateSurfaceVariant.error'));
+    expect(shell, contains('V3StateSurfaceVariant.empty'));
     expect(shell, contains('getTimelineEvents(limit: 30)'));
     expect(shell, contains('TimelineReadPage.parse(raw)'));
     expect(shell, isNot(contains('late Future<List<Map<String, dynamic>>> _places')));
