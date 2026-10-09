@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'auth_session_store.dart';
+import 'auth_v3.dart';
 import 'phone_one_tap_bridge.dart';
 import 'sms_otp.dart';
 
@@ -676,6 +677,18 @@ class JiYiApiClient implements PhoneOneTapExchangeClient, SmsOtpGateway {
       body: {'email': email.trim()},
       authenticated: false,
     );
+  }
+
+  /// Reads the server-owned, provider-neutral pre-login capability contract.
+  /// A caller must treat transport/protocol failure as unavailable for every
+  /// non-email provider; this method never infers capability from local UI.
+  Future<AuthCapabilities> fetchAuthCapabilities() async {
+    final data = await _jsonRequest(
+      'GET',
+      '/auth/capabilities',
+      authenticated: false,
+    );
+    return AuthCapabilities.fromJson(data);
   }
 
   Future<void> requestPasswordReset(String email) async {

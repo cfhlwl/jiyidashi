@@ -523,6 +523,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   api: api,
                   capabilities: const AuthCapabilities.emailOnly(),
                   phoneOneTapBridge: phoneOneTapBridge,
+                  authCapabilityLoader: api.fetchAuthCapabilities,
                   smsOtpGateway: api,
                   initialMessage: restoreMessage,
                   onRegistrationCompleted: () {
@@ -563,6 +564,7 @@ class AuthPage extends StatefulWidget {
     required this.onAuthenticated,
     this.capabilities = const AuthCapabilities.emailOnly(),
     this.phoneOneTapBridge,
+    this.authCapabilityLoader,
     this.privacyConsentGranted = false,
     this.onSmsOtp,
     this.smsOtpGateway,
@@ -575,6 +577,7 @@ class AuthPage extends StatefulWidget {
   final VoidCallback onAuthenticated;
   final AuthCapabilities capabilities;
   final PhoneOneTapBridge? phoneOneTapBridge;
+  final AuthCapabilityLoader? authCapabilityLoader;
   final bool privacyConsentGranted;
   final VoidCallback? onSmsOtp;
   final SmsOtpGateway? smsOtpGateway;
@@ -632,13 +635,11 @@ class _AuthPageState extends State<AuthPage> {
           : AuthCapabilityStatus.unavailable,
     );
     _privacyConsentGranted = widget.privacyConsentGranted;
-    final phoneBridge = widget.phoneOneTapBridge;
-    if (phoneBridge != null) {
-      _capabilityAuthority = AuthCapabilityAuthority(
-        phoneOneTapBridge: phoneBridge,
-      );
-      if (_privacyConsentGranted) unawaited(_probeCapabilities());
-    }
+    _capabilityAuthority = AuthCapabilityAuthority(
+      phoneOneTapBridge: widget.phoneOneTapBridge,
+      serverCapabilityLoader: widget.authCapabilityLoader,
+    );
+    if (_privacyConsentGranted) unawaited(_probeCapabilities());
     message = widget.initialMessage;
   }
 
@@ -687,6 +688,7 @@ class _AuthPageState extends State<AuthPage> {
           _privacyConsentGranted = false;
           _capabilities = _capabilities.copyWith(
             phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+            smsOtpStatus: AuthCapabilityStatus.unavailable,
           );
         });
       }

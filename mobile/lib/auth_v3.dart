@@ -18,6 +18,8 @@ enum AuthV3Screen {
 
 enum AuthCapabilityStatus { available, planned, disabled, unavailable, unsupported }
 
+typedef AuthCapabilityLoader = Future<AuthCapabilities> Function();
+
 @immutable
 class AuthCapabilities {
   const AuthCapabilities({
@@ -92,14 +94,38 @@ class AuthCapabilities {
     smsOtpStatus: smsOtpStatus ?? this.smsOtpStatus,
     wechatStatus: wechatStatus ?? this.wechatStatus,
   );
+
+  factory AuthCapabilities.fromJson(Map<String, dynamic> json) {
+    AuthCapabilityStatus parse(String key) {
+      return switch (json[key]) {
+        'AVAILABLE' => AuthCapabilityStatus.available,
+        'PLANNED' => AuthCapabilityStatus.planned,
+        'DISABLED' => AuthCapabilityStatus.disabled,
+        'UNAVAILABLE' => AuthCapabilityStatus.unavailable,
+        'UNSUPPORTED' => AuthCapabilityStatus.unsupported,
+        _ => throw const FormatException('invalid auth capability response'),
+      };
+    }
+
+    return AuthCapabilities.statuses(
+      emailStatus: parse('email'),
+      phoneOneTapStatus: parse('phone_one_tap'),
+      smsOtpStatus: parse('sms_otp'),
+      wechatStatus: parse('wechat'),
+    );
+  }
 }
 
 /// The only Auth V3 provider capability authority. It performs no pre-login
 /// work when privacy has not been explicitly accepted.
 class AuthCapabilityAuthority {
-  const AuthCapabilityAuthority({required this.phoneOneTapBridge});
+  const AuthCapabilityAuthority({
+    this.phoneOneTapBridge,
+    this.serverCapabilityLoader,
+  });
 
-  final PhoneOneTapBridge phoneOneTapBridge;
+  final PhoneOneTapBridge? phoneOneTapBridge;
+  final AuthCapabilityLoader? serverCapabilityLoader;
 
   Future<AuthCapabilities> probe({
     required bool privacyConsentGranted,
@@ -111,12 +137,35 @@ class AuthCapabilityAuthority {
       );
     }
 
+    var serverCapabilities = baseline;
     try {
-      var result = await phoneOneTapBridge.initialize(
+      final loader = serverCapabilityLoader;
+      if (loader != null) {
+        serverCapabilities = await loader();
+      }
+    } catch (_) {
+      // A pre-login capability network failure must hide SMS and phone login;
+      // email remains the local fallback authority.
+      return baseline.copyWith(
+        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+        smsOtpStatus: AuthCapabilityStatus.unavailable,
+      );
+    }
+
+    final bridge = phoneOneTapBridge;
+    if (bridge == null ||
+        (serverCapabilityLoader != null && !serverCapabilities.phoneOneTap)) {
+      return serverCapabilities.copyWith(
+        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+      );
+    }
+
+    try {
+      var result = await bridge.initialize(
         privacyConsentGranted: true,
       );
       if (result.isAvailable) {
-        result = await phoneOneTapBridge.checkAvailability();
+        result = await bridge.checkAvailability();
       }
       final phoneStatus = switch (result.state) {
         PhoneOneTapState.available => AuthCapabilityStatus.available,
@@ -126,9 +175,9 @@ class AuthCapabilityAuthority {
         PhoneOneTapState.unavailable ||
         PhoneOneTapState.tokenAcquired => AuthCapabilityStatus.unavailable,
       };
-      return baseline.copyWith(phoneOneTapStatus: phoneStatus);
+      return serverCapabilities.copyWith(phoneOneTapStatus: phoneStatus);
     } catch (_) {
-      return baseline.copyWith(
+      return serverCapabilities.copyWith(
         phoneOneTapStatus: AuthCapabilityStatus.unavailable,
       );
     }

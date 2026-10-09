@@ -186,6 +186,60 @@ void main() {
     expect(disabledEmail.phoneOneTapStatus, AuthCapabilityStatus.unavailable);
   });
 
+  test('server capability is the authority for SMS visibility', () async {
+    final result = await AuthCapabilityAuthority(
+      phoneOneTapBridge: _TestPhoneBridge(),
+      serverCapabilityLoader: () async => const AuthCapabilities.statuses(
+        emailStatus: AuthCapabilityStatus.available,
+        phoneOneTapStatus: AuthCapabilityStatus.unavailable,
+        smsOtpStatus: AuthCapabilityStatus.available,
+        wechatStatus: AuthCapabilityStatus.disabled,
+      ),
+    ).probe(privacyConsentGranted: true);
+
+    expect(result.email, isTrue);
+    expect(result.smsOtp, isTrue);
+    expect(result.phoneOneTap, isFalse);
+    expect(result.wechat, isFalse);
+  });
+
+  test('capability transport failure hides SMS but preserves email', () async {
+    final result = await AuthCapabilityAuthority(
+      phoneOneTapBridge: _TestPhoneBridge(),
+      serverCapabilityLoader: () async => throw const FormatException('offline'),
+    ).probe(privacyConsentGranted: true);
+
+    expect(result.email, isTrue);
+    expect(result.smsOtp, isFalse);
+    expect(result.phoneOneTap, isFalse);
+  });
+
+  test('API client parses the provider-neutral capability response', () async {
+    final api = _api(
+      handler: (request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/v1/auth/capabilities');
+        return http.Response(
+          jsonEncode({
+            'email': 'AVAILABLE',
+            'sms_otp': 'AVAILABLE',
+            'phone_one_tap': 'UNAVAILABLE',
+            'wechat': 'DISABLED',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      },
+    );
+
+    final result = await api.fetchAuthCapabilities();
+
+    expect(result.email, isTrue);
+    expect(result.smsOtp, isTrue);
+    expect(result.phoneOneTap, isFalse);
+    expect(result.wechat, isFalse);
+  });
+
   test('capability statuses keep planned and disabled providers hidden', () {
     const capabilities = AuthCapabilities.statuses(
       emailStatus: AuthCapabilityStatus.available,

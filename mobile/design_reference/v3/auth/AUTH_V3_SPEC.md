@@ -44,7 +44,7 @@ Capability rule:
 | `SILENT_SESSION_RECOVERY` | Durable session exists and the app is refreshing authority | Keep the persistent shell when possible; do not show a login page or full-screen login spinner for a recoverable refresh |
 | `PHONE_ONE_TAP_AVAILABLE` | Real carrier one-tap capability is available | Show the one-tap entry and confirmation state |
 | `PHONE_ONE_TAP_UNAVAILABLE` | Carrier/provider cannot provide a phone identity now | Show consumer copy “暂时无法获取本机号码” and real fallbacks |
-| `SMS_OTP` | Real SMS provider is available and the user is using phone fallback | Show phone, OTP, resend, and verification states |
+| `SMS_OTP` | The server capability endpoint reports real SMS availability and the user is using phone fallback | Show phone, OTP, resend, and verification states |
 | `WECHAT` | Real WeChat provider is available and the user is authorizing | Show WeChat authorization, cancellation, and failure states |
 | `EMAIL` | Existing email provider flow | Show email/password, verification, reset, and registration states |
 | `AUTHENTICATING` | A provider request or email operation is in flight | Disable only the relevant action and preserve the shell; this does not require a full-screen loading page |
@@ -62,7 +62,7 @@ Purpose: establish JiYi identity and offer the highest-confidence consumer entry
 - Secondary primary action: `微信登录`
 - Alternative section: `手机号验证码登录`, `邮箱登录`
 - Agreement footer: `登录即表示同意《用户协议》与《隐私政策》`
-- Current release behavior: only render the entries whose provider capability is `AVAILABLE`; with current capabilities, the real email path is the only enabled provider.
+- Current release behavior: only render the entries whose provider capability is `AVAILABLE`; capability is server-authoritative before login, then combined with local gateway/native/privacy prerequisites. With the current external activation state, the real email path remains the only enabled provider.
 
 ### 02 One-Tap Confirmation
 
@@ -83,7 +83,7 @@ Purpose: provide the phone fallback when one-tap is unavailable or the user choo
 - Resend action with countdown, for example `重新发送 (60s)`
 - `登录` action
 - Backup link: `使用邮箱登录`
-- Current release behavior: hidden until a real SMS provider is integrated.
+- Current release behavior: hidden until the server reports `SMS_OTP=AVAILABLE` and the local `SmsOtpGateway` exists; transport/configuration failure hides it and preserves email.
 
 ### 04 Email Login
 
@@ -186,10 +186,10 @@ The current lightweight fallback in `TodayHeroBackground` is not an Auth product
 | --- | --- | --- | --- |
 | `EMAIL` | `AVAILABLE` | Keep the existing real email login, registration, verification, reset, and logout behavior; expose it as the current enabled path, visually restyled later | Backup provider under the Auth V3 shell |
 | `PHONE_ONE_TAP` | `PLANNED` | Hide from current production UI; no fake CTA | Primary consumer entry after real carrier capability and server exchange exist |
-| `SMS_OTP` | `PLANNED` | Hide from current production UI; no fake CTA | Phone fallback with real SMS send, verify, resend, rate limit, and recovery states |
+| `SMS_OTP` | `UNAVAILABLE` until external activation | Hide unless the server capability is `AVAILABLE` and a gateway exists; no fake CTA | Phone fallback with real SMS send, verify, resend, rate limit, and recovery states |
 | `WECHAT` | `PLANNED` | Hide from current production UI; no fake CTA | Primary consumer entry after real WeChat authorization and server identity exchange exist |
 
-The Design Authority can show all five states even while current production exposes only the real email capability. Capability-driven visibility is mandatory.
+The Design Authority can show all five states even while current production exposes only the real email capability. Capability-driven visibility is mandatory. The pre-login server contract is `GET /v1/auth/capabilities`; it exposes only provider-neutral status values and must fail closed when the backend is unreachable or SMS configuration is incomplete.
 
 ## 10. Account Identity Model
 
