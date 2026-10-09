@@ -294,8 +294,12 @@ void main() {
                 unawaited(
                   JiYiNavigator.pushDetail<void>(
                     context,
-                    builder: (_) => const Scaffold(
-                      body: Center(child: Text('detail')),
+                    builder: (detailContext) => Scaffold(
+                      body: TextButton(
+                        key: const ValueKey('pop-detail'),
+                        onPressed: () => Navigator.of(detailContext).pop(),
+                        child: const Text('detail'),
+                      ),
                     ),
                   ),
                 );
@@ -311,7 +315,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('detail'), findsOneWidget);
 
-    await tester.binding.handlePopRoute();
+    await tester.tap(find.byKey(const ValueKey('pop-detail')));
     await tester.pumpAndSettle();
     expect(find.text('source'), findsOneWidget);
     expect(find.text('detail'), findsNothing);
