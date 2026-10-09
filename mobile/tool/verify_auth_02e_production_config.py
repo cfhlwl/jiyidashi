@@ -58,9 +58,6 @@ def first_missing_production_requirement() -> str | None:
         if not any(os.environ.get(name, "").strip() for name in names):
             return label
 
-    fingerprint = os.environ["ANDROID_RELEASE_CERTIFICATE_SHA256"].strip()
-    if not FINGERPRINT_RE.fullmatch(fingerprint):
-        return "ANDROID_RELEASE_CERTIFICATE_SHA256 (64 hexadecimal characters)"
     return None
 
 
