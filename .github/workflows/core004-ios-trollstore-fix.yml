@@ -1,3 +1,5 @@
+# TEMPORARY BUILD-ONLY PR: Build the exact reviewed main base SHA, not the trigger branch.
+# DO NOT MERGE this workflow change; close the temporary PR after artifact verification.
 name: core004-ios-trollstore-fix
 
 on:
@@ -27,13 +29,13 @@ jobs:
       run:
         working-directory: mobile
     env:
-      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
       API_BASE_URL: https://jiyi.ccwl.net.cn/v1
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
       - name: Verify exact checkout
         shell: bash
@@ -165,7 +167,7 @@ jobs:
       - name: Upload TrollStore test IPA
         uses: actions/upload-artifact@v4
         with:
-          name: core004-ios-trollstore-${{ github.event.pull_request.head.sha || github.sha }}
+          name: core004-ios-trollstore-${{ github.event.pull_request.base.sha || github.sha }}
           path: ${{ runner.temp }}/core004-ios-trollstore/
           if-no-files-found: error
           retention-days: 14
