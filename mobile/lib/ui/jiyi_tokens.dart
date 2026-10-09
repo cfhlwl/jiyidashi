@@ -76,6 +76,16 @@ abstract final class JiYiProductColors {
   static const Color media = Color(0xFF4F7D69);
 }
 
+// Shared surface roles map to the existing product palette. Today keeps its
+// approved page-specific visual roles and is not forced through these values.
+abstract final class JiYiSurfaceRoles {
+  static const Color pageBackground = JiYiProductColors.background;
+  static const Color surface = JiYiProductColors.surface;
+  static const Color elevated = JiYiProductColors.surfaceElevated;
+  static const Color soft = JiYiProductColors.surfaceSoft;
+  static const Color border = JiYiProductColors.border;
+}
+
 // Today V3 visual roles. These are presentation tokens only; they never
 // replace server-authoritative data or semantic state colors.
 abstract final class JiYiTodayVisuals {
