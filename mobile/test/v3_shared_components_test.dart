@@ -78,7 +78,7 @@ void main() {
   });
 
   testWidgets('V3TopBar exposes a reachable back semantic', (tester) async {
-    var backPressed = false;
+    var backPressed = 0;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -87,21 +87,24 @@ void main() {
           scrollable: false,
           topBar: V3TopBar(
             title: '详情',
-            onBack: () => backPressed = true,
+            onBack: () => backPressed += 1,
           ),
           child: const SizedBox.expand(),
         ),
       ),
     );
 
-    expect(find.bySemanticsLabel('返回'), findsOneWidget);
-    await tester.tap(find.bySemanticsLabel('返回'));
-    expect(backPressed, isTrue);
+    final back = find.bySemanticsLabel('返回');
+    expect(back, findsOneWidget);
+    final backSize = tester.getSize(back);
+    expect(backSize.height, greaterThanOrEqualTo(48));
+    await tester.tap(back);
+    expect(backPressed, 1);
   });
 
   testWidgets('V3SurfaceCard keeps its interaction semantic and target',
       (tester) async {
-    var tapped = false;
+    var tapped = 0;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -109,10 +112,11 @@ void main() {
         home: Scaffold(
           body: V3SurfaceCard(
             semanticLabel: '打开记忆',
-            onTap: () => tapped = true,
+            padding: EdgeInsets.zero,
+            onTap: () => tapped += 1,
             child: const SizedBox(
               width: double.infinity,
-              height: 80,
+              height: 1,
               child: Text('记忆卡片'),
             ),
           ),
@@ -120,9 +124,12 @@ void main() {
       ),
     );
 
-    expect(find.bySemanticsLabel('打开记忆'), findsOneWidget);
-    await tester.tap(find.text('记忆卡片'));
-    expect(tapped, isTrue);
+    final card = find.bySemanticsLabel('打开记忆');
+    expect(card, findsOneWidget);
+    final cardSize = tester.getSize(card);
+    expect(cardSize.height, greaterThanOrEqualTo(48));
+    await tester.tap(card);
+    expect(tapped, 1);
   });
 
   testWidgets('V3StateSurface keeps truthful variants distinct',

@@ -107,14 +107,20 @@ class V3TopBar extends StatelessWidget {
     final leadingWidget = leading ??
         (onBack == null
             ? const SizedBox.square(dimension: JiYiTapTarget.normal)
-            : IconButton(
-                onPressed: onBack,
-                icon: const Icon(Icons.arrow_back_ios_new),
-                tooltip: backLabel,
-                semanticLabel: backLabel,
-                constraints: const BoxConstraints(
-                  minWidth: JiYiTapTarget.normal,
-                  minHeight: JiYiTapTarget.normal,
+            : Semantics(
+                button: true,
+                label: backLabel,
+                onTap: onBack,
+                child: ExcludeSemantics(
+                  child: IconButton(
+                    onPressed: onBack,
+                    icon: const Icon(Icons.arrow_back_ios_new),
+                    tooltip: backLabel,
+                    constraints: const BoxConstraints(
+                      minWidth: JiYiTapTarget.normal,
+                      minHeight: JiYiTapTarget.normal,
+                    ),
+                  ),
                 ),
               ));
 
@@ -208,6 +214,7 @@ class V3SurfaceCard extends StatelessWidget {
       ),
     );
 
+    final content = Padding(padding: padding, child: child);
     final surface = Material(
       color: color ?? theme.colorScheme.surface,
       elevation: elevation,
@@ -215,10 +222,15 @@ class V3SurfaceCard extends StatelessWidget {
       shape: shape,
       clipBehavior: clipBehavior,
       child: onTap == null
-          ? Padding(padding: padding, child: child)
+          ? content
           : InkWell(
               onTap: onTap,
-              child: Padding(padding: padding, child: child),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: JiYiTapTarget.normal,
+                ),
+                child: content,
+              ),
             ),
     );
 
