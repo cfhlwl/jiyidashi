@@ -51,7 +51,7 @@ variables rather than printed or embedded in command output.
 | Item | Current result | Evidence / next gate |
 |---|---|---|
 | Runner Bundle ID | READY | `com.jiyidays` in the Xcode project |
-| signing/team identity | CODE READY / EXTERNAL BLOCKED | Release `DEVELOPMENT_TEAM` is bound to `JIYI_APPLE_DEVELOPMENT_TEAM`; Apple team/signing registration is not externally verified |
+| signing/team identity | CODE READY / EXTERNAL BLOCKED | Release `DEVELOPMENT_TEAM` is bound to the build-consumed expected team identity `JIYI_APPLE_DEVELOPMENT_TEAM`; Apple team/signing registration is not externally verified |
 | PNVS application/scheme registration | EXTERNAL BLOCKED | `JIYI_PNVS_SCHEME_ID` is an injected xcconfig seam; no value is committed |
 | PNVS SDK | EXTERNAL BLOCKED | no Aliyun framework/package is present or enabled |
 | required provider capability/privacy review | EXTERNAL BLOCKED | official provider registration and privacy review remain pending |

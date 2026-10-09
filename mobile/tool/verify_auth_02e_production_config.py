@@ -51,7 +51,7 @@ def first_missing_production_requirement() -> str | None:
         ("ANDROID_RELEASE_KEY_ALIAS", "ANDROID_RELEASE_KEY_ALIAS"),
         ("ANDROID_RELEASE_KEY_PASSWORD", "ANDROID_RELEASE_KEY_PASSWORD"),
         ("ANDROID_RELEASE_CERTIFICATE_SHA256", "ANDROID_RELEASE_CERTIFICATE_SHA256"),
-        ("APPLE_TEAM_ID", "APPLE_TEAM_ID"),
+        ("JIYI_APPLE_DEVELOPMENT_TEAM", "JIYI_APPLE_DEVELOPMENT_TEAM"),
     )
     for item in requirements:
         label, *names = item

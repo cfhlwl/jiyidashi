@@ -110,6 +110,19 @@ jobs:
             --team-id TESTTEAM01 \
             --expected-team-id TESTTEAM01
 
+          set +e
+          mismatch_output="$(python3 tool/verify_auth_02e_ios_release_config.py \
+            --required YES \
+            --bundle-id com.jiyidays \
+            --scheme-id test-pnvs-scheme \
+            --team-id TEAM_A \
+            --expected-team-id TEAM_B 2>&1)"
+          mismatch_status=$?
+          set -e
+          printf '%s\n' "$mismatch_output"
+          test "$mismatch_status" -ne 0
+          grep -Fq 'DEVELOPMENT_TEAM does not match JIYI_APPLE_DEVELOPMENT_TEAM' <<<"$mismatch_output"
+
       - name: Verify AUTH-02E Android certificate derivation and mismatch gate
         shell: bash
         run: |
@@ -141,6 +154,16 @@ jobs:
           export ANDROID_RELEASE_KEY_PASSWORD=testpass
           export ANDROID_RELEASE_CERTIFICATE_SHA256="$fingerprint"
           export APPLE_TEAM_ID=TESTTEAM01
+          unset JIYI_APPLE_DEVELOPMENT_TEAM
+          set +e
+          alias_output="$(python3 tool/verify_auth_02e_production_config.py --require-production 2>&1)"
+          alias_status=$?
+          set -e
+          printf '%s\n' "$alias_output"
+          test "$alias_status" -ne 0
+          grep -Fq 'missing required external/configuration input JIYI_APPLE_DEVELOPMENT_TEAM' <<<"$alias_output"
+
+          export JIYI_APPLE_DEVELOPMENT_TEAM=TESTTEAM01
           python3 tool/verify_auth_02e_production_config.py --require-production
 
           export ANDROID_RELEASE_CERTIFICATE_SHA256="$(python3 -c 'print("0" * 64)')"
