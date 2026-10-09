@@ -1,7 +1,7 @@
 from functools import lru_cache
 from urllib.parse import urlparse
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.embedding_policy import (
@@ -238,6 +238,27 @@ class Settings(BaseSettings):
     # is test/development-only and production remains fail closed until a later
     # provider activation supplies server-side delivery credentials.
     auth_sms_otp_provider: str = "disabled"
+    # AUTH-03P-A: production provider configuration is server-only. Empty
+    # values intentionally keep the capability unavailable until deployment
+    # supplies the complete external configuration.
+    auth_sms_otp_aliyun_endpoint: str = ""
+    auth_sms_otp_aliyun_region: str = ""
+    auth_sms_otp_aliyun_sign_name: str = ""
+    auth_sms_otp_aliyun_template_code: str = ""
+    auth_sms_otp_aliyun_credential_source: str = "environment"
+    auth_sms_otp_aliyun_access_key_id: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "AUTH_SMS_OTP_ALIYUN_ACCESS_KEY_ID", "ALIBABA_CLOUD_ACCESS_KEY_ID"
+        ),
+    )
+    auth_sms_otp_aliyun_access_key_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "AUTH_SMS_OTP_ALIYUN_ACCESS_KEY_SECRET", "ALIBABA_CLOUD_ACCESS_KEY_SECRET"
+        ),
+    )
+    auth_sms_otp_aliyun_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
     auth_sms_otp_code_secret: str = ""
     auth_sms_otp_code_key_version: str = "v1"
     auth_sms_otp_code_ttl_seconds: int = Field(default=300, ge=60, le=900)
