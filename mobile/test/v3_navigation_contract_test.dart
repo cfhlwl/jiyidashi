@@ -291,10 +291,12 @@ void main() {
             body: ElevatedButton(
               key: const ValueKey('open-detail'),
               onPressed: () {
-                JiYiNavigator.pushDetail<void>(
-                  context,
-                  builder: (_) => const Scaffold(
-                    body: Center(child: Text('detail')),
+                unawaited(
+                  JiYiNavigator.pushDetail<void>(
+                    context,
+                    builder: (_) => const Scaffold(
+                      body: Center(child: Text('detail')),
+                    ),
                   ),
                 );
               },
