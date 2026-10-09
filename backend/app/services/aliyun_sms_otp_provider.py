@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Protocol
+from urllib.parse import urlparse
 from uuid import UUID
 
 from app.core.config import Settings
@@ -11,6 +12,7 @@ from app.services.sms_otp_provider import SmsOtpDelivery, SmsOtpProviderError
 
 _MAINLAND_PHONE = re.compile(r"^\+86(1[3-9]\d{9})$")
 _OTP = re.compile(r"^\d{6}$")
+_OFFICIAL_ENDPOINT_HOST = "dysmsapi.aliyuncs.com"
 _RATE_LIMIT_CODES = {
     "isv.businesslimitcontrol",
     "isv.quotanumberlimit",
@@ -47,7 +49,7 @@ class AliyunSmsProviderConfig:
     @property
     def complete(self) -> bool:
         return (
-            self.endpoint.startswith("https://")
+            self.normalized_endpoint is not None
             and bool(self.region)
             and bool(self.sign_name)
             and bool(self.template_code)
@@ -55,6 +57,30 @@ class AliyunSmsProviderConfig:
             and bool(self.access_key_id)
             and bool(self.access_key_secret)
         )
+
+    @property
+    def normalized_endpoint(self) -> str | None:
+        value = self.endpoint.strip()
+        if not value:
+            return None
+        candidate = urlparse(value if "://" in value else f"//{value}")
+        if "://" in value and candidate.scheme.lower() != "https":
+            return None
+        try:
+            port = candidate.port
+        except ValueError:
+            return None
+        if (
+            candidate.hostname != _OFFICIAL_ENDPOINT_HOST
+            or candidate.username
+            or candidate.password
+            or port is not None
+            or candidate.path not in ("", "/")
+            or candidate.query
+            or candidate.fragment
+        ):
+            return None
+        return _OFFICIAL_ENDPOINT_HOST
 
 
 @dataclass(frozen=True)
@@ -87,8 +113,10 @@ class _OfficialAliyunSmsTransport:
             access_key_id=config.access_key_id,
             access_key_secret=config.access_key_secret,
         )
-        sdk_config.endpoint = config.endpoint
+        sdk_config.endpoint = config.normalized_endpoint
+        sdk_config.protocol = "https"
         sdk_config.region_id = config.region
+        self.sdk_config = sdk_config
         self._client = Client(sdk_config)
         self._config = config
 

@@ -118,7 +118,10 @@ def request_sms_otp(
     )
     if existing is not None:
         cooldown_until = _utc(existing.cooldown_until)
-        if existing.state == AuthSmsOtpChallengeState.PENDING and cooldown_until > now:
+        if existing.state in {
+            AuthSmsOtpChallengeState.PENDING,
+            AuthSmsOtpChallengeState.PROVIDER_ERROR,
+        } and cooldown_until > now:
             db.rollback()
             retry = max(1, int((cooldown_until - now).total_seconds()))
             raise SmsOtpError("AUTH_SMS_OTP_COOLDOWN", 429, retry)
@@ -164,7 +167,8 @@ def request_sms_otp(
         )
         if failed is not None:
             failed.state = AuthSmsOtpChallengeState.PROVIDER_ERROR
-            failed.active_key = None
+            # Keep the durable active key until cooldown_until. The provider
+            # may have accepted the request even when the response was lost.
             failed.error_code = exc.code
             db.commit()
         code = ""

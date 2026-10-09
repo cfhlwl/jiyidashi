@@ -14,7 +14,7 @@ from app.auth_models import (
     AuthSmsOtpChallengeState,
 )
 from app.core.db import SessionLocal
-from app.services.sms_otp_provider import FakeSmsOtpProvider
+from app.services.sms_otp_provider import FakeSmsOtpProvider, SmsOtpDelivery, SmsOtpProviderError
 
 
 def _settings(monkeypatch):
@@ -36,6 +36,21 @@ def _provider() -> FakeSmsOtpProvider:
 
     _fake_provider.sent.clear()
     return _fake_provider
+
+
+class _SequenceProvider:
+    available = True
+
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls = 0
+
+    def deliver_code(self, *, phone_subject, code, request_id):
+        self.calls += 1
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 @pytest.mark.asyncio
@@ -180,3 +195,112 @@ async def test_sms_otp_disabled_provider_fails_closed(client, monkeypatch):
     )
     assert response.status_code == 503
     assert response.json()["detail"] == "AUTH_SMS_OTP_UNAVAILABLE"
+
+
+def test_sms_otp_provider_failure_keeps_resend_fence_until_cooldown(monkeypatch):
+    from app.services.sms_otp_service import SmsOtpError, request_sms_otp
+
+    settings = _settings(monkeypatch)
+    settings.auth_sms_otp_cooldown_seconds = 60
+    now = datetime.now(UTC).replace(microsecond=0)
+    provider = _SequenceProvider(
+        [
+            SmsOtpProviderError("TIMEOUT"),
+            SmsOtpDelivery(provider_request_id="provider-request-2"),
+        ]
+    )
+    kwargs = {
+        "phone": "+8613800000091",
+        "device_id": "DEVICE-A",
+        "client_platform": "test",
+        "device_name": "test",
+        "client_ip": "198.51.100.91",
+        "provider": provider,
+        "settings": settings,
+        "code_factory": lambda: "123456",
+    }
+
+    with SessionLocal() as db:
+        with pytest.raises(SmsOtpError) as first:
+            request_sms_otp(db, now=now, **kwargs)
+        assert first.value.code == "AUTH_SMS_OTP_TIMEOUT"
+        failed = db.scalar(
+            select(AuthSmsOtpChallenge).where(
+                AuthSmsOtpChallenge.phone_subject == "+8613800000091",
+                AuthSmsOtpChallenge.device_id == "DEVICE-A",
+            )
+        )
+        assert failed is not None
+        assert failed.state == AuthSmsOtpChallengeState.PROVIDER_ERROR
+        assert failed.active_key is not None
+
+    with SessionLocal() as db:
+        with pytest.raises(SmsOtpError) as immediate:
+            request_sms_otp(db, now=now + timedelta(seconds=1), **kwargs)
+        assert immediate.value.code == "AUTH_SMS_OTP_COOLDOWN"
+        assert provider.calls == 1
+
+    with SessionLocal() as db:
+        fresh = request_sms_otp(db, now=now + timedelta(seconds=61), **kwargs)
+    assert fresh.request_id is not None
+    assert provider.calls == 2
+
+
+@pytest.mark.parametrize("provider_code", ["RATE_LIMITED", "PROVIDER_ERROR", "TIMEOUT"])
+def test_sms_otp_all_provider_failures_keep_same_device_resend_fence(monkeypatch, provider_code):
+    from app.services.sms_otp_service import SmsOtpError, request_sms_otp
+
+    settings = _settings(monkeypatch)
+    now = datetime.now(UTC).replace(microsecond=0)
+    provider = _SequenceProvider([SmsOtpProviderError(provider_code)])
+    phone_suffix = {
+        "RATE_LIMITED": "0092",
+        "PROVIDER_ERROR": "0094",
+        "TIMEOUT": "0095",
+    }[provider_code]
+    kwargs = {
+        "phone": f"+861380000{phone_suffix}",
+        "device_id": "DEVICE-A",
+        "client_platform": None,
+        "device_name": None,
+        "client_ip": "198.51.100.92",
+        "provider": provider,
+        "settings": settings,
+        "code_factory": lambda: "123456",
+    }
+    with SessionLocal() as db:
+        with pytest.raises(SmsOtpError):
+            request_sms_otp(db, now=now, **kwargs)
+    with SessionLocal() as db:
+        with pytest.raises(SmsOtpError) as second:
+            request_sms_otp(db, now=now + timedelta(seconds=1), **kwargs)
+    assert second.value.code == "AUTH_SMS_OTP_COOLDOWN"
+    assert provider.calls == 1
+
+
+def test_sms_otp_resend_fence_remains_device_scoped(monkeypatch):
+    from app.services.sms_otp_service import request_sms_otp
+
+    settings = _settings(monkeypatch)
+    now = datetime.now(UTC).replace(microsecond=0)
+    provider = _SequenceProvider(
+        [
+            SmsOtpDelivery(provider_request_id="provider-request-a"),
+            SmsOtpDelivery(provider_request_id="provider-request-b"),
+        ]
+    )
+    common = {
+        "phone": "+8613800000093",
+        "client_platform": None,
+        "device_name": None,
+        "client_ip": "198.51.100.93",
+        "provider": provider,
+        "settings": settings,
+        "code_factory": lambda: "123456",
+        "now": now,
+    }
+    with SessionLocal() as db:
+        request_sms_otp(db, device_id="DEVICE-A", **common)
+    with SessionLocal() as db:
+        request_sms_otp(db, device_id="DEVICE-B", **common)
+    assert provider.calls == 2

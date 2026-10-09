@@ -10,6 +10,7 @@ from app.services.aliyun_sms_otp_provider import (
     AliyunSmsOtpProvider,
     AliyunSmsProviderConfig,
     AliyunSmsResponse,
+    _OfficialAliyunSmsTransport,
 )
 from app.services.sms_otp_provider import SmsOtpProviderError, get_sms_otp_provider
 
@@ -30,7 +31,7 @@ class FakeAliyunTransport:
 
 def _config(**overrides) -> AliyunSmsProviderConfig:
     values = {
-        "endpoint": "https://dysmsapi.aliyuncs.com",
+        "endpoint": "dysmsapi.aliyuncs.com",
         "region": "cn-hangzhou",
         "sign_name": "JiYi",
         "template_code": "SMS_TEST",
@@ -48,6 +49,31 @@ def test_aliyun_provider_missing_config_is_unavailable():
     assert provider.available is False
     with pytest.raises(SmsOtpProviderError, match="UNAVAILABLE"):
         provider.deliver_code(phone_subject="+8613812345678", code="123456", request_id=uuid4())
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "",
+        "http://dysmsapi.aliyuncs.com",
+        "https://invalid.example.com",
+        "https://user:secret@dysmsapi.aliyuncs.com",
+        "https://dysmsapi.aliyuncs.com/path",
+        "https://dysmsapi.aliyuncs.com?query=1",
+        "https://dysmsapi.aliyuncs.com#fragment",
+        "dysmsapi.aliyuncs.com:not-a-port",
+    ],
+)
+def test_aliyun_endpoint_contract_fails_closed(endpoint):
+    assert AliyunSmsOtpProvider(_config(endpoint=endpoint)).available is False
+
+
+def test_official_transport_construction_sets_host_https_and_region():
+    transport = _OfficialAliyunSmsTransport(_config())
+
+    assert transport.sdk_config.endpoint == "dysmsapi.aliyuncs.com"
+    assert transport.sdk_config.protocol == "https"
+    assert transport.sdk_config.region_id == "cn-hangzhou"
 
 
 def test_production_fake_provider_is_fail_closed(monkeypatch):

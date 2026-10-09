@@ -70,7 +70,11 @@ provider compatibility guarantee. The configured production endpoint must be
 HTTPS; the current official mainland endpoint is
 `https://dysmsapi.aliyuncs.com`. The configured region, approved sign name,
 approved template code, credential source, and timeout are all required for
-availability. Missing or unsupported configuration returns
+availability. `AUTH_SMS_OTP_ALIYUN_ENDPOINT` is the host
+`dysmsapi.aliyuncs.com`; the adapter sets the SDK protocol to `https`. An
+optional input in the form `https://dysmsapi.aliyuncs.com` is normalized to the
+same host, while HTTP URLs, credentials, ports, paths, queries, fragments,
+other hosts, and empty values fail closed. Missing or unsupported configuration returns
 `AUTH_SMS_OTP_UNAVAILABLE`; it never falls back to the fake provider.
 
 The adapter uses server-side AccessKey material delivered through deployment
@@ -108,6 +112,14 @@ whose HTTP result is unknown. Therefore this adapter does not retry any
 ambiguous result. Provider billing, quota, approved signature/template, RAM
 policy, production credential delivery, and real-device acceptance remain
 external activation prerequisites.
+
+After a provider attempt fails or has an unknown completion state, the durable
+challenge enters `PROVIDER_ERROR` but retains its active key through
+`cooldown_until`. A same-phone/same-device resend during that period returns
+`AUTH_SMS_OTP_COOLDOWN` without another provider call. Once the durable
+cooldown expires, the old challenge is released and a new request may make one
+new provider call. The active key remains device-scoped, so the existing
+policy for a different device is unchanged.
 
 ## Tests
 
