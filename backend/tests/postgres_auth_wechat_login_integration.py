@@ -33,8 +33,14 @@ settings.auth_wechat_permit_lease_seconds = 30
 class FakeProvider:
     available = True
 
-    def __init__(self, outcomes: dict[str, VerifiedWechatResult]):
+    def __init__(
+        self,
+        outcomes: dict[str, VerifiedWechatResult],
+        *,
+        contested_window: threading.Barrier | None = None,
+    ):
         self.outcomes = outcomes
+        self.contested_window = contested_window
         self.calls: list[str] = []
         self._lock = threading.Lock()
 
@@ -43,6 +49,8 @@ class FakeProvider:
             self.calls.append(credential)
         with SessionLocal() as db:
             assert db.in_transaction() is False
+        if self.contested_window is not None:
+            self.contested_window.wait(timeout=30)
         return self.outcomes[credential]
 
 
@@ -104,11 +112,13 @@ def _cleanup(*, request_ids: set[UUID], user_ids: set[UUID]) -> None:
 
 
 def _prove_same_identity_concurrency(request_ids: set[UUID], user_ids: set[UUID]) -> None:
+    contested_window = threading.Barrier(2)
     provider = FakeProvider(
         {
             "same-unionid-a": _verified(openid="same-openid-a", unionid="same-unionid"),
             "same-unionid-b": _verified(openid="same-openid-b", unionid="same-unionid"),
-        }
+        },
+        contested_window=contested_window,
     )
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(
@@ -121,7 +131,7 @@ def _prove_same_identity_concurrency(request_ids: set[UUID], user_ids: set[UUID]
                 ("same-unionid-a", "same-unionid-b"),
             )
         )
-    assert all(result[0] == "ok" for result in results), results
+    assert all(result[0] in {"ok", "AUTH_IDENTITY_CONFLICT"} for result in results), results
     request_ids.update(result[2] for result in results)
     with SessionLocal() as db:
         identities = list(
@@ -139,8 +149,30 @@ def _prove_same_identity_concurrency(request_ids: set[UUID], user_ids: set[UUID]
             )
         )
         assert len({identity.user_id for identity in identities}) == 1
-        assert len(identities) == 3
+        assert len(identities) in {2, 3}
         user_ids.add(identities[0].user_id)
+        receipts = list(
+            db.scalars(
+                select(WechatLoginExchange).where(
+                    WechatLoginExchange.request_id.in_(request_ids)
+                )
+            )
+        )
+        assert all(str(receipt.state) != "RESERVED" for receipt in receipts)
+        assert all(
+            str(receipt.state) in {"COMPLETED", "PROVIDER_REJECTED"}
+            for receipt in receipts
+        )
+        assert sum(
+            1
+            for result in results
+            if result[0] == "ok"
+        ) == db.scalar(
+            select(func.count(AuthSession.id)).where(
+                AuthSession.user_id == identities[0].user_id,
+                AuthSession.revoked_at.is_(None),
+            )
+        )
     assert sorted(provider.calls) == ["same-unionid-a", "same-unionid-b"]
 
 
@@ -176,6 +208,13 @@ def _prove_alias_conflict(request_ids: set[UUID], user_ids: set[UUID]) -> None:
     request_ids.add(result[2])
     assert result[0] == "AUTH_IDENTITY_CONFLICT", result
     assert provider.calls == ["alias-conflict"]
+    with SessionLocal() as db:
+        receipt = db.scalar(
+            select(WechatLoginExchange).where(WechatLoginExchange.request_id == result[2])
+        )
+        assert receipt is not None
+        assert str(receipt.state) == "PROVIDER_REJECTED"
+        assert receipt.error_code == "AUTH_IDENTITY_CONFLICT"
 
 
 def _prove_disabled_and_deletion(request_ids: set[UUID], user_ids: set[UUID]) -> None:
@@ -226,39 +265,40 @@ def _prove_disabled_and_deletion(request_ids: set[UUID], user_ids: set[UUID]) ->
     user_ids.add(deleting_result[1].tokens.user_id)
 
 
-def _prove_response_loss_recovery(request_ids: set[UUID], user_ids: set[UUID]) -> None:
+def _prove_completed_replay_is_rejected(request_ids: set[UUID], user_ids: set[UUID]) -> None:
     provider = FakeProvider(
-        {"recovery": _verified(openid="recovery-openid", unionid="recovery-unionid")}
+        {"completed-replay": _verified(openid="replay-openid", unionid="replay-unionid")}
     )
-    device_id = f"pg-recovery-{uuid4()}"
-    first = _exchange(provider=provider, credential="recovery", device_id=device_id)
+    device_id = f"pg-replay-{uuid4()}"
+    first = _exchange(provider=provider, credential="completed-replay", device_id=device_id)
     request_ids.add(first[2])
     assert first[0] == "ok", first
     user_ids.add(first[1].tokens.user_id)
     with ThreadPoolExecutor(max_workers=2) as executor:
-        recovered = list(
+        replayed = list(
             executor.map(
                 lambda _: _exchange(
                     provider=provider,
-                    credential="recovery",
+                    credential="completed-replay",
                     device_id=device_id,
                     request_id=first[2],
                 ),
                 range(2),
             )
         )
-    request_ids.update(result[2] for result in recovered)
-    assert sorted(result[0] for result in recovered) == [
-        "AUTH_WECHAT_CREDENTIAL_REPLAYED",
-        "ok",
-    ], recovered
-    assert provider.calls == ["recovery"]
+    request_ids.update(result[2] for result in replayed)
+    assert all(
+        result[0] == "AUTH_WECHAT_CREDENTIAL_REPLAYED" for result in replayed
+    ), replayed
+    assert provider.calls == ["completed-replay"]
     with SessionLocal() as db:
         row = db.scalar(
             select(WechatLoginExchange).where(WechatLoginExchange.request_id == first[2])
         )
-        assert row is not None and row.recovery_count == 1
-        assert row.replacement_session_id is not None
+        assert row is not None
+        assert str(row.state) == "COMPLETED"
+        assert row.recovery_count == 0
+        assert row.replacement_session_id is None
         assert (
             db.scalar(
                 select(func.count(AuthSession.id)).where(
@@ -318,7 +358,7 @@ def main() -> None:
         _prove_same_identity_concurrency(request_ids, user_ids)
         _prove_alias_conflict(request_ids, user_ids)
         _prove_disabled_and_deletion(request_ids, user_ids)
-        _prove_response_loss_recovery(request_ids, user_ids)
+        _prove_completed_replay_is_rejected(request_ids, user_ids)
         _prove_session_rollback(request_ids, user_ids)
     finally:
         _cleanup(request_ids=request_ids, user_ids=user_ids)

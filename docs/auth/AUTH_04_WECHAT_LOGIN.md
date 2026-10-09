@@ -175,22 +175,22 @@ root view controller, or guessed callback host is an authority.
 `auth_wechat_login_exchanges` is the durable PostgreSQL-compatible receipt. It
 stores a server-keyed HMAC-SHA256 credential fingerprint, request ID, frozen
 device identity, state, verified subject, provider request ID, session/user
-references, lease, and bounded recovery fields. It never stores the raw code,
+references, lease, and terminal-state fields. It never stores the raw code,
 access token, refresh token, AppSecret, or provider response.
 
 Rules:
 
-- same credential fingerprint + same request ID: one provider call; a completed
-  receipt permits one bounded replacement-session recovery;
+- same credential fingerprint + same request ID: one provider call; any replay
+  of a completed receipt is rejected with
+  `AUTH_WECHAT_CREDENTIAL_REPLAYED`, including the identical device context;
 - same credential fingerprint + different request ID: `AUTH_WECHAT_CREDENTIAL_REPLAYED`;
 - same request ID + different credential fingerprint: `AUTH_WECHAT_CONFLICT`;
 - provider I/O occurs after the reservation commit and before the short identity
   and session transaction;
-- completed response loss recovers against the receipt's frozen `device_id`,
-  never retry payload identity;
-- the original session is revoked and the replacement session is issued under
-  the same User/device/session authority ordering;
-- recovery is single-use and bounded by the durable deadline/count.
+- a completed response loss does not revoke or reissue the original session;
+  the durable receipt remains terminal and the client must fail closed;
+- identity/session uniqueness races are rolled back and terminalized as a
+  sanitized receipt error; owners are never auto-merged;
 
 ## Transaction and concurrency rules
 
@@ -269,16 +269,17 @@ identities or existing Email/Phone/SMS behavior.
 ## Test coverage
 
 Backend tests cover scoped UnionID/OpenID alias resolution, bare/cross-user
-conflict rejection, one-provider-call response-loss recovery, frozen device
-identity, credential replay, capability neutrality, and absence of raw
+conflict rejection, one-provider-call completed-replay rejection, frozen device
+identity, identity/session race terminalization, capability neutrality, and absence of raw
 provider values from the HTTP response. Flutter tests cover privacy-false
 first-frame hiding/no probe, provider-neutral transient credential handling,
 and late credential after privacy revoke.
 
 PostgreSQL integration must additionally cover concurrent first login, existing
 identity login, alias conflict, disabled account, deletion continuation,
-same-request retry, different-request replay, and provider-I/O transaction
-separation before field activation.
+same-request completed replay, different-request replay, deterministic
+contested-window concurrency, and provider-I/O transaction separation before
+field activation.
 
 ## Field prerequisites
 

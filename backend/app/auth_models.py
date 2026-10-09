@@ -127,7 +127,7 @@ class WechatLoginExchange(Base):
     """Durable receipt for one provider credential exchange.
 
     The transient WeChat code/access token is never stored. The keyed
-    fingerprint only fences replay and response-loss retries.
+    fingerprint only fences replay; completed receipts are terminal.
     """
 
     __tablename__ = "auth_wechat_login_exchanges"

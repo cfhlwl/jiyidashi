@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from app.auth_models import (
     AuthIdentity,
     AuthProvider,
-    AuthSession,
     WechatExchangeRecoveryState,
     WechatExchangeState,
     WechatLoginExchange,
@@ -30,8 +29,6 @@ from app.services.auth_rate_limit import consume_wechat_attempt
 from app.services.auth_session_service import (
     PublicAuthError,
     PublicSessionTokens,
-    lock_installation_authority_in_transaction,
-    revoke_session_in_transaction,
 )
 from app.services.concurrency_guard import (
     ConcurrencyRejected,
@@ -114,7 +111,7 @@ def _lookup_existing(
     if by_request is not None:
         if by_request.credential_fingerprint != credential_fingerprint:
             raise WechatLoginError("AUTH_WECHAT_CONFLICT", 409)
-        if by_request.state == WechatExchangeState.COMPLETED and by_request.device_id != device_id:
+        if by_request.state == WechatExchangeState.COMPLETED:
             raise WechatLoginError("AUTH_WECHAT_CREDENTIAL_REPLAYED", 409)
         return by_request
     by_credential = db.scalar(
@@ -127,86 +124,70 @@ def _lookup_existing(
     return by_credential
 
 
-def _recover_completed(db: Session, *, row_id: UUID) -> WechatLoginResult:
-    row = db.scalar(
+_EXPECTED_IDENTITY_SESSION_CONSTRAINTS = {
+    "uq_auth_identities_provider_subject",
+    "uq_auth_identities_user_email_password",
+    "uq_auth_identities_user_phone",
+    "uq_auth_sessions_refresh_digest",
+}
+
+
+def _is_expected_identity_session_integrity_error(exc: IntegrityError) -> bool:
+    constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    if constraint_name in _EXPECTED_IDENTITY_SESSION_CONSTRAINTS:
+        return True
+    detail = str(exc.orig).lower()
+    return any(
+        marker in detail
+        for marker in (
+            "uq_auth_identities_provider_subject",
+            "uq_auth_identities_user_email_password",
+            "uq_auth_identities_user_phone",
+            "uq_auth_sessions_refresh_digest",
+        )
+    )
+
+
+def _terminalize_identity_session_integrity_race(
+    db: Session,
+    *,
+    row_id: UUID,
+    result: VerifiedWechatResult,
+) -> None:
+    """Convert an expected identity/session uniqueness race into a receipt error."""
+
+    # Re-read under locks after the savepoint rollback. This is diagnostic only:
+    # it never merges owners or manufactures an identity from a losing request.
+    subjects = result.canonical_subjects()
+    identities = list(
+        db.scalars(
+            select(AuthIdentity)
+            .where(
+                AuthIdentity.provider == AuthProvider.WECHAT,
+                AuthIdentity.subject.in_(subjects),
+            )
+            .with_for_update()
+        )
+    )
+    owners = {identity.user_id for identity in identities}
+    error_code = "AUTH_IDENTITY_CONFLICT"
+    if len(owners) > 1:
+        error_code = "AUTH_IDENTITY_CONFLICT"
+    failed = db.scalar(
         select(WechatLoginExchange).where(WechatLoginExchange.id == row_id).with_for_update()
     )
-    if row is None or row.state != WechatExchangeState.COMPLETED:
+    if failed is None:
         db.rollback()
         raise WechatLoginError("AUTH_WECHAT_TIMEOUT", 504)
     now = datetime.now(UTC)
-    if (
-        row.recovery_state != WechatExchangeRecoveryState.OPEN
-        or row.recovery_count >= 1
-        or row.recovery_deadline is None
-        or _utc(row.recovery_deadline) <= now
-        or row.session_id is None
-        or row.resolved_user_id is None
-    ):
-        db.rollback()
-        raise WechatLoginError("AUTH_WECHAT_CREDENTIAL_REPLAYED", 409)
-
-    db.scalar(
-        select(User.id)
-        .where(User.id == row.resolved_user_id)
-        .with_for_update(read=True, key_share=True)
-    )
-    lock_installation_authority_in_transaction(db, row.device_id)
-    original = db.scalar(
-        select(AuthSession)
-        .where(
-            AuthSession.id == row.session_id,
-            AuthSession.user_id == row.resolved_user_id,
-            AuthSession.device_id == row.device_id,
-        )
-        .with_for_update()
-    )
-    if (
-        original is None
-        or original.revoked_at is not None
-        or _utc(original.expires_at) <= now
-        or original.rotation_revision != 0
-    ):
-        row.recovery_state = WechatExchangeRecoveryState.CLOSED
-        row.recovery_deadline = now
-        db.commit()
-        raise WechatLoginError("AUTH_WECHAT_CREDENTIAL_REPLAYED", 409)
-
-    revoked = revoke_session_in_transaction(
-        db,
-        user_id=row.resolved_user_id,
-        session_id=original.id,
-        reason="WECHAT_LOGIN_RECOVERY",
-    )
-    if not revoked[0]:
-        db.rollback()
-        raise WechatLoginError("AUTH_WECHAT_CREDENTIAL_REPLAYED", 409)
-    try:
-        issued = issue_authenticated_session_in_transaction(
-            db,
-            user_id=row.resolved_user_id,
-            device_id=row.device_id,
-            client_platform=original.client_platform,
-            device_name=original.device_name,
-        )
-    except PublicAuthError as exc:
-        row.recovery_state = WechatExchangeRecoveryState.CLOSED
-        row.recovery_deadline = now
-        row.error_code = exc.code
-        db.commit()
-        raise WechatLoginError(exc.code, exc.status_code) from exc
-
-    row.replacement_session_id = issued.tokens.session_id
-    row.recovery_count += 1
-    row.recovery_state = WechatExchangeRecoveryState.CLOSED
-    row.recovery_deadline = now
-    row.updated_at = now
+    failed.state = WechatExchangeState.PROVIDER_REJECTED
+    failed.recovery_state = WechatExchangeRecoveryState.CLOSED
+    failed.error_code = error_code
+    failed.lease_expires_at = now
+    failed.recovery_deadline = now
+    failed.updated_at = now
     db.commit()
-    return WechatLoginResult(
-        tokens=issued.tokens,
-        account_deletion_in_progress=issued.account_deletion_in_progress,
-        device_id=row.device_id,
-    )
+    raise WechatLoginError(error_code, 409)
 
 
 def _resolve_verified_identity(
@@ -341,16 +322,21 @@ def _complete(
             failed.updated_at = datetime.now(UTC)
             db.commit()
         raise WechatLoginError(exc.code, exc.status_code) from exc
+    except IntegrityError as exc:
+        business_transaction.rollback()
+        if not _is_expected_identity_session_integrity_error(exc):
+            raise
+        _terminalize_identity_session_integrity_race(db, row_id=row_id, result=result)
     else:
         business_transaction.commit()
     row.state = WechatExchangeState.COMPLETED
-    row.recovery_state = WechatExchangeRecoveryState.OPEN
+    row.recovery_state = WechatExchangeRecoveryState.CLOSED
     row.resolved_user_id = user_id
     row.session_id = issued.tokens.session_id
     row.subject = primary_subject
     row.provider_request_id = (result.provider_request_id or "")[:255] or None
     row.verified_at = result.verified_at
-    row.recovery_deadline = now + timedelta(seconds=settings.auth_wechat_recovery_deadline_seconds)
+    row.recovery_deadline = now
     row.completed_at = now
     row.lease_expires_at = now
     row.updated_at = now
@@ -411,8 +397,6 @@ def exchange_wechat_credential(
         device_id=device_id,
     )
     if existing is not None:
-        if existing.state == WechatExchangeState.COMPLETED:
-            return _recover_completed(db, row_id=existing.id)
         if existing.state == WechatExchangeState.RESERVED:
             db.rollback()
             raise WechatLoginError("AUTH_WECHAT_TIMEOUT", 504)
@@ -447,8 +431,6 @@ def exchange_wechat_credential(
             )
             if existing is None:
                 raise WechatLoginError("AUTH_WECHAT_CONFLICT", 409) from exc
-            if existing.state == WechatExchangeState.COMPLETED:
-                return _recover_completed(db, row_id=existing.id)
             _stored_error(existing)
 
         permit = claim_wechat_login_permit(db.get_bind(), settings=cfg)

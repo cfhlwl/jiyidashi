@@ -3,9 +3,10 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.api import auth as auth_api
-from app.auth_models import AuthIdentity, AuthProvider
+from app.auth_models import AuthIdentity, AuthProvider, AuthSession, WechatLoginExchange
 from app.core.config import get_settings
 from app.core.db import SessionLocal, create_schema
 from app.models import User
@@ -74,7 +75,7 @@ def test_verified_wechat_resolves_scoped_unionid_and_openid_aliases(monkeypatch)
         assert provider.calls == 1
 
 
-def test_same_request_retry_recovers_once_without_second_provider_call(monkeypatch):
+def test_same_request_retry_is_replayed_without_reissuing_session(monkeypatch):
     provider = _provider()
     settings = _settings(monkeypatch)
     request_id = uuid4()
@@ -90,20 +91,64 @@ def test_same_request_retry_recovers_once_without_second_provider_call(monkeypat
             provider=provider,
             settings=settings,
         )
-        recovered = exchange_wechat_credential(
-            db,
-            credential="opaque-code-retry",
-            request_id=request_id,
-            device_id="device-a",
-            client_platform="flutter",
-            device_name=None,
-            client_ip="127.0.0.1",
-            provider=provider,
-            settings=settings,
+        with pytest.raises(WechatLoginError, match="AUTH_WECHAT_CREDENTIAL_REPLAYED"):
+            exchange_wechat_credential(
+                db,
+                credential="opaque-code-retry",
+                request_id=request_id,
+                device_id="device-a",
+                client_platform="flutter",
+                device_name=None,
+                client_ip="127.0.0.1",
+                provider=provider,
+                settings=settings,
+            )
+        session = db.scalar(select(AuthSession).where(AuthSession.id == first.tokens.session_id))
+        receipt = db.scalar(
+            select(WechatLoginExchange).where(WechatLoginExchange.request_id == request_id)
         )
-        assert recovered.tokens.user_id == first.tokens.user_id
-        assert recovered.device_id == "device-a"
+        assert session is not None and session.revoked_at is None
+        assert receipt is not None and str(receipt.state) == "COMPLETED"
+        assert receipt.recovery_count == 0
         assert provider.calls == 1
+
+
+def test_expected_identity_unique_race_terminalizes_receipt(monkeypatch):
+    settings = _settings(monkeypatch)
+    provider = _provider("integrity-race")
+
+    def raise_expected_integrity(*args, **kwargs):
+        raise IntegrityError(
+            "insert",
+            {},
+            RuntimeError("uq_auth_identities_provider_subject"),
+        )
+
+    monkeypatch.setattr(
+        wechat_login_service, "_resolve_verified_identity", raise_expected_integrity
+    )
+    request_id = uuid4()
+    with SessionLocal() as db:
+        with pytest.raises(WechatLoginError, match="AUTH_IDENTITY_CONFLICT"):
+            exchange_wechat_credential(
+                db,
+                credential="opaque-integrity-race",
+                request_id=request_id,
+                device_id="device-a",
+                client_platform="flutter",
+                device_name=None,
+                client_ip="127.0.0.1",
+                provider=provider,
+                settings=settings,
+            )
+        receipt = db.scalar(
+            select(WechatLoginExchange).where(WechatLoginExchange.request_id == request_id)
+        )
+        assert receipt is not None
+        assert str(receipt.state) == "PROVIDER_REJECTED"
+        assert receipt.error_code == "AUTH_IDENTITY_CONFLICT"
+        assert receipt.resolved_user_id is None
+    assert provider.calls == 1
 
 
 def test_same_request_retry_from_different_device_is_rejected(monkeypatch):
