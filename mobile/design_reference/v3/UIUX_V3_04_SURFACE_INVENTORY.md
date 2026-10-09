@@ -1,8 +1,8 @@
 # UIUX-V3-04 Consumer Surface Inventory
 
-Status: first-round audit only  
-Branch: `codex/uiux-v3-04-consumer-full-refactor`  
-Base: `bceacead10902bd7297aca335769b6351bb8eb2d` (`origin/main`)  
+Status: first-round audit only
+Branch: `codex/uiux-v3-04-consumer-full-refactor`
+Base: `bceacead10902bd7297aca335769b6351bb8eb2d` (`origin/main`)
 Scope: Consumer UI V3 refactor planning; no production implementation in this round.
 
 ## Authority and safety rules
