@@ -50,8 +50,11 @@ _fake_provider = FakeSmsOtpProvider()
 
 def get_sms_otp_provider(settings: Settings | None = None) -> SmsOtpProvider:
     current = settings or get_settings()
-    if current.app_env.lower() == "production":
-        return DisabledSmsOtpProvider()
-    if current.auth_sms_otp_provider.strip().lower() == "fake":
+    provider_name = current.auth_sms_otp_provider.strip().lower()
+    if provider_name == "aliyun":
+        from app.services.aliyun_sms_otp_provider import AliyunSmsOtpProvider
+
+        return AliyunSmsOtpProvider.from_settings(current)
+    if not current.is_production and provider_name == "fake":
         return _fake_provider
     return DisabledSmsOtpProvider()

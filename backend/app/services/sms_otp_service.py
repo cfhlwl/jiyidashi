@@ -168,12 +168,13 @@ def request_sms_otp(
             failed.error_code = exc.code
             db.commit()
         code = ""
-        mapped = (
-            "AUTH_SMS_OTP_UNAVAILABLE"
-            if exc.code == "UNAVAILABLE"
-            else "AUTH_SMS_OTP_PROVIDER_ERROR"
-        )
-        raise SmsOtpError(mapped, 503 if exc.code == "UNAVAILABLE" else 502) from exc
+        mapped = {
+            "UNAVAILABLE": ("AUTH_SMS_OTP_UNAVAILABLE", 503),
+            "RATE_LIMITED": ("AUTH_SMS_OTP_RATE_LIMITED", 429),
+            "TIMEOUT": ("AUTH_SMS_OTP_TIMEOUT", 504),
+            "PROVIDER_ERROR": ("AUTH_SMS_OTP_PROVIDER_ERROR", 502),
+        }.get(exc.code, ("AUTH_SMS_OTP_PROVIDER_ERROR", 502))
+        raise SmsOtpError(mapped[0], mapped[1]) from exc
     finally:
         code = ""
 
