@@ -172,7 +172,7 @@ void main() {
         AuthCapabilityStatus.unavailable);
   });
 
-  test('phone probe preserves every non-phone capability status', () async {
+  test('phone probe keeps WeChat fail closed without server authority', () async {
     final bridge = _TestPhoneBridge();
     final baseline = _capabilities(
       email: AuthCapabilityStatus.planned,
@@ -187,7 +187,7 @@ void main() {
     expect(result.emailStatus, AuthCapabilityStatus.planned);
     expect(result.phoneOneTapStatus, AuthCapabilityStatus.available);
     expect(result.smsOtpStatus, AuthCapabilityStatus.planned);
-    expect(result.wechatStatus, AuthCapabilityStatus.unsupported);
+    expect(result.wechatStatus, AuthCapabilityStatus.unavailable);
 
     final disabledEmail = await AuthCapabilityAuthority(
       phoneOneTapBridge: _TestPhoneBridge(
@@ -199,6 +199,19 @@ void main() {
     );
     expect(disabledEmail.emailStatus, AuthCapabilityStatus.unavailable);
     expect(disabledEmail.phoneOneTapStatus, AuthCapabilityStatus.unavailable);
+  });
+
+  test('WeChat never trusts an injected baseline without server capability', () async {
+    final gateway = FakeWechatAuthGateway();
+    final result = await AuthCapabilityAuthority(
+      wechatAuthGateway: gateway,
+    ).probe(
+      privacyConsentGranted: true,
+      baseline: const AuthCapabilities.allEnabled(),
+    );
+
+    expect(result.wechatStatus, AuthCapabilityStatus.unavailable);
+    expect(gateway.initializeCalls, 0);
   });
 
   test('server capability is the authority for SMS visibility', () async {

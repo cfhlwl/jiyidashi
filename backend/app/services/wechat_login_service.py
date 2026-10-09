@@ -81,16 +81,12 @@ def _fingerprint(credential: str, settings: Settings) -> str:
     secret = settings.auth_wechat_fingerprint_secret.strip()
     if not secret:
         raise WechatLoginError("AUTH_WECHAT_UNAVAILABLE", 503)
-    message = (
-        f"auth-wechat:{settings.auth_wechat_fingerprint_key_version}:{credential}"
-    ).encode()
+    message = (f"auth-wechat:{settings.auth_wechat_fingerprint_key_version}:{credential}").encode()
     return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
 
 
 def _provider_error(error: str, *, ambiguous: bool = False) -> WechatLoginError:
-    code, status = _PUBLIC_PROVIDER_CODES.get(
-        error, ("AUTH_WECHAT_PROVIDER_ERROR", 502)
-    )
+    code, status = _PUBLIC_PROVIDER_CODES.get(error, ("AUTH_WECHAT_PROVIDER_ERROR", 502))
     if ambiguous or status == 504:
         return WechatLoginError("AUTH_WECHAT_TIMEOUT", 504)
     return WechatLoginError(code, status)
@@ -110,7 +106,7 @@ def _stored_error(row: WechatLoginExchange) -> None:
 
 
 def _lookup_existing(
-    db: Session, *, request_id: UUID, credential_fingerprint: str
+    db: Session, *, request_id: UUID, credential_fingerprint: str, device_id: str
 ) -> WechatLoginExchange | None:
     by_request = db.scalar(
         select(WechatLoginExchange).where(WechatLoginExchange.request_id == request_id)
@@ -118,6 +114,8 @@ def _lookup_existing(
     if by_request is not None:
         if by_request.credential_fingerprint != credential_fingerprint:
             raise WechatLoginError("AUTH_WECHAT_CONFLICT", 409)
+        if by_request.state == WechatExchangeState.COMPLETED and by_request.device_id != device_id:
+            raise WechatLoginError("AUTH_WECHAT_CREDENTIAL_REPLAYED", 409)
         return by_request
     by_credential = db.scalar(
         select(WechatLoginExchange).where(
@@ -131,9 +129,7 @@ def _lookup_existing(
 
 def _recover_completed(db: Session, *, row_id: UUID) -> WechatLoginResult:
     row = db.scalar(
-        select(WechatLoginExchange)
-        .where(WechatLoginExchange.id == row_id)
-        .with_for_update()
+        select(WechatLoginExchange).where(WechatLoginExchange.id == row_id).with_for_update()
     )
     if row is None or row.state != WechatExchangeState.COMPLETED:
         db.rollback()
@@ -283,9 +279,7 @@ def _complete(
     settings: Settings,
 ) -> WechatLoginResult:
     row = db.scalar(
-        select(WechatLoginExchange)
-        .where(WechatLoginExchange.id == row_id)
-        .with_for_update()
+        select(WechatLoginExchange).where(WechatLoginExchange.id == row_id).with_for_update()
     )
     if row is None or row.state != WechatExchangeState.RESERVED:
         db.rollback()
@@ -297,6 +291,15 @@ def _complete(
         db.commit()
         raise WechatLoginError("AUTH_WECHAT_TIMEOUT", 504)
     try:
+        result.validate_against_settings(settings)
+    except WechatProviderError as exc:
+        row.state = WechatExchangeState.PROVIDER_REJECTED
+        row.error_code = _provider_error(exc.code).code
+        row.updated_at = now
+        db.commit()
+        raise _provider_error(exc.code) from exc
+    business_transaction = db.begin_nested()
+    try:
         user_id, primary_subject = _resolve_verified_identity(db, result=result)
         issued = issue_authenticated_session_in_transaction(
             db,
@@ -306,11 +309,21 @@ def _complete(
             device_name=row.device_name,
         )
     except (AuthIdentityError, PublicAuthError) as exc:
-        row.state = WechatExchangeState.PROVIDER_REJECTED
-        row.error_code = exc.code
-        row.updated_at = now
-        db.commit()
+        # Identity, aliases, entitlements, and the candidate session belong to
+        # one business transaction. Persist only the receipt failure after the
+        # business transaction has been rolled back.
+        business_transaction.rollback()
+        failed = db.scalar(
+            select(WechatLoginExchange).where(WechatLoginExchange.id == row_id).with_for_update()
+        )
+        if failed is not None:
+            failed.state = WechatExchangeState.PROVIDER_REJECTED
+            failed.error_code = exc.code
+            failed.updated_at = datetime.now(UTC)
+            db.commit()
         raise WechatLoginError(exc.code, exc.status_code) from exc
+    else:
+        business_transaction.commit()
     row.state = WechatExchangeState.COMPLETED
     row.recovery_state = WechatExchangeRecoveryState.OPEN
     row.resolved_user_id = user_id
@@ -318,9 +331,7 @@ def _complete(
     row.subject = primary_subject
     row.provider_request_id = (result.provider_request_id or "")[:255] or None
     row.verified_at = result.verified_at
-    row.recovery_deadline = now + timedelta(
-        seconds=settings.auth_wechat_recovery_deadline_seconds
-    )
+    row.recovery_deadline = now + timedelta(seconds=settings.auth_wechat_recovery_deadline_seconds)
     row.completed_at = now
     row.lease_expires_at = now
     row.updated_at = now
@@ -352,8 +363,11 @@ def exchange_wechat_credential(
 ) -> WechatLoginResult:
     cfg = settings or get_settings()
     selected_provider = provider or get_wechat_provider(cfg)
-    if not cfg.auth_wechat_fingerprint_secret.strip() or not getattr(
-        selected_provider, "available", True
+    if (
+        not cfg.auth_wechat_fingerprint_secret.strip()
+        or not cfg.auth_wechat_app_id.strip()
+        or not cfg.auth_wechat_subject_scope.strip()
+        or not getattr(selected_provider, "available", True)
     ):
         consume_wechat_attempt(
             db,
@@ -372,7 +386,10 @@ def exchange_wechat_credential(
     )
     db.rollback()
     existing = _lookup_existing(
-        db, request_id=request_id, credential_fingerprint=credential_fingerprint
+        db,
+        request_id=request_id,
+        credential_fingerprint=credential_fingerprint,
+        device_id=device_id,
     )
     if existing is not None:
         if existing.state == WechatExchangeState.COMPLETED:
@@ -393,10 +410,8 @@ def exchange_wechat_credential(
             device_id=device_id,
             client_platform=client_platform,
             device_name=device_name,
-            lease_expires_at=now
-            + timedelta(seconds=cfg.auth_wechat_exchange_reservation_seconds),
-            expires_at=now
-            + timedelta(seconds=cfg.auth_wechat_exchange_retention_seconds),
+            lease_expires_at=now + timedelta(seconds=cfg.auth_wechat_exchange_reservation_seconds),
+            expires_at=now + timedelta(seconds=cfg.auth_wechat_exchange_retention_seconds),
             created_at=now,
             updated_at=now,
         )
@@ -409,6 +424,7 @@ def exchange_wechat_credential(
                 db,
                 request_id=request_id,
                 credential_fingerprint=credential_fingerprint,
+                device_id=device_id,
             )
             if existing is None:
                 raise WechatLoginError("AUTH_WECHAT_CONFLICT", 409) from exc

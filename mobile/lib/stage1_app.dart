@@ -635,13 +635,9 @@ class _AuthPageState extends State<AuthPage> {
   @override
   void initState() {
     super.initState();
-    _capabilities = widget.privacyConsentGranted
-        ? widget.capabilities.copyWith(
-            phoneOneTapStatus: widget.phoneOneTapBridge == null
-                ? AuthCapabilityStatus.unavailable
-                : widget.capabilities.phoneOneTapStatus,
-          )
-        : widget.capabilities.failClosedNonEmail();
+    // The first frame cannot trust injected provider availability. Every
+    // non-email capability must be re-authorized by the current probe.
+    _capabilities = widget.capabilities.failClosedNonEmail();
     _privacyConsentGranted = widget.privacyConsentGranted;
     _capabilityAuthority = AuthCapabilityAuthority(
       phoneOneTapBridge: widget.phoneOneTapBridge,
@@ -725,6 +721,11 @@ class _AuthPageState extends State<AuthPage> {
       }
       try {
         await widget.phoneOneTapBridge?.revokePrivacy();
+      } catch (_) {
+        // Privacy revocation remains fail closed even if native cleanup fails.
+      }
+      try {
+        await widget.wechatAuthGateway?.revokePrivacy();
       } catch (_) {
         // Privacy revocation remains fail closed even if native cleanup fails.
       }

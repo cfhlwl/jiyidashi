@@ -187,15 +187,12 @@ class AuthCapabilityAuthority {
     }
 
     final wechat = wechatAuthGateway;
-    if (wechat == null) {
-      // Preserve injected non-phone baseline states when this authority is
-      // only probing the phone surface. Once a server capability loader is
-      // present, a missing native gateway must fail closed.
-      return serverCapabilityLoader == null
-          ? serverCapabilities
-          : serverCapabilities.copyWith(
-              wechatStatus: AuthCapabilityStatus.unavailable,
-            );
+    if (wechat == null || serverCapabilityLoader == null) {
+      // WeChat is never authorized by an injected baseline. It requires both
+      // the current server capability and the native gateway in this probe.
+      return serverCapabilities.copyWith(
+        wechatStatus: AuthCapabilityStatus.unavailable,
+      );
     }
     if (serverCapabilityLoader != null && !serverCapabilities.wechat) {
       return serverCapabilities.copyWith(

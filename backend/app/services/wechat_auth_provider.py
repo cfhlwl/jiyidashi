@@ -29,6 +29,19 @@ class VerifiedWechatResult:
     verified_at: datetime
     provider_request_id: str | None = None
 
+    def validate_against_settings(self, settings: Settings) -> None:
+        """Bind trusted provider output to JiYi's server-side app contract."""
+        configured_app_id = settings.auth_wechat_app_id.strip()
+        configured_scope = settings.auth_wechat_subject_scope.strip()
+        if not configured_app_id or not configured_scope:
+            raise WechatProviderError("UNAVAILABLE")
+        if self.app_id != configured_app_id or self.scope != configured_scope:
+            raise WechatProviderError("PROVIDER_ERROR")
+        try:
+            self.canonical_subjects()
+        except WechatProviderError:
+            raise
+
     def canonical_subjects(self) -> tuple[str, ...]:
         if not self.app_id.strip() or not self.scope.strip():
             raise WechatProviderError("PROVIDER_ERROR")
