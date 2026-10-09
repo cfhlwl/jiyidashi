@@ -36,6 +36,8 @@ const _captureDeterministicQueryPreview =
     bool.fromEnvironment('DETERMINISTIC_QUERY_VISUAL_PREVIEW');
 const _captureProductionAuthCandidate =
     bool.fromEnvironment('UIUX_V3_PRODUCTION_AUTH_CANDIDATE_MODE');
+const _captureBatch3Candidates =
+    bool.fromEnvironment('UIUX_V3_BATCH3_CANDIDATE_MODE');
 
 const _goldenCacheVersion =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -1269,6 +1271,59 @@ void main() {
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/production_auth_email.png'),
+    );
+  });
+
+  testWidgets('candidate: Batch 3 Timeline production surface', (tester) async {
+    if (!_captureBatch3Candidates) return;
+    final api = _GoldenTimelineApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
+    final key = await _pumpSurface(
+      tester,
+      _goldenNavigationShell(
+        selectedIndex: 1,
+        child: TimelinePage(
+          api: api,
+          mediaCache: cache,
+          photoThumbnailBuilder: _goldenPagePhotoThumbnail,
+        ),
+      ),
+    );
+
+    expect(find.text('第一次产品讨论'), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-photo-$v2MemoryId')), findsOneWidget);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
+    );
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/timeline_v3_batch3.png'),
+    );
+  });
+
+  testWidgets('candidate: Batch 3 Memory Detail production surface',
+      (tester) async {
+    if (!_captureBatch3Candidates) return;
+    final api = _GoldenMemoryDetailApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
+    final key = await _pumpSurface(
+      tester,
+      MemoryDetailPage(
+        api: api,
+        memoryId: v2MemoryId,
+        mediaCache: cache,
+        amapPrivacyConsent: _GoldenAmapConsent(true),
+      ),
+    );
+
+    expect(find.text('第一次产品讨论'), findsWidgets);
+    expect(find.byKey(const ValueKey('memory-reminder-entry')), findsOneWidget);
+    expect(find.text('编辑'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/memory_detail_v3_batch3.png'),
     );
   });
 

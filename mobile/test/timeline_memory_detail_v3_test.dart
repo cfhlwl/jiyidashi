@@ -109,7 +109,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Memory Detail reminder entry re-reads and owns canonical memory ID',
+  testWidgets('Memory Detail reminder cancel does not create a reminder',
       (tester) async {
     final api = _Batch3Api();
     await _pumpAt(tester, MemoryDetailPage(api: api, memoryId: _batch3Memory));
@@ -124,6 +124,22 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(api.reminderMemoryIds, isEmpty);
+  });
+
+  testWidgets('Memory Detail reminder save uses canonical memory ID',
+      (tester) async {
+    final api = _Batch3Api();
+    await _pumpAt(tester, MemoryDetailPage(api: api, memoryId: _batch3Memory));
+
+    await tester.tap(find.byKey(const ValueKey('memory-reminder-entry')));
+    await tester.pumpAndSettle();
+    expect(find.text('为这条记忆设置提醒'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('reminder-save')));
+    await tester.pumpAndSettle();
+
+    expect(api.reminderMemoryIds, [_batch3Memory]);
+    expect(api.reminderMemoryIds, hasLength(1));
   });
 
   testWidgets('Memory Detail keeps primary actions reachable with large text',

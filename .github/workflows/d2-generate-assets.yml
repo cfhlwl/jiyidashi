@@ -233,6 +233,41 @@ jobs:
           test -z "$(git status --porcelain -- test/goldens)"
           test -s /tmp/product-v2-goldens/candidate/production_auth_email.png
 
+      - name: Generate Batch 3 Timeline and Memory Detail candidates
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/batch3-v3-candidates
+          mkdir -p /tmp/batch3-v3-candidates
+
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 3 Timeline production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH3_CANDIDATE_MODE=true \
+            --reporter expanded
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 3 Memory Detail production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH3_CANDIDATE_MODE=true \
+            --reporter expanded
+
+          cp test/goldens/timeline_v3_batch3.png /tmp/batch3-v3-candidates/
+          cp test/goldens/memory_detail_v3_batch3.png /tmp/batch3-v3-candidates/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/batch3-v3-candidates/timeline_v3_batch3.png
+          test -s /tmp/batch3-v3-candidates/memory_detail_v3_batch3.png
+
+      - name: Upload Batch 3 review candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-batch3-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/batch3-v3-candidates/*.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -343,6 +378,8 @@ jobs:
               'auth_email_login': ('design_reference/v3/auth/derived/04_email_login.png', '/tmp/auth-v3-candidates/04_email_login.png', 44, 22),
               'auth_one_tap_unavailable': ('design_reference/v3/auth/derived/05_one_tap_unavailable.png', '/tmp/auth-v3-candidates/05_one_tap_unavailable.png', 44, 22),
               'production_auth_email': ('design_reference/v3/auth/derived/04_email_login.png', '/tmp/product-v2-goldens/candidate/production_auth_email.png', 44, 22),
+              'batch3_timeline': ('design_reference/v3/06_timeline.png', '/tmp/batch3-v3-candidates/timeline_v3_batch3.png', 44, 22),
+              'batch3_memory_detail': ('design_reference/v3/07_memory_detail.png', '/tmp/batch3-v3-candidates/memory_detail_v3_batch3.png', 44, 22),
           }
 
           def normalize(authority, size):
@@ -391,6 +428,7 @@ jobs:
           manifest = [
               'PRODUCTION AUTH EMAIL: production_auth_email',
               'FUTURE DESIGN PREVIEW: auth_main_login, auth_phone_one_tap, auth_sms_otp, auth_email_login, auth_one_tap_unavailable',
+              'BATCH 3 PRODUCTION CANDIDATES: batch3_timeline, batch3_memory_detail',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())

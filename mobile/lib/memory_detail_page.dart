@@ -862,14 +862,6 @@ String _memoryTypeLabel(String value) => switch (value) {
       _ => '记忆',
     };
 
-IconData _memoryIcon(String value) => switch (value) {
-      'VOICE' => Icons.mic_none_outlined,
-      'PHOTO' => Icons.photo_outlined,
-      'PLACE' => Icons.place_outlined,
-      'OBJECT_LOCATION' => Icons.inventory_2_outlined,
-      _ => Icons.auto_stories_outlined,
-    };
-
 String _formatDateTime(String value) {
   final parsed = DateTime.tryParse(value);
   if (parsed == null) return '时间未知';
