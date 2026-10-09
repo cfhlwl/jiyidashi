@@ -69,6 +69,98 @@ jobs:
           test "$status" -ne 0
           grep -Fq 'AUTH-02E production gate blocked: missing required external/configuration input' <<<"$output"
 
+      - name: Verify AUTH-02E iOS production gate fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          output="$(python3 tool/verify_auth_02e_ios_release_config.py \
+            --required YES \
+            --bundle-id com.jiyidays \
+            --scheme-id '' \
+            --team-id TESTTEAM01 \
+            --expected-team-id TESTTEAM01 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -ne 0
+          grep -Fq 'AUTH-02E iOS production gate blocked: JIYI_PNVS_SCHEME_ID' <<<"$output"
+
+          set +e
+          output="$(python3 tool/verify_auth_02e_ios_release_config.py \
+            --required YES \
+            --bundle-id com.jiyidays \
+            --scheme-id '$(JIYI_PNVS_SCHEME_ID)' \
+            --team-id TESTTEAM01 \
+            --expected-team-id TESTTEAM01 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -ne 0
+          grep -Fq 'AUTH-02E iOS production gate blocked: JIYI_PNVS_SCHEME_ID' <<<"$output"
+
+      - name: Verify AUTH-02E iOS synthetic build settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tool/verify_auth_02e_ios_release_config.py \
+            --required YES \
+            --bundle-id com.jiyidays \
+            --scheme-id test-pnvs-scheme \
+            --team-id TESTTEAM01 \
+            --expected-team-id TESTTEAM01
+
+      - name: Verify AUTH-02E Android certificate derivation and mismatch gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          keytool -genkeypair \
+            -alias auth02e-test \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 2 \
+            -storetype PKCS12 \
+            -keystore "$work/test.p12" \
+            -storepass testpass \
+            -keypass testpass \
+            -dname "CN=AUTH-02E Test"
+          fingerprint="$(keytool -list -v \
+            -keystore "$work/test.p12" \
+            -storepass testpass \
+            -alias auth02e-test \
+            | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' \
+            | tr -d ':[:space:]' \
+            | tr '[:lower:]' '[:upper:]')"
+          test "${#fingerprint}" -eq 64
+          export JIYI_PNVS_SCHEME_ID=test-pnvs-scheme
+          export ANDROID_RELEASE_KEYSTORE_PATH="$work/test.p12"
+          export ANDROID_RELEASE_KEYSTORE_PASSWORD=testpass
+          export ANDROID_RELEASE_KEY_ALIAS=auth02e-test
+          export ANDROID_RELEASE_KEY_PASSWORD=testpass
+          export ANDROID_RELEASE_CERTIFICATE_SHA256="$fingerprint"
+          export APPLE_TEAM_ID=TESTTEAM01
+          python3 tool/verify_auth_02e_production_config.py --require-production
+
+          export ANDROID_RELEASE_CERTIFICATE_SHA256="$(python3 -c 'print("0" * 64)')"
+          set +e
+          mismatch_output="$(python3 tool/verify_auth_02e_production_config.py --require-production 2>&1)"
+          mismatch_status=$?
+          set -e
+          printf '%s\n' "$mismatch_output"
+          test "$mismatch_status" -ne 0
+          grep -Fq 'release certificate fingerprint mismatch' <<<"$mismatch_output"
+
+          export ANDROID_RELEASE_CERTIFICATE_SHA256=not-a-fingerprint
+          set +e
+          malformed_output="$(python3 tool/verify_auth_02e_production_config.py --require-production 2>&1)"
+          malformed_status=$?
+          set -e
+          printf '%s\n' "$malformed_output"
+          test "$malformed_status" -ne 0
+          grep -Fq 'must be 64 hexadecimal characters' <<<"$malformed_output"
+
 
       - name: Verify dependency lock
         id: android-lock

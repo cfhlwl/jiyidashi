@@ -29,6 +29,7 @@ IPA, Git, or logs.
 |---|---|---|
 | applicationId / namespace | READY | `com.jiyidays` is frozen in Gradle and APP-ID-001 |
 | release signing configuration seam | READY | four server/CI inputs; no debug-key fallback |
+| release certificate derivation gate | READY | production gate derives SHA-256 from the supplied keystore with `keytool` and compares it to the expected fingerprint |
 | final release certificate fingerprint | EXTERNAL BLOCKED | must be generated from the final release keystore and registered with PNVS |
 | PNVS scheme / app identifier | EXTERNAL BLOCKED | `JIYI_PNVS_SCHEME_ID` is an injected client-config seam; no value is committed |
 | PNVS SDK | EXTERNAL BLOCKED | no Aliyun AAR is present or enabled |
@@ -38,13 +39,19 @@ IPA, Git, or logs.
 Production enforcement is explicit: `requireProductionPhoneOneTap=true` requires
 the scheme identifier and complete release signing inputs. Missing input fails the
 Gradle configuration/build gate; it does not fall back to a demo scheme.
+The Python preflight uses the same generic `JIYI_PNVS_SCHEME_ID` consumed by the
+Android and iOS build seams; platform-specific scheme aliases are not accepted.
+The release certificate fingerprint is derived from the actual configured
+keystore and alias. A malformed or mismatched expected fingerprint fails closed,
+and keystore passwords are passed to `keytool` through subprocess environment
+variables rather than printed or embedded in command output.
 
 ## iOS prerequisite matrix
 
 | Item | Current result | Evidence / next gate |
 |---|---|---|
 | Runner Bundle ID | READY | `com.jiyidays` in the Xcode project |
-| signing/team identity | EXTERNAL BLOCKED | Apple team/signing registration is not externally verified |
+| signing/team identity | CODE READY / EXTERNAL BLOCKED | Release `DEVELOPMENT_TEAM` is bound to `JIYI_APPLE_DEVELOPMENT_TEAM`; Apple team/signing registration is not externally verified |
 | PNVS application/scheme registration | EXTERNAL BLOCKED | `JIYI_PNVS_SCHEME_ID` is an injected xcconfig seam; no value is committed |
 | PNVS SDK | EXTERNAL BLOCKED | no Aliyun framework/package is present or enabled |
 | required provider capability/privacy review | EXTERNAL BLOCKED | official provider registration and privacy review remain pending |
@@ -52,11 +59,17 @@ Gradle configuration/build gate; it does not fall back to a demo scheme.
 
 The iOS bridge treats missing or placeholder configuration as unavailable. A
 configured identifier alone still does not enable the provider adapter.
+Release builds also run `mobile/tool/verify_auth_02e_ios_release_config.py` from
+an Xcode build phase. When
+`JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED=YES`, the build fails closed unless the
+build-consumed Bundle ID, PNVS scheme identifier, `DEVELOPMENT_TEAM`, and the
+expected `JIYI_APPLE_DEVELOPMENT_TEAM` all match. CI tests this with synthetic
+values only; it is not an Apple registration or PNVS readiness claim.
 
 ## Backend credential matrix
 
 | Item | Current result | Evidence / next gate |
-|---|---|
+|---|---|---|
 | provider-neutral adapter seam | READY | `PhoneOneTapProvider` remains the only backend boundary |
 | real PNVS adapter | NOT READY | factory still returns disabled provider |
 | AccessKey ID / Secret | NOT CONFIGURED | no value exists in repository or CI |
@@ -80,6 +93,13 @@ mobile/tool/verify_auth_02e_production_config.py
 Use `--require-production` only in a release environment that has supplied the
 external prerequisites. CI intentionally exercises the missing-input path and
 expects a non-zero result.
+
+The iOS Release build phase is a separate build-consumed gate. Required `NO`
+keeps unsigned/test builds usable while the runtime remains unavailable;
+required `YES` never falls back to a placeholder or test scheme. The production
+configuration scripts report `CODE READY / EXTERNAL BLOCKED`, not READY, until
+PNVS console binding, Apple registration, billing/quota, credential delivery,
+SDK integration, and physical-device acceptance are externally verified.
 
 ## Physical-device acceptance matrix
 

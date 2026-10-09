@@ -5,12 +5,14 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_ID = "com.jiyidays"
 FINGERPRINT_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
+KEYTOOL_FINGERPRINT_RE = re.compile(r"SHA256:\s*([0-9A-Fa-f: ]+)", re.IGNORECASE)
 
 
 def read(relative: str) -> str:
@@ -33,6 +35,9 @@ def static_gate() -> None:
     require("ios/Runner/Info.plist", "JIYI_PNVS_SCHEME_ID")
     require("ios/Runner/Info.plist", "JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED")
     require("ios/Flutter/Release.xcconfig", "JIYI_PNVS_SCHEME_ID")
+    require("ios/Flutter/Release.xcconfig", "DEVELOPMENT_TEAM = $(JIYI_APPLE_DEVELOPMENT_TEAM)")
+    require("ios/Runner.xcodeproj/project.pbxproj", "AUTH-02E Production Gate")
+    require("ios/Runner.xcodeproj/project.pbxproj", "verify_auth_02e_ios_release_config.py")
     require("ios/Runner/AppDelegate.swift", "PhoneOneTapProviderConfiguration")
     print("AUTH-02E static production configuration seam: PASS")
     print("PHONE_ONE_TAP_LIVE_PROVIDER: DISABLED (fail closed; no real SDK/credential)")
@@ -40,8 +45,7 @@ def static_gate() -> None:
 
 def first_missing_production_requirement() -> str | None:
     requirements = (
-        ("JIYI_ANDROID_PNVS_SCHEME_ID or JIYI_PNVS_SCHEME_ID", "JIYI_ANDROID_PNVS_SCHEME_ID", "JIYI_PNVS_SCHEME_ID"),
-        ("JIYI_IOS_PNVS_SCHEME_ID or JIYI_PNVS_SCHEME_ID", "JIYI_IOS_PNVS_SCHEME_ID", "JIYI_PNVS_SCHEME_ID"),
+        ("JIYI_PNVS_SCHEME_ID", "JIYI_PNVS_SCHEME_ID"),
         ("ANDROID_RELEASE_KEYSTORE_PATH", "ANDROID_RELEASE_KEYSTORE_PATH"),
         ("ANDROID_RELEASE_KEYSTORE_PASSWORD", "ANDROID_RELEASE_KEYSTORE_PASSWORD"),
         ("ANDROID_RELEASE_KEY_ALIAS", "ANDROID_RELEASE_KEY_ALIAS"),
@@ -67,7 +71,74 @@ def production_gate() -> None:
             "AUTH-02E production gate blocked: missing required external/configuration "
             f"input {missing}. No provider secret was read or printed."
         )
-    print("AUTH-02E production configuration: READY_FOR_EXTERNAL_PROVIDER_REVIEW")
+    expected = os.environ["ANDROID_RELEASE_CERTIFICATE_SHA256"].strip().upper()
+    if not FINGERPRINT_RE.fullmatch(expected):
+        raise RuntimeError(
+            "AUTH-02E Android production gate blocked: "
+            "ANDROID_RELEASE_CERTIFICATE_SHA256 must be 64 hexadecimal characters."
+        )
+    try:
+        derived = derive_android_certificate_fingerprint(
+            keystore_path=os.environ["ANDROID_RELEASE_KEYSTORE_PATH"],
+            store_password=os.environ["ANDROID_RELEASE_KEYSTORE_PASSWORD"],
+            alias=os.environ["ANDROID_RELEASE_KEY_ALIAS"],
+            key_password=os.environ["ANDROID_RELEASE_KEY_PASSWORD"],
+        )
+    except (OSError, RuntimeError) as exc:
+        raise RuntimeError(
+            "AUTH-02E Android production gate blocked: "
+            "unable to derive the release certificate fingerprint from the supplied keystore."
+        ) from exc
+    if derived != expected:
+        raise RuntimeError(
+            "AUTH-02E Android production gate blocked: release certificate fingerprint mismatch "
+            f"(expected {expected}, derived {derived})."
+        )
+    print("AUTH-02E Android production config: certificate fingerprint comparison PASS")
+    print("AUTH-02E production configuration: CODE READY / EXTERNAL BLOCKED")
+
+
+def derive_android_certificate_fingerprint(
+    *,
+    keystore_path: str,
+    store_password: str,
+    alias: str,
+    key_password: str,
+) -> str:
+    if not keystore_path.strip() or not Path(keystore_path).is_file():
+        raise RuntimeError("keystore is missing")
+    command = [
+        "keytool",
+        "-list",
+        "-v",
+        "-keystore",
+        keystore_path,
+        "-alias",
+        alias,
+        "-storepass:env",
+        "AUTH02E_KEYSTORE_PASSWORD",
+        "-keypass:env",
+        "AUTH02E_KEY_PASSWORD",
+    ]
+    keytool_environment = os.environ.copy()
+    keytool_environment["AUTH02E_KEYSTORE_PASSWORD"] = store_password
+    keytool_environment["AUTH02E_KEY_PASSWORD"] = key_password
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=keytool_environment,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("keytool failed")
+    match = KEYTOOL_FINGERPRINT_RE.search(result.stdout + result.stderr)
+    if not match:
+        raise RuntimeError("keytool did not return SHA256 fingerprint")
+    fingerprint = re.sub(r"[^0-9A-Fa-f]", "", match.group(1)).upper()
+    if not FINGERPRINT_RE.fullmatch(fingerprint):
+        raise RuntimeError("keytool returned malformed SHA256 fingerprint")
+    return fingerprint
 
 
 def main() -> None:
