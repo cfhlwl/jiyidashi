@@ -337,8 +337,8 @@ void main() {
     await tester.tap(find.text('重要的人和人生故事'));
     await tester.pumpAndSettle();
     expect(find.text('记忆与人生'), findsOneWidget);
-    expect(find.text('重要的人'), findsOneWidget);
-    expect(find.text('我的人生'), findsOneWidget);
+    expect(find.widgetWithText(Tab, '重要的人'), findsOneWidget);
+    expect(find.widgetWithText(Tab, '我的人生'), findsOneWidget);
 
     await tester.pageBack();
     await tester.pumpAndSettle();
