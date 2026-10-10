@@ -132,7 +132,7 @@ class WechatAuthNativeException implements Exception {
 
 class MethodChannelWechatAuthGateway implements WechatAuthGateway {
   MethodChannelWechatAuthGateway({MethodChannel? channel})
-    : _channel = channel ?? const MethodChannel('cn.jiyidashi/wechat_auth');
+    : _channel = channel ?? MethodChannel('cn.jiyidashi/wechat_auth');
 
   final MethodChannel _channel;
 
@@ -142,7 +142,7 @@ class MethodChannelWechatAuthGateway implements WechatAuthGateway {
 
   @override
   Future<WechatAuthResult> revokePrivacy() =>
-      _invoke('initialize', {'privacy_consent_granted': false});
+      _invoke('revokePrivacy');
 
   @override
   Future<WechatAuthResult> checkAvailability() => _invoke('checkAvailability');

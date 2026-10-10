@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -104,6 +105,50 @@ Widget _page({
 }
 
 void main() {
+  test('MethodChannel WeChat contract maps native states without leaking code', () async {
+    final channel = MethodChannel('cn.jiyidashi/wechat_auth');
+    final methods = <String>[];
+    final binaryMessenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    binaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      methods.add(call.method);
+      return switch (call.method) {
+        'initialize' => <String, Object?>{'state': 'AVAILABLE'},
+        'checkAvailability' => <String, Object?>{'state': 'AVAILABLE'},
+        'requestCredential' => <String, Object?>{
+            'state': 'CREDENTIAL_ACQUIRED',
+            'credential': 'short-lived-code',
+          },
+        'cancel' => <String, Object?>{'state': 'CANCELLED'},
+        'revokePrivacy' => <String, Object?>{
+            'state': 'UNAVAILABLE',
+            'reason': 'PRIVACY_REVOKED',
+          },
+        _ => <String, Object?>{'state': 'UNAVAILABLE'},
+      };
+    });
+    addTearDown(() => binaryMessenger.setMockMethodCallHandler(channel, null));
+
+    final gateway = MethodChannelWechatAuthGateway(channel: channel);
+    expect(
+      (await gateway.initialize(privacyConsentGranted: true)).state,
+      WechatAuthState.available,
+    );
+    expect((await gateway.checkAvailability()).state, WechatAuthState.available);
+    final credential = await gateway.requestCredential();
+    expect(credential.state, WechatAuthState.credentialAcquired);
+    expect(credential.credential, 'short-lived-code');
+    expect((await gateway.cancel()).state, WechatAuthState.cancelled);
+    expect((await gateway.revokePrivacy()).state, WechatAuthState.unavailable);
+    expect(methods, [
+      'initialize',
+      'checkAvailability',
+      'requestCredential',
+      'cancel',
+      'revokePrivacy',
+    ]);
+    expect(credential.toString(), isNot(contains('short-lived-code')));
+  });
+
   test('provider-neutral coordinator keeps credential transient', () async {
     final gateway = FakeWechatAuthGateway();
     final exchange = _ExchangeFake();

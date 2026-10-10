@@ -73,6 +73,20 @@ if (productionPhoneOneTapRequired && pnvsSchemeIdentifier.isBlank()) {
     )
 }
 
+val wechatAppId = externalPushValue("JIYI_WECHAT_APP_ID")
+val wechatProvider = externalPushValue("AUTH_WECHAT_PROVIDER").ifBlank { "disabled" }
+val wechatLiveEnabled = externalPushValue("JIYI_WECHAT_LIVE_ENABLED").toBoolean()
+if (wechatLiveEnabled && !wechatProvider.equals("wechat", ignoreCase = true)) {
+    throw GradleException(
+        "WeChat live mode requires AUTH_WECHAT_PROVIDER=wechat; production remains disabled by default."
+    )
+}
+if (wechatLiveEnabled && wechatAppId.isBlank()) {
+    throw GradleException(
+        "WeChat live mode requires JIYI_WECHAT_APP_ID; no AppID is configured."
+    )
+}
+
 android {
     namespace = "com.jiyidays"
     compileSdk = flutter.compileSdkVersion
@@ -118,6 +132,9 @@ android {
             "JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED",
             productionPhoneOneTapRequired.toString(),
         )
+        buildConfigField("String", "JIYI_WECHAT_APP_ID", quotedBuildConfig(wechatAppId))
+        buildConfigField("String", "AUTH_WECHAT_PROVIDER", quotedBuildConfig(wechatProvider))
+        buildConfigField("Boolean", "JIYI_WECHAT_LIVE_ENABLED", wechatLiveEnabled.toString())
         manifestPlaceholders["JIYI_HMS_APP_ID"] = hmsAppId
         if (fcmAppId.isNotBlank()) {
             resValue("string", "google_app_id", fcmAppId)
@@ -206,6 +223,8 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     implementation("com.google.firebase:firebase-messaging")
     implementation("com.huawei.hms:push:6.13.0.300")
+    // Locked official WeChat OpenSDK artifact; defaults remain disabled/fail closed.
+    implementation("com.tencent.mm.opensdk:wechat-sdk-android:6.8.40")
     testImplementation("junit:junit:4.13.2")
 }
 

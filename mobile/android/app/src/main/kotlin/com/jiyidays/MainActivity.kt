@@ -22,5 +22,6 @@ class MainActivity : FlutterActivity() {
         flutterEngine.plugins.add(NativeLocationPlugin())
         flutterEngine.plugins.add(NotificationPushPlugin())
         flutterEngine.plugins.add(PhoneOneTapPlugin())
+        flutterEngine.plugins.add(WechatAuthPlugin())
     }
 }

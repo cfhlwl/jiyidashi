@@ -98,6 +98,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       widget.notificationClient ?? NotificationClientService(api: api);
   late final PhoneOneTapBridge phoneOneTapBridge =
       widget.phoneOneTapBridge ?? MethodChannelPhoneOneTapBridge();
+  late final WechatAuthGateway wechatAuthGateway =
+      widget.wechatAuthGateway ?? MethodChannelWechatAuthGateway();
 
   bool authenticated = false;
   AuthSessionVisualState _sessionState = AuthSessionVisualState.unknown;
@@ -528,7 +530,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   api: api,
                   capabilities: const AuthCapabilities.emailOnly(),
                   phoneOneTapBridge: phoneOneTapBridge,
-                  wechatAuthGateway: widget.wechatAuthGateway,
+                  wechatAuthGateway: wechatAuthGateway,
                   authCapabilityLoader: api.fetchAuthCapabilities,
                   smsOtpGateway: api,
                   initialMessage: restoreMessage,
