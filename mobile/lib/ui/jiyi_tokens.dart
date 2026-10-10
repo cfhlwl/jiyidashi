@@ -11,6 +11,12 @@ abstract final class JiYiSpacing {
   static const double xxl = 32;
   static const double xxxl = 40;
   static const double hero = 48;
+
+  // Shared V3 semantic aliases. These intentionally resolve to the existing
+  // spacing scale; Today geometry remains page-specific and is not globalized.
+  static const double pageHorizontalPadding = lg;
+  static const double sectionGap = sm;
+  static const double cardPadding = md;
 }
 
 // Today V3 structure anchors. These values describe the primary 390x844 review
@@ -34,6 +40,20 @@ abstract final class JiYiRadius {
   static const double large = 24;
   static const double sheet = 28;
   static const double pill = 999;
+
+  // Semantic aliases for new V3 primitives; no second radius system.
+  static const double controlRadius = control;
+  static const double surfaceRadius = card;
+}
+
+// Shared V3 typography roles describe hierarchy only. The active Theme's
+// TextTheme still owns font family, locale, and platform-specific rendering.
+abstract final class JiYiTypography {
+  static const double titleLarge = 22;
+  static const double titleSection = 18;
+  static const double bodyPrimary = 16;
+  static const double bodySecondary = 14;
+  static const double caption = 12;
 }
 
 // Product Experience V2 visual tokens. These complement Material ColorScheme without
@@ -54,6 +74,16 @@ abstract final class JiYiProductColors {
   static const Color family = Color(0xFF7A6395);
   static const Color location = Color(0xFFBD7544);
   static const Color media = Color(0xFF4F7D69);
+}
+
+// Shared surface roles map to the existing product palette. Today keeps its
+// approved page-specific visual roles and is not forced through these values.
+abstract final class JiYiSurfaceRoles {
+  static const Color pageBackground = JiYiProductColors.background;
+  static const Color surface = JiYiProductColors.surface;
+  static const Color elevated = JiYiProductColors.surfaceElevated;
+  static const Color soft = JiYiProductColors.surfaceSoft;
+  static const Color border = JiYiProductColors.border;
 }
 
 // Today V3 visual roles. These are presentation tokens only; they never

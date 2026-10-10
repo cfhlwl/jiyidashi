@@ -6,6 +6,8 @@ import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 
+const _timelinePlaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
 class _PlaceApi extends JiYiApiClient {
   _PlaceApi({
     this.detail,
@@ -24,6 +26,7 @@ class _PlaceApi extends JiYiApiClient {
   final Completer<Map<String, dynamic>>? pendingDetail;
   final Map<String, dynamic>? nextDetail;
   int detailCalls = 0;
+  String? lastPlaceId;
 
   @override
   Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async => places;
@@ -52,7 +55,7 @@ class _PlaceApi extends JiYiApiClient {
           'id': '11111111-1111-4111-8111-111111111111',
           'occurred_at': '2026-09-20T08:00:00Z',
           'ended_at': '2026-09-20T09:00:00Z',
-          'place_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          'place_id': _timelinePlaceId,
           'place_name': place['name'],
           'memory_type': null,
           'title': null,
@@ -73,6 +76,7 @@ class _PlaceApi extends JiYiApiClient {
     String? cursor,
   }) async {
     detailCalls += 1;
+    lastPlaceId = placeId;
     if (pendingDetail != null) return pendingDetail!.future;
     if (detailError != null) throw detailError!;
     if (cursor != null) {
@@ -109,7 +113,7 @@ Map<String, dynamic> _place({
 }) {
   return {
     'place': {
-      'id': 'place-1',
+      'id': _timelinePlaceId,
       'name': '家',
       'name_source': 'USER',
       'address': '测试地址',
@@ -222,9 +226,11 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimelinePage(api: api))));
     await tester.pumpAndSettle();
-    expect(find.text('家'), findsOneWidget);
-    await tester.tap(find.text('家'));
+    final placeChip = find.widgetWithText(Chip, '家');
+    expect(placeChip, findsOneWidget);
+    await tester.tap(placeChip);
     await tester.pumpAndSettle();
+    expect(api.lastPlaceId, _timelinePlaceId);
     expect(find.text('地点详情'), findsOneWidget);
     expect(find.text('还没有到访记录'), findsOneWidget);
   });

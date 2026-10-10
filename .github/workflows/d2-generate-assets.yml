@@ -122,6 +122,10 @@ jobs:
           --plain-name "Auth V3 fixture 05 one tap unavailable"
           --reporter expanded
 
+      - name: Test Batch 3 Timeline and Memory Detail targeted
+        timeout-minutes: 5
+        run: flutter test test/timeline_memory_detail_v3_test.dart --reporter expanded
+
       - name: Generate Today V3 authority candidate
         timeout-minutes: 5
         shell: bash
@@ -233,6 +237,52 @@ jobs:
           test -z "$(git status --porcelain -- test/goldens)"
           test -s /tmp/product-v2-goldens/candidate/production_auth_email.png
 
+      - name: Generate Batch 3 Timeline and Memory Detail candidates
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/batch3-v3-candidates
+          mkdir -p /tmp/batch3-v3-candidates
+          mkdir -p test/goldens
+
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 3 Timeline production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH3_CANDIDATE_MODE=true \
+            --reporter expanded
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 3 Memory Detail production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH3_CANDIDATE_MODE=true \
+            --reporter expanded
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 3 Memory Detail photo error state" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH3_CANDIDATE_MODE=true \
+            --reporter expanded
+
+          test -s test/goldens/timeline_v3_batch3.png
+          test -s test/goldens/memory_detail_v3_batch3.png
+          test -s test/goldens/memory_detail_v3_batch3_photo_error.png
+          cp test/goldens/timeline_v3_batch3.png /tmp/batch3-v3-candidates/
+          cp test/goldens/memory_detail_v3_batch3.png /tmp/batch3-v3-candidates/
+          cp test/goldens/memory_detail_v3_batch3_photo_error.png /tmp/batch3-v3-candidates/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/batch3-v3-candidates/timeline_v3_batch3.png
+          test -s /tmp/batch3-v3-candidates/memory_detail_v3_batch3.png
+          test -s /tmp/batch3-v3-candidates/memory_detail_v3_batch3_photo_error.png
+
+      - name: Upload Batch 3 review candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-batch3-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/batch3-v3-candidates/*.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -343,6 +393,9 @@ jobs:
               'auth_email_login': ('design_reference/v3/auth/derived/04_email_login.png', '/tmp/auth-v3-candidates/04_email_login.png', 44, 22),
               'auth_one_tap_unavailable': ('design_reference/v3/auth/derived/05_one_tap_unavailable.png', '/tmp/auth-v3-candidates/05_one_tap_unavailable.png', 44, 22),
               'production_auth_email': ('design_reference/v3/auth/derived/04_email_login.png', '/tmp/product-v2-goldens/candidate/production_auth_email.png', 44, 22),
+              'batch3_timeline': ('design_reference/v3/06_timeline.png', '/tmp/batch3-v3-candidates/timeline_v3_batch3.png', 44, 22),
+              'batch3_memory_detail': ('design_reference/v3/07_memory_detail.png', '/tmp/batch3-v3-candidates/memory_detail_v3_batch3.png', 44, 22),
+              'batch3_memory_detail_photo_error': ('design_reference/v3/07_memory_detail.png', '/tmp/batch3-v3-candidates/memory_detail_v3_batch3_photo_error.png', 44, 22),
           }
 
           def normalize(authority, size):
@@ -387,10 +440,25 @@ jobs:
               diff.save(root / 'diff' / f'{name}.png')
               report.append(f'| {name} | `{authority_path}` | `{candidate_path}` | {authority.size[0]}x{authority.size[1]} | {candidate.size[0]}x{candidate.size[1]} | top {top_mask}px / bottom {bottom_mask}px |')
 
+          report.extend([
+              '',
+              '## Batch 3 contract notes',
+              '',
+              '| Design element | Real authority | Implemented / deferred |',
+              '|---|---|---|',
+              '| Timeline date and order | `getTimelineEvents` + server `timezone` | Real API order with account-timezone month headers and per-record day/time. |',
+              '| Timeline filters/search | No supported month/week query contract | Deferred; no fake filter state is rendered. |',
+              '| Timeline photo-first card | `media_id` + owner-scoped media cache | Real PHOTO records use the production cache/renderer; no media count or gallery is invented. |',
+              '| PHOTO | Media cache and signed download | PHOTO-ready candidate plus real transport-error candidate. |',
+              '| Photo gallery / people / share | No supported count/list/relationship authority | Deferred; no fabricated media or relationship data. |',
+              '| Place/map | `getPlaceDetail` coordinates plus AMap privacy gate | Rendered only when real coordinates and consent authority are present. |',
+          ])
           (root / 'audit.md').write_text('\n'.join(report) + '\n\nAutomated images are evidence only; visual severity remains subject to independent review.\n', encoding='utf-8')
           manifest = [
               'PRODUCTION AUTH EMAIL: production_auth_email',
               'FUTURE DESIGN PREVIEW: auth_main_login, auth_phone_one_tap, auth_sms_otp, auth_email_login, auth_one_tap_unavailable',
+              'BATCH 3 PRODUCTION CANDIDATES: batch3_timeline, batch3_memory_detail, batch3_memory_detail_photo_error',
+              'BATCH 3 PHOTO STATES: memory_detail_v3_batch3.png=PHOTO_READY; memory_detail_v3_batch3_photo_error.png=PHOTO_ERROR',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())

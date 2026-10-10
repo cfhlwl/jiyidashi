@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -36,6 +37,10 @@ const _captureDeterministicQueryPreview =
     bool.fromEnvironment('DETERMINISTIC_QUERY_VISUAL_PREVIEW');
 const _captureProductionAuthCandidate =
     bool.fromEnvironment('UIUX_V3_PRODUCTION_AUTH_CANDIDATE_MODE');
+const _captureBatch3Candidates =
+    bool.fromEnvironment('UIUX_V3_BATCH3_CANDIDATE_MODE');
+
+late Uint8List _goldenPhotoBytes;
 
 const _goldenCacheVersion =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -71,43 +76,16 @@ Widget _goldenLocalPhoto(
   File file,
   BoxFit fit,
 ) {
-  final scheme = Theme.of(context).colorScheme;
   return Semantics(
     label: '本地照片视觉测试样本',
     child: AspectRatio(
       aspectRatio: 4 / 3,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              scheme.primaryContainer,
-              scheme.tertiaryContainer,
-            ],
-          ),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Align(
-              alignment: const Alignment(0, -0.22),
-              child: Icon(
-                Icons.wb_sunny_outlined,
-                size: 42,
-                color: scheme.onPrimaryContainer.withValues(alpha: 0.78),
-              ),
-            ),
-            Align(
-              alignment: const Alignment(0, 0.42),
-              child: Icon(
-                Icons.landscape_outlined,
-                size: 92,
-                color: scheme.onTertiaryContainer.withValues(alpha: 0.88),
-              ),
-            ),
-          ],
-        ),
+      child: Image.memory(
+        _goldenPhotoBytes,
+        key: ValueKey(file.path),
+        cacheWidth: MediaQuery.of(context).size.width.round(),
+        fit: fit,
+        gaplessPlayback: true,
       ),
     ),
   );
@@ -284,6 +262,9 @@ class _GoldenMediaCache extends LocalMediaCache {
     required String cacheVersion,
   }) {
     final file = File('/tmp/jiyi-golden-${mediaId.toLowerCase()}.media');
+    // Keep the cache fixture honest: PHOTO_READY must point at a decodable
+    // image, while the production renderer remains unchanged.
+    file.writeAsBytesSync(_goldenPhotoBytes, flush: true);
     _files[_key(ownerUserId, mediaId, cacheVersion)] = file;
     _files[_key(ownerUserId, mediaId)] = file;
     _authority.add(_key(ownerUserId, mediaId));
@@ -451,7 +432,10 @@ class _GoldenApi extends JiYiApiClient {
     SignedDownloadTarget target, {
     int maxBytes = 50 * 1024 * 1024,
   }) async {
-    return Uint8List.fromList(const <int>[1, 2, 3, 4]);
+    if (_goldenPhotoBytes.length > maxBytes) {
+      throw StateError('visual fixture exceeds requested byte limit');
+    }
+    return _goldenPhotoBytes;
   }
 
   @override
@@ -971,6 +955,16 @@ class _GoldenMemoryDetailApi extends _GoldenApi {
   };
 }
 
+class _GoldenMemoryDetailPhotoErrorApi extends _GoldenMemoryDetailApi {
+  @override
+  Future<Uint8List> downloadSignedMedia(
+    SignedDownloadTarget target, {
+    int maxBytes = 50 * 1024 * 1024,
+  }) async {
+    throw TransportException('photo fixture unavailable');
+  }
+}
+
 class _GoldenPlaceDetailApi extends JiYiApiClient {
   _GoldenPlaceDetailApi() : super(baseUrl: 'http://golden-place.invalid/v1') {
     accessToken = 'golden-token';
@@ -1070,6 +1064,46 @@ Future<void> _pumpUntilFinder(
     await tester.pump(step);
   }
   fail('visual fixture did not reach expected state: $finder');
+}
+
+Future<void> _assertDecodedGoldenImage(
+  WidgetTester tester,
+  Finder finder,
+) async {
+  expect(finder, findsOneWidget);
+  final image = tester.widget<Image>(finder);
+  final context = tester.element(finder);
+  final info = await tester.runAsync(() async {
+    final stream = image.image.resolve(createLocalImageConfiguration(context));
+    final completer = Completer<ImageInfo>();
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (value, _) {
+        if (!completer.isCompleted) completer.complete(value);
+      },
+      onError: (error, stackTrace) {
+        if (!completer.isCompleted) {
+          completer.completeError(error, stackTrace);
+        }
+      },
+    );
+    stream.addListener(listener);
+    try {
+      final value = await completer.future.timeout(const Duration(seconds: 5));
+      final pixels = await value.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      expect(pixels, isNotNull);
+      expect(pixels!.lengthInBytes, greaterThan(0));
+      return value;
+    } finally {
+      stream.removeListener(listener);
+    }
+  });
+  expect(info, isNotNull);
+  expect(info!.image.width, greaterThan(1));
+  expect(info.image.height, greaterThan(1));
+  await tester.pump();
 }
 
 Future<Key> _pumpSurface(
@@ -1236,6 +1270,8 @@ void main() {
   setUpAll(() async {
     await _loadGoldenFont();
     await _loadMaterialIconsFont();
+    _goldenPhotoBytes = await File('test/assets/visual/today_memory_left.png')
+        .readAsBytes();
   });
 
   testWidgets('golden: login', (tester) async {
@@ -1269,6 +1305,94 @@ void main() {
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/production_auth_email.png'),
+    );
+  });
+
+  testWidgets('candidate: Batch 3 Timeline production surface', (tester) async {
+    if (!_captureBatch3Candidates) return;
+    final api = _GoldenTimelineApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
+    final key = await _pumpSurface(
+      tester,
+      _goldenNavigationShell(
+        selectedIndex: 1,
+        child: TimelinePage(
+          api: api,
+          mediaCache: cache,
+          photoThumbnailBuilder: _goldenPagePhotoThumbnail,
+        ),
+      ),
+    );
+
+    expect(find.text('第一次产品讨论'), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-photo-$v2MemoryId')), findsOneWidget);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
+    );
+    await _assertDecodedGoldenImage(
+      tester,
+      find.byKey(const ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
+    );
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/timeline_v3_batch3.png'),
+    );
+  });
+
+  testWidgets('candidate: Batch 3 Memory Detail production surface',
+      (tester) async {
+    if (!_captureBatch3Candidates) return;
+    final api = _GoldenMemoryDetailApi();
+    final cache = await _seedGoldenMediaCache(api.authenticatedUserId!);
+    final key = await _pumpSurface(
+      tester,
+      MemoryDetailPage(
+        api: api,
+        memoryId: v2MemoryId,
+        mediaCache: cache,
+        amapPrivacyConsent: _GoldenAmapConsent(true),
+      ),
+    );
+
+    expect(find.text('第一次产品讨论'), findsWidgets);
+    expect(find.byKey(const ValueKey('memory-reminder-entry')), findsOneWidget);
+    expect(find.text('编辑'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(const ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+    );
+    await _assertDecodedGoldenImage(
+      tester,
+      find.byKey(const ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+    );
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/memory_detail_v3_batch3.png'),
+    );
+  });
+
+  testWidgets('candidate: Batch 3 Memory Detail photo error state',
+      (tester) async {
+    if (!_captureBatch3Candidates) return;
+    final api = _GoldenMemoryDetailPhotoErrorApi();
+    final key = await _pumpSurface(
+      tester,
+      MemoryDetailPage(
+        api: api,
+        memoryId: v2MemoryId,
+        mediaCache: _GoldenMediaCache(),
+        amapPrivacyConsent: _GoldenAmapConsent(true),
+      ),
+    );
+
+    expect(find.text('第一次产品讨论'), findsWidgets);
+    expect(find.textContaining('网络暂时不可用'), findsOneWidget);
+    expect(find.byKey(const ValueKey('memory-reminder-entry')), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/memory_detail_v3_batch3_photo_error.png'),
     );
   });
 
@@ -1771,6 +1895,10 @@ void main() {
       tester,
       find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
     );
+    await _assertDecodedGoldenImage(
+      tester,
+      find.byKey(const ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
+    );
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_timeline.png'),
@@ -1794,6 +1922,14 @@ void main() {
     expect(find.text('第一次产品讨论'), findsWidgets);
     expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
     expect(find.text('照片'), findsWidgets);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(const ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+    );
+    await _assertDecodedGoldenImage(
+      tester,
+      find.byKey(const ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+    );
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_memory_detail.png'),

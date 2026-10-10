@@ -149,6 +149,7 @@ void main() {
     final life = File('lib/v2/life_page.dart').readAsStringSync();
     final home = File('lib/v2/v2_home_page.dart').readAsStringSync();
     final shell = File('lib/stage1_app.dart').readAsStringSync();
+    final navigation = File('lib/navigation/jiyi_navigation.dart').readAsStringSync();
 
     expect(people, contains('重要的人'));
     expect(people, contains('最近相关的记忆'));
@@ -167,11 +168,9 @@ void main() {
     expect(home, contains('记忆与人生'));
     expect(home, isNot(contains('个人记忆图谱')));
 
-    expect(shell, contains("'今天'"));
-    expect(shell, contains("'记忆'"));
-    expect(shell, contains("'人生'"));
-    expect(shell, contains("'家庭'"));
-    expect(shell, contains("'我的'"));
+    for (final label in ['今天', '记忆', '人生', '家庭', '我的']) {
+      expect(navigation, contains("'$label'"));
+    }
     expect(shell, contains("label: const Text('记一下')"));
     expect(shell, isNot(contains("label: '时间轴'")));
     expect(shell, isNot(contains("label: '问记忆'")));
@@ -260,7 +259,13 @@ void main() {
     expect(components, contains('class JiYiLoadingState'));
     expect(components, contains('class JiYiErrorState'));
     expect(components, contains('class JiYiOfflineState'));
-    expect(shell, contains('JiYiOfflineState(onRetry: _loadInitial)'));
+    // Timeline is now on the accepted V3 state surface. The legacy shared
+    // states remain available to unmigrated V2 pages, but this route must not
+    // regress to the pre-V3 presentation contract.
+    expect(shell, contains('V3StateSurfaceVariant.loading'));
+    expect(shell, contains('V3StateSurfaceVariant.offline'));
+    expect(shell, contains('V3StateSurfaceVariant.error'));
+    expect(shell, contains('V3StateSurfaceVariant.empty'));
     expect(shell, contains('getTimelineEvents(limit: 30)'));
     expect(shell, contains('TimelineReadPage.parse(raw)'));
     expect(shell, isNot(contains('late Future<List<Map<String, dynamic>>> _places')));
