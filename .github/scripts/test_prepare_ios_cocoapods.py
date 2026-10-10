@@ -26,8 +26,8 @@ class ProcessGroupCleanupTest(unittest.TestCase):
         leader_code = (
             "import signal,subprocess,sys,time; "
             "child=subprocess.Popen([sys.executable,'-c',sys.argv[1]]); "
-            "print(child.pid, flush=True); "
             "signal.signal(signal.SIGTERM, lambda *_: sys.exit(0)); "
+            "print(child.pid, flush=True); "
             "time.sleep(60)"
         )
         leader = subprocess.Popen(
@@ -40,7 +40,12 @@ class ProcessGroupCleanupTest(unittest.TestCase):
         child_pid = int(leader.stdout.readline().strip())
 
         try:
-            terminate_process_group(leader)
+            process_group_id = leader.pid
+            os.kill(leader.pid, signal.SIGTERM)
+            leader.wait(timeout=5)
+            # Exercise the race: the leader is already reaped, but its child
+            # remains in the original process group.
+            terminate_process_group(leader, process_group_id)
             self.assertIsNotNone(leader.poll())
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
@@ -52,7 +57,7 @@ class ProcessGroupCleanupTest(unittest.TestCase):
             self.fail("child downloader survived process-group cleanup")
         finally:
             if leader.poll() is None:
-                terminate_process_group(leader)
+                terminate_process_group(leader, leader.pid)
 
 
 if __name__ == "__main__":

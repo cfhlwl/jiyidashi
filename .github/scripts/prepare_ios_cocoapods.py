@@ -15,13 +15,10 @@ import time
 from pathlib import Path
 
 
-def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+def terminate_process_group(
+    process: subprocess.Popen[bytes], process_group_id: int
+) -> None:
     """Stop pod and any child downloader it started."""
-
-    try:
-        process_group_id = os.getpgid(process.pid)
-    except ProcessLookupError:
-        return
 
     try:
         os.killpg(process_group_id, signal.SIGTERM)
@@ -51,6 +48,9 @@ def run_attempt(timeout_seconds: int, working_directory: Path) -> int:
         cwd=working_directory,
         start_new_session=True,
     )
+    # start_new_session makes the leader its own process-group leader, so its
+    # PID is the stable group ID even if the leader exits before cleanup starts.
+    process_group_id = process.pid
     try:
         return process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
@@ -58,7 +58,7 @@ def run_attempt(timeout_seconds: int, working_directory: Path) -> int:
             f"pod install exceeded {timeout_seconds}s; terminating its process group",
             flush=True,
         )
-        terminate_process_group(process)
+        terminate_process_group(process, process_group_id)
         return 124
 
 
