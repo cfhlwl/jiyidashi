@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import httpx
@@ -50,8 +52,8 @@ def _transport(payload=None, *, status_code=200, error: Exception | None = None,
     return httpx.MockTransport(handler)
 
 
-def _exchange(provider: WechatOAuthProvider):
-    return provider.exchange_credential(credential="native-code-123", request_id=uuid4())
+def _exchange(provider: WechatOAuthProvider, credential: str = "native-code-123"):
+    return provider.exchange_credential(credential=credential, request_id=uuid4())
 
 
 def test_oauth_exchange_returns_scoped_verified_identifiers_and_never_tokens():
@@ -271,18 +273,92 @@ def test_oauth_exchange_sanitizes_timeout_trace_and_exception_chain(caplog):
     assert "native-code-123" not in caplog.text
 
 
+def test_oauth_exchange_redacts_exception_stack_and_structured_url_extra(caplog):
+    raw_secret = "server-only-app-secret"
+    raw_code = "native-code-123"
+    raw_url = (
+        "https://api.weixin.qq.com/sns/oauth2/access_token"
+        f"?secret={raw_secret}&code={raw_code}"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        logger = logging.getLogger("httpx")
+        try:
+            raise RuntimeError(raw_url)
+        except RuntimeError:
+            logger.exception(
+                "provider trace",
+                extra={"url": raw_url, "nested": {"code": raw_code}},
+                stack_info=True,
+            )
+        return httpx.Response(
+            200,
+            json={"access_token": "provider-access-token", "openid": "openid-trace"},
+            request=request,
+        )
+
+    caplog.set_level(logging.DEBUG, logger="httpx")
+    _exchange(WechatOAuthProvider(_config(), transport=httpx.MockTransport(handler)))
+
+    assert raw_secret not in caplog.text
+    assert raw_code not in caplog.text
+    assert "<redacted>" in caplog.text
+    assert all(raw_secret not in repr(record.__dict__) for record in caplog.records)
+    assert all(raw_code not in repr(record.__dict__) for record in caplog.records)
+
+
+def test_oauth_exchange_redacts_concurrent_requests_with_distinct_credentials(caplog):
+    raw_values = (
+        ("secret-one", "code-one"),
+        ("secret-two", "code-two"),
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        secret = request.url.params["secret"]
+        code = request.url.params["code"]
+        logging.getLogger("httpx").info(
+            "provider request %s",
+            request.url,
+            extra={
+                "request_url": str(request.url),
+                "credentials": {"secret": secret, "code": code},
+            },
+        )
+        return httpx.Response(
+            200,
+            json={"access_token": "provider-access-token", "openid": code},
+            request=request,
+        )
+
+    def run(values: tuple[str, str]) -> VerifiedWechatResult:
+        secret, code = values
+        provider = WechatOAuthProvider(
+            _config(app_secret=secret), transport=httpx.MockTransport(handler)
+        )
+        return _exchange(provider, credential=code)
+
+    caplog.set_level(logging.DEBUG, logger="httpx")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(run, raw_values))
+
+    assert len(results) == 2
+    for secret, code in raw_values:
+        assert secret not in caplog.text
+        assert code not in caplog.text
+
+
 def test_oauth_exchange_enforces_total_timeout_for_slow_response_headers():
     started = threading.Event()
     release = threading.Event()
     finished = threading.Event()
     calls = 0
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
         started.set()
         try:
-            release.wait(timeout=5)
+            await asyncio.to_thread(release.wait, 5)
             return httpx.Response(
                 200,
                 json={"access_token": "token", "openid": "openid-slow-header"},
@@ -306,14 +382,14 @@ def test_oauth_exchange_enforces_total_timeout_for_slow_response_headers():
     assert finished.wait(timeout=1)
 
 
-class _BlockingBody(httpx.SyncByteStream):
+class _BlockingBody(httpx.AsyncByteStream):
     def __init__(self, started: threading.Event, release: threading.Event) -> None:
         self._started = started
         self._release = release
 
-    def __iter__(self):
+    async def __aiter__(self):
         self._started.set()
-        self._release.wait(timeout=5)
+        await asyncio.to_thread(self._release.wait, 5)
         yield b'{"access_token":"token","openid":"openid-slow-body"}'
 
 
@@ -322,7 +398,7 @@ def test_oauth_exchange_enforces_total_timeout_for_slow_stream_body():
     release = threading.Event()
     calls = 0
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
         return httpx.Response(200, stream=_BlockingBody(started, release), request=request)
@@ -339,6 +415,76 @@ def test_oauth_exchange_enforces_total_timeout_for_slow_stream_body():
     assert raised.value.code == "TIMEOUT"
     assert raised.value.ambiguous is True
     release.set()
+
+
+class _TricklingBody(httpx.AsyncByteStream):
+    def __init__(self, started: threading.Event, cancelled: threading.Event) -> None:
+        self._started = started
+        self._cancelled = cancelled
+
+    async def __aiter__(self):
+        self._started.set()
+        try:
+            while True:
+                yield b"x"
+                await asyncio.sleep(0.01)
+        except asyncio.CancelledError:
+            self._cancelled.set()
+            raise
+
+
+def test_oauth_exchange_timeout_cancels_continuous_trickle_body():
+    started = threading.Event()
+    cancelled = threading.Event()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            stream=_TricklingBody(started, cancelled),
+            request=request,
+        )
+
+    provider = WechatOAuthProvider(
+        _config(timeout_seconds=0.05),
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(WechatProviderError) as raised:
+        _exchange(provider)
+
+    assert started.is_set()
+    assert cancelled.wait(timeout=1)
+    assert raised.value.code == "TIMEOUT"
+    assert raised.value.ambiguous is True
+
+
+def test_repeated_provider_timeouts_leave_no_exchange_workers_or_open_tasks():
+    started = threading.Event()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        started.set()
+        await asyncio.sleep(30)
+        return httpx.Response(
+            200,
+            json={"access_token": "token", "openid": "openid-trickle"},
+            request=request,
+        )
+
+    provider = WechatOAuthProvider(
+        _config(timeout_seconds=0.05),
+        transport=httpx.MockTransport(handler),
+    )
+    before = {thread.name for thread in threading.enumerate()}
+
+    for _ in range(5):
+        with pytest.raises(WechatProviderError) as raised:
+            _exchange(provider)
+        assert raised.value.code == "TIMEOUT"
+        assert raised.value.ambiguous is True
+
+    after = {thread.name for thread in threading.enumerate()}
+    assert started.is_set()
+    assert "wechat-oauth-exchange" not in after
+    assert after - before == set()
 
 
 @pytest.mark.parametrize(
@@ -454,12 +600,12 @@ def test_slow_provider_timeout_terminalizes_receipt_without_session_or_retry(mon
     finished = threading.Event()
     calls = 0
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
         started.set()
         try:
-            release.wait(timeout=5)
+            await asyncio.to_thread(release.wait, 5)
             return httpx.Response(
                 200,
                 json={"access_token": "token", "openid": "openid-timeout"},

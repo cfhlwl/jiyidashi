@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
 import logging
-import queue
-import threading
+import re
+import traceback
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -25,55 +27,91 @@ _WECHAT_ERRCODE_MAP = {
 }
 
 
-class _SensitiveProviderLogFilter(logging.Filter):
-    """Keep normal HTTPX observability while removing credential values."""
+_PROVIDER_LOG_SECRETS: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
+    "wechat_provider_log_secrets", default=()
+)
+_SENSITIVE_QUERY_VALUE = re.compile(
+    r"(?i)([?&](?:secret|code|access_token|refresh_token)=)([^&#\s'\"]+)"
+)
+_SENSITIVE_JSON_VALUE = re.compile(
+    r'(?i)((?:"|\b)(?:secret|code|access_token|refresh_token)(?:"|\b)\s*[:=]\s*["\'])([^"\']+)'
+)
 
-    def __init__(self, values: tuple[str, ...]) -> None:
-        super().__init__()
-        encoded = {
-            variant
-            for value in values
-            if value
-            for variant in (value, quote(value, safe=""), quote_plus(value))
-        }
-        self._values = tuple(sorted(encoded, key=len, reverse=True))
+
+def _redact_text(value: str, secrets: tuple[str, ...]) -> str:
+    for secret in secrets:
+        value = value.replace(secret, "<redacted>")
+    value = _SENSITIVE_QUERY_VALUE.sub(r"\1<redacted>", value)
+    return _SENSITIVE_JSON_VALUE.sub(r"\1<redacted>", value)
+
+
+def _redact_extra(value: object, secrets: tuple[str, ...]) -> object:
+    if isinstance(value, str):
+        return _redact_text(value, secrets)
+    if isinstance(value, dict):
+        return {key: _redact_extra(item, secrets) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_extra(item, secrets) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_extra(item, secrets) for item in value)
+    return value
+
+
+class _SensitiveProviderLogFilter(logging.Filter):
+    """Keep HTTPX observability while redacting provider credentials at output."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        secrets = tuple(
+            variant
+            for value in _PROVIDER_LOG_SECRETS.get()
+            if value
+            for variant in (value, quote(value, safe=""), quote_plus(value))
+        )
         try:
             message = record.getMessage()
         except Exception:
             record.msg = "provider HTTP log redacted"
             record.args = ()
             return True
-        for value in self._values:
-            message = message.replace(value, "<redacted>")
-        record.msg = message
+        record.msg = _redact_text(message, secrets)
         record.args = ()
+        if record.exc_info:
+            try:
+                record.exc_text = _redact_text(
+                    "".join(traceback.format_exception(*record.exc_info)), secrets
+                )
+            except Exception:
+                record.exc_text = "provider HTTP exception redacted"
+            record.exc_info = None
+        if record.stack_info:
+            record.stack_info = _redact_text(record.stack_info, secrets)
+        for key, value in tuple(record.__dict__.items()):
+            if key in {"msg", "args", "exc_info", "exc_text", "stack_info"}:
+                continue
+            record.__dict__[key] = _redact_extra(value, secrets)
         return True
 
 
 @contextmanager
 def _redacted_provider_logging(*, credential: str, app_secret: str):
-    loggers = []
-    for name in (
-        "httpx",
-        "httpcore",
-        "httpcore.connection",
-        "httpcore.http11",
-        "httpcore.proxy",
-        "httpcore._sync.connection",
-        "httpcore._sync.http11",
-    ):
-        logger = logging.getLogger(name)
-        loggers.append(logger)
-    redaction = _SensitiveProviderLogFilter((credential, app_secret))
-    for logger in loggers:
-        logger.addFilter(redaction)
+    token = _PROVIDER_LOG_SECRETS.set((credential, app_secret))
     try:
         yield
     finally:
-        for logger in loggers:
-            logger.removeFilter(redaction)
+        _PROVIDER_LOG_SECRETS.reset(token)
+
+
+_PROVIDER_LOG_FILTER = _SensitiveProviderLogFilter()
+for _logger_name in (
+    "httpx",
+    "httpcore",
+    "httpcore.connection",
+    "httpcore.http11",
+    "httpcore.proxy",
+    "httpcore._async.connection",
+    "httpcore._async.http11",
+):
+    logging.getLogger(_logger_name).addFilter(_PROVIDER_LOG_FILTER)
 
 
 class WechatProviderError(RuntimeError):
@@ -213,7 +251,7 @@ class WechatOAuthProvider:
         self,
         config: WechatOAuthProviderConfig,
         *,
-        transport: httpx.BaseTransport | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.config = config
         self._transport = transport
@@ -265,43 +303,29 @@ class WechatOAuthProvider:
         base_url = self.config.normalized_api_base_url
         if base_url is None:
             raise WechatProviderError("UNAVAILABLE")
+        return asyncio.run(self._request_async(base_url, credential))
+
+    async def _request_async(self, base_url: str, credential: str) -> tuple[int, bytes]:
         timeout = httpx.Timeout(self.config.timeout_seconds)
-        client = httpx.Client(
-            base_url=base_url,
-            follow_redirects=False,
-            timeout=timeout,
-            transport=self._transport,
-            trust_env=False,
-        )
-        result_queue: queue.Queue[tuple[str, object]] = queue.Queue(maxsize=1)
-
-        def run_request() -> None:
-            try:
-                result_queue.put(("result", self._request_once(client, credential)))
-            except Exception as exc:
-                result_queue.put(("error", exc))
-
-        worker = threading.Thread(target=run_request, name="wechat-oauth-exchange", daemon=True)
-        worker.start()
         try:
-            kind, value = result_queue.get(timeout=self.config.timeout_seconds)
-        except queue.Empty:
-            client.close()
+            async with httpx.AsyncClient(
+                base_url=base_url,
+                follow_redirects=False,
+                timeout=timeout,
+                transport=self._transport,
+                trust_env=False,
+            ) as client:
+                async with asyncio.timeout(self.config.timeout_seconds):
+                    return await self._request_once(client, credential)
+        except TimeoutError:
             raise WechatProviderError("TIMEOUT", ambiguous=True) from None
-        finally:
-            client.close()
-        if kind == "error":
-            assert isinstance(value, Exception)
-            raise value
-        assert isinstance(value, tuple)
-        return value  # type: ignore[return-value]
 
-    def _request_once(self, client: httpx.Client, credential: str) -> tuple[int, bytes]:
+    async def _request_once(self, client: httpx.AsyncClient, credential: str) -> tuple[int, bytes]:
         with _redacted_provider_logging(
             credential=credential,
             app_secret=self.config.app_secret,
         ):
-            with client.stream(
+            async with client.stream(
                 "GET",
                 _ACCESS_TOKEN_PATH,
                 params={
@@ -313,7 +337,7 @@ class WechatOAuthProvider:
             ) as response:
                 chunks: list[bytes] = []
                 total = 0
-                for chunk in response.iter_bytes():
+                async for chunk in response.aiter_bytes():
                     total += len(chunk)
                     if total > self.config.max_response_bytes:
                         raise WechatProviderError("PROVIDER_ERROR")

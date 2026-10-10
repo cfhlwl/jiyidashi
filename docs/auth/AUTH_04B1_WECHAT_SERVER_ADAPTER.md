@@ -100,12 +100,16 @@ fixed grant type. It does not accept an endpoint, AppID, OpenID, UnionID, or
 profile field from the client request.
 
 HTTPX/httpcore request records remain enabled for normal operational
-observability, but the adapter installs a request-scoped redaction filter for
-the AppSecret and authorization code. Provider transport exceptions are
-converted without preserving the raw exception as a cause, so neither INFO /
-DEBUG request logs nor error traces contain the outbound query values. The
-whole request, including response-header and streamed-body wait time, is also
-bounded by the configured end-to-end budget. If that budget expires, the
+observability. A permanently installed, context-aware output filter redacts
+the AppSecret and authorization code from request messages, URL-encoded query
+values, structured `extra` fields, `exc_info`, and `stack_info`; it does not
+add or remove mutable logger filters per request. Provider transport
+exceptions are converted without preserving the raw exception as a cause, so
+neither INFO / DEBUG request logs nor error traces contain the outbound query
+values. The whole request, including response-header and streamed-body wait
+time, is bounded by the configured end-to-end budget. The request uses an
+`AsyncClient` under cancellation so timeout cleanup closes the transport
+instead of leaving a daemon worker behind. If that budget expires, the
 provider result is discarded and the existing receipt remains an ambiguous
 terminal failure; it cannot create a session or trigger a second provider
 exchange.
@@ -175,7 +179,8 @@ duration, deployment SHA, and adapter version. The following are prohibited:
 
 The adapter sanitizes exceptions to `WechatProviderError` codes. HTTP clients
 are created with redirects disabled and environment proxy settings disabled;
-there is no adapter retry or trace hook that records the query URL.
+there is no adapter retry, and timeout cancellation does not leave a provider
+exchange worker or connection task running after the call returns.
 
 ## Test evidence required for B1
 
@@ -188,6 +193,10 @@ The automated adapter suite uses `httpx.MockTransport` and proves:
 - no redirect to another host;
 - response-size limit;
 - timeout/connection ambiguity and no retry;
+- INFO/DEBUG, exception-stack, structured-extra, URL-encoding, and concurrent
+  credential log redaction;
+- slow headers, slow bodies, continuous trickle bodies, and repeated timeout
+  cancellation without residual exchange workers;
 - raw code, secret, tokens, and provider body are absent from surfaced errors;
 - production/default/fake factory gating;
 - the existing durable receipt blocks a second provider call when a completed
