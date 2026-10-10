@@ -28,6 +28,9 @@ data class WechatAuthNativeResult(
         if (credential != null) put("credential", credential)
         if (reason != null) put("reason", reason)
     }
+
+    override fun toString(): String =
+        "WechatAuthNativeResult(state=$state, reason=${reason ?: "none"})"
 }
 
 data class WechatAndroidConfiguration(
@@ -82,7 +85,10 @@ data class WechatSdkAuthResponse(
     val errorCode: Int,
     val code: String? = null,
     val state: String? = null,
-)
+) {
+    override fun toString(): String =
+        "WechatSdkAuthResponse(errorCode=$errorCode, statePresent=${!state.isNullOrBlank()})"
+}
 
 /**
  * The callback Activity is only a transport endpoint. It never owns a

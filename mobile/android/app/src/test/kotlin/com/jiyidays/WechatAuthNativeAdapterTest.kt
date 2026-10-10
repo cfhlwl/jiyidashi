@@ -85,6 +85,12 @@ class WechatAuthNativeAdapterTest {
         assertEquals(WechatAuthNativeState.CREDENTIAL_ACQUIRED, result?.state)
         assertEquals("short-lived-code", result?.credential)
         assertFalse(scheduler.pending)
+        assertFalse(result.toString().contains("short-lived-code"))
+        assertFalse(
+            WechatSdkAuthResponse(0, code = "short-lived-code", state = state)
+                .toString()
+                .contains("short-lived-code"),
+        )
     }
 
     @Test
