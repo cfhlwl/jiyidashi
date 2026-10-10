@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
-import time
+import logging
+import queue
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
-from urllib.parse import urlparse
+from urllib.parse import quote, quote_plus, urlparse
 from uuid import UUID
 
 import httpx
@@ -20,6 +23,57 @@ _WECHAT_ERRCODE_MAP = {
     40163: "REPLAYED",
     45011: "RATE_LIMITED",
 }
+
+
+class _SensitiveProviderLogFilter(logging.Filter):
+    """Keep normal HTTPX observability while removing credential values."""
+
+    def __init__(self, values: tuple[str, ...]) -> None:
+        super().__init__()
+        encoded = {
+            variant
+            for value in values
+            if value
+            for variant in (value, quote(value, safe=""), quote_plus(value))
+        }
+        self._values = tuple(sorted(encoded, key=len, reverse=True))
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:
+            record.msg = "provider HTTP log redacted"
+            record.args = ()
+            return True
+        for value in self._values:
+            message = message.replace(value, "<redacted>")
+        record.msg = message
+        record.args = ()
+        return True
+
+
+@contextmanager
+def _redacted_provider_logging(*, credential: str, app_secret: str):
+    loggers = []
+    for name in (
+        "httpx",
+        "httpcore",
+        "httpcore.connection",
+        "httpcore.http11",
+        "httpcore.proxy",
+        "httpcore._sync.connection",
+        "httpcore._sync.http11",
+    ):
+        logger = logging.getLogger(name)
+        loggers.append(logger)
+    redaction = _SensitiveProviderLogFilter((credential, app_secret))
+    for logger in loggers:
+        logger.addFilter(redaction)
+    try:
+        yield
+    finally:
+        for logger in loggers:
+            logger.removeFilter(redaction)
 
 
 class WechatProviderError(RuntimeError):
@@ -184,16 +238,19 @@ class WechatOAuthProvider:
         if not credential.strip():
             raise WechatProviderError("INVALID")
 
+        sanitized_error: WechatProviderError | None = None
         try:
             status_code, body = self._request(credential)
         except WechatProviderError:
             raise
-        except httpx.TimeoutException as exc:
-            raise WechatProviderError("TIMEOUT", ambiguous=True) from exc
-        except httpx.RequestError as exc:
-            raise WechatProviderError("PROVIDER_ERROR", ambiguous=True) from exc
-        except Exception as exc:  # pragma: no cover - defensive provider boundary
-            raise WechatProviderError("PROVIDER_ERROR", ambiguous=True) from exc
+        except httpx.TimeoutException:
+            sanitized_error = WechatProviderError("TIMEOUT", ambiguous=True)
+        except httpx.RequestError:
+            sanitized_error = WechatProviderError("PROVIDER_ERROR", ambiguous=True)
+        except Exception:  # pragma: no cover - defensive provider boundary
+            sanitized_error = WechatProviderError("PROVIDER_ERROR", ambiguous=True)
+        if sanitized_error is not None:
+            raise sanitized_error
 
         if status_code == 429:
             raise WechatProviderError("RATE_LIMITED")
@@ -209,14 +266,41 @@ class WechatOAuthProvider:
         if base_url is None:
             raise WechatProviderError("UNAVAILABLE")
         timeout = httpx.Timeout(self.config.timeout_seconds)
-        with httpx.Client(
+        client = httpx.Client(
             base_url=base_url,
             follow_redirects=False,
             timeout=timeout,
             transport=self._transport,
             trust_env=False,
-        ) as client:
-            deadline = time.monotonic() + self.config.timeout_seconds
+        )
+        result_queue: queue.Queue[tuple[str, object]] = queue.Queue(maxsize=1)
+
+        def run_request() -> None:
+            try:
+                result_queue.put(("result", self._request_once(client, credential)))
+            except Exception as exc:
+                result_queue.put(("error", exc))
+
+        worker = threading.Thread(target=run_request, name="wechat-oauth-exchange", daemon=True)
+        worker.start()
+        try:
+            kind, value = result_queue.get(timeout=self.config.timeout_seconds)
+        except queue.Empty:
+            client.close()
+            raise WechatProviderError("TIMEOUT", ambiguous=True) from None
+        finally:
+            client.close()
+        if kind == "error":
+            assert isinstance(value, Exception)
+            raise value
+        assert isinstance(value, tuple)
+        return value  # type: ignore[return-value]
+
+    def _request_once(self, client: httpx.Client, credential: str) -> tuple[int, bytes]:
+        with _redacted_provider_logging(
+            credential=credential,
+            app_secret=self.config.app_secret,
+        ):
             with client.stream(
                 "GET",
                 _ACCESS_TOKEN_PATH,
@@ -230,14 +314,10 @@ class WechatOAuthProvider:
                 chunks: list[bytes] = []
                 total = 0
                 for chunk in response.iter_bytes():
-                    if time.monotonic() > deadline:
-                        raise WechatProviderError("TIMEOUT", ambiguous=True)
                     total += len(chunk)
                     if total > self.config.max_response_bytes:
                         raise WechatProviderError("PROVIDER_ERROR")
                     chunks.append(chunk)
-                if time.monotonic() > deadline:
-                    raise WechatProviderError("TIMEOUT", ambiguous=True)
                 return response.status_code, b"".join(chunks)
 
     @staticmethod

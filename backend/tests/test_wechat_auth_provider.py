@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
+import threading
 from uuid import uuid4
 
 import httpx
 import pytest
+from sqlalchemy import select
 
+from app.auth_models import AuthSession, WechatExchangeState, WechatLoginExchange
 from app.core.config import get_settings
 from app.core.db import SessionLocal
+from app.models import User
 from app.services.wechat_auth_provider import (
     DisabledWechatAuthProvider,
     FakeWechatAuthProvider,
@@ -223,6 +228,119 @@ def test_oauth_exchange_maps_network_timeout_to_ambiguous_without_leaking_inputs
     assert str(raised.value) == "TIMEOUT"
 
 
+def test_oauth_exchange_redacts_httpx_info_logs(caplog):
+    caplog.set_level(logging.INFO, logger="httpx")
+    provider = WechatOAuthProvider(
+        _config(),
+        transport=_transport(
+            {
+                "access_token": "provider-access-token",
+                "openid": "openid-log-safe",
+            }
+        ),
+    )
+
+    _exchange(provider)
+
+    assert any(record.name == "httpx" for record in caplog.records)
+    assert "server-only-app-secret" not in caplog.text
+    assert "native-code-123" not in caplog.text
+    assert "<redacted>" in caplog.text
+
+
+def test_oauth_exchange_sanitizes_timeout_trace_and_exception_chain(caplog):
+    caplog.set_level(logging.DEBUG, logger="httpx")
+    provider = WechatOAuthProvider(
+        _config(),
+        transport=_transport(
+            error=httpx.ReadTimeout(
+                "https://api.weixin.qq.com/sns/oauth2/access_token"
+                "?secret=server-only-app-secret&code=native-code-123",
+                request=httpx.Request("GET", "https://api.weixin.qq.com"),
+            )
+        ),
+    )
+
+    with pytest.raises(WechatProviderError) as raised:
+        _exchange(provider)
+
+    assert raised.value.code == "TIMEOUT"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+    assert "server-only-app-secret" not in caplog.text
+    assert "native-code-123" not in caplog.text
+
+
+def test_oauth_exchange_enforces_total_timeout_for_slow_response_headers():
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        started.set()
+        try:
+            release.wait(timeout=5)
+            return httpx.Response(
+                200,
+                json={"access_token": "token", "openid": "openid-slow-header"},
+                request=request,
+            )
+        finally:
+            finished.set()
+
+    provider = WechatOAuthProvider(
+        _config(timeout_seconds=0.1),
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(WechatProviderError) as raised:
+        _exchange(provider)
+
+    assert started.is_set()
+    assert calls == 1
+    assert raised.value.code == "TIMEOUT"
+    assert raised.value.ambiguous is True
+    release.set()
+    assert finished.wait(timeout=1)
+
+
+class _BlockingBody(httpx.SyncByteStream):
+    def __init__(self, started: threading.Event, release: threading.Event) -> None:
+        self._started = started
+        self._release = release
+
+    def __iter__(self):
+        self._started.set()
+        self._release.wait(timeout=5)
+        yield b'{"access_token":"token","openid":"openid-slow-body"}'
+
+
+def test_oauth_exchange_enforces_total_timeout_for_slow_stream_body():
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, stream=_BlockingBody(started, release), request=request)
+
+    provider = WechatOAuthProvider(
+        _config(timeout_seconds=0.1),
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(WechatProviderError) as raised:
+        _exchange(provider)
+
+    assert started.is_set()
+    assert calls == 1
+    assert raised.value.code == "TIMEOUT"
+    assert raised.value.ambiguous is True
+    release.set()
+
+
 @pytest.mark.parametrize(
     "base_url",
     [
@@ -323,3 +441,86 @@ def test_real_adapter_uses_existing_receipt_to_block_code_replay(monkeypatch):
 
     assert first.tokens.user_id is not None
     assert len(calls) == 1
+
+
+def test_slow_provider_timeout_terminalizes_receipt_without_session_or_retry(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_rate_limit_enabled", False)
+    monkeypatch.setattr(settings, "auth_wechat_fingerprint_secret", "test-timeout-fingerprint")
+    monkeypatch.setattr(settings, "auth_wechat_app_id", "wx-timeout-app")
+    monkeypatch.setattr(settings, "auth_wechat_subject_scope", "wx-timeout-group")
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        started.set()
+        try:
+            release.wait(timeout=5)
+            return httpx.Response(
+                200,
+                json={"access_token": "token", "openid": "openid-timeout"},
+                request=request,
+            )
+        finally:
+            finished.set()
+
+    provider = WechatOAuthProvider(
+        _config(
+            app_id="wx-timeout-app",
+            subject_scope="wx-timeout-group",
+            timeout_seconds=0.1,
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+    request_id = uuid4()
+    credential = "native-code-timeout"
+
+    with SessionLocal() as db:
+        before_sessions = set(db.scalars(select(AuthSession.id)))
+        before_users = set(db.scalars(select(User.id)))
+        with pytest.raises(WechatLoginError, match="AUTH_WECHAT_TIMEOUT"):
+            exchange_wechat_credential(
+                db,
+                credential=credential,
+                request_id=request_id,
+                device_id="timeout-device",
+                client_platform="test",
+                device_name="timeout",
+                client_ip="127.0.0.1",
+                provider=provider,
+                settings=settings,
+            )
+
+        receipt = db.scalar(
+            select(WechatLoginExchange).where(WechatLoginExchange.request_id == request_id)
+        )
+        assert receipt is not None
+        assert receipt.state == WechatExchangeState.PROVIDER_UNKNOWN
+        assert receipt.error_code == "AUTH_WECHAT_TIMEOUT"
+        assert receipt.resolved_user_id is None
+        assert receipt.session_id is None
+        assert set(db.scalars(select(AuthSession.id))) == before_sessions
+        assert set(db.scalars(select(User.id))) == before_users
+
+        release.set()
+        assert finished.wait(timeout=1)
+
+        with pytest.raises(WechatLoginError, match="AUTH_WECHAT_TIMEOUT"):
+            exchange_wechat_credential(
+                db,
+                credential=credential,
+                request_id=request_id,
+                device_id="timeout-device",
+                client_platform="test",
+                device_name="timeout",
+                client_ip="127.0.0.1",
+                provider=provider,
+                settings=settings,
+            )
+
+    assert started.is_set()
+    assert calls == 1

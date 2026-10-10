@@ -84,7 +84,7 @@ The adapter accepts only:
 - no credentials, non-default port, path, query, or fragment in the base URL;
 - path `/sns/oauth2/access_token` selected by code, never by request input;
 - `follow_redirects=False`;
-- one total connection/read request timeout;
+- bounded connection/read timeout plus a hard end-to-end request budget;
 - bounded response body (`AUTH_WECHAT_MAX_RESPONSE_BYTES`, default 65536);
 - no automatic retry.
 
@@ -98,6 +98,17 @@ AppID mismatch fail closed as `PROVIDER_ERROR`.
 The adapter sends the configured AppID, server-only AppSecret, opaque code, and
 fixed grant type. It does not accept an endpoint, AppID, OpenID, UnionID, or
 profile field from the client request.
+
+HTTPX/httpcore request records remain enabled for normal operational
+observability, but the adapter installs a request-scoped redaction filter for
+the AppSecret and authorization code. Provider transport exceptions are
+converted without preserving the raw exception as a cause, so neither INFO /
+DEBUG request logs nor error traces contain the outbound query values. The
+whole request, including response-header and streamed-body wait time, is also
+bounded by the configured end-to-end budget. If that budget expires, the
+provider result is discarded and the existing receipt remains an ambiguous
+terminal failure; it cannot create a session or trigger a second provider
+exchange.
 
 ## Provider error mapping
 
