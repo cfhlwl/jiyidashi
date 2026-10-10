@@ -72,6 +72,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cocoapods-
 
+      - name: Verify CocoaPods process-group cleanup
+        shell: bash
+        run: python3 ../.github/scripts/test_prepare_ios_cocoapods.py
+
       - name: Verify iOS Keychain entitlement contract
         shell: bash
         run: |

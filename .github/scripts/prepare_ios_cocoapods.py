@@ -19,17 +19,28 @@ def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
     """Stop pod and any child downloader it started."""
 
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        process_group_id = os.getpgid(process.pid)
     except ProcessLookupError:
         return
+
+    try:
+        os.killpg(process_group_id, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+
     try:
         process.wait(timeout=15)
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
+        pass
+
+    # Do not make SIGKILL conditional on the leader still being alive.  A
+    # SIGTERM handler may let the pod leader exit while a downloader child
+    # remains in the same process group.
+    try:
+        os.killpg(process_group_id, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
 
 
 def run_attempt(timeout_seconds: int, working_directory: Path) -> int:

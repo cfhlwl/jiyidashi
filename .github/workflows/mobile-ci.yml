@@ -369,6 +369,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cocoapods-
 
+      - name: Verify CocoaPods process-group cleanup
+        shell: bash
+        run: python3 ../.github/scripts/test_prepare_ios_cocoapods.py
+
       - name: Test iOS native location policy
         # AUTH-001 adds flutter_secure_storage native compilation; keep the exact
         # RunnerTests gate, but do not mistake a cold CocoaPods/Xcode build for failure.
