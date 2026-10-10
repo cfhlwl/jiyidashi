@@ -1,0 +1,325 @@
+from __future__ import annotations
+
+from uuid import uuid4
+
+import httpx
+import pytest
+
+from app.core.config import get_settings
+from app.core.db import SessionLocal
+from app.services.wechat_auth_provider import (
+    DisabledWechatAuthProvider,
+    FakeWechatAuthProvider,
+    VerifiedWechatResult,
+    WechatOAuthProvider,
+    WechatOAuthProviderConfig,
+    WechatProviderError,
+    get_wechat_provider,
+)
+from app.services.wechat_login_service import WechatLoginError, exchange_wechat_credential
+
+
+def _config(**overrides) -> WechatOAuthProviderConfig:
+    values = {
+        "app_id": "wx-test-app",
+        "app_secret": "server-only-app-secret",
+        "subject_scope": "wx-test-group",
+        "fingerprint_secret": "test-fingerprint-secret",
+        "api_base_url": "https://api.weixin.qq.com",
+        "timeout_seconds": 5.0,
+        "max_response_bytes": 65536,
+        "live_enabled": True,
+    }
+    values.update(overrides)
+    return WechatOAuthProviderConfig(**values)
+
+
+def _transport(payload=None, *, status_code=200, error: Exception | None = None, calls=None):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if calls is not None:
+            calls.append(request)
+        if error is not None:
+            raise error
+        return httpx.Response(status_code, json=payload, request=request)
+
+    return httpx.MockTransport(handler)
+
+
+def _exchange(provider: WechatOAuthProvider):
+    return provider.exchange_credential(credential="native-code-123", request_id=uuid4())
+
+
+def test_oauth_exchange_returns_scoped_verified_identifiers_and_never_tokens():
+    calls: list[httpx.Request] = []
+    provider = WechatOAuthProvider(
+        _config(),
+        transport=_transport(
+            {
+                "access_token": "provider-access-token",
+                "expires_in": 7200,
+                "refresh_token": "provider-refresh-token",
+                "openid": "openid-123",
+                "scope": "snsapi_userinfo",
+                "unionid": "unionid-123",
+            },
+            calls=calls,
+        ),
+    )
+
+    result = _exchange(provider)
+
+    assert result == VerifiedWechatResult(
+        app_id="wx-test-app",
+        scope="wx-test-group",
+        openid="openid-123",
+        unionid="unionid-123",
+        verified_at=result.verified_at,
+    )
+    assert result.canonical_subjects() == (
+        "unionid:wx-test-group:unionid-123",
+        "openid:wx-test-app:openid-123",
+    )
+    assert len(calls) == 1
+    assert calls[0].url.scheme == "https"
+    assert calls[0].url.host == "api.weixin.qq.com"
+    assert calls[0].url.path == "/sns/oauth2/access_token"
+    assert calls[0].url.params["appid"] == "wx-test-app"
+    assert calls[0].url.params["secret"] == "server-only-app-secret"
+    assert calls[0].url.params["code"] == "native-code-123"
+    assert "provider-access-token" not in repr(result)
+    assert "provider-refresh-token" not in repr(result)
+
+
+def test_oauth_exchange_accepts_official_openid_only_response():
+    provider = WechatOAuthProvider(
+        _config(),
+        transport=_transport(
+            {
+                "access_token": "provider-access-token",
+                "expires_in": 7200,
+                "refresh_token": "provider-refresh-token",
+                "openid": "openid-only",
+                "scope": "snsapi_base",
+            }
+        ),
+    )
+
+    result = _exchange(provider)
+
+    assert result.unionid is None
+    assert result.canonical_subjects() == ("openid:wx-test-app:openid-only",)
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_code"),
+    [
+        ({"errcode": 40029, "errmsg": "invalid code"}, "INVALID"),
+        ({"errcode": 40163, "errmsg": "code been used"}, "REPLAYED"),
+        ({"errcode": 45011, "errmsg": "too frequent"}, "RATE_LIMITED"),
+        ({"access_token": "token", "openid": "openid", "appid": "wrong-app"}, "PROVIDER_ERROR"),
+        ({"access_token": "token"}, "PROVIDER_ERROR"),
+        ({"access_token": "token", "openid": "bad openid"}, "PROVIDER_ERROR"),
+        ({"access_token": "token", "openid": "openid", "expires_in": "7200"}, "PROVIDER_ERROR"),
+    ],
+)
+def test_oauth_exchange_rejects_provider_errors_and_malformed_schema(payload, expected_code):
+    provider = WechatOAuthProvider(_config(), transport=_transport(payload))
+
+    with pytest.raises(WechatProviderError) as raised:
+        _exchange(provider)
+
+    assert raised.value.code == expected_code
+    assert "server-only-app-secret" not in str(raised.value)
+    assert "native-code-123" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_code", "ambiguous"),
+    [
+        (401, "PROVIDER_ERROR", False),
+        (429, "RATE_LIMITED", False),
+        (500, "TIMEOUT", True),
+        (503, "TIMEOUT", True),
+        (302, "PROVIDER_ERROR", False),
+    ],
+)
+def test_oauth_exchange_normalizes_http_failures_without_retry(
+    status_code, expected_code, ambiguous
+):
+    calls: list[httpx.Request] = []
+    provider = WechatOAuthProvider(
+        _config(),
+        transport=_transport(
+            {"errmsg": "secret=server-only-app-secret"},
+            status_code=status_code,
+            calls=calls,
+        ),
+    )
+
+    with pytest.raises(WechatProviderError) as raised:
+        _exchange(provider)
+
+    assert raised.value.code == expected_code
+    assert raised.value.ambiguous is ambiguous
+    assert len(calls) == 1
+
+
+def test_oauth_exchange_treats_malformed_5xx_body_as_ambiguous():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, content=b"not-json", request=request)
+
+    provider = WechatOAuthProvider(_config(), transport=httpx.MockTransport(handler))
+
+    with pytest.raises(WechatProviderError) as raised:
+        _exchange(provider)
+
+    assert raised.value.code == "TIMEOUT"
+    assert raised.value.ambiguous is True
+
+
+def test_oauth_exchange_does_not_follow_redirects_to_another_host():
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(
+            302,
+            headers={"location": "https://evil.example/collect"},
+            request=request,
+        )
+
+    provider = WechatOAuthProvider(_config(), transport=httpx.MockTransport(handler))
+    with pytest.raises(WechatProviderError, match="PROVIDER_ERROR"):
+        _exchange(provider)
+    assert len(calls) == 1
+
+
+def test_oauth_exchange_fails_closed_on_oversized_response():
+    provider = WechatOAuthProvider(
+        _config(max_response_bytes=1024),
+        transport=_transport({"access_token": "token", "openid": "x" * 4096}),
+    )
+
+    with pytest.raises(WechatProviderError, match="PROVIDER_ERROR"):
+        _exchange(provider)
+
+
+def test_oauth_exchange_maps_network_timeout_to_ambiguous_without_leaking_inputs():
+    provider = WechatOAuthProvider(
+        _config(),
+        transport=_transport(
+            error=httpx.ReadTimeout(
+                "secret=server-only-app-secret code=native-code-123",
+                request=httpx.Request("GET", "https://api.weixin.qq.com"),
+            )
+        ),
+    )
+
+    with pytest.raises(WechatProviderError) as raised:
+        _exchange(provider)
+
+    assert raised.value.code == "TIMEOUT"
+    assert raised.value.ambiguous is True
+    assert str(raised.value) == "TIMEOUT"
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "",
+        "http://api.weixin.qq.com",
+        "https://evil.example",
+        "https://api.weixin.qq.com/sns",
+        "https://user:password@api.weixin.qq.com",
+        "https://api.weixin.qq.com?forward=evil",
+        "https://api.weixin.qq.com:8443",
+    ],
+)
+def test_oauth_config_rejects_unapproved_endpoint(base_url):
+    provider = WechatOAuthProvider(_config(api_base_url=base_url))
+
+    assert provider.available is False
+    with pytest.raises(WechatProviderError, match="UNAVAILABLE"):
+        _exchange(provider)
+
+
+def test_factory_requires_live_gate_and_complete_server_configuration(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "auth_wechat_provider", "wechat")
+    monkeypatch.setattr(settings, "auth_wechat_live_enabled", False)
+    monkeypatch.setattr(settings, "auth_wechat_app_id", "wx-test-app")
+    monkeypatch.setattr(settings, "auth_wechat_app_secret", "server-only-app-secret")
+    monkeypatch.setattr(settings, "auth_wechat_subject_scope", "wx-test-group")
+    monkeypatch.setattr(settings, "auth_wechat_fingerprint_secret", "test-fingerprint-secret")
+    monkeypatch.setattr(settings, "auth_wechat_api_base_url", "https://api.weixin.qq.com")
+
+    assert isinstance(get_wechat_provider(settings), DisabledWechatAuthProvider)
+
+    monkeypatch.setattr(settings, "auth_wechat_live_enabled", True)
+    provider = get_wechat_provider(settings)
+    assert isinstance(provider, WechatOAuthProvider)
+    assert provider.available is True
+
+    monkeypatch.setattr(settings, "auth_wechat_app_secret", "")
+    assert isinstance(get_wechat_provider(settings), DisabledWechatAuthProvider)
+
+    monkeypatch.setattr(settings, "app_env", "development")
+    monkeypatch.setattr(settings, "auth_wechat_provider", "fake")
+    assert isinstance(get_wechat_provider(settings), FakeWechatAuthProvider)
+
+
+def test_real_adapter_uses_existing_receipt_to_block_code_replay(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_rate_limit_enabled", False)
+    monkeypatch.setattr(settings, "auth_wechat_fingerprint_secret", "test-b1-fingerprint-secret")
+    monkeypatch.setattr(settings, "auth_wechat_app_id", "wx-b1-app")
+    monkeypatch.setattr(settings, "auth_wechat_subject_scope", "wx-b1-group")
+    suffix = uuid4().hex
+    calls: list[httpx.Request] = []
+    provider = WechatOAuthProvider(
+        _config(
+            app_id="wx-b1-app",
+            subject_scope="wx-b1-group",
+        ),
+        transport=_transport(
+            {
+                "access_token": "provider-access-token",
+                "expires_in": 7200,
+                "refresh_token": "provider-refresh-token",
+                "openid": f"openid-{suffix}",
+                "unionid": f"unionid-{suffix}",
+            },
+            calls=calls,
+        ),
+    )
+    request_id = uuid4()
+    credential = f"native-code-{suffix}"
+
+    with SessionLocal() as db:
+        first = exchange_wechat_credential(
+            db,
+            credential=credential,
+            request_id=request_id,
+            device_id=f"b1-device-{suffix}",
+            client_platform="test",
+            device_name="B1",
+            client_ip="127.0.0.1",
+            provider=provider,
+            settings=settings,
+        )
+        with pytest.raises(WechatLoginError, match="AUTH_WECHAT_CREDENTIAL_REPLAYED"):
+            exchange_wechat_credential(
+                db,
+                credential=credential,
+                request_id=request_id,
+                device_id=f"b1-device-{suffix}",
+                client_platform="test",
+                device_name="B1",
+                client_ip="127.0.0.1",
+                provider=provider,
+                settings=settings,
+            )
+
+    assert first.tokens.user_id is not None
+    assert len(calls) == 1
