@@ -165,6 +165,15 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_auth_phone_one_tap_integration.py
 
+      - name: PostgreSQL AUTH-04 WeChat login authority
+        # AUTH-04 Phase A validates durable identity/recovery/rollback authority
+        # with a fake provider only; no real WeChat SDK or credential is used.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_auth_wechat_login_integration.py
+
       - name: PostgreSQL Durable Maintenance Job concurrency
         # [OPS-002] Real PostgreSQL validates SKIP LOCKED single-claim authority,
         # concurrent dedupe, lease reclaim, stale-token fencing and crash terminalization.

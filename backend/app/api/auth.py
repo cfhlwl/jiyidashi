@@ -31,6 +31,7 @@ from app.schemas import (
     SmsOtpRequestResponse,
     SmsOtpVerifyRequest,
     TokenResponse,
+    WechatLoginRequest,
 )
 from app.services.auth_identity_service import issue_authenticated_session
 from app.services.auth_recovery_service import (
@@ -71,6 +72,11 @@ from app.services.sms_otp_service import (
     SmsOtpError,
     request_sms_otp,
     verify_sms_otp,
+)
+from app.services.wechat_auth_provider import get_wechat_provider
+from app.services.wechat_login_service import (
+    WechatLoginError,
+    exchange_wechat_credential,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -164,6 +170,12 @@ def auth_capabilities() -> AuthCapabilitiesResponse:
         phone_one_tap_available = bool(get_phone_one_tap_provider().available)
     except Exception:
         phone_one_tap_available = False
+    wechat_available = False
+    if settings.auth_wechat_provider.strip().lower() == "wechat":
+        try:
+            wechat_available = bool(get_wechat_provider().available)
+        except Exception:
+            wechat_available = False
     return AuthCapabilitiesResponse(
         email=AuthCapabilityStatus.AVAILABLE,
         sms_otp=(
@@ -176,7 +188,15 @@ def auth_capabilities() -> AuthCapabilitiesResponse:
             if phone_one_tap_available
             else AuthCapabilityStatus.UNAVAILABLE
         ),
-        wechat=AuthCapabilityStatus.DISABLED,
+        wechat=(
+            AuthCapabilityStatus.AVAILABLE
+            if wechat_available
+            else (
+                AuthCapabilityStatus.UNAVAILABLE
+                if settings.auth_wechat_provider.strip().lower() == "wechat"
+                else AuthCapabilityStatus.DISABLED
+            )
+        ),
     )
 
 
@@ -310,6 +330,40 @@ def phone_one_tap(
             client_uuid=result.device_id,
         )
     except PhoneOneTapError as exc:
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.code,
+            headers=headers,
+        ) from exc
+    return _token_response(
+        result.tokens,
+        account_deletion_in_progress=result.account_deletion_in_progress,
+    )
+
+
+@router.post("/wechat/exchange", response_model=TokenResponse)
+def wechat_exchange(
+    payload: WechatLoginRequest,
+    request: Request,
+    db: DbSession,
+) -> TokenResponse:
+    try:
+        result = exchange_wechat_credential(
+            db,
+            credential=payload.credential,
+            request_id=payload.request_id,
+            device_id=_resolve_session_device_id(payload.device_id),
+            client_platform=payload.client_platform,
+            device_name=payload.device_name,
+            client_ip=_client_ip(request),
+        )
+        fence_other_owner_push_bindings_for_client_uuid(
+            db,
+            user_id=result.tokens.user_id,
+            client_uuid=result.device_id,
+        )
+    except WechatLoginError as exc:
         headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
         raise HTTPException(
             status_code=exc.status_code,

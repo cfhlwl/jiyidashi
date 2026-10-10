@@ -271,6 +271,30 @@ class Settings(BaseSettings):
     auth_sms_otp_verify_request_limit: int = Field(default=10, ge=1, le=100)
     auth_sms_otp_window_seconds: int = Field(default=600, ge=60, le=86400)
 
+    # AUTH-04: provider-neutral WeChat login foundation. The live adapter remains
+    # disabled until Open Platform registration, AppID/AppSecret delivery, and
+    # platform SDK wiring are separately reviewed. Secrets are server-only.
+    auth_wechat_provider: str = "disabled"
+    auth_wechat_app_id: str = ""
+    auth_wechat_app_secret: str = ""
+    auth_wechat_subject_scope: str = ""
+    auth_wechat_api_base_url: str = "https://api.weixin.qq.com"
+    auth_wechat_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
+    auth_wechat_fingerprint_secret: str = ""
+    auth_wechat_fingerprint_key_version: str = "v1"
+    auth_wechat_exchange_reservation_seconds: int = Field(default=60, ge=5, le=900)
+    auth_wechat_recovery_deadline_seconds: int = Field(default=60, ge=5, le=900)
+    auth_wechat_exchange_retention_seconds: int = Field(
+        default=86400, ge=3600, le=2592000
+    )
+    auth_wechat_ip_limit: int = Field(default=20, ge=1, le=1000)
+    auth_wechat_device_limit: int = Field(default=10, ge=1, le=500)
+    auth_wechat_request_limit: int = Field(default=4, ge=1, le=100)
+    auth_wechat_credential_limit: int = Field(default=4, ge=1, le=100)
+    auth_wechat_window_seconds: int = Field(default=600, ge=60, le=86400)
+    auth_wechat_global_concurrency: int = Field(default=8, ge=1, le=1000)
+    auth_wechat_permit_lease_seconds: int = Field(default=120, ge=5, le=1800)
+
     # AUTH-02B: durable phone one-tap exchange policy. These are JiYi-side
     # replay/abuse controls, not claims about a live carrier provider's TTL.
     # The fingerprint secret is intentionally empty by default: the endpoint

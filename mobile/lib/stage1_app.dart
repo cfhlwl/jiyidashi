@@ -23,6 +23,7 @@ import 'offline_sync.dart';
 import 'passive_memory_delivery.dart';
 import 'phone_one_tap_bridge.dart';
 import 'sms_otp.dart';
+import 'wechat_auth_bridge.dart';
 import 'onboarding_controller.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_state.dart';
@@ -52,6 +53,7 @@ class JiYiApp extends StatefulWidget {
     this.motionSamplingBridge,
     this.notificationClient,
     this.phoneOneTapBridge,
+    this.wechatAuthGateway,
   });
 
   final JiYiApiClient? api;
@@ -61,6 +63,7 @@ class JiYiApp extends StatefulWidget {
   final NativeMotionSamplingBridge? motionSamplingBridge;
   final NotificationClientService? notificationClient;
   final PhoneOneTapBridge? phoneOneTapBridge;
+  final WechatAuthGateway? wechatAuthGateway;
 
   @override
   State<JiYiApp> createState() => _JiYiAppState();
@@ -523,6 +526,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
                   api: api,
                   capabilities: const AuthCapabilities.emailOnly(),
                   phoneOneTapBridge: phoneOneTapBridge,
+                  wechatAuthGateway: widget.wechatAuthGateway,
                   authCapabilityLoader: api.fetchAuthCapabilities,
                   smsOtpGateway: api,
                   initialMessage: restoreMessage,
@@ -564,6 +568,7 @@ class AuthPage extends StatefulWidget {
     required this.onAuthenticated,
     this.capabilities = const AuthCapabilities.emailOnly(),
     this.phoneOneTapBridge,
+    this.wechatAuthGateway,
     this.authCapabilityLoader,
     this.privacyConsentGranted = false,
     this.onSmsOtp,
@@ -577,6 +582,7 @@ class AuthPage extends StatefulWidget {
   final VoidCallback onAuthenticated;
   final AuthCapabilities capabilities;
   final PhoneOneTapBridge? phoneOneTapBridge;
+  final WechatAuthGateway? wechatAuthGateway;
   final AuthCapabilityLoader? authCapabilityLoader;
   final bool privacyConsentGranted;
   final VoidCallback? onSmsOtp;
@@ -623,20 +629,19 @@ class _AuthPageState extends State<AuthPage> {
   String? error;
   String? message;
   bool _phoneOneTapCancelling = false;
+  bool _wechatAuthPending = false;
+  bool _wechatAuthCancelling = false;
 
   @override
   void initState() {
     super.initState();
-    _capabilities = widget.privacyConsentGranted
-        ? widget.capabilities.copyWith(
-            phoneOneTapStatus: widget.phoneOneTapBridge == null
-                ? AuthCapabilityStatus.unavailable
-                : widget.capabilities.phoneOneTapStatus,
-          )
-        : widget.capabilities.failClosedNonEmail();
+    // The first frame cannot trust injected provider availability. Every
+    // non-email capability must be re-authorized by the current probe.
+    _capabilities = widget.capabilities.failClosedNonEmail();
     _privacyConsentGranted = widget.privacyConsentGranted;
     _capabilityAuthority = AuthCapabilityAuthority(
       phoneOneTapBridge: widget.phoneOneTapBridge,
+      wechatAuthGateway: widget.wechatAuthGateway,
       serverCapabilityLoader: widget.authCapabilityLoader,
     );
     if (_privacyConsentGranted) unawaited(_probeCapabilities());
@@ -646,10 +651,14 @@ class _AuthPageState extends State<AuthPage> {
   @override
   void dispose() {
     _authSurfaceGeneration += 1;
-    if (_phoneOneTapPending) {
+    if (_phoneOneTapPending || _wechatAuthPending) {
       widget.api.invalidateUnauthenticatedAuthGeneration();
       unawaited(
         widget.phoneOneTapBridge?.cancel().then<void>((_) {}) ??
+            Future<void>.value(),
+      );
+      unawaited(
+        widget.wechatAuthGateway?.cancel().then<void>((_) {}) ??
             Future<void>.value(),
       );
     }
@@ -680,8 +689,11 @@ class _AuthPageState extends State<AuthPage> {
       _authSurfaceGeneration += 1;
       _capabilityGeneration += 1;
       final wasPending = _phoneOneTapPending;
+      final wasWechatPending = _wechatAuthPending;
       _phoneOneTapPending = false;
       _phoneOneTapCancelling = wasPending;
+      _wechatAuthPending = false;
+      _wechatAuthCancelling = wasWechatPending;
       widget.api.invalidateUnauthenticatedAuthGeneration();
       if (mounted) {
         setState(() {
@@ -700,12 +712,29 @@ class _AuthPageState extends State<AuthPage> {
           // Privacy revocation remains fail closed even if native cleanup fails.
         }
       }
+      if (wasWechatPending) {
+        try {
+          await widget.wechatAuthGateway?.cancel();
+        } catch (_) {
+          // Privacy revocation remains fail closed even if native cleanup fails.
+        }
+      }
       try {
         await widget.phoneOneTapBridge?.revokePrivacy();
       } catch (_) {
         // Privacy revocation remains fail closed even if native cleanup fails.
       }
-      if (mounted) setState(() => _phoneOneTapCancelling = false);
+      try {
+        await widget.wechatAuthGateway?.revokePrivacy();
+      } catch (_) {
+        // Privacy revocation remains fail closed even if native cleanup fails.
+      }
+      if (mounted) {
+        setState(() {
+          _phoneOneTapCancelling = false;
+          _wechatAuthCancelling = false;
+        });
+      }
       return;
     }
 
@@ -727,6 +756,23 @@ class _AuthPageState extends State<AuthPage> {
       // Cancellation is best effort; the generation fence still rejects late results.
     } finally {
       if (mounted) setState(() => _phoneOneTapCancelling = false);
+    }
+  }
+
+  Future<void> _cancelWechat() async {
+    _authSurfaceGeneration += 1;
+    widget.api.invalidateUnauthenticatedAuthGeneration();
+    final wasPending = _wechatAuthPending;
+    _wechatAuthPending = false;
+    _wechatAuthCancelling = wasPending;
+    if (mounted) setState(() {});
+    if (!wasPending) return;
+    try {
+      await widget.wechatAuthGateway?.cancel();
+    } catch (_) {
+      // The generation fence rejects any late credential.
+    } finally {
+      if (mounted) setState(() => _wechatAuthCancelling = false);
     }
   }
 
@@ -798,8 +844,71 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
+  String _wechatError(WechatAuthState state) => switch (state) {
+    WechatAuthState.cancelled => '',
+    WechatAuthState.timeout => '微信登录响应超时，请使用邮箱登录。',
+    WechatAuthState.unavailable => '当前暂时无法使用微信登录，请使用邮箱登录。',
+    WechatAuthState.providerError => '微信登录暂时不可用，请使用邮箱登录。',
+    WechatAuthState.available || WechatAuthState.credentialAcquired =>
+      '暂时无法完成微信登录，请使用邮箱登录。',
+  };
+
+  Future<void> _startWechat() async {
+    if (_wechatAuthPending ||
+        _wechatAuthCancelling ||
+        !_capabilities.wechat ||
+        !_privacyConsentGranted) {
+      return;
+    }
+    final gateway = widget.wechatAuthGateway;
+    if (gateway == null) return;
+    final generation = ++_authSurfaceGeneration;
+    setState(() {
+      _wechatAuthPending = true;
+      error = null;
+      message = null;
+    });
+    final coordinator = WechatLoginCoordinator(
+      gateway: gateway,
+      exchangeClient: widget.api,
+    );
+    try {
+      final attempt = await coordinator.requestAttempt();
+      if (!_isCurrentAuthOperation(generation)) return;
+      await coordinator.exchange(attempt);
+      if (!_isCurrentAuthOperation(generation)) return;
+      widget.onAuthenticated();
+    } on WechatAuthNativeException catch (exception) {
+      if (_isCurrentAuthOperation(generation)) {
+        final productError = _wechatError(exception.result.state);
+        if (productError.isNotEmpty) setState(() => error = productError);
+      }
+    } on ApiException {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => error = '暂时无法完成微信登录，请使用邮箱登录。');
+      }
+    } on TransportException {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => error = '暂时无法连接服务器，请使用邮箱登录或稍后重试。');
+      }
+    } on ProtocolException {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => error = '认证服务暂时不可用，请使用邮箱登录。');
+      }
+    } catch (_) {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => error = '暂时无法完成微信登录，请使用邮箱登录。');
+      }
+    } finally {
+      if (_isCurrentAuthOperation(generation)) {
+        setState(() => _wechatAuthPending = false);
+      }
+    }
+  }
+
   Future<void> _switchToEmail() async {
     await _cancelPhoneOneTap();
+    await _cancelWechat();
     if (!mounted) return;
     setState(() {
       mode = _AuthMode.login;
@@ -1007,7 +1116,8 @@ class _AuthPageState extends State<AuthPage> {
       _capabilities.email ||
       _capabilities.phoneOneTap ||
       (_capabilities.smsOtp &&
-          (widget.onSmsOtp != null || widget.smsOtpGateway != null));
+          (widget.onSmsOtp != null || widget.smsOtpGateway != null)) ||
+      (_capabilities.wechat && widget.wechatAuthGateway != null);
 
   Widget _buildPhoneOneTapEntry() {
     if (!_capabilities.phoneOneTap) return const SizedBox.shrink();
@@ -1051,6 +1161,22 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 
+  Widget _buildWechatEntry() {
+    if (!_capabilities.wechat || widget.wechatAuthGateway == null) {
+      return const SizedBox.shrink();
+    }
+    return AuthV3ProviderRow(
+      key: const ValueKey('auth-v3-wechat-login'),
+      label: _wechatAuthPending ? '正在打开微信…' : '微信登录',
+      icon: Icons.chat_bubble_outline,
+      iconColor: const Color(0xFF07B65A),
+      leading: const AuthV3WeChatGlyph(),
+      onPressed: _wechatAuthPending || _wechatAuthCancelling
+          ? null
+          : _startWechat,
+    );
+  }
+
   void _openSmsOtp() {
     final gateway = widget.smsOtpGateway;
     if (gateway == null) {
@@ -1078,6 +1204,7 @@ class _AuthPageState extends State<AuthPage> {
     final hasPhone = _capabilities.phoneOneTap;
     final hasSms = _capabilities.smsOtp &&
         (widget.onSmsOtp != null || widget.smsOtpGateway != null);
+    final hasWechat = _capabilities.wechat && widget.wechatAuthGateway != null;
     return Scaffold(
       backgroundColor: JiYiTodayVisuals.background,
       body: SafeArea(
@@ -1106,6 +1233,8 @@ class _AuthPageState extends State<AuthPage> {
               if (hasPhone) _buildPhoneOneTapEntry(),
               if (hasPhone && hasSms) const SizedBox(height: 12),
               if (hasSms) _buildSmsFallbackEntry(),
+              if (hasSms && hasWechat) const SizedBox(height: 12),
+              if (hasWechat) _buildWechatEntry(),
               AuthV3Agreement(
                 accepted: _privacyConsentGranted,
                 onChanged: _setPrivacyConsent,
@@ -1253,6 +1382,7 @@ class _AuthPageState extends State<AuthPage> {
                   ),
                   _buildPhoneOneTapEntry(),
                   _buildSmsFallbackEntry(),
+                  _buildWechatEntry(),
                   SizedBox(height: compactViewport ? 32 : 150),
                   Container(
                     height: 48,

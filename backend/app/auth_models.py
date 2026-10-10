@@ -111,6 +111,84 @@ class AuthSession(Base):
     revoke_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class WechatExchangeState(StrEnum):
+    RESERVED = "RESERVED"
+    COMPLETED = "COMPLETED"
+    PROVIDER_REJECTED = "PROVIDER_REJECTED"
+    PROVIDER_UNKNOWN = "PROVIDER_UNKNOWN"
+
+
+class WechatExchangeRecoveryState(StrEnum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
+class WechatLoginExchange(Base):
+    """Durable receipt for one provider credential exchange.
+
+    The transient WeChat code/access token is never stored. The keyed
+    fingerprint only fences replay; completed receipts are terminal.
+    """
+
+    __tablename__ = "auth_wechat_login_exchanges"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_wechat_login_request_id"),
+        UniqueConstraint("credential_fingerprint", name="uq_wechat_login_credential_fingerprint"),
+        Index("ix_wechat_login_state_expires", "state", "expires_at"),
+        Index("ix_wechat_login_lease", "state", "lease_expires_at"),
+        CheckConstraint(
+            "state IN ('RESERVED', 'COMPLETED', 'PROVIDER_REJECTED', 'PROVIDER_UNKNOWN')",
+            name="ck_wechat_login_exchange_state",
+        ),
+        CheckConstraint(
+            "recovery_state IN ('OPEN', 'CLOSED')",
+            name="ck_wechat_login_recovery_state",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    request_id: Mapped[UUID] = mapped_column(nullable=False)
+    credential_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    fingerprint_key_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    state: Mapped[WechatExchangeState] = mapped_column(
+        String(32), nullable=False, default=WechatExchangeState.RESERVED
+    )
+    recovery_state: Mapped[WechatExchangeRecoveryState] = mapped_column(
+        String(16), nullable=False, default=WechatExchangeRecoveryState.CLOSED
+    )
+    device_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    client_platform: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    device_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resolved_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("auth_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    replacement_session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("auth_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    recovery_deadline: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    recovery_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class AuthRefreshTokenReceipt(Base):
     """Consumed refresh digest retained only for replay detection."""
 

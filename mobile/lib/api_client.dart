@@ -9,6 +9,7 @@ import 'auth_session_store.dart';
 import 'auth_v3.dart';
 import 'phone_one_tap_bridge.dart';
 import 'sms_otp.dart';
+import 'wechat_auth_bridge.dart';
 
 const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
@@ -504,7 +505,8 @@ class AuthDiagnosticEvent {
 typedef AuthDiagnosticSink = void Function(AuthDiagnosticEvent event);
 
 
-class JiYiApiClient implements PhoneOneTapExchangeClient, SmsOtpGateway {
+class JiYiApiClient
+    implements PhoneOneTapExchangeClient, SmsOtpGateway, WechatExchangeClient {
   JiYiApiClient({
     http.Client? httpClient,
     String? baseUrl,
@@ -817,6 +819,40 @@ class JiYiApiClient implements PhoneOneTapExchangeClient, SmsOtpGateway {
         'code': code.trim(),
         'device_id': installationId,
         'client_platform': 'flutter',
+      },
+      authenticated: false,
+    );
+    await _establishAuthenticatedSession(
+      data,
+      expectedSessionVersion: expectedSessionVersion,
+      expectedUnauthenticatedAuthGeneration:
+          expectedUnauthenticatedAuthGeneration,
+    );
+  }
+
+  @override
+  Future<void> exchangeWechatCredential({
+    required String credential,
+    required String requestId,
+    required String deviceId,
+    String? clientPlatform,
+    String? deviceName,
+  }) async {
+    if (credential.trim().isEmpty || requestId.trim().isEmpty) {
+      throw ArgumentError('WeChat exchange requires an opaque credential and request id');
+    }
+    final expectedSessionVersion = _sessionVersion;
+    final expectedUnauthenticatedAuthGeneration =
+        captureUnauthenticatedAuthGeneration();
+    final data = await _jsonRequest(
+      'POST',
+      '/auth/wechat/exchange',
+      body: {
+        'credential': credential,
+        'request_id': requestId,
+        'device_id': deviceId,
+        if (clientPlatform != null) 'client_platform': clientPlatform,
+        if (deviceName != null) 'device_name': deviceName,
       },
       authenticated: false,
     );
