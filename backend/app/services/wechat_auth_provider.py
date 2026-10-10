@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
@@ -215,6 +216,7 @@ class WechatOAuthProvider:
             transport=self._transport,
             trust_env=False,
         ) as client:
+            deadline = time.monotonic() + self.config.timeout_seconds
             with client.stream(
                 "GET",
                 _ACCESS_TOKEN_PATH,
@@ -228,10 +230,14 @@ class WechatOAuthProvider:
                 chunks: list[bytes] = []
                 total = 0
                 for chunk in response.iter_bytes():
+                    if time.monotonic() > deadline:
+                        raise WechatProviderError("TIMEOUT", ambiguous=True)
                     total += len(chunk)
                     if total > self.config.max_response_bytes:
                         raise WechatProviderError("PROVIDER_ERROR")
                     chunks.append(chunk)
+                if time.monotonic() > deadline:
+                    raise WechatProviderError("TIMEOUT", ambiguous=True)
                 return response.status_code, b"".join(chunks)
 
     @staticmethod
