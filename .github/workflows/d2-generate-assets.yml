@@ -127,6 +127,10 @@ jobs:
         timeout-minutes: 5
         run: flutter test test/timeline_memory_detail_v3_test.dart --reporter expanded
 
+      - name: Test Batch 4A Place Detail targeted
+        timeout-minutes: 5
+        run: flutter test test/place_detail_test.dart --reporter expanded
+
       - name: Generate Today V3 authority candidate
         timeout-minutes: 5
         shell: bash
@@ -284,6 +288,33 @@ jobs:
           retention-days: 14
           path: /tmp/batch3-v3-candidates/*.png
 
+      - name: Generate Batch 4A Place Detail candidate
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/place-detail-v3-candidates
+          mkdir -p /tmp/place-detail-v3-candidates
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 4A Place Detail production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH4A_CANDIDATE_MODE=true \
+            --reporter expanded
+          test -s test/goldens/place_detail_v3_batch4a.png
+          cp test/goldens/place_detail_v3_batch4a.png /tmp/place-detail-v3-candidates/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/place-detail-v3-candidates/place_detail_v3_batch4a.png
+
+      - name: Upload Batch 4A Place Detail review candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-batch4a-place-detail-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/place-detail-v3-candidates/*.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -397,6 +428,10 @@ jobs:
               'batch3_timeline': ('design_reference/v3/06_timeline.png', '/tmp/batch3-v3-candidates/timeline_v3_batch3.png', 44, 22),
               'batch3_memory_detail': ('design_reference/v3/07_memory_detail.png', '/tmp/batch3-v3-candidates/memory_detail_v3_batch3.png', 44, 22),
               'batch3_memory_detail_photo_error': ('design_reference/v3/07_memory_detail.png', '/tmp/batch3-v3-candidates/memory_detail_v3_batch3_photo_error.png', 44, 22),
+              # Place Detail has no dedicated V3 Design Authority PNG. This
+              # existing committed golden is a regression reference only, not
+              # an acceptance authority.
+              'batch4a_place_detail_existing_reference': ('test/goldens/place_detail_loaded.png', '/tmp/place-detail-v3-candidates/place_detail_v3_batch4a.png', 0, 0),
           }
 
           def normalize(authority, size):
@@ -410,7 +445,7 @@ jobs:
               return canvas
 
           report = [
-              f'# UIUX-V3-03 Design Authority Audit ({head})',
+              f'# UIUX-V3-05-4A Design Authority Audit ({head})',
               '',
               'Review-only package. Design Authority PNGs are copied, never modified.',
               '',
@@ -453,6 +488,7 @@ jobs:
               '| PHOTO | Media cache and signed download | PHOTO-ready candidate plus real transport-error candidate. |',
               '| Photo gallery / people / share | No supported count/list/relationship authority | Deferred; no fabricated media or relationship data. |',
               '| Place/map | `getPlaceDetail` coordinates plus AMap privacy gate | Rendered only when real coordinates and consent authority are present. |',
+              '| Batch 4A Place Detail visual authority | No dedicated V3 PNG; `test/goldens/place_detail_loaded.png` is regression reference only | Candidate is production `PlaceDetailPage` with deterministic server-backed place/visit data and privacy-blocked map state. |',
           ])
           (root / 'audit.md').write_text('\n'.join(report) + '\n\nAutomated images are evidence only; visual severity remains subject to independent review.\n', encoding='utf-8')
           manifest = [
@@ -460,6 +496,8 @@ jobs:
               'FUTURE DESIGN PREVIEW: auth_main_login, auth_phone_one_tap, auth_sms_otp, auth_email_login, auth_one_tap_unavailable',
               'BATCH 3 PRODUCTION CANDIDATES: batch3_timeline, batch3_memory_detail, batch3_memory_detail_photo_error',
               'BATCH 3 PHOTO STATES: memory_detail_v3_batch3.png=PHOTO_READY; memory_detail_v3_batch3_photo_error.png=PHOTO_ERROR',
+              'BATCH 4A PRODUCTION CANDIDATE: batch4a_place_detail_existing_reference',
+              'BATCH 4A AUTHORITY STATUS: no dedicated Design Authority PNG; place_detail_loaded.png is regression reference only',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())

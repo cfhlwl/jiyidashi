@@ -39,6 +39,8 @@ const _captureProductionAuthCandidate =
     bool.fromEnvironment('UIUX_V3_PRODUCTION_AUTH_CANDIDATE_MODE');
 const _captureBatch3Candidates =
     bool.fromEnvironment('UIUX_V3_BATCH3_CANDIDATE_MODE');
+const _captureBatch4aCandidates =
+    bool.fromEnvironment('UIUX_V3_BATCH4A_CANDIDATE_MODE');
 
 late Uint8List _goldenPhotoBytes;
 
@@ -1015,6 +1017,49 @@ class _GoldenPlaceDetailApi extends JiYiApiClient {
   }
 }
 
+class _GoldenBatch4aPlaceDetailApi extends JiYiApiClient {
+  _GoldenBatch4aPlaceDetailApi()
+      : super(baseUrl: 'http://golden-batch4a-place.invalid/v1') {
+    accessToken = 'golden-batch4a-token';
+    authenticatedUserId = '00000000-0000-4000-8000-000000000004';
+  }
+
+  @override
+  Future<Map<String, dynamic>> getPlaceDetail(
+    String placeId, {
+    int limit = 50,
+    String? cursor,
+  }) async {
+    return {
+      'place': {
+        'id': placeId,
+        'name': '晨曦湖畔',
+        'name_source': 'USER',
+        'address': '上海市测试湖畔 18 号',
+        'latitude': 31.2304,
+        'longitude': 121.4737,
+        'category': 'PARK',
+        'visit_count': 2,
+        'first_visited_at': '2026-09-18T01:10:00Z',
+        'last_visited_at': '2026-09-20T03:30:00Z',
+      },
+      'visits': [
+        {
+          'id': 'visit-batch4a-finalized',
+          'arrived_at': '2026-09-20T02:20:00Z',
+          'left_at': '2026-09-20T03:30:00Z',
+          'duration_seconds': 4200,
+          'confidence': 0.96,
+          'source': 'GPS',
+          'finalized_at': '2026-09-20T04:00:00Z',
+          'visit_finalized': true,
+        },
+      ],
+      'next_cursor': null,
+    };
+  }
+}
+
 // Golden tests must not depend on an unregistered platform channel. Native platform policy
 // is covered separately by Flutter bridge tests, Android JVM tests and iOS RunnerTests.
 class _GoldenQueue extends OfflineQueueStore {
@@ -1396,6 +1441,30 @@ void main() {
     );
   });
 
+  testWidgets('candidate: Batch 4A Place Detail production surface',
+      (tester) async {
+    if (!_captureBatch4aCandidates) return;
+    const placeId = 'place-batch4a-candidate';
+    final key = await _pumpSurface(
+      tester,
+      PlaceDetailPage(
+        api: _GoldenBatch4aPlaceDetailApi(),
+        placeId: placeId,
+        amapPrivacyConsent: _GoldenAmapConsent(false),
+      ),
+    );
+
+    expect(find.text('晨曦湖畔'), findsWidgets);
+    expect(find.byKey(const ValueKey('place-map-card')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsOneWidget);
+    expect(find.byKey(const ValueKey('place-amap-privacy-accept')), findsOneWidget);
+    expect(find.text('已稳定的到访'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/place_detail_v3_batch4a.png'),
+    );
+  });
+
   testWidgets('golden: onboarding intro', (tester) async {
     // [人工注释][S1-026] Golden 直接渲染正式 OnboardingIntroPage；固定字体/窗口仍复用本文件统一基线。
     final key = await _pumpSurface(
@@ -1712,7 +1781,7 @@ void main() {
         placeId: 'place-golden-1',
       ),
     );
-    expect(find.text('常去的咖啡店'), findsOneWidget);
+    expect(find.text('常去的咖啡店'), findsWidgets);
     expect(find.text('已稳定的到访'), findsOneWidget);
     expect(find.text('仍在更新的到访'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, '加载更多'), findsOneWidget);
