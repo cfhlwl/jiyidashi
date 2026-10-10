@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/ios-unsigned-ipa.yml"
+      - ".github/scripts/prepare_ios_cocoapods.py"
   workflow_dispatch:
     inputs:
       api_base_url:
@@ -59,6 +60,24 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Cache CocoaPods dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods/repos
+            mobile/ios/Pods
+          key: ${{ runner.os }}-cocoapods-${{ hashFiles('mobile/ios/Podfile', 'mobile/pubspec.lock', 'mobile/.flutter-plugins-dependencies') }}
+          restore-keys: |
+            ${{ runner.os }}-cocoapods-
+
+      - name: Prepare iOS CocoaPods with bounded retry
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ../.github/scripts/prepare_ios_cocoapods.py
 
       - name: Validate build inputs
         shell: bash

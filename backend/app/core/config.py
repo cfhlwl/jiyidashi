@@ -271,15 +271,17 @@ class Settings(BaseSettings):
     auth_sms_otp_verify_request_limit: int = Field(default=10, ge=1, le=100)
     auth_sms_otp_window_seconds: int = Field(default=600, ge=60, le=86400)
 
-    # AUTH-04: provider-neutral WeChat login foundation. The live adapter remains
-    # disabled until Open Platform registration, AppID/AppSecret delivery, and
-    # platform SDK wiring are separately reviewed. Secrets are server-only.
+    # AUTH-04B1: server-side WeChat OAuth code exchange. The independent live gate
+    # remains false until Open Platform registration and secret delivery are
+    # separately approved. Secrets are server-only.
     auth_wechat_provider: str = "disabled"
+    auth_wechat_live_enabled: bool = False
     auth_wechat_app_id: str = ""
     auth_wechat_app_secret: str = ""
     auth_wechat_subject_scope: str = ""
     auth_wechat_api_base_url: str = "https://api.weixin.qq.com"
     auth_wechat_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
+    auth_wechat_max_response_bytes: int = Field(default=65536, ge=1024, le=1048576)
     auth_wechat_fingerprint_secret: str = ""
     auth_wechat_fingerprint_key_version: str = "v1"
     auth_wechat_exchange_reservation_seconds: int = Field(default=60, ge=5, le=900)

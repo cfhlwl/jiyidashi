@@ -7,6 +7,7 @@ on:
       - "docs/V2_PRODUCTIZATION_BACKLOG.md"
       - "docs/DEVELOPMENT_PROGRESS.md"
       - ".github/workflows/d2-generate-assets.yml"
+      - ".github/scripts/prepare_ios_cocoapods.py"
       - "mobile/**"
   push:
     branches:
@@ -575,6 +576,24 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Cache CocoaPods dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods/repos
+            mobile/ios/Pods
+          key: ${{ runner.os }}-cocoapods-${{ hashFiles('mobile/ios/Podfile', 'mobile/pubspec.lock', 'mobile/.flutter-plugins-dependencies') }}
+          restore-keys: |
+            ${{ runner.os }}-cocoapods-
+
+      - name: Prepare iOS CocoaPods with bounded retry
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ../.github/scripts/prepare_ios_cocoapods.py
 
       # [人工注释][CI-005] D2 不改产品业务，但仍保留 iOS 无签名构建门禁，防止视觉测试依赖破坏现有双端基线。
       - name: Build iOS without codesigning

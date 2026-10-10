@@ -11,6 +11,7 @@ on:
       - "mobile/lib/stage1_app.dart"
       - "mobile/test/ios_keychain_entitlements_test.dart"
       - ".github/workflows/core004-ios-trollstore-fix.yml"
+      - ".github/scripts/prepare_ios_cocoapods.py"
   workflow_dispatch:
 
 permissions:
@@ -60,6 +61,21 @@ jobs:
       - name: Verify dependency lock
         run: git diff --exit-code -- pubspec.lock
 
+      - name: Cache CocoaPods dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods/repos
+            mobile/ios/Pods
+          key: ${{ runner.os }}-cocoapods-${{ hashFiles('mobile/ios/Podfile', 'mobile/pubspec.lock', 'mobile/.flutter-plugins-dependencies') }}
+          restore-keys: |
+            ${{ runner.os }}-cocoapods-
+
+      - name: Verify CocoaPods process-group cleanup
+        shell: bash
+        run: python3 ../.github/scripts/test_prepare_ios_cocoapods.py
+
       - name: Verify iOS Keychain entitlement contract
         shell: bash
         run: |
@@ -93,23 +109,11 @@ jobs:
           echo "endpoint_status=reachable" >> "$GITHUB_OUTPUT"
 
       - name: Prepare iOS CocoaPods with bounded retry
-        timeout-minutes: 20
+        timeout-minutes: 25
         shell: bash
         run: |
           set -euo pipefail
-          (
-            cd ios
-            for attempt in 1 2 3; do
-              if pod install; then
-                break
-              fi
-              if [ "$attempt" = "3" ]; then
-                exit 1
-              fi
-              echo "pod install failed on attempt $attempt; retrying transient CocoaPods download"
-              sleep $((attempt * 5))
-            done
-          )
+          python3 ../.github/scripts/prepare_ios_cocoapods.py
 
       - name: Build iOS release app without Apple codesigning
         shell: bash
