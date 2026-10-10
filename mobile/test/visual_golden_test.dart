@@ -82,6 +82,8 @@ Widget _goldenLocalPhoto(
       aspectRatio: 4 / 3,
       child: Image.memory(
         _goldenPhotoBytes,
+        key: ValueKey(file.path),
+        cacheWidth: MediaQuery.of(context).size.width.round(),
         fit: fit,
         gaplessPlayback: true,
       ),
