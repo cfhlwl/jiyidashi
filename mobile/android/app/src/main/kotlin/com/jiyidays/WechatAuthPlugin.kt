@@ -218,7 +218,13 @@ class WechatAuthPlugin(
 
         override fun onActivityStopped(activity: Activity) {
             started = (started - 1).coerceAtLeast(0)
-            if (started == 0 && !activity.isChangingConfigurations) {
+            if (
+                started == 0 &&
+                !activity.isChangingConfigurations &&
+                pending != null &&
+                !(adapterOrUnavailable() as? WechatAuthExternalHandoffAware)
+                    ?.isAwaitingExternalProvider().orFalse()
+            ) {
                 invalidateForLifecycle("APP_BACKGROUND")
             }
         }
@@ -228,6 +234,8 @@ class WechatAuthPlugin(
         override fun onActivityPaused(activity: Activity) = Unit
         override fun onActivitySaveInstanceState(activity: Activity, state: android.os.Bundle) = Unit
         override fun onActivityDestroyed(activity: Activity) = Unit
+
+        private fun Boolean?.orFalse(): Boolean = this == true
     }
 
     private inner class CallbackFence(

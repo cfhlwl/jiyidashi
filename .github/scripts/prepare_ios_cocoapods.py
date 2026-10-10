@@ -15,15 +15,59 @@ import time
 from pathlib import Path
 
 
+def _process_group_members(process_group_id: int) -> tuple[int, ...]:
+    """Return live PIDs in a process group when killpg is unavailable."""
+
+    try:
+        result = subprocess.run(
+            ["ps", "-axo", "pid=,pgid="],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return ()
+
+    members: list[int] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) != 2:
+            continue
+        try:
+            pid, pgid = (int(value) for value in fields)
+        except ValueError:
+            continue
+        if pgid == process_group_id and pid != os.getpid():
+            members.append(pid)
+    return tuple(members)
+
+
+def _signal_process_group(process_group_id: int, signal_number: signal.Signals) -> None:
+    """Signal a process group, falling back to its members on macOS runners."""
+
+    try:
+        os.killpg(process_group_id, signal_number)
+        return
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        # Some macOS hosted runners reject killpg after the group leader has
+        # already exited. The saved PGID remains authoritative; signal each
+        # surviving member so a downloader cannot escape cleanup.
+        members = _process_group_members(process_group_id)
+        for pid in members:
+            try:
+                os.kill(pid, signal_number)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+
 def terminate_process_group(
     process: subprocess.Popen[bytes], process_group_id: int
 ) -> None:
     """Stop pod and any child downloader it started."""
 
-    try:
-        os.killpg(process_group_id, signal.SIGTERM)
-    except ProcessLookupError:
-        return
+    _signal_process_group(process_group_id, signal.SIGTERM)
 
     try:
         process.wait(timeout=15)
@@ -33,10 +77,7 @@ def terminate_process_group(
     # Do not make SIGKILL conditional on the leader still being alive.  A
     # SIGTERM handler may let the pod leader exit while a downloader child
     # remains in the same process group.
-    try:
-        os.killpg(process_group_id, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+    _signal_process_group(process_group_id, signal.SIGKILL)
     process.wait()
 
 

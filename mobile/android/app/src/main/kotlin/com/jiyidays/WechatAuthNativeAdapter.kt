@@ -59,6 +59,14 @@ interface WechatAuthProviderAdapter {
     fun revokePrivacy(completion: (WechatAuthNativeResult) -> Unit)
 }
 
+/**
+ * True only while an accepted provider request owns the external Activity
+ * handoff. The host lifecycle must not mistake that handoff for backgrounding.
+ */
+interface WechatAuthExternalHandoffAware {
+    fun isAwaitingExternalProvider(): Boolean
+}
+
 interface WechatOpenSdkClient {
     fun registerApp(): Boolean
     fun isWXAppInstalled(): Boolean
@@ -133,7 +141,7 @@ class WechatAuthNativeAdapter(
     private val timeoutScheduler: WechatAuthTimeoutScheduler =
         WechatAuthTimeoutScheduler(::scheduleWechatTimeout),
     private val timeoutMillis: Long = REQUEST_TIMEOUT_MILLIS,
-) : WechatAuthProviderAdapter {
+) : WechatAuthProviderAdapter, WechatAuthExternalHandoffAware {
     companion object {
         const val REQUEST_TIMEOUT_MILLIS = 60_000L
         const val ERR_OK = 0
@@ -146,6 +154,7 @@ class WechatAuthNativeAdapter(
         val state: String,
         val completion: (WechatAuthNativeResult) -> Unit,
         val cancelTimeout: () -> Unit,
+        val externalHandoffAccepted: Boolean = false,
     )
 
     private val lock = Any()
@@ -154,6 +163,10 @@ class WechatAuthNativeAdapter(
     private var sdk: WechatOpenSdkClient? = null
     private var privacyGranted = false
     private var initialized = false
+
+    override fun isAwaitingExternalProvider(): Boolean = synchronized(lock) {
+        pending?.externalHandoffAccepted == true
+    }
 
     override fun initialize(
         privacyConsentGranted: Boolean,
@@ -246,6 +259,10 @@ class WechatAuthNativeAdapter(
             pending = PendingRequest(generation, state, completion, cancelTimeout)
         }
         val installed = WechatAuthCallbackRegistry.install(generation) { response ->
+            // State is the request correlation authority for all response
+            // types, including cancel and denial. Ignore stale responses so
+            // they cannot terminate a newer request.
+            if (response.state != state) return@install
             when (response.errorCode) {
                 ERR_USER_CANCEL -> complete(
                     generation,
@@ -314,6 +331,12 @@ class WechatAuthNativeAdapter(
                         reason = "REQUEST_REJECTED",
                     ),
                 )
+            } else {
+                synchronized(lock) {
+                    if (pending?.generation == generation) {
+                        pending = pending?.copy(externalHandoffAccepted = true)
+                    }
+                }
             }
         } catch (_: Throwable) {
             complete(

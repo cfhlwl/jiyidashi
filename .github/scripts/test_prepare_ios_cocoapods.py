@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -86,6 +87,23 @@ class ProcessGroupCleanupTest(unittest.TestCase):
             # This is the failure/retry path: pod has returned non-zero and
             # was reaped, while its downloader remains in the process group.
             terminate_process_group(leader, process_group_id)
+            self._assert_dead(child_pid)
+        finally:
+            if leader.poll() is None:
+                terminate_process_group(leader, process_group_id)
+
+    def test_member_fallback_handles_killpg_permission_error(self) -> None:
+        leader, child_pid = self._start_leader(
+            self._leader_code(exit_status=17), self._child_code()
+        )
+        process_group_id = leader.pid
+        try:
+            self.assertEqual(leader.wait(timeout=5), 17)
+            with mock.patch(
+                "prepare_ios_cocoapods.os.killpg",
+                side_effect=PermissionError(1, "operation not permitted"),
+            ):
+                terminate_process_group(leader, process_group_id)
             self._assert_dead(child_pid)
         finally:
             if leader.poll() is None:

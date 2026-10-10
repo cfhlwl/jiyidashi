@@ -103,9 +103,57 @@ class WechatAuthNativeAdapterTest {
         WechatAuthCallbackRegistry.dispatch(
             WechatSdkAuthResponse(0, code = "must-not-cross-boundary", state = "spoofed"),
         )
-        assertEquals(WechatAuthNativeState.PROVIDER_ERROR, result?.state)
-        assertEquals("STATE_MISMATCH", result?.reason)
-        assertNull(result?.credential)
+        assertNull(result)
+
+        WechatAuthCallbackRegistry.dispatch(
+            WechatSdkAuthResponse(0, code = "matching-code", state = sdk.sentState),
+        )
+        assertEquals(WechatAuthNativeState.CREDENTIAL_ACQUIRED, result?.state)
+        assertEquals("matching-code", result?.credential)
+    }
+
+    @Test
+    fun staleCancelOrDenialCannotTerminateTheNextRequest() {
+        val sdk = FakeWechatSdk()
+        val adapter = adapter(sdk)
+        var firstState: String? = null
+        var secondResult: WechatAuthNativeResult? = null
+
+        adapter.initialize(true) { }
+        adapter.requestCredential(TestActivity()) { }
+        firstState = sdk.sentState
+        adapter.cancel { }
+        adapter.requestCredential(TestActivity()) { secondResult = it }
+        val secondState = sdk.sentState
+
+        WechatAuthCallbackRegistry.dispatch(
+            WechatSdkAuthResponse(WechatAuthNativeAdapter.ERR_USER_CANCEL, state = firstState),
+        )
+        assertNull(secondResult)
+
+        WechatAuthCallbackRegistry.dispatch(
+            WechatSdkAuthResponse(WechatAuthNativeAdapter.ERR_AUTH_DENIED, state = secondState),
+        )
+        assertEquals(WechatAuthNativeState.PROVIDER_ERROR, secondResult?.state)
+        assertEquals("AUTH_DENIED", secondResult?.reason)
+    }
+
+    @Test
+    fun acceptedProviderRequestOwnsExternalHandoffUntilCallbackCompletes() {
+        val sdk = FakeWechatSdk()
+        val adapter = adapter(sdk)
+        var result: WechatAuthNativeResult? = null
+
+        adapter.initialize(true) { }
+        assertFalse(adapter.isAwaitingExternalProvider())
+        adapter.requestCredential(TestActivity()) { result = it }
+        assertTrue(adapter.isAwaitingExternalProvider())
+
+        WechatAuthCallbackRegistry.dispatch(
+            WechatSdkAuthResponse(0, code = "returned-code", state = sdk.sentState),
+        )
+        assertEquals(WechatAuthNativeState.CREDENTIAL_ACQUIRED, result?.state)
+        assertFalse(adapter.isAwaitingExternalProvider())
     }
 
     @Test
@@ -215,6 +263,39 @@ class WechatAuthNativeAdapterTest {
         assertEquals(1, foregroundRequest.callCount)
     }
 
+    @Test
+    fun externalWechatHandoffSurvivesMainActivityStopAndCompletesOnReturn() {
+        val adapter = DelayedAdapter(externalHandoffOnRequest = true)
+        val plugin = WechatAuthPlugin(adapter)
+        val activity = TestActivity()
+        setPrivateActivity(plugin, activity)
+
+        val initialize = RecordingResult()
+        plugin.onMethodCall(
+            MethodCall("initialize", mapOf("privacy_consent_granted" to true)),
+            initialize,
+        )
+        val request = RecordingResult()
+        plugin.onMethodCall(MethodCall("requestCredential", null), request)
+
+        val callbacks = privateLifecycleCallbacks(plugin)
+        callbacks.onActivityStarted(activity)
+        callbacks.onActivityStopped(activity)
+
+        assertEquals(0, adapter.cancelCalls)
+        assertEquals(0, request.callCount)
+
+        adapter.requestCallback?.invoke(
+            WechatAuthNativeResult(
+                WechatAuthNativeState.CREDENTIAL_ACQUIRED,
+                credential = "returned-from-wechat",
+            ),
+        )
+        assertEquals("CREDENTIAL_ACQUIRED", request.value["state"])
+        assertEquals("returned-from-wechat", request.value["credential"])
+        assertEquals(1, request.callCount)
+    }
+
     private fun adapter(
         sdk: FakeWechatSdk,
         scheduler: TestScheduler = TestScheduler(),
@@ -277,9 +358,12 @@ class WechatAuthNativeAdapterTest {
         override fun notImplemented() = Unit
     }
 
-    private class DelayedAdapter : WechatAuthProviderAdapter {
+    private class DelayedAdapter(
+        private val externalHandoffOnRequest: Boolean = false,
+    ) : WechatAuthProviderAdapter, WechatAuthExternalHandoffAware {
         var requestCallback: ((WechatAuthNativeResult) -> Unit)? = null
         var cancelCalls = 0
+        var externalHandoffAccepted = false
 
         override fun initialize(
             privacyConsentGranted: Boolean,
@@ -293,6 +377,7 @@ class WechatAuthNativeAdapterTest {
             activity: Activity,
             completion: (WechatAuthNativeResult) -> Unit,
         ) {
+            externalHandoffAccepted = externalHandoffOnRequest
             requestCallback = completion
         }
 
@@ -303,6 +388,8 @@ class WechatAuthNativeAdapterTest {
 
         override fun revokePrivacy(completion: (WechatAuthNativeResult) -> Unit) =
             completion(WechatAuthNativeResult(WechatAuthNativeState.UNAVAILABLE))
+
+        override fun isAwaitingExternalProvider(): Boolean = externalHandoffAccepted
     }
 
     private fun setPrivateActivity(plugin: WechatAuthPlugin, activity: Activity) {
