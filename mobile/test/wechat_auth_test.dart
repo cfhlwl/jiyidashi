@@ -106,7 +106,7 @@ Widget _page({
 
 void main() {
   test('MethodChannel WeChat contract maps native states without leaking code', () async {
-    final channel = MethodChannel('cn.jiyidashi/wechat_auth');
+    const channel = MethodChannel('cn.jiyidashi/wechat_auth');
     final methods = <String>[];
     final binaryMessenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     binaryMessenger.setMockMethodCallHandler(channel, (call) async {
