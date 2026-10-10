@@ -26,6 +26,7 @@ class _PlaceApi extends JiYiApiClient {
   final Completer<Map<String, dynamic>>? pendingDetail;
   final Map<String, dynamic>? nextDetail;
   int detailCalls = 0;
+  String? lastPlaceId;
 
   @override
   Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async => places;
@@ -75,6 +76,7 @@ class _PlaceApi extends JiYiApiClient {
     String? cursor,
   }) async {
     detailCalls += 1;
+    lastPlaceId = placeId;
     if (pendingDetail != null) return pendingDetail!.future;
     if (detailError != null) throw detailError!;
     if (cursor != null) {
@@ -228,6 +230,7 @@ void main() {
     expect(placeChip, findsOneWidget);
     await tester.tap(placeChip);
     await tester.pumpAndSettle();
+    expect(api.lastPlaceId, _timelinePlaceId);
     expect(find.text('地点详情'), findsOneWidget);
     expect(find.text('还没有到访记录'), findsOneWidget);
   });
