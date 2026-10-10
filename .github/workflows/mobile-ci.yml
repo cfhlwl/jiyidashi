@@ -7,6 +7,7 @@ on:
       - "docs/V2_PRODUCTIZATION_BACKLOG.md"
       - "docs/DEVELOPMENT_PROGRESS.md"
       - ".github/workflows/mobile-ci.yml"
+      - ".github/scripts/prepare_ios_cocoapods.py"
       - "mobile/**"
   workflow_dispatch:
 
@@ -357,26 +358,25 @@ jobs:
         shell: bash
         run: git diff --exit-code -- pubspec.lock
 
+      - name: Cache CocoaPods dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods/repos
+            mobile/ios/Pods
+          key: ${{ runner.os }}-cocoapods-${{ hashFiles('mobile/ios/Podfile', 'mobile/pubspec.lock', 'mobile/.flutter-plugins-dependencies') }}
+          restore-keys: |
+            ${{ runner.os }}-cocoapods-
+
       - name: Test iOS native location policy
         # AUTH-001 adds flutter_secure_storage native compilation; keep the exact
         # RunnerTests gate, but do not mistake a cold CocoaPods/Xcode build for failure.
-        timeout-minutes: 20
+        timeout-minutes: 25
         shell: bash
         run: |
           set -euo pipefail
-          (
-            cd ios
-            for attempt in 1 2 3; do
-              if pod install; then
-                break
-              fi
-              if [ "$attempt" = "3" ]; then
-                exit 1
-              fi
-              echo "pod install failed on attempt $attempt; retrying transient CocoaPods download"
-              sleep $((attempt * 5))
-            done
-          )
+          python3 ../.github/scripts/prepare_ios_cocoapods.py
           device_id="$(xcrun simctl list devices available -j | python3 -c '
           import json, sys
           data = json.load(sys.stdin)
