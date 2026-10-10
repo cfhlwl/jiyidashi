@@ -8,13 +8,14 @@ const _batch3Owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const _batch3Memory = '11111111-1111-4111-8111-111111111111';
 
 class _Batch3Api extends JiYiApiClient {
-  _Batch3Api({this.timelineItems = const []})
+  _Batch3Api({this.timelineItems = const [], this.timezone = 'Asia/Shanghai'})
       : super(baseUrl: 'https://batch3.invalid/v1') {
     accessToken = 'token';
     authenticatedUserId = _batch3Owner;
   }
 
   final List<Map<String, dynamic>> timelineItems;
+  final String timezone;
   final List<String> reminderMemoryIds = <String>[];
 
   @override
@@ -24,7 +25,7 @@ class _Batch3Api extends JiYiApiClient {
     String? day,
   }) async {
     return <String, dynamic>{
-      'timezone': 'Asia/Shanghai',
+      'timezone': timezone,
       'day': null,
       'items': timelineItems,
       'next_cursor': null,
@@ -61,11 +62,12 @@ class _Batch3Api extends JiYiApiClient {
 
 Map<String, dynamic> _timelineMemory({
   String title = '真实时间线记录',
+  String occurredAt = '2026-10-08T08:20:00+08:00',
 }) {
   return <String, dynamic>{
     'kind': 'MEMORY',
     'id': _batch3Memory,
-    'occurred_at': '2026-10-08T08:20:00+08:00',
+    'occurred_at': occurredAt,
     'ended_at': null,
     'place_id': null,
     'place_name': null,
@@ -114,6 +116,20 @@ void main() {
     expect(find.text('来自 API 的真实正文。'), findsOneWidget);
     expect(find.text('MEMORY'), findsNothing);
     expect(find.text(_batch3Memory), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Timeline groups UTC records in the server timezone', (tester) async {
+    final api = _Batch3Api(
+      timezone: 'Asia/Shanghai',
+      timelineItems: [
+        _timelineMemory(occurredAt: '2026-10-08T23:30:00Z'),
+      ],
+    );
+    await _pumpAt(tester, TimelinePage(api: api));
+
+    expect(find.text('2026年10月9日'), findsOneWidget);
+    expect(find.text('07:30'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -187,7 +203,7 @@ void main() {
       size: const Size(320, 568),
     );
 
-    expect(find.text('真实记忆标题'), findsOneWidget);
+    expect(find.text('真实记忆标题'), findsWidgets);
     expect(find.byKey(const ValueKey('memory-reminder-entry')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

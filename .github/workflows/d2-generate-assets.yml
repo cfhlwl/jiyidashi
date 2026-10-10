@@ -244,6 +244,7 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/batch3-v3-candidates
           mkdir -p /tmp/batch3-v3-candidates
+          mkdir -p test/goldens
 
           flutter test test/visual_golden_test.dart \
             --plain-name "candidate: Batch 3 Timeline production surface" \
@@ -261,6 +262,9 @@ jobs:
             --dart-define=UIUX_V3_BATCH3_CANDIDATE_MODE=true \
             --reporter expanded
 
+          test -s test/goldens/timeline_v3_batch3.png
+          test -s test/goldens/memory_detail_v3_batch3.png
+          test -s test/goldens/memory_detail_v3_batch3_photo_error.png
           cp test/goldens/timeline_v3_batch3.png /tmp/batch3-v3-candidates/
           cp test/goldens/memory_detail_v3_batch3.png /tmp/batch3-v3-candidates/
           cp test/goldens/memory_detail_v3_batch3_photo_error.png /tmp/batch3-v3-candidates/

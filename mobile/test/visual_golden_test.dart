@@ -1327,6 +1327,7 @@ void main() {
       MemoryDetailPage(
         api: api,
         memoryId: v2MemoryId,
+        mediaCache: _GoldenMediaCache(),
         amapPrivacyConsent: _GoldenAmapConsent(true),
       ),
     );

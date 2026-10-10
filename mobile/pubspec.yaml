@@ -18,6 +18,9 @@ dependencies:
   record: ^7.1.1
   # Android / iOS 本地持久化使用 SQLite；禁止用内存队列冒充离线可靠存储。
   sqflite: ^2.4.4
+  # Timeline presentation must honor the server-owned IANA timezone rather
+  # than the device timezone when grouping and formatting UTC timestamps.
+  timezone: ^0.10.1
 
 dev_dependencies:
   flutter_test:

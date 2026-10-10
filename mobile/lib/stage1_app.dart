@@ -33,7 +33,6 @@ import 'reminder_page.dart';
 import 'today_footprint_page.dart';
 import 'timeline_models.dart';
 import 'navigation/jiyi_navigation.dart';
-import 'ui/jiyi_format.dart';
 
 // [人工注释][S1-026] AppShell 只接线 Onboarding；首次自动触发仅来自注册成功，老账号不会因缺少本地状态被误判为新用户。
 import 'unified_capture_section.dart';
@@ -41,6 +40,7 @@ import 'ui/jiyi_theme.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_tokens.dart';
 import 'ui/jiyi_v3_components.dart';
+import 'ui/jiyi_timezone.dart';
 import 'v2/family_page.dart';
 import 'v2/life_page.dart';
 import 'v2/v2_home_page.dart';
@@ -2781,10 +2781,14 @@ class _TimelinePageState extends State<TimelinePage> {
             const SizedBox(height: JiYiSpacing.md),
             for (var index = 0; index < _items.length; index++) ...[
               if (_startsNewTimelineDay(index))
-                _TimelineDayHeader(item: _items[index]),
+                _TimelineDayHeader(
+                  item: _items[index],
+                  timezone: _timezone,
+                ),
               _TimelineEntry(
                 api: widget.api,
                 item: _items[index],
+                timezone: _timezone,
                 mediaCache: widget.mediaCache,
                 photoThumbnailBuilder: widget.photoThumbnailBuilder,
                 isLast: index == _items.length - 1,
@@ -2838,22 +2842,31 @@ class _TimelinePageState extends State<TimelinePage> {
 
   bool _startsNewTimelineDay(int index) {
     if (index == 0) return true;
-    final previous = DateTime.parse(_items[index - 1].occurredAt).toLocal();
-    final current = DateTime.parse(_items[index].occurredAt).toLocal();
+    final previous = _timelineWallClock(_items[index - 1].occurredAt);
+    final current = _timelineWallClock(_items[index].occurredAt);
     return previous.year != current.year ||
         previous.month != current.month ||
         previous.day != current.day;
   }
+
+  DateTime _timelineWallClock(String value) {
+    return jiyiDateTimeInTimezone(value, _timezone ?? 'UTC') ??
+        DateTime.tryParse(value)?.toUtc() ??
+        DateTime.utc(1970);
+  }
 }
 
 class _TimelineDayHeader extends StatelessWidget {
-  const _TimelineDayHeader({required this.item});
+  const _TimelineDayHeader({required this.item, required this.timezone});
 
   final TimelineReadItem item;
+  final String? timezone;
 
   @override
   Widget build(BuildContext context) {
-    final occurred = DateTime.parse(item.occurredAt).toLocal();
+    final occurred = jiyiDateTimeInTimezone(item.occurredAt, timezone ?? 'UTC') ??
+        DateTime.tryParse(item.occurredAt)?.toUtc() ??
+        DateTime.utc(1970);
     final date = '${occurred.year}年${occurred.month}月${occurred.day}日';
     return Padding(
       key: ValueKey('timeline-day-${occurred.year}-${occurred.month}-${occurred.day}'),
@@ -2885,6 +2898,7 @@ class _TimelineEntry extends StatelessWidget {
   const _TimelineEntry({
     required this.api,
     required this.item,
+    required this.timezone,
     required this.isLast,
     required this.onTap,
     this.mediaCache,
@@ -2893,6 +2907,7 @@ class _TimelineEntry extends StatelessWidget {
 
   final JiYiApiClient api;
   final TimelineReadItem item;
+  final String? timezone;
   final LocalMediaCache? mediaCache;
   final LocalMediaThumbnailBuilder? photoThumbnailBuilder;
   final bool isLast;
@@ -2929,9 +2944,12 @@ class _TimelineEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final occurred = DateTime.parse(item.occurredAt).toLocal();
+    final occurred = jiyiDateTimeInTimezone(item.occurredAt, timezone ?? 'UTC') ??
+        DateTime.tryParse(item.occurredAt)?.toUtc() ??
+        DateTime.utc(1970);
     final day = '${occurred.month}月${occurred.day}日';
-    final time = jiyiDisplayTime(item.occurredAt);
+    String two(int value) => value.toString().padLeft(2, '0');
+    final time = '${two(occurred.hour)}:${two(occurred.minute)}';
     final title = item.isMemory
         ? (item.title ?? _timelineMemoryTypeLabel(item.memoryType))
         : (item.placeName ?? '一次到访');
