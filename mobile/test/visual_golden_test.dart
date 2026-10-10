@@ -1332,7 +1332,7 @@ void main() {
     );
     await _assertDecodedGoldenImage(
       tester,
-      find.byKey(ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
+      find.byKey(const ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
     );
     await expectLater(
       find.byKey(key),
@@ -1361,11 +1361,11 @@ void main() {
     expect(find.text('删除'), findsOneWidget);
     await _pumpUntilFinder(
       tester,
-      find.byKey(ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+      find.byKey(const ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
     );
     await _assertDecodedGoldenImage(
       tester,
-      find.byKey(ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+      find.byKey(const ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
     );
     await expectLater(
       find.byKey(key),
@@ -1897,7 +1897,7 @@ void main() {
     );
     await _assertDecodedGoldenImage(
       tester,
-      find.byKey(ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
+      find.byKey(const ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
     );
     await expectLater(
       find.byKey(key),
@@ -1924,11 +1924,11 @@ void main() {
     expect(find.text('照片'), findsWidgets);
     await _pumpUntilFinder(
       tester,
-      find.byKey(ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+      find.byKey(const ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
     );
     await _assertDecodedGoldenImage(
       tester,
-      find.byKey(ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+      find.byKey(const ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
     );
     await expectLater(
       find.byKey(key),
