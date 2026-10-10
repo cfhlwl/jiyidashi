@@ -490,6 +490,16 @@ jobs:
               '| Place/map | `getPlaceDetail` coordinates plus AMap privacy gate | Rendered only when real coordinates and consent authority are present. |',
               '| Batch 4A Place Detail visual authority | No dedicated V3 PNG; `test/goldens/place_detail_loaded.png` is regression reference only | Candidate is production `PlaceDetailPage` with deterministic server-backed place/visit data and privacy-blocked map state. |',
           ])
+          report.extend([
+              '',
+              '## Golden baseline classification',
+              '',
+              '| Result | Classification | Action |',
+              '|---|---|---|',
+              '| `golden: place detail loaded` | Single expected new Batch 4A visual difference from the V3 Place Detail refactor | Candidate-only review evidence; do not update the committed Golden automatically. |',
+              '| Other 24 mobile-ci visual failures | Existing historical Golden baseline | Out of Batch 4A scope; no bulk update and no Design Authority change. |',
+              '| Other mobile-visual-preview visual failures | Existing visual/fixture baseline outside Batch 4A | Retain as known baseline and review independently; do not use as Batch 4A acceptance evidence. |',
+          ])
           (root / 'audit.md').write_text('\n'.join(report) + '\n\nAutomated images are evidence only; visual severity remains subject to independent review.\n', encoding='utf-8')
           manifest = [
               'PRODUCTION AUTH EMAIL: production_auth_email',
@@ -498,6 +508,7 @@ jobs:
               'BATCH 3 PHOTO STATES: memory_detail_v3_batch3.png=PHOTO_READY; memory_detail_v3_batch3_photo_error.png=PHOTO_ERROR',
               'BATCH 4A PRODUCTION CANDIDATE: batch4a_place_detail_existing_reference',
               'BATCH 4A AUTHORITY STATUS: no dedicated Design Authority PNG; place_detail_loaded.png is regression reference only',
+              'BATCH 4A GOLDEN CLASSIFICATION: place_detail_loaded.png is the single expected new diff; historical visual failures remain unchanged',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())

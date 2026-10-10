@@ -35,7 +35,12 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   bool _loadingMore = false;
   bool _offline = false;
   int _requestEpoch = 0;
+  int? _displayedSessionVersion;
+  String? _displayedOwnerId;
+  bool _sessionRefreshScheduled = false;
   late final AmapPrivacyConsentAuthority _amapPrivacyConsent;
+  Listenable? _mapPrivacyListenable;
+  int _privacyReadEpoch = 0;
   bool _mapPrivacyAccepted = false;
 
   @override
@@ -43,17 +48,37 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     super.initState();
     _amapPrivacyConsent =
         widget.amapPrivacyConsent ?? AmapPrivacyConsentStore();
+    if (_amapPrivacyConsent is Listenable) {
+      _mapPrivacyListenable = _amapPrivacyConsent as Listenable;
+      _mapPrivacyListenable!.addListener(_handleMapPrivacyChanged);
+    }
     _loadMapPrivacy();
     _loadInitial();
   }
 
   Future<void> _loadMapPrivacy() async {
+    final readEpoch = ++_privacyReadEpoch;
     try {
       final accepted = await _amapPrivacyConsent.readAccepted();
-      if (mounted) setState(() => _mapPrivacyAccepted = accepted);
+      if (mounted && readEpoch == _privacyReadEpoch) {
+        setState(() => _mapPrivacyAccepted = accepted);
+      }
     } catch (_) {
-      if (mounted) setState(() => _mapPrivacyAccepted = false);
+      if (mounted && readEpoch == _privacyReadEpoch) {
+        setState(() => _mapPrivacyAccepted = false);
+      }
     }
+  }
+
+  void _handleMapPrivacyChanged() {
+    final controller = _amapPrivacyConsent;
+    if (controller is AmapPrivacyConsentController && mounted) {
+      // The controller has already updated its fail-closed value before
+      // notifying listeners. Apply that value synchronously so a revoked
+      // consent can never leave the native map visible for another frame.
+      setState(() => _mapPrivacyAccepted = controller.accepted);
+    }
+    _loadMapPrivacy();
   }
 
   Future<void> _acceptMapPrivacy() async {
@@ -85,6 +110,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         _place = parsed.place;
         _visits.addAll(parsed.visits);
         _nextCursor = parsed.nextCursor;
+        _displayedSessionVersion = sessionVersion;
+        _displayedOwnerId = ownerId;
         _error = null;
         _offline = false;
       });
@@ -127,6 +154,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         _place = parsed.place;
         _visits.addAll(parsed.visits);
         _nextCursor = parsed.nextCursor;
+        _displayedSessionVersion = sessionVersion;
+        _displayedOwnerId = ownerId;
         _error = null;
         _offline = false;
       });
@@ -149,6 +178,37 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         epoch == _requestEpoch &&
         widget.api.sessionVersion == sessionVersion &&
         widget.api.authenticatedUserId == ownerId;
+  }
+
+  bool get _displayedDataIsCurrent =>
+      _displayedSessionVersion == widget.api.sessionVersion &&
+      _displayedOwnerId == widget.api.authenticatedUserId;
+
+  void _scheduleSessionInvalidation() {
+    if (_sessionRefreshScheduled) return;
+    _sessionRefreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sessionRefreshScheduled = false;
+      if (!mounted || _displayedDataIsCurrent) return;
+      _requestEpoch += 1;
+      setState(() {
+        _loading = true;
+        _error = null;
+        _offline = false;
+        _place = null;
+        _visits.clear();
+        _nextCursor = null;
+        _displayedSessionVersion = null;
+        _displayedOwnerId = null;
+      });
+      _loadInitial();
+    });
+  }
+
+  @override
+  void dispose() {
+    _mapPrivacyListenable?.removeListener(_handleMapPrivacyChanged);
+    super.dispose();
   }
 
   String _errorText(Object error) {
@@ -247,6 +307,21 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_place != null && !_displayedDataIsCurrent) {
+      _scheduleSessionInvalidation();
+      return V3PageScaffold(
+        topBar: V3TopBar(
+          title: '地点详情',
+          onBack: () => Navigator.of(context).maybePop(),
+        ),
+        child: const V3StateSurface(
+          variant: V3StateSurfaceVariant.loading,
+          icon: Icons.sync_lock_outlined,
+          title: '账号状态已变化',
+          message: '正在清除旧账号的地点信息并重新读取。',
+        ),
+      );
+    }
     if (_loading) {
       return V3PageScaffold(
         topBar: V3TopBar(
