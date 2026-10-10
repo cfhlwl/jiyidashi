@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -39,6 +40,8 @@ const _captureProductionAuthCandidate =
 const _captureBatch3Candidates =
     bool.fromEnvironment('UIUX_V3_BATCH3_CANDIDATE_MODE');
 
+late Uint8List _goldenPhotoBytes;
+
 const _goldenCacheVersion =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
@@ -73,43 +76,14 @@ Widget _goldenLocalPhoto(
   File file,
   BoxFit fit,
 ) {
-  final scheme = Theme.of(context).colorScheme;
   return Semantics(
     label: '本地照片视觉测试样本',
     child: AspectRatio(
       aspectRatio: 4 / 3,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              scheme.primaryContainer,
-              scheme.tertiaryContainer,
-            ],
-          ),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Align(
-              alignment: const Alignment(0, -0.22),
-              child: Icon(
-                Icons.wb_sunny_outlined,
-                size: 42,
-                color: scheme.onPrimaryContainer.withValues(alpha: 0.78),
-              ),
-            ),
-            Align(
-              alignment: const Alignment(0, 0.42),
-              child: Icon(
-                Icons.landscape_outlined,
-                size: 92,
-                color: scheme.onTertiaryContainer.withValues(alpha: 0.88),
-              ),
-            ),
-          ],
-        ),
+      child: Image.memory(
+        _goldenPhotoBytes,
+        fit: fit,
+        gaplessPlayback: true,
       ),
     ),
   );
@@ -453,7 +427,10 @@ class _GoldenApi extends JiYiApiClient {
     SignedDownloadTarget target, {
     int maxBytes = 50 * 1024 * 1024,
   }) async {
-    return Uint8List.fromList(const <int>[1, 2, 3, 4]);
+    if (_goldenPhotoBytes.length > maxBytes) {
+      throw StateError('visual fixture exceeds requested byte limit');
+    }
+    return _goldenPhotoBytes;
   }
 
   @override
@@ -973,6 +950,16 @@ class _GoldenMemoryDetailApi extends _GoldenApi {
   };
 }
 
+class _GoldenMemoryDetailPhotoErrorApi extends _GoldenMemoryDetailApi {
+  @override
+  Future<Uint8List> downloadSignedMedia(
+    SignedDownloadTarget target, {
+    int maxBytes = 50 * 1024 * 1024,
+  }) async {
+    throw TransportException('photo fixture unavailable');
+  }
+}
+
 class _GoldenPlaceDetailApi extends JiYiApiClient {
   _GoldenPlaceDetailApi() : super(baseUrl: 'http://golden-place.invalid/v1') {
     accessToken = 'golden-token';
@@ -1238,6 +1225,8 @@ void main() {
   setUpAll(() async {
     await _loadGoldenFont();
     await _loadMaterialIconsFont();
+    _goldenPhotoBytes = await File('test/assets/visual/today_memory_left.png')
+        .readAsBytes();
   });
 
   testWidgets('golden: login', (tester) async {
@@ -1324,6 +1313,28 @@ void main() {
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/memory_detail_v3_batch3.png'),
+    );
+  });
+
+  testWidgets('candidate: Batch 3 Memory Detail photo error state',
+      (tester) async {
+    if (!_captureBatch3Candidates) return;
+    final api = _GoldenMemoryDetailPhotoErrorApi();
+    final key = await _pumpSurface(
+      tester,
+      MemoryDetailPage(
+        api: api,
+        memoryId: v2MemoryId,
+        amapPrivacyConsent: _GoldenAmapConsent(true),
+      ),
+    );
+
+    expect(find.text('第一次产品讨论'), findsWidgets);
+    expect(find.textContaining('网络暂时不可用'), findsOneWidget);
+    expect(find.byKey(const ValueKey('memory-reminder-entry')), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/memory_detail_v3_batch3_photo_error.png'),
     );
   });
 

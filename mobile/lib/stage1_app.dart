@@ -2779,7 +2779,9 @@ class _TimelinePageState extends State<TimelinePage> {
               subtitle: '按时间从新到旧排列。',
             ),
             const SizedBox(height: JiYiSpacing.md),
-            for (var index = 0; index < _items.length; index++)
+            for (var index = 0; index < _items.length; index++) ...[
+              if (_startsNewTimelineDay(index))
+                _TimelineDayHeader(item: _items[index]),
               _TimelineEntry(
                 api: widget.api,
                 item: _items[index],
@@ -2788,6 +2790,7 @@ class _TimelinePageState extends State<TimelinePage> {
                 isLast: index == _items.length - 1,
                 onTap: () => _openItem(_items[index]),
               ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: JiYiSpacing.sm),
               JiYiStatusBanner(
@@ -2828,6 +2831,50 @@ class _TimelinePageState extends State<TimelinePage> {
               },
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  bool _startsNewTimelineDay(int index) {
+    if (index == 0) return true;
+    final previous = DateTime.parse(_items[index - 1].occurredAt).toLocal();
+    final current = DateTime.parse(_items[index].occurredAt).toLocal();
+    return previous.year != current.year ||
+        previous.month != current.month ||
+        previous.day != current.day;
+  }
+}
+
+class _TimelineDayHeader extends StatelessWidget {
+  const _TimelineDayHeader({required this.item});
+
+  final TimelineReadItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final occurred = DateTime.parse(item.occurredAt).toLocal();
+    final date = '${occurred.year}年${occurred.month}月${occurred.day}日';
+    return Padding(
+      key: ValueKey('timeline-day-${occurred.year}-${occurred.month}-${occurred.day}'),
+      padding: const EdgeInsets.only(
+        top: JiYiSpacing.sm,
+        bottom: JiYiSpacing.xs,
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.calendar_today_outlined,
+            size: 16,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: JiYiSpacing.xs),
+          Text(
+            date,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
         ],
       ),
     );

@@ -178,4 +178,30 @@ void main() {
     expect(find.text('删除'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Memory Detail remains usable on small screens', (tester) async {
+    final api = _Batch3Api();
+    await _pumpAt(
+      tester,
+      MemoryDetailPage(api: api, memoryId: _batch3Memory),
+      size: const Size(320, 568),
+    );
+
+    expect(find.text('真实记忆标题'), findsOneWidget);
+    expect(find.byKey(const ValueKey('memory-reminder-entry')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Timeline remains usable with large text', (tester) async {
+    final api = _Batch3Api(timelineItems: [_timelineMemory()]);
+    await _pumpAt(
+      tester,
+      TimelinePage(api: api),
+      textScale: 1.4,
+    );
+
+    expect(find.text('时间线'), findsOneWidget);
+    expect(find.text('真实时间线记录'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

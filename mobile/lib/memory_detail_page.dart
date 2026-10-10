@@ -604,7 +604,8 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
           const SizedBox(height: JiYiSpacing.md),
         ],
         JiYiSectionCard(
-          title: '记录',
+          title: current.title ?? _memoryTypeLabel(current.memoryType),
+          subtitle: _formatDateTime(current.occurredAt),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
