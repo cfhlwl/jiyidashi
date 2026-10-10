@@ -49,12 +49,33 @@ def _redact_extra(value: object, secrets: tuple[str, ...]) -> object:
     if isinstance(value, str):
         return _redact_text(value, secrets)
     if isinstance(value, dict):
-        return {key: _redact_extra(item, secrets) for key, item in value.items()}
+        return {
+            _redact_extra(key, secrets) if not isinstance(key, str) else key: _redact_extra(
+                item, secrets
+            )
+            for key, item in value.items()
+        }
     if isinstance(value, list):
         return [_redact_extra(item, secrets) for item in value]
     if isinstance(value, tuple):
         return tuple(_redact_extra(item, secrets) for item in value)
-    return value
+    if value is None or isinstance(value, (bool, int, float, complex)):
+        return value
+    if isinstance(value, httpx.URL):
+        return _redact_text(str(value), secrets)
+    if isinstance(value, httpx.Request):
+        return _redact_text(str(value.url), secrets)
+    if isinstance(value, httpx.Response):
+        request = value.request
+        return _redact_text(str(request.url) if request is not None else str(value), secrets)
+    if isinstance(value, BaseException):
+        return _redact_text(str(value), secrets)
+    try:
+        # Structured telemetry objects must not survive as typed values: a
+        # later formatter may call repr/str outside this filter's control.
+        return _redact_text(str(value), secrets)
+    except Exception:
+        return "<redacted>"
 
 
 class _SensitiveProviderLogFilter(logging.Filter):
@@ -83,6 +104,8 @@ class _SensitiveProviderLogFilter(logging.Filter):
             except Exception:
                 record.exc_text = "provider HTTP exception redacted"
             record.exc_info = None
+        elif record.exc_text:
+            record.exc_text = _redact_text(record.exc_text, secrets)
         if record.stack_info:
             record.stack_info = _redact_text(record.stack_info, secrets)
         for key, value in tuple(record.__dict__.items()):
@@ -308,14 +331,16 @@ class WechatOAuthProvider:
     async def _request_async(self, base_url: str, credential: str) -> tuple[int, bytes]:
         timeout = httpx.Timeout(self.config.timeout_seconds)
         try:
-            async with httpx.AsyncClient(
-                base_url=base_url,
-                follow_redirects=False,
-                timeout=timeout,
-                transport=self._transport,
-                trust_env=False,
-            ) as client:
-                async with asyncio.timeout(self.config.timeout_seconds):
+            # Cover client construction, request I/O, response streaming, and
+            # cooperative transport cleanup with one cancellation scope.
+            async with asyncio.timeout(self.config.timeout_seconds):
+                async with httpx.AsyncClient(
+                    base_url=base_url,
+                    follow_redirects=False,
+                    timeout=timeout,
+                    transport=self._transport,
+                    trust_env=False,
+                ) as client:
                     return await self._request_once(client, credential)
         except TimeoutError:
             raise WechatProviderError("TIMEOUT", ambiguous=True) from None

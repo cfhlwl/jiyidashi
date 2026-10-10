@@ -102,17 +102,22 @@ profile field from the client request.
 HTTPX/httpcore request records remain enabled for normal operational
 observability. A permanently installed, context-aware output filter redacts
 the AppSecret and authorization code from request messages, URL-encoded query
-values, structured `extra` fields, `exc_info`, and `stack_info`; it does not
-add or remove mutable logger filters per request. Provider transport
-exceptions are converted without preserving the raw exception as a cause, so
-neither INFO / DEBUG request logs nor error traces contain the outbound query
-values. The whole request, including response-header and streamed-body wait
-time, is bounded by the configured end-to-end budget. The request uses an
-`AsyncClient` under cancellation so timeout cleanup closes the transport
-instead of leaving a daemon worker behind. If that budget expires, the
-provider result is discarded and the existing receipt remains an ambiguous
-terminal failure; it cannot create a session or trigger a second provider
-exchange.
+values, typed HTTPX URL/request/response values, nested structured `extra`
+fields, exception objects, `exc_info`, and `stack_info`; typed telemetry
+objects are converted to redacted text before a later formatter can call their
+`str`/`repr`. It does not add or remove mutable logger filters per request.
+Provider transport exceptions are converted without preserving the raw
+exception as a cause, so neither INFO / DEBUG request logs nor error traces
+contain the outbound query values. The whole request, including
+response-header and streamed-body wait time, is bounded by the configured
+end-to-end budget for the production `AsyncClient` transport and other
+cooperative async transports. Cancellation closes the transport instead of
+leaving a daemon worker behind. JiYi does not claim to forcibly terminate an
+arbitrary synchronous/blocking custom transport; such a transport is outside
+the production adapter contract and is not used by the supported transport
+seam. If the budget expires, the provider result is discarded and the
+existing receipt remains an ambiguous terminal failure; it cannot create a
+session or trigger a second provider exchange.
 
 ## Provider error mapping
 
@@ -195,8 +200,9 @@ The automated adapter suite uses `httpx.MockTransport` and proves:
 - timeout/connection ambiguity and no retry;
 - INFO/DEBUG, exception-stack, structured-extra, URL-encoding, and concurrent
   credential log redaction;
-- slow headers, slow bodies, continuous trickle bodies, and repeated timeout
-  cancellation without residual exchange workers;
+- slow headers, slow bodies, continuous trickle bodies, and repeated
+  cancellation-cooperative timeout runs with measured sub-budget return and no
+  residual exchange workers;
 - raw code, secret, tokens, and provider body are absent from surfaced errors;
 - production/default/fake factory gating;
 - the existing durable receipt blocks a second provider call when a completed

@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote, quote_plus
 from uuid import uuid4
 
 import httpx
@@ -280,6 +282,8 @@ def test_oauth_exchange_redacts_exception_stack_and_structured_url_extra(caplog)
         "https://api.weixin.qq.com/sns/oauth2/access_token"
         f"?secret={raw_secret}&code={raw_code}"
     )
+    typed_url = httpx.URL(raw_url)
+    typed_request = httpx.Request("GET", typed_url)
 
     def handler(request: httpx.Request) -> httpx.Response:
         logger = logging.getLogger("httpx")
@@ -288,7 +292,11 @@ def test_oauth_exchange_redacts_exception_stack_and_structured_url_extra(caplog)
         except RuntimeError:
             logger.exception(
                 "provider trace",
-                extra={"url": raw_url, "nested": {"code": raw_code}},
+                extra={
+                    "url": typed_url,
+                    "request": typed_request,
+                    "nested": {"url": typed_url, "error": RuntimeError(raw_code)},
+                },
                 stack_info=True,
             )
         return httpx.Response(
@@ -305,12 +313,18 @@ def test_oauth_exchange_redacts_exception_stack_and_structured_url_extra(caplog)
     assert "<redacted>" in caplog.text
     assert all(raw_secret not in repr(record.__dict__) for record in caplog.records)
     assert all(raw_code not in repr(record.__dict__) for record in caplog.records)
+    trace_record = next(
+        record for record in caplog.records if record.getMessage() == "provider trace"
+    )
+    rendered = logging.Formatter("%(message)s %(url)s %(request)s %(nested)s").format(trace_record)
+    assert raw_secret not in rendered
+    assert raw_code not in rendered
 
 
 def test_oauth_exchange_redacts_concurrent_requests_with_distinct_credentials(caplog):
     raw_values = (
-        ("secret-one", "code-one"),
-        ("secret-two", "code-two"),
+        ("secret-one/with+space", "code-one/with+space"),
+        ("secret-two/with+space", "code-two/with+space"),
     )
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -320,13 +334,14 @@ def test_oauth_exchange_redacts_concurrent_requests_with_distinct_credentials(ca
             "provider request %s",
             request.url,
             extra={
-                "request_url": str(request.url),
+                "request_url": request.url,
+                "request": request,
                 "credentials": {"secret": secret, "code": code},
             },
         )
         return httpx.Response(
             200,
-            json={"access_token": "provider-access-token", "openid": code},
+            json={"access_token": "provider-access-token", "openid": "openid-concurrent"},
             request=request,
         )
 
@@ -345,11 +360,15 @@ def test_oauth_exchange_redacts_concurrent_requests_with_distinct_credentials(ca
     for secret, code in raw_values:
         assert secret not in caplog.text
         assert code not in caplog.text
+        assert quote(secret, safe="") not in caplog.text
+        assert quote(code, safe="") not in caplog.text
+        assert quote_plus(secret) not in caplog.text
+        assert quote_plus(code) not in caplog.text
 
 
 def test_oauth_exchange_enforces_total_timeout_for_slow_response_headers():
     started = threading.Event()
-    release = threading.Event()
+    cancelled = threading.Event()
     finished = threading.Event()
     calls = 0
 
@@ -358,12 +377,15 @@ def test_oauth_exchange_enforces_total_timeout_for_slow_response_headers():
         calls += 1
         started.set()
         try:
-            await asyncio.to_thread(release.wait, 5)
+            await asyncio.sleep(5)
             return httpx.Response(
                 200,
                 json={"access_token": "token", "openid": "openid-slow-header"},
                 request=request,
             )
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
         finally:
             finished.set()
 
@@ -371,50 +393,60 @@ def test_oauth_exchange_enforces_total_timeout_for_slow_response_headers():
         _config(timeout_seconds=0.1),
         transport=httpx.MockTransport(handler),
     )
+    began = time.monotonic()
     with pytest.raises(WechatProviderError) as raised:
         _exchange(provider)
+    elapsed = time.monotonic() - began
 
     assert started.is_set()
     assert calls == 1
     assert raised.value.code == "TIMEOUT"
     assert raised.value.ambiguous is True
-    release.set()
+    assert elapsed < 0.5
+    assert cancelled.is_set()
     assert finished.wait(timeout=1)
 
 
-class _BlockingBody(httpx.AsyncByteStream):
-    def __init__(self, started: threading.Event, release: threading.Event) -> None:
+class _SlowBody(httpx.AsyncByteStream):
+    def __init__(self, started: threading.Event, cancelled: threading.Event) -> None:
         self._started = started
-        self._release = release
+        self._cancelled = cancelled
 
     async def __aiter__(self):
         self._started.set()
-        await asyncio.to_thread(self._release.wait, 5)
-        yield b'{"access_token":"token","openid":"openid-slow-body"}'
+        try:
+            await asyncio.sleep(5)
+            yield b'{"access_token":"token","openid":"openid-slow-body"}'
+        except asyncio.CancelledError:
+            self._cancelled.set()
+            raise
 
 
 def test_oauth_exchange_enforces_total_timeout_for_slow_stream_body():
     started = threading.Event()
-    release = threading.Event()
+    cancelled = threading.Event()
     calls = 0
 
     async def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
-        return httpx.Response(200, stream=_BlockingBody(started, release), request=request)
+        return httpx.Response(200, stream=_SlowBody(started, cancelled), request=request)
 
     provider = WechatOAuthProvider(
         _config(timeout_seconds=0.1),
         transport=httpx.MockTransport(handler),
     )
+    began = time.monotonic()
     with pytest.raises(WechatProviderError) as raised:
         _exchange(provider)
+    elapsed = time.monotonic() - began
 
     assert started.is_set()
     assert calls == 1
     assert raised.value.code == "TIMEOUT"
     assert raised.value.ambiguous is True
-    release.set()
+    assert elapsed < 0.5
+    assert cancelled.is_set()
 
 
 class _TricklingBody(httpx.AsyncByteStream):
@@ -448,13 +480,16 @@ def test_oauth_exchange_timeout_cancels_continuous_trickle_body():
         _config(timeout_seconds=0.05),
         transport=httpx.MockTransport(handler),
     )
+    began = time.monotonic()
     with pytest.raises(WechatProviderError) as raised:
         _exchange(provider)
+    elapsed = time.monotonic() - began
 
     assert started.is_set()
     assert cancelled.wait(timeout=1)
     assert raised.value.code == "TIMEOUT"
     assert raised.value.ambiguous is True
+    assert elapsed < 0.5
 
 
 def test_repeated_provider_timeouts_leave_no_exchange_workers_or_open_tasks():
@@ -475,6 +510,7 @@ def test_repeated_provider_timeouts_leave_no_exchange_workers_or_open_tasks():
     )
     before = {thread.name for thread in threading.enumerate()}
 
+    began = time.monotonic()
     for _ in range(5):
         with pytest.raises(WechatProviderError) as raised:
             _exchange(provider)
@@ -485,6 +521,7 @@ def test_repeated_provider_timeouts_leave_no_exchange_workers_or_open_tasks():
     assert started.is_set()
     assert "wechat-oauth-exchange" not in after
     assert after - before == set()
+    assert time.monotonic() - began < 1.0
 
 
 @pytest.mark.parametrize(
@@ -596,7 +633,7 @@ def test_slow_provider_timeout_terminalizes_receipt_without_session_or_retry(mon
     monkeypatch.setattr(settings, "auth_wechat_app_id", "wx-timeout-app")
     monkeypatch.setattr(settings, "auth_wechat_subject_scope", "wx-timeout-group")
     started = threading.Event()
-    release = threading.Event()
+    cancelled = threading.Event()
     finished = threading.Event()
     calls = 0
 
@@ -605,12 +642,15 @@ def test_slow_provider_timeout_terminalizes_receipt_without_session_or_retry(mon
         calls += 1
         started.set()
         try:
-            await asyncio.to_thread(release.wait, 5)
+            await asyncio.sleep(5)
             return httpx.Response(
                 200,
                 json={"access_token": "token", "openid": "openid-timeout"},
                 request=request,
             )
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
         finally:
             finished.set()
 
@@ -625,6 +665,7 @@ def test_slow_provider_timeout_terminalizes_receipt_without_session_or_retry(mon
     request_id = uuid4()
     credential = "native-code-timeout"
 
+    began = time.monotonic()
     with SessionLocal() as db:
         before_sessions = set(db.scalars(select(AuthSession.id)))
         before_users = set(db.scalars(select(User.id)))
@@ -652,7 +693,7 @@ def test_slow_provider_timeout_terminalizes_receipt_without_session_or_retry(mon
         assert set(db.scalars(select(AuthSession.id))) == before_sessions
         assert set(db.scalars(select(User.id))) == before_users
 
-        release.set()
+        assert cancelled.is_set()
         assert finished.wait(timeout=1)
 
         with pytest.raises(WechatLoginError, match="AUTH_WECHAT_TIMEOUT"):
@@ -670,3 +711,4 @@ def test_slow_provider_timeout_terminalizes_receipt_without_session_or_retry(mon
 
     assert started.is_set()
     assert calls == 1
+    assert time.monotonic() - began < 0.5
