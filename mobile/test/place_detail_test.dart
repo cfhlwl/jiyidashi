@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jiyidashi/amap_footprint_map.dart';
 import 'package:jiyidashi/amap_privacy_consent.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/footprint_models.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 
@@ -36,7 +38,7 @@ class _PlaceApi extends JiYiApiClient {
     authenticatedUserId = 'owner';
   }
 
-  final Map<String, dynamic>? detail;
+  Map<String, dynamic>? detail;
   final Object? detailError;
   final List<Map<String, dynamic>> places;
   final Completer<Map<String, dynamic>>? pendingDetail;
@@ -267,6 +269,75 @@ void main() {
 
     expect(find.text('正在读取地点详情…'), findsOneWidget);
     expect(find.text('家'), findsNothing);
+  });
+
+  testWidgets('PlaceDetailPage clears displayed facts when owner changes',
+      (tester) async {
+    final api = _PlaceApi(detail: _place());
+    await tester.pumpWidget(
+      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('家'), findsWidgets);
+
+    api.detail = _place(name: '新账号的地点');
+    api.authenticatedUserId = 'different-owner';
+    await tester.pumpWidget(
+      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
+    );
+    await tester.pump();
+    expect(find.text('家'), findsNothing);
+    expect(find.text('账号状态已变化'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.text('新账号的地点'), findsWidgets);
+  });
+
+  testWidgets('PlaceDetailPage hides map immediately when consent is revoked',
+      (tester) async {
+    final consentDelegate = _PlaceConsent(true);
+    final consent = AmapPrivacyConsentController(delegate: consentDelegate);
+    final api = _PlaceApi(detail: _place(latitude: 31.2243, longitude: 121.4768));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: JiYiAmapPresentationScope(
+          config: const JiYiAmapConfig(
+            androidKey: 'test-amap-key',
+            platformOverride: TargetPlatform.android,
+          ),
+          footprintBuilder: (
+            context,
+            config,
+            visits,
+            selectedIndex,
+            onSelected,
+            interactive,
+          ) => const SizedBox.shrink(),
+          placeBuilder: (
+            context,
+            config,
+            latitude,
+            longitude,
+            name,
+            address,
+          ) => const SizedBox(key: ValueKey('test-amap-native')),
+          child: PlaceDetailPage(
+            api: api,
+            placeId: _timelinePlaceId,
+            amapPrivacyConsent: consent,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
+
+    await consent.revoke();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('amap-place-real-surface')), findsNothing);
+    expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsOneWidget);
+    expect(find.byKey(const ValueKey('place-amap-privacy-accept')), findsOneWidget);
   });
 
   testWidgets('PlaceDetailPage remains usable on small screens with large text',
