@@ -582,27 +582,6 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
           _photoCard(current),
           const SizedBox(height: JiYiSpacing.md),
         ],
-        if (current.placeId != null &&
-            placeLatitude != null &&
-            placeLongitude != null) ...[
-          JiYiPlaceMap(
-            latitude: placeLatitude,
-            longitude: placeLongitude,
-            name: placeName ?? '已关联地点',
-            address: placeAddress,
-            privacyAccepted: _mapPrivacyAccepted,
-          ),
-          if (!_mapPrivacyAccepted) ...[
-            const SizedBox(height: JiYiSpacing.sm),
-            OutlinedButton.icon(
-              key: const ValueKey('memory-amap-privacy-accept'),
-              onPressed: _acceptMapPrivacy,
-              icon: const Icon(Icons.map_outlined),
-              label: const Text('同意地图服务隐私说明并启用地图'),
-            ),
-          ],
-          const SizedBox(height: JiYiSpacing.md),
-        ],
         JiYiSectionCard(
           title: current.title ?? _memoryTypeLabel(current.memoryType),
           subtitle: _formatDateTime(current.occurredAt),
@@ -621,6 +600,27 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
             ],
           ),
         ),
+        if (current.placeId != null &&
+            placeLatitude != null &&
+            placeLongitude != null) ...[
+          const SizedBox(height: JiYiSpacing.md),
+          JiYiPlaceMap(
+            latitude: placeLatitude,
+            longitude: placeLongitude,
+            name: placeName ?? '已关联地点',
+            address: placeAddress,
+            privacyAccepted: _mapPrivacyAccepted,
+          ),
+          if (!_mapPrivacyAccepted) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            OutlinedButton.icon(
+              key: const ValueKey('memory-amap-privacy-accept'),
+              onPressed: _acceptMapPrivacy,
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('同意地图服务隐私说明并启用地图'),
+            ),
+          ],
+        ],
         const SizedBox(height: JiYiSpacing.md),
         JiYiSectionCard(
           title: '管理',

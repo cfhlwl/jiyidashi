@@ -128,7 +128,7 @@ void main() {
     );
     await _pumpAt(tester, TimelinePage(api: api));
 
-    expect(find.text('2026年10月9日'), findsOneWidget);
+    expect(find.text('2026年10月'), findsOneWidget);
     expect(find.text('07:30'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

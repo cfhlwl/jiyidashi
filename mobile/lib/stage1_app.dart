@@ -2780,7 +2780,7 @@ class _TimelinePageState extends State<TimelinePage> {
             ),
             const SizedBox(height: JiYiSpacing.md),
             for (var index = 0; index < _items.length; index++) ...[
-              if (_startsNewTimelineDay(index))
+              if (_startsNewTimelineMonth(index))
                 _TimelineDayHeader(
                   item: _items[index],
                   timezone: _timezone,
@@ -2840,13 +2840,12 @@ class _TimelinePageState extends State<TimelinePage> {
     );
   }
 
-  bool _startsNewTimelineDay(int index) {
+  bool _startsNewTimelineMonth(int index) {
     if (index == 0) return true;
     final previous = _timelineWallClock(_items[index - 1].occurredAt);
     final current = _timelineWallClock(_items[index].occurredAt);
     return previous.year != current.year ||
-        previous.month != current.month ||
-        previous.day != current.day;
+        previous.month != current.month;
   }
 
   DateTime _timelineWallClock(String value) {
@@ -2867,9 +2866,9 @@ class _TimelineDayHeader extends StatelessWidget {
     final occurred = jiyiDateTimeInTimezone(item.occurredAt, timezone ?? 'UTC') ??
         DateTime.tryParse(item.occurredAt)?.toUtc() ??
         DateTime.utc(1970);
-    final date = '${occurred.year}年${occurred.month}月${occurred.day}日';
+    final date = '${occurred.year}年${occurred.month}月';
     return Padding(
-      key: ValueKey('timeline-day-${occurred.year}-${occurred.month}-${occurred.day}'),
+      key: ValueKey('timeline-month-${occurred.year}-${occurred.month}'),
       padding: const EdgeInsets.only(
         top: JiYiSpacing.sm,
         bottom: JiYiSpacing.xs,
@@ -2961,6 +2960,7 @@ class _TimelineEntry extends StatelessWidget {
         : Icons.place_outlined;
 
     return Semantics(
+      key: ValueKey('timeline-entry-${item.kind}-${item.id}'),
       button: true,
       label: '$day $time $title',
       child: Material(
@@ -3028,6 +3028,10 @@ class _TimelineEntry extends StatelessWidget {
               Expanded(
                 child: V3SurfaceCard(
                   padding: const EdgeInsets.all(JiYiSpacing.cardPadding),
+                  borderColor: Colors.transparent,
+                  borderRadius: BorderRadius.circular(JiYiRadius.card),
+                  elevation: 1,
+                  shadowColor: const Color(0x1A152D4B),
                   semanticLabel: '$day $time $title',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
