@@ -6,6 +6,7 @@ import 'api_client.dart';
 import 'ui/jiyi_components.dart';
 import 'ui/jiyi_format.dart';
 import 'ui/jiyi_tokens.dart';
+import 'ui/jiyi_v3_components.dart';
 
 // 地点详情只消费服务端权威 Place/Visit read model；客户端负责严格解析与展示，不重算命名优先级或 Visit 可信状态。
 // 初始页与分页都必须整页验证后再提交 UI state，避免半页数据被误当成可信历史。
@@ -32,6 +33,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   String? _error;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _offline = false;
+  int _requestEpoch = 0;
   late final AmapPrivacyConsentAuthority _amapPrivacyConsent;
   bool _mapPrivacyAccepted = false;
 
@@ -60,33 +63,51 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   }
 
   Future<void> _loadInitial() async {
+    final epoch = ++_requestEpoch;
+    final sessionVersion = widget.api.sessionVersion;
+    final ownerId = widget.api.authenticatedUserId;
     setState(() {
       _loading = true;
       _error = null;
+      _offline = false;
+      _place = null;
+      _visits.clear();
+      _nextCursor = null;
     });
     try {
       final response = await widget.api.getPlaceDetail(widget.placeId);
       final parsed = _PlaceDetailPayload.parse(response);
-      if (mounted) {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
+      if (parsed.place.id.toLowerCase() != widget.placeId.toLowerCase()) {
+        throw ProtocolException('服务端返回格式不正确');
+      }
+      setState(() {
+        _place = parsed.place;
+        _visits.addAll(parsed.visits);
+        _nextCursor = parsed.nextCursor;
+        _error = null;
+        _offline = false;
+      });
+    } on Object catch (error) {
+      if (_requestCurrent(epoch, sessionVersion, ownerId)) {
         setState(() {
-          _place = parsed.place;
-          _visits
-            ..clear()
-            ..addAll(parsed.visits);
-          _nextCursor = parsed.nextCursor;
-          _error = null;
+          _error = _errorText(error);
+          _offline = error is TransportException;
         });
       }
-    } on Object catch (error) {
-      if (mounted) setState(() => _error = _errorText(error));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (_requestCurrent(epoch, sessionVersion, ownerId)) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   Future<void> _loadMore() async {
     final cursor = _nextCursor;
     if (cursor == null || _loadingMore) return;
+    final epoch = _requestEpoch;
+    final sessionVersion = widget.api.sessionVersion;
+    final ownerId = widget.api.authenticatedUserId;
     setState(() => _loadingMore = true);
     try {
       final response = await widget.api.getPlaceDetail(
@@ -97,22 +118,37 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
       // 任何 Visit 或 next_cursor 字段异常都不能留下半页“看起来可信”的到访记录。
       final parsed = _PlaceDetailPayload.parse(response);
       final currentPlace = _place;
-      if (currentPlace == null || parsed.place.id != currentPlace.id) {
+      if (!_requestCurrent(epoch, sessionVersion, ownerId) ||
+          currentPlace == null ||
+          parsed.place.id.toLowerCase() != currentPlace.id.toLowerCase()) {
         throw ProtocolException('服务端返回格式不正确');
       }
-      if (mounted) {
+      setState(() {
+        _place = parsed.place;
+        _visits.addAll(parsed.visits);
+        _nextCursor = parsed.nextCursor;
+        _error = null;
+        _offline = false;
+      });
+    } on Object catch (error) {
+      if (_requestCurrent(epoch, sessionVersion, ownerId)) {
         setState(() {
-          _place = parsed.place;
-          _visits.addAll(parsed.visits);
-          _nextCursor = parsed.nextCursor;
-          _error = null;
+          _error = _errorText(error);
+          _offline = error is TransportException;
         });
       }
-    } on Object catch (error) {
-      if (mounted) setState(() => _error = _errorText(error));
     } finally {
-      if (mounted) setState(() => _loadingMore = false);
+      if (_requestCurrent(epoch, sessionVersion, ownerId)) {
+        setState(() => _loadingMore = false);
+      }
     }
+  }
+
+  bool _requestCurrent(int epoch, int sessionVersion, String? ownerId) {
+    return mounted &&
+        epoch == _requestEpoch &&
+        widget.api.sessionVersion == sessionVersion &&
+        widget.api.authenticatedUserId == ownerId;
   }
 
   String _errorText(Object error) {
@@ -147,146 +183,243 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     return '$label：${_text(value, fallback: fallback)}';
   }
 
+  String _displayName(_PlaceDetailPlace place) {
+    if (place.nameSource == 'UNNAMED' || place.name.trim().isEmpty) {
+      return '未知地点';
+    }
+    return place.name;
+  }
+
+  Widget _mapState(_PlaceDetailPlace place) {
+    if (place.latitude == null || place.longitude == null) {
+      return const _PlaceMapState(
+        key: ValueKey('place-map-no-coordinate-state'),
+        icon: Icons.location_off_outlined,
+        title: '暂无可用坐标',
+        message: '这个地点没有完整坐标，地图不会猜测或补造位置。',
+      );
+    }
+
+    return JiYiPlaceMap(
+      key: const ValueKey('place-map-surface'),
+      latitude: place.latitude,
+      longitude: place.longitude,
+      name: _displayName(place),
+      address: place.address,
+      privacyAccepted: _mapPrivacyAccepted,
+    );
+  }
+
+  Widget _mapCard(_PlaceDetailPlace place) {
+    final hasCoordinates = place.latitude != null && place.longitude != null;
+    return V3SurfaceCard(
+      key: const ValueKey('place-map-card'),
+      padding: const EdgeInsets.all(JiYiSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(
+              JiYiSpacing.xs,
+              JiYiSpacing.xxs,
+              JiYiSpacing.xs,
+              JiYiSpacing.sm,
+            ),
+            child: V3SectionHeader(
+              title: '地图位置',
+              subtitle: '仅展示服务端已经形成的地点坐标。',
+            ),
+          ),
+          _mapState(place),
+          if (hasCoordinates && !_mapPrivacyAccepted) ...[
+            const SizedBox(height: JiYiSpacing.sm),
+            OutlinedButton.icon(
+              key: const ValueKey('place-amap-privacy-accept'),
+              onPressed: _acceptMapPrivacy,
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('同意地图服务隐私说明并启用地图'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: SafeArea(
-          child: JiYiPageFrame(
-            title: '地点详情',
-            child: JiYiSectionCard(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: JiYiSpacing.xl),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    SizedBox(width: JiYiSpacing.sm),
-                    Text('正在读取地点详情…'),
-                  ],
-                ),
-              ),
-            ),
-          ),
+      return V3PageScaffold(
+        topBar: V3TopBar(
+          title: '地点详情',
+          onBack: () => Navigator.of(context).maybePop(),
+        ),
+        child: const V3StateSurface(
+          variant: V3StateSurfaceVariant.loading,
+          icon: Icons.place_outlined,
+          title: '正在读取地点详情…',
+          message: '正在读取服务端已经形成的地点与到访记录。',
         ),
       );
     }
 
     if (_place == null) {
-      return Scaffold(
-        body: SafeArea(
-          child: JiYiPageFrame(
-            title: '地点详情',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                JiYiStatusBanner(
-                  kind: JiYiStatusKind.error,
-                  title: '无法读取地点详情',
-                  message: _error ?? '地点详情读取失败',
-                ),
-                const SizedBox(height: JiYiSpacing.md),
-                FilledButton(
-                  onPressed: _loadInitial,
-                  child: const Text('重试'),
-                ),
-              ],
-            ),
+      return V3PageScaffold(
+        topBar: V3TopBar(
+          title: '地点详情',
+          onBack: () => Navigator.of(context).maybePop(),
+        ),
+        child: V3StateSurface(
+          variant: _offline
+              ? V3StateSurfaceVariant.offline
+              : V3StateSurfaceVariant.error,
+          icon: _offline ? Icons.cloud_off_outlined : Icons.place_outlined,
+          title: _offline ? '当前离线' : '无法读取地点详情',
+          message: _error ?? '地点详情读取失败',
+          primaryAction: V3StateAction(
+            label: '重试',
+            icon: Icons.refresh,
+            onPressed: _loadInitial,
           ),
         ),
       );
     }
 
     final place = _place!;
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('地点详情')),
-      body: SafeArea(
-        child: JiYiPageFrame(
-          title: _text(place.name, fallback: '未命名地点'),
-          subtitle: _text(place.address, fallback: '暂无地址信息'),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              JiYiPlaceMap(
-                latitude: place.latitude,
-                longitude: place.longitude,
-                name: place.name,
-                address: place.address,
-                privacyAccepted: _mapPrivacyAccepted,
-              ),
-              if (!_mapPrivacyAccepted &&
-                  place.latitude != null &&
-                  place.longitude != null) ...[
-                const SizedBox(height: JiYiSpacing.sm),
-                OutlinedButton.icon(
-                  key: const ValueKey('place-amap-privacy-accept'),
-                  onPressed: _acceptMapPrivacy,
-                  icon: const Icon(Icons.map_outlined),
-                  label: const Text('同意地图服务隐私说明并启用地图'),
+    final displayName = _displayName(place);
+    return V3PageScaffold(
+      topBar: V3TopBar(
+        title: '地点详情',
+        subtitle: displayName,
+        onBack: () => Navigator.of(context).maybePop(),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          V3SurfaceCard(
+            key: const ValueKey('place-summary-card'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                V3SectionHeader(
+                  title: displayName,
+                  subtitle: _text(place.address, fallback: '暂无地址信息'),
                 ),
-              ],
-              const SizedBox(height: JiYiSpacing.md),
-              JiYiSectionCard(
-                leading: Icon(
-                  Icons.place_outlined,
-                  color: theme.colorScheme.primary,
-                ),
-                title: '地点概况',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_line('类型', _placeCategoryLabel(place.category))),
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text('累计到访：${place.visitCount} 次'),
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text(_line('首次到访', place.firstVisitedAt == null ? null : jiyiDisplayDateTime(place.firstVisitedAt!))),
-                    const SizedBox(height: JiYiSpacing.xs),
-                    Text(_line('最近到访', place.lastVisitedAt == null ? null : jiyiDisplayDateTime(place.lastVisitedAt!))),
-                  ],
-                ),
-              ),
-              const SizedBox(height: JiYiSpacing.md),
-              JiYiSectionCard(
-                title: '到访历史',
-                subtitle: '只展示已经形成的到访记录；“仍在更新”不等于已确认事实。',
-                child: _visits.isEmpty
-                    ? const JiYiEmptyState(
-                        icon: Icons.history_toggle_off,
-                        title: '还没有到访记录',
-                        message: '这个地点当前还没有可展示的到访记录。',
-                      )
-                    : Column(
-                        children: [
-                          for (var i = 0; i < _visits.length; i++) ...[
-                            _VisitTile(visit: _visits[i]),
-                            if (i != _visits.length - 1)
-                              const Divider(height: JiYiSpacing.lg),
-                          ],
-                          if (_nextCursor != null) ...[
-                            const SizedBox(height: JiYiSpacing.md),
-                            OutlinedButton(
-                              onPressed: _loadingMore ? null : _loadMore,
-                              child: Text(_loadingMore ? '正在加载…' : '加载更多'),
-                            ),
-                          ],
-                        ],
-                      ),
-              ),
-              if (_error != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
-                JiYiStatusBanner(
-                  kind: JiYiStatusKind.error,
-                  title: '部分到访记录加载失败',
-                  message: _error!,
-                ),
+                Text(_line('类型', _placeCategoryLabel(place.category))),
+                const SizedBox(height: JiYiSpacing.xs),
+                Text('累计到访：${place.visitCount} 次'),
+                const SizedBox(height: JiYiSpacing.xs),
+                Text(_line(
+                  '首次到访',
+                  place.firstVisitedAt == null
+                      ? null
+                      : jiyiDisplayDateTime(place.firstVisitedAt!),
+                )),
+                const SizedBox(height: JiYiSpacing.xs),
+                Text(_line(
+                  '最近到访',
+                  place.lastVisitedAt == null
+                      ? null
+                      : jiyiDisplayDateTime(place.lastVisitedAt!),
+                )),
               ],
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: JiYiSpacing.sectionGap),
+          _mapCard(place),
+          const SizedBox(height: JiYiSpacing.sectionGap),
+          V3SurfaceCard(
+            key: const ValueKey('place-visits-card'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const V3SectionHeader(
+                  title: '到访历史',
+                  subtitle: '只展示已经形成的到访记录；“仍在更新”不等于已确认事实。',
+                ),
+                const SizedBox(height: JiYiSpacing.md),
+                if (_visits.isEmpty)
+                  const V3StateSurface(
+                    variant: V3StateSurfaceVariant.empty,
+                    icon: Icons.history_toggle_off,
+                    title: '还没有到访记录',
+                    message: '这个地点当前还没有可展示的到访记录。',
+                  )
+                else ...[
+                  for (var i = 0; i < _visits.length; i++) ...[
+                    _VisitTile(visit: _visits[i]),
+                    if (i != _visits.length - 1)
+                      const Divider(height: JiYiSpacing.lg),
+                  ],
+                  if (_nextCursor != null) ...[
+                    const SizedBox(height: JiYiSpacing.md),
+                    OutlinedButton(
+                      key: const ValueKey('place-load-more'),
+                      onPressed: _loadingMore ? null : _loadMore,
+                      child: Text(_loadingMore ? '正在加载…' : '加载更多'),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: JiYiSpacing.sectionGap),
+            JiYiStatusBanner(
+              kind: _offline ? JiYiStatusKind.warning : JiYiStatusKind.error,
+              title: _offline ? '部分记录暂时离线' : '部分到访记录加载失败',
+              message: _error!,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaceMapState extends StatelessWidget {
+  const _PlaceMapState({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      constraints: const BoxConstraints(minHeight: 180),
+      padding: const EdgeInsets.all(JiYiSpacing.lg),
+      decoration: BoxDecoration(
+        color: JiYiSurfaceRoles.soft,
+        borderRadius: BorderRadius.circular(JiYiRadius.card),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: JiYiIconSize.large, color: theme.colorScheme.primary),
+          const SizedBox(height: JiYiSpacing.sm),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: JiYiSpacing.xs),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -408,9 +541,16 @@ class _PlaceDetailPlace {
 
   factory _PlaceDetailPlace.parse(Map<String, dynamic> raw) {
     final id = _requiredText(raw['id']);
-    final name = _requiredText(raw['name']);
+    final rawName = raw['name'];
+    if (rawName is! String) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    final name = rawName;
     final nameSource = _requiredText(raw['name_source']);
     if (!const {'USER', 'AUTOMATIC', 'UNNAMED'}.contains(nameSource)) {
+      throw ProtocolException('服务端返回格式不正确');
+    }
+    if (nameSource != 'UNNAMED' && name.trim().isEmpty) {
       throw ProtocolException('服务端返回格式不正确');
     }
 
