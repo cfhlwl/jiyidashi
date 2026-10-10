@@ -52,7 +52,7 @@ def run_attempt(timeout_seconds: int, working_directory: Path) -> int:
     # PID is the stable group ID even if the leader exits before cleanup starts.
     process_group_id = process.pid
     try:
-        return process.wait(timeout=timeout_seconds)
+        status = process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         print(
             f"pod install exceeded {timeout_seconds}s; terminating its process group",
@@ -60,6 +60,14 @@ def run_attempt(timeout_seconds: int, working_directory: Path) -> int:
         )
         terminate_process_group(process, process_group_id)
         return 124
+
+    if status != 0:
+        print(
+            f"pod install exited with status {status}; cleaning its process group",
+            flush=True,
+        )
+        terminate_process_group(process, process_group_id)
+    return status
 
 
 def main() -> int:
