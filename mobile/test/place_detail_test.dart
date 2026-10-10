@@ -308,6 +308,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('已稳定的到访'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const ValueKey('place-load-more')));
     await tester.tap(find.widgetWithText(OutlinedButton, '加载更多'));
     await tester.pumpAndSettle();
     expect(find.text('仍在更新的到访'), findsOneWidget);
@@ -346,6 +347,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('已稳定的到访'), findsOneWidget);
 
+      await tester.ensureVisible(find.byKey(const ValueKey('place-load-more')));
       await tester.tap(find.widgetWithText(OutlinedButton, '加载更多'));
       await tester.pumpAndSettle();
 
