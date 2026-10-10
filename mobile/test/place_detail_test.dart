@@ -274,17 +274,23 @@ void main() {
   testWidgets('PlaceDetailPage clears displayed facts when owner changes',
       (tester) async {
     final api = _PlaceApi(detail: _place());
+    late StateSetter rebuild;
     await tester.pumpWidget(
-      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return PlaceDetailPage(api: api, placeId: _timelinePlaceId);
+          },
+        ),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('家'), findsWidgets);
 
     api.detail = _place(name: '新账号的地点');
     api.authenticatedUserId = 'different-owner';
-    await tester.pumpWidget(
-      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
-    );
+    rebuild(() {});
     await tester.pump();
     expect(find.text('家'), findsNothing);
     expect(find.text('账号状态已变化'), findsOneWidget);
