@@ -224,8 +224,9 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimelinePage(api: api))));
     await tester.pumpAndSettle();
-    expect(find.text('家'), findsOneWidget);
-    await tester.tap(find.text('家'));
+    final placeChip = find.widgetWithText(Chip, '家');
+    expect(placeChip, findsOneWidget);
+    await tester.tap(placeChip);
     await tester.pumpAndSettle();
     expect(find.text('地点详情'), findsOneWidget);
     expect(find.text('还没有到访记录'), findsOneWidget);
