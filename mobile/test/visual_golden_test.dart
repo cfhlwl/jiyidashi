@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -261,6 +262,9 @@ class _GoldenMediaCache extends LocalMediaCache {
     required String cacheVersion,
   }) {
     final file = File('/tmp/jiyi-golden-${mediaId.toLowerCase()}.media');
+    // Keep the cache fixture honest: PHOTO_READY must point at a decodable
+    // image, while the production renderer remains unchanged.
+    file.writeAsBytesSync(_goldenPhotoBytes, flush: true);
     _files[_key(ownerUserId, mediaId, cacheVersion)] = file;
     _files[_key(ownerUserId, mediaId)] = file;
     _authority.add(_key(ownerUserId, mediaId));
@@ -1062,6 +1066,46 @@ Future<void> _pumpUntilFinder(
   fail('visual fixture did not reach expected state: $finder');
 }
 
+Future<void> _assertDecodedGoldenImage(
+  WidgetTester tester,
+  Finder finder,
+) async {
+  expect(finder, findsOneWidget);
+  final image = tester.widget<Image>(finder);
+  final context = tester.element(finder);
+  final info = await tester.runAsync(() async {
+    final stream = image.image.resolve(createLocalImageConfiguration(context));
+    final completer = Completer<ImageInfo>();
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (value, _) {
+        if (!completer.isCompleted) completer.complete(value);
+      },
+      onError: (error, stackTrace) {
+        if (!completer.isCompleted) {
+          completer.completeError(error, stackTrace);
+        }
+      },
+    );
+    stream.addListener(listener);
+    try {
+      final value = await completer.future.timeout(const Duration(seconds: 5));
+      final pixels = await value.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      expect(pixels, isNotNull);
+      expect(pixels!.lengthInBytes, greaterThan(0));
+      return value;
+    } finally {
+      stream.removeListener(listener);
+    }
+  });
+  expect(info, isNotNull);
+  expect(info!.image.width, greaterThan(1));
+  expect(info.image.height, greaterThan(1));
+  await tester.pump();
+}
+
 Future<Key> _pumpSurface(
   WidgetTester tester,
   Widget child, {
@@ -1286,6 +1330,10 @@ void main() {
       tester,
       find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
     );
+    await _assertDecodedGoldenImage(
+      tester,
+      find.byKey(ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
+    );
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/timeline_v3_batch3.png'),
@@ -1311,6 +1359,14 @@ void main() {
     expect(find.byKey(const ValueKey('memory-reminder-entry')), findsOneWidget);
     expect(find.text('编辑'), findsOneWidget);
     expect(find.text('删除'), findsOneWidget);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+    );
+    await _assertDecodedGoldenImage(
+      tester,
+      find.byKey(ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+    );
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/memory_detail_v3_batch3.png'),
@@ -1839,6 +1895,10 @@ void main() {
       tester,
       find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
     );
+    await _assertDecodedGoldenImage(
+      tester,
+      find.byKey(ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
+    );
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_timeline.png'),
@@ -1862,6 +1922,14 @@ void main() {
     expect(find.text('第一次产品讨论'), findsWidgets);
     expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
     expect(find.text('照片'), findsWidgets);
+    await _pumpUntilFinder(
+      tester,
+      find.byKey(ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+    );
+    await _assertDecodedGoldenImage(
+      tester,
+      find.byKey(ValueKey('/tmp/jiyi-golden-$v2MediaId.media')),
+    );
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/design_authority_memory_detail.png'),
