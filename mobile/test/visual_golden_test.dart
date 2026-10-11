@@ -1472,6 +1472,7 @@ void main() {
           amapPrivacyConsent: _GoldenAmapConsent(true),
         ),
       ),
+      precacheTodayHero: true,
       amapConfig: const JiYiAmapConfig(
         androidKey: '',
         platformOverride: TargetPlatform.android,
