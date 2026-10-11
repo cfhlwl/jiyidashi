@@ -44,7 +44,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   int? _displayedSessionVersion;
   String? _displayedOwnerId;
   bool _sessionRefreshScheduled = false;
-  late final AmapPrivacyConsentAuthority _amapPrivacyConsent;
+  late AmapPrivacyConsentAuthority _amapPrivacyConsent;
   Listenable? _mapPrivacyListenable;
   int _privacyReadEpoch = 0;
   bool _mapPrivacyAccepted = false;
@@ -52,20 +52,30 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   @override
   void initState() {
     super.initState();
-    _amapPrivacyConsent =
-        widget.amapPrivacyConsent ?? AmapPrivacyConsentStore();
-    if (_amapPrivacyConsent is Listenable) {
-      _mapPrivacyListenable = _amapPrivacyConsent as Listenable;
-      _mapPrivacyListenable!.addListener(_handleMapPrivacyChanged);
-    }
+    _bindMapPrivacyConsent(
+      widget.amapPrivacyConsent ?? AmapPrivacyConsentStore(),
+    );
     _loadMapPrivacy();
     _loadInitial();
   }
 
+  void _bindMapPrivacyConsent(AmapPrivacyConsentAuthority authority) {
+    _mapPrivacyListenable?.removeListener(_handleMapPrivacyChanged);
+    _mapPrivacyListenable = null;
+    _privacyReadEpoch += 1;
+    _amapPrivacyConsent = authority;
+    _mapPrivacyAccepted = false;
+    if (authority is Listenable) {
+      _mapPrivacyListenable = authority;
+      _mapPrivacyListenable!.addListener(_handleMapPrivacyChanged);
+    }
+  }
+
   Future<void> _loadMapPrivacy() async {
     final readEpoch = ++_privacyReadEpoch;
+    final authority = _amapPrivacyConsent;
     try {
-      final accepted = await _amapPrivacyConsent.readAccepted();
+      final accepted = await authority.readAccepted();
       if (mounted && readEpoch == _privacyReadEpoch) {
         setState(() => _mapPrivacyAccepted = accepted);
       }
@@ -105,6 +115,7 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     _requestOwnerId = ownerId;
     setState(() {
       _loading = true;
+      _loadingMore = false;
       _error = null;
       _offline = false;
       _place = null;
@@ -152,6 +163,16 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   @override
   void didUpdateWidget(covariant PlaceDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(
+      oldWidget.amapPrivacyConsent,
+      widget.amapPrivacyConsent,
+    )) {
+      _bindMapPrivacyConsent(
+        widget.amapPrivacyConsent ?? AmapPrivacyConsentStore(),
+      );
+      setState(() {});
+      _loadMapPrivacy();
+    }
     if (!identical(oldWidget.api, widget.api) ||
         oldWidget.placeId.toLowerCase() != widget.placeId.toLowerCase()) {
       _loadInitial();
