@@ -65,7 +65,9 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     _privacyReadEpoch += 1;
     _amapPrivacyConsent = authority;
     _mapPrivacyAccepted = false;
-    final listenable = authority is Listenable ? authority : null;
+    final listenable = authority is Listenable
+        ? authority as Listenable
+        : null;
     if (listenable != null) {
       _mapPrivacyListenable = listenable;
       listenable.addListener(_handleMapPrivacyChanged);
