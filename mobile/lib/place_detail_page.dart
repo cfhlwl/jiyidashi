@@ -65,9 +65,10 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     _privacyReadEpoch += 1;
     _amapPrivacyConsent = authority;
     _mapPrivacyAccepted = false;
-    if (authority is Listenable) {
-      _mapPrivacyListenable = authority;
-      _mapPrivacyListenable!.addListener(_handleMapPrivacyChanged);
+    final listenable = authority is Listenable ? authority : null;
+    if (listenable != null) {
+      _mapPrivacyListenable = listenable;
+      listenable.addListener(_handleMapPrivacyChanged);
     }
   }
 
@@ -170,7 +171,6 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
       _bindMapPrivacyConsent(
         widget.amapPrivacyConsent ?? AmapPrivacyConsentStore(),
       );
-      setState(() {});
       _loadMapPrivacy();
     }
     if (!identical(oldWidget.api, widget.api) ||
