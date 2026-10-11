@@ -333,12 +333,38 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/product-v2-goldens/candidate
+          candidate_font=/tmp/JiYiGoldenCJK-Regular.ttf
+          committed_font=test/fonts/JiYiGoldenCJK-Regular.ttf
+          committed_font_backup=/tmp/JiYiGoldenCJK-Regular.committed.ttf
+          cp "$committed_font" "$committed_font_backup"
+          candidate_font_sha="$(sha256sum "$candidate_font" | awk '{print $1}')"
+          committed_font_sha="$(sha256sum "$committed_font" | awk '{print $1}')"
+          echo "candidate font sha:  $candidate_font_sha"
+          echo "committed font sha:  $committed_font_sha"
 
           cleanup_goldens() {
-            git checkout -- test/goldens
-            git clean -f -- test/goldens
+            local cleanup_status=0
+            git checkout -- test/goldens || cleanup_status=1
+            git clean -f -- test/goldens || cleanup_status=1
+            cp "$committed_font_backup" "$committed_font" || cleanup_status=1
+            local restored_font_sha=''
+            if [ -f "$committed_font" ]; then
+              if ! restored_font_sha="$(sha256sum "$committed_font" | awk '{print $1}')"; then
+                cleanup_status=1
+              fi
+            else
+              cleanup_status=1
+            fi
+            test "$restored_font_sha" = "$committed_font_sha" || cleanup_status=1
+            git diff --quiet -- test/fonts || cleanup_status=1
+            return "$cleanup_status"
           }
           trap cleanup_goldens EXIT
+
+          # Candidate-only evidence uses the regenerated font. The canonical
+          # tracked font is restored before this step exits and before committed
+          # Golden validation starts.
+          cp "$candidate_font" "$committed_font"
 
           # Generate the complete deterministic visual suite in one Flutter
           # process. This is candidate-only: every PNG is copied to the review
