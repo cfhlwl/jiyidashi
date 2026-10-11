@@ -67,7 +67,15 @@ jobs:
         env:
           TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
-          bash ../.github/scripts/validate_ci_sha_inputs.sh "$TARGET_SHA"
+          sha_pattern='^[0-9a-f]{40}$'
+          if [[ ! "$TARGET_SHA" =~ $sha_pattern ]]; then
+            echo "target SHA must be a 40-character lowercase Git commit SHA" >&2
+            exit 1
+          fi
+          if ! git cat-file -e "$TARGET_SHA^{commit}" 2>/dev/null; then
+            echo "target SHA is not a commit present in the checkout" >&2
+            exit 1
+          fi
 
       - uses: actions/setup-python@v5
         with:

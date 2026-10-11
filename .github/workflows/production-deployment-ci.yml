@@ -146,14 +146,44 @@ jobs:
           echo "BACKEND_IMAGE=jiyidashi-backend:$EXPECTED_SHA" >> "$GITHUB_ENV"
           echo "EDGE_IMAGE=jiyidashi-edge:$EXPECTED_SHA" >> "$GITHUB_ENV"
 
-      - name: Validate target and base commit inputs
+      - name: Validate commits and SHA guardrail boundaries
         shell: bash
         env:
           TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          bash .github/scripts/validate_ci_sha_inputs.sh "$TARGET_SHA"
+          sha_pattern='^[0-9a-f]{40}$'
+
+          require_commit_sha() {
+            local label="$1"
+            local value="$2"
+            if [[ ! "$value" =~ $sha_pattern ]]; then
+              echo "$label must be a 40-character lowercase Git commit SHA" >&2
+              return 1
+            fi
+            if ! git cat-file -e "$value^{commit}" 2>/dev/null; then
+              echo "$label is not a commit present in the checkout" >&2
+              return 1
+            fi
+          }
+
+          require_base_target_relation() {
+            local target_sha="$1"
+            local base_sha="$2"
+            require_commit_sha target_sha "$target_sha"
+            require_commit_sha base_sha "$base_sha"
+            if [[ "$base_sha" == "$target_sha" ]]; then
+              echo "base SHA and target SHA must differ" >&2
+              return 1
+            fi
+            if ! git merge-base --is-ancestor "$base_sha" "$target_sha"; then
+              echo "base SHA is not an ancestor of target SHA" >&2
+              return 1
+            fi
+          }
+
+          require_commit_sha target_sha "$TARGET_SHA"
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
@@ -162,12 +192,41 @@ jobs:
               git fetch --no-tags origin
             fi
             git fetch --no-tags origin "$TARGET_SHA" "$BASE_SHA"
-            bash .github/scripts/validate_ci_sha_inputs.sh "$TARGET_SHA" "$BASE_SHA"
+            require_base_target_relation "$TARGET_SHA" "$BASE_SHA"
           fi
 
-      - name: Test CI SHA validation boundaries
-        shell: bash
-        run: bash .github/scripts/test_validate_ci_sha_inputs.sh
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --no-tags --unshallow origin
+          fi
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            test_base_sha="$BASE_SHA"
+          else
+            test_base_sha="$(git rev-parse "$TARGET_SHA^")"
+          fi
+
+          expect_failure() {
+            if "$@"; then
+              echo "expected validation failure: $*" >&2
+              exit 1
+            fi
+          }
+
+          expect_failure require_commit_sha target_sha not-a-commit-sha
+          missing_sha=0000000000000000000000000000000000000000
+          expect_failure require_commit_sha missing_sha "$missing_sha"
+          expect_failure require_base_target_relation "$TARGET_SHA" "$TARGET_SHA"
+
+          empty_tree="$(git mktree < /dev/null)"
+          unrelated_sha="$(
+            GIT_AUTHOR_NAME=ci-test \
+            GIT_AUTHOR_EMAIL=ci-test@example.invalid \
+            GIT_COMMITTER_NAME=ci-test \
+            GIT_COMMITTER_EMAIL=ci-test@example.invalid \
+              git commit-tree "$empty_tree" -m unrelated
+          )"
+          expect_failure require_base_target_relation "$TARGET_SHA" "$unrelated_sha"
+          require_base_target_relation "$TARGET_SHA" "$test_base_sha"
+          echo "CI SHA validation boundary tests passed"
 
       - uses: actions/setup-python@v5
         with:
