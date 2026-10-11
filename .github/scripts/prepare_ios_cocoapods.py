@@ -17,7 +17,7 @@ from pathlib import Path
 CLEANUP_FAILED_STATUS = 125
 
 
-def _process_group_members(process_group_id: int) -> tuple[int, ...]:
+def _process_group_members(process_group_id: int) -> tuple[int, ...] | None:
     """Return live PIDs in a process group when killpg is unavailable."""
 
     try:
@@ -28,7 +28,7 @@ def _process_group_members(process_group_id: int) -> tuple[int, ...]:
             text=True,
         )
     except (OSError, subprocess.CalledProcessError):
-        return ()
+        return None
 
     members: list[int] = []
     for line in result.stdout.splitlines():
@@ -57,7 +57,12 @@ def _signal_process_group(process_group_id: int, signal_number: signal.Signals) 
         # already exited. The saved PGID remains authoritative; signal each
         # surviving member so a downloader cannot escape cleanup.
         members = _process_group_members(process_group_id)
-        cleanup_confirmed = bool(members)
+        if members is None:
+            return False
+        # An empty, successfully enumerated group is already clean. A group
+        # with members is cleanable only when every member accepts the signal
+        # (or has exited between enumeration and signalling).
+        cleanup_confirmed = True
         for pid in members:
             try:
                 os.kill(pid, signal_number)
