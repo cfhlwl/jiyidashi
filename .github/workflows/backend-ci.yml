@@ -14,6 +14,12 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: "Exact commit SHA to validate"
+        required: true
+        type: string
 
 jobs:
   test:
@@ -44,17 +50,32 @@ jobs:
         with:
           # [人工注释][CI-GATE] pull_request 默认会 checkout 临时 merge ref，
           # 不能用于严格 exact-head Gate；PR 明确测试 head SHA，push 仍测试 github.sha。
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Verify exact checkout
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           actual_sha="$(git rev-parse HEAD)"
           echo "expected checkout SHA: $EXPECTED_SHA"
           echo "actual checkout SHA:   $actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Validate target commit input
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
+        run: |
+          sha_pattern='^[0-9a-f]{40}$'
+          if [[ ! "$TARGET_SHA" =~ $sha_pattern ]]; then
+            echo "target SHA must be a 40-character lowercase Git commit SHA" >&2
+            exit 1
+          fi
+          if ! git cat-file -e "$TARGET_SHA^{commit}" 2>/dev/null; then
+            echo "target SHA is not a commit present in the checkout" >&2
+            exit 1
+          fi
 
       - uses: actions/setup-python@v5
         with:

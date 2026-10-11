@@ -113,6 +113,16 @@ on:
       - "docs/PRODUCTION_MEDIA_ANALYSIS.md"
       - "docs/PRODUCTION_EXPORT_API.md"
       - ".github/workflows/production-deployment-ci.yml"
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: "Exact release commit SHA to validate"
+        required: true
+        type: string
+      base_sha:
+        description: "Exact previous release/base commit SHA for cutover validation"
+        required: true
+        type: string
 
 jobs:
   deployment:
@@ -122,12 +132,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Pull requests must validate the exact head, never GitHub's temporary merge ref.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Verify exact checkout
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           actual_sha="$(git rev-parse HEAD)"
           echo "expected checkout SHA: $EXPECTED_SHA"
@@ -135,6 +145,130 @@ jobs:
           test "$actual_sha" = "$EXPECTED_SHA"
           echo "BACKEND_IMAGE=jiyidashi-backend:$EXPECTED_SHA" >> "$GITHUB_ENV"
           echo "EDGE_IMAGE=jiyidashi-edge:$EXPECTED_SHA" >> "$GITHUB_ENV"
+
+      - name: Validate commits and SHA guardrail boundaries
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          sha_pattern='^[0-9a-f]{40}$'
+
+          require_commit_sha() {
+            local label="$1"
+            local value="$2"
+            if [[ ! "$value" =~ $sha_pattern ]]; then
+              echo "$label must be a 40-character lowercase Git commit SHA" >&2
+              return 1
+            fi
+            if ! git cat-file -e "$value^{commit}" 2>/dev/null; then
+              echo "$label is not a commit present in the checkout" >&2
+              return 1
+            fi
+          }
+
+          validate_base_target_inputs() {
+            local target_sha="$1"
+            local base_sha="$2"
+            if [[ ! "$target_sha" =~ $sha_pattern ]]; then
+              echo "target SHA must be a 40-character lowercase Git commit SHA" >&2
+              return 1
+            fi
+            if [[ ! "$base_sha" =~ $sha_pattern ]]; then
+              echo "base SHA must be a 40-character lowercase Git commit SHA" >&2
+              return 1
+            fi
+            if [[ "$base_sha" == "$target_sha" ]]; then
+              echo "base SHA and target SHA must differ" >&2
+              return 1
+            fi
+          }
+
+          require_base_target_relation() {
+            local target_sha="$1"
+            local base_sha="$2"
+            require_commit_sha target_sha "$target_sha"
+            require_commit_sha base_sha "$base_sha"
+            if [[ "$base_sha" == "$target_sha" ]]; then
+              echo "base SHA and target SHA must differ" >&2
+              return 1
+            fi
+            if ! git merge-base --is-ancestor "$base_sha" "$target_sha"; then
+              echo "base SHA is not an ancestor of target SHA" >&2
+              return 1
+            fi
+          }
+
+          fetch_and_validate_manual_refs() {
+            local target_sha="$1"
+            local base_sha="$2"
+            if ! validate_base_target_inputs "$target_sha" "$base_sha"; then
+              return 1
+            fi
+
+            if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+              git fetch --no-tags --unshallow origin
+            else
+              git fetch --no-tags origin
+            fi
+            git fetch --no-tags origin -- "$target_sha" "$base_sha"
+            require_base_target_relation "$target_sha" "$base_sha"
+          }
+
+          require_commit_sha target_sha "$TARGET_SHA"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            fetch_and_validate_manual_refs "$TARGET_SHA" "$BASE_SHA"
+          fi
+
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --no-tags --unshallow origin
+          fi
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            test_base_sha="$BASE_SHA"
+          else
+            test_base_sha="$(git rev-parse "$TARGET_SHA^")"
+          fi
+
+          expect_failure() {
+            if "$@"; then
+              echo "expected validation failure: $*" >&2
+              exit 1
+            fi
+          }
+
+          expect_failure require_commit_sha target_sha not-a-commit-sha
+          missing_sha=0000000000000000000000000000000000000000
+          expect_failure require_commit_sha missing_sha "$missing_sha"
+          expect_failure require_base_target_relation "$TARGET_SHA" "$TARGET_SHA"
+
+          fetch_attempted=0
+          git() {
+            if [[ "$1" == "fetch" ]]; then
+              fetch_attempted=1
+              return 0
+            fi
+            command git "$@"
+          }
+          expect_failure fetch_and_validate_manual_refs "$TARGET_SHA" --xxx
+          unset -f git
+          if [[ "$fetch_attempted" != "0" ]]; then
+            echo "invalid base SHA reached git fetch" >&2
+            exit 1
+          fi
+
+          empty_tree="$(git mktree < /dev/null)"
+          unrelated_sha="$(
+            GIT_AUTHOR_NAME=ci-test \
+            GIT_AUTHOR_EMAIL=ci-test@example.invalid \
+            GIT_COMMITTER_NAME=ci-test \
+            GIT_COMMITTER_EMAIL=ci-test@example.invalid \
+              git commit-tree "$empty_tree" -m unrelated
+          )"
+          expect_failure require_base_target_relation "$TARGET_SHA" "$unrelated_sha"
+          require_base_target_relation "$TARGET_SHA" "$test_base_sha"
+          echo "CI SHA validation boundary tests passed"
 
       - uses: actions/setup-python@v5
         with:
@@ -360,7 +494,7 @@ jobs:
           trap - EXIT
           cp "$RELEASE_IMAGE_STATE_DIR/$EXPECTED_SHA.image-id" "$RUNNER_TEMP/reviewed-image-id.txt"
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Reject silent same-SHA image replacement
         shell: bash
@@ -400,7 +534,7 @@ jobs:
           test "$recovered_id" = "$reviewed_id"
           bash ops/verify-recorded-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Prepare immutable Admin edge image from exact Git tree
         shell: bash
@@ -411,12 +545,12 @@ jobs:
           docker run --rm --entrypoint sh "$EDGE_IMAGE" -ceu \
             'test -s /srv/admin/index.html; test -n "$(find /srv/admin/assets -type f -print -quit)"'
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Reject untracked release build context
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           TARGET_SHA="$EXPECTED_SHA" bash ops/validate-release-source.sh
           trap 'rm -f backend/app/__ops_untracked_release_probe__.py' EXIT
@@ -432,8 +566,8 @@ jobs:
       - name: Real deploy.sh worker/API cutover from legacy release
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          LEGACY_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
+          LEGACY_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
         run: |
           test "$LEGACY_SHA" != "$EXPECTED_SHA"
           git fetch --no-tags --depth=1 origin "$LEGACY_SHA"
@@ -651,9 +785,11 @@ jobs:
 
       - name: Stopped existing volume is backed up before migration
         shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           export ENV_FILE
-          export RELEASE_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          export RELEASE_SHA="$TARGET_SHA"
           backup_record="$RUNNER_TEMP/backup-record.txt"
           ENV_FILE="$ENV_FILE"           COMPOSE_FILE="$PWD/docker-compose.prod.yml"           BACKUP_DIR="$RUNNER_TEMP/backups"           BACKUP_RECORD_FILE="$backup_record"             bash ops/prepare-production-database.sh
 
@@ -714,6 +850,8 @@ jobs:
 
       - name: OPS-003 off-host backup publication and same-slot idempotency
         shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           fake_root="$RUNNER_TEMP/offhost-backup-store"
           staging="$RUNNER_TEMP/offhost-staging"
@@ -728,7 +866,7 @@ jobs:
             BACKUP_LOCAL_STAGING_DIR="$staging" \
             BACKUP_LOCK_FILE="$lock_file" \
             BACKUP_SLOT=2026-10-05 \
-            RELEASE_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+            RELEASE_SHA="$TARGET_SHA" \
               bash ops/offhost-backup.sh
           done
 
