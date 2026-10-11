@@ -113,6 +113,16 @@ on:
       - "docs/PRODUCTION_MEDIA_ANALYSIS.md"
       - "docs/PRODUCTION_EXPORT_API.md"
       - ".github/workflows/production-deployment-ci.yml"
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: "Exact release commit SHA to validate"
+        required: true
+        type: string
+      base_sha:
+        description: "Exact previous release/base commit SHA for cutover validation"
+        required: true
+        type: string
 
 jobs:
   deployment:
@@ -122,12 +132,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Pull requests must validate the exact head, never GitHub's temporary merge ref.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Verify exact checkout
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           actual_sha="$(git rev-parse HEAD)"
           echo "expected checkout SHA: $EXPECTED_SHA"
@@ -360,7 +370,7 @@ jobs:
           trap - EXIT
           cp "$RELEASE_IMAGE_STATE_DIR/$EXPECTED_SHA.image-id" "$RUNNER_TEMP/reviewed-image-id.txt"
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Reject silent same-SHA image replacement
         shell: bash
@@ -400,7 +410,7 @@ jobs:
           test "$recovered_id" = "$reviewed_id"
           bash ops/verify-recorded-release-image.sh "$BACKEND_IMAGE" "$EXPECTED_SHA"
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Prepare immutable Admin edge image from exact Git tree
         shell: bash
@@ -411,12 +421,12 @@ jobs:
           docker run --rm --entrypoint sh "$EDGE_IMAGE" -ceu \
             'test -s /srv/admin/index.html; test -n "$(find /srv/admin/assets -type f -print -quit)"'
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Reject untracked release build context
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           TARGET_SHA="$EXPECTED_SHA" bash ops/validate-release-source.sh
           trap 'rm -f backend/app/__ops_untracked_release_probe__.py' EXIT
@@ -432,8 +442,8 @@ jobs:
       - name: Real deploy.sh worker/API cutover from legacy release
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          LEGACY_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
+          LEGACY_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
         run: |
           test "$LEGACY_SHA" != "$EXPECTED_SHA"
           git fetch --no-tags --depth=1 origin "$LEGACY_SHA"
@@ -653,7 +663,7 @@ jobs:
         shell: bash
         run: |
           export ENV_FILE
-          export RELEASE_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          export RELEASE_SHA="${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}"
           backup_record="$RUNNER_TEMP/backup-record.txt"
           ENV_FILE="$ENV_FILE"           COMPOSE_FILE="$PWD/docker-compose.prod.yml"           BACKUP_DIR="$RUNNER_TEMP/backups"           BACKUP_RECORD_FILE="$backup_record"             bash ops/prepare-production-database.sh
 
@@ -728,7 +738,7 @@ jobs:
             BACKUP_LOCAL_STAGING_DIR="$staging" \
             BACKUP_LOCK_FILE="$lock_file" \
             BACKUP_SLOT=2026-10-05 \
-            RELEASE_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+            RELEASE_SHA="${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}" \
               bash ops/offhost-backup.sh
           done
 

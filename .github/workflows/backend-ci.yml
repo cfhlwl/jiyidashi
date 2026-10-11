@@ -14,6 +14,12 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: "Exact commit SHA to validate"
+        required: true
+        type: string
 
 jobs:
   test:
@@ -44,12 +50,12 @@ jobs:
         with:
           # [人工注释][CI-GATE] pull_request 默认会 checkout 临时 merge ref，
           # 不能用于严格 exact-head Gate；PR 明确测试 head SHA，push 仍测试 github.sha。
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Verify exact checkout
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           actual_sha="$(git rev-parse HEAD)"
           echo "expected checkout SHA: $EXPECTED_SHA"
