@@ -17,6 +17,7 @@ import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/today_footprint_page.dart';
+import 'package:jiyidashi/ui/jiyi_components.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/family_page.dart';
 import 'package:jiyidashi/v2/graph_page.dart';
@@ -1112,6 +1113,7 @@ Future<Key> _pumpSurface(
   bool elderMode = false,
   Size size = _goldenSize,
   double textScale = 1.0,
+  bool precacheTodayHero = false,
   JiYiAmapConfig amapConfig = const JiYiAmapConfig(
     androidKey: 'golden-amap-key',
     platformOverride: TargetPlatform.android,
@@ -1160,6 +1162,14 @@ Future<Key> _pumpSurface(
       ),
     ),
   );
+  if (precacheTodayHero) {
+    await tester.runAsync(() async {
+      await precacheImage(
+        const AssetImage(TodayHeroBackground.defaultAsset),
+        tester.element(find.byType(MaterialApp)),
+      );
+    });
+  }
   await _pumpVisualFrames(tester);
   return key;
 }
@@ -1231,6 +1241,7 @@ Future<Key> _pumpGoldenToday(
         amapPrivacyConsent: _GoldenAmapConsent(mapAccepted),
       ),
     ),
+    precacheTodayHero: true,
   );
 }
 
@@ -1461,6 +1472,7 @@ void main() {
           amapPrivacyConsent: _GoldenAmapConsent(true),
         ),
       ),
+      precacheTodayHero: true,
       amapConfig: const JiYiAmapConfig(
         androidKey: '',
         platformOverride: TargetPlatform.android,
@@ -1506,6 +1518,13 @@ void main() {
       _pumpUntilFinder(
         tester,
         find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
+      ),
+    );
+    await _visualStep(
+      'cached-photo image decode',
+      _assertDecodedGoldenImage(
+        tester,
+        find.byKey(const ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
       ),
     );
     expect(api.capabilityCalls, 0);
@@ -1693,10 +1712,19 @@ void main() {
       api: _GoldenApi(privacyError: ApiException(503, '服务端状态读取失败')),
     );
 
-    expect(find.text('无法确认当前隐私状态'), findsOneWidget);
-    expect(find.text('服务端状态读取失败'), findsOneWidget);
+    final privacyError = find.text('无法确认当前隐私状态');
+    final privacyMessage = find.text('服务端状态读取失败');
+    expect(privacyError, findsOneWidget);
+    expect(privacyMessage, findsOneWidget);
     expect(find.text('当前没有暂停自动采集'), findsNothing);
     expect(find.text('自动采集已暂停'), findsNothing);
+    // The Profile is a scrollable surface. Keep the error state itself in the
+    // captured viewport; otherwise this test can pass its semantic assertions
+    // while the Golden still captures the healthy identity header above it.
+    await tester.ensureVisible(privacyError);
+    await _pumpVisualFrames(tester);
+    expect(privacyError, findsOneWidget);
+    expect(privacyMessage, findsOneWidget);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/profile_privacy_error.png'),

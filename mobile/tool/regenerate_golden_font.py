@@ -42,7 +42,7 @@ def run(*args: str) -> None:
     subprocess.run(args, check=True)
 
 
-def regenerate() -> str:
+def regenerate(output: pathlib.Path = OUTPUT) -> str:
     try:
         import fontTools  # noqa: F401
     except ImportError as exc:
@@ -68,13 +68,14 @@ def regenerate() -> str:
             "--output",
             str(regular),
         )
+        output.parent.mkdir(parents=True, exist_ok=True)
         run(
             sys.executable,
             "-m",
             "fontTools.subset",
             str(regular),
             "--text-file=" + str(corpus_file),
-            "--output-file=" + str(OUTPUT),
+            "--output-file=" + str(output),
             "--layout-features=*",
             "--name-IDs=*",
             "--name-legacy",
@@ -92,20 +93,20 @@ def regenerate() -> str:
         # it to the pinned source creation timestamp and save without recalculation.
         from fontTools.ttLib import TTFont
 
-        normalized = TTFont(OUTPUT, recalcTimestamp=False)
+        normalized = TTFont(output, recalcTimestamp=False)
         normalized["head"].modified = normalized["head"].created
-        normalized.save(OUTPUT, reorderTables=False)
+        normalized.save(output, reorderTables=False)
 
-    digest = hashlib.sha256(OUTPUT.read_bytes()).hexdigest()
-    print(f"golden font: {OUTPUT}")
+    digest = hashlib.sha256(output.read_bytes()).hexdigest()
+    print(f"golden font: {output}")
     print(f"sha256: {digest}")
     return digest
 
 
-def verify_coverage() -> None:
+def verify_coverage(output: pathlib.Path = OUTPUT) -> None:
     from fontTools.ttLib import TTFont
 
-    font = TTFont(OUTPUT)
+    font = TTFont(output)
     cmap = font.getBestCmap() or {}
     missing = sorted({ord(ch) for ch in visible_corpus()} - set(cmap))
     if missing:
@@ -119,10 +120,11 @@ def verify_coverage() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--output", type=pathlib.Path, default=OUTPUT)
     args = parser.parse_args()
     if not args.check:
-        regenerate()
-    verify_coverage()
+        regenerate(args.output)
+    verify_coverage(args.output)
 
 
 if __name__ == "__main__":
