@@ -305,8 +305,15 @@ jobs:
             --update-goldens \
             --dart-define=UIUX_V3_BATCH4A_CANDIDATE_MODE=true \
             --reporter expanded
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 4A Place Detail scrolled visit surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH4A_CANDIDATE_MODE=true \
+            --reporter expanded
           test -s test/goldens/place_detail_v3_batch4a.png
+          test -s test/goldens/place_detail_loaded_scrolled.png
           cp test/goldens/place_detail_v3_batch4a.png /tmp/place-detail-v3-candidates/
+          cp test/goldens/place_detail_loaded_scrolled.png /tmp/place-detail-v3-candidates/
           git checkout -- test/goldens
           git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
@@ -527,9 +534,9 @@ jobs:
               '',
               '| Result | Classification | Action |',
               '|---|---|---|',
-              '| `golden: place detail loaded` | Single expected new Batch 4A visual difference from the V3 Place Detail refactor | Candidate-only review evidence; do not update the committed Golden automatically. |',
-              '| Other 24 mobile-ci visual failures | Existing historical Golden baseline | Out of Batch 4A scope; no bulk update and no Design Authority change. |',
-              '| Other mobile-visual-preview visual failures | Existing visual/fixture baseline outside Batch 4A | Retain as known baseline and review independently; do not use as Batch 4A acceptance evidence. |',
+              '| `golden: place detail loaded` | Single expected new Batch 4A visual difference from the V3 Place Detail refactor | Approved targeted baseline update only; SHA is recorded in the review evidence. |',
+              '| Other mobile-ci visual failures | None after the approved Place Detail baseline update | No additional mobile-ci visual baseline is currently classified as historical for Batch 4A. |',
+              '| Other mobile-visual-preview visual failures | None after the approved Place Detail baseline update | No additional visual/fixture baseline is currently classified as historical for Batch 4A. |',
           ])
           (root / 'audit.md').write_text('\n'.join(report) + '\n\nAutomated images are evidence only; visual severity remains subject to independent review.\n', encoding='utf-8')
           manifest = [
@@ -539,7 +546,7 @@ jobs:
               'BATCH 3 PHOTO STATES: memory_detail_v3_batch3.png=PHOTO_READY; memory_detail_v3_batch3_photo_error.png=PHOTO_ERROR',
               'BATCH 4A PRODUCTION CANDIDATE: batch4a_place_detail_existing_reference',
               'BATCH 4A AUTHORITY STATUS: no dedicated Design Authority PNG; place_detail_loaded.png is regression reference only',
-              'BATCH 4A GOLDEN CLASSIFICATION: place_detail_loaded.png is the single expected new diff; historical visual failures remain unchanged',
+              'BATCH 4A GOLDEN CLASSIFICATION: place_detail_loaded.png is the single approved targeted update; the scrolled visit surface remains candidate-only until separately reviewed',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())

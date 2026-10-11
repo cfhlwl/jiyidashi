@@ -1476,6 +1476,30 @@ void main() {
     );
   });
 
+  testWidgets(
+    'candidate: Batch 4A Place Detail scrolled visit surface',
+    (tester) async {
+      if (!_captureBatch4aCandidates) return;
+      final key = await _pumpSurface(
+        tester,
+        PlaceDetailPage(
+          api: _GoldenPlaceDetailApi(),
+          placeId: 'place-golden-1',
+        ),
+      );
+      final loadMore = find.byKey(const ValueKey('place-load-more'));
+      await tester.scrollUntilVisible(loadMore, 500);
+      await _pumpVisualFrames(tester);
+
+      expect(find.text('仍在更新的到访'), findsOneWidget);
+      expect(loadMore, findsOneWidget);
+      await expectLater(
+        find.byKey(key),
+        matchesGoldenFile('goldens/place_detail_loaded_scrolled.png'),
+      );
+    },
+  );
+
   testWidgets('golden: onboarding intro', (tester) async {
     // [人工注释][S1-026] Golden 直接渲染正式 OnboardingIntroPage；固定字体/窗口仍复用本文件统一基线。
     final key = await _pumpSurface(
