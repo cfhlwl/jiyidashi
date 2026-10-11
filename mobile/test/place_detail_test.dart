@@ -581,7 +581,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('仍在更新的到访'), findsOneWidget);
-      expect(api.detailCalls, 3);
+      expect(api.detailCalls, 4);
     },
   );
 
