@@ -73,11 +73,12 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check fonttools==4.59.2
           committed_font_sha="$(git show HEAD:mobile/test/fonts/JiYiGoldenCJK-Regular.ttf | sha256sum | awk '{print $1}')"
-          python tool/regenerate_golden_font.py
-          generated_font_sha="$(sha256sum test/fonts/JiYiGoldenCJK-Regular.ttf | awk '{print $1}')"
+          candidate_font=/tmp/JiYiGoldenCJK-Regular.ttf
+          python tool/regenerate_golden_font.py --output "$candidate_font"
+          generated_font_sha="$(sha256sum "$candidate_font" | awk '{print $1}')"
           echo "committed font sha:  $committed_font_sha"
           echo "generated font sha:  $generated_font_sha"
-          cp test/fonts/JiYiGoldenCJK-Regular.ttf /tmp/JiYiGoldenCJK-Regular.ttf
+          test "$(sha256sum test/fonts/JiYiGoldenCJK-Regular.ttf | awk '{print $1}')" = "$committed_font_sha"
           if [ "$committed_font_sha" != "$generated_font_sha" ]; then
             echo "stale=true" >> "$GITHUB_OUTPUT"
           else
@@ -95,7 +96,11 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp /tmp/JiYiGoldenCJK-Regular.ttf test/fonts/JiYiGoldenCJK-Regular.ttf
           git add test/fonts/JiYiGoldenCJK-Regular.ttf
+          refreshed_font_sha="$(sha256sum test/fonts/JiYiGoldenCJK-Regular.ttf | awk '{print $1}')"
+          candidate_font_sha="$(sha256sum /tmp/JiYiGoldenCJK-Regular.ttf | awk '{print $1}')"
+          test "$refreshed_font_sha" = "$candidate_font_sha"
           git diff --cached --quiet && exit 0
           git commit -m "UIUX-P0-002: refresh deterministic CJK golden font"
           git push origin "HEAD:${{ github.head_ref }}"

@@ -17,6 +17,7 @@ import 'package:jiyidashi/onboarding_flow.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 import 'package:jiyidashi/today_footprint_page.dart';
+import 'package:jiyidashi/ui/jiyi_components.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/family_page.dart';
 import 'package:jiyidashi/v2/graph_page.dart';
@@ -1112,6 +1113,7 @@ Future<Key> _pumpSurface(
   bool elderMode = false,
   Size size = _goldenSize,
   double textScale = 1.0,
+  bool precacheTodayHero = false,
   JiYiAmapConfig amapConfig = const JiYiAmapConfig(
     androidKey: 'golden-amap-key',
     platformOverride: TargetPlatform.android,
@@ -1160,6 +1162,14 @@ Future<Key> _pumpSurface(
       ),
     ),
   );
+  if (precacheTodayHero) {
+    await tester.runAsync(() async {
+      await precacheImage(
+        const AssetImage(TodayHeroBackground.defaultAsset),
+        tester.element(find.byType(MaterialApp)),
+      );
+    });
+  }
   await _pumpVisualFrames(tester);
   return key;
 }
@@ -1231,6 +1241,7 @@ Future<Key> _pumpGoldenToday(
         amapPrivacyConsent: _GoldenAmapConsent(mapAccepted),
       ),
     ),
+    precacheTodayHero: true,
   );
 }
 

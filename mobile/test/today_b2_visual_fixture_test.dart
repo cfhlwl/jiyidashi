@@ -8,6 +8,7 @@ import 'package:jiyidashi/amap_privacy_consent.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/footprint_models.dart';
 import 'package:jiyidashi/today_footprint_page.dart';
+import 'package:jiyidashi/ui/jiyi_components.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 
 const _fixtureSize = Size(390, 844);
@@ -404,6 +405,10 @@ void main() {
       ),
     );
     await tester.runAsync(() async {
+      await precacheImage(
+        const AssetImage(TodayHeroBackground.defaultAsset),
+        tester.element(find.byType(MaterialApp)),
+      );
       await precacheImage(leftImage, tester.element(find.byType(MaterialApp)));
       await precacheImage(rightImage, tester.element(find.byType(MaterialApp)));
     });
