@@ -44,6 +44,7 @@ class _PlaceApi extends JiYiApiClient {
   final Map<String, dynamic>? nextDetail;
   int detailCalls = 0;
   String? lastPlaceId;
+  bool _pendingDetailConsumed = false;
 
   @override
   Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async => places;
@@ -94,7 +95,10 @@ class _PlaceApi extends JiYiApiClient {
   }) async {
     detailCalls += 1;
     lastPlaceId = placeId;
-    if (pendingDetail != null) return pendingDetail!.future;
+    if (pendingDetail != null && !_pendingDetailConsumed) {
+      _pendingDetailConsumed = true;
+      return pendingDetail!.future;
+    }
     if (detailError != null) throw detailError!;
     if (cursor != null) {
       return nextDetail ??
@@ -254,20 +258,72 @@ void main() {
     expect(find.text('家'), findsNothing);
   });
 
-  testWidgets('PlaceDetailPage drops stale response after owner changes', (tester) async {
+  testWidgets('PlaceDetailPage reloads after owner changes during initial request',
+      (tester) async {
     final response = Completer<Map<String, dynamic>>();
-    final api = _PlaceApi(pendingDetail: response);
+    final api = _PlaceApi(
+      detail: _place(name: '新账号的地点'),
+      pendingDetail: response,
+    );
+    late StateSetter rebuild;
     await tester.pumpWidget(
-      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return PlaceDetailPage(api: api, placeId: _timelinePlaceId);
+          },
+        ),
+      ),
     );
     expect(find.text('正在读取地点详情…'), findsOneWidget);
 
     api.authenticatedUserId = 'different-owner';
+    rebuild(() {});
+    await tester.pump();
+    expect(find.text('账号状态已变化'), findsOneWidget);
+
     response.complete(_place());
     await tester.pumpAndSettle();
 
-    expect(find.text('正在读取地点详情…'), findsOneWidget);
+    expect(api.detailCalls, 2);
+    expect(find.text('新账号的地点'), findsWidgets);
     expect(find.text('家'), findsNothing);
+  });
+
+  testWidgets('PlaceDetailPage reloads when API and place identity changes',
+      (tester) async {
+    final firstApi = _PlaceApi(detail: _place());
+    final secondPlaceId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    final secondApi = _PlaceApi(
+      detail: _place(placeId: secondPlaceId, name: '办公室'),
+    );
+    var api = firstApi;
+    var placeId = _timelinePlaceId;
+    late StateSetter rebuild;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return PlaceDetailPage(api: api, placeId: placeId);
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('家'), findsWidgets);
+
+    api = secondApi;
+    placeId = secondPlaceId;
+    rebuild(() {});
+    await tester.pump();
+    expect(find.text('家'), findsNothing);
+    await tester.pumpAndSettle();
+
+    expect(find.text('办公室'), findsWidgets);
+    expect(firstApi.detailCalls, 1);
+    expect(secondApi.lastPlaceId, secondPlaceId);
   });
 
   testWidgets('PlaceDetailPage clears displayed facts when owner changes',

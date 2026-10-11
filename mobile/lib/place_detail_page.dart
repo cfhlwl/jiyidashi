@@ -35,6 +35,12 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   bool _loadingMore = false;
   bool _offline = false;
   int _requestEpoch = 0;
+  JiYiApiClient? _requestApi;
+  String? _requestPlaceId;
+  int? _requestSessionVersion;
+  String? _requestOwnerId;
+  JiYiApiClient? _displayedApi;
+  String? _displayedPlaceId;
   int? _displayedSessionVersion;
   String? _displayedOwnerId;
   bool _sessionRefreshScheduled = false;
@@ -89,8 +95,14 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
 
   Future<void> _loadInitial() async {
     final epoch = ++_requestEpoch;
-    final sessionVersion = widget.api.sessionVersion;
-    final ownerId = widget.api.authenticatedUserId;
+    final api = widget.api;
+    final placeId = widget.placeId;
+    final sessionVersion = api.sessionVersion;
+    final ownerId = api.authenticatedUserId;
+    _requestApi = api;
+    _requestPlaceId = placeId;
+    _requestSessionVersion = sessionVersion;
+    _requestOwnerId = ownerId;
     setState(() {
       _loading = true;
       _error = null;
@@ -98,34 +110,51 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
       _place = null;
       _visits.clear();
       _nextCursor = null;
+      _displayedApi = null;
+      _displayedPlaceId = null;
+      _displayedSessionVersion = null;
+      _displayedOwnerId = null;
     });
     try {
-      final response = await widget.api.getPlaceDetail(widget.placeId);
+      final response = await api.getPlaceDetail(placeId);
       final parsed = _PlaceDetailPayload.parse(response);
-      if (!_requestCurrent(epoch, sessionVersion, ownerId)) return;
-      if (parsed.place.id.toLowerCase() != widget.placeId.toLowerCase()) {
+      if (!_requestCurrent(epoch, api, placeId, sessionVersion, ownerId)) {
+        return;
+      }
+      if (parsed.place.id.toLowerCase() != placeId.toLowerCase()) {
         throw ProtocolException('服务端返回格式不正确');
       }
       setState(() {
         _place = parsed.place;
         _visits.addAll(parsed.visits);
         _nextCursor = parsed.nextCursor;
+        _displayedApi = api;
+        _displayedPlaceId = placeId;
         _displayedSessionVersion = sessionVersion;
         _displayedOwnerId = ownerId;
         _error = null;
         _offline = false;
       });
     } on Object catch (error) {
-      if (_requestCurrent(epoch, sessionVersion, ownerId)) {
+      if (_requestCurrent(epoch, api, placeId, sessionVersion, ownerId)) {
         setState(() {
           _error = _errorText(error);
           _offline = error is TransportException;
         });
       }
     } finally {
-      if (_requestCurrent(epoch, sessionVersion, ownerId)) {
+      if (_requestCurrent(epoch, api, placeId, sessionVersion, ownerId)) {
         setState(() => _loading = false);
       }
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaceDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.api, widget.api) ||
+        oldWidget.placeId.toLowerCase() != widget.placeId.toLowerCase()) {
+      _loadInitial();
     }
   }
 
@@ -133,19 +162,21 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
     final cursor = _nextCursor;
     if (cursor == null || _loadingMore) return;
     final epoch = _requestEpoch;
-    final sessionVersion = widget.api.sessionVersion;
-    final ownerId = widget.api.authenticatedUserId;
+    final api = widget.api;
+    final placeId = widget.placeId;
+    final sessionVersion = api.sessionVersion;
+    final ownerId = api.authenticatedUserId;
     setState(() => _loadingMore = true);
     try {
-      final response = await widget.api.getPlaceDetail(
-        widget.placeId,
+      final response = await api.getPlaceDetail(
+        placeId,
         cursor: cursor,
       );
       // 分页必须先完整验证整页协议，再一次性提交到 UI state；
       // 任何 Visit 或 next_cursor 字段异常都不能留下半页“看起来可信”的到访记录。
       final parsed = _PlaceDetailPayload.parse(response);
       final currentPlace = _place;
-      if (!_requestCurrent(epoch, sessionVersion, ownerId) ||
+      if (!_requestCurrent(epoch, api, placeId, sessionVersion, ownerId) ||
           currentPlace == null ||
           parsed.place.id.toLowerCase() != currentPlace.id.toLowerCase()) {
         throw ProtocolException('服务端返回格式不正确');
@@ -154,53 +185,62 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
         _place = parsed.place;
         _visits.addAll(parsed.visits);
         _nextCursor = parsed.nextCursor;
+        _displayedApi = api;
+        _displayedPlaceId = placeId;
         _displayedSessionVersion = sessionVersion;
         _displayedOwnerId = ownerId;
         _error = null;
         _offline = false;
       });
     } on Object catch (error) {
-      if (_requestCurrent(epoch, sessionVersion, ownerId)) {
+      if (_requestCurrent(epoch, api, placeId, sessionVersion, ownerId)) {
         setState(() {
           _error = _errorText(error);
           _offline = error is TransportException;
         });
       }
     } finally {
-      if (_requestCurrent(epoch, sessionVersion, ownerId)) {
+      if (_requestCurrent(epoch, api, placeId, sessionVersion, ownerId)) {
         setState(() => _loadingMore = false);
       }
     }
   }
 
-  bool _requestCurrent(int epoch, int sessionVersion, String? ownerId) {
+  bool _requestCurrent(
+    int epoch,
+    JiYiApiClient api,
+    String placeId,
+    int sessionVersion,
+    String? ownerId,
+  ) {
     return mounted &&
         epoch == _requestEpoch &&
-        widget.api.sessionVersion == sessionVersion &&
-        widget.api.authenticatedUserId == ownerId;
+        identical(widget.api, api) &&
+        widget.placeId.toLowerCase() == placeId.toLowerCase() &&
+        api.sessionVersion == sessionVersion &&
+        api.authenticatedUserId == ownerId;
   }
 
   bool get _displayedDataIsCurrent =>
+      _displayedApi != null &&
+      identical(_displayedApi, widget.api) &&
+      _displayedPlaceId?.toLowerCase() == widget.placeId.toLowerCase() &&
       _displayedSessionVersion == widget.api.sessionVersion &&
       _displayedOwnerId == widget.api.authenticatedUserId;
+
+  bool get _requestIsCurrent =>
+      _requestApi != null &&
+      identical(_requestApi, widget.api) &&
+      _requestPlaceId?.toLowerCase() == widget.placeId.toLowerCase() &&
+      _requestSessionVersion == widget.api.sessionVersion &&
+      _requestOwnerId == widget.api.authenticatedUserId;
 
   void _scheduleSessionInvalidation() {
     if (_sessionRefreshScheduled) return;
     _sessionRefreshScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _sessionRefreshScheduled = false;
-      if (!mounted || _displayedDataIsCurrent) return;
-      _requestEpoch += 1;
-      setState(() {
-        _loading = true;
-        _error = null;
-        _offline = false;
-        _place = null;
-        _visits.clear();
-        _nextCursor = null;
-        _displayedSessionVersion = null;
-        _displayedOwnerId = null;
-      });
+      if (!mounted || (_requestIsCurrent && _displayedDataIsCurrent)) return;
       _loadInitial();
     });
   }
@@ -307,7 +347,8 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_place != null && !_displayedDataIsCurrent) {
+    if ((_place != null && !_displayedDataIsCurrent) ||
+        (_requestApi != null && !_requestIsCurrent)) {
       _scheduleSessionInvalidation();
       return V3PageScaffold(
         topBar: V3TopBar(
