@@ -214,6 +214,8 @@ class WechatAuthPlugin(
 
         override fun onActivityStarted(activity: Activity) {
             started += 1
+            (adapterOrUnavailable() as? WechatAuthExternalHandoffAware)
+                ?.markExternalProviderReturned()
         }
 
         override fun onActivityStopped(activity: Activity) {

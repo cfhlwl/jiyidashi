@@ -14,6 +14,8 @@ import sys
 import time
 from pathlib import Path
 
+CLEANUP_FAILED_STATUS = 125
+
 
 def _process_group_members(process_group_id: int) -> tuple[int, ...]:
     """Return live PIDs in a process group when killpg is unavailable."""
@@ -42,32 +44,45 @@ def _process_group_members(process_group_id: int) -> tuple[int, ...]:
     return tuple(members)
 
 
-def _signal_process_group(process_group_id: int, signal_number: signal.Signals) -> None:
+def _signal_process_group(process_group_id: int, signal_number: signal.Signals) -> bool:
     """Signal a process group, falling back to its members on macOS runners."""
 
     try:
         os.killpg(process_group_id, signal_number)
-        return
+        return True
     except ProcessLookupError:
-        return
+        return True
     except PermissionError:
         # Some macOS hosted runners reject killpg after the group leader has
         # already exited. The saved PGID remains authoritative; signal each
         # surviving member so a downloader cannot escape cleanup.
         members = _process_group_members(process_group_id)
+        cleanup_confirmed = bool(members)
         for pid in members:
             try:
                 os.kill(pid, signal_number)
             except (ProcessLookupError, PermissionError):
-                pass
+                if not _pid_is_gone(pid):
+                    cleanup_confirmed = False
+        return cleanup_confirmed
+
+
+def _pid_is_gone(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
 
 
 def terminate_process_group(
     process: subprocess.Popen[bytes], process_group_id: int
-) -> None:
+) -> bool:
     """Stop pod and any child downloader it started."""
 
-    _signal_process_group(process_group_id, signal.SIGTERM)
+    term_confirmed = _signal_process_group(process_group_id, signal.SIGTERM)
 
     try:
         process.wait(timeout=15)
@@ -77,8 +92,12 @@ def terminate_process_group(
     # Do not make SIGKILL conditional on the leader still being alive.  A
     # SIGTERM handler may let the pod leader exit while a downloader child
     # remains in the same process group.
-    _signal_process_group(process_group_id, signal.SIGKILL)
-    process.wait()
+    kill_confirmed = _signal_process_group(process_group_id, signal.SIGKILL)
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        return False
+    return term_confirmed and kill_confirmed
 
 
 def run_attempt(timeout_seconds: int, working_directory: Path) -> int:
@@ -99,7 +118,13 @@ def run_attempt(timeout_seconds: int, working_directory: Path) -> int:
             f"pod install exceeded {timeout_seconds}s; terminating its process group",
             flush=True,
         )
-        terminate_process_group(process, process_group_id)
+        if not terminate_process_group(process, process_group_id):
+            print(
+                "unable to confirm CocoaPods process-group cleanup; refusing retry",
+                file=sys.stderr,
+                flush=True,
+            )
+            return CLEANUP_FAILED_STATUS
         return 124
 
     if status != 0:
@@ -107,7 +132,13 @@ def run_attempt(timeout_seconds: int, working_directory: Path) -> int:
             f"pod install exited with status {status}; cleaning its process group",
             flush=True,
         )
-        terminate_process_group(process, process_group_id)
+        if not terminate_process_group(process, process_group_id):
+            print(
+                "unable to confirm CocoaPods process-group cleanup; refusing retry",
+                file=sys.stderr,
+                flush=True,
+            )
+            return CLEANUP_FAILED_STATUS
     return status
 
 
@@ -128,6 +159,9 @@ def main() -> int:
         if status == 0:
             print("CocoaPods install completed", flush=True)
             return 0
+        if status == CLEANUP_FAILED_STATUS:
+            print("CocoaPods install stopped because cleanup was not confirmed", file=sys.stderr)
+            return status
         if attempt == attempts:
             print(f"CocoaPods install failed with status {status}", file=sys.stderr)
             return status or 1

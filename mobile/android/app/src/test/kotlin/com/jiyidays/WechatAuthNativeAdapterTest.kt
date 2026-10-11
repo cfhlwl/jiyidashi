@@ -223,11 +223,12 @@ class WechatAuthNativeAdapterTest {
             MethodCall("initialize", mapOf("privacy_consent_granted" to true)),
             initialize,
         )
+        val callbacks = privateLifecycleCallbacks(plugin)
+        callbacks.onActivityStarted(activity)
+
         val request = RecordingResult()
         plugin.onMethodCall(MethodCall("requestCredential", null), request)
 
-        val callbacks = privateLifecycleCallbacks(plugin)
-        callbacks.onActivityStarted(activity)
         callbacks.onActivityStopped(activity)
 
         assertEquals("CANCELLED", request.value["state"])
@@ -275,11 +276,11 @@ class WechatAuthNativeAdapterTest {
             MethodCall("initialize", mapOf("privacy_consent_granted" to true)),
             initialize,
         )
-        val request = RecordingResult()
-        plugin.onMethodCall(MethodCall("requestCredential", null), request)
-
         val callbacks = privateLifecycleCallbacks(plugin)
         callbacks.onActivityStarted(activity)
+
+        val request = RecordingResult()
+        plugin.onMethodCall(MethodCall("requestCredential", null), request)
         callbacks.onActivityStopped(activity)
 
         assertEquals(0, adapter.cancelCalls)
@@ -294,6 +295,38 @@ class WechatAuthNativeAdapterTest {
         assertEquals("CREDENTIAL_ACQUIRED", request.value["state"])
         assertEquals("returned-from-wechat", request.value["credential"])
         assertEquals(1, request.callCount)
+    }
+
+    @Test
+    fun returnedWithoutWechatCallbackRestoresBackgroundCancellation() {
+        val adapter = DelayedAdapter(externalHandoffOnRequest = true)
+        val plugin = WechatAuthPlugin(adapter)
+        val activity = TestActivity()
+        setPrivateActivity(plugin, activity)
+
+        val initialize = RecordingResult()
+        plugin.onMethodCall(
+            MethodCall("initialize", mapOf("privacy_consent_granted" to true)),
+            initialize,
+        )
+        val callbacks = privateLifecycleCallbacks(plugin)
+        callbacks.onActivityStarted(activity)
+
+        val request = RecordingResult()
+        plugin.onMethodCall(MethodCall("requestCredential", null), request)
+        callbacks.onActivityStopped(activity)
+        assertEquals(0, adapter.cancelCalls)
+
+        // JiYi becomes visible again without a provider callback. A later Home
+        // transition must use the ordinary background cancellation fence.
+        callbacks.onActivityStarted(activity)
+        assertFalse(adapter.isAwaitingExternalProvider())
+        callbacks.onActivityStopped(activity)
+
+        assertEquals("CANCELLED", request.value["state"])
+        assertEquals("APP_BACKGROUND", request.value["reason"])
+        assertEquals(1, request.callCount)
+        assertEquals(1, adapter.cancelCalls)
     }
 
     private fun adapter(
@@ -390,6 +423,10 @@ class WechatAuthNativeAdapterTest {
             completion(WechatAuthNativeResult(WechatAuthNativeState.UNAVAILABLE))
 
         override fun isAwaitingExternalProvider(): Boolean = externalHandoffAccepted
+
+        override fun markExternalProviderReturned() {
+            externalHandoffAccepted = false
+        }
     }
 
     private fun setPrivateActivity(plugin: WechatAuthPlugin, activity: Activity) {

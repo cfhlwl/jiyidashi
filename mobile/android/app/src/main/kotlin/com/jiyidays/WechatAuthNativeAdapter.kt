@@ -65,6 +65,7 @@ interface WechatAuthProviderAdapter {
  */
 interface WechatAuthExternalHandoffAware {
     fun isAwaitingExternalProvider(): Boolean
+    fun markExternalProviderReturned()
 }
 
 interface WechatOpenSdkClient {
@@ -166,6 +167,14 @@ class WechatAuthNativeAdapter(
 
     override fun isAwaitingExternalProvider(): Boolean = synchronized(lock) {
         pending?.externalHandoffAccepted == true
+    }
+
+    override fun markExternalProviderReturned() {
+        synchronized(lock) {
+            if (pending?.externalHandoffAccepted == true) {
+                pending = pending?.copy(externalHandoffAccepted = false)
+            }
+        }
     }
 
     override fun initialize(

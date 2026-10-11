@@ -13,7 +13,11 @@ from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from prepare_ios_cocoapods import terminate_process_group  # noqa: E402
+from prepare_ios_cocoapods import (  # noqa: E402
+    CLEANUP_FAILED_STATUS,
+    main,
+    terminate_process_group,
+)
 
 
 @unittest.skipUnless(hasattr(os, "killpg"), "requires POSIX process groups")
@@ -103,11 +107,58 @@ class ProcessGroupCleanupTest(unittest.TestCase):
                 "prepare_ios_cocoapods.os.killpg",
                 side_effect=PermissionError(1, "operation not permitted"),
             ):
-                terminate_process_group(leader, process_group_id)
+                self.assertTrue(terminate_process_group(leader, process_group_id))
             self._assert_dead(child_pid)
         finally:
             if leader.poll() is None:
                 terminate_process_group(leader, process_group_id)
+
+    def test_member_permission_error_marks_cleanup_unconfirmed(self) -> None:
+        leader, child_pid = self._start_leader(
+            self._leader_code(exit_status=17), self._child_code()
+        )
+        process_group_id = leader.pid
+        try:
+            self.assertEqual(leader.wait(timeout=5), 17)
+            with (
+                mock.patch(
+                    "prepare_ios_cocoapods.os.killpg",
+                    side_effect=PermissionError(1, "operation not permitted"),
+                ),
+                mock.patch(
+                    "prepare_ios_cocoapods.os.kill",
+                    side_effect=PermissionError(1, "operation not permitted"),
+                ),
+            ):
+                self.assertFalse(terminate_process_group(leader, process_group_id))
+        finally:
+            if leader.poll() is None:
+                terminate_process_group(leader, process_group_id)
+            else:
+                # The child intentionally ignores SIGTERM in this test.
+                try:
+                    os.kill(child_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_cleanup_failure_stops_before_retry(self) -> None:
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "COCOAPODS_MAX_ATTEMPTS": "3",
+                    "COCOAPODS_ATTEMPT_TIMEOUT_SECONDS": "1",
+                    "COCOAPODS_RETRY_DELAY_SECONDS": "0",
+                },
+                clear=False,
+            ),
+            mock.patch(
+                "prepare_ios_cocoapods.run_attempt",
+                side_effect=[CLEANUP_FAILED_STATUS, 0],
+            ) as run_attempt,
+        ):
+            self.assertEqual(main(), CLEANUP_FAILED_STATUS)
+            run_attempt.assert_called_once()
 
 
 if __name__ == "__main__":
