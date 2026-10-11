@@ -101,9 +101,16 @@ class _PlaceDetailPageState extends State<PlaceDetailPage> {
   }
 
   Future<void> _acceptMapPrivacy() async {
+    final authority = _amapPrivacyConsent;
+    final readEpoch = _privacyReadEpoch;
     final accepted =
-        await requestAmapPrivacyConsent(context, _amapPrivacyConsent);
-    if (mounted && accepted) setState(() => _mapPrivacyAccepted = true);
+        await requestAmapPrivacyConsent(context, authority);
+    if (mounted &&
+        accepted &&
+        identical(authority, _amapPrivacyConsent) &&
+        readEpoch == _privacyReadEpoch) {
+      setState(() => _mapPrivacyAccepted = true);
+    }
   }
 
   Future<void> _loadInitial() async {

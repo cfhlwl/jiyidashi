@@ -25,6 +25,15 @@ class _PlaceConsent implements AmapPrivacyConsentAuthority {
   Future<void> revoke() async => accepted = false;
 }
 
+class _DelayedPlaceConsent extends _PlaceConsent {
+  _DelayedPlaceConsent(super.accepted);
+
+  final acceptCompleter = Completer<void>();
+
+  @override
+  Future<void> accept() => acceptCompleter.future.then((_) => accepted = true);
+}
+
 class _PlaceApi extends JiYiApiClient {
   _PlaceApi({
     this.detail,
@@ -624,6 +633,54 @@ void main() {
       expect(find.text('部分到访记录加载失败'), findsOneWidget);
       expect(find.text('仍在更新的到访'), findsNothing);
       expect(find.textContaining('visit-2'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'PlaceDetailPage ignores an old privacy acceptance after authority replacement',
+    (tester) async {
+      final firstDelegate = _DelayedPlaceConsent(false);
+      final first = AmapPrivacyConsentController(delegate: firstDelegate);
+      final second = AmapPrivacyConsentController(
+        delegate: _PlaceConsent(false),
+      );
+      var currentConsent = first;
+      final api = _PlaceApi(
+        detail: _place(latitude: 31.2243, longitude: 121.4768),
+      );
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return PlaceDetailPage(
+                api: api,
+                placeId: _timelinePlaceId,
+                amapPrivacyConsent: currentConsent,
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('place-amap-privacy-accept')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('amap-privacy-confirm')));
+      await tester.pump();
+
+      currentConsent = second;
+      rebuild(() {});
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsOneWidget);
+
+      firstDelegate.acceptCompleter.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('amap-place-real-surface')), findsNothing);
+      expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsOneWidget);
     },
   );
 
