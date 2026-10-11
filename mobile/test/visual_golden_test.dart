@@ -1477,9 +1477,8 @@ void main() {
   });
 
   testWidgets(
-    'candidate: Batch 4A Place Detail scrolled visit surface',
+    'golden: place detail loaded scrolled',
     (tester) async {
-      if (!_captureBatch4aCandidates) return;
       final key = await _pumpSurface(
         tester,
         PlaceDetailPage(

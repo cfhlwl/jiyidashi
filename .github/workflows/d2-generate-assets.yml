@@ -306,9 +306,7 @@ jobs:
             --dart-define=UIUX_V3_BATCH4A_CANDIDATE_MODE=true \
             --reporter expanded
           flutter test test/visual_golden_test.dart \
-            --plain-name "candidate: Batch 4A Place Detail scrolled visit surface" \
-            --update-goldens \
-            --dart-define=UIUX_V3_BATCH4A_CANDIDATE_MODE=true \
+            --plain-name "golden: place detail loaded scrolled" \
             --reporter expanded
           test -s test/goldens/place_detail_v3_batch4a.png
           test -s test/goldens/place_detail_loaded_scrolled.png
