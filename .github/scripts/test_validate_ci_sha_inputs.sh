@@ -3,6 +3,9 @@ set -euo pipefail
 
 validator="$(dirname "$0")/validate_ci_sha_inputs.sh"
 target_sha="$(git rev-parse HEAD)"
+if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+  git fetch --no-tags --unshallow origin
+fi
 base_sha="$(git rev-parse "$target_sha^")"
 
 expect_failure() {
