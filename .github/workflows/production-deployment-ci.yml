@@ -146,6 +146,38 @@ jobs:
           echo "BACKEND_IMAGE=jiyidashi-backend:$EXPECTED_SHA" >> "$GITHUB_ENV"
           echo "EDGE_IMAGE=jiyidashi-edge:$EXPECTED_SHA" >> "$GITHUB_ENV"
 
+      - name: Validate target and base commit inputs
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          sha_pattern='^[0-9a-f]{40}$'
+          if [[ ! "$TARGET_SHA" =~ $sha_pattern ]]; then
+            echo "target SHA must be a 40-character lowercase Git commit SHA" >&2
+            exit 1
+          fi
+          git cat-file -e "$TARGET_SHA^{commit}"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ ! "$BASE_SHA" =~ $sha_pattern ]]; then
+              echo "base SHA must be a 40-character lowercase Git commit SHA" >&2
+              exit 1
+            fi
+            if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+              git fetch --no-tags --unshallow origin
+            else
+              git fetch --no-tags origin
+            fi
+            git fetch --no-tags origin "$TARGET_SHA" "$BASE_SHA"
+            git cat-file -e "$BASE_SHA^{commit}"
+            if ! git merge-base --is-ancestor "$BASE_SHA" "$TARGET_SHA"; then
+              echo "base SHA is not an ancestor of target SHA" >&2
+              exit 1
+            fi
+          fi
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -661,9 +693,11 @@ jobs:
 
       - name: Stopped existing volume is backed up before migration
         shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           export ENV_FILE
-          export RELEASE_SHA="${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}"
+          export RELEASE_SHA="$TARGET_SHA"
           backup_record="$RUNNER_TEMP/backup-record.txt"
           ENV_FILE="$ENV_FILE"           COMPOSE_FILE="$PWD/docker-compose.prod.yml"           BACKUP_DIR="$RUNNER_TEMP/backups"           BACKUP_RECORD_FILE="$backup_record"             bash ops/prepare-production-database.sh
 
@@ -724,6 +758,8 @@ jobs:
 
       - name: OPS-003 off-host backup publication and same-slot idempotency
         shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           fake_root="$RUNNER_TEMP/offhost-backup-store"
           staging="$RUNNER_TEMP/offhost-staging"
@@ -738,7 +774,7 @@ jobs:
             BACKUP_LOCAL_STAGING_DIR="$staging" \
             BACKUP_LOCK_FILE="$lock_file" \
             BACKUP_SLOT=2026-10-05 \
-            RELEASE_SHA="${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}" \
+            RELEASE_SHA="$TARGET_SHA" \
               bash ops/offhost-backup.sh
           done
 

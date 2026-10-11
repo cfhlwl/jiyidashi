@@ -62,6 +62,18 @@ jobs:
           echo "actual checkout SHA:   $actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
 
+      - name: Validate target commit input
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.event.pull_request.head.sha || github.sha }}
+        run: |
+          sha_pattern='^[0-9a-f]{40}$'
+          if [[ ! "$TARGET_SHA" =~ $sha_pattern ]]; then
+            echo "target SHA must be a 40-character lowercase Git commit SHA" >&2
+            exit 1
+          fi
+          git cat-file -e "$TARGET_SHA^{commit}"
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
