@@ -168,6 +168,23 @@ jobs:
             fi
           }
 
+          validate_base_target_inputs() {
+            local target_sha="$1"
+            local base_sha="$2"
+            if [[ ! "$target_sha" =~ $sha_pattern ]]; then
+              echo "target SHA must be a 40-character lowercase Git commit SHA" >&2
+              return 1
+            fi
+            if [[ ! "$base_sha" =~ $sha_pattern ]]; then
+              echo "base SHA must be a 40-character lowercase Git commit SHA" >&2
+              return 1
+            fi
+            if [[ "$base_sha" == "$target_sha" ]]; then
+              echo "base SHA and target SHA must differ" >&2
+              return 1
+            fi
+          }
+
           require_base_target_relation() {
             local target_sha="$1"
             local base_sha="$2"
@@ -183,16 +200,26 @@ jobs:
             fi
           }
 
-          require_commit_sha target_sha "$TARGET_SHA"
+          fetch_and_validate_manual_refs() {
+            local target_sha="$1"
+            local base_sha="$2"
+            if ! validate_base_target_inputs "$target_sha" "$base_sha"; then
+              return 1
+            fi
 
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
               git fetch --no-tags --unshallow origin
             else
               git fetch --no-tags origin
             fi
-            git fetch --no-tags origin "$TARGET_SHA" "$BASE_SHA"
-            require_base_target_relation "$TARGET_SHA" "$BASE_SHA"
+            git fetch --no-tags origin -- "$target_sha" "$base_sha"
+            require_base_target_relation "$target_sha" "$base_sha"
+          }
+
+          require_commit_sha target_sha "$TARGET_SHA"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            fetch_and_validate_manual_refs "$TARGET_SHA" "$BASE_SHA"
           fi
 
           if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
@@ -215,6 +242,21 @@ jobs:
           missing_sha=0000000000000000000000000000000000000000
           expect_failure require_commit_sha missing_sha "$missing_sha"
           expect_failure require_base_target_relation "$TARGET_SHA" "$TARGET_SHA"
+
+          fetch_attempted=0
+          git() {
+            if [[ "$1" == "fetch" ]]; then
+              fetch_attempted=1
+              return 0
+            fi
+            command git "$@"
+          }
+          expect_failure fetch_and_validate_manual_refs "$TARGET_SHA" --xxx
+          unset -f git
+          if [[ "$fetch_attempted" != "0" ]]; then
+            echo "invalid base SHA reached git fetch" >&2
+            exit 1
+          fi
 
           empty_tree="$(git mktree < /dev/null)"
           unrelated_sha="$(
