@@ -132,25 +132,25 @@ jobs:
         timeout-minutes: 5
         run: flutter test test/timeline_memory_detail_v3_test.dart --reporter expanded
 
-      - name: Generate Today V3 authority candidate
+      - name: Generate Today B2 authority candidate
         timeout-minutes: 5
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/today-v3-candidates
+          rm -rf /tmp/today-b2-candidates
           rm -rf test/uiux_v3_candidates
-          mkdir -p /tmp/today-v3-candidates
+          mkdir -p /tmp/today-b2-candidates
           flutter test test/today_b2_visual_fixture_test.dart \
             --update-goldens \
             --dart-define=UIUX_V3_CANDIDATE_MODE=true \
             --reporter expanded
-          cp test/uiux_v3_candidates/today_v3.png /tmp/today-v3-candidates/today_v3.png
+          cp test/uiux_v3_candidates/today_b2.png /tmp/today-b2-candidates/today_b2.png
           rm -rf test/uiux_v3_candidates
           git checkout -- test/goldens
           git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
           test -z "$(git status --porcelain -- test/uiux_v3_candidates)"
-          test -s /tmp/today-v3-candidates/today_v3.png
+          test -s /tmp/today-b2-candidates/today_b2.png
 
       - name: Generate Auth V3 authority candidates
         timeout-minutes: 5
@@ -186,7 +186,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
-            /tmp/today-v3-candidates/today_v3.png
+            /tmp/today-b2-candidates/today_b2.png
             /tmp/auth-v3-candidates/*.png
 
       - name: Generate Memory V3 review candidates
@@ -389,7 +389,7 @@ jobs:
               (root / name).mkdir(parents=True, exist_ok=True)
 
           cases = {
-              'today': ('design_reference/v3/01_today.png', '/tmp/today-v3-candidates/today_v3.png', 44, 22),
+              'today': ('design_reference/v3/01_today.png', '/tmp/product-v2-goldens/candidate/design_authority_today.png', 44, 22),
               'memory_default': ('design_reference/v3/02_memory.png', '/tmp/memory-v3-candidates/memory_v3_default.png', 43, 31),
               'memory_answer': ('design_reference/v3/02_memory.png', '/tmp/memory-v3-candidates/memory_v3_answer.png', 43, 31),
               'memory_shell': ('design_reference/v3/02_memory.png', '/tmp/memory-v3-candidates/memory_v3_shell.png', 43, 31),

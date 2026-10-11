@@ -428,12 +428,12 @@ void main() {
 
     await expectLater(
       find.byType(MaterialApp),
-      matchesGoldenFile('goldens/design_authority_today.png'),
+      matchesGoldenFile('goldens/design_authority_today_b2.png'),
     );
     if (_candidateMode) {
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('uiux_v3_candidates/today_v3.png'),
+        matchesGoldenFile('uiux_v3_candidates/today_b2.png'),
       );
     }
   });
