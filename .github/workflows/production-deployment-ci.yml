@@ -153,30 +153,21 @@ jobs:
           BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          sha_pattern='^[0-9a-f]{40}$'
-          if [[ ! "$TARGET_SHA" =~ $sha_pattern ]]; then
-            echo "target SHA must be a 40-character lowercase Git commit SHA" >&2
-            exit 1
-          fi
-          git cat-file -e "$TARGET_SHA^{commit}"
+          bash .github/scripts/validate_ci_sha_inputs.sh "$TARGET_SHA"
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            if [[ ! "$BASE_SHA" =~ $sha_pattern ]]; then
-              echo "base SHA must be a 40-character lowercase Git commit SHA" >&2
-              exit 1
-            fi
             if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
               git fetch --no-tags --unshallow origin
             else
               git fetch --no-tags origin
             fi
             git fetch --no-tags origin "$TARGET_SHA" "$BASE_SHA"
-            git cat-file -e "$BASE_SHA^{commit}"
-            if ! git merge-base --is-ancestor "$BASE_SHA" "$TARGET_SHA"; then
-              echo "base SHA is not an ancestor of target SHA" >&2
-              exit 1
-            fi
+            bash .github/scripts/validate_ci_sha_inputs.sh "$TARGET_SHA" "$BASE_SHA"
           fi
+
+      - name: Test CI SHA validation boundaries
+        shell: bash
+        run: bash .github/scripts/test_validate_ci_sha_inputs.sh
 
       - uses: actions/setup-python@v5
         with:
