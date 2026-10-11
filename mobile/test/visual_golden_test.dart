@@ -1520,6 +1520,13 @@ void main() {
         find.byKey(const ValueKey('local-media-ready-$v2MediaId')),
       ),
     );
+    await _visualStep(
+      'cached-photo image decode',
+      _assertDecodedGoldenImage(
+        tester,
+        find.byKey(const ValueKey('/tmp/jiyi-page-visual-$v2MediaId.media')),
+      ),
+    );
     expect(api.capabilityCalls, 0);
     await _visualStep(
       'cached-photo golden raster',
@@ -1705,10 +1712,19 @@ void main() {
       api: _GoldenApi(privacyError: ApiException(503, '服务端状态读取失败')),
     );
 
-    expect(find.text('无法确认当前隐私状态'), findsOneWidget);
-    expect(find.text('服务端状态读取失败'), findsOneWidget);
+    final privacyError = find.text('无法确认当前隐私状态');
+    final privacyMessage = find.text('服务端状态读取失败');
+    expect(privacyError, findsOneWidget);
+    expect(privacyMessage, findsOneWidget);
     expect(find.text('当前没有暂停自动采集'), findsNothing);
     expect(find.text('自动采集已暂停'), findsNothing);
+    // The Profile is a scrollable surface. Keep the error state itself in the
+    // captured viewport; otherwise this test can pass its semantic assertions
+    // while the Golden still captures the healthy identity header above it.
+    await tester.ensureVisible(privacyError);
+    await _pumpVisualFrames(tester);
+    expect(privacyError, findsOneWidget);
+    expect(privacyMessage, findsOneWidget);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/profile_privacy_error.png'),
