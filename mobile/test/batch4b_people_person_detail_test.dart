@@ -129,6 +129,12 @@ class _MutationProbeApi extends V2TestApi {
       };
 
   @override
+  Map<String, dynamic> get memory => {
+        ...super.memory,
+        'user_id': owner,
+      };
+
+  @override
   Future<Object?> requestV2Json(
     String method,
     String path, {
