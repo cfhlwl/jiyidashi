@@ -131,7 +131,7 @@ final class WechatIOSSDKClient: WechatIOSSDKClientProtocol {
   }
 
   func isWXAppSupportAPI() -> Bool {
-    WXApi.isWXAppSupportApi()
+    WXApi.isWXAppSupport()
   }
 
   func sendAuthRequest(
