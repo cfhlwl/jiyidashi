@@ -764,3 +764,320 @@ private final class DelayedPhoneOneTapAdapter: PhoneOneTapProviderAdapter {
     completion(PhoneOneTapNativeResult(state: .unavailable, reason: "PRIVACY_REVOKED"))
   }
 }
+
+private final class ManualWechatIOSAuthScheduler: WechatIOSAuthScheduler {
+  private var tasks: [Int: () -> Void] = [:]
+  private var nextID = 0
+
+  func schedule(after seconds: TimeInterval, _ task: @escaping () -> Void) -> () -> Void {
+    nextID += 1
+    let id = nextID
+    tasks[id] = task
+    return { [weak self] in self?.tasks[id] = nil }
+  }
+
+  func fireAll() {
+    let pending = tasks.values
+    tasks.removeAll()
+    pending.forEach { $0() }
+  }
+}
+
+private final class FakeWechatIOSSDKClient: WechatIOSSDKClientProtocol {
+  var registerCalls = 0
+  var installed = true
+  var supportsAPI = true
+  var sendStates: [String] = []
+  var sendCompletion: ((Bool) -> Void)?
+  var openURLCalls = 0
+  var openUniversalLinkCalls = 0
+
+  func registerApp(appId: String, universalLink: String) -> Bool {
+    registerCalls += 1
+    return true
+  }
+
+  func isWXAppInstalled() -> Bool {
+    installed
+  }
+
+  func isWXAppSupportAPI() -> Bool {
+    supportsAPI
+  }
+
+  func sendAuthRequest(
+    state: String,
+    presenter: UIViewController,
+    delegate: WXApiDelegate,
+    completion: @escaping (Bool) -> Void
+  ) {
+    sendStates.append(state)
+    sendCompletion = completion
+  }
+
+  func handleOpenURL(_ url: URL, delegate: WXApiDelegate) -> Bool {
+    openURLCalls += 1
+    return true
+  }
+
+  func handleOpenUniversalLink(
+    _ userActivity: NSUserActivity,
+    delegate: WXApiDelegate
+  ) -> Bool {
+    openUniversalLinkCalls += 1
+    return true
+  }
+
+  func completeSend(_ accepted: Bool) {
+    sendCompletion?(accepted)
+    sendCompletion = nil
+  }
+}
+
+final class WechatAuthNativeBridgeTests: XCTestCase {
+  private let configuration = WechatIOSConfiguration(
+    appId: "wx-test",
+    universalLink: "https://example.invalid/wechat/",
+    provider: "wechat",
+    liveEnabled: true
+  )
+
+  private func makeBridge(
+    sdk: FakeWechatIOSSDKClient,
+    scheduler: ManualWechatIOSAuthScheduler,
+    host: UIViewController? = UIViewController()
+  ) -> WechatAuthNativeBridge {
+    let bridge = WechatAuthNativeBridge(
+      configuration: configuration,
+      sdk: sdk,
+      scheduler: scheduler,
+      viewControllerProvider: { host }
+    )
+    return bridge
+  }
+
+  func testPrivacyFalsePerformsZeroSDKOperations() {
+    let sdk = FakeWechatIOSSDKClient()
+    let scheduler = ManualWechatIOSAuthScheduler()
+    let bridge = WechatAuthNativeBridge(
+      configuration: configuration,
+      sdk: sdk,
+      scheduler: scheduler
+    )
+    var value: [String: Any]?
+
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": false]
+      ),
+      result: { value = $0 as? [String: Any] }
+    )
+
+    XCTAssertEqual(value?["state"] as? String, "UNAVAILABLE")
+    XCTAssertEqual(value?["reason"] as? String, "PRIVACY_REVOKED")
+    XCTAssertEqual(sdk.registerCalls, 0)
+    XCTAssertTrue(sdk.sendStates.isEmpty)
+  }
+
+  func testMissingConfigurationFailsClosedBeforeSDKRegistration() {
+    let sdk = FakeWechatIOSSDKClient()
+    let bridge = WechatAuthNativeBridge(
+      configuration: WechatIOSConfiguration(
+        appId: nil,
+        universalLink: nil,
+        provider: "disabled",
+        liveEnabled: false
+      ),
+      sdk: sdk,
+      scheduler: ManualWechatIOSAuthScheduler()
+    )
+    var value: [String: Any]?
+
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": true]
+      ),
+      result: { value = $0 as? [String: Any] }
+    )
+
+    XCTAssertEqual(value?["state"] as? String, "UNAVAILABLE")
+    XCTAssertEqual(value?["reason"] as? String, "WECHAT_PROVIDER_DISABLED")
+    XCTAssertEqual(sdk.registerCalls, 0)
+  }
+
+  func testConfiguredInitializationAndAvailabilityUseProviderNeutralContract() {
+    let sdk = FakeWechatIOSSDKClient()
+    let bridge = WechatAuthNativeBridge(
+      configuration: configuration,
+      sdk: sdk,
+      scheduler: ManualWechatIOSAuthScheduler(),
+      viewControllerProvider: { UIViewController() }
+    )
+    var initializeValue: [String: Any]?
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": true]
+      ),
+      result: { initializeValue = $0 as? [String: Any] }
+    )
+    XCTAssertEqual(initializeValue?["state"] as? String, "AVAILABLE")
+    XCTAssertEqual(sdk.registerCalls, 1)
+
+    var availabilityValue: [String: Any]?
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "checkAvailability", arguments: nil),
+      result: { availabilityValue = $0 as? [String: Any] }
+    )
+    XCTAssertEqual(availabilityValue?["state"] as? String, "AVAILABLE")
+  }
+
+  func testMatchingStateProducesOneInMemoryCredentialAndFencesDuplicates() {
+    let sdk = FakeWechatIOSSDKClient()
+    let bridge = WechatAuthNativeBridge(
+      configuration: configuration,
+      sdk: sdk,
+      scheduler: ManualWechatIOSAuthScheduler(),
+      viewControllerProvider: { UIViewController() }
+    )
+    initializeWechatBridge(bridge)
+    var values: [[String: Any]] = []
+
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestCredential", arguments: nil),
+      result: { if let value = $0 as? [String: Any] { values.append(value) } }
+    )
+    sdk.completeSend(true)
+    let state = sdk.sendStates[0]
+
+    bridge.handleProviderResponse(errorCode: 0, state: "wrong", credential: "stale")
+    XCTAssertTrue(values.isEmpty)
+    bridge.handleProviderResponse(errorCode: 0, state: state, credential: "opaque-code")
+    bridge.handleProviderResponse(errorCode: 0, state: state, credential: "duplicate-code")
+
+    XCTAssertEqual(values.count, 1)
+    XCTAssertEqual(values[0]["state"] as? String, "CREDENTIAL_ACQUIRED")
+    XCTAssertEqual(values[0]["credential"] as? String, "opaque-code")
+  }
+
+  func testLateRequestADoesNotAffectRequestB() {
+    let sdk = FakeWechatIOSSDKClient()
+    let bridge = WechatAuthNativeBridge(
+      configuration: configuration,
+      sdk: sdk,
+      scheduler: ManualWechatIOSAuthScheduler(),
+      viewControllerProvider: { UIViewController() }
+    )
+    initializeWechatBridge(bridge)
+    var first: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestCredential", arguments: nil),
+      result: { if let value = $0 as? [String: Any] { first.append(value) } }
+    )
+    sdk.completeSend(true)
+    let stateA = sdk.sendStates[0]
+    var cancel: [String: Any]?
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "cancel", arguments: nil),
+      result: { cancel = $0 as? [String: Any] }
+    )
+    XCTAssertEqual(cancel?["state"] as? String, "CANCELLED")
+    XCTAssertEqual(first.first?["reason"] as? String, "USER_CANCELLED")
+
+    var second: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestCredential", arguments: nil),
+      result: { if let value = $0 as? [String: Any] { second.append(value) } }
+    )
+    sdk.completeSend(true)
+    let stateB = sdk.sendStates[1]
+    bridge.handleProviderResponse(errorCode: 0, state: stateA, credential: "late-a")
+    XCTAssertTrue(second.isEmpty)
+    bridge.handleProviderResponse(errorCode: 0, state: stateB, credential: "credential-b")
+
+    XCTAssertEqual(second.count, 1)
+    XCTAssertEqual(second[0]["credential"] as? String, "credential-b")
+  }
+
+  func testExternalHandoffSuppressesFirstBackgroundButNextBackgroundCancels() {
+    let sdk = FakeWechatIOSSDKClient()
+    let bridge = WechatAuthNativeBridge(
+      configuration: configuration,
+      sdk: sdk,
+      scheduler: ManualWechatIOSAuthScheduler(),
+      viewControllerProvider: { UIViewController() }
+    )
+    initializeWechatBridge(bridge)
+    var values: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestCredential", arguments: nil),
+      result: { if let value = $0 as? [String: Any] { values.append(value) } }
+    )
+    sdk.completeSend(true)
+    bridge.invalidateForLifecycle(reason: "APP_BACKGROUND")
+    XCTAssertTrue(values.isEmpty)
+    bridge.markExternalProviderReturned()
+    bridge.invalidateForLifecycle(reason: "APP_BACKGROUND")
+    XCTAssertEqual(values.first?["state"] as? String, "CANCELLED")
+    XCTAssertEqual(values.first?["reason"] as? String, "APP_BACKGROUND")
+  }
+
+  func testPrivacyRevokeCancelsPendingAndIgnoresLateProviderResponse() {
+    let sdk = FakeWechatIOSSDKClient()
+    let bridge = WechatAuthNativeBridge(
+      configuration: configuration,
+      sdk: sdk,
+      scheduler: ManualWechatIOSAuthScheduler(),
+      viewControllerProvider: { UIViewController() }
+    )
+    initializeWechatBridge(bridge)
+    var values: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestCredential", arguments: nil),
+      result: { if let value = $0 as? [String: Any] { values.append(value) } }
+    )
+    sdk.completeSend(true)
+    let state = sdk.sendStates[0]
+    var privacy: [String: Any]?
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "revokePrivacy", arguments: nil),
+      result: { privacy = $0 as? [String: Any] }
+    )
+    bridge.handleProviderResponse(errorCode: 0, state: state, credential: "late")
+
+    XCTAssertEqual(values.count, 1)
+    XCTAssertEqual(values[0]["reason"] as? String, "PRIVACY_REVOKED")
+    XCTAssertEqual(privacy?["reason"] as? String, "PRIVACY_REVOKED")
+  }
+
+  func testMissingPresenterFailsClosedWithoutProviderCall() {
+    let sdk = FakeWechatIOSSDKClient()
+    let bridge = WechatAuthNativeBridge(
+      configuration: configuration,
+      sdk: sdk,
+      scheduler: ManualWechatIOSAuthScheduler(),
+      viewControllerProvider: { nil }
+    )
+    initializeWechatBridge(bridge)
+    var value: [String: Any]?
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestCredential", arguments: nil),
+      result: { value = $0 as? [String: Any] }
+    )
+
+    XCTAssertEqual(value?["reason"] as? String, "VIEW_CONTROLLER_UNAVAILABLE")
+    XCTAssertTrue(sdk.sendStates.isEmpty)
+  }
+
+  private func initializeWechatBridge(_ bridge: WechatAuthNativeBridge) {
+    bridge.handle(
+      call: FlutterMethodCall(
+        methodName: "initialize",
+        arguments: ["privacy_consent_granted": true]
+      ),
+      result: { _ in }
+    )
+  }
+}

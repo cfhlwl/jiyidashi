@@ -2404,6 +2404,7 @@ final class PhoneOneTapNativeBridge {
   private var nativeLocationBridge: NativeLocationBridge?
   private var phoneOneTapBridge: PhoneOneTapNativeBridge?
   private let nativeNotificationBridge = NativeNotificationBridge.shared
+  private let wechatAuthBridge = WechatAuthNativeBridge.shared
   private var activePassiveRecoveryTask: BGAppRefreshTask?
   private var passiveRecoveryCompletionChannel: FlutterMethodChannel?
 
@@ -2467,6 +2468,13 @@ final class PhoneOneTapNativeBridge {
     )
     phoneOneTapBridge = phoneOneTap
 
+    wechatAuthBridge.attach(
+      messenger: applicationRegistrar.messenger(),
+      viewControllerProvider: {
+        pluginRegistry.registrar(forPlugin: "WechatAuthNativeBridge")?.viewController
+      }
+    )
+
     let completionChannel = FlutterMethodChannel(
       name: "cn.jiyidashi/passive_recovery",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
@@ -2494,7 +2502,39 @@ final class PhoneOneTapNativeBridge {
     // This is the process-level background event. Authorization-page
     // transitions do not call this method, so they do not cancel PNVS auth.
     phoneOneTapBridge?.invalidateForLifecycle(reason: "APP_BACKGROUND")
+    wechatAuthBridge.invalidateForLifecycle(reason: "APP_BACKGROUND")
     super.applicationDidEnterBackground(application)
+  }
+
+  override func applicationWillEnterForeground(_ application: UIApplication) {
+    wechatAuthBridge.markExternalProviderReturned()
+    super.applicationWillEnterForeground(application)
+  }
+
+  override func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    if wechatAuthBridge.handleOpenURL(url) {
+      return true
+    }
+    return super.application(app, open: url, options: options)
+  }
+
+  override func application(
+    _ application: UIApplication,
+    continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+  ) -> Bool {
+    if wechatAuthBridge.handleOpenUniversalLink(userActivity) {
+      return true
+    }
+    return super.application(
+      application,
+      continue: userActivity,
+      restorationHandler: restorationHandler
+    )
   }
 
   @available(iOS 13.0, *)
