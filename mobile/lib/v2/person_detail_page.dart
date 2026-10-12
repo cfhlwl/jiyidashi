@@ -558,7 +558,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         const SizedBox(height: JiYiSpacing.md),
         _durationCard(),
         const SizedBox(height: JiYiSpacing.md),
-        V3SectionHeader(
+        const V3SectionHeader(
           title: '关于 TA 的记忆',
           subtitle: '只显示你主动关联的记忆，不会自动推断。',
         ),
@@ -627,7 +627,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
             const SizedBox(height: JiYiSpacing.sm),
           ],
         const SizedBox(height: JiYiSpacing.md),
-        V3SectionHeader(
+        const V3SectionHeader(
           title: '你们的关系',
           subtitle: '只显示你主动维护的关系，不会根据姓名或共同出现自动创建。',
         ),

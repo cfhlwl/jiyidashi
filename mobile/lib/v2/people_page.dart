@@ -270,7 +270,7 @@ class _PeoplePageState extends State<PeoplePage> {
               ),
             )
           else ...[
-            V3SectionHeader(
+            const V3SectionHeader(
               title: '重要的人',
               count: people.length,
               subtitle: '资料和关系均来自你的主动记录。',
