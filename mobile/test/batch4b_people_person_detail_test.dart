@@ -24,7 +24,7 @@ class _NamedV2Api extends V2TestApi {
   }
 
   final String name;
-  final String owner;
+  final String owner = '00000000-0000-0000-0000-000000000002';
 
   @override
   Map<String, dynamic> get person1 => {
