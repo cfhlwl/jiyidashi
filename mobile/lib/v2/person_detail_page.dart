@@ -639,7 +639,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
                       height: 96,
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(JiYiRadius.md),
+                        borderRadius: BorderRadius.circular(JiYiRadius.card),
                       ),
                       child: Icon(
                         Icons.photo_outlined,

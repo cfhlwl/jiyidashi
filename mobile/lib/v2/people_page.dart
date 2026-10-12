@@ -338,7 +338,7 @@ class _PeoplePageState extends State<PeoplePage> {
                         height: 96,
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(JiYiRadius.md),
+                          borderRadius: BorderRadius.circular(JiYiRadius.card),
                         ),
                         child: Icon(
                           Icons.photo_outlined,
