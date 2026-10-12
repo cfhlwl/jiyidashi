@@ -192,7 +192,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await _pumpUntilFound(tester, find.text('新账号的人物详情'));
+    expect(find.text('老张'), findsNothing);
 
     release.complete();
     await _pumpUntilFound(tester, find.text('新账号的人物详情'));
