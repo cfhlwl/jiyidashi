@@ -135,6 +135,9 @@ class _MutationProbeApi extends V2TestApi {
     Map<String, dynamic>? body,
   }) async {
     final route = Uri.parse(path).path;
+    if (method == 'GET' && route == '/people/$v2PersonId') {
+      return {...person1, 'id': v2PersonId, 'display_name': '$label-原人物'};
+    }
     if (method == 'GET' && route == '/people/$v2Person2Id') {
       return {...person1, 'id': v2Person2Id, 'display_name': '$label-新人物'};
     }
