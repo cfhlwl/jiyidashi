@@ -544,7 +544,7 @@ jobs:
               'BATCH 3 PHOTO STATES: memory_detail_v3_batch3.png=PHOTO_READY; memory_detail_v3_batch3_photo_error.png=PHOTO_ERROR',
               'BATCH 4A PRODUCTION CANDIDATE: batch4a_place_detail_existing_reference',
               'BATCH 4A AUTHORITY STATUS: no dedicated Design Authority PNG; place_detail_loaded.png is regression reference only',
-              'BATCH 4A GOLDEN CLASSIFICATION: place_detail_loaded.png is the single approved targeted update; the scrolled visit surface remains candidate-only until separately reviewed',
+              'BATCH 4A GOLDEN CLASSIFICATION: place_detail_loaded.png and place_detail_loaded_scrolled.png are approved committed Goldens; place_detail_v3_batch4a.png remains candidate-only',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())
