@@ -317,6 +317,7 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
           let expectedURL = configuration.universalLink.flatMap({ URL(string: $0) }),
           actualURL.scheme?.lowercased() == "https",
           actualURL.host?.caseInsensitiveCompare(expectedURL.host ?? "") == .orderedSame,
+          actualURL.port == expectedURL.port,
           actualURL.query == nil,
           actualURL.fragment == nil,
           universalLinkPathMatches(expected: expectedURL.path, actual: actualURL.path)

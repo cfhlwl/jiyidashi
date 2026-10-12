@@ -1249,6 +1249,52 @@ final class WechatAuthNativeBridgeTests: XCTestCase {
     XCTAssertEqual(sdk.openURLCalls, 1)
   }
 
+  func testSceneURLRouterConsumesWechatAndForwardsOnlyUnconsumedMixedURLs() {
+    let wechatURL = URL(string: "wx-test://app/callback")!
+    let ordinaryURL = URL(string: "jiyi://memory/42")!
+    var handled: [URL] = []
+
+    let partition = WechatSceneURLRouter.partition([
+      wechatURL,
+      ordinaryURL,
+      wechatURL
+    ]) { url in
+      if url == wechatURL {
+        handled.append(url)
+        return true
+      }
+      return false
+    }
+
+    XCTAssertEqual(partition.consumed, [wechatURL])
+    XCTAssertEqual(partition.unconsumed, [ordinaryURL])
+    XCTAssertEqual(handled, [wechatURL])
+  }
+
+  func testSceneURLRouterForwardsAllOrdinaryColdStartURLs() {
+    let first = URL(string: "jiyi://timeline/1")!
+    let second = URL(string: "https://example.invalid/deep-link")!
+
+    let partition = WechatSceneURLRouter.partition([first, second]) { _ in false }
+
+    XCTAssertTrue(partition.consumed.isEmpty)
+    XCTAssertEqual(partition.unconsumed, [first, second])
+  }
+
+  func testColdStartWechatCallbackWithoutPendingIsFailClosedAndForwardable() {
+    let sdk = FakeWechatIOSSDKClient()
+    let bridge = makeBridge(sdk: sdk, scheduler: ManualWechatIOSAuthScheduler())
+    let coldStartURL = URL(string: "wx-test://app/callback")!
+
+    let partition = WechatSceneURLRouter.partition([coldStartURL]) { url in
+      bridge.handleOpenURL(url)
+    }
+
+    XCTAssertTrue(partition.consumed.isEmpty)
+    XCTAssertEqual(partition.unconsumed, [coldStartURL])
+    XCTAssertEqual(sdk.openURLCalls, 0)
+  }
+
   func testUniversalLinkRoutingRequiresExpectedWebHostAndPath() {
     let sdk = FakeWechatIOSSDKClient()
     let bridge = makeBridge(sdk: sdk, scheduler: ManualWechatIOSAuthScheduler())
@@ -1266,6 +1312,16 @@ final class WechatAuthNativeBridgeTests: XCTestCase {
     let prefixCollision = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
     prefixCollision.webpageURL = URL(string: "https://example.invalid/wechat-other/callback")
     XCTAssertFalse(bridge.handleOpenUniversalLink(prefixCollision))
+    XCTAssertEqual(sdk.openUniversalLinkCalls, 0)
+
+    let wrongPort = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    wrongPort.webpageURL = URL(string: "https://example.invalid:8443/wechat/callback")
+    XCTAssertFalse(bridge.handleOpenUniversalLink(wrongPort))
+    XCTAssertEqual(sdk.openUniversalLinkCalls, 0)
+
+    let queryMixed = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    queryMixed.webpageURL = URL(string: "https://example.invalid/wechat/callback?code=unexpected")
+    XCTAssertFalse(bridge.handleOpenUniversalLink(queryMixed))
     XCTAssertEqual(sdk.openUniversalLinkCalls, 0)
 
     let expected = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)

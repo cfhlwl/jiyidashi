@@ -2,6 +2,32 @@ import Flutter
 import UIKit
 import UserNotifications
 
+enum WechatSceneURLRouter {
+  struct Partition: Equatable {
+    let consumed: Set<URL>
+    let unconsumed: [URL]
+  }
+
+  static func partition(
+    _ urls: [URL],
+    handle: (URL) -> Bool
+  ) -> Partition {
+    var consumed = Set<URL>()
+    var unconsumed: [URL] = []
+    for url in urls {
+      if consumed.contains(url) {
+        continue
+      }
+      if handle(url) {
+        consumed.insert(url)
+      } else {
+        unconsumed.append(url)
+      }
+    }
+    return Partition(consumed: consumed, unconsumed: unconsumed)
+  }
+}
+
 class SceneDelegate: FlutterSceneDelegate {
   override func scene(
     _ scene: UIScene,
@@ -48,12 +74,16 @@ class SceneDelegate: FlutterSceneDelegate {
     _ scene: UIScene,
     openURLContexts URLContexts: Set<UIOpenURLContext>
   ) {
-    var handled = false
-    for context in URLContexts {
-      handled = WechatAuthNativeBridge.shared.handleOpenURL(context.url) || handled
+    let partition = WechatSceneURLRouter.partition(
+      URLContexts.map { $0.url }
+    ) { url in
+      WechatAuthNativeBridge.shared.handleOpenURL(url)
     }
-    if !handled {
-      super.scene(scene, openURLContexts: URLContexts)
+    let unconsumedContexts = Set(
+      URLContexts.filter { partition.unconsumed.contains($0.url) }
+    )
+    if !unconsumedContexts.isEmpty {
+      super.scene(scene, openURLContexts: unconsumedContexts)
     }
   }
 
