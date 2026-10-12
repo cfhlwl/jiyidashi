@@ -270,7 +270,7 @@ class _PeoplePageState extends State<PeoplePage> {
               ),
             )
           else ...[
-            const V3SectionHeader(
+            V3SectionHeader(
               title: '重要的人',
               count: people.length,
               subtitle: '资料和关系均来自你的主动记录。',
@@ -333,7 +333,7 @@ class _PeoplePageState extends State<PeoplePage> {
           ],
           if (interactions.isNotEmpty) ...[
             const SizedBox(height: JiYiSpacing.md),
-            V3SectionHeader(
+            const V3SectionHeader(
               title: '最近相关的记忆',
               subtitle: '来自你主动关联的记忆，不会自动推断。',
             ),
