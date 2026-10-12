@@ -1058,6 +1058,35 @@ final class WechatAuthNativeBridgeTests: XCTestCase {
     XCTAssertEqual(values.first?["reason"] as? String, "APP_BACKGROUND")
   }
 
+  func testBackgroundForegroundBeforeLateHandoffCompletionThenSecondBackgroundCancels() {
+    let sdk = FakeWechatIOSSDKClient()
+    let scheduler = ManualWechatIOSAuthScheduler()
+    let bridge = WechatAuthNativeBridge(
+      configuration: configuration,
+      sdk: sdk,
+      scheduler: scheduler,
+      handoffAcceptanceGrace: 2,
+      viewControllerProvider: { UIViewController() }
+    )
+    initializeWechatBridge(bridge)
+    var values: [[String: Any]] = []
+    bridge.handle(
+      call: FlutterMethodCall(methodName: "requestCredential", arguments: nil),
+      result: { if let value = $0 as? [String: Any] { values.append(value) } }
+    )
+
+    bridge.invalidateForLifecycle(reason: "APP_BACKGROUND")
+    bridge.markExternalProviderReturned()
+    sdk.completeSend(true)
+    XCTAssertTrue(values.isEmpty)
+
+    bridge.invalidateForLifecycle(reason: "APP_BACKGROUND")
+
+    XCTAssertEqual(values.count, 1)
+    XCTAssertEqual(values[0]["state"] as? String, "CANCELLED")
+    XCTAssertEqual(values[0]["reason"] as? String, "APP_BACKGROUND")
+  }
+
   func testBackgroundBeforeAsyncHandoffAcceptanceUsesBoundedGrace() {
     let sdk = FakeWechatIOSSDKClient()
     let scheduler = ManualWechatIOSAuthScheduler()
@@ -1211,7 +1240,8 @@ final class WechatAuthNativeBridgeTests: XCTestCase {
 
     XCTAssertFalse(bridge.handleOpenURL(URL(string: "https://evil.example/callback")!))
     XCTAssertEqual(sdk.openURLCalls, 0)
-    XCTAssertTrue(bridge.handleOpenURL(URL(string: "weixin://app/callback")!))
+    XCTAssertFalse(bridge.handleOpenURL(URL(string: "weixin://app/callback")!))
+    XCTAssertTrue(bridge.handleOpenURL(URL(string: "wx-test://app/callback")!))
     XCTAssertEqual(sdk.openURLCalls, 1)
     let state = sdk.sendStates[0]
     bridge.handleProviderResponse(errorCode: 0, state: state, credential: "credential")
@@ -1231,6 +1261,11 @@ final class WechatAuthNativeBridgeTests: XCTestCase {
     let unrelated = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
     unrelated.webpageURL = URL(string: "https://evil.example/wechat/callback")
     XCTAssertFalse(bridge.handleOpenUniversalLink(unrelated))
+    XCTAssertEqual(sdk.openUniversalLinkCalls, 0)
+
+    let prefixCollision = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    prefixCollision.webpageURL = URL(string: "https://example.invalid/wechat-other/callback")
+    XCTAssertFalse(bridge.handleOpenUniversalLink(prefixCollision))
     XCTAssertEqual(sdk.openUniversalLinkCalls, 0)
 
     let expected = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)

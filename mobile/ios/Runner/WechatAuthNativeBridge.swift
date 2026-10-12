@@ -83,6 +83,10 @@ struct WechatIOSConfiguration: Equatable {
     return true
   }
 
+  var callbackScheme: String? {
+    appId?.lowercased()
+  }
+
   var unavailableReason: String {
     if !liveEnabled || provider.caseInsensitiveCompare("wechat") != .orderedSame {
       return "WECHAT_PROVIDER_DISABLED"
@@ -300,7 +304,7 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
     guard configuration.isConfigured,
           pending != nil,
           let scheme = url.scheme?.lowercased(),
-          ["weixin", "weixinulapi", "weixinurlparamsapi"].contains(scheme)
+          scheme == configuration.callbackScheme
     else { return false }
     return sdk.handleOpenURL(url, delegate: self)
   }
@@ -313,17 +317,26 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
           let expectedURL = configuration.universalLink.flatMap({ URL(string: $0) }),
           actualURL.scheme?.lowercased() == "https",
           actualURL.host?.caseInsensitiveCompare(expectedURL.host ?? "") == .orderedSame,
-          actualURL.path.hasPrefix(expectedURL.path)
+          actualURL.query == nil,
+          actualURL.fragment == nil,
+          universalLinkPathMatches(expected: expectedURL.path, actual: actualURL.path)
     else { return false }
     return sdk.handleOpenUniversalLink(userActivity, delegate: self)
   }
 
   func markExternalProviderReturned() {
     guard var request = pending else { return }
-    if request.handoffState == .active {
+    switch request.handoffState {
+    case .starting where request.cancelDeferredBackground != nil:
+      request.cancelDeferredBackground?()
+      request.cancelDeferredBackground = nil
       request.handoffState = .returned
-      pending = request
+    case .active:
+      request.handoffState = .returned
+    case .starting, .returned:
+      break
     }
+    pending = request
   }
 
   func invalidateForLifecycle(reason: String) {
@@ -477,9 +490,11 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
       guard let self, self.pending?.generation == generation else { return }
       if accepted {
         guard var request = self.pending else { return }
-        request.handoffState = .active
-        request.cancelDeferredBackground?()
-        request.cancelDeferredBackground = nil
+        if request.handoffState != .returned {
+          request.handoffState = .active
+          request.cancelDeferredBackground?()
+          request.cancelDeferredBackground = nil
+        }
         self.pending = request
       } else {
         self.complete(
@@ -544,5 +559,13 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
     guard sdk.isWXAppInstalled() else { return "WECHAT_NOT_INSTALLED" }
     guard sdk.isWXAppSupportAPI() else { return "WECHAT_API_UNSUPPORTED" }
     return nil
+  }
+
+  private func universalLinkPathMatches(expected: String, actual: String) -> Bool {
+    let base = expected == "/"
+      ? ""
+      : expected.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard !base.isEmpty else { return true }
+    return actual == "/\(base)" || actual.hasPrefix("/\(base)/")
   }
 }
