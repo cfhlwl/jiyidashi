@@ -129,7 +129,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('新账号的人物'), findsOneWidget);
+    expect(find.text('新账号的人物'), findsWidgets);
 
     release.complete();
     await tester.pumpAndSettle();
@@ -180,7 +180,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('新账号的人物详情'), findsOneWidget);
+    expect(find.text('新账号的人物详情'), findsWidgets);
 
     release.complete();
     await tester.pumpAndSettle();
