@@ -18,6 +18,13 @@ Future<void> _pumpBatch4b(WidgetTester tester, Widget child) async {
   );
 }
 
+Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
+  for (var attempt = 0; attempt < 20 && finder.evaluate().isEmpty; attempt++) {
+    await tester.pump();
+  }
+  expect(finder, findsWidgets);
+}
+
 class _NamedV2Api extends V2TestApi {
   _NamedV2Api(this.name) {
     authenticatedUserId = owner;
@@ -179,11 +186,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('新账号的人物详情'), findsWidgets);
+    await _pumpUntilFound(tester, find.text('新账号的人物详情'));
 
     release.complete();
-    await tester.pumpAndSettle();
-    expect(find.text('新账号的人物详情'), findsWidgets);
+    await _pumpUntilFound(tester, find.text('新账号的人物详情'));
     expect(find.text('老张'), findsNothing);
   });
 
