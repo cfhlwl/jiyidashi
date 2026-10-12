@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/people_page.dart';
 import 'package:jiyidashi/v2/person_detail_page.dart';
+import 'package:jiyidashi/v2/v2_api.dart';
 
 import 'v2_test_api.dart';
 
@@ -204,6 +205,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('老张'), findsNothing);
     expect(newApi.detailCalls, greaterThan(0));
+    final probe = V2Api(newApi);
+    expect((await probe.getPerson(v2PersonId)).displayName, '新账号的人物详情');
+    await probe.listMemoryChoices();
 
     release.complete();
     await _pumpUntilFound(tester, find.text('新账号的人物详情'));
