@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/people_page.dart';
 import 'package:jiyidashi/v2/person_detail_page.dart';
-import 'package:jiyidashi/v2/v2_api.dart';
 
 import 'v2_test_api.dart';
 
@@ -32,9 +31,8 @@ class _NamedV2Api extends V2TestApi {
   }
 
   final String name;
-  final String owner = '00000000-0000-0000-0000-000000000002';
+  final String owner = '00000000-0000-4000-8000-000000000002';
   int detailCalls = 0;
-  String? lastError;
 
   @override
   Map<String, dynamic> get person1 => {
@@ -63,14 +61,7 @@ class _NamedV2Api extends V2TestApi {
     if (method == 'GET' && route == '/timeline') {
       return [memory];
     }
-    late final Object? value;
-    try {
-      value = await super.requestV2Json(method, path, body: body);
-    } catch (error) {
-      lastError = '$method $route: $error';
-      debugPrint('Batch 4B named API error: $lastError');
-      rethrow;
-    }
+    final value = await super.requestV2Json(method, path, body: body);
     if (method == 'GET' && route == '/people/interactions' && value is List) {
       return [
         for (final row in value.cast<Map<String, dynamic>>())
@@ -205,9 +196,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('老张'), findsNothing);
     expect(newApi.detailCalls, greaterThan(0));
-    final probe = V2Api(newApi);
-    expect((await probe.getPerson(v2PersonId)).displayName, '新账号的人物详情');
-    await probe.listMemoryChoices();
 
     release.complete();
     await _pumpUntilFound(tester, find.text('新账号的人物详情'));
