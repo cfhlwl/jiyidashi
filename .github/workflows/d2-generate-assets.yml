@@ -533,6 +533,7 @@ jobs:
               '| Result | Classification | Action |',
               '|---|---|---|',
               '| `golden: place detail loaded` | Single expected new Batch 4A visual difference from the V3 Place Detail refactor | Approved targeted baseline update only; SHA is recorded in the review evidence. |',
+              '| `golden: place detail loaded scrolled` | Approved Batch 4A lower-viewport regression Golden covering the in-progress visit and load-more surface | Approved committed Golden; strict comparison only, never candidate auto-update. |',
               '| Other mobile-ci visual failures | None after the approved Place Detail baseline update | No additional mobile-ci visual baseline is currently classified as historical for Batch 4A. |',
               '| Other mobile-visual-preview visual failures | None after the approved Place Detail baseline update | No additional visual/fixture baseline is currently classified as historical for Batch 4A. |',
           ])
