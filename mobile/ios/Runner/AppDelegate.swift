@@ -2472,7 +2472,8 @@ final class PhoneOneTapNativeBridge {
       messenger: applicationRegistrar.messenger(),
       viewControllerProvider: {
         pluginRegistry.registrar(forPlugin: "WechatAuthNativeBridge")?.viewController
-      }
+      },
+      engineIdentity: engineBridge
     )
 
     let completionChannel = FlutterMethodChannel(
@@ -2509,6 +2510,11 @@ final class PhoneOneTapNativeBridge {
   override func applicationWillEnterForeground(_ application: UIApplication) {
     wechatAuthBridge.markExternalProviderReturned()
     super.applicationWillEnterForeground(application)
+  }
+
+  override func applicationWillTerminate(_ application: UIApplication) {
+    wechatAuthBridge.detach()
+    super.applicationWillTerminate(application)
   }
 
   override func application(

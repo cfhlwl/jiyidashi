@@ -20,6 +20,9 @@ class SceneDelegate: FlutterSceneDelegate {
     for userActivity in connectionOptions.userActivities {
       _ = WechatAuthNativeBridge.shared.handleOpenUniversalLink(userActivity)
     }
+    for context in connectionOptions.urlContexts {
+      _ = WechatAuthNativeBridge.shared.handleOpenURL(context.url)
+    }
   }
 
   override func sceneWillEnterForeground(_ scene: UIScene) {
@@ -36,17 +39,26 @@ class SceneDelegate: FlutterSceneDelegate {
     _ scene: UIScene,
     continue userActivity: NSUserActivity
   ) {
-    _ = WechatAuthNativeBridge.shared.handleOpenUniversalLink(userActivity)
-    super.scene(scene, continue: userActivity)
+    if !WechatAuthNativeBridge.shared.handleOpenUniversalLink(userActivity) {
+      super.scene(scene, continue: userActivity)
+    }
   }
 
   override func scene(
     _ scene: UIScene,
     openURLContexts URLContexts: Set<UIOpenURLContext>
   ) {
+    var handled = false
     for context in URLContexts {
-      _ = WechatAuthNativeBridge.shared.handleOpenURL(context.url)
+      handled = WechatAuthNativeBridge.shared.handleOpenURL(context.url) || handled
     }
-    super.scene(scene, openURLContexts: URLContexts)
+    if !handled {
+      super.scene(scene, openURLContexts: URLContexts)
+    }
+  }
+
+  override func sceneDidDisconnect(_ scene: UIScene) {
+    WechatAuthNativeBridge.shared.detach()
+    super.sceneDidDisconnect(scene)
   }
 }

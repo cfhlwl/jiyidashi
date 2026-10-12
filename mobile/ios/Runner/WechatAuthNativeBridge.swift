@@ -178,21 +178,30 @@ final class DispatchWechatIOSAuthScheduler: WechatIOSAuthScheduler {
 final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
   static let shared = WechatAuthNativeBridge()
 
+  private enum ExternalHandoffState {
+    case starting
+    case active
+    case returned
+  }
+
   private struct PendingRequest {
     let generation: UInt64
     let state: String
     let completion: (WechatIOSAuthResult) -> Void
     let cancelTimeout: () -> Void
-    var externalHandoff: Bool
+    var handoffState: ExternalHandoffState
+    var cancelDeferredBackground: (() -> Void)?
   }
 
   private let configuration: WechatIOSConfiguration
   private let sdk: WechatIOSSDKClientProtocol
   private let scheduler: WechatIOSAuthScheduler
   private let requestTimeout: TimeInterval
+  private let handoffAcceptanceGrace: TimeInterval
   private var channel: FlutterMethodChannel?
   private var viewControllerProvider: (() -> UIViewController?)?
   private var pending: PendingRequest?
+  private var attachedEngineIdentity: ObjectIdentifier?
   private var nextGeneration: UInt64 = 0
   private var privacyGranted = false
   private var initialized = false
@@ -202,20 +211,33 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
     sdk: WechatIOSSDKClientProtocol = WechatIOSSDKClient(),
     scheduler: WechatIOSAuthScheduler = DispatchWechatIOSAuthScheduler(),
     requestTimeout: TimeInterval = 60,
+    handoffAcceptanceGrace: TimeInterval = 2,
     viewControllerProvider: (() -> UIViewController?)? = nil
   ) {
     self.configuration = configuration
     self.sdk = sdk
     self.scheduler = scheduler
     self.requestTimeout = requestTimeout
+    self.handoffAcceptanceGrace = handoffAcceptanceGrace
     self.viewControllerProvider = viewControllerProvider
     super.init()
   }
 
   func attach(
     messenger: FlutterBinaryMessenger,
-    viewControllerProvider: @escaping () -> UIViewController?
+    viewControllerProvider: @escaping () -> UIViewController?,
+    engineIdentity: AnyObject? = nil
   ) {
+    let identity: ObjectIdentifier
+    if let engineIdentity {
+      identity = ObjectIdentifier(engineIdentity)
+    } else {
+      identity = ObjectIdentifier(messenger as AnyObject)
+    }
+    if let attachedEngineIdentity, attachedEngineIdentity != identity {
+      detach()
+    }
+    attachedEngineIdentity = identity
     self.viewControllerProvider = viewControllerProvider
     channel?.setMethodCallHandler(nil)
     let methodChannel = FlutterMethodChannel(
@@ -233,6 +255,17 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
     channel?.setMethodCallHandler(nil)
     channel = nil
     viewControllerProvider = nil
+    attachedEngineIdentity = nil
+    initialized = false
+    privacyGranted = false
+  }
+
+  func rebindEngineForTesting(_ engine: AnyObject) {
+    let identity = ObjectIdentifier(engine)
+    if let attachedEngineIdentity, attachedEngineIdentity != identity {
+      detach()
+    }
+    attachedEngineIdentity = identity
   }
 
   func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -258,22 +291,46 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
   }
 
   func handleOpenURL(_ url: URL) -> Bool {
-    guard configuration.isConfigured, pending != nil else { return false }
+    guard configuration.isConfigured,
+          pending != nil,
+          let scheme = url.scheme?.lowercased(),
+          ["weixin", "weixinulapi", "weixinurlparamsapi"].contains(scheme)
+    else { return false }
     return sdk.handleOpenURL(url, delegate: self)
   }
 
   func handleOpenUniversalLink(_ userActivity: NSUserActivity) -> Bool {
-    guard configuration.isConfigured, pending != nil else { return false }
+    guard configuration.isConfigured,
+          pending != nil,
+          userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+          let actualURL = userActivity.webpageURL,
+          let expectedURL = configuration.universalLink.flatMap({ URL(string: $0) }),
+          actualURL.scheme?.lowercased() == "https",
+          actualURL.host?.caseInsensitiveCompare(expectedURL.host ?? "") == .orderedSame,
+          actualURL.path.hasPrefix(expectedURL.path)
+    else { return false }
     return sdk.handleOpenUniversalLink(userActivity, delegate: self)
   }
 
   func markExternalProviderReturned() {
-    pending?.externalHandoff = false
+    guard var request = pending else { return }
+    if request.handoffState == .active {
+      request.handoffState = .returned
+      pending = request
+    }
   }
 
   func invalidateForLifecycle(reason: String) {
-    if reason == "APP_BACKGROUND", pending?.externalHandoff == true {
-      return
+    if reason == "APP_BACKGROUND", let request = pending {
+      switch request.handoffState {
+      case .active:
+        return
+      case .starting:
+        scheduleDeferredBackgroundCancellation(for: request.generation)
+        return
+      case .returned:
+        break
+      }
     }
     guard let generation = pending?.generation else { return }
     complete(
@@ -364,12 +421,8 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
       result(unavailable(reason: "NOT_INITIALIZED").platformMap())
       return
     }
-    guard sdk.isWXAppInstalled() else {
-      result(unavailable(reason: "WECHAT_NOT_INSTALLED").platformMap())
-      return
-    }
-    guard sdk.isWXAppSupportAPI() else {
-      result(unavailable(reason: "WECHAT_API_UNSUPPORTED").platformMap())
+    if let reason = providerAvailabilityFailureReason() {
+      result(unavailable(reason: reason).platformMap())
       return
     }
     result(WechatIOSAuthResult(state: .available).platformMap())
@@ -382,6 +435,10 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
     }
     guard pending == nil else {
       result(unavailable(reason: "REQUEST_IN_PROGRESS").platformMap())
+      return
+    }
+    if let reason = providerAvailabilityFailureReason() {
+      result(unavailable(reason: reason).platformMap())
       return
     }
     guard let presenter = viewControllerProvider?() else {
@@ -403,7 +460,8 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
       state: state,
       completion: { value in result(value.platformMap()) },
       cancelTimeout: cancelTimeout,
-      externalHandoff: false
+      handoffState: .starting,
+      cancelDeferredBackground: nil
     )
     sdk.sendAuthRequest(
       state: state,
@@ -412,7 +470,11 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
     ) { [weak self] accepted in
       guard let self, self.pending?.generation == generation else { return }
       if accepted {
-        self.pending?.externalHandoff = true
+        guard var request = self.pending else { return }
+        request.handoffState = .active
+        request.cancelDeferredBackground?()
+        request.cancelDeferredBackground = nil
+        self.pending = request
       } else {
         self.complete(
           generation: generation,
@@ -450,10 +512,31 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
     guard let request = pending, request.generation == generation else { return }
     pending = nil
     request.cancelTimeout()
+    request.cancelDeferredBackground?()
     request.completion(result)
+  }
+
+  private func scheduleDeferredBackgroundCancellation(for generation: UInt64) {
+    guard var request = pending,
+          request.generation == generation,
+          request.cancelDeferredBackground == nil
+    else { return }
+    request.cancelDeferredBackground = scheduler.schedule(after: handoffAcceptanceGrace) { [weak self] in
+      self?.complete(
+        generation: generation,
+        result: WechatIOSAuthResult(state: .cancelled, reason: "APP_BACKGROUND")
+      )
+    }
+    pending = request
   }
 
   private func unavailable(reason: String) -> WechatIOSAuthResult {
     WechatIOSAuthResult(state: .unavailable, reason: reason)
+  }
+
+  private func providerAvailabilityFailureReason() -> String? {
+    guard sdk.isWXAppInstalled() else { return "WECHAT_NOT_INSTALLED" }
+    guard sdk.isWXAppSupportAPI() else { return "WECHAT_API_UNSUPPORTED" }
+    return nil
   }
 }
