@@ -348,8 +348,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final deleteButton = find.byKey(const ValueKey('person-delete'));
+    final deleteButton = find.byKey(
+      const ValueKey('person-delete'),
+      skipOffstage: false,
+    );
     expect(deleteButton, findsOneWidget);
+    await tester.ensureVisible(deleteButton);
+    await tester.pumpAndSettle();
     await tester.tap(deleteButton);
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, '删除'));
