@@ -1175,7 +1175,7 @@ final class WechatAuthNativeBridgeTests: XCTestCase {
     sdk.completeSend(true)
     let stateA = sdk.sendStates[0]
 
-    bridge.rebindEngineForTesting(engineB)
+    bridge.rebindEngineForTesting(engineB, viewControllerProvider: { UIViewController() })
     XCTAssertEqual(oldValues.count, 1)
     XCTAssertEqual(oldValues[0]["reason"] as? String, "ENGINE_DETACHED")
 

@@ -260,12 +260,18 @@ final class WechatAuthNativeBridge: NSObject, WXApiDelegate {
     privacyGranted = false
   }
 
-  func rebindEngineForTesting(_ engine: AnyObject) {
+  func rebindEngineForTesting(
+    _ engine: AnyObject,
+    viewControllerProvider: (() -> UIViewController?)? = nil
+  ) {
     let identity = ObjectIdentifier(engine)
     if let attachedEngineIdentity, attachedEngineIdentity != identity {
       detach()
     }
     attachedEngineIdentity = identity
+    if let viewControllerProvider {
+      self.viewControllerProvider = viewControllerProvider
+    }
   }
 
   func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
