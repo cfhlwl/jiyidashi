@@ -370,15 +370,16 @@ void main() {
     await tester.pump();
     expect(api.deleteCalls, 1);
 
+    final newApi = _MutationProbeApi('账号 B');
     await tester.pumpWidget(
-      _PeopleHarness(api: api, personId: v2Person2Id),
+      _PeopleHarness(api: newApi, personId: v2Person2Id),
     );
     await tester.pumpAndSettle();
-    expect(find.text('账号 A-新人物'), findsWidgets);
+    expect(find.text('账号 B-新人物'), findsWidgets);
 
     release.complete();
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('person-edit')), findsOneWidget);
-    expect(find.text('账号 A-新人物'), findsWidgets);
+    expect(find.text('账号 B-新人物'), findsWidgets);
   });
 }
