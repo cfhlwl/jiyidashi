@@ -577,13 +577,13 @@ jobs:
               '',
               '| Surface / element | Candidate status | Review decision |',
               '|---|---|---|',
-              '| People title, subtitle and standalone add action | Implemented from real production widgets | ACCEPT for candidate review; strict Golden remains blocked pending owner approval. |',
-              '| People card scale, spacing and recent-memory hierarchy | Improved toward `11_people.png`; exact editorial spacing remains different | ADJUST/REVIEW; do not infer acceptance from CI. |',
+              '| People title, subtitle and standalone add action | Implemented from real production widgets | STAGE VISUAL APPROVED for targeted Golden update; remains `V3_PARTIAL`. |',
+              '| People card scale, spacing and recent-memory hierarchy | Improved toward `11_people.png`; exact editorial spacing remains different | `V3_PARTIAL`; targeted Golden approved, remaining pixel/design differences remain tracked. |',
               '| People avatar/photo media | No trusted `V2Person` media authority | DEFER; honest neutral placeholder only, no fabricated image. |',
-              '| Person Detail identity and edit action placement | Canonical identity preserved; edit action remains structurally different from `12_person_detail.png` | ADJUST/REVIEW; strict Golden remains blocked pending owner approval. |',
-              '| Person Detail memory card ratio and relationship layout | Real memory/relationship authority preserved; proportions and spacing remain different | ADJUST/REVIEW; no fake media or relationship data. |',
-              '| `golden: people` | Strict committed baseline fails against Batch 4B candidate | BLOCKED UNTIL REVIEWED TARGETED BASELINE; never auto-update. |',
-              '| `golden: V2 person detail` | Strict committed baseline fails against Batch 4B candidate | BLOCKED UNTIL REVIEWED TARGETED BASELINE; never auto-update. |',
+              '| Person Detail identity and edit action placement | Canonical identity preserved; latest production edit placement is in the identity row | STAGE VISUAL APPROVED; `V3_PARTIAL`; media and fine pixel differences remain deferred. |',
+              '| Person Detail memory card ratio and relationship layout | Real memory/relationship authority preserved; approved hierarchy is memory cards → link action → relationships → add relationship → graph | STAGE VISUAL APPROVED; `V3_PARTIAL`; no fake media or relationship data. |',
+              '| `golden: people` | Approved production candidate from review comment `6124453506` | REVIEWED TARGETED UPDATE; exact committed Golden only, no bulk update. |',
+              '| `golden: V2 person detail` | Approved production candidate from review comment `6124453506` | REVIEWED TARGETED UPDATE; exact committed Golden only, no bulk update. |',
           ])
           report.extend([
               '',
@@ -593,8 +593,8 @@ jobs:
               '|---|---|---|',
               '| `golden: place detail loaded` | Single expected new Batch 4A visual difference from the V3 Place Detail refactor | Approved targeted baseline update only; SHA is recorded in the review evidence. |',
               '| `golden: place detail loaded scrolled` | Approved Batch 4A lower-viewport regression Golden covering the in-progress visit and load-more surface | Approved committed Golden; strict comparison only, never candidate auto-update. |',
-              '| `golden: people` | Batch 4B production UI differs from the pre-Batch-4B strict baseline | BLOCKED UNTIL REVIEWED TARGETED BASELINE; owner must approve the exact candidate and hash. |',
-              '| `golden: V2 person detail` | Batch 4B production UI differs from the pre-Batch-4B strict baseline | BLOCKED UNTIL REVIEWED TARGETED BASELINE; owner must approve the exact candidate and hash. |',
+              '| `golden: people` | Batch 4B production UI differs from the pre-Batch-4B strict baseline; stage visual approval recorded in review comment `6124453506` | REVIEWED TARGETED UPDATE; PASS only when this exact-head strict test is green. |',
+              '| `golden: V2 person detail` | Batch 4B production UI differs from the pre-Batch-4B strict baseline; stage visual approval recorded in review comment `6124453506` | REVIEWED TARGETED UPDATE; PASS only when this exact-head strict test is green. |',
               '| Other mobile-ci visual failures | None beyond the two named Batch 4B Goldens | No bulk update or historical-failure waiver. |',
               '| Other mobile-visual-preview visual failures | None beyond the two named Batch 4B Goldens | Candidate/audit evidence remains review-only. |',
           ])
@@ -608,7 +608,7 @@ jobs:
               'BATCH 4A AUTHORITY STATUS: no dedicated Design Authority PNG; place_detail_loaded.png is regression reference only',
               'BATCH 4A GOLDEN CLASSIFICATION: place_detail_loaded.png and place_detail_loaded_scrolled.png are approved committed Goldens; place_detail_v3_batch4a.png remains candidate-only',
               'BATCH 4B PRODUCTION CANDIDATES: batch4b_people, batch4b_person_detail',
-              'BATCH 4B AUTHORITY STATUS: candidate-only; no committed Golden or Design Authority PNG is modified',
+              'BATCH 4B AUTHORITY STATUS: STAGE VISUAL APPROVED / V3_PARTIAL; targeted Goldens approved by review comment 6124453506; media deferred; Design Authority PNGs unchanged',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())
