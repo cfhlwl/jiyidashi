@@ -158,7 +158,7 @@ class _MutationProbeApi extends V2TestApi {
     if (method == 'GET' &&
         route == '/people/$v2Person2Id/known-duration') {
       return {
-        'status': 'INSUFFICIENT_EVIDENCE',
+        'status': 'NO_TRUSTED_EVIDENCE',
         'person_id': v2Person2Id,
         'display_name': '$label-新人物',
         'as_of': '2026-09-29T00:00:00Z',
