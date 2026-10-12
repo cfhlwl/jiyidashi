@@ -32,6 +32,7 @@ class _NamedV2Api extends V2TestApi {
 
   final String name;
   final String owner = '00000000-0000-0000-0000-000000000002';
+  int detailCalls = 0;
 
   @override
   Map<String, dynamic> get person1 => {
@@ -54,6 +55,7 @@ class _NamedV2Api extends V2TestApi {
   }) async {
     final route = Uri.parse(path).path;
     if (method == 'GET' && route == '/people/$v2PersonId') {
+      detailCalls += 1;
       return person1;
     }
     if (method == 'GET' && route == '/timeline') {
@@ -193,6 +195,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('老张'), findsNothing);
+    expect(newApi.detailCalls, greaterThan(0));
 
     release.complete();
     await _pumpUntilFound(tester, find.text('新账号的人物详情'));
