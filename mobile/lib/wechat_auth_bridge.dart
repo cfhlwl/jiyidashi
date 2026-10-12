@@ -142,7 +142,7 @@ class MethodChannelWechatAuthGateway implements WechatAuthGateway {
 
   @override
   Future<WechatAuthResult> revokePrivacy() =>
-      _invoke('initialize', {'privacy_consent_granted': false});
+      _invoke('revokePrivacy');
 
   @override
   Future<WechatAuthResult> checkAvailability() => _invoke('checkAvailability');
