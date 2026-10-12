@@ -3,14 +3,13 @@
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
-import '../ui/jiyi_components.dart';
 import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
+import '../ui/jiyi_v3_components.dart';
 import 'graph_page.dart';
 import 'people_models.dart';
 import 'v2_api.dart';
 import 'v2_authority.dart';
-import 'v2_widgets.dart';
 
 String _personMemoryRelationLabel(String kind) {
   return kind == 'MET' ? '见过 / 互动过' : '相关';
@@ -43,10 +42,23 @@ class PersonDetailPage extends StatefulWidget {
 }
 
 class _PersonDetailPageState extends State<PersonDetailPage> {
-  late final V2Api v2 = V2Api(widget.api);
+  late V2Api v2;
+  JiYiApiClient? _boundApi;
+  String? _boundOwner;
+  int? _boundSessionVersion;
   final V2Authority readAuthority = V2Authority();
   final V2Authority mutationAuthority = V2Authority();
   final V2OperationFlight mutationFlight = V2OperationFlight();
+  int _dialogGeneration = 0;
+
+  bool _dialogStillCurrent(_PersonDialogBinding binding) {
+    return mounted &&
+        identical(widget.api, binding.api) &&
+        widget.api.authenticatedUserId == binding.owner &&
+        widget.api.sessionVersion == binding.sessionVersion &&
+        widget.personId == binding.personId &&
+        _dialogGeneration == binding.generation;
+  }
 
   V2Person? person;
   V2KnownDuration? duration;
@@ -61,16 +73,21 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   @override
   void initState() {
     super.initState();
+    v2 = V2Api(widget.api);
+    _rememberAuthorityBinding();
     _load();
   }
 
   @override
   void didUpdateWidget(PersonDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.personId != widget.personId) {
+    if (oldWidget.personId != widget.personId || oldWidget.api != widget.api) {
+      _dialogGeneration += 1;
       readAuthority.invalidate();
       mutationAuthority.invalidate();
       mutationFlight.invalidate();
+      v2 = V2Api(widget.api);
+      _rememberAuthorityBinding();
       _clear();
       _load();
     }
@@ -107,6 +124,29 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         operation.snapshot.identity,
       ) &&
       mutationFlight.isCurrent(operation.token, widget.api);
+
+  void _rememberAuthorityBinding() {
+    _boundApi = widget.api;
+    _boundOwner = widget.api.authenticatedUserId;
+    _boundSessionVersion = widget.api.sessionVersion;
+  }
+
+  void _checkAuthorityBinding() {
+    final changed = _boundApi != widget.api ||
+        _boundOwner != widget.api.authenticatedUserId ||
+        _boundSessionVersion != widget.api.sessionVersion;
+    if (!changed) return;
+    readAuthority.invalidate();
+    mutationAuthority.invalidate();
+    mutationFlight.invalidate();
+    _dialogGeneration += 1;
+    v2 = V2Api(widget.api);
+    _rememberAuthorityBinding();
+    _clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
+  }
 
   Future<void> _load() async {
     final identity = 'person:' + widget.personId;
@@ -177,7 +217,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     return result == true;
   }
 
-  Future<void> _runMutation(
+  Future<bool> _runMutation(
     String identity,
     Future<String?> Function() operation, {
     bool refresh = true,
@@ -188,23 +228,26 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       mutationFlight,
       identity,
     );
-    if (context == null) return;
+    if (context == null) return false;
     if (mounted) setState(() { error = null; status = null; });
     try {
       final message = await operation();
-      if (!_mutationCurrent(context)) return;
+      if (!_mutationCurrent(context)) return false;
       if (message != null) setState(() => status = message);
       if (refresh) {
-        await continueV2Operation(
+        final refreshed = await continueV2Operation(
           widget.api,
           mutationAuthority,
           context.snapshot,
           [() async => _load()],
         );
+        if (!refreshed || !_mutationCurrent(context)) return false;
       }
+      return _mutationCurrent(context);
     } catch (exc) {
-      if (!_mutationCurrent(context)) return;
+      if (!_mutationCurrent(context)) return false;
       setState(() => error = exc.toString());
+      return false;
     } finally {
       if (mutationFlight.end(context.token) && mounted) {
         setState(() {});
@@ -215,11 +258,16 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   Future<void> _editPerson() async {
     final current = person;
     if (current == null) return;
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: current.id,
+      generation: _dialogGeneration,
+    );
     final draft = await showDialog<_PersonEditDraft>(
       context: context,
       builder: (_) => _PersonEditDialog(person: current),
     );
-    if (draft == null || !mounted) return;
+    if (draft == null || !_dialogStillCurrent(binding)) return;
     await _runMutation('person:update:' + current.id, () async {
       final saved = await v2.updatePerson(
         current,
@@ -235,21 +283,28 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   Future<void> _deletePerson() async {
     final current = person;
     if (current == null) return;
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: current.id,
+      generation: _dialogGeneration,
+    );
     final ok = await _confirm(
       '删除人物？',
       '将删除“' + current.displayName + '”及其人物关联。原有记忆本身不会因此删除。',
       '删除',
     );
-    if (!ok || !mounted) return;
-    await _runMutation(
+    if (!ok || !_dialogStillCurrent(binding)) return;
+    final deleted = await _runMutation(
       'person:delete:' + current.id,
       () async {
         await v2.deletePerson(current.id);
-        if (mounted) Navigator.of(context).pop();
         return null;
       },
       refresh: false,
     );
+    if (deleted && mounted && _dialogStillCurrent(binding)) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _linkMemory() async {
@@ -261,11 +316,16 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       setState(() => status = '没有可继续关联的记忆');
       return;
     }
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: widget.personId,
+      generation: _dialogGeneration,
+    );
     final draft = await showDialog<_MemoryLinkDraft>(
       context: context,
       builder: (_) => _MemoryLinkDialog(choices: choices),
     );
-    if (draft == null || !mounted) return;
+    if (draft == null || !_dialogStillCurrent(binding)) return;
     await _runMutation(
       'person:link:' + widget.personId + ':' + draft.memoryId,
       () async {
@@ -296,12 +356,17 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   }
 
   Future<void> _unlinkMemory(V2PersonMemoryTimelineRow row) async {
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: widget.personId,
+      generation: _dialogGeneration,
+    );
     final ok = await _confirm(
       '取消记忆关联？',
       '只取消这个人与这条记忆的关联，不会删除原记忆。',
       '取消关联',
     );
-    if (!ok || !mounted) return;
+    if (!ok || !_dialogStillCurrent(binding)) return;
     await _runMutation(
       'person:memory:unlink:' + row.link.id,
       () async {
@@ -329,11 +394,16 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       setState(() => status = '没有可新建关系的其他人物');
       return;
     }
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: widget.personId,
+      generation: _dialogGeneration,
+    );
     final draft = await showDialog<_RelationshipDraft>(
       context: context,
       builder: (_) => _RelationshipDialog(candidates: candidates),
     );
-    if (draft == null || !mounted || draft.otherPersonId == null) return;
+    if (draft == null || !_dialogStillCurrent(binding) || draft.otherPersonId == null) return;
     await _runMutation(
       'relationship:create:' + widget.personId + ':' + draft.otherPersonId!,
       () async {
@@ -360,6 +430,11 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     try {
       final full = await v2.getRelationship(projection.relationshipId);
       if (!_mutationCurrent(operation) || !mounted) return;
+      final binding = _PersonDialogBinding.capture(
+        api: widget.api,
+        personId: widget.personId,
+        generation: _dialogGeneration,
+      );
       final draft = await showDialog<_RelationshipDraft>(
         context: context,
         builder: (_) => _RelationshipDialog(
@@ -368,7 +443,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
           initialNote: full.note ?? '',
         ),
       );
-      if (draft == null || !_mutationCurrent(operation)) return;
+      if (draft == null || !_mutationCurrent(operation) || !_dialogStillCurrent(binding)) return;
       await v2.updateRelationship(
         full,
         kind: draft.kind,
@@ -394,12 +469,17 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   }
 
   Future<void> _deleteRelationship(V2RelationshipProjection projection) async {
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: widget.personId,
+      generation: _dialogGeneration,
+    );
     final ok = await _confirm(
       '删除人物关系？',
       '将删除与“' + projection.otherPersonName + '”之间的显式人物关系。',
       '删除关系',
     );
-    if (!ok || !mounted) return;
+    if (!ok || !_dialogStillCurrent(binding)) return;
     await _runMutation(
       'relationship:delete:' + projection.relationshipId,
       () async {
@@ -426,106 +506,186 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    _checkAuthorityBinding();
     final current = person;
-    return Scaffold(
-      appBar: AppBar(title: Text(current?.displayName ?? '重要的人')),
-      body: SafeArea(
-        child: JiYiPageFrame(
-          title: current?.displayName ?? '重要的人',
-          subtitle: '这里展示你主动记录的资料、关系和相关记忆，不会自动猜测。',
-          child: loading
-              ? const Center(child: CircularProgressIndicator())
-              : error != null && current == null
-                  ? V2ErrorState(message: error!, onRetry: _load)
-                  : current == null
-                      ? const JiYiEmptyState(
-                          icon: Icons.person_off_outlined,
-                          title: '人物不可用',
-                          message: '这个人物当前不可访问。',
-                        )
-                      : _buildReady(current),
-        ),
+    return V3PageScaffold(
+      topBar: V3TopBar(
+        title: current?.displayName ?? '重要的人',
+        subtitle: current == null ? '正在读取人物资料' : '只展示你主动记录的资料、关系和记忆',
+        onBack: () => Navigator.of(context).maybePop(),
       ),
+      child: loading
+          ? const V3StateSurface(
+              variant: V3StateSurfaceVariant.loading,
+              title: '正在读取人物资料',
+              message: '正在核对当前账号的人物、记忆和关系。',
+            )
+          : error != null && current == null
+              ? V3StateSurface(
+                  variant: V3StateSurfaceVariant.error,
+                  title: '人物资料暂不可用',
+                  message: error!,
+                  primaryAction: V3StateAction(label: '重试', onPressed: _load),
+                )
+              : current == null
+                  ? const V3StateSurface(
+                      variant: V3StateSurfaceVariant.empty,
+                      icon: Icons.person_off_outlined,
+                      title: '人物不可用',
+                      message: '这个人物当前不可访问，未使用猜测内容替代。',
+                    )
+                  : _buildReady(current),
     );
   }
 
   Widget _buildReady(V2Person current) {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (error != null) ...[
-          JiYiStatusBanner(kind: JiYiStatusKind.error, message: error!),
+          V3SurfaceCard(
+            color: theme.colorScheme.errorContainer,
+            child: Text(error!),
+          ),
           const SizedBox(height: JiYiSpacing.sm),
         ],
         if (status != null) ...[
-          JiYiStatusBanner(kind: JiYiStatusKind.success, message: status!),
+          V3SurfaceCard(
+            color: theme.colorScheme.primaryContainer,
+            child: Text(status!),
+          ),
           const SizedBox(height: JiYiSpacing.sm),
         ],
-        V2SectionCard(
-          title: '基本信息',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        V3SurfaceCard(
+          color: JiYiSurfaceRoles.elevated,
+          padding: const EdgeInsets.all(JiYiSpacing.lg),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              V2KeyValue(label: '你们的关系', value: current.relationshipLabel ?? '未填写'),
-              V2KeyValue(
-                label: '别名',
-                value: current.aliases.isEmpty ? '无' : current.aliases.join(' / '),
+              Semantics(
+                label: '没有可信头像数据',
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.person_outline,
+                    size: 34,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
               ),
-              V2KeyValue(label: '备注', value: current.note ?? '无'),
-              const SizedBox(height: JiYiSpacing.sm),
-              Wrap(
-                spacing: JiYiSpacing.sm,
-                runSpacing: JiYiSpacing.sm,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: mutationFlight.isPending ? null : _editPerson,
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('编辑资料'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _openGraph,
-                    icon: const Icon(Icons.hub_outlined),
-                    label: const Text('相关的人和事'),
-                  ),
-                  TextButton.icon(
-                    onPressed: mutationFlight.isPending ? null : _deletePerson,
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('删除这个人'),
-                  ),
-                ],
+              const SizedBox(width: JiYiSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            current.displayName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: JiYiSpacing.xs),
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: Semantics(
+                            button: true,
+                            label: '编辑资料',
+                            child: OutlinedButton.icon(
+                              key: const ValueKey('person-edit'),
+                              onPressed: mutationFlight.isPending ? null : _editPerson,
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, JiYiTapTarget.normal),
+                                padding: const EdgeInsets.symmetric(horizontal: JiYiSpacing.sm),
+                              ),
+                              icon: const Icon(Icons.edit_outlined),
+                              label: const Text(
+                                '编辑资料',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: JiYiSpacing.xs),
+                    Text(
+                      current.relationshipLabel ?? '关系尚未填写',
+                      key: const ValueKey('person-identity-relationship'),
+                    ),
+                    if (current.aliases.isNotEmpty)
+                      Text('别名：' + current.aliases.join(' / ')),
+                  ],
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        _durationCard(),
-        const SizedBox(height: JiYiSpacing.md),
-        V2SectionCard(
+        const V3SectionHeader(
           title: '关于 TA 的记忆',
           subtitle: '只显示你主动关联的记忆，不会自动推断。',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              OutlinedButton.icon(
-                onPressed: mutationFlight.isPending ? null : _linkMemory,
-                icon: const Icon(Icons.add_link),
-                label: const Text('关联已有记忆'),
-              ),
-              if (memories.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: JiYiSpacing.sm),
-                  child: Text('还没有关联记忆。'),
-                ),
-              for (final row in memories)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(row.memoryTitle ?? row.memoryContent),
-                  subtitle: Text(
-                    _personMemoryRelationLabel(row.link.relationKind) +
-                        ' · ' +
-                        jiyiDisplayDateTime(row.occurredAt),
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
+        if (memories.isEmpty)
+          const V3SurfaceCard(child: Text('还没有关联记忆。'))
+        else
+          for (final row in memories) ...[
+            V3SurfaceCard(
+              semanticLabel: '人物记忆 ${row.memoryTitle ?? row.memoryContent}',
+              padding: const EdgeInsets.all(JiYiSpacing.lg),
+              child: Row(
+                children: [
+                  Semantics(
+                    label: '没有可信照片数据',
+                    child: Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(JiYiRadius.card),
+                      ),
+                      child: Icon(
+                        Icons.photo_outlined,
+                        size: 36,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
                   ),
-                  trailing: PopupMenuButton<String>(
+                  const SizedBox(width: JiYiSpacing.lg),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          row.memoryTitle ?? row.memoryContent,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(jiyiDisplayDateTime(row.occurredAt)),
+                        const SizedBox(height: JiYiSpacing.xs),
+                        Text(_personMemoryRelationLabel(row.link.relationKind)),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: '管理记忆关联',
                     onSelected: (value) {
                       if (value == 'unlink') {
                         _unlinkMemory(row);
@@ -535,54 +695,62 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
                     },
                     itemBuilder: (_) => [
                       if (row.link.relationKind != 'RELATED')
-                        const PopupMenuItem(
-                          value: 'RELATED',
-                          child: Text('改为相关'),
-                        ),
+                        const PopupMenuItem(value: 'RELATED', child: Text('改为相关')),
                       if (row.link.relationKind != 'MET')
-                        const PopupMenuItem(
-                          value: 'MET',
-                          child: Text('改为见过'),
-                        ),
-                      const PopupMenuItem(
-                        value: 'unlink',
-                        child: Text('取消关联'),
-                      ),
+                        const PopupMenuItem(value: 'MET', child: Text('改为见过')),
+                      const PopupMenuItem(value: 'unlink', child: Text('取消关联')),
                     ],
                   ),
-                ),
-            ],
+                ],
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+          ],
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            key: const ValueKey('person-link-memory'),
+            onPressed: mutationFlight.isPending ? null : _linkMemory,
+            icon: const Icon(Icons.add_link),
+            label: const Text('关联已有记忆'),
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        V2SectionCard(
+        const V3SectionHeader(
           title: '你们的关系',
-          subtitle: '只显示你主动维护的人际关系，不会根据姓名、别名或共同出现自动创建。',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              OutlinedButton.icon(
-                onPressed: mutationFlight.isPending ? null : _createRelationship,
-                icon: const Icon(Icons.group_add_outlined),
-                label: const Text('添加关系'),
-              ),
-              if (relationships.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: JiYiSpacing.sm),
-                  child: Text('还没有记录关系。'),
-                ),
-              for (final relation in relationships)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(relation.otherPersonName),
-                  subtitle: Text(
-                    _relationshipKindLabel(
-                          relation.kind,
-                          relation.customLabel,
-                        ) +
-                        (relation.note == null ? '' : ' · ' + relation.note!),
+          subtitle: '只显示你主动维护的关系，不会根据姓名或共同出现自动创建。',
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
+        if (relationships.isEmpty)
+          const V3SurfaceCard(child: Text('还没有记录关系。'))
+        else
+          for (final relation in relationships) ...[
+            V3SurfaceCard(
+              key: ValueKey('person-relationship-${relation.relationshipId}'),
+              padding: const EdgeInsets.all(JiYiSpacing.md),
+              child: Row(
+                children: [
+                  Icon(Icons.people_outline, color: theme.colorScheme.primary),
+                  const SizedBox(width: JiYiSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          relation.otherPersonName,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          _relationshipKindLabel(relation.kind, relation.customLabel) +
+                              (relation.note == null ? '' : ' · ' + relation.note!),
+                        ),
+                      ],
+                    ),
                   ),
-                  trailing: PopupMenuButton<String>(
+                  PopupMenuButton<String>(
+                    tooltip: '管理人物关系',
                     onSelected: (value) {
                       if (value == 'edit') {
                         _editRelationship(relation);
@@ -595,10 +763,44 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
                       PopupMenuItem(value: 'delete', child: Text('删除关系')),
                     ],
                   ),
-                ),
+                ],
+              ),
+            ),
+            const SizedBox(height: JiYiSpacing.sm),
+          ],
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('person-add-relationship'),
+            onPressed: mutationFlight.isPending ? null : _createRelationship,
+            icon: const Icon(Icons.group_add_outlined),
+            label: const Text('添加关系'),
+          ),
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
+        V3SurfaceCard(
+          padding: const EdgeInsets.all(JiYiSpacing.md),
+          child: Wrap(
+            spacing: JiYiSpacing.sm,
+            runSpacing: JiYiSpacing.sm,
+            children: [
+              OutlinedButton.icon(
+                key: const ValueKey('person-open-graph'),
+                onPressed: _openGraph,
+                icon: const Icon(Icons.hub_outlined),
+                label: const Text('查看相关的人和事'),
+              ),
+              TextButton.icon(
+                key: const ValueKey('person-delete'),
+                onPressed: mutationFlight.isPending ? null : _deletePerson,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('删除这个人'),
+              ),
             ],
           ),
         ),
+        const SizedBox(height: JiYiSpacing.md),
+        _durationCard(),
       ],
     );
   }
@@ -606,9 +808,15 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   Widget _durationCard() {
     final value = duration;
     if (value == null) {
-      return const V2SectionCard(
-        title: '认识时长',
-        child: Text('暂时无法读取认识时长。'),
+      return const V3SurfaceCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('认识时长'),
+            SizedBox(height: JiYiSpacing.xs),
+            Text('暂时无法读取认识时长。'),
+          ],
+        ),
       );
     }
     String message;
@@ -625,12 +833,54 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     } else {
       message = '还没有足够可靠的认识时间记录。';
     }
-    return V2SectionCard(
-      title: '认识时长',
-      subtitle: '根据你已有的明确记录计算，不由 AI 猜测。',
-      child: Text(message),
+    return V3SurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '认识时长',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: JiYiSpacing.xs),
+          const Text('根据你已有的明确记录计算，不由 AI 猜测。'),
+          const SizedBox(height: JiYiSpacing.sm),
+          Text(message),
+        ],
+      ),
     );
   }
+}
+
+class _PersonDialogBinding {
+  const _PersonDialogBinding({
+    required this.api,
+    required this.owner,
+    required this.sessionVersion,
+    required this.personId,
+    required this.generation,
+  });
+
+  factory _PersonDialogBinding.capture({
+    required JiYiApiClient api,
+    required String personId,
+    required int generation,
+  }) {
+    return _PersonDialogBinding(
+      api: api,
+      owner: api.authenticatedUserId,
+      sessionVersion: api.sessionVersion,
+      personId: personId,
+      generation: generation,
+    );
+  }
+
+  final JiYiApiClient api;
+  final String? owner;
+  final int sessionVersion;
+  final String personId;
+  final int generation;
 }
 
 class _PersonEditDraft {

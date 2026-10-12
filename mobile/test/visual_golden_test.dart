@@ -42,6 +42,8 @@ const _captureBatch3Candidates =
     bool.fromEnvironment('UIUX_V3_BATCH3_CANDIDATE_MODE');
 const _captureBatch4aCandidates =
     bool.fromEnvironment('UIUX_V3_BATCH4A_CANDIDATE_MODE');
+const _captureBatch4bCandidates =
+    bool.fromEnvironment('UIUX_V3_BATCH4B_CANDIDATE_MODE');
 
 late Uint8List _goldenPhotoBytes;
 
@@ -1473,6 +1475,37 @@ void main() {
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/place_detail_v3_batch4a.png'),
+    );
+  });
+
+  testWidgets('candidate: Batch 4B People production surface', (tester) async {
+    if (!_captureBatch4bCandidates) return;
+    final key = await _pumpSurface(tester, PeoplePage(api: V2TestApi()));
+    expect(find.text('重要的人'), findsWidgets);
+    expect(find.text('老张'), findsWidgets);
+    expect(find.text('最近相关的记忆'), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/people_v3_batch4b.png'),
+    );
+  });
+
+  testWidgets('candidate: Batch 4B Person Detail production surface',
+      (tester) async {
+    if (!_captureBatch4bCandidates) return;
+    final key = await _pumpSurface(
+      tester,
+      PersonDetailPage(api: V2TestApi(), personId: v2PersonId),
+    );
+    expect(find.text('老张'), findsWidgets);
+    expect(find.text('关于 TA 的记忆'), findsOneWidget);
+    expect(find.text('团队记录'), findsOneWidget);
+    expect(find.text('你们的关系'), findsOneWidget);
+    expect(find.byKey(const ValueKey('person-link-memory')), findsOneWidget);
+    expect(find.byKey(const ValueKey('person-edit')), findsOneWidget);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/person_detail_v3_batch4b.png'),
     );
   });
 

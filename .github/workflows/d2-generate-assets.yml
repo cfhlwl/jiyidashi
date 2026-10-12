@@ -136,6 +136,10 @@ jobs:
         timeout-minutes: 5
         run: flutter test test/place_detail_test.dart --reporter expanded
 
+      - name: Test Batch 4B People and Person Detail targeted
+        timeout-minutes: 5
+        run: flutter test test/batch4b_people_person_detail_test.dart --reporter expanded
+
       - name: Generate Today B2 authority candidate
         timeout-minutes: 5
         shell: bash
@@ -325,6 +329,42 @@ jobs:
           retention-days: 14
           path: /tmp/place-detail-v3-candidates/*.png
 
+      - name: Generate Batch 4B People and Person Detail candidates
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/batch4b-v3-candidates
+          mkdir -p /tmp/batch4b-v3-candidates
+          mkdir -p test/goldens
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 4B People production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH4B_CANDIDATE_MODE=true \
+            --reporter expanded
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 4B Person Detail production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH4B_CANDIDATE_MODE=true \
+            --reporter expanded
+          test -s test/goldens/people_v3_batch4b.png
+          test -s test/goldens/person_detail_v3_batch4b.png
+          cp test/goldens/people_v3_batch4b.png /tmp/batch4b-v3-candidates/
+          cp test/goldens/person_detail_v3_batch4b.png /tmp/batch4b-v3-candidates/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/batch4b-v3-candidates/people_v3_batch4b.png
+          test -s /tmp/batch4b-v3-candidates/person_detail_v3_batch4b.png
+
+      - name: Upload Batch 4B People and Person Detail review candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-batch4b-people-person-detail-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/batch4b-v3-candidates/*.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -464,6 +504,8 @@ jobs:
               'batch3_timeline': ('design_reference/v3/06_timeline.png', '/tmp/batch3-v3-candidates/timeline_v3_batch3.png', 44, 22),
               'batch3_memory_detail': ('design_reference/v3/07_memory_detail.png', '/tmp/batch3-v3-candidates/memory_detail_v3_batch3.png', 44, 22),
               'batch3_memory_detail_photo_error': ('design_reference/v3/07_memory_detail.png', '/tmp/batch3-v3-candidates/memory_detail_v3_batch3_photo_error.png', 44, 22),
+              'batch4b_people': ('design_reference/v3/11_people.png', '/tmp/batch4b-v3-candidates/people_v3_batch4b.png', 44, 22),
+              'batch4b_person_detail': ('design_reference/v3/12_person_detail.png', '/tmp/batch4b-v3-candidates/person_detail_v3_batch4b.png', 44, 22),
               # Place Detail has no dedicated V3 Design Authority PNG. This
               # existing committed golden is a regression reference only, not
               # an acceptance authority.
@@ -481,7 +523,7 @@ jobs:
               return canvas
 
           report = [
-              f'# UIUX-V3-05-4A Design Authority Audit ({head})',
+              f'# UIUX-V3-05 Design Authority Audit ({head})',
               '',
               'Review-only package. Design Authority PNGs are copied, never modified.',
               '',
@@ -514,7 +556,7 @@ jobs:
 
           report.extend([
               '',
-              '## Batch 3 contract notes',
+              '## Batch 3 and Batch 4B contract notes',
               '',
               '| Design element | Real authority | Implemented / deferred |',
               '|---|---|---|',
@@ -525,6 +567,23 @@ jobs:
               '| Photo gallery / people / share | No supported count/list/relationship authority | Deferred; no fabricated media or relationship data. |',
               '| Place/map | `getPlaceDetail` coordinates plus AMap privacy gate | Rendered only when real coordinates and consent authority are present. |',
               '| Batch 4A Place Detail visual authority | No dedicated V3 PNG; `test/goldens/place_detail_loaded.png` is regression reference only | Candidate is production `PlaceDetailPage` with deterministic server-backed place/visit data and privacy-blocked map state. |',
+              '| Batch 4B People / Person Detail | `design_reference/v3/11_people.png` and `design_reference/v3/12_person_detail.png` | Candidates are production `PeoplePage` and `PersonDetailPage` with deterministic strict V2 API fixtures. Avatar photos are deferred because `V2Person` has no trusted media authority; accessible placeholders are used. |',
+              '| Batch 4B data authority | `V2Api` / `V2Authority` / owner-session fencing | Person, memory-link, relationship, duration, mutation and failure states remain server-backed; no design-image names or relationships are inferred. |',
+              '| Batch 4B People hierarchy | `11_people.png`: editorial title, standalone outlined add action, prominent person cards, large recent-memory card | Production now uses the page title/subtitle, separate outlined add action, larger person cards and a spacious recent-memory card. Trusted avatar/photo media remains an explicit placeholder when the API has no media authority. |',
+              '| Batch 4B Person Detail hierarchy | `12_person_detail.png`: dominant identity, immediate memory cards, wide linked-memory action, then relationships | Production keeps canonical identity first, expands memory cards and uses a wide primary link action before the relationship section; known-duration evidence is retained after relationships rather than fabricated as a leading visual. |',
+              '| Batch 4B modal/mutation fencing | Account/session/person identity at dialog open | Dialog results are rejected after API, owner, session or person identity changes; stale delete completion cannot pop a rebound detail route. |',
+              '',
+              '## Batch 4B visual difference matrix',
+              '',
+              '| Surface / element | Candidate status | Review decision |',
+              '|---|---|---|',
+              '| People title, subtitle and standalone add action | Implemented from real production widgets | STAGE VISUAL APPROVED for targeted Golden update; remains `V3_PARTIAL`. |',
+              '| People card scale, spacing and recent-memory hierarchy | Improved toward `11_people.png`; exact editorial spacing remains different | `V3_PARTIAL`; targeted Golden approved, remaining pixel/design differences remain tracked. |',
+              '| People avatar/photo media | No trusted `V2Person` media authority | DEFER; honest neutral placeholder only, no fabricated image. |',
+              '| Person Detail identity and edit action placement | Canonical identity preserved; latest production edit placement is in the identity row | STAGE VISUAL APPROVED; `V3_PARTIAL`; media and fine pixel differences remain deferred. |',
+              '| Person Detail memory card ratio and relationship layout | Real memory/relationship authority preserved; approved hierarchy is memory cards → link action → relationships → add relationship → graph | STAGE VISUAL APPROVED; `V3_PARTIAL`; no fake media or relationship data. |',
+              '| `golden: people` | Approved production candidate from review comment `6124453506` | REVIEWED TARGETED UPDATE; exact committed Golden only, no bulk update. |',
+              '| `golden: V2 person detail` | Approved production candidate from review comment `6124453506` | REVIEWED TARGETED UPDATE; exact committed Golden only, no bulk update. |',
           ])
           report.extend([
               '',
@@ -534,8 +593,10 @@ jobs:
               '|---|---|---|',
               '| `golden: place detail loaded` | Single expected new Batch 4A visual difference from the V3 Place Detail refactor | Approved targeted baseline update only; SHA is recorded in the review evidence. |',
               '| `golden: place detail loaded scrolled` | Approved Batch 4A lower-viewport regression Golden covering the in-progress visit and load-more surface | Approved committed Golden; strict comparison only, never candidate auto-update. |',
-              '| Other mobile-ci visual failures | None after the approved Place Detail baseline update | No additional mobile-ci visual baseline is currently classified as historical for Batch 4A. |',
-              '| Other mobile-visual-preview visual failures | None after the approved Place Detail baseline update | No additional visual/fixture baseline is currently classified as historical for Batch 4A. |',
+              '| `golden: people` | Batch 4B production UI differs from the pre-Batch-4B strict baseline; stage visual approval recorded in review comment `6124453506` | REVIEWED TARGETED UPDATE; PASS only when this exact-head strict test is green. |',
+              '| `golden: V2 person detail` | Batch 4B production UI differs from the pre-Batch-4B strict baseline; stage visual approval recorded in review comment `6124453506` | REVIEWED TARGETED UPDATE; PASS only when this exact-head strict test is green. |',
+              '| Other mobile-ci visual failures | None beyond the two named Batch 4B Goldens | No bulk update or historical-failure waiver. |',
+              '| Other mobile-visual-preview visual failures | None beyond the two named Batch 4B Goldens | Candidate/audit evidence remains review-only. |',
           ])
           (root / 'audit.md').write_text('\n'.join(report) + '\n\nAutomated images are evidence only; visual severity remains subject to independent review.\n', encoding='utf-8')
           manifest = [
@@ -546,6 +607,8 @@ jobs:
               'BATCH 4A PRODUCTION CANDIDATE: batch4a_place_detail_existing_reference',
               'BATCH 4A AUTHORITY STATUS: no dedicated Design Authority PNG; place_detail_loaded.png is regression reference only',
               'BATCH 4A GOLDEN CLASSIFICATION: place_detail_loaded.png and place_detail_loaded_scrolled.png are approved committed Goldens; place_detail_v3_batch4a.png remains candidate-only',
+              'BATCH 4B PRODUCTION CANDIDATES: batch4b_people, batch4b_person_detail',
+              'BATCH 4B AUTHORITY STATUS: STAGE VISUAL APPROVED / V3_PARTIAL; targeted Goldens approved by review comment 6124453506; media deferred; Design Authority PNGs unchanged',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())

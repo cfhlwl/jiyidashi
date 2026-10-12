@@ -3,14 +3,13 @@
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
-import '../ui/jiyi_components.dart';
 import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
+import '../ui/jiyi_v3_components.dart';
 import 'people_models.dart';
 import 'person_detail_page.dart';
 import 'v2_api.dart';
 import 'v2_authority.dart';
-import 'v2_widgets.dart';
 
 class PeoplePage extends StatefulWidget {
   const PeoplePage({super.key, required this.api});
@@ -22,10 +21,14 @@ class PeoplePage extends StatefulWidget {
 }
 
 class _PeoplePageState extends State<PeoplePage> {
-  late final V2Api v2 = V2Api(widget.api);
+  late V2Api v2;
+  JiYiApiClient? _boundApi;
+  String? _boundOwner;
+  int? _boundSessionVersion;
   final V2Authority readAuthority = V2Authority();
   final V2Authority mutationAuthority = V2Authority();
   final V2OperationFlight mutationFlight = V2OperationFlight();
+  int _dialogGeneration = 0;
 
   List<V2Person> people = const [];
   List<V2PersonInteraction> interactions = const [];
@@ -36,7 +39,28 @@ class _PeoplePageState extends State<PeoplePage> {
   @override
   void initState() {
     super.initState();
+    v2 = V2Api(widget.api);
+    _rememberAuthorityBinding();
     _load();
+  }
+
+  @override
+  void didUpdateWidget(PeoplePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.api != widget.api) {
+      _dialogGeneration += 1;
+      readAuthority.invalidate();
+      mutationAuthority.invalidate();
+      mutationFlight.invalidate();
+      v2 = V2Api(widget.api);
+      _rememberAuthorityBinding();
+      people = const [];
+      interactions = const [];
+      error = null;
+      status = null;
+      loading = true;
+      _load();
+    }
   }
 
   @override
@@ -58,6 +82,33 @@ class _PeoplePageState extends State<PeoplePage> {
         context.snapshot.identity,
       ) &&
       mutationFlight.isCurrent(context.token, widget.api);
+
+  void _rememberAuthorityBinding() {
+    _boundApi = widget.api;
+    _boundOwner = widget.api.authenticatedUserId;
+    _boundSessionVersion = widget.api.sessionVersion;
+  }
+
+  void _checkAuthorityBinding() {
+    final changed = _boundApi != widget.api ||
+        _boundOwner != widget.api.authenticatedUserId ||
+        _boundSessionVersion != widget.api.sessionVersion;
+    if (!changed) return;
+    readAuthority.invalidate();
+    mutationAuthority.invalidate();
+    mutationFlight.invalidate();
+    _dialogGeneration += 1;
+    v2 = V2Api(widget.api);
+    _rememberAuthorityBinding();
+    people = const [];
+    interactions = const [];
+    error = null;
+    status = null;
+    loading = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
+  }
 
   Future<void> _load() async {
     late final V2AuthoritySnapshot snapshot;
@@ -99,14 +150,20 @@ class _PeoplePageState extends State<PeoplePage> {
   }
 
   Future<void> _createPerson() async {
+    final binding = _PeopleDialogBinding(
+      api: widget.api,
+      owner: widget.api.authenticatedUserId,
+      sessionVersion: widget.api.sessionVersion,
+      generation: _dialogGeneration,
+    );
     final draft = await showDialog<_PersonDraft>(
       context: context,
       builder: (context) => const _PersonDialog(title: '添加重要的人'),
     );
-    if (draft == null || !mounted) return;
+    if (draft == null || !_dialogStillCurrent(binding)) return;
 
     final operation = beginV2Operation(
-      widget.api,
+      binding.api,
       mutationAuthority,
       mutationFlight,
       'person:create',
@@ -148,82 +205,173 @@ class _PeoplePageState extends State<PeoplePage> {
 
   @override
   Widget build(BuildContext context) {
-    return JiYiPageFrame(
-      title: '重要的人',
-      subtitle: '记录生命中重要的人。只有你主动添加的人才会出现在这里。',
-      hero: const JiYiHeroHeader(
-        eyebrow: '迹忆 · 重要的人',
+    _checkAuthorityBinding();
+    final theme = Theme.of(context);
+    return V3PageScaffold(
+      topBar: const V3TopBar(
         title: '重要的人',
-        subtitle: '记录生命中重要的人。只有你主动添加的人才会出现在这里。',
-        icon: Icons.people_outline,
+        subtitle: '只有你主动添加的人会出现在这里',
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FilledButton.icon(
+          OutlinedButton.icon(
+            key: const ValueKey('people-add-person'),
             onPressed: mutationFlight.isPending ? null : _createPerson,
-            icon: const Icon(Icons.person_add_alt_1),
+            icon: const Icon(Icons.add, size: 28),
             label: const Text('添加重要的人'),
           ),
           if (status != null) ...[
             const SizedBox(height: JiYiSpacing.sm),
-            JiYiStatusBanner(kind: JiYiStatusKind.success, message: status!),
+            V3SurfaceCard(
+              color: theme.colorScheme.primaryContainer,
+              child: Text(status!),
+            ),
           ],
-          const SizedBox(height: JiYiSpacing.md),
+          const SizedBox(height: JiYiSpacing.xl),
           if (loading)
-            const Center(child: CircularProgressIndicator())
+            const V3StateSurface(
+              variant: V3StateSurfaceVariant.loading,
+              title: '正在读取重要的人',
+              message: '只读取当前账号主动维护的人物资料。',
+            )
           else if (error != null)
-            V2ErrorState(message: error!, onRetry: _load)
+            V3StateSurface(
+              variant: V3StateSurfaceVariant.error,
+              title: '暂时无法读取人物',
+              message: error!,
+              primaryAction: V3StateAction(label: '重试', onPressed: _load),
+            )
           else if (people.isEmpty)
-            JiYiEmptyState(
+            V3StateSurface(
+              variant: V3StateSurfaceVariant.empty,
               icon: Icons.people_outline,
               title: '还没有记录重要的人',
               message: '先添加一个重要的人，再慢慢整理与 TA 有关的记忆和关系。',
-              action: OutlinedButton(
+              primaryAction: V3StateAction(
+                label: '添加重要的人',
+                icon: Icons.person_add_alt_1,
                 onPressed: _createPerson,
-                child: const Text('添加重要的人'),
               ),
             )
-          else
-            V2SectionCard(
+          else ...[
+            V3SectionHeader(
               title: '重要的人',
-              child: Column(
-                children: [
-                  for (final person in people)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.person_outline),
-                      ),
-                      title: Text(person.displayName),
-                      subtitle: Text(
-                        person.aliases.isEmpty
-                            ? (person.relationshipLabel ?? '还没有写下你们的关系')
-                            : '别名：' + person.aliases.join(' / '),
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _openPerson(person),
-                    ),
-                ],
-              ),
+              count: people.length,
+              subtitle: '资料和关系均来自你的主动记录。',
             ),
+            const SizedBox(height: JiYiSpacing.sm),
+            for (final person in people) ...[
+              V3SurfaceCard(
+                semanticLabel: '打开人物 ${person.displayName}',
+                onTap: () => _openPerson(person),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: JiYiSpacing.lg,
+                  vertical: JiYiSpacing.md,
+                ),
+                child: Row(
+                  children: [
+                    Semantics(
+                      label: '没有可信头像数据',
+                      child: Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.person_outline,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: JiYiSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            person.displayName,
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: JiYiSpacing.xxs),
+                          Text(
+                            person.relationshipLabel ?? '还没有写下你们的关系',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                          if (person.aliases.isNotEmpty)
+                            Text(
+                              '别名：' + person.aliases.join(' / '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right),
+                  ],
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.sm),
+            ],
+          ],
           if (interactions.isNotEmpty) ...[
             const SizedBox(height: JiYiSpacing.md),
-            V2SectionCard(
+            const V3SectionHeader(
               title: '最近相关的记忆',
               subtitle: '来自你主动关联的记忆，不会自动推断。',
-              child: Column(
-                children: [
-                  for (final row in interactions.take(8))
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.history),
-                      title: Text(row.personDisplayName),
-                      subtitle: Text('记录时间：' + jiyiDisplayDateTime(row.occurredAt)),
-                    ),
-                ],
-              ),
             ),
+            const SizedBox(height: JiYiSpacing.sm),
+            for (final row in interactions.take(8)) ...[
+              V3SurfaceCard(
+                padding: const EdgeInsets.all(JiYiSpacing.lg),
+                child: Row(
+                  children: [
+                    Semantics(
+                      label: '没有可信照片数据',
+                      child: Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(JiYiRadius.card),
+                        ),
+                        child: Icon(
+                          Icons.photo_outlined,
+                          size: 36,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: JiYiSpacing.lg),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            row.personDisplayName,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(jiyiDisplayDateTime(row.occurredAt)),
+                          const SizedBox(height: JiYiSpacing.xs),
+                          Text(
+                            '来自你主动关联的记忆',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.sm),
+            ],
           ],
         ],
       ),
@@ -241,6 +389,30 @@ class _PersonDraft {
   final String name;
   final String relationshipLabel;
   final String note;
+}
+
+class _PeopleDialogBinding {
+  const _PeopleDialogBinding({
+    required this.api,
+    required this.owner,
+    required this.sessionVersion,
+    required this.generation,
+  });
+
+  final JiYiApiClient api;
+  final String? owner;
+  final int sessionVersion;
+  final int generation;
+}
+
+extension on _PeoplePageState {
+  bool _dialogStillCurrent(_PeopleDialogBinding binding) {
+    return mounted &&
+        identical(widget.api, binding.api) &&
+        widget.api.authenticatedUserId == binding.owner &&
+        widget.api.sessionVersion == binding.sessionVersion &&
+        _dialogGeneration == binding.generation;
+  }
 }
 
 class _PersonDialog extends StatefulWidget {
