@@ -584,23 +584,50 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      current.displayName,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            current.displayName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: JiYiSpacing.xs),
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: Semantics(
+                            button: true,
+                            label: '编辑资料',
+                            child: OutlinedButton.icon(
+                              key: const ValueKey('person-edit'),
+                              onPressed: mutationFlight.isPending ? null : _editPerson,
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, JiYiTapTarget.normal),
+                                padding: const EdgeInsets.symmetric(horizontal: JiYiSpacing.sm),
+                              ),
+                              icon: const Icon(Icons.edit_outlined),
+                              label: const Text(
+                                '编辑资料',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: JiYiSpacing.xs),
-                    Text(current.relationshipLabel ?? '关系尚未填写'),
+                    Text(
+                      current.relationshipLabel ?? '关系尚未填写',
+                      key: const ValueKey('person-identity-relationship'),
+                    ),
                     if (current.aliases.isNotEmpty)
                       Text('别名：' + current.aliases.join(' / ')),
-                    const SizedBox(height: JiYiSpacing.sm),
-                    OutlinedButton.icon(
-                      key: const ValueKey('person-edit'),
-                      onPressed: mutationFlight.isPending ? null : _editPerson,
-                      icon: const Icon(Icons.edit_outlined),
-                      label: const Text('编辑资料'),
-                    ),
                   ],
                 ),
               ),
@@ -611,16 +638,6 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         const V3SectionHeader(
           title: '关于 TA 的记忆',
           subtitle: '只显示你主动关联的记忆，不会自动推断。',
-        ),
-        const SizedBox(height: JiYiSpacing.sm),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            key: const ValueKey('person-link-memory'),
-            onPressed: mutationFlight.isPending ? null : _linkMemory,
-            icon: const Icon(Icons.add_link),
-            label: const Text('关联已有记忆'),
-          ),
         ),
         const SizedBox(height: JiYiSpacing.sm),
         if (memories.isEmpty)
@@ -689,20 +706,19 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
             ),
             const SizedBox(height: JiYiSpacing.sm),
           ],
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            key: const ValueKey('person-link-memory'),
+            onPressed: mutationFlight.isPending ? null : _linkMemory,
+            icon: const Icon(Icons.add_link),
+            label: const Text('关联已有记忆'),
+          ),
+        ),
         const SizedBox(height: JiYiSpacing.md),
         const V3SectionHeader(
           title: '你们的关系',
           subtitle: '只显示你主动维护的关系，不会根据姓名或共同出现自动创建。',
-        ),
-        const SizedBox(height: JiYiSpacing.sm),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            key: const ValueKey('person-add-relationship'),
-            onPressed: mutationFlight.isPending ? null : _createRelationship,
-            icon: const Icon(Icons.group_add_outlined),
-            label: const Text('添加关系'),
-          ),
         ),
         const SizedBox(height: JiYiSpacing.sm),
         if (relationships.isEmpty)
@@ -710,6 +726,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         else
           for (final relation in relationships) ...[
             V3SurfaceCard(
+              key: ValueKey('person-relationship-${relation.relationshipId}'),
               padding: const EdgeInsets.all(JiYiSpacing.md),
               child: Row(
                 children: [
@@ -751,8 +768,16 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
             ),
             const SizedBox(height: JiYiSpacing.sm),
           ],
-        _durationCard(),
-        const SizedBox(height: JiYiSpacing.md),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('person-add-relationship'),
+            onPressed: mutationFlight.isPending ? null : _createRelationship,
+            icon: const Icon(Icons.group_add_outlined),
+            label: const Text('添加关系'),
+          ),
+        ),
+        const SizedBox(height: JiYiSpacing.sm),
         V3SurfaceCard(
           padding: const EdgeInsets.all(JiYiSpacing.md),
           child: Wrap(
@@ -774,6 +799,8 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
             ],
           ),
         ),
+        const SizedBox(height: JiYiSpacing.md),
+        _durationCard(),
       ],
     );
   }

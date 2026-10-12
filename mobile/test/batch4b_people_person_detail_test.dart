@@ -277,7 +277,38 @@ void main() {
       expect(find.text('你们的关系'), findsOneWidget);
       expect(find.byKey(const ValueKey('person-edit')), findsOneWidget);
       expect(find.byKey(const ValueKey('person-link-memory')), findsOneWidget);
+      expect(find.byKey(const ValueKey('person-relationship-$v2LinkId')), findsOneWidget);
+      expect(find.byKey(const ValueKey('person-add-relationship')), findsOneWidget);
       expect(find.byKey(const ValueKey('person-open-graph')), findsOneWidget);
+
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('person-edit'))).dy,
+        lessThan(
+          tester
+              .getTopLeft(find.byKey(const ValueKey('person-identity-relationship')))
+              .dy,
+        ),
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('person-link-memory'))).dy,
+        greaterThan(tester.getTopLeft(find.text('团队记录')).dy),
+      );
+      expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('person-add-relationship')))
+            .dy,
+        greaterThan(
+          tester
+              .getTopLeft(find.byKey(const ValueKey('person-relationship-$v2LinkId')))
+              .dy,
+        ),
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('person-open-graph'))).dy,
+        greaterThan(
+          tester.getTopLeft(find.byKey(const ValueKey('person-add-relationship'))).dy,
+        ),
+      );
     } finally {
       semantics.dispose();
     }
