@@ -572,6 +572,18 @@ jobs:
               '| Batch 4B People hierarchy | `11_people.png`: editorial title, standalone outlined add action, prominent person cards, large recent-memory card | Production now uses the page title/subtitle, separate outlined add action, larger person cards and a spacious recent-memory card. Trusted avatar/photo media remains an explicit placeholder when the API has no media authority. |',
               '| Batch 4B Person Detail hierarchy | `12_person_detail.png`: dominant identity, immediate memory cards, wide linked-memory action, then relationships | Production keeps canonical identity first, expands memory cards and uses a wide primary link action before the relationship section; known-duration evidence is retained after relationships rather than fabricated as a leading visual. |',
               '| Batch 4B modal/mutation fencing | Account/session/person identity at dialog open | Dialog results are rejected after API, owner, session or person identity changes; stale delete completion cannot pop a rebound detail route. |',
+              '',
+              '## Batch 4B visual difference matrix',
+              '',
+              '| Surface / element | Candidate status | Review decision |',
+              '|---|---|---|',
+              '| People title, subtitle and standalone add action | Implemented from real production widgets | ACCEPT for candidate review; strict Golden remains blocked pending owner approval. |',
+              '| People card scale, spacing and recent-memory hierarchy | Improved toward `11_people.png`; exact editorial spacing remains different | ADJUST/REVIEW; do not infer acceptance from CI. |',
+              '| People avatar/photo media | No trusted `V2Person` media authority | DEFER; honest neutral placeholder only, no fabricated image. |',
+              '| Person Detail identity and edit action placement | Canonical identity preserved; edit action remains structurally different from `12_person_detail.png` | ADJUST/REVIEW; strict Golden remains blocked pending owner approval. |',
+              '| Person Detail memory card ratio and relationship layout | Real memory/relationship authority preserved; proportions and spacing remain different | ADJUST/REVIEW; no fake media or relationship data. |',
+              '| `golden: people` | Strict committed baseline fails against Batch 4B candidate | BLOCKED UNTIL REVIEWED TARGETED BASELINE; never auto-update. |',
+              '| `golden: V2 person detail` | Strict committed baseline fails against Batch 4B candidate | BLOCKED UNTIL REVIEWED TARGETED BASELINE; never auto-update. |',
           ])
           report.extend([
               '',
@@ -581,8 +593,10 @@ jobs:
               '|---|---|---|',
               '| `golden: place detail loaded` | Single expected new Batch 4A visual difference from the V3 Place Detail refactor | Approved targeted baseline update only; SHA is recorded in the review evidence. |',
               '| `golden: place detail loaded scrolled` | Approved Batch 4A lower-viewport regression Golden covering the in-progress visit and load-more surface | Approved committed Golden; strict comparison only, never candidate auto-update. |',
-              '| Other mobile-ci visual failures | None after the approved Place Detail baseline update | No additional mobile-ci visual baseline is currently classified as historical for Batch 4A. |',
-              '| Other mobile-visual-preview visual failures | None after the approved Place Detail baseline update | No additional visual/fixture baseline is currently classified as historical for Batch 4A. |',
+              '| `golden: people` | Batch 4B production UI differs from the pre-Batch-4B strict baseline | BLOCKED UNTIL REVIEWED TARGETED BASELINE; owner must approve the exact candidate and hash. |',
+              '| `golden: V2 person detail` | Batch 4B production UI differs from the pre-Batch-4B strict baseline | BLOCKED UNTIL REVIEWED TARGETED BASELINE; owner must approve the exact candidate and hash. |',
+              '| Other mobile-ci visual failures | None beyond the two named Batch 4B Goldens | No bulk update or historical-failure waiver. |',
+              '| Other mobile-visual-preview visual failures | None beyond the two named Batch 4B Goldens | Candidate/audit evidence remains review-only. |',
           ])
           (root / 'audit.md').write_text('\n'.join(report) + '\n\nAutomated images are evidence only; visual severity remains subject to independent review.\n', encoding='utf-8')
           manifest = [

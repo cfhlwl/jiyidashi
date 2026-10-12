@@ -111,14 +111,20 @@ class _DelayedPersonApi extends V2TestApi {
 }
 
 class _MutationProbeApi extends V2TestApi {
-  _MutationProbeApi(this.label, {this.deleteRelease}) {
+  _MutationProbeApi(
+    this.label, {
+    this.deleteRelease,
+    this.rejectUpdates = false,
+  }) {
     authenticatedUserId = owner;
   }
 
   final String label;
   final Completer<void>? deleteRelease;
+  final bool rejectUpdates;
   final String owner = '00000000-0000-4000-8000-000000000010';
   int createCalls = 0;
+  int updateCalls = 0;
   int deleteCalls = 0;
 
   @override
@@ -171,6 +177,19 @@ class _MutationProbeApi extends V2TestApi {
     if (method == 'POST' && route == '/people') {
       createCalls += 1;
       return {...person1, 'display_name': body?['display_name'] ?? label};
+    }
+    if (method == 'PATCH' &&
+        (route == '/people/$v2PersonId' ||
+            route == '/people/$v2Person2Id')) {
+      updateCalls += 1;
+      if (rejectUpdates) {
+        throw ApiException(409, 'REVISION_CONFLICT');
+      }
+      return {
+        ...person1,
+        'id': route.endsWith(v2Person2Id) ? v2Person2Id : v2PersonId,
+        'display_name': body?['display_name'] ?? label,
+      };
     }
     if (method == 'DELETE' && route == '/people/$v2PersonId') {
       deleteCalls += 1;
@@ -345,6 +364,77 @@ void main() {
 
     expect(api.createCalls, 0);
     expect(newApi.createCalls, 0);
+  });
+
+  testWidgets(
+      'Batch 4B rejects a dialog after same API session and owner rebind',
+      (tester) async {
+    final api = _MutationProbeApi('账号 A');
+    await tester.pumpWidget(_PeopleHarness(api: api));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('people-add-person')));
+    await tester.pump();
+    expect(find.byType(TextField), findsWidgets);
+
+    // logout() invalidates the session synchronously before its revocation
+    // request; restore only the test identity so the same API instance models
+    // a new signed-in owner without introducing a network dependency.
+    unawaited(api.logout());
+    api.authenticatedUserId = '00000000-0000-4000-8000-000000000011';
+    api.accessToken = 'token-b';
+
+    await tester.enterText(find.byType(TextField).first, '同 API 旧草稿');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(api.createCalls, 0);
+  });
+
+  testWidgets(
+      'Batch 4B rejects a person mutation after same state personId rebind',
+      (tester) async {
+    final api = _MutationProbeApi('账号 A');
+    await tester.pumpWidget(
+      _PeopleHarness(api: api, personId: v2PersonId),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('person-edit')));
+    await tester.pump();
+    expect(find.byType(TextField), findsWidgets);
+
+    await tester.pumpWidget(
+      _PeopleHarness(api: api, personId: v2Person2Id),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('账号 A-新人物'), findsWidgets);
+
+    await tester.enterText(find.byType(TextField).first, '不应写入新人物');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(api.updateCalls, 0);
+    expect(find.text('账号 A-新人物'), findsWidgets);
+  });
+
+  testWidgets('Batch 4B failed mutation never publishes success',
+      (tester) async {
+    final api = _MutationProbeApi('账号 A', rejectUpdates: true);
+    await tester.pumpWidget(
+      _PeopleHarness(api: api, personId: v2PersonId),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('person-edit')));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField).first, '冲突后不应成功');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(api.updateCalls, 1);
+    expect(find.textContaining('REVISION_CONFLICT'), findsOneWidget);
+    expect(find.textContaining('已保存人物：'), findsNothing);
   });
 
   testWidgets(
