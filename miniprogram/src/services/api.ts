@@ -200,6 +200,7 @@ const AUTH_SESSION_KEY = 'jiyi_auth_session'
 const AUTH_DEVICE_ID_KEY = 'jiyi_auth_device_id'
 const ACCESS_REFRESH_SKEW_MS = 30_000
 let authSessionEpoch = 0
+let authAttemptGeneration = 0
 let refreshFlight: { sessionId: string; promise: Promise<MiniAuthSession> } | null = null
 const elderProjection = new ElderProjectionStore()
 type AuthSessionListener = (owner: string | null, epoch: number) => void
@@ -227,6 +228,18 @@ export type MiniAuthSession = {
   access_expires_at: string
   refresh_expires_at: string
   account_deletion_in_progress: boolean
+}
+
+export type AuthSessionSnapshot = {
+  epoch: number
+  owner: string
+  sessionId: string
+}
+
+export type LogoutResult = {
+  localCleared: true
+  serverRevoked: boolean
+  serverStatus: 'CONFIRMED' | 'UNCONFIRMED' | 'NOT_ATTEMPTED'
 }
 
 export type RegistrationResponse = {
@@ -333,6 +346,16 @@ function sameSessionIdentity(left: MiniAuthSession | null, right: MiniAuthSessio
   return Boolean(left && left.session_id === right.session_id && left.user_id === right.user_id)
 }
 
+function sameSessionSnapshot(snapshot: AuthSessionSnapshot): boolean {
+  const current = currentStoredSession()
+  return Boolean(
+    current
+    && snapshot.epoch === authSessionEpoch
+    && current.user_id === snapshot.owner
+    && current.session_id === snapshot.sessionId,
+  )
+}
+
 function currentStoredSession(): MiniAuthSession | null {
   const raw = Taro.getStorageSync<unknown>(AUTH_SESSION_KEY)
   if (raw === undefined || raw === null || raw === '') return null
@@ -435,18 +458,27 @@ export function subscribeAuthSession(listener: AuthSessionListener): () => void 
   }
 }
 
-export function logout(): Promise<void> {
+export function logout(): Promise<LogoutResult> {
   return logoutAndRevoke()
+}
+
+export function captureAuthSession(): AuthSessionSnapshot {
+  const session = currentStoredSession()
+  if (!session) throw new Error('请先登录')
+  return { epoch: authSessionEpoch, owner: session.user_id, sessionId: session.session_id }
+}
+
+export function isAuthSessionCurrent(snapshot: AuthSessionSnapshot): boolean {
+  return sameSessionSnapshot(snapshot)
 }
 
 function resetElderProjection(): void {
   elderProjection.reset()
 }
 
-function publishElderProjection(profile: UserProfile, epoch: number): void {
-  if (epoch !== authSessionEpoch) throw new Error('登录状态已变化，请重试')
-  const owner = Taro.getStorageSync<string>(AUTH_OWNER_KEY)
-  if (!owner || profile.id !== owner) throw new Error('个人资料账号不匹配')
+function publishElderProjection(profile: UserProfile, snapshot: AuthSessionSnapshot): void {
+  if (!sameSessionSnapshot(snapshot)) throw new Error('登录状态已变化，请重试')
+  if (profile.id !== snapshot.owner) throw new Error('个人资料账号不匹配')
   elderProjection.publish(profile.id, profile.elder_mode_enabled)
 }
 
@@ -499,11 +531,20 @@ async function request<T>(
 ): Promise<T> {
   if (!options.anonymous && !options.skipSessionRefresh) await ensureFreshSession()
   const requestEpoch = authSessionEpoch
-  const requestSession = currentStoredSession()
+  const requestSession = options.anonymous ? null : currentStoredSession()
+  if (!options.anonymous && !requestSession) throw new Error('请先登录')
   const token = options.tokenOverride !== undefined
     ? options.tokenOverride
     : options.anonymous ? '' : requestSession?.access_token || ''
   const response = await rawRequest<T>(method, path, data, token, options)
+
+  const assertCurrent = () => {
+    if (!options.anonymous && (
+      requestEpoch !== authSessionEpoch
+      || !requestSession
+      || !sameSessionIdentity(currentStoredSession(), requestSession)
+    )) throw new Error('登录状态已变化，请重试')
+  }
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
     const payload = response.data as unknown as { detail?: string | Array<{ msg?: string }> }
@@ -524,14 +565,30 @@ async function request<T>(
       && !options.skipSessionRefresh
       && requestSession
     ) {
-      await refreshAuthSession(requestSession)
-      if (requestEpoch !== authSessionEpoch || !sameSessionIdentity(currentStoredSession(), requestSession)) {
-        throw new Error('登录状态已变化，请重试')
+      const current = currentStoredSession()
+      if (
+        requestEpoch !== authSessionEpoch
+        || !sameSessionIdentity(current, requestSession)
+      ) throw new Error('登录状态已变化，请重试')
+      if (current?.refresh_token === requestSession.refresh_token) {
+        await refreshAuthSession(requestSession)
       }
-      return request(method, path, data, { ...options, skipSessionRefresh: true })
+      const rotated = currentStoredSession()
+      if (
+        requestEpoch !== authSessionEpoch
+        || !sameSessionIdentity(rotated, requestSession)
+        || !rotated
+      ) throw new Error('登录状态已变化，请重试')
+      return request(method, path, data, {
+        ...options,
+        skipSessionRefresh: true,
+        tokenOverride: rotated.access_token,
+      })
     }
+    assertCurrent()
     throw error
   }
+  assertCurrent()
   return response.data
 }
 
@@ -554,6 +611,10 @@ async function refreshAuthSession(expected: MiniAuthSession): Promise<MiniAuthSe
   const existingFlight = refreshFlight
   if (existingFlight?.sessionId === expected.session_id) return existingFlight.promise
   const expectedEpoch = authSessionEpoch
+  if (
+    !sameSession(currentStoredSession(), expected)
+    || expectedEpoch !== authSessionEpoch
+  ) throw new Error('登录状态已变化，请重试')
   let promise!: Promise<MiniAuthSession>
   promise = (async () => {
     try {
@@ -567,6 +628,7 @@ async function refreshAuthSession(expected: MiniAuthSession): Promise<MiniAuthSe
       if (
         expectedEpoch !== authSessionEpoch
         || !sameSession(currentStoredSession(), expected)
+        || !sameSessionIdentity(next, expected)
       ) throw new Error('登录状态已变化，请重试')
       // Refresh is the only path allowed to replace a session without changing
       // the account epoch. The rotated token is immediately the only token kept.
@@ -616,15 +678,21 @@ export async function resumeAuthSession(): Promise<boolean> {
   return restoreAuthSession()
 }
 
-async function logoutAndRevoke(): Promise<void> {
+async function logoutAndRevoke(): Promise<LogoutResult> {
+  authAttemptGeneration += 1
   const previous = currentStoredSession()
   clearLocalSession()
-  if (!previous) return
+  if (!previous) return { localCleared: true, serverRevoked: false, serverStatus: 'NOT_ATTEMPTED' }
   try {
-    await rawRequest('POST', '/auth/logout', undefined, previous.access_token)
+    const response = await rawRequest('POST', '/auth/logout', undefined, previous.access_token)
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return { localCleared: true, serverRevoked: true, serverStatus: 'CONFIRMED' }
+    }
+    return { localCleared: true, serverRevoked: false, serverStatus: 'UNCONFIRMED' }
   } catch {
     // Local fencing is authoritative for this client. A failed server revoke
     // never restores the old account or session into the UI.
+    return { localCleared: true, serverRevoked: false, serverStatus: 'UNCONFIRMED' }
   }
 }
 
@@ -645,10 +713,12 @@ export async function registerAccount(input: {
 }
 
 export async function loginAccount(email: string, password: string): Promise<void> {
+  const attempt = ++authAttemptGeneration
   clearLocalSession(false)
   // Account switching invalidates the prior owner before the network request,
   // so an in-flight response from account A cannot publish into account B.
   authSessionEpoch += 1
+  const expectedEpoch = authSessionEpoch
   resetElderProjection()
   const result = parseMiniAuthSession(await request<unknown>('POST', '/auth/login', {
     email: email.trim(),
@@ -656,15 +726,25 @@ export async function loginAccount(email: string, password: string): Promise<voi
     device_id: getAuthDeviceId(),
     client_platform: 'miniprogram',
   }, { anonymous: true }))
+  if (attempt !== authAttemptGeneration || expectedEpoch !== authSessionEpoch || currentStoredSession()) {
+    throw new Error('登录状态已变化，请重试')
+  }
   installSession(result, false)
 }
 
 export async function verifyEmail(token: string): Promise<EmailVerificationResponse> {
+  const attempt = ++authAttemptGeneration
+  const expectedEpoch = authSessionEpoch
   const result = parseEmailVerificationResponse(await request<unknown>('POST', '/auth/verify-email', {
     token: token.trim(),
     device_id: getAuthDeviceId(),
     client_platform: 'miniprogram',
   }, { anonymous: true }))
+  if (
+    attempt !== authAttemptGeneration
+    || expectedEpoch !== authSessionEpoch
+    || currentStoredSession()
+  ) throw new Error('登录状态已变化，请重试')
   if (result.session) installSession(result.session)
   return result
 }
@@ -674,10 +754,10 @@ export async function resendVerification(email: string): Promise<void> {
 }
 
 export async function getProfile(): Promise<UserProfile> {
-  const epoch = authSessionEpoch
+  const snapshot = captureAuthSession()
   const raw = await request<unknown>('GET', '/user')
   const profile = parseElderUserProfile(raw)
-  publishElderProjection(profile, epoch)
+  publishElderProjection(profile, snapshot)
   return profile
 }
 
@@ -1297,7 +1377,7 @@ export async function updateProfile(input: {
   locale?: string
   elder_mode_enabled?: boolean
 }): Promise<UserProfile> {
-  const epoch = authSessionEpoch
+  const snapshot = captureAuthSession()
   const payload: Record<string, unknown> = {}
   if (input.nickname !== undefined) payload.nickname = input.nickname.trim()
   if (input.timezone !== undefined) payload.timezone = input.timezone.trim()
@@ -1307,7 +1387,7 @@ export async function updateProfile(input: {
   }
   const raw = await request<unknown>('PATCH', '/user', payload)
   const profile = parseElderUserProfile(raw)
-  publishElderProjection(profile, epoch)
+  publishElderProjection(profile, snapshot)
   return profile
 }
 

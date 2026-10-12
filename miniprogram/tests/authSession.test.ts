@@ -139,3 +139,205 @@ test('AUTH-MINI-01 malformed complete session responses fail closed', async () =
     /认证响应异常/,
   )
 })
+
+test('profile projection uses the validated session owner after legacy owner removal', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  const calls: RequestOptions[] = []
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    calls.push(options)
+    if (options.url.endsWith('/auth/login')) return { statusCode: 200, data: tokenResponse() }
+    if (options.url.endsWith('/user')) {
+      return {
+        statusCode: 200,
+        data: {
+          id: USER_ID,
+          email: 'a@example.com',
+          nickname: 'A',
+          timezone: 'Asia/Shanghai',
+          locale: 'zh-CN',
+          elder_mode_enabled: false,
+        },
+      }
+    }
+    throw new Error(`unexpected request ${options.url}`)
+  }
+  const api = await import('../src/services/api')
+  await api.logout()
+  await api.loginAccount('a@example.com', 'password-1234')
+  assert.equal(storage.has('jiyi_authenticated_user_id'), false)
+  const profile = await api.getProfile()
+  assert.equal(profile.id, USER_ID)
+  assert.equal(calls.at(-1)?.url, 'https://api.example.test/v1/user')
+})
+
+test('delayed 401 reuses the rotated access token without replaying the old refresh token', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  let handler: (options: RequestOptions) => Promise<{ statusCode: number; data: unknown }>
+    = async () => ({ statusCode: 500, data: { detail: 'unconfigured' } })
+  let privacyCalls = 0
+  let refreshCalls = 0
+  let releaseDelayed401!: (value: { statusCode: number; data: unknown }) => void
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = (options: RequestOptions) => handler(options)
+  const api = await import('../src/services/api')
+  await api.logout()
+  handler = async (options) => {
+    if (options.url.endsWith('/auth/login')) return { statusCode: 200, data: tokenResponse() }
+    if (options.url.endsWith('/auth/refresh')) {
+      refreshCalls += 1
+      assert.deepEqual(options.data, { refresh_token: 'refresh-a' })
+      return { statusCode: 200, data: tokenResponse({ access_token: 'access-b', refresh_token: 'refresh-b' }) }
+    }
+    if (options.url.endsWith('/privacy/status')) {
+      privacyCalls += 1
+      const auth = options.header?.Authorization
+      if (privacyCalls === 1) return { statusCode: 401, data: { detail: 'AUTH_SESSION_EXPIRED' } }
+      if (privacyCalls === 2) {
+        return new Promise((resolve) => { releaseDelayed401 = resolve })
+      }
+      assert.equal(auth, 'Bearer access-b')
+      return { statusCode: 200, data: { recording_paused: false } }
+    }
+    throw new Error(`unexpected request ${options.url}`)
+  }
+  await api.loginAccount('a@example.com', 'password-1234')
+  const first = api.getPrivacyStatus()
+  await Promise.resolve()
+  const delayed = api.getPrivacyStatus()
+  await first
+  releaseDelayed401({ statusCode: 401, data: { detail: 'AUTH_SESSION_EXPIRED' } })
+  await delayed
+  assert.equal(refreshCalls, 1)
+  assert.equal((storage.get('jiyi_auth_session') as any).refresh_token, 'refresh-b')
+})
+
+test('late login A cannot install over completed login B', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  let resolveA!: (value: { statusCode: number; data: unknown }) => void
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    if (options.data && (options.data as any).email === 'a@example.com') {
+      return new Promise((resolve) => { resolveA = resolve })
+    }
+    return { statusCode: 200, data: tokenResponse({ user_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }) }
+  }
+  const api = await import('../src/services/api')
+  await api.logout()
+  const loginA = api.loginAccount('a@example.com', 'password-1234')
+  await api.loginAccount('b@example.com', 'password-1234')
+  resolveA({ statusCode: 200, data: tokenResponse() })
+  await assert.rejects(loginA, /登录状态已变化/)
+  assert.equal(api.currentAuthenticatedUserId(), 'dddddddd-dddd-4ddd-8ddd-dddddddddddd')
+})
+
+test('late verify-email A cannot replace login B', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  let resolveVerify!: (value: { statusCode: number; data: unknown }) => void
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    if (options.url.endsWith('/auth/verify-email')) {
+      return new Promise((resolve) => { resolveVerify = resolve })
+    }
+    return { statusCode: 200, data: tokenResponse({ user_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }) }
+  }
+  const api = await import('../src/services/api')
+  await api.logout()
+  const verifyA = api.verifyEmail('verify-a')
+  await api.loginAccount('b@example.com', 'password-1234')
+  resolveVerify({
+    statusCode: 200,
+    data: { verified: true, already_verified: false, session: tokenResponse() },
+  })
+  await assert.rejects(verifyA, /登录状态已变化/)
+  assert.equal(api.currentAuthenticatedUserId(), 'dddddddd-dddd-4ddd-8ddd-dddddddddddd')
+})
+
+test('delayed protected success is rejected after account switch', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  let resolvePrivacy!: (value: { statusCode: number; data: unknown }) => void
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    if (options.url.endsWith('/auth/login')) {
+      const userId = (options.data as any).email === 'b@example.com'
+        ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+        : USER_ID
+      return { statusCode: 200, data: tokenResponse({ user_id: userId }) }
+    }
+    if (options.url.endsWith('/privacy/status')) return new Promise((resolve) => { resolvePrivacy = resolve })
+    throw new Error(`unexpected request ${options.url}`)
+  }
+  const api = await import('../src/services/api')
+  await api.logout()
+  await api.loginAccount('a@example.com', 'password-1234')
+  const oldRequest = api.getPrivacyStatus()
+  await Promise.resolve()
+  await api.loginAccount('b@example.com', 'password-1234')
+  resolvePrivacy({ statusCode: 200, data: { recording_paused: true } })
+  await assert.rejects(oldRequest, /登录状态已变化/)
+})
+
+test('delayed protected error is rejected after logout instead of reaching the old page', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  let resolvePrivacy!: (value: { statusCode: number; data: unknown }) => void
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    if (options.url.endsWith('/auth/login')) return { statusCode: 200, data: tokenResponse() }
+    if (options.url.endsWith('/privacy/status')) return new Promise((resolve) => { resolvePrivacy = resolve })
+    if (options.url.endsWith('/auth/logout')) return { statusCode: 204, data: undefined }
+    throw new Error(`unexpected request ${options.url}`)
+  }
+  const api = await import('../src/services/api')
+  await api.logout()
+  await api.loginAccount('a@example.com', 'password-1234')
+  const oldRequest = api.getPrivacyStatus()
+  await Promise.resolve()
+  await api.logout()
+  resolvePrivacy({ statusCode: 500, data: { detail: 'old account error' } })
+  await assert.rejects(oldRequest, /登录状态已变化/)
+})
+
+test('logout reports remote revoke uncertainty and rejects cross-session refresh responses', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  let mode: 'logout-500' | 'refresh-cross-account' = 'logout-500'
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    if (options.url.endsWith('/auth/login')) return { statusCode: 200, data: tokenResponse() }
+    if (options.url.endsWith('/auth/logout')) return { statusCode: 500, data: { detail: 'server error' } }
+    if (options.url.endsWith('/auth/refresh') && mode === 'refresh-cross-account') {
+      return { statusCode: 200, data: tokenResponse({ user_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', session_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }) }
+    }
+    if (options.url.endsWith('/privacy/status')) return { statusCode: 401, data: { detail: 'expired' } }
+    throw new Error(`unexpected request ${options.url}`)
+  }
+  const api = await import('../src/services/api')
+  await api.logout()
+  await api.loginAccount('a@example.com', 'password-1234')
+  const logoutResult = await api.logout()
+  assert.equal((logoutResult as any).serverRevoked, false)
+  await api.loginAccount('a@example.com', 'password-1234')
+  mode = 'refresh-cross-account'
+  await assert.rejects(api.getPrivacyStatus())
+  assert.equal(api.isAuthenticated(), false)
+})

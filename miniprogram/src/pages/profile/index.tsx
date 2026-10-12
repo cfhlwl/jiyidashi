@@ -1,11 +1,15 @@
 import Taro from '@tarojs/taro'
 import { Button, Input, Switch, Text, View } from '@tarojs/components'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   canEditApiBaseUrl,
+  captureAuthSession,
+  currentAuthSessionEpoch,
+  currentAuthenticatedUserId,
   getApiBaseUrl,
   getPrivacyStatus,
   getProfile,
+  isAuthSessionCurrent,
   isAuthenticated,
   loginAccount,
   logout,
@@ -17,6 +21,7 @@ import {
   restoreAuthSession,
   resumeMemory,
   setApiBaseUrl,
+  subscribeAuthSession,
   updateElderMode,
   updateProfile,
 } from '../../services/api'
@@ -36,6 +41,11 @@ export default function Page() {
   const [status, setStatus] = useState('')
   const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const profileViewGeneration = useRef(0)
+  const authView = useRef<{ owner: string | null; epoch: number }>({
+    owner: currentAuthenticatedUserId(),
+    epoch: currentAuthSessionEpoch(),
+  })
   const allowApiEdit = canEditApiBaseUrl()
 
   const applyProfile = (next: Awaited<ReturnType<typeof getProfile>>) => {
@@ -45,24 +55,48 @@ export default function Page() {
   }
 
   const refreshProfile = async () => {
+    const viewGeneration = ++profileViewGeneration.current
     if (!isAuthenticated()) {
       setProfile(null)
       setPrivacy(null)
       return
     }
     try {
-      applyProfile(await getProfile())
-      setPrivacy(await getPrivacyStatus())
+      const snapshot = captureAuthSession()
+      const nextProfile = await getProfile()
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      applyProfile(nextProfile)
+      const nextPrivacy = await getPrivacyStatus()
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      setPrivacy(nextPrivacy)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '读取资料失败')
+      if (viewGeneration === profileViewGeneration.current) {
+        setStatus(error instanceof Error ? error.message : '读取资料失败')
+      }
     }
   }
+
+  useEffect(() => {
+    const unsubscribe = subscribeAuthSession((owner, epoch) => {
+      if (authView.current.owner === owner && authView.current.epoch === epoch) return
+      authView.current = { owner, epoch }
+      profileViewGeneration.current += 1
+      if (!owner) {
+        setProfile(null)
+        setPrivacy(null)
+      }
+    })
+    return unsubscribe
+  }, [])
 
   useEffect(() => {
     void (async () => {
       await restoreAuthSession()
       await refreshProfile()
     })()
+    return () => {
+      profileViewGeneration.current += 1
+    }
   }, [])
 
   const submit = async () => {
@@ -88,6 +122,7 @@ export default function Page() {
         )
         return
       } else {
+        profileViewGeneration.current += 1
         await loginAccount(email, password)
       }
       await refreshProfile()
@@ -116,10 +151,14 @@ export default function Page() {
 
   const toggleElderMode = async (enabled: boolean) => {
     if (!profile || loading) return
+    const viewGeneration = profileViewGeneration.current
+    const snapshot = captureAuthSession()
     setLoading(true)
     setStatus('')
     try {
-      applyProfile(await updateElderMode(enabled))
+      const nextProfile = await updateElderMode(enabled)
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      applyProfile(nextProfile)
       setStatus(enabled ? '长辈模式已开启' : '长辈模式已关闭')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '长辈模式更新失败')
@@ -133,11 +172,15 @@ export default function Page() {
       setStatus('昵称和时区不能为空')
       return
     }
+    const viewGeneration = profileViewGeneration.current
+    const snapshot = captureAuthSession()
     setLoading(true)
     setStatus('')
     try {
       // [人工注释][S1-002] 用户修改 IANA 时区后以后端返回值为准，客户端不自行推断自然日边界。
-      applyProfile(await updateProfile({ nickname, timezone, locale: profile?.locale }))
+      const nextProfile = await updateProfile({ nickname, timezone, locale: profile?.locale })
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      applyProfile(nextProfile)
       setStatus('资料已更新')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '资料更新失败')
@@ -147,10 +190,14 @@ export default function Page() {
   }
 
   const applyPrivacy = async (action: () => Promise<PrivacyStatus>, success: string) => {
+    const viewGeneration = profileViewGeneration.current
+    const snapshot = captureAuthSession()
     setLoading(true)
     setStatus('')
     try {
-      setPrivacy(await action())
+      const nextPrivacy = await action()
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      setPrivacy(nextPrivacy)
       setStatus(success)
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '操作失败')
@@ -230,7 +277,14 @@ export default function Page() {
         <Button
           className='secondary-button'
           onClick={() => {
-            void logout()
+            const logoutGeneration = ++profileViewGeneration.current
+            void logout().then((result) => {
+              if (
+                logoutGeneration === profileViewGeneration.current
+                && !result.serverRevoked
+                && result.serverStatus !== 'NOT_ATTEMPTED'
+              ) setStatus('已退出登录；服务器注销未确认，请重新登录后检查账号状态')
+            })
             setProfile(null)
             setPrivacy(null)
             setEmail('')

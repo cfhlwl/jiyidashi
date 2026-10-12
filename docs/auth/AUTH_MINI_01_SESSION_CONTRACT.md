@@ -2,7 +2,8 @@
 
 ## Status
 
-`CODE READY / MINI FIELD PENDING` on the AUTH-MINI-01 implementation branch.
+`SECURITY REMEDIATION COMPLETE / INDEPENDENT REVIEW PENDING / MINI FIELD PENDING`
+on the AUTH-MINI-01 implementation branch.
 
 This contract is limited to the WeChat Mini Program client. It does not change
 the already-authoritative backend auth routes, Flutter/Android contracts, UI V3,
@@ -57,10 +58,19 @@ loss, malformed response, timeout, or replayed/invalid refresh clears the
 local session; the old refresh token is never retried.
 
 Logout fences the local epoch and clears the session before attempting the
-server `/v1/auth/logout` call. A failed network revoke cannot restore the old
-account UI. A new login clears the previous local authority before installing
-the new complete session, so account switching cannot publish stale owner
-data.
+server `/v1/auth/logout` call. The adapter checks the actual HTTP status and
+returns `CONFIRMED` only for a 2xx response; network errors, 401/5xx responses,
+and unknown completion are `UNCONFIRMED`. A failed network revoke cannot
+restore the old account UI, and the result cannot clear or alter a newer login.
+A new login clears the previous local authority before installing the new
+complete session, so account switching cannot publish stale owner data.
+
+Every protected request captures the owner, session id, and auth epoch before
+I/O. Both success and error completion are rejected when that snapshot is no
+longer current. A 401 refresh first compares the captured refresh token with
+the current session; if another request already rotated it, the request uses
+the new access token instead of replaying the old refresh token. A refresh
+response whose user or session identity changes is rejected and not persisted.
 
 Startup restore and foreground resume validate the same durable record and
 perform a bounded refresh when needed. Existing `subscribeAuthSession`,
@@ -74,8 +84,11 @@ are never logged or sent to analytics. The Mini Program does not locally
 decide verification success or create a session. Tests use controlled
 `Taro.request` and storage fakes to cover registration-without-session,
 complete login/verify responses, malformed response fail-closed behavior,
-expiry refresh, 401 single-flight, rotated-token non-reuse, response-loss
-logout/switch fencing, storage corruption, and token-free errors.
+expiry refresh, 401 single-flight, delayed-401 rotated-token non-reuse,
+response-loss logout/switch fencing, login/verification attempt generations,
+protected success/error fencing, remote logout status, refresh identity
+continuity, storage corruption, and token-free errors. Profile publication is
+also guarded by a page view generation and the captured validated session.
 
 Backend PostgreSQL auth/session tests remain the authority for registration,
 email verification, refresh rotation, logout, and session revocation; this
