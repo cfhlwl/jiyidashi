@@ -3,9 +3,9 @@
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
-import '../ui/jiyi_components.dart';
 import '../ui/jiyi_format.dart';
 import '../ui/jiyi_tokens.dart';
+import '../ui/jiyi_v3_components.dart';
 import 'people_models.dart';
 import 'person_detail_page.dart';
 import 'v2_api.dart';
