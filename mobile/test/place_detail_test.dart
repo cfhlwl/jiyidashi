@@ -2,11 +2,37 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jiyidashi/amap_footprint_map.dart';
+import 'package:jiyidashi/amap_privacy_consent.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/place_detail_page.dart';
 import 'package:jiyidashi/stage1_app.dart';
 
 const _timelinePlaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+class _PlaceConsent implements AmapPrivacyConsentAuthority {
+  _PlaceConsent(this.accepted);
+
+  bool accepted;
+
+  @override
+  Future<void> accept() async => accepted = true;
+
+  @override
+  Future<bool> readAccepted() async => accepted;
+
+  @override
+  Future<void> revoke() async => accepted = false;
+}
+
+class _DelayedPlaceConsent extends _PlaceConsent {
+  _DelayedPlaceConsent(super.accepted);
+
+  final acceptCompleter = Completer<void>();
+
+  @override
+  Future<void> accept() => acceptCompleter.future.then((_) => accepted = true);
+}
 
 class _PlaceApi extends JiYiApiClient {
   _PlaceApi({
@@ -14,19 +40,23 @@ class _PlaceApi extends JiYiApiClient {
     this.detailError,
     this.places = const [],
     this.pendingDetail,
+    this.pendingNextDetail,
     this.nextDetail,
   }) : super(baseUrl: 'http://place-detail.invalid/v1') {
     accessToken = 'token';
     authenticatedUserId = 'owner';
   }
 
-  final Map<String, dynamic>? detail;
+  Map<String, dynamic>? detail;
   final Object? detailError;
   final List<Map<String, dynamic>> places;
   final Completer<Map<String, dynamic>>? pendingDetail;
+  final Completer<Map<String, dynamic>>? pendingNextDetail;
   final Map<String, dynamic>? nextDetail;
   int detailCalls = 0;
   String? lastPlaceId;
+  bool _pendingDetailConsumed = false;
+  bool _pendingNextDetailConsumed = false;
 
   @override
   Future<List<Map<String, dynamic>>> listPlaces({int limit = 100}) async => places;
@@ -77,9 +107,16 @@ class _PlaceApi extends JiYiApiClient {
   }) async {
     detailCalls += 1;
     lastPlaceId = placeId;
-    if (pendingDetail != null) return pendingDetail!.future;
+    if (pendingDetail != null && !_pendingDetailConsumed) {
+      _pendingDetailConsumed = true;
+      return pendingDetail!.future;
+    }
     if (detailError != null) throw detailError!;
     if (cursor != null) {
+      if (pendingNextDetail != null && !_pendingNextDetailConsumed) {
+        _pendingNextDetailConsumed = true;
+        return pendingNextDetail!.future;
+      }
       return nextDetail ??
           {
             'place': detail!['place'],
@@ -110,14 +147,21 @@ Map<String, dynamic> _visit({
 Map<String, dynamic> _place({
   List<Map<String, dynamic>> visits = const [],
   Object? cursor,
+  String placeId = _timelinePlaceId,
+  String name = '家',
+  String nameSource = 'USER',
+  double? latitude,
+  double? longitude,
 }) {
   return {
     'place': {
-      'id': _timelinePlaceId,
-      'name': '家',
-      'name_source': 'USER',
+      'id': placeId,
+      'name': name,
+      'name_source': nameSource,
       'address': '测试地址',
       'category': 'HOME',
+      'latitude': latitude,
+      'longitude': longitude,
       'visit_count': 2,
       'first_visited_at': '2026-09-18T08:00:00Z',
       'last_visited_at': '2026-09-20T08:00:00Z',
@@ -132,7 +176,7 @@ void main() {
     final completer = Completer<Map<String, dynamic>>();
     final api = _PlaceApi(pendingDetail: completer);
     await tester.pumpWidget(
-      MaterialApp(home: PlaceDetailPage(api: api, placeId: 'place-1')),
+      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
     );
     expect(find.text('正在读取地点详情…'), findsOneWidget);
   });
@@ -140,7 +184,7 @@ void main() {
   testWidgets('PlaceDetailPage exposes error and retry state', (tester) async {
     final api = _PlaceApi(detailError: ApiException(404, 'PLACE_NOT_FOUND'));
     await tester.pumpWidget(
-      MaterialApp(home: PlaceDetailPage(api: api, placeId: 'place-1')),
+      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
     );
     await tester.pumpAndSettle();
     expect(find.text('无法读取地点详情'), findsOneWidget);
@@ -148,14 +192,327 @@ void main() {
     expect(find.widgetWithText(FilledButton, '重试'), findsOneWidget);
   });
 
+  testWidgets('PlaceDetailPage exposes an explicit offline state', (tester) async {
+    final api = _PlaceApi(detailError: TransportException('网络连接失败'));
+    await tester.pumpWidget(
+      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('当前离线'), findsOneWidget);
+    expect(find.text('网络连接失败'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '重试'), findsOneWidget);
+  });
+
   testWidgets('PlaceDetailPage exposes empty retained-visit state', (tester) async {
     final api = _PlaceApi(detail: _place());
     await tester.pumpWidget(
-      MaterialApp(home: PlaceDetailPage(api: api, placeId: 'place-1')),
+      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
     );
     await tester.pumpAndSettle();
-    expect(find.text('家'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('place-summary-card')),
+        matching: find.text('家'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('还没有到访记录'), findsOneWidget);
+  });
+
+  testWidgets('PlaceDetailPage keeps no-coordinate places truthful', (tester) async {
+    final api = _PlaceApi(
+      detail: _place(name: '', nameSource: 'UNNAMED'),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('未知地点'), findsWidgets);
+    expect(find.byKey(const ValueKey('place-map-no-coordinate-state')), findsOneWidget);
+    expect(find.byKey(const ValueKey('place-map-surface')), findsNothing);
+    expect(find.byKey(const ValueKey('amap-place-real-surface')), findsNothing);
+  });
+
+  testWidgets('PlaceDetailPage gates real map behind privacy consent', (tester) async {
+    final consent = _PlaceConsent(false);
+    final api = _PlaceApi(detail: _place(latitude: 31.2243, longitude: 121.4768));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlaceDetailPage(
+          api: api,
+          placeId: _timelinePlaceId,
+          amapPrivacyConsent: consent,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsOneWidget);
+    expect(find.byKey(const ValueKey('place-amap-privacy-accept')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('place-amap-privacy-accept')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('amap-privacy-confirm')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('amap-privacy-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(consent.accepted, isTrue);
+    expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsNothing);
+    expect(find.byKey(const ValueKey('amap-place-key-unavailable')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amap-place-real-surface')), findsNothing);
+  });
+
+  testWidgets('PlaceDetailPage rejects a returned place identity mismatch', (tester) async {
+    final api = _PlaceApi(detail: _place(placeId: 'another-place'));
+    await tester.pumpWidget(
+      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('无法读取地点详情'), findsOneWidget);
+    expect(find.text('家'), findsNothing);
+  });
+
+  testWidgets('PlaceDetailPage reloads after owner changes during initial request',
+      (tester) async {
+    final response = Completer<Map<String, dynamic>>();
+    final api = _PlaceApi(
+      detail: _place(name: '新账号的地点'),
+      pendingDetail: response,
+    );
+    late StateSetter rebuild;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return PlaceDetailPage(api: api, placeId: _timelinePlaceId);
+          },
+        ),
+      ),
+    );
+    expect(find.text('正在读取地点详情…'), findsOneWidget);
+
+    api.authenticatedUserId = 'different-owner';
+    rebuild(() {});
+    await tester.pump();
+    expect(find.text('账号状态已变化'), findsOneWidget);
+
+    response.complete(_place());
+    await tester.pumpAndSettle();
+
+    expect(api.detailCalls, 2);
+    expect(find.text('新账号的地点'), findsWidgets);
+    expect(find.text('家'), findsNothing);
+  });
+
+  testWidgets('PlaceDetailPage reloads when API and place identity changes',
+      (tester) async {
+    final firstApi = _PlaceApi(detail: _place());
+    final secondPlaceId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    final secondApi = _PlaceApi(
+      detail: _place(placeId: secondPlaceId, name: '办公室'),
+    );
+    var api = firstApi;
+    var placeId = _timelinePlaceId;
+    late StateSetter rebuild;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return PlaceDetailPage(api: api, placeId: placeId);
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('家'), findsWidgets);
+
+    api = secondApi;
+    placeId = secondPlaceId;
+    rebuild(() {});
+    await tester.pump();
+    expect(find.text('家'), findsNothing);
+    await tester.pumpAndSettle();
+
+    expect(find.text('办公室'), findsWidgets);
+    expect(firstApi.detailCalls, 1);
+    expect(secondApi.lastPlaceId, secondPlaceId);
+  });
+
+  testWidgets('PlaceDetailPage clears displayed facts when owner changes',
+      (tester) async {
+    final api = _PlaceApi(detail: _place());
+    late StateSetter rebuild;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return PlaceDetailPage(api: api, placeId: _timelinePlaceId);
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('家'), findsWidgets);
+
+    api.detail = _place(name: '新账号的地点');
+    api.authenticatedUserId = 'different-owner';
+    rebuild(() {});
+    await tester.pump();
+    expect(find.text('家'), findsNothing);
+    expect(find.text('账号状态已变化'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.text('新账号的地点'), findsWidgets);
+  });
+
+  testWidgets('PlaceDetailPage hides map immediately when consent is revoked',
+      (tester) async {
+    final consentDelegate = _PlaceConsent(true);
+    final consent = AmapPrivacyConsentController(delegate: consentDelegate);
+    final api = _PlaceApi(detail: _place(latitude: 31.2243, longitude: 121.4768));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: JiYiAmapPresentationScope(
+          config: const JiYiAmapConfig(
+            androidKey: 'test-amap-key',
+            platformOverride: TargetPlatform.android,
+          ),
+          footprintBuilder: (
+            context,
+            config,
+            visits,
+            selectedIndex,
+            onSelected,
+            interactive,
+          ) => const SizedBox.shrink(),
+          placeBuilder: (
+            context,
+            config,
+            latitude,
+            longitude,
+            name,
+            address,
+          ) => const SizedBox(key: ValueKey('test-amap-native')),
+          child: PlaceDetailPage(
+            api: api,
+            placeId: _timelinePlaceId,
+            amapPrivacyConsent: consent,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
+
+    await consent.revoke();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('amap-place-real-surface')), findsNothing);
+    expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsOneWidget);
+    expect(find.byKey(const ValueKey('place-amap-privacy-accept')), findsOneWidget);
+  });
+
+  testWidgets(
+    'PlaceDetailPage rebinds map privacy when the authority is replaced',
+    (tester) async {
+      final first = AmapPrivacyConsentController(
+        delegate: _PlaceConsent(true),
+      );
+      final second = AmapPrivacyConsentController(
+        delegate: _PlaceConsent(false),
+      );
+      var currentConsent = first;
+      final api = _PlaceApi(
+        detail: _place(latitude: 31.2243, longitude: 121.4768),
+      );
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: JiYiAmapPresentationScope(
+            config: const JiYiAmapConfig(
+              androidKey: 'test-amap-key',
+              platformOverride: TargetPlatform.android,
+            ),
+            footprintBuilder: (
+              context,
+              config,
+              visits,
+              selectedIndex,
+              onSelected,
+              interactive,
+            ) => const SizedBox.shrink(),
+            placeBuilder: (
+              context,
+              config,
+              latitude,
+              longitude,
+              name,
+              address,
+            ) => const SizedBox(key: ValueKey('test-amap-native')),
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                rebuild = setState;
+                return PlaceDetailPage(
+                  api: api,
+                  placeId: _timelinePlaceId,
+                  amapPrivacyConsent: currentConsent,
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
+
+      currentConsent = second;
+      rebuild(() {});
+      await tester.pump();
+      expect(find.byKey(const ValueKey('amap-place-real-surface')), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsOneWidget);
+
+      await second.accept();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
+
+      await first.revoke();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('amap-place-real-surface')), findsOneWidget);
+    },
+  );
+
+  testWidgets('PlaceDetailPage remains usable on small screens with large text',
+      (tester) async {
+    final api = _PlaceApi(detail: _place(visits: [_visit()]));
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(
+          size: Size(320, 568),
+          textScaler: TextScaler.linear(2),
+        ),
+        child: MaterialApp(
+          home: PlaceDetailPage(api: api, placeId: _timelinePlaceId),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.bySemanticsLabel('返回'), findsOneWidget);
+    expect(find.text('地点详情'), findsOneWidget);
   });
 
   testWidgets('PlaceDetailPage distinguishes finalized and mutable visits and paginates', (tester) async {
@@ -166,10 +523,11 @@ void main() {
       ),
     );
     await tester.pumpWidget(
-      MaterialApp(home: PlaceDetailPage(api: api, placeId: 'place-1')),
+      MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
     );
     await tester.pumpAndSettle();
     expect(find.text('已稳定的到访'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const ValueKey('place-load-more')));
     await tester.tap(find.widgetWithText(OutlinedButton, '加载更多'));
     await tester.pumpAndSettle();
     expect(find.text('仍在更新的到访'), findsOneWidget);
@@ -177,12 +535,72 @@ void main() {
   });
 
   testWidgets(
+    'PlaceDetailPage resets pagination after an owner changes',
+    (tester) async {
+      final pendingNext = Completer<Map<String, dynamic>>();
+      final api = _PlaceApi(
+        detail: _place(
+          name: '旧账号地点',
+          visits: [_visit()],
+          cursor: 'next-page',
+        ),
+        nextDetail: _place(
+          name: '新账号地点',
+          visits: [_visit(id: 'visit-2', finalized: false)],
+        ),
+        pendingNextDetail: pendingNext,
+      );
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return PlaceDetailPage(
+                api: api,
+                placeId: _timelinePlaceId,
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('place-load-more')));
+      await tester.tap(find.byKey(const ValueKey('place-load-more')));
+      await tester.pump();
+
+      api.detail = _place(
+        name: '新账号地点',
+        visits: [_visit()],
+        cursor: 'next-page',
+      );
+      api.authenticatedUserId = 'different-owner';
+      rebuild(() {});
+      await tester.pump();
+      expect(find.text('账号状态已变化'), findsOneWidget);
+
+      pendingNext.complete(_place(name: '旧账号地点'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('新账号地点'), findsWidgets);
+      expect(find.widgetWithText(OutlinedButton, '加载更多'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const ValueKey('place-load-more')));
+      await tester.tap(find.byKey(const ValueKey('place-load-more')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('仍在更新的到访'), findsOneWidget);
+      expect(api.detailCalls, 4);
+    },
+  );
+
+  testWidgets(
     'PlaceDetailPage rejects non-bool finalized instead of rendering mutable fact',
     (tester) async {
       final malformed = _visit()..['visit_finalized'] = 'true';
       final api = _PlaceApi(detail: _place(visits: [malformed]));
       await tester.pumpWidget(
-        MaterialApp(home: PlaceDetailPage(api: api, placeId: 'place-1')),
+        MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
       );
       await tester.pumpAndSettle();
 
@@ -203,17 +621,66 @@ void main() {
       final api = _PlaceApi(detail: initial, nextDetail: malformedNext);
 
       await tester.pumpWidget(
-        MaterialApp(home: PlaceDetailPage(api: api, placeId: 'place-1')),
+        MaterialApp(home: PlaceDetailPage(api: api, placeId: _timelinePlaceId)),
       );
       await tester.pumpAndSettle();
       expect(find.text('已稳定的到访'), findsOneWidget);
 
+      await tester.ensureVisible(find.byKey(const ValueKey('place-load-more')));
       await tester.tap(find.widgetWithText(OutlinedButton, '加载更多'));
       await tester.pumpAndSettle();
 
       expect(find.text('部分到访记录加载失败'), findsOneWidget);
       expect(find.text('仍在更新的到访'), findsNothing);
       expect(find.textContaining('visit-2'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'PlaceDetailPage ignores an old privacy acceptance after authority replacement',
+    (tester) async {
+      final firstDelegate = _DelayedPlaceConsent(false);
+      final first = AmapPrivacyConsentController(delegate: firstDelegate);
+      final second = AmapPrivacyConsentController(
+        delegate: _PlaceConsent(false),
+      );
+      var currentConsent = first;
+      final api = _PlaceApi(
+        detail: _place(latitude: 31.2243, longitude: 121.4768),
+      );
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return PlaceDetailPage(
+                api: api,
+                placeId: _timelinePlaceId,
+                amapPrivacyConsent: currentConsent,
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('place-amap-privacy-accept')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('amap-privacy-confirm')));
+      await tester.pump();
+
+      currentConsent = second;
+      rebuild(() {});
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsOneWidget);
+
+      firstDelegate.acceptCompleter.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('amap-place-real-surface')), findsNothing);
+      expect(find.byKey(const ValueKey('amap-place-privacy-blocked')), findsOneWidget);
     },
   );
 
