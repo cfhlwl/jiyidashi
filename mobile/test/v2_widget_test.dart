@@ -73,9 +73,9 @@ void main() {
         title: '老张',
       ),
     );
-    expect(find.text('相关的人和事'), findsWidgets);
-    expect(find.textContaining('小李'), findsWidgets);
-    expect(find.textContaining('你们的关系'), findsOneWidget);
+    expect(find.byKey(const ValueKey('graph-center-label')), findsOneWidget);
+    expect(find.text('小李 · 重要的人'), findsOneWidget);
+    expect(find.text('朋友'), findsOneWidget);
   });
 
   testWidgets('LifeEvent detail remains deterministic and evidence backed', (tester) async {
