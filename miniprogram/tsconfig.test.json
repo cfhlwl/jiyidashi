@@ -17,6 +17,7 @@
     "src/services/photoCapture.ts",
     "src/services/voiceCapture.ts",
     "src/services/api.ts",
+    "tests/authSession.test.ts",
     "src/services/todayFootprint.ts",
     "src/services/placeDetail.ts",
     "tests/photoCapture.test.ts",

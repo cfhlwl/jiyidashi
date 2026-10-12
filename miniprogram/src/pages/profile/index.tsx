@@ -13,6 +13,8 @@ import {
   pauseMemoryToday,
   PrivacyStatus,
   registerAccount,
+  resendVerification,
+  restoreAuthSession,
   resumeMemory,
   setApiBaseUrl,
   updateElderMode,
@@ -32,6 +34,7 @@ export default function Page() {
   const [profile, setProfile] = useState<Awaited<ReturnType<typeof getProfile>> | null>(null)
   const [privacy, setPrivacy] = useState<PrivacyStatus | null>(null)
   const [status, setStatus] = useState('')
+  const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const allowApiEdit = canEditApiBaseUrl()
 
@@ -56,7 +59,10 @@ export default function Page() {
   }
 
   useEffect(() => {
-    void refreshProfile()
+    void (async () => {
+      await restoreAuthSession()
+      await refreshProfile()
+    })()
   }, [])
 
   const submit = async () => {
@@ -71,16 +77,38 @@ export default function Page() {
     setLoading(true)
     setStatus('')
     try {
-      // [人工注释][S1-001] 登录/注册成功后才允许进入个人记忆 API，Token 保存在微信本地存储。
+      // [人工注释][AUTH-MINI-01] 注册只创建待验证账号；只有完整 TokenResponse 才能进入个人记忆 API。
       if (registerMode) {
-        await registerAccount({ email, password, nickname })
+        const registration = await registerAccount({ email, password, nickname })
+        setVerificationPendingEmail(email.trim())
+        setStatus(
+          registration.verification_delivery_pending
+            ? '账号已创建，验证邮件尚未送达，请稍后重试发送'
+            : '账号已创建，请查收验证邮件后再登录',
+        )
+        return
       } else {
         await loginAccount(email, password)
       }
       await refreshProfile()
-      setStatus(registerMode ? '账号创建成功' : '登录成功')
+      setVerificationPendingEmail(null)
+      setStatus('登录成功')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '认证失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const resend = async () => {
+    if (!verificationPendingEmail || loading) return
+    setLoading(true)
+    setStatus('')
+    try {
+      await resendVerification(verificationPendingEmail)
+      setStatus('验证邮件已重新发送，请查收邮箱')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '验证邮件发送失败')
     } finally {
       setLoading(false)
     }
@@ -202,7 +230,7 @@ export default function Page() {
         <Button
           className='secondary-button'
           onClick={() => {
-            logout()
+            void logout()
             setProfile(null)
             setPrivacy(null)
             setEmail('')
@@ -236,6 +264,11 @@ export default function Page() {
         <Button className='secondary-button' onClick={() => setRegisterMode(!registerMode)}>
           {registerMode ? '已有账号？登录' : '第一次使用？创建账号'}
         </Button>
+        {verificationPendingEmail && (
+          <Button className='secondary-button' disabled={loading} onClick={() => void resend()}>
+            重新发送验证邮件
+          </Button>
+        )}
       </View>
       {allowApiEdit && (
         <View className='card'>
