@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/people_page.dart';
 import 'package:jiyidashi/v2/person_detail_page.dart';
@@ -106,6 +107,65 @@ class _DelayedPersonApi extends V2TestApi {
       await release.future;
     }
     return super.requestV2Json(method, path, body: body);
+  }
+}
+
+class _MutationProbeApi extends V2TestApi {
+  _MutationProbeApi(this.label, {this.deleteRelease}) {
+    authenticatedUserId = owner;
+  }
+
+  final String label;
+  final Completer<void>? deleteRelease;
+  final String owner = '00000000-0000-4000-8000-000000000010';
+  int createCalls = 0;
+  int deleteCalls = 0;
+
+  @override
+  Map<String, dynamic> get person1 => {
+        ...super.person1,
+        'display_name': label,
+        'user_id': owner,
+      };
+
+  @override
+  Future<Object?> requestV2Json(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final route = Uri.parse(path).path;
+    if (method == 'GET' && route == '/people/$v2Person2Id') {
+      return {...person1, 'id': v2Person2Id, 'display_name': '$label-新人物'};
+    }
+    if (method == 'POST' && route == '/people') {
+      createCalls += 1;
+      return {...person1, 'display_name': body?['display_name'] ?? label};
+    }
+    if (method == 'DELETE' && route == '/people/$v2PersonId') {
+      deleteCalls += 1;
+      await deleteRelease?.future;
+      return null;
+    }
+    return super.requestV2Json(method, path, body: body);
+  }
+}
+
+class _PeopleHarness extends StatelessWidget {
+  const _PeopleHarness({required this.api, this.personId});
+
+  final JiYiApiClient api;
+  final String? personId;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: JiYiTheme.light(),
+      home: personId == null
+          ? PeoplePage(api: api)
+          : PersonDetailPage(api: api, personId: personId!),
+    );
   }
 }
 
@@ -232,5 +292,56 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('关于 TA 的记忆'), findsOneWidget);
     expect(find.byKey(const ValueKey('person-edit')), findsOneWidget);
+  });
+
+  testWidgets(
+      'Batch 4B rejects a person dialog result after account/session rebind',
+      (tester) async {
+    final api = _MutationProbeApi('账号 A');
+    await tester.pumpWidget(_PeopleHarness(api: api));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('people-add-person')));
+    await tester.pump();
+    expect(find.byType(TextField), findsWidgets);
+
+    final newApi = _MutationProbeApi('账号 B');
+    await tester.pumpWidget(_PeopleHarness(api: newApi));
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField).first, '不应提交');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(api.createCalls, 0);
+    expect(newApi.createCalls, 0);
+  });
+
+  testWidgets(
+      'Batch 4B stale delete cannot close a rebound person detail route',
+      (tester) async {
+    final release = Completer<void>();
+    final api = _MutationProbeApi('账号 A', deleteRelease: release);
+    await tester.pumpWidget(
+      _PeopleHarness(api: api, personId: v2PersonId),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('person-delete')));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pump();
+    expect(api.deleteCalls, 1);
+
+    await tester.pumpWidget(
+      _PeopleHarness(api: api, personId: v2Person2Id),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('账号 A-新人物'), findsWidgets);
+
+    release.complete();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('person-edit')), findsOneWidget);
+    expect(find.text('账号 A-新人物'), findsWidgets);
   });
 }

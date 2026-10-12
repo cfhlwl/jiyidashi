@@ -49,6 +49,16 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   final V2Authority readAuthority = V2Authority();
   final V2Authority mutationAuthority = V2Authority();
   final V2OperationFlight mutationFlight = V2OperationFlight();
+  int _dialogGeneration = 0;
+
+  bool _dialogStillCurrent(_PersonDialogBinding binding) {
+    return mounted &&
+        identical(widget.api, binding.api) &&
+        widget.api.authenticatedUserId == binding.owner &&
+        widget.api.sessionVersion == binding.sessionVersion &&
+        widget.personId == binding.personId &&
+        _dialogGeneration == binding.generation;
+  }
 
   V2Person? person;
   V2KnownDuration? duration;
@@ -72,6 +82,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   void didUpdateWidget(PersonDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.personId != widget.personId || oldWidget.api != widget.api) {
+      _dialogGeneration += 1;
       readAuthority.invalidate();
       mutationAuthority.invalidate();
       mutationFlight.invalidate();
@@ -128,6 +139,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     readAuthority.invalidate();
     mutationAuthority.invalidate();
     mutationFlight.invalidate();
+    _dialogGeneration += 1;
     v2 = V2Api(widget.api);
     _rememberAuthorityBinding();
     _clear();
@@ -205,7 +217,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     return result == true;
   }
 
-  Future<void> _runMutation(
+  Future<bool> _runMutation(
     String identity,
     Future<String?> Function() operation, {
     bool refresh = true,
@@ -216,23 +228,26 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       mutationFlight,
       identity,
     );
-    if (context == null) return;
+    if (context == null) return false;
     if (mounted) setState(() { error = null; status = null; });
     try {
       final message = await operation();
-      if (!_mutationCurrent(context)) return;
+      if (!_mutationCurrent(context)) return false;
       if (message != null) setState(() => status = message);
       if (refresh) {
-        await continueV2Operation(
+        final refreshed = await continueV2Operation(
           widget.api,
           mutationAuthority,
           context.snapshot,
           [() async => _load()],
         );
+        if (!refreshed || !_mutationCurrent(context)) return false;
       }
+      return _mutationCurrent(context);
     } catch (exc) {
-      if (!_mutationCurrent(context)) return;
+      if (!_mutationCurrent(context)) return false;
       setState(() => error = exc.toString());
+      return false;
     } finally {
       if (mutationFlight.end(context.token) && mounted) {
         setState(() {});
@@ -243,11 +258,16 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   Future<void> _editPerson() async {
     final current = person;
     if (current == null) return;
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: current.id,
+      generation: _dialogGeneration,
+    );
     final draft = await showDialog<_PersonEditDraft>(
       context: context,
       builder: (_) => _PersonEditDialog(person: current),
     );
-    if (draft == null || !mounted) return;
+    if (draft == null || !_dialogStillCurrent(binding)) return;
     await _runMutation('person:update:' + current.id, () async {
       final saved = await v2.updatePerson(
         current,
@@ -263,21 +283,28 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   Future<void> _deletePerson() async {
     final current = person;
     if (current == null) return;
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: current.id,
+      generation: _dialogGeneration,
+    );
     final ok = await _confirm(
       '删除人物？',
       '将删除“' + current.displayName + '”及其人物关联。原有记忆本身不会因此删除。',
       '删除',
     );
-    if (!ok || !mounted) return;
-    await _runMutation(
+    if (!ok || !_dialogStillCurrent(binding)) return;
+    final deleted = await _runMutation(
       'person:delete:' + current.id,
       () async {
         await v2.deletePerson(current.id);
-        if (mounted) Navigator.of(context).pop();
         return null;
       },
       refresh: false,
     );
+    if (deleted && _dialogStillCurrent(binding)) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _linkMemory() async {
@@ -289,11 +316,16 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       setState(() => status = '没有可继续关联的记忆');
       return;
     }
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: widget.personId,
+      generation: _dialogGeneration,
+    );
     final draft = await showDialog<_MemoryLinkDraft>(
       context: context,
       builder: (_) => _MemoryLinkDialog(choices: choices),
     );
-    if (draft == null || !mounted) return;
+    if (draft == null || !_dialogStillCurrent(binding)) return;
     await _runMutation(
       'person:link:' + widget.personId + ':' + draft.memoryId,
       () async {
@@ -324,12 +356,17 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   }
 
   Future<void> _unlinkMemory(V2PersonMemoryTimelineRow row) async {
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: widget.personId,
+      generation: _dialogGeneration,
+    );
     final ok = await _confirm(
       '取消记忆关联？',
       '只取消这个人与这条记忆的关联，不会删除原记忆。',
       '取消关联',
     );
-    if (!ok || !mounted) return;
+    if (!ok || !_dialogStillCurrent(binding)) return;
     await _runMutation(
       'person:memory:unlink:' + row.link.id,
       () async {
@@ -357,11 +394,16 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       setState(() => status = '没有可新建关系的其他人物');
       return;
     }
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: widget.personId,
+      generation: _dialogGeneration,
+    );
     final draft = await showDialog<_RelationshipDraft>(
       context: context,
       builder: (_) => _RelationshipDialog(candidates: candidates),
     );
-    if (draft == null || !mounted || draft.otherPersonId == null) return;
+    if (draft == null || !_dialogStillCurrent(binding) || draft.otherPersonId == null) return;
     await _runMutation(
       'relationship:create:' + widget.personId + ':' + draft.otherPersonId!,
       () async {
@@ -388,6 +430,11 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
     try {
       final full = await v2.getRelationship(projection.relationshipId);
       if (!_mutationCurrent(operation) || !mounted) return;
+      final binding = _PersonDialogBinding.capture(
+        api: widget.api,
+        personId: widget.personId,
+        generation: _dialogGeneration,
+      );
       final draft = await showDialog<_RelationshipDraft>(
         context: context,
         builder: (_) => _RelationshipDialog(
@@ -396,7 +443,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
           initialNote: full.note ?? '',
         ),
       );
-      if (draft == null || !_mutationCurrent(operation)) return;
+      if (draft == null || !_mutationCurrent(operation) || !_dialogStillCurrent(binding)) return;
       await v2.updateRelationship(
         full,
         kind: draft.kind,
@@ -422,12 +469,17 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
   }
 
   Future<void> _deleteRelationship(V2RelationshipProjection projection) async {
+    final binding = _PersonDialogBinding.capture(
+      api: widget.api,
+      personId: widget.personId,
+      generation: _dialogGeneration,
+    );
     final ok = await _confirm(
       '删除人物关系？',
       '将删除与“' + projection.otherPersonName + '”之间的显式人物关系。',
       '删除关系',
     );
-    if (!ok || !mounted) return;
+    if (!ok || !_dialogStillCurrent(binding)) return;
     await _runMutation(
       'relationship:delete:' + projection.relationshipId,
       () async {
@@ -556,8 +608,6 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
           ),
         ),
         const SizedBox(height: JiYiSpacing.md),
-        _durationCard(),
-        const SizedBox(height: JiYiSpacing.md),
         const V3SectionHeader(
           title: '关于 TA 的记忆',
           subtitle: '只显示你主动关联的记忆，不会自动推断。',
@@ -565,7 +615,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
         const SizedBox(height: JiYiSpacing.sm),
         SizedBox(
           width: double.infinity,
-          child: OutlinedButton.icon(
+          child: FilledButton.icon(
             key: const ValueKey('person-link-memory'),
             onPressed: mutationFlight.isPending ? null : _linkMemory,
             icon: const Icon(Icons.add_link),
@@ -579,11 +629,26 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
           for (final row in memories) ...[
             V3SurfaceCard(
               semanticLabel: '人物记忆 ${row.memoryTitle ?? row.memoryContent}',
-              padding: const EdgeInsets.all(JiYiSpacing.md),
+              padding: const EdgeInsets.all(JiYiSpacing.lg),
               child: Row(
                 children: [
-                  Icon(Icons.photo_album_outlined, color: theme.colorScheme.primary),
-                  const SizedBox(width: JiYiSpacing.md),
+                  Semantics(
+                    label: '没有可信照片数据',
+                    child: Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(JiYiRadius.md),
+                      ),
+                      child: Icon(
+                        Icons.photo_outlined,
+                        size: 36,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: JiYiSpacing.lg),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -592,15 +657,13 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
                           row.memoryTitle ?? row.memoryContent,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall?.copyWith(
+                          style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        Text(
-                          _personMemoryRelationLabel(row.link.relationKind) +
-                              ' · ' +
-                              jiyiDisplayDateTime(row.occurredAt),
-                        ),
+                        Text(jiyiDisplayDateTime(row.occurredAt)),
+                        const SizedBox(height: JiYiSpacing.xs),
+                        Text(_personMemoryRelationLabel(row.link.relationKind)),
                       ],
                     ),
                   ),
@@ -688,6 +751,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
             ),
             const SizedBox(height: JiYiSpacing.sm),
           ],
+        _durationCard(),
         const SizedBox(height: JiYiSpacing.md),
         V3SurfaceCard(
           padding: const EdgeInsets.all(JiYiSpacing.md),
@@ -702,6 +766,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
                 label: const Text('查看相关的人和事'),
               ),
               TextButton.icon(
+                key: const ValueKey('person-delete'),
                 onPressed: mutationFlight.isPending ? null : _deletePerson,
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('删除这个人'),
@@ -759,6 +824,36 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       ),
     );
   }
+}
+
+class _PersonDialogBinding {
+  const _PersonDialogBinding({
+    required this.api,
+    required this.owner,
+    required this.sessionVersion,
+    required this.personId,
+    required this.generation,
+  });
+
+  factory _PersonDialogBinding.capture({
+    required JiYiApiClient api,
+    required String personId,
+    required int generation,
+  }) {
+    return _PersonDialogBinding(
+      api: api,
+      owner: api.authenticatedUserId,
+      sessionVersion: api.sessionVersion,
+      personId: personId,
+      generation: generation,
+    );
+  }
+
+  final JiYiApiClient api;
+  final String? owner;
+  final int sessionVersion;
+  final String personId;
+  final int generation;
 }
 
 class _PersonEditDraft {
