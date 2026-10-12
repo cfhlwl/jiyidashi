@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/people_page.dart';
 import 'package:jiyidashi/v2/person_detail_page.dart';
@@ -20,7 +19,7 @@ Future<void> _pumpBatch4b(WidgetTester tester, Widget child) async {
 }
 
 class _NamedV2Api extends V2TestApi {
-  _NamedV2Api(this.name, {this.owner = '00000000-0000-4000-8000-000000000002'}) {
+  _NamedV2Api(this.name) {
     authenticatedUserId = owner;
   }
 
