@@ -53,6 +53,12 @@ class _NamedV2Api extends V2TestApi {
     Map<String, dynamic>? body,
   }) async {
     final route = Uri.parse(path).path;
+    if (method == 'GET' && route == '/people/$v2PersonId') {
+      return person1;
+    }
+    if (method == 'GET' && route == '/timeline') {
+      return [memory];
+    }
     final value = await super.requestV2Json(method, path, body: body);
     if (method == 'GET' && route == '/people/interactions' && value is List) {
       return [
