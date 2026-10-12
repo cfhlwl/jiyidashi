@@ -136,6 +136,10 @@ jobs:
         timeout-minutes: 5
         run: flutter test test/place_detail_test.dart --reporter expanded
 
+      - name: Test Batch 4B People and Person Detail targeted
+        timeout-minutes: 5
+        run: flutter test test/batch4b_people_person_detail_test.dart --reporter expanded
+
       - name: Generate Today B2 authority candidate
         timeout-minutes: 5
         shell: bash
@@ -325,6 +329,42 @@ jobs:
           retention-days: 14
           path: /tmp/place-detail-v3-candidates/*.png
 
+      - name: Generate Batch 4B People and Person Detail candidates
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/batch4b-v3-candidates
+          mkdir -p /tmp/batch4b-v3-candidates
+          mkdir -p test/goldens
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 4B People production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH4B_CANDIDATE_MODE=true \
+            --reporter expanded
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 4B Person Detail production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH4B_CANDIDATE_MODE=true \
+            --reporter expanded
+          test -s test/goldens/people_v3_batch4b.png
+          test -s test/goldens/person_detail_v3_batch4b.png
+          cp test/goldens/people_v3_batch4b.png /tmp/batch4b-v3-candidates/
+          cp test/goldens/person_detail_v3_batch4b.png /tmp/batch4b-v3-candidates/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/batch4b-v3-candidates/people_v3_batch4b.png
+          test -s /tmp/batch4b-v3-candidates/person_detail_v3_batch4b.png
+
+      - name: Upload Batch 4B People and Person Detail review candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-batch4b-people-person-detail-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/batch4b-v3-candidates/*.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -464,6 +504,8 @@ jobs:
               'batch3_timeline': ('design_reference/v3/06_timeline.png', '/tmp/batch3-v3-candidates/timeline_v3_batch3.png', 44, 22),
               'batch3_memory_detail': ('design_reference/v3/07_memory_detail.png', '/tmp/batch3-v3-candidates/memory_detail_v3_batch3.png', 44, 22),
               'batch3_memory_detail_photo_error': ('design_reference/v3/07_memory_detail.png', '/tmp/batch3-v3-candidates/memory_detail_v3_batch3_photo_error.png', 44, 22),
+              'batch4b_people': ('design_reference/v3/11_people.png', '/tmp/batch4b-v3-candidates/people_v3_batch4b.png', 44, 22),
+              'batch4b_person_detail': ('design_reference/v3/12_person_detail.png', '/tmp/batch4b-v3-candidates/person_detail_v3_batch4b.png', 44, 22),
               # Place Detail has no dedicated V3 Design Authority PNG. This
               # existing committed golden is a regression reference only, not
               # an acceptance authority.
@@ -481,7 +523,7 @@ jobs:
               return canvas
 
           report = [
-              f'# UIUX-V3-05-4A Design Authority Audit ({head})',
+              f'# UIUX-V3-05 Design Authority Audit ({head})',
               '',
               'Review-only package. Design Authority PNGs are copied, never modified.',
               '',
@@ -514,7 +556,7 @@ jobs:
 
           report.extend([
               '',
-              '## Batch 3 contract notes',
+              '## Batch 3 and Batch 4B contract notes',
               '',
               '| Design element | Real authority | Implemented / deferred |',
               '|---|---|---|',
@@ -525,6 +567,8 @@ jobs:
               '| Photo gallery / people / share | No supported count/list/relationship authority | Deferred; no fabricated media or relationship data. |',
               '| Place/map | `getPlaceDetail` coordinates plus AMap privacy gate | Rendered only when real coordinates and consent authority are present. |',
               '| Batch 4A Place Detail visual authority | No dedicated V3 PNG; `test/goldens/place_detail_loaded.png` is regression reference only | Candidate is production `PlaceDetailPage` with deterministic server-backed place/visit data and privacy-blocked map state. |',
+              '| Batch 4B People / Person Detail | `design_reference/v3/11_people.png` and `design_reference/v3/12_person_detail.png` | Candidates are production `PeoplePage` and `PersonDetailPage` with deterministic strict V2 API fixtures. Avatar photos are deferred because `V2Person` has no trusted media authority; accessible placeholders are used. |',
+              '| Batch 4B data authority | `V2Api` / `V2Authority` / owner-session fencing | Person, memory-link, relationship, duration, mutation and failure states remain server-backed; no design-image names or relationships are inferred. |',
           ])
           report.extend([
               '',
@@ -546,6 +590,8 @@ jobs:
               'BATCH 4A PRODUCTION CANDIDATE: batch4a_place_detail_existing_reference',
               'BATCH 4A AUTHORITY STATUS: no dedicated Design Authority PNG; place_detail_loaded.png is regression reference only',
               'BATCH 4A GOLDEN CLASSIFICATION: place_detail_loaded.png and place_detail_loaded_scrolled.png are approved committed Goldens; place_detail_v3_batch4a.png remains candidate-only',
+              'BATCH 4B PRODUCTION CANDIDATES: batch4b_people, batch4b_person_detail',
+              'BATCH 4B AUTHORITY STATUS: candidate-only; no committed Golden or Design Authority PNG is modified',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())
