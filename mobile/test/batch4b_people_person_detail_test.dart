@@ -348,6 +348,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('person-delete')),
+      420,
+    );
     await tester.tap(find.byKey(const ValueKey('person-delete')));
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, '删除'));
