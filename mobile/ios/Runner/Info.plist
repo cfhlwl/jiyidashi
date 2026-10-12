@@ -28,6 +28,33 @@
 	<string>$(JIYI_PNVS_SCHEME_ID)</string>
 	<key>JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED</key>
 	<string>$(JIYI_PHONE_ONE_TAP_PRODUCTION_REQUIRED)</string>
+	<key>AUTH_WECHAT_PROVIDER</key>
+	<string>$(AUTH_WECHAT_PROVIDER)</string>
+	<key>JIYI_WECHAT_LIVE_ENABLED</key>
+	<string>$(JIYI_WECHAT_LIVE_ENABLED)</string>
+	<key>JIYI_WECHAT_APP_ID</key>
+	<string>$(JIYI_WECHAT_APP_ID)</string>
+	<key>JIYI_WECHAT_UNIVERSAL_LINK</key>
+	<string>$(JIYI_WECHAT_UNIVERSAL_LINK)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).wechat</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(JIYI_WECHAT_APP_ID)</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>weixin</string>
+		<string>weixinULAPI</string>
+		<string>weixinURLParamsAPI</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
