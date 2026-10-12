@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import XCTest
+import WechatOpenSDK
 @testable import Runner
 
 class RunnerTests: XCTestCase {
