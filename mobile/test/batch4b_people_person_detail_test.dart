@@ -138,6 +138,27 @@ class _MutationProbeApi extends V2TestApi {
     if (method == 'GET' && route == '/people/$v2Person2Id') {
       return {...person1, 'id': v2Person2Id, 'display_name': '$label-新人物'};
     }
+    if (method == 'GET' &&
+        route == '/people/$v2Person2Id/memories') {
+      return <Object?>[];
+    }
+    if (method == 'GET' &&
+        route == '/people/$v2Person2Id/relationships') {
+      return <Object?>[];
+    }
+    if (method == 'GET' &&
+        route == '/people/$v2Person2Id/known-duration') {
+      return {
+        'status': 'INSUFFICIENT_EVIDENCE',
+        'person_id': v2Person2Id,
+        'display_name': '$label-新人物',
+        'as_of': '2026-09-29T00:00:00Z',
+        'at_least_since_at': null,
+        'elapsed_days': null,
+        'earliest_related_at': null,
+        'evidence': null,
+      };
+    }
     if (method == 'POST' && route == '/people') {
       createCalls += 1;
       return {...person1, 'display_name': body?['display_name'] ?? label};
