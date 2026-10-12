@@ -33,6 +33,7 @@ class _NamedV2Api extends V2TestApi {
   final String name;
   final String owner = '00000000-0000-0000-0000-000000000002';
   int detailCalls = 0;
+  String? lastError;
 
   @override
   Map<String, dynamic> get person1 => {
@@ -61,7 +62,14 @@ class _NamedV2Api extends V2TestApi {
     if (method == 'GET' && route == '/timeline') {
       return [memory];
     }
-    final value = await super.requestV2Json(method, path, body: body);
+    late final Object? value;
+    try {
+      value = await super.requestV2Json(method, path, body: body);
+    } catch (error) {
+      lastError = '$method $route: $error';
+      debugPrint('Batch 4B named API error: $lastError');
+      rethrow;
+    }
     if (method == 'GET' && route == '/people/interactions' && value is List) {
       return [
         for (final row in value.cast<Map<String, dynamic>>())
