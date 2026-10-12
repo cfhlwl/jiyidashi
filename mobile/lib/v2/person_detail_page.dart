@@ -302,7 +302,7 @@ class _PersonDetailPageState extends State<PersonDetailPage> {
       },
       refresh: false,
     );
-    if (deleted && _dialogStillCurrent(binding)) {
+    if (deleted && mounted && _dialogStillCurrent(binding)) {
       Navigator.of(context).pop();
     }
   }
