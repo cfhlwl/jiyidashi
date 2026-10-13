@@ -80,6 +80,7 @@ class TimelineReadItem {
   final String? content;
   final bool? isConfirmed;
   final String? mediaId;
+  final String? photoOccurrenceRole;
   final double confidence;
   final bool? visitFinalized;
 
