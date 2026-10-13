@@ -30,7 +30,9 @@ class _OwnerScopedQueueFixture extends OfflineQueueStore {
   @override
   Future<List<OfflineQueueItem>> listAll(String ownerUserId) async {
     listCalls++;
-    if (ownerUserId != ownerA) return const [];
+    if (ownerUserId != ownerA) {
+      return const [];
+    }
     final now = DateTime.utc(2026, 10, 13);
     return [
       OfflineQueueItem(
