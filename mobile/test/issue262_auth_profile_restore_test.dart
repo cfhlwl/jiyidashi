@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/notification_client.dart';
+import 'package:jiyidashi/motion_sampling_policy.dart';
+import 'package:jiyidashi/native_motion_sampling_bridge.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/onboarding_state.dart';
 import 'package:jiyidashi/stage1_app.dart';
@@ -52,6 +56,47 @@ class _QuietNotifications extends NotificationClientService {
   Future<void> onAppResumed() async {}
 }
 
+class _IdleMotionBridge implements NativeMotionSamplingBridge {
+  final StreamController<void> _events = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get samplesAvailable => _events.stream;
+
+  @override
+  Future<List<NativeLocationSample>> drainSamples(
+    String ownerUserId, {int limit = 100,
+  }) async => const <NativeLocationSample>[];
+
+  @override
+  Future<NativeMotionObservation?> takeObservation(String ownerUserId) async => null;
+
+  @override
+  Future<void> acknowledgeSamples(String ownerUserId, List<String> clientUuids) async {}
+
+  @override
+  Future<void> applyProfile(String ownerUserId, AdaptiveSamplingProfile profile) async {}
+
+  @override
+  Future<LocationProducerMetrics> metrics(String ownerUserId) async =>
+      const LocationProducerMetrics(
+        wakeups: 0,
+        samplesAccepted: 0,
+        samplesDropped: 0,
+        uploadBatches: 0,
+        uploadedSamples: 0,
+        activeTrackingDuration: Duration.zero,
+      );
+
+  @override
+  Future<void> recordUploadBatch(String ownerUserId, {required int sampleCount}) async {}
+
+  @override
+  Future<void> purgeOwner(String ownerUserId) async {}
+
+  @override
+  Future<void> close() async { await _events.close(); }
+}
+
 class _EmptyQueue extends OfflineQueueStore {
   @override
   Future<int> countAwaitingDelivery(String ownerUserId) async => 0;
@@ -82,9 +127,16 @@ Future<void> _boot(WidgetTester tester, _RestoreApi api) async {
     offlineQueue: _EmptyQueue(),
     onboardingStore: _CompletedOnboarding(),
     notificationClient: _QuietNotifications(api),
+    motionSamplingBridge: _IdleMotionBridge(),
   ));
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 150));
+  for (var attempt = 0; attempt < 120; attempt++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (api.refreshCalls == 1 && api.profileCalls >= 1) {
+      await tester.pump();
+      return;
+    }
+  }
+  throw TestFailure('cold-start session restore and profile were not reached');
 }
 
 void main() {
