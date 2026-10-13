@@ -591,6 +591,8 @@ class TrustedMediaCaptureService {
     PendingMediaFile file, {
     String? title,
     required String content,
+    Map<String, dynamic>? importProvenance,
+    DateTime? importCaptureUtc,
     void Function(MediaSubmissionPhase phase)? onPhase,
   }) async {
     final session = _captureSession();
