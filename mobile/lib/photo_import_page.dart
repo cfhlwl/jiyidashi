@@ -25,6 +25,8 @@ class PhotoImportPage extends StatefulWidget {
 }
 
 class _PhotoImportPageState extends State<PhotoImportPage> {
+  late final String? _pageOwner = widget.api.authenticatedUserId;
+  late final int _pageSessionVersion = widget.api.sessionVersion;
   late final PhotoImportPicker _picker = widget.picker ?? PhotoImportPicker();
   PhotoImportSelection? _selection;
   PhotoImportBatchCoordinator? _batch;
@@ -101,6 +103,21 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.api.authenticatedUserId != _pageOwner ||
+        widget.api.sessionVersion != _pageSessionVersion) {
+      // The old account's selected thumbnails and filenames are private.
+      // Do not leave them visible if this route outlives an auth rebind.
+      return Scaffold(
+        appBar: AppBar(title: const Text('导入已有照片')),
+        body: Center(
+          child: TextButton(
+            key: const ValueKey('photo-import-owner-changed'),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('登录状态已变化，请返回重新选择照片'),
+          ),
+        ),
+      );
+    }
     final batch = _batch;
     final selected = _selection;
     return Scaffold(
