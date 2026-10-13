@@ -275,6 +275,21 @@ class OfflineQueueStore {
     return (_enqueueIdleWaiters[owner] ??= Completer<void>()).future;
   }
 
+  /// Photo copy begins BEFORE the SQLite row is committed. Register that
+  /// owner-scoped write synchronously, so account deletion quiesce waits until
+  /// the staged bytes and row have both committed or been cleaned up.
+  void Function() holdPhotoImportStaging(String ownerUserId) {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    _beginEnqueue(owner);
+    var released = false;
+    return () {
+      if (!released) {
+        released = true;
+        _finishEnqueue(owner);
+      }
+    };
+  }
+
   void _beginEnqueue(String owner) {
     if (_accountDeletionQuiescedOwners.contains(owner)) {
       throw StateError('Offline queue owner is quiesced for account deletion');
