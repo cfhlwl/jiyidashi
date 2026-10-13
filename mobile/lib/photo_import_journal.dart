@@ -54,7 +54,9 @@ class PhotoImportJournal {
     final all = await store.listAll(ownerUserId);
     final photos = all.where((item) => item.operationType == operationType)
         .toList(growable: false);
-    await sweepOrphanedFiles(photos);
+    if (store.supportsPhotoImportFileSweep) {
+      await sweepOrphanedFiles(photos);
+    }
     return photos;
   }
 
@@ -190,7 +192,9 @@ class PhotoImportJournal {
     Duration gracePeriod = const Duration(hours: 1),
     DateTime? now,
   }) async {
-    if (gracePeriod < Duration.zero) throw ArgumentError('negative grace period');
+    if (gracePeriod < Duration.zero) {
+      throw ArgumentError('negative grace period');
+    }
     final dir = await store.photoImportOwnerDirectory(ownerUserId);
     if (await FileSystemEntity.type(dir.path, followLinks: false) !=
         FileSystemEntityType.directory) {
@@ -220,7 +224,9 @@ class PhotoImportJournal {
       }
       final file = File(entity.path);
       final stat = await file.stat();
-      if (!stat.modified.toUtc().isBefore(cutoff)) continue;
+      if (!stat.modified.toUtc().isBefore(cutoff)) {
+        continue;
+      }
       // Second check prevents a referenced item being removed if another
       // SQLite writer committed during directory enumeration.
       final existing = await store.findByClientUuid(ownerUserId, match.group(1)!);
@@ -259,85 +265,13 @@ class PhotoImportJournal {
     if (row.ownerUserId != ownerUserId || row.operationType != operationType) {
       throw StateError('wrong photo owner');
     }
-    if (row.status == OfflineQueueStatus.failed) {
-      await store.retryFailed(ownerUserId, row.clientUuid);
+    final digest = row.payload['sha256'];
+    if (digest is! String) {
+      throw const FormatException('invalid photo SHA claim');
     }
-    return store.markSending(ownerUserId, row.clientUuid);
-  }
-
-  Future<OfflineQueueItem> failed(OfflineQueueItem row) =>
-      store.markFailed(
-        ownerUserId, row.clientUuid,
-        'PHOTO_IMPORT_RETRY_REQUIRED',
-        retryable: true,
-      );
-
-  Future<OfflineQueueItem> complete(
-    OfflineQueueItem row, {
-    required String memoryId,
-  }) async {
-    final completed = await store.markCompleted(
-      ownerUserId, row.clientUuid,
-      serverResourceId: memoryId,
-    );
-    // Durable completed receipt precedes file deletion. Failure to clean a
-    // cache copy must never turn a confirmed server memory into false failure.
-    try {
-      final source = await selectedFrom(completed);
-      final file = File(source.path);
-      if (await file.exists()) {
-        await file.delete();
-      }
-    } catch (_) {}
-    return completed;
-  }
-}
-,
-      ).firstMatch(basename);
-      if (match == null ||
-          referenced.contains(match.group(1)!.toLowerCase())) {
-        continue;
-      }
-      final file = File(entity.path);
-      final stat = await file.stat();
-      if (!stat.modified.toUtc().isBefore(cutoff)) continue;
-      // Second check prevents a referenced item being removed if another
-      // SQLite writer committed during directory enumeration.
-      final existing = await store.findByClientUuid(ownerUserId, match.group(1)!);
-      if (existing != null && existing.operationType == operationType &&
-          existing.status != OfflineQueueStatus.cancelled &&
-          existing.status != OfflineQueueStatus.completed) {
-        continue;
-      }
-      if (await FileSystemEntity.type(file.path, followLinks: false) ==
-          FileSystemEntityType.file) {
-        await file.delete();
-        deleted++;
-      }
-    }
-    return deleted;
-  }
-
-  Future<void> withdraw(OfflineQueueItem row) async {
-    if (row.ownerUserId != ownerUserId || row.operationType != operationType) {
-      throw StateError('photo withdraw owner mismatch');
-    }
-    if (row.status != OfflineQueueStatus.pending &&
-        row.status != OfflineQueueStatus.failed &&
-        row.status != OfflineQueueStatus.cancelled) {
-      throw StateError('in-flight or completed media cannot be withdrawn');
-    }
-    final source = await selectedFrom(row);
-    await store.cancel(ownerUserId, row.clientUuid);
-    final staged = File(source.path);
-    if (await staged.exists()) {
-      await staged.delete();
-    }
-  }
-
-  Future<OfflineQueueItem> begin(OfflineQueueItem row) async {
-    if (row.ownerUserId != ownerUserId || row.operationType != operationType) {
-      throw StateError('wrong photo owner');
+    final claim = await store.findClaimedPhoto(ownerUserId, digest);
+    if (claim?.clientUuid != row.clientUuid) {
+      throw StateError('photo UUID is not owner-SHA active claim');
     }
     if (row.status == OfflineQueueStatus.failed) {
       await store.retryFailed(ownerUserId, row.clientUuid);
@@ -372,3 +306,4 @@ class PhotoImportJournal {
     return completed;
   }
 }
+
