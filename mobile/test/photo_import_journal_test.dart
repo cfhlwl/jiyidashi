@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -10,6 +11,34 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 const ownerA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ownerB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const uploadId = '12345678-1234-4234-8234-123456789abc';
+
+class _PausedReservationStore extends OfflineQueueStore {
+  _PausedReservationStore(String path)
+      : super(
+          factory: databaseFactoryFfiNoIsolate,
+          databasePathProvider: () async => path,
+        );
+
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> proceed = Completer<void>();
+
+  @override
+  Future<OfflineQueueItem> reservePhotoImport({
+    required String ownerUserId,
+    required String clientUuid,
+    required String sha256Hex,
+    required Map<String, dynamic> payload,
+  }) async {
+    entered.complete();
+    await proceed.future;
+    return super.reservePhotoImport(
+      ownerUserId: ownerUserId,
+      clientUuid: clientUuid,
+      sha256Hex: sha256Hex,
+      payload: payload,
+    );
+  }
+}
 
 void main() {
   sqfliteFfiInit();
@@ -50,6 +79,28 @@ void main() {
       utcOffsetMinutes: 480,
     ),
   );
+
+  test('account deletion waits for source copy before purge', () async {
+    final store = _PausedReservationStore(databasePath);
+    final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
+    final staging = journal.stage(selected(), clientUploadId: uploadId);
+    await store.entered.future;
+    var quiesced = false;
+    final barrier = store.quiesceForAccountDeletion(ownerA).then((_) {
+      quiesced = true;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(quiesced, false, reason: 'never purge while copied image is in flight');
+    store.proceed.complete();
+    await expectLater(staging, throwsA(isA<StateError>()));
+    await barrier;
+    expect(quiesced, true);
+    await store.purgeOwner(ownerA);
+    expect(await store.listAll(ownerA), isEmpty);
+    final folder = await store.photoImportOwnerDirectory(ownerA);
+    expect(await folder.exists(), false);
+    await store.close();
+  });
 
   test('outbox copy and client UUID survive process reopening without auto-upload', () async {
     final first = createStore();
