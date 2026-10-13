@@ -445,6 +445,47 @@ jobs:
           retention-days: 14
           path: /tmp/batch5a-v3-candidates/*.png
 
+      - name: Generate Batch 5B Life Events candidates
+        if: always()
+        timeout-minutes: 6
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/batch5b-v3-candidates
+          mkdir -p /tmp/batch5b-v3-candidates
+          mkdir -p test/goldens
+          for candidate in \
+            "candidate: Batch 5B Life Events production surface|life_events_v3_batch5b.png" \
+            "candidate: Batch 5B Life Event Detail production surface|life_event_detail_v3_batch5b.png" \
+            "candidate: Batch 5B Life Event Editor production surface|life_event_editor_v3_batch5b.png" \
+            "candidate: Batch 5B Life Events dark surface|life_events_v3_batch5b_dark.png" \
+            "candidate: Batch 5B Life Events compact large text surface|life_event_detail_v3_batch5b_compact.png" \
+            "candidate: Batch 5B Life Events empty state|life_events_v3_batch5b_empty.png" \
+            "candidate: Batch 5B Life Events offline state|life_events_v3_batch5b_offline.png"; do
+            name="${candidate%%|*}"
+            file="${candidate##*|}"
+            flutter test test/batch5b_life_events_visual_test.dart \
+              --plain-name "$name" \
+              --update-goldens \
+              --dart-define=UIUX_V3_BATCH5B_CANDIDATE_MODE=true \
+              --reporter expanded
+            test -s "test/goldens/$file"
+            cp "test/goldens/$file" /tmp/batch5b-v3-candidates/
+          done
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          for file in /tmp/batch5b-v3-candidates/*.png; do test -s "$file"; done
+
+      - name: Upload Batch 5B Life Events review candidates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-batch5b-life-events-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/batch5b-v3-candidates/*.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -588,6 +629,9 @@ jobs:
               'batch4b_people': ('design_reference/v3/11_people.png', '/tmp/batch4b-v3-candidates/people_v3_batch4b.png', 44, 22),
               'batch4b_person_detail': ('design_reference/v3/12_person_detail.png', '/tmp/batch4b-v3-candidates/person_detail_v3_batch4b.png', 44, 22),
               'batch5a_life_home': ('design_reference/v3/03_life.png', '/tmp/batch5a-v3-candidates/life_home_v3_batch5a.png', 44, 22),
+              'batch5b_life_events': ('design_reference/v3/10_life_experience.png', '/tmp/batch5b-v3-candidates/life_events_v3_batch5b.png', 44, 22),
+              'batch5b_life_event_detail': ('design_reference/v3/10_life_experience.png', '/tmp/batch5b-v3-candidates/life_event_detail_v3_batch5b.png', 44, 22),
+              'batch5b_life_event_editor': ('design_reference/v3/10_life_experience.png', '/tmp/batch5b-v3-candidates/life_event_editor_v3_batch5b.png', 44, 22),
               # Place Detail has no dedicated V3 Design Authority PNG. This
               # existing committed golden is a regression reference only, not
               # an acceptance authority.
@@ -669,6 +713,16 @@ jobs:
               '| Life Home owner/session fencing | `V2Authority` plus child-page `V2Authority` | Route construction is blocked when owner/session/API identity changes; rapid duplicate taps are coalesced. |',
               '| Life Home responsive/accessibility | Flutter semantics and V3 48dp target contract | 320/390 layouts, 200% text scale, dark theme, semantics and target-size focused tests are included. |',
               '',
+              '## Batch 5B Life Events contract notes',
+              '',
+              '| Design element | Real authority | Implemented / deferred |',
+              '|---|---|---|',
+              '| Life Events list | `V2Api.listLifeEvents` + `V2Authority` | Production `LifeEventsPage` renders canonical event IDs, types, dates, notes and authorized place labels; no raw enums or internal IDs are exposed. |',
+              '| Life Event detail | `V2Api.getLifeEvent` + linked memory/place contracts | Production `LifeEventDetailPage` preserves event identity, linked records, edit/delete and explicit empty/error/offline/blocked states. |',
+              '| Life Event editor | `createLifeEvent` / `updateLifeEvent` with existing `LifeEventDraft` validation | Save, cancel, validation and mutation failure preserve the user draft; no second business model or guessed data is introduced. |',
+              '| Batch 5B visual status | `design_reference/v3/10_life_experience.png` read-only authority | List/detail/editor candidates are candidate-only evidence; exact layout/media differences remain `DERIVED V3 / V3_PARTIAL` pending independent review. |',
+              '| Batch 5B responsive/accessibility | V3 48dp target and explicit state semantics | 390 light, 390 dark, 320 at 200% text, empty and offline candidates plus focused navigation/state tests are generated. |',
+              '',
               '## Batch 5A visual difference matrix',
               '',
               '| Surface / element | Candidate status | Review decision |',
@@ -730,6 +784,8 @@ jobs:
               'BATCH 4C AUTHORITY STATUS: STAGE VISUAL APPROVED / DERIVED V3 / V3_PARTIAL; no dedicated Graph Design Authority PNG; one authorized Golden update completed; strict Graph Golden test PASS',
               'BATCH 5A PRODUCTION CANDIDATES: batch5a_life_home, batch5a_life_home_dark, batch5a_life_home_compact',
               'BATCH 5A AUTHORITY STATUS: DERIVED V3 / V3_PARTIAL; authority is read-only 03_life.png; four real routes preserved; visual approval and any Golden update are deferred',
+              'BATCH 5B PRODUCTION CANDIDATES: batch5b_life_events, batch5b_life_event_detail, batch5b_life_event_editor plus dark/compact/empty/offline variants',
+              'BATCH 5B AUTHORITY STATUS: DERIVED V3 / V3_PARTIAL; authority is read-only 10_life_experience.png; candidate-only, no committed Golden update',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())
