@@ -196,7 +196,12 @@ export type {
 const TOKEN_KEY = 'jiyi_access_token'
 const API_BASE_KEY = 'jiyi_api_base_url'
 const AUTH_OWNER_KEY = 'jiyi_authenticated_user_id'
+const AUTH_SESSION_KEY = 'jiyi_auth_session'
+const AUTH_DEVICE_ID_KEY = 'jiyi_auth_device_id'
+const ACCESS_REFRESH_SKEW_MS = 30_000
 let authSessionEpoch = 0
+let authAttemptGeneration = 0
+let refreshFlight: { sessionId: string; promise: Promise<MiniAuthSession> } | null = null
 const elderProjection = new ElderProjectionStore()
 type AuthSessionListener = (owner: string | null, epoch: number) => void
 const authSessionListeners = new Set<AuthSessionListener>()
@@ -212,6 +217,201 @@ export type PrivacyStatus = {
 export type UserObject = {
   id: string
   name: string
+}
+
+export type MiniAuthSession = {
+  access_token: string
+  refresh_token: string
+  session_id: string
+  token_type: 'bearer'
+  user_id: string
+  access_expires_at: string
+  refresh_expires_at: string
+  account_deletion_in_progress: boolean
+}
+
+export type AuthSessionSnapshot = {
+  epoch: number
+  owner: string
+  sessionId: string
+}
+
+export type LogoutResult = {
+  localCleared: true
+  serverRevoked: boolean
+  serverStatus: 'CONFIRMED' | 'UNCONFIRMED' | 'NOT_ATTEMPTED'
+}
+
+export type RegistrationResponse = {
+  user_id: string
+  verification_required: boolean
+  verification_delivery_pending: boolean
+}
+
+export type EmailVerificationResponse = {
+  verified: boolean
+  already_verified: boolean
+  session: MiniAuthSession | null
+}
+
+type RequestOptions = SafeRequestOptions & Readonly<{
+  anonymous?: boolean
+  skipSessionRefresh?: boolean
+  tokenOverride?: string
+}>
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function invalidAuthResponse(): never {
+  throw new Error('认证响应异常，请稍后重试')
+}
+
+function parseAuthDate(value: unknown): string {
+  if (
+    typeof value !== 'string'
+    || !/T/.test(value)
+    || !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+    || !Number.isFinite(Date.parse(value))
+  ) return invalidAuthResponse()
+  return value
+}
+
+export function parseMiniAuthSession(raw: unknown): MiniAuthSession {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return invalidAuthResponse()
+  const value = raw as Record<string, unknown>
+  if (
+    typeof value.access_token !== 'string' || !value.access_token
+    || typeof value.refresh_token !== 'string' || !value.refresh_token
+    || typeof value.session_id !== 'string' || !UUID_PATTERN.test(value.session_id)
+    || value.token_type !== 'bearer'
+    || typeof value.user_id !== 'string' || !UUID_PATTERN.test(value.user_id)
+    || typeof value.account_deletion_in_progress !== 'boolean'
+  ) return invalidAuthResponse()
+  return {
+    access_token: value.access_token,
+    refresh_token: value.refresh_token,
+    session_id: value.session_id,
+    token_type: 'bearer',
+    user_id: value.user_id,
+    access_expires_at: parseAuthDate(value.access_expires_at),
+    refresh_expires_at: parseAuthDate(value.refresh_expires_at),
+    account_deletion_in_progress: value.account_deletion_in_progress,
+  }
+}
+
+function parseRegistrationResponse(raw: unknown): RegistrationResponse {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return invalidAuthResponse()
+  const value = raw as Record<string, unknown>
+  if (
+    typeof value.user_id !== 'string' || !UUID_PATTERN.test(value.user_id)
+    || typeof value.verification_required !== 'boolean'
+    || typeof value.verification_delivery_pending !== 'boolean'
+  ) return invalidAuthResponse()
+  return {
+    user_id: value.user_id,
+    verification_required: value.verification_required,
+    verification_delivery_pending: value.verification_delivery_pending,
+  }
+}
+
+function parseEmailVerificationResponse(raw: unknown): EmailVerificationResponse {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return invalidAuthResponse()
+  const value = raw as Record<string, unknown>
+  if (
+    typeof value.verified !== 'boolean'
+    || typeof value.already_verified !== 'boolean'
+    || !Object.prototype.hasOwnProperty.call(value, 'session')
+  ) {
+    return invalidAuthResponse()
+  }
+  if (value.session !== null) {
+    return {
+      verified: value.verified,
+      already_verified: value.already_verified,
+      session: parseMiniAuthSession(value.session),
+    }
+  }
+  return {
+    verified: value.verified,
+    already_verified: value.already_verified,
+    session: null,
+  }
+}
+
+function sameSession(left: MiniAuthSession | null, right: MiniAuthSession): boolean {
+  return Boolean(left && left.session_id === right.session_id && left.refresh_token === right.refresh_token)
+}
+
+function sameSessionIdentity(left: MiniAuthSession | null, right: MiniAuthSession): boolean {
+  return Boolean(left && left.session_id === right.session_id && left.user_id === right.user_id)
+}
+
+function sameSessionSnapshot(snapshot: AuthSessionSnapshot): boolean {
+  const current = currentStoredSession()
+  return Boolean(
+    current
+    && snapshot.epoch === authSessionEpoch
+    && current.user_id === snapshot.owner
+    && current.session_id === snapshot.sessionId,
+  )
+}
+
+function currentStoredSession(): MiniAuthSession | null {
+  const raw = Taro.getStorageSync<unknown>(AUTH_SESSION_KEY)
+  if (raw === undefined || raw === null || raw === '') return null
+  try {
+    return parseMiniAuthSession(raw)
+  } catch {
+    return null
+  }
+}
+
+function removeLegacyAuthKeys(): void {
+  Taro.removeStorageSync(TOKEN_KEY)
+  Taro.removeStorageSync(AUTH_OWNER_KEY)
+}
+
+function clearLocalSession(invalidate = true): void {
+  if (invalidate) authSessionEpoch += 1
+  Taro.removeStorageSync(AUTH_SESSION_KEY)
+  removeLegacyAuthKeys()
+  resetElderProjection()
+  emitAuthSessionChanged()
+}
+
+function persistSession(session: MiniAuthSession): void {
+  Taro.setStorageSync(AUTH_SESSION_KEY, session)
+  removeLegacyAuthKeys()
+}
+
+function installSession(session: MiniAuthSession, invalidate = true): void {
+  if (invalidate) authSessionEpoch += 1
+  persistSession(session)
+  resetElderProjection()
+  emitAuthSessionChanged()
+}
+
+function accessNeedsRefresh(session: MiniAuthSession, now = Date.now()): boolean {
+  return Date.parse(session.access_expires_at) <= now + ACCESS_REFRESH_SKEW_MS
+}
+
+function randomDeviceId(): string {
+  const bytes = new Uint8Array(16)
+  const cryptoApi = (globalThis as { crypto?: { getRandomValues?: (target: Uint8Array) => Uint8Array } }).crypto
+  if (cryptoApi?.getRandomValues) cryptoApi.getRandomValues(bytes)
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export function getAuthDeviceId(): string {
+  const existing = Taro.getStorageSync<string>(AUTH_DEVICE_ID_KEY)
+  if (typeof existing === 'string' && UUID_PATTERN.test(existing)) return existing
+  const created = randomDeviceId()
+  Taro.setStorageSync(AUTH_DEVICE_ID_KEY, created)
+  return created
 }
 
 export function canEditApiBaseUrl(): boolean {
@@ -234,7 +434,7 @@ export function setApiBaseUrl(value: string): void {
 }
 
 export function isAuthenticated(): boolean {
-  return Boolean(Taro.getStorageSync<string>(TOKEN_KEY))
+  return currentStoredSession() !== null
 }
 
 export function currentAuthenticatedUserId(): string | null {
@@ -258,27 +458,32 @@ export function subscribeAuthSession(listener: AuthSessionListener): () => void 
   }
 }
 
-export function logout(): void {
-  authSessionEpoch += 1
-  Taro.removeStorageSync(TOKEN_KEY)
-  Taro.removeStorageSync(AUTH_OWNER_KEY)
-  resetElderProjection()
-  emitAuthSessionChanged()
+export function logout(): Promise<LogoutResult> {
+  return logoutAndRevoke()
+}
+
+export function captureAuthSession(): AuthSessionSnapshot {
+  const session = currentStoredSession()
+  if (!session) throw new Error('请先登录')
+  return { epoch: authSessionEpoch, owner: session.user_id, sessionId: session.session_id }
+}
+
+export function isAuthSessionCurrent(snapshot: AuthSessionSnapshot): boolean {
+  return sameSessionSnapshot(snapshot)
 }
 
 function resetElderProjection(): void {
   elderProjection.reset()
 }
 
-function publishElderProjection(profile: UserProfile, epoch: number): void {
-  if (epoch !== authSessionEpoch) throw new Error('登录状态已变化，请重试')
-  const owner = Taro.getStorageSync<string>(AUTH_OWNER_KEY)
-  if (!owner || profile.id !== owner) throw new Error('个人资料账号不匹配')
+function publishElderProjection(profile: UserProfile, snapshot: AuthSessionSnapshot): void {
+  if (!sameSessionSnapshot(snapshot)) throw new Error('登录状态已变化，请重试')
+  if (profile.id !== snapshot.owner) throw new Error('个人资料账号不匹配')
   elderProjection.publish(profile.id, profile.elder_mode_enabled)
 }
 
 function currentAuthOwner(): string | null {
-  return Taro.getStorageSync<string>(AUTH_OWNER_KEY) || null
+  return currentStoredSession()?.user_id || null
 }
 
 export function currentElderModeEnabled(): boolean {
@@ -322,15 +527,33 @@ async function request<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   data?: unknown,
-  options: SafeRequestOptions = {},
+  options: RequestOptions = {},
 ): Promise<T> {
-  const token = Taro.getStorageSync<string>(TOKEN_KEY)
-  const response = await Taro.request<T>({
-    url: `${getApiBaseUrl()}${path}`,
-    method,
-    data,
-    header: buildApiHeaders(token, options),
-  })
+  if (!options.anonymous && !options.skipSessionRefresh) await ensureFreshSession()
+  const requestEpoch = authSessionEpoch
+  const requestSession = options.anonymous ? null : currentStoredSession()
+  if (!options.anonymous && !requestSession) throw new Error('请先登录')
+  const token = options.tokenOverride !== undefined
+    ? options.tokenOverride
+    : options.anonymous ? '' : requestSession?.access_token || ''
+  const assertCurrent = () => {
+    if (!options.anonymous && (
+      requestEpoch !== authSessionEpoch
+      || !requestSession
+      || !sameSessionIdentity(currentStoredSession(), requestSession)
+    )) throw new Error('登录状态已变化，请重试')
+  }
+
+  let response: { statusCode: number; data: T }
+  try {
+    response = await rawRequest<T>(method, path, data, token, options)
+  } catch (error) {
+    // A transport rejection is still a protected response boundary. Re-check
+    // the frozen owner before exposing the error to a consumer; otherwise an
+    // A-only network error can be rendered by the page now showing account B.
+    assertCurrent()
+    throw error
+  }
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
     const payload = response.data as unknown as { detail?: string | Array<{ msg?: string }> }
@@ -340,52 +563,217 @@ async function request<T>(
     const code = typeof payload?.detail === 'string'
       ? payload.detail
       : `HTTP_${response.statusCode}`
-    throw new ApiRequestError(
+    const error = new ApiRequestError(
       response.statusCode,
       code,
       detail || `HTTP_${response.statusCode}`,
     )
+    if (
+      response.statusCode === 401
+      && !options.anonymous
+      && !options.skipSessionRefresh
+      && requestSession
+    ) {
+      const current = currentStoredSession()
+      if (
+        requestEpoch !== authSessionEpoch
+        || !sameSessionIdentity(current, requestSession)
+      ) throw new Error('登录状态已变化，请重试')
+      if (current?.refresh_token === requestSession.refresh_token) {
+        await refreshAuthSession(requestSession)
+      }
+      const rotated = currentStoredSession()
+      if (
+        requestEpoch !== authSessionEpoch
+        || !sameSessionIdentity(rotated, requestSession)
+        || !rotated
+      ) throw new Error('登录状态已变化，请重试')
+      return request(method, path, data, {
+        ...options,
+        skipSessionRefresh: true,
+        tokenOverride: rotated.access_token,
+      })
+    }
+    assertCurrent()
+    throw error
   }
+  assertCurrent()
   return response.data
+}
+
+async function rawRequest<T>(
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  data: unknown,
+  token: string,
+  options: SafeRequestOptions = {},
+): Promise<{ statusCode: number; data: T }> {
+  return Taro.request<T>({
+    url: `${getApiBaseUrl()}${path}`,
+    method,
+    data,
+    header: buildApiHeaders(token, options),
+  })
+}
+
+async function refreshAuthSession(expected: MiniAuthSession): Promise<MiniAuthSession> {
+  const existingFlight = refreshFlight
+  if (existingFlight?.sessionId === expected.session_id) return existingFlight.promise
+  const expectedEpoch = authSessionEpoch
+  if (
+    !sameSession(currentStoredSession(), expected)
+    || expectedEpoch !== authSessionEpoch
+  ) throw new Error('登录状态已变化，请重试')
+  let promise!: Promise<MiniAuthSession>
+  promise = (async () => {
+    try {
+      const response = await rawRequest<unknown>(
+        'POST',
+        '/auth/refresh',
+        { refresh_token: expected.refresh_token },
+        '',
+      )
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new ApiRequestError(
+          response.statusCode,
+          `HTTP_${response.statusCode}`,
+          `HTTP_${response.statusCode}`,
+        )
+      }
+      const next = parseMiniAuthSession(response.data)
+      if (
+        expectedEpoch !== authSessionEpoch
+        || !sameSession(currentStoredSession(), expected)
+        || !sameSessionIdentity(next, expected)
+      ) throw new Error('登录状态已变化，请重试')
+      // Refresh is the only path allowed to replace a session without changing
+      // the account epoch. The rotated token is immediately the only token kept.
+      installSession(next, false)
+      return next
+    } catch (error) {
+      if (expectedEpoch === authSessionEpoch && sameSession(currentStoredSession(), expected)) {
+        clearLocalSession()
+      }
+      throw error
+    } finally {
+      if (refreshFlight?.promise === promise) refreshFlight = null
+    }
+  })()
+  refreshFlight = { sessionId: expected.session_id, promise }
+  return promise
+}
+
+async function ensureFreshSession(): Promise<void> {
+  const session = currentStoredSession()
+  if (session && accessNeedsRefresh(session)) await refreshAuthSession(session)
+}
+
+export async function restoreAuthSession(): Promise<boolean> {
+  const raw = Taro.getStorageSync<unknown>(AUTH_SESSION_KEY)
+  if (raw === undefined || raw === null || raw === '') return false
+  let session: MiniAuthSession
+  try {
+    session = parseMiniAuthSession(raw)
+  } catch {
+    clearLocalSession()
+    return false
+  }
+  removeLegacyAuthKeys()
+  if (accessNeedsRefresh(session)) {
+    try {
+      await refreshAuthSession(session)
+      return true
+    } catch {
+      return false
+    }
+  }
+  return true
+}
+
+export async function resumeAuthSession(): Promise<boolean> {
+  return restoreAuthSession()
+}
+
+async function logoutAndRevoke(): Promise<LogoutResult> {
+  authAttemptGeneration += 1
+  const previous = currentStoredSession()
+  clearLocalSession()
+  if (!previous) return { localCleared: true, serverRevoked: false, serverStatus: 'NOT_ATTEMPTED' }
+  try {
+    const response = await rawRequest('POST', '/auth/logout', undefined, previous.access_token)
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return { localCleared: true, serverRevoked: true, serverStatus: 'CONFIRMED' }
+    }
+    return { localCleared: true, serverRevoked: false, serverStatus: 'UNCONFIRMED' }
+  } catch {
+    // Local fencing is authoritative for this client. A failed server revoke
+    // never restores the old account or session into the UI.
+    return { localCleared: true, serverRevoked: false, serverStatus: 'UNCONFIRMED' }
+  }
 }
 
 export async function registerAccount(input: {
   email: string
   password: string
   nickname: string
-}): Promise<void> {
+}): Promise<RegistrationResponse> {
   // [人工注释][S1-001] 小程序正式注册只提交凭证与公开资料，user_id 永远由服务端生成。
-  const result = await request<{ access_token: string; user_id: string }>('POST', '/auth/register', {
+  const result = parseRegistrationResponse(await request<unknown>('POST', '/auth/register', {
     email: input.email.trim(),
     password: input.password,
     nickname: input.nickname.trim(),
     timezone: 'Asia/Shanghai',
     locale: 'zh-CN',
-  })
-  authSessionEpoch += 1
-  resetElderProjection()
-  Taro.setStorageSync(TOKEN_KEY, result.access_token)
-  Taro.setStorageSync(AUTH_OWNER_KEY, result.user_id)
-  emitAuthSessionChanged()
+  }, { anonymous: true }))
+  return result
 }
 
 export async function loginAccount(email: string, password: string): Promise<void> {
-  const result = await request<{ access_token: string; user_id: string }>('POST', '/auth/login', {
+  const attempt = ++authAttemptGeneration
+  clearLocalSession(false)
+  // Account switching invalidates the prior owner before the network request,
+  // so an in-flight response from account A cannot publish into account B.
+  authSessionEpoch += 1
+  const expectedEpoch = authSessionEpoch
+  resetElderProjection()
+  const result = parseMiniAuthSession(await request<unknown>('POST', '/auth/login', {
     email: email.trim(),
     password,
-  })
-  authSessionEpoch += 1
-  resetElderProjection()
-  Taro.setStorageSync(TOKEN_KEY, result.access_token)
-  Taro.setStorageSync(AUTH_OWNER_KEY, result.user_id)
-  emitAuthSessionChanged()
+    device_id: getAuthDeviceId(),
+    client_platform: 'miniprogram',
+  }, { anonymous: true }))
+  if (attempt !== authAttemptGeneration || expectedEpoch !== authSessionEpoch || currentStoredSession()) {
+    throw new Error('登录状态已变化，请重试')
+  }
+  installSession(result, false)
+}
+
+export async function verifyEmail(token: string): Promise<EmailVerificationResponse> {
+  const attempt = ++authAttemptGeneration
+  const expectedEpoch = authSessionEpoch
+  const result = parseEmailVerificationResponse(await request<unknown>('POST', '/auth/verify-email', {
+    token: token.trim(),
+    device_id: getAuthDeviceId(),
+    client_platform: 'miniprogram',
+  }, { anonymous: true }))
+  if (
+    attempt !== authAttemptGeneration
+    || expectedEpoch !== authSessionEpoch
+    || currentStoredSession()
+  ) throw new Error('登录状态已变化，请重试')
+  if (result.session) installSession(result.session)
+  return result
+}
+
+export async function resendVerification(email: string): Promise<void> {
+  await request('POST', '/auth/resend-verification', { email: email.trim() }, { anonymous: true })
 }
 
 export async function getProfile(): Promise<UserProfile> {
-  const epoch = authSessionEpoch
+  const snapshot = captureAuthSession()
   const raw = await request<unknown>('GET', '/user')
   const profile = parseElderUserProfile(raw)
-  publishElderProjection(profile, epoch)
+  publishElderProjection(profile, snapshot)
   return profile
 }
 
@@ -1005,7 +1393,7 @@ export async function updateProfile(input: {
   locale?: string
   elder_mode_enabled?: boolean
 }): Promise<UserProfile> {
-  const epoch = authSessionEpoch
+  const snapshot = captureAuthSession()
   const payload: Record<string, unknown> = {}
   if (input.nickname !== undefined) payload.nickname = input.nickname.trim()
   if (input.timezone !== undefined) payload.timezone = input.timezone.trim()
@@ -1015,7 +1403,7 @@ export async function updateProfile(input: {
   }
   const raw = await request<unknown>('PATCH', '/user', payload)
   const profile = parseElderUserProfile(raw)
-  publishElderProjection(profile, epoch)
+  publishElderProjection(profile, snapshot)
   return profile
 }
 
