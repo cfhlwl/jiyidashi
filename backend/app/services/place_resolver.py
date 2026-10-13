@@ -26,6 +26,44 @@ class PlaceResolverError(RuntimeError):
         self.code = code
 
 
+# Provider errors are intentionally mapped to a small, stable, secret-free code set.
+# Never emit AMap's request URL, raw JSON, key, or user coordinates in telemetry.
+_AMAP_INFOCODE_ERRORS = {
+    "10001": "AMAP_KEY_INVALID",
+    "10002": "AMAP_SERVICE_UNAUTHORIZED",
+    "10003": "AMAP_QUOTA_EXCEEDED",
+    "10004": "AMAP_RATE_LIMITED",
+    "10005": "AMAP_IP_RESTRICTED",
+    "20011": "AMAP_REGION_UNSUPPORTED",
+}
+_AMAP_INFO_ERRORS = {
+    "INVALID_USER_KEY": "AMAP_KEY_INVALID",
+    "SERVICE_NOT_AVAILABLE": "AMAP_SERVICE_UNAUTHORIZED",
+    "DAILY_QUERY_OVER_LIMIT": "AMAP_QUOTA_EXCEEDED",
+    "ACCESS_TOO_FREQUENT": "AMAP_RATE_LIMITED",
+}
+
+
+def _amap_provider_error(payload: object, fallback: str) -> str:
+    if not isinstance(payload, dict):
+        return fallback
+    code = str(payload.get("infocode") or "").strip()
+    if code in _AMAP_INFOCODE_ERRORS:
+        return _AMAP_INFOCODE_ERRORS[code]
+    info = payload.get("info")
+    return _AMAP_INFO_ERRORS.get(info, fallback) if isinstance(info, str) else fallback
+
+
+def _amap_http_error(status: int, fallback: str) -> str:
+    if status == 429:
+        return "AMAP_RATE_LIMITED"
+    if status in (401, 403):
+        return "AMAP_HTTP_AUTH_REJECTED"
+    if 500 <= status < 600:
+        return "AMAP_HTTP_UPSTREAM_UNAVAILABLE"
+    return fallback
+
+
 @dataclass(frozen=True)
 class _CachedFailure:
     code: str
@@ -144,9 +182,9 @@ class AMapPlaceResolver:
                 _CachedFailure(code),
                 ttl_seconds=self._settings.place_naming_failure_backoff_seconds,
             )
-            if cause is None:
-                raise PlaceResolverError(code)
-            raise PlaceResolverError(code) from cause
+            # Transport exceptions can embed URLs containing the server-only key
+            # in their string representation. Do not chain them into tracebacks.
+            raise PlaceResolverError(code) from None
 
         base_url = self._settings.amap_web_service_base_url.rstrip("/")
         try:
@@ -167,7 +205,9 @@ class AMapPlaceResolver:
                     },
                 )
                 if convert_response.status_code < 200 or convert_response.status_code >= 300:
-                    fail("AMAP_COORDINATE_CONVERT_FAILED")
+                    fail(_amap_http_error(
+                        convert_response.status_code, "AMAP_COORDINATE_CONVERT_FAILED"
+                    ))
                 try:
                     convert_payload = convert_response.json()
                 except ValueError as exc:
@@ -176,7 +216,9 @@ class AMapPlaceResolver:
                     not isinstance(convert_payload, dict)
                     or str(convert_payload.get("status")) != "1"
                 ):
-                    fail("AMAP_COORDINATE_CONVERT_FAILED")
+                    fail(_amap_provider_error(
+                        convert_payload, "AMAP_COORDINATE_CONVERT_FAILED"
+                    ))
                 converted = _text(convert_payload.get("locations"))
                 if converted is None:
                     fail("AMAP_COORDINATE_CONVERT_INVALID_RESPONSE")
@@ -211,13 +253,13 @@ class AMapPlaceResolver:
             fail("AMAP_UNAVAILABLE", exc)
 
         if response.status_code < 200 or response.status_code >= 300:
-            fail("AMAP_FAILED")
+            fail(_amap_http_error(response.status_code, "AMAP_FAILED"))
         try:
             payload = response.json()
         except ValueError as exc:
             fail("AMAP_INVALID_RESPONSE", exc)
         if not isinstance(payload, dict) or str(payload.get("status")) != "1":
-            fail("AMAP_FAILED")
+            fail(_amap_provider_error(payload, "AMAP_FAILED"))
         regeocode = payload.get("regeocode")
         if not isinstance(regeocode, dict):
             fail("AMAP_INVALID_RESPONSE")
