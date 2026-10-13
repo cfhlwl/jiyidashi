@@ -1,6 +1,6 @@
 """add isolated WeChat Mini Program identity exchange receipts
 
-Revision ID: 0041_auth_wechat_miniprogram_identity
+Revision ID: 0041_auth_wechat_miniprogram
 Revises: 0040_auth_wechat_login_exchange
 """
 
@@ -9,7 +9,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0041_auth_wechat_miniprogram_identity"
+revision: str = "0041_auth_wechat_miniprogram"
 down_revision: str | None = "0040_auth_wechat_login_exchange"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
