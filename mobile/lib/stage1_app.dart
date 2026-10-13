@@ -278,7 +278,9 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     if (!mounted) return;
     // Another login/logout may have superseded the cold-start request.
     if (result != AuthRestoreStatus.restored &&
-        api.sessionVersion != startingVersion) return;
+        api.sessionVersion != startingVersion) {
+      return;
+    }
     if (result == AuthRestoreStatus.restored) {
       final restoredVersion = api.sessionVersion;
       final restoredOwner = api.authenticatedUserId;
