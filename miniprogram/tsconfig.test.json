@@ -29,6 +29,7 @@
     "tests/todayFootprint.test.ts",
     "tests/placeDetail.test.ts",
     "tests/wechatMiniAuth.test.ts",
+    "tests/smsOtp.test.ts",
     "src/services/family.ts",
     "tests/family.test.ts",
     "src/services/memorySummaries.ts",

@@ -254,6 +254,12 @@ export type EmailVerificationResponse = {
   session: MiniAuthSession | null
 }
 
+export type SmsOtpRequestResponse = {
+  request_id: string
+  expires_at: string
+  cooldown_until: string
+}
+
 export type AuthCapabilityStatus = 'AVAILABLE' | 'PLANNED' | 'DISABLED' | 'UNAVAILABLE' | 'UNSUPPORTED'
 
 export type AuthCapabilities = {
@@ -345,6 +351,21 @@ function parseEmailVerificationResponse(raw: unknown): EmailVerificationResponse
     verified: value.verified,
     already_verified: value.already_verified,
     session: null,
+  }
+}
+
+export function parseSmsOtpRequestResponse(raw: unknown): SmsOtpRequestResponse {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return invalidAuthResponse()
+  const value = raw as Record<string, unknown>
+  if (
+    typeof value.request_id !== 'string' || !UUID_PATTERN.test(value.request_id)
+    || typeof value.expires_at !== 'string' || !Number.isFinite(Date.parse(value.expires_at))
+    || typeof value.cooldown_until !== 'string' || !Number.isFinite(Date.parse(value.cooldown_until))
+  ) return invalidAuthResponse()
+  return {
+    request_id: value.request_id,
+    expires_at: parseAuthDate(value.expires_at),
+    cooldown_until: parseAuthDate(value.cooldown_until),
   }
 }
 
@@ -487,6 +508,16 @@ export function subscribeAuthSession(listener: AuthSessionListener): () => void 
 
 export function logout(): Promise<LogoutResult> {
   return logoutAndRevoke()
+}
+
+/**
+ * Fence a pre-login operation without touching an already installed session.
+ * The SMS page uses this when the user changes authentication method or leaves
+ * the flow; OTP values remain only in component memory and are never stored.
+ */
+export function cancelPendingAuthAttempt(): void {
+  authAttemptGeneration += 1
+  authSessionEpoch += 1
 }
 
 export function captureAuthSession(): AuthSessionSnapshot {
@@ -770,6 +801,39 @@ export async function loginAccount(email: string, password: string): Promise<voi
   const result = parseMiniAuthSession(await request<unknown>('POST', '/auth/login', {
     email: email.trim(),
     password,
+    device_id: getAuthDeviceId(),
+    client_platform: 'miniprogram',
+  }, { anonymous: true }))
+  if (attempt !== authAttemptGeneration || expectedEpoch !== authSessionEpoch || currentStoredSession()) {
+    throw new Error('登录状态已变化，请重试')
+  }
+  installSession(result, false)
+}
+
+export async function requestSmsOtp(phone: string): Promise<SmsOtpRequestResponse> {
+  const normalizedPhone = phone.trim()
+  if (!normalizedPhone) throw new Error('请输入手机号')
+  const result = await request<unknown>('POST', '/auth/phone/sms/request', {
+    phone: normalizedPhone,
+    device_id: getAuthDeviceId(),
+    client_platform: 'miniprogram',
+  }, { anonymous: true })
+  return parseSmsOtpRequestResponse(result)
+}
+
+export async function verifySmsOtp(requestId: string, code: string): Promise<void> {
+  const normalizedRequestId = requestId.trim()
+  const normalizedCode = code.trim()
+  if (!UUID_PATTERN.test(normalizedRequestId) || !/^\d{6}$/.test(normalizedCode)) {
+    throw new Error('请输入有效的验证码')
+  }
+  const attempt = ++authAttemptGeneration
+  clearLocalSession(false)
+  authSessionEpoch += 1
+  const expectedEpoch = authSessionEpoch
+  const result = parseMiniAuthSession(await request<unknown>('POST', '/auth/phone/sms/verify', {
+    request_id: normalizedRequestId,
+    code: normalizedCode,
     device_id: getAuthDeviceId(),
     client_platform: 'miniprogram',
   }, { anonymous: true }))

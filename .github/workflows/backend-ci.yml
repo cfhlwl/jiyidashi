@@ -205,6 +205,17 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_auth_wechat_miniprogram_integration.py
 
+      - name: PostgreSQL AUTH-003 phone SMS OTP authority
+        # AUTH-003 requires real PostgreSQL row locks, one-time challenge
+        # consumption, durable resend fencing, and canonical PHONE identity
+        # resolution. The provider is an explicit in-process fake; no live SMS
+        # endpoint, credential, or paid message is used.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_auth_sms_otp_integration.py
+
       - name: PostgreSQL Durable Maintenance Job concurrency
         # [OPS-002] Real PostgreSQL validates SKIP LOCKED single-claim authority,
         # concurrent dedupe, lease reclaim, stale-token fencing and crash terminalization.
