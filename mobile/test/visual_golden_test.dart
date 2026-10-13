@@ -410,12 +410,18 @@ Future<void> _precacheProductionAuthAssets(WidgetTester tester) async {
   await tester.pump();
 }
 
-// Golden 复用生产 Theme；这里只注入仓库固定 CJK 测试字体，禁止再次复制产品色/布局 token。
-ThemeData _goldenTheme({bool elderMode = false}) {
-  final base = JiYiTheme.light(
-    fontFamily: _goldenFontFamily,
-    elderMode: elderMode,
-  );
+// Golden 复用生产 Theme；公共 Golden 必须继续使用既有字体行为。
+ThemeData _goldenTheme({bool elderMode = false}) => JiYiTheme.light(
+      fontFamily: _goldenFontFamily,
+      elderMode: elderMode,
+    );
+
+// Batch 5A candidates may opt into the deterministic CJK fixture font. This
+// helper is intentionally not used by committed Golden tests.
+ThemeData _batch5aCandidateTheme({bool dark = false}) {
+  final base = dark
+      ? JiYiTheme.dark(fontFamily: _goldenFontFamily)
+      : _goldenTheme();
   return base.copyWith(
     textTheme: base.textTheme.apply(fontFamily: _goldenFallbackFontFamily),
   );
@@ -1558,6 +1564,7 @@ void main() {
       final key = await _pumpSurface(
         tester,
         LifePage(api: V2TestApi()),
+        theme: _batch5aCandidateTheme(),
         precacheTodayHero: true,
       );
       expect(find.text('我的人生'), findsOneWidget);
@@ -1593,11 +1600,7 @@ void main() {
       final key = await _pumpSurface(
         tester,
         LifePage(api: V2TestApi()),
-        theme: JiYiTheme.dark(fontFamily: _goldenFontFamily).copyWith(
-          textTheme: JiYiTheme.dark(fontFamily: _goldenFontFamily)
-              .textTheme
-              .apply(fontFamily: _goldenFallbackFontFamily),
-        ),
+        theme: _batch5aCandidateTheme(dark: true),
         precacheTodayHero: true,
       );
       expect(find.text('我的人生'), findsOneWidget);
@@ -1618,6 +1621,7 @@ void main() {
         LifePage(api: V2TestApi()),
         size: const Size(320, 568),
         textScale: 2.0,
+        theme: _batch5aCandidateTheme(),
         precacheTodayHero: true,
       );
       expect(find.text('我的人生'), findsOneWidget);

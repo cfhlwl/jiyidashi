@@ -402,6 +402,7 @@ jobs:
           path: /tmp/batch4c-v3-candidates/*.png
 
       - name: Generate Batch 5A Life Home candidate
+        if: always()
         timeout-minutes: 5
         shell: bash
         run: |
@@ -436,6 +437,7 @@ jobs:
           test -s /tmp/batch5a-v3-candidates/life_home_v3_batch5a.png
 
       - name: Upload Batch 5A Life Home review candidate
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: uiux-v3-batch5a-life-home-candidates-${{ github.event.pull_request.head.sha || github.sha }}

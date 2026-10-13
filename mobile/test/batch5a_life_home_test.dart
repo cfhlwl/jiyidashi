@@ -303,6 +303,31 @@ void main() {
     expect(api.authenticatedUserId, _ownerB);
   });
 
+  testWidgets('Batch 5A rejects a session-version-only rebound',
+      (tester) async {
+    final api = V2TestApi();
+    await _pumpLife(tester, api: api);
+    final entry = find.byKey(const ValueKey('life-home-entry-events'));
+    final originalOwner = api.authenticatedUserId;
+    final previousSessionVersion = api.sessionVersion;
+
+    final gesture = await tester.startGesture(tester.getCenter(entry));
+    await gesture.up();
+    await api.logout();
+    api.accessToken = 'v2-test-token-restored';
+    api.authenticatedUserId = originalOwner;
+
+    expect(api.authenticatedUserId, same(originalOwner));
+    expect(api.sessionVersion, greaterThan(previousSessionVersion));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LifeEventsPage), findsNothing);
+    expect(find.text('会话已变化'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(LifePage), findsOneWidget);
+  });
+
   testWidgets('Batch 5A rejects a queued route after API object rebind',
       (tester) async {
     final apiA = V2TestApi();
