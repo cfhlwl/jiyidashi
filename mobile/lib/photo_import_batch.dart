@@ -168,7 +168,7 @@ class PhotoImportBatchCoordinator {
           final pending = PendingMediaFile.fromPath(
             path: journal == null
                 ? item.selected.path
-                : journal.selectedFrom(durableRow!).path,
+                : (await journal.selectedFrom(durableRow!)).path,
             clientUploadId: item.clientUploadId,
             contentType: item.selected.contentType,
             sizeBytes: item.selected.bytes,
