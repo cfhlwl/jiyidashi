@@ -50,6 +50,27 @@ class PhotoImportJournal {
     );
   }
 
+  /// Inter-process advisory owner lock. A crashed writer releases its OS lock,
+  /// letting the next foreground reopen safely sweep abandoned originals.
+  /// A live copy + SQLite reservation are serialized with owner reconciliation.
+  Future<T> _withOwnerStageLock<T>(Future<T> Function() operation) async {
+    final directory = await store.photoImportOwnerDirectory(ownerUserId);
+    await directory.parent.create(recursive: true);
+    final handle = await File('${directory.path}.stage.lock').open(
+      mode: FileMode.append,
+    );
+    try {
+      await handle.lock(FileLock.exclusive);
+      try {
+        return await operation();
+      } finally {
+        await handle.unlock();
+      }
+    } finally {
+      await handle.close();
+    }
+  }
+
   Future<List<OfflineQueueItem>> list() async {
     final all = await store.listAll(ownerUserId);
     final photos = all.where((item) => item.operationType == operationType)
@@ -127,6 +148,7 @@ class PhotoImportJournal {
     }
     final releaseStage = store.holdPhotoImportStaging(ownerUserId);
     try {
+      return await _withOwnerStageLock(() async {
       final previous = await store.findByClientUuid(ownerUserId, clientUploadId);
       if (previous != null) {
         if (previous.operationType != operationType ||
@@ -192,6 +214,7 @@ class PhotoImportJournal {
           await saved.delete();
         }
       }
+      });
     } finally {
       releaseStage();
     }
@@ -207,6 +230,7 @@ class PhotoImportJournal {
     Duration gracePeriod = const Duration(hours: 1),
     DateTime? now,
   }) async {
+    return _withOwnerStageLock(() async {
     if (gracePeriod < Duration.zero) {
       throw ArgumentError('negative grace period');
     }
@@ -257,6 +281,7 @@ class PhotoImportJournal {
       }
     }
     return deleted;
+    });
   }
 
   Future<void> withdraw(OfflineQueueItem row) async {
