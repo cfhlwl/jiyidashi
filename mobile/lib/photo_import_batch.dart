@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+
 import 'capture_media.dart';
 import 'api_client.dart';
 import 'photo_import_metadata.dart';
@@ -25,7 +29,9 @@ class PhotoImportBatchCoordinator {
     required this.api,
     required PhotoImportSelection selection,
     TrustedMediaCaptureService? service,
+    Future<bool> Function(SelectedPhotoImport)? verifySelection,
   }) : _service = service ?? TrustedMediaCaptureService(api),
+       _verifySelection = verifySelection ?? _verifySourceFingerprint,
        items = List.unmodifiable(
          selection.selected.map(PhotoImportBatchItem.new),
        ),
@@ -34,6 +40,7 @@ class PhotoImportBatchCoordinator {
 
   final JiYiApiClient api;
   final TrustedMediaCaptureService _service;
+  final Future<bool> Function(SelectedPhotoImport) _verifySelection;
   final List<PhotoImportBatchItem> items;
   final String _owner;
   final int _sessionVersion;
@@ -47,6 +54,13 @@ class PhotoImportBatchCoordinator {
       items.where((item) => item.state == PhotoImportItemState.saved).length;
   int get failedCount =>
       items.where((item) => item.state == PhotoImportItemState.failed).length;
+
+  static Future<bool> _verifySourceFingerprint(SelectedPhotoImport item) async {
+    final file = File(item.path);
+    if (await file.length() != item.bytes) return false;
+    final digest = (await sha256.bind(file.openRead()).first).toString();
+    return digest == item.contentSha256;
+  }
 
   static String _requireOwner(JiYiApiClient api) {
     final owner = api.authenticatedUserId?.trim();
@@ -104,6 +118,13 @@ class PhotoImportBatchCoordinator {
         };
 
         try {
+          // The picker may have copied into a cache path that is later rotated
+          // or modified. Do not upload a different same-sized file as the one
+          // whose metadata and SHA-256 the user reviewed.
+          if (!await _verifySelection(item.selected)) {
+            throw const FormatException('selected photo changed after preview');
+          }
+          _assertOwner();
           final pending = PendingMediaFile.fromPath(
             path: item.selected.path,
             clientUploadId: item.clientUploadId,
