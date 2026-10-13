@@ -25,57 +25,77 @@ void main() {
   final factory = databaseFactoryFfiNoIsolate;
 
   testWidgets('reopen photos shows owner pending rows but never auto-uploads', (tester) async {
-    final temp = await Directory.systemTemp.createTemp('jiyi-resume-ui-');
-    final dbPath = '${temp.path}${Platform.pathSeparator}photo.sqlite';
+    // File and sqflite_ffi operations require real asynchronous IO. A
+    // testWidgets body runs under FakeAsync: awaiting the filesystem/SQLite
+    // future directly can deadlock and hang the entire workflow for 10 minutes.
+    late Directory temp;
+    late String dbPath;
     OfflineQueueStore createStore() => OfflineQueueStore(
       factory: factory,
       databasePathProvider: () async => dbPath,
     );
-    final first = createStore();
-    final source = File('${temp.path}${Platform.pathSeparator}select.jpeg');
-    await source.writeAsBytes([0xff, 0xd8, 0xff, ...List<int>.filled(20, 0)]);
-    final sha = sha256.convert(await source.readAsBytes()).toString();
-    final journal = PhotoImportJournal(store: first, ownerUserId: ownerA);
-    await journal.stage(
-      SelectedPhotoImport(
-        path: source.path,
-        originalFilename: 'restored.jpeg',
-        bytes: 23,
-        contentType: 'image/jpeg',
-        contentSha256: sha,
-        evidence: const PhotoCaptureEvidence(),
-      ),
-      clientUploadId: 'c1c1c1c1-c1c1-41c1-81c1-c1c1c1c1c1c1',
-    );
-    await first.close();
+    await tester.runAsync(() async {
+      temp = await Directory.systemTemp.createTemp('jiyi-resume-ui-');
+      dbPath = '${temp.path}${Platform.pathSeparator}photo.sqlite';
+      final first = createStore();
+      final source = File('${temp.path}${Platform.pathSeparator}select.jpeg');
+      await source.writeAsBytes([0xff, 0xd8, 0xff, ...List<int>.filled(20, 0)]);
+      final sha = sha256.convert(await source.readAsBytes()).toString();
+      final journal = PhotoImportJournal(store: first, ownerUserId: ownerA);
+      await journal.stage(
+        SelectedPhotoImport(
+          path: source.path,
+          originalFilename: 'restored.jpeg',
+          bytes: 23,
+          contentType: 'image/jpeg',
+          contentSha256: sha,
+          evidence: const PhotoCaptureEvidence(),
+        ),
+        clientUploadId: 'c1c1c1c1-c1c1-41c1-81c1-c1c1c1c1c1c1',
+      );
+      await first.close();
+    });
 
     final reopened = createStore();
     await tester.pumpWidget(MaterialApp(home: PhotoImportPage(
       api: _Api(ownerA),
       offlineQueue: reopened,
     )));
-    for (var i = 0; i < 60 &&
+    // Pumping fake time does not run SQLite's real event loop. Allow bounded
+    // real IO progress first, then render the completion in Flutter's zone.
+    for (var i = 0; i < 30 &&
         find.textContaining('已恢复 1 张待续传照片').evaluate().isEmpty; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(() => Future<void>.delayed(
+        const Duration(milliseconds: 30),
+      ));
+      await tester.pump();
     }
     expect(find.textContaining('已恢复 1 张待续传照片'), findsOneWidget);
     expect(find.text('restored.jpeg'), findsOneWidget);
     expect(find.byKey(const ValueKey('photo-import-submit')), findsOneWidget);
-    expect((await reopened.listAll(ownerA)).single.status, OfflineQueueStatus.pending);
+    await tester.runAsync(() async {
+      final rows = await reopened.listAll(ownerA);
+      expect(rows.single.status, OfflineQueueStatus.pending);
+    });
     await tester.pumpWidget(const MaterialApp(home: Scaffold()));
-    await reopened.close();
+    await tester.runAsync(reopened.close);
 
     final b = createStore();
     await tester.pumpWidget(MaterialApp(home: PhotoImportPage(
       api: _Api(ownerB),
       offlineQueue: b,
     )));
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    });
+    await tester.pump();
     expect(find.text('restored.jpeg'), findsNothing);
     expect(find.textContaining('已恢复 1 张待续传照片'), findsNothing);
     await tester.pumpWidget(const MaterialApp(home: Scaffold()));
-    await b.close();
-    await factory.deleteDatabase(dbPath);
-    await temp.delete(recursive: true);
+    await tester.runAsync(() async {
+      await b.close();
+      await factory.deleteDatabase(dbPath);
+      await temp.delete(recursive: true);
+    });
   });
 }
