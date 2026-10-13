@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:exif/exif.dart';
@@ -81,7 +80,7 @@ class PhotoCaptureEvidence {
     final input = raw?.trim();
     if (input == null) return null;
     final matched = RegExp(
-      r'^(\\d{4}):(\\d{2}):(\\d{2}) (\\d{2}):(\\d{2}):(\\d{2})$',
+      r'^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$',
     ).firstMatch(input);
     if (matched == null) return null;
     final nums = List<int>.generate(
@@ -107,7 +106,7 @@ class PhotoCaptureEvidence {
   }
 
   static int? _parseOffset(String? raw) {
-    final matched = RegExp(r'^([+-])(\\d{2}):(\\d{2})$')
+    final matched = RegExp(r'^([+-])(\d{2}):(\d{2})$')
         .firstMatch(raw?.trim() ?? '');
     if (matched == null) return null;
     final hours = int.parse(matched.group(2)!);
