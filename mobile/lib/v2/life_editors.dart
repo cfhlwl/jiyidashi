@@ -97,31 +97,52 @@ class LifeEventEditorDialog extends StatefulWidget {
     super.key,
     required this.places,
     this.initial,
+    this.initialDraft,
+    this.initialError,
   });
 
   final List<V2PlacePickerItem> places;
   final V2LifeEvent? initial;
+  final LifeEventDraft? initialDraft;
+  final String? initialError;
 
   @override
   State<LifeEventEditorDialog> createState() => _LifeEventEditorDialogState();
 }
 
 class _LifeEventEditorDialogState extends State<LifeEventEditorDialog> {
-  late String kind = widget.initial?.kind ?? 'WORK';
-  late final TextEditingController title =
-      TextEditingController(text: widget.initial?.title ?? '');
-  late final TextEditingController custom =
-      TextEditingController(text: widget.initial?.customLabel ?? '');
-  late final TextEditingController note =
-      TextEditingController(text: widget.initial?.note ?? '');
-  late DateTime started = widget.initial == null
+  late String kind =
+      widget.initialDraft?.kind ?? widget.initial?.kind ?? 'WORK';
+  late final TextEditingController title = TextEditingController(
+    text: widget.initialDraft?.title ?? widget.initial?.title ?? '',
+  );
+  late final TextEditingController custom = TextEditingController(
+    text: widget.initialDraft?.customLabel ?? widget.initial?.customLabel ?? '',
+  );
+  late final TextEditingController note = TextEditingController(
+    text: widget.initialDraft?.note ?? widget.initial?.note ?? '',
+  );
+  late DateTime started = widget.initialDraft != null
+      ? DateTime.parse(widget.initialDraft!.startedAt).toLocal()
+      : widget.initial == null
       ? DateTime.now()
       : DateTime.parse(widget.initial!.startedAt).toLocal();
-  late DateTime? ended = widget.initial?.endedAt == null
+  late DateTime? ended = widget.initialDraft != null
+      ? (widget.initialDraft!.endedAt == null
+            ? null
+            : DateTime.parse(widget.initialDraft!.endedAt!).toLocal())
+      : widget.initial?.endedAt == null
       ? null
       : DateTime.parse(widget.initial!.endedAt!).toLocal();
-  late String? placeId = widget.initial?.placeId;
-  String? error;
+  late String? placeId =
+      widget.initialDraft?.placeId ?? widget.initial?.placeId;
+  late String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    error = widget.initialError;
+  }
 
   @override
   void dispose() {
@@ -176,14 +197,19 @@ class _LifeEventEditorDialogState extends State<LifeEventEditorDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final placeValues = <String?>[null, ...widget.places.map((item) => item.id)];
+    final placeValues = <String?>[
+      null,
+      ...widget.places.map((item) => item.id),
+    ];
     return AlertDialog(
+      key: const ValueKey('life-event-editor-dialog'),
       title: Text(widget.initial == null ? '新建人生事件' : '编辑人生事件'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<String>(
+              key: const ValueKey('life-event-kind'),
               initialValue: kind,
               decoration: const InputDecoration(labelText: '事件类型'),
               items: [
@@ -201,11 +227,13 @@ class _LifeEventEditorDialogState extends State<LifeEventEditorDialog> {
             ),
             if (kind == 'OTHER')
               TextField(
+                key: const ValueKey('life-event-custom-label'),
                 controller: custom,
                 maxLength: 120,
                 decoration: const InputDecoration(labelText: '自定义类型'),
               ),
             TextField(
+              key: const ValueKey('life-event-title'),
               controller: title,
               maxLength: 240,
               decoration: const InputDecoration(labelText: '事件标题'),
@@ -254,6 +282,7 @@ class _LifeEventEditorDialogState extends State<LifeEventEditorDialog> {
               onChanged: (value) => setState(() => placeId = value),
             ),
             TextField(
+              key: const ValueKey('life-event-note'),
               controller: note,
               maxLength: 5000,
               minLines: 2,
@@ -265,8 +294,16 @@ class _LifeEventEditorDialogState extends State<LifeEventEditorDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-        FilledButton(onPressed: submit, child: const Text('保存')),
+        TextButton(
+          key: const ValueKey('life-event-cancel'),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const ValueKey('life-event-save'),
+          onPressed: submit,
+          child: const Text('保存'),
+        ),
       ],
     );
   }
@@ -283,12 +320,15 @@ class LifeStageEditorDialog extends StatefulWidget {
 
 class _LifeStageEditorDialogState extends State<LifeStageEditorDialog> {
   late String kind = widget.initial?.kind ?? 'WORK';
-  late final TextEditingController title =
-      TextEditingController(text: widget.initial?.title ?? '');
-  late final TextEditingController custom =
-      TextEditingController(text: widget.initial?.customLabel ?? '');
-  late final TextEditingController note =
-      TextEditingController(text: widget.initial?.note ?? '');
+  late final TextEditingController title = TextEditingController(
+    text: widget.initial?.title ?? '',
+  );
+  late final TextEditingController custom = TextEditingController(
+    text: widget.initial?.customLabel ?? '',
+  );
+  late final TextEditingController note = TextEditingController(
+    text: widget.initial?.note ?? '',
+  );
   late DateTime started = widget.initial == null
       ? DateTime.now()
       : DateTime.parse(widget.initial!.startedAt).toLocal();
@@ -420,7 +460,10 @@ class _LifeStageEditorDialogState extends State<LifeStageEditorDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
         FilledButton(onPressed: submit, child: const Text('保存')),
       ],
     );
