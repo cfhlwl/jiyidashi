@@ -73,9 +73,10 @@ class PhotoImportJournal {
     // Never honor a DB-provided arbitrary path. Only the exact opaque UUID
     // filename inside this row's private owner directory is permitted.
     final uuid = row.clientUuid;
-    final dir = await store.photoImportOwnerDirectory(ownerUserId);
-    final expected = '${dir.path}${Platform.pathSeparator}$uuid.bin';
-    if (!RegExp(r'^[0-9a-fA-F-]{36}
+    final directory = await store.photoImportOwnerDirectory(ownerUserId);
+    final expected = '${directory.path}${Platform.pathSeparator}$uuid.bin';
+    if (!RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(uuid) ||
+        path != expected) {
       throw const FormatException('photo journal filename invalid');
     }
     return SelectedPhotoImport(
@@ -180,114 +181,6 @@ class PhotoImportJournal {
       if (await file.exists()) {
         await file.delete();
       }
-    } catch (_) {}
-    return completed;
-  }
-}
-).hasMatch(uuid) ||
-        path != expected) {
-      throw const FormatException('photo journal filename invalid');
-    }
-    return SelectedPhotoImport(
-      path: path,
-      originalFilename: filename,
-      bytes: size,
-      contentType: contentType,
-      contentSha256: digest,
-      evidence: _parseEvidence(json['evidence']),
-    );
-  }
-
-  Future<OfflineQueueItem> stage(
-    SelectedPhotoImport photo, {
-    required String clientUploadId,
-  }) async {
-    if (!RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(clientUploadId) ||
-        photo.bytes <= 0 || photo.bytes > PhotoImportPicker.maxBytesPerPhoto ||
-        !RegExp(r'^[a-f0-9]{64}$').hasMatch(photo.contentSha256)) {
-      throw ArgumentError('invalid photo import id or fingerprint');
-    }
-    final previous = await store.findByClientUuid(ownerUserId, clientUploadId);
-    if (previous != null) {
-      if (previous.operationType != operationType ||
-          previous.payload['sha256'] != photo.contentSha256) {
-        throw StateError('photo upload UUID already belongs to different work');
-      }
-      return previous;
-    }
-
-    final dir = await store.photoImportOwnerDirectory(ownerUserId);
-    await dir.create(recursive: true);
-    final saved = File('${dir.path}${Platform.pathSeparator}$clientUploadId.bin');
-    final temporary = File('${saved.path}.partial');
-    var persisted = false;
-    try {
-      if (!await saved.exists()) {
-        await File(photo.path).copy(temporary.path);
-        if (await temporary.length() != photo.bytes ||
-            (await sha256.bind(temporary.openRead()).first).toString() !=
-                photo.contentSha256) {
-          throw const FormatException('photo changed during durable copy');
-        }
-        await temporary.rename(saved.path);
-      }
-      final row = await store.enqueueLocalTask(
-        ownerUserId: ownerUserId,
-        operationType: operationType,
-        clientUuid: clientUploadId,
-        payload: {
-          'staged_path': saved.path,
-          'original_filename': photo.originalFilename,
-          'size_bytes': photo.bytes,
-          'content_type': photo.contentType,
-          'sha256': photo.contentSha256,
-          'evidence': _evidence(photo.evidence),
-        },
-      );
-      persisted = true;
-      return row;
-    } finally {
-      if (await temporary.exists()) {
-        await temporary.delete();
-      }
-      if (!persisted && await saved.exists()) {
-        // Failed DB write or owner deletion quiesce cannot strand bytes.
-        await saved.delete();
-      }
-    }
-  }
-
-  Future<OfflineQueueItem> begin(OfflineQueueItem row) async {
-    if (row.ownerUserId != ownerUserId || row.operationType != operationType) {
-      throw StateError('wrong photo owner');
-    }
-    if (row.status == OfflineQueueStatus.failed) {
-      await store.retryFailed(ownerUserId, row.clientUuid);
-    }
-    return store.markSending(ownerUserId, row.clientUuid);
-  }
-
-  Future<OfflineQueueItem> failed(OfflineQueueItem row) =>
-      store.markFailed(
-        ownerUserId, row.clientUuid,
-        'PHOTO_IMPORT_RETRY_REQUIRED',
-        retryable: true,
-      );
-
-  Future<OfflineQueueItem> complete(
-    OfflineQueueItem row, {
-    required String memoryId,
-  }) async {
-    final completed = await store.markCompleted(
-      ownerUserId, row.clientUuid,
-      serverResourceId: memoryId,
-    );
-    // Durable completed receipt precedes file deletion. Failure to clean a
-    // cache copy must never turn a confirmed server memory into false failure.
-    try {
-      final source = selectedFrom(completed);
-      final file = File(source.path);
-      if (await file.exists()) await file.delete();
     } catch (_) {}
     return completed;
   }
