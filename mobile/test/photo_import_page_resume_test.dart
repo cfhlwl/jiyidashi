@@ -30,6 +30,9 @@ class _OwnerScopedQueueFixture extends OfflineQueueStore {
   int listCalls = 0;
 
   @override
+  bool get supportsPhotoImportFileSweep => false;
+
+  @override
   Future<List<OfflineQueueItem>> listAll(String ownerUserId) async {
     listCalls++;
     if (ownerUserId != ownerA) {
