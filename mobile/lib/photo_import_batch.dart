@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'capture_media.dart';
 import 'api_client.dart';
 import 'photo_import_metadata.dart';
+import 'photo_import_journal.dart';
+import 'offline_queue.dart';
 
 /// In-memory coordinator for one user-approved picker selection.
 ///
@@ -15,11 +17,16 @@ import 'photo_import_metadata.dart';
 enum PhotoImportItemState { waiting, uploading, verifying, saving, saved, failed }
 
 class PhotoImportBatchItem {
-  PhotoImportBatchItem(this.selected) : clientUploadId = newCaptureClientUuid();
+  PhotoImportBatchItem(
+    this.selected, {
+    String? clientUploadId,
+    this.state = PhotoImportItemState.waiting,
+    this.memoryId,
+  }) : clientUploadId = clientUploadId ?? newCaptureClientUuid();
 
   final SelectedPhotoImport selected;
   final String clientUploadId;
-  PhotoImportItemState state = PhotoImportItemState.waiting;
+  PhotoImportItemState state;
   String? memoryId;
   String? errorCode;
 }
@@ -30,7 +37,9 @@ class PhotoImportBatchCoordinator {
     required PhotoImportSelection selection,
     TrustedMediaCaptureService? service,
     Future<bool> Function(SelectedPhotoImport)? verifySelection,
-  }) : _service = service ?? TrustedMediaCaptureService(api),
+    PhotoImportJournal? journal,
+  }) : _journal = journal,
+       _service = service ?? TrustedMediaCaptureService(api),
        _verifySelection = verifySelection ?? _verifySourceFingerprint,
        items = List.unmodifiable(
          selection.selected.map(PhotoImportBatchItem.new),
@@ -38,8 +47,22 @@ class PhotoImportBatchCoordinator {
        _owner = _requireOwner(api),
        _sessionVersion = api.sessionVersion;
 
+  PhotoImportBatchCoordinator.restored({
+    required this.api,
+    required List<PhotoImportBatchItem> restoredItems,
+    required PhotoImportJournal journal,
+    TrustedMediaCaptureService? service,
+    Future<bool> Function(SelectedPhotoImport)? verifySelection,
+  }) : _journal = journal,
+       _service = service ?? TrustedMediaCaptureService(api),
+       _verifySelection = verifySelection ?? _verifySourceFingerprint,
+       items = List.unmodifiable(restoredItems),
+       _owner = _requireOwner(api),
+       _sessionVersion = api.sessionVersion;
+
   final JiYiApiClient api;
   final TrustedMediaCaptureService _service;
+  final PhotoImportJournal? _journal;
   final Future<bool> Function(SelectedPhotoImport) _verifySelection;
   final List<PhotoImportBatchItem> items;
   final String _owner;
@@ -123,6 +146,7 @@ class PhotoImportBatchCoordinator {
           if (e.hasGps) 'gps_longitude': e.longitude,
         };
 
+        OfflineQueueItem? durableRow;
         try {
           // The picker may have copied into a cache path that is later rotated
           // or modified. Do not upload a different same-sized file as the one
@@ -131,8 +155,20 @@ class PhotoImportBatchCoordinator {
             throw const FormatException('selected photo changed after preview');
           }
           _assertOwner();
+          final journal = _journal;
+          if (journal != null) {
+            durableRow = await journal.stage(
+              item.selected,
+              clientUploadId: item.clientUploadId,
+            );
+            _assertOwner();
+            durableRow = await journal.begin(durableRow);
+            _assertOwner();
+          }
           final pending = PendingMediaFile.fromPath(
-            path: item.selected.path,
+            path: journal == null
+                ? item.selected.path
+                : journal.selectedFrom(durableRow!).path,
             clientUploadId: item.clientUploadId,
             contentType: item.selected.contentType,
             sizeBytes: item.selected.bytes,
@@ -158,10 +194,22 @@ class PhotoImportBatchCoordinator {
             },
           );
           _assertOwner();
+          if (_journal != null) {
+            await _journal.complete(durableRow!, memoryId: id);
+            _assertOwner();
+          }
           item.memoryId = id;
           item.state = PhotoImportItemState.saved;
           onUpdate?.call(item);
         } catch (error) {
+          // An owner rebind must stop before any further mutation, including
+          // the stale account's local journal state.
+          _assertOwner();
+          if (_journal != null &&
+              durableRow?.status == OfflineQueueStatus.sending) {
+            await _journal.failed(durableRow!);
+            _assertOwner();
+          }
           item.errorCode = error is ProtocolException
               ? 'SESSION_OR_PROTOCOL_CHANGED'
               : 'UPLOAD_OR_SAVE_FAILED';
