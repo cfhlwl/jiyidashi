@@ -411,12 +411,15 @@ Future<void> _precacheProductionAuthAssets(WidgetTester tester) async {
 }
 
 // Golden 复用生产 Theme；这里只注入仓库固定 CJK 测试字体，禁止再次复制产品色/布局 token。
-ThemeData _goldenTheme({bool elderMode = false}) => JiYiTheme.light(
-      fontFamily: _goldenFontFamily,
-      elderMode: elderMode,
-    ).copyWith(
-      fontFamilyFallback: const [_goldenFallbackFontFamily],
-    );
+ThemeData _goldenTheme({bool elderMode = false}) {
+  final base = JiYiTheme.light(
+    fontFamily: _goldenFontFamily,
+    elderMode: elderMode,
+  );
+  return base.copyWith(
+    textTheme: base.textTheme.apply(fontFamily: _goldenFallbackFontFamily),
+  );
+}
 
 class _GoldenApi extends JiYiApiClient {
   _GoldenApi({
@@ -1590,10 +1593,10 @@ void main() {
       final key = await _pumpSurface(
         tester,
         LifePage(api: V2TestApi()),
-        theme: JiYiTheme.dark(
-          fontFamily: _goldenFontFamily,
-        ).copyWith(
-          fontFamilyFallback: const [_goldenFallbackFontFamily],
+        theme: JiYiTheme.dark(fontFamily: _goldenFontFamily).copyWith(
+          textTheme: JiYiTheme.dark(fontFamily: _goldenFontFamily)
+              .textTheme
+              .apply(fontFamily: _goldenFallbackFontFamily),
         ),
         precacheTodayHero: true,
       );
