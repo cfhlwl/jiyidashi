@@ -69,11 +69,23 @@ class PhotoImportJournal {
       if (previous != null) {
         await previous;
       }
-      if (await FileSystemEntity.type(directory.path, followLinks: false) ==
-          FileSystemEntityType.link) {
-        throw const FormatException('owner photo staging directory is a symlink');
+      // Both the owner leaf and its private photo-import parent must be real
+      // directories. Checking only the leaf follows a symlinked ancestor.
+      if (await FileSystemEntity.type(
+            directory.parent.path,
+            followLinks: false,
+          ) == FileSystemEntityType.link ||
+          await FileSystemEntity.type(directory.path, followLinks: false) ==
+              FileSystemEntityType.link) {
+        throw const FormatException('photo staging path contains a symlink');
       }
       await directory.create(recursive: true);
+      if (await FileSystemEntity.type(
+            directory.parent.path,
+            followLinks: false,
+          ) != FileSystemEntityType.directory) {
+        throw const FormatException('photo staging parent is not a real directory');
+      }
       if (await FileSystemEntity.type(directory.path, followLinks: false) !=
           FileSystemEntityType.directory) {
         throw const FormatException('invalid owner photo staging directory');
