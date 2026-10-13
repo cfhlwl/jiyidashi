@@ -245,6 +245,15 @@ struct NativeLocationPolicy {
     explicitAutomaticEnable && authorization == .foreground
   }
 
+  // iOS may report the old When-In-Use authorization while the Always request
+  // is still being presented. Only a definitive refusal can discard the
+  // user's explicit, owner-scoped request before a subsequent Always callback.
+  static func shouldDiscardPendingAlwaysRequest(
+    authorization: NativeLocationAuthorization
+  ) -> Bool {
+    authorization == .denied || authorization == .restricted
+  }
+
   static func relaunchState(
     enabledOwnerUserId: String?,
     activeOwnerUserId: String?,
@@ -424,9 +433,15 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     case "enableAutomaticLocation":
       result(enableAutomaticLocation(ownerUserId: ownerUserId))
     case "openBackgroundLocationSettings":
-      // Android 11+ uses this cross-platform bridge method. iOS Always permission has its
-      // own explicit CoreLocation flow, so this is intentionally status-only here.
-      result(status(ownerUserId: ownerUserId))
+      // The OS does not expose a direct URL for the Always row. Open this app's
+      // settings only after the user taps the explicit action; Flutter rechecks
+      // actual authorization when the app resumes, never assuming a grant.
+      if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+        UIApplication.shared.open(settingsURL, options: [:], completionHandler: nil)
+        result(status(ownerUserId: ownerUserId, forcedReason: "background_permission_settings_opened"))
+      } else {
+        result(status(ownerUserId: ownerUserId, forcedReason: "background_permission_settings_unavailable"))
+      }
     case "openLocationServicesSettings":
       if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
         UIApplication.shared.open(settingsURL, options: [:], completionHandler: nil)
@@ -1561,10 +1576,12 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
     if current == .background, let pendingOwner = pendingEnableOwnerUserId {
       pendingEnableOwnerUserId = nil
       switchAutomaticOwner(pendingOwner)
-    } else if current == .denied || current == .restricted ||
-                current == .foreground {
-      // If an Always request resolves without an Always grant, automatic location stays
-      // disabled. We never reinterpret When-In-Use as background consent.
+    } else if NativeLocationPolicy.shouldDiscardPendingAlwaysRequest(
+      authorization: current
+    ) {
+      // Denied/restricted is definitive; When-In-Use is not. In particular,
+      // the old foreground status may be sent before the iOS permission sheet
+      // has completed and must not consume pending owner intent.
       pendingEnableOwnerUserId = nil
     }
 
