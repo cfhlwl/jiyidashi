@@ -1554,6 +1554,7 @@ class JiYiApiClient
         if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
         'content': content.trim(),
         if (occurredAt != null) 'occurred_at': occurredAt.toUtc().toIso8601String(),
+        if (importProvenance != null) 'import_provenance': importProvenance,
       },
     );
   }
