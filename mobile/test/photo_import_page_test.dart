@@ -82,6 +82,12 @@ void main() {
     await tester.pump();
     expect(find.text('test.jpeg'), findsOneWidget);
     api.authenticatedUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    // The parent Shell rebuilds when authority changes; a plain API field
+    // mutation alone does not notify Flutter's widget framework.
+    await tester.pumpWidget(MaterialApp(home: PhotoImportPage(
+      api: api,
+      picker: picker,
+    )));
     await tester.pump();
     expect(find.byKey(const ValueKey('photo-import-owner-changed')), findsOneWidget);
     expect(find.text('test.jpeg'), findsNothing);
