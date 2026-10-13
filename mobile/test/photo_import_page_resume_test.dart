@@ -61,7 +61,7 @@ void main() {
     expect(find.textContaining('已恢复 1 张待续传照片'), findsOneWidget);
     expect(find.text('restored.jpeg'), findsOneWidget);
     expect(find.byKey(const ValueKey('photo-import-submit')), findsOneWidget);
-    expect((await journal.list()).single.status, OfflineQueueStatus.pending);
+    expect((await reopened.listAll(ownerA)).single.status, OfflineQueueStatus.pending);
     await tester.pumpWidget(const MaterialApp(home: Scaffold()));
     await reopened.close();
 
