@@ -56,6 +56,40 @@ export async function runProfileSubmit<TOperation extends object>(deps: SubmitDe
   }
 }
 
+type MutationDeps<TOperation extends object, TResult> = {
+  beginOperation: () => TOperation
+  operationIsCurrent: (operation: TOperation) => boolean
+  currentViewGeneration: () => number
+  isViewGenerationCurrent: (generation: number) => boolean
+  action: () => Promise<TResult>
+  applySuccess: (result: TResult) => void
+  setLoading: (value: boolean) => void
+  setStatus: (value: string) => void
+  successStatus: string
+  errorStatus: string
+}
+
+export async function runProfileMutation<TOperation extends object, TResult>(
+  deps: MutationDeps<TOperation, TResult>,
+): Promise<void> {
+  const operation = deps.beginOperation()
+  const viewGeneration = deps.currentViewGeneration()
+  deps.setLoading(true)
+  deps.setStatus('')
+  try {
+    const result = await deps.action()
+    if (!deps.isViewGenerationCurrent(viewGeneration) || !deps.operationIsCurrent(operation)) return
+    deps.applySuccess(result)
+    deps.setStatus(deps.successStatus)
+  } catch (error) {
+    if (deps.operationIsCurrent(operation)) {
+      deps.setStatus(error instanceof Error ? error.message : deps.errorStatus)
+    }
+  } finally {
+    if (deps.operationIsCurrent(operation)) deps.setLoading(false)
+  }
+}
+
 type LogoutDeps = {
   beginViewGeneration: () => number
   isViewGenerationCurrent: (generation: number) => boolean
@@ -69,8 +103,12 @@ type LogoutDeps = {
 }
 
 export async function runProfileLogout(deps: LogoutDeps): Promise<void> {
-  const generation = deps.beginViewGeneration()
+  // Fence old page work before local logout starts. logout() synchronously
+  // clears the session and notifies the page, so capture a second generation
+  // after that transition for the remote revoke result.
+  deps.beginViewGeneration()
   const pendingLogout = deps.logout()
+  const generation = deps.beginViewGeneration()
   // Logout is the current synchronous page transition: release the old
   // mutation's busy owner now, while its delayed finally remains fenced by
   // operation/auth generation and cannot clear a newer login's busy state.

@@ -33,7 +33,7 @@ import {
   type ProfileAsyncOperation,
   type ProfileAuthState,
 } from './authFence'
-import { runProfileLogout, runProfileSubmit } from './profileAuthFlow'
+import { runProfileLogout, runProfileMutation, runProfileSubmit } from './profileAuthFlow'
 import './index.scss'
 
 export default function Page() {
@@ -192,22 +192,19 @@ export default function Page() {
       setStatus('昵称和时区不能为空')
       return
     }
-    const operation = beginOperation()
-    const viewGeneration = profileViewGeneration.current
-    const snapshot = captureAuthSession()
-    setLoading(true)
-    setStatus('')
-    try {
+    await runProfileMutation({
+      beginOperation,
+      operationIsCurrent,
+      currentViewGeneration: () => profileViewGeneration.current,
+      isViewGenerationCurrent: (generation) => generation === profileViewGeneration.current,
       // [人工注释][S1-002] 用户修改 IANA 时区后以后端返回值为准，客户端不自行推断自然日边界。
-      const nextProfile = await updateProfile({ nickname, timezone, locale: profile?.locale })
-      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot) || !operationIsCurrent(operation)) return
-      applyProfile(nextProfile)
-      if (operationIsCurrent(operation)) setStatus('资料已更新')
-    } catch (error) {
-      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '资料更新失败')
-    } finally {
-      if (operationIsCurrent(operation)) setLoading(false)
-    }
+      action: () => updateProfile({ nickname, timezone, locale: profile?.locale }),
+      applySuccess: applyProfile,
+      setLoading,
+      setStatus,
+      successStatus: '资料已更新',
+      errorStatus: '资料更新失败',
+    })
   }
 
   const applyPrivacy = async (action: () => Promise<PrivacyStatus>, success: string) => {
