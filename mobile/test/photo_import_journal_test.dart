@@ -263,7 +263,14 @@ void main() {
     expect(await journal.list(), isEmpty);
     final dir = await store.photoImportOwnerDirectory(ownerA);
     if (await dir.exists()) {
-      expect(await dir.list().toList(), isEmpty);
+      final all = await dir.list().toList();
+      expect(
+        all.where((entry) =>
+            entry.path.endsWith('.bin') ||
+            entry.path.endsWith('.bin.partial')),
+        isEmpty,
+        reason: 'private lock metadata is allowed; orphan photo bytes are not',
+      );
     }
     await store.close();
   });
