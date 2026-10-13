@@ -140,6 +140,10 @@ jobs:
         timeout-minutes: 5
         run: flutter test test/batch4b_people_person_detail_test.dart --reporter expanded
 
+      - name: Test Batch 4C Graph Neighborhood targeted
+        timeout-minutes: 5
+        run: flutter test test/batch4c_graph_neighborhood_test.dart --reporter expanded
+
       - name: Generate Today B2 authority candidate
         timeout-minutes: 5
         shell: bash
@@ -365,6 +369,34 @@ jobs:
           retention-days: 14
           path: /tmp/batch4b-v3-candidates/*.png
 
+      - name: Generate Batch 4C Graph Neighborhood candidate
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/batch4c-v3-candidates
+          mkdir -p /tmp/batch4c-v3-candidates
+          mkdir -p test/goldens
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 4C Graph Neighborhood production surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH4C_CANDIDATE_MODE=true \
+            --reporter expanded
+          test -s test/goldens/graph_neighborhood_v3_batch4c.png
+          cp test/goldens/graph_neighborhood_v3_batch4c.png /tmp/batch4c-v3-candidates/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          test -s /tmp/batch4c-v3-candidates/graph_neighborhood_v3_batch4c.png
+
+      - name: Upload Batch 4C Graph Neighborhood review candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-batch4c-graph-neighborhood-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/batch4c-v3-candidates/*.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -482,6 +514,7 @@ jobs:
           python -m pip install --disable-pip-version-check pillow==11.3.0
           python3 - <<'PY'
           import os
+          import shutil
           from pathlib import Path
           from PIL import Image, ImageChops, ImageEnhance
 
@@ -511,6 +544,10 @@ jobs:
               # an acceptance authority.
               'batch4a_place_detail_existing_reference': ('test/goldens/place_detail_loaded.png', '/tmp/place-detail-v3-candidates/place_detail_v3_batch4a.png', 0, 0),
           }
+
+          graph_candidate = Path('/tmp/batch4c-v3-candidates/graph_neighborhood_v3_batch4c.png')
+          if graph_candidate.is_file():
+              shutil.copy2(graph_candidate, root / 'candidate' / graph_candidate.name)
 
           def normalize(authority, size):
               target_w, target_h = size
@@ -584,6 +621,15 @@ jobs:
               '| Person Detail memory card ratio and relationship layout | Real memory/relationship authority preserved; approved hierarchy is memory cards → link action → relationships → add relationship → graph | STAGE VISUAL APPROVED; `V3_PARTIAL`; no fake media or relationship data. |',
               '| `golden: people` | Approved production candidate from review comment `6124453506` | REVIEWED TARGETED UPDATE; exact committed Golden only, no bulk update. |',
               '| `golden: V2 person detail` | Approved production candidate from review comment `6124453506` | REVIEWED TARGETED UPDATE; exact committed Golden only, no bulk update. |',
+              '',
+              '## Batch 4C derived visual evidence',
+              '',
+              '| Surface | Authority boundary | Candidate / disposition |',
+              '|---|---|---|',
+              '| Graph Neighborhood | No dedicated Graph V3 Design Authority PNG; do not infer topology from People/Person Detail originals | `graph_neighborhood_v3_batch4c.png` is a real `GraphNeighborhoodPage` candidate using strict V2 Graph fixture data; `STAGE VISUAL APPROVED / DERIVED V3 / V3_PARTIAL`. |',
+              '| Graph semantics | `V2Api.graphNeighborhood` + strict `V2GraphNeighborhood` parser + `V2Authority` | Center, one-hop nodes, edge direction/kind and truncation are server-backed; no fake nodes, edges, photos or topology are accepted. |',
+              '| Graph navigation | Existing `PersonDetailPage` route only for canonical `PERSON` IDs | PERSON navigation is implemented and tested; PLACE/EVENT/OBJECT detail navigation remains DEFERRED unless an existing authorized route is available. |',
+              '| Graph state matrix | API response and transport/permission status | Loading, empty, truncated, offline, 401/403/404 and protocol failure remain separate truthful states. |',
           ])
           report.extend([
               '',
@@ -595,8 +641,9 @@ jobs:
               '| `golden: place detail loaded scrolled` | Approved Batch 4A lower-viewport regression Golden covering the in-progress visit and load-more surface | Approved committed Golden; strict comparison only, never candidate auto-update. |',
               '| `golden: people` | Batch 4B production UI differs from the pre-Batch-4B strict baseline; stage visual approval recorded in review comment `6124453506` | REVIEWED TARGETED UPDATE; PASS only when this exact-head strict test is green. |',
               '| `golden: V2 person detail` | Batch 4B production UI differs from the pre-Batch-4B strict baseline; stage visual approval recorded in review comment `6124453506` | REVIEWED TARGETED UPDATE; PASS only when this exact-head strict test is green. |',
-              '| Other mobile-ci visual failures | None beyond the two named Batch 4B Goldens | No bulk update or historical-failure waiver. |',
-              '| Other mobile-visual-preview visual failures | None beyond the two named Batch 4B Goldens | Candidate/audit evidence remains review-only. |',
+              '| `golden: V2 graph neighborhood` | Batch 4C Graph Neighborhood production UI differs from the pre-Batch-4C strict baseline; the candidate received stage visual approval | Single authorized Golden update completed; strict comparison PASS. No bulk update. |',
+              '| Other mobile-ci visual failures | None beyond the targeted Batch 4C Golden | No remaining Batch 4C visual failure; no historical-failure waiver. |',
+              '| Other mobile-visual-preview visual failures | None beyond the targeted Batch 4C Golden | Candidate and audit evidence generated; strict Golden comparison PASS. |',
           ])
           (root / 'audit.md').write_text('\n'.join(report) + '\n\nAutomated images are evidence only; visual severity remains subject to independent review.\n', encoding='utf-8')
           manifest = [
@@ -609,6 +656,8 @@ jobs:
               'BATCH 4A GOLDEN CLASSIFICATION: place_detail_loaded.png and place_detail_loaded_scrolled.png are approved committed Goldens; place_detail_v3_batch4a.png remains candidate-only',
               'BATCH 4B PRODUCTION CANDIDATES: batch4b_people, batch4b_person_detail',
               'BATCH 4B AUTHORITY STATUS: STAGE VISUAL APPROVED / V3_PARTIAL; targeted Goldens approved by review comment 6124453506; media deferred; Design Authority PNGs unchanged',
+              'BATCH 4C PRODUCTION CANDIDATE: graph_neighborhood_v3_batch4c',
+              'BATCH 4C AUTHORITY STATUS: STAGE VISUAL APPROVED / DERIVED V3 / V3_PARTIAL; no dedicated Graph Design Authority PNG; one authorized Golden update completed; strict Graph Golden test PASS',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())
