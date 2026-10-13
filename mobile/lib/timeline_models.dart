@@ -64,6 +64,7 @@ class TimelineReadItem {
     required this.content,
     required this.isConfirmed,
     required this.mediaId,
+    this.photoOccurrenceRole,
     required this.confidence,
     required this.visitFinalized,
   });
