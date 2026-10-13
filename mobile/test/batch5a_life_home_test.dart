@@ -157,10 +157,11 @@ void main() {
     expect(find.byType(LifeEventsPage), findsNothing);
     expect(find.byType(LifePage), findsOneWidget);
 
-    if (find.text('会话已变化').evaluate().isNotEmpty) {
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-    }
+    // Rebind back to the original owner before proving that a fresh route
+    // can be opened. The first tap must be dropped; it must not be reused as
+    // a valid navigation after the account changes.
+    api.authenticatedUserId = v2OwnerId;
+    await tester.pump();
 
     await tester.tap(entry);
     await tester.pumpAndSettle();
