@@ -2393,10 +2393,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               controller: _nativeLocation!,
               revalidateAuthority: _revalidateNativeLocationAuthority,
             ),
-      onEnableNotifications: () => unawaited(
-        widget.notificationClient?.requestPermissionAndRegister() ??
-            Future<void>.value(),
-      ),
+      onEnableNotifications: widget.notificationClient == null
+          ? null
+          : () => unawaited(
+              widget.notificationClient!.requestPermissionAndRegister(),
+            ),
       onSkip: () {
         if (onboarding != null) unawaited(onboarding.skip());
       },
