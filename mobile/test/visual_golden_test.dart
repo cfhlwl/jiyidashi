@@ -44,6 +44,8 @@ const _captureBatch4aCandidates =
     bool.fromEnvironment('UIUX_V3_BATCH4A_CANDIDATE_MODE');
 const _captureBatch4bCandidates =
     bool.fromEnvironment('UIUX_V3_BATCH4B_CANDIDATE_MODE');
+const _captureBatch4cCandidates =
+    bool.fromEnvironment('UIUX_V3_BATCH4C_CANDIDATE_MODE');
 
 late Uint8List _goldenPhotoBytes;
 
@@ -1509,6 +1511,28 @@ void main() {
     );
   });
 
+  testWidgets('candidate: Batch 4C Graph Neighborhood production surface',
+      (tester) async {
+    if (!_captureBatch4cCandidates) return;
+    final key = await _pumpSurface(
+      tester,
+      GraphNeighborhoodPage(
+        api: V2TestApi(),
+        kind: 'PERSON',
+        entityId: v2PersonId,
+        title: '老张',
+      ),
+    );
+    expect(find.byKey(const ValueKey('graph-center-label')), findsOneWidget);
+    expect(find.text('小李 · 重要的人'), findsOneWidget);
+    expect(find.text('朋友'), findsOneWidget);
+    expect(find.textContaining(v2PersonId), findsNothing);
+    await expectLater(
+      find.byKey(key),
+      matchesGoldenFile('goldens/graph_neighborhood_v3_batch4c.png'),
+    );
+  });
+
   testWidgets(
     'golden: place detail loaded scrolled',
     (tester) async {
@@ -1899,8 +1923,9 @@ void main() {
         title: '老张',
       ),
     );
-    expect(find.text('相关的人和事'), findsWidgets);
-    expect(find.textContaining('小李'), findsWidgets);
+    expect(find.byKey(const ValueKey('graph-center-label')), findsOneWidget);
+    expect(find.text('小李 · 重要的人'), findsOneWidget);
+    expect(find.text('朋友'), findsOneWidget);
     await expectLater(
       find.byKey(key),
       matchesGoldenFile('goldens/v2_graph_neighborhood.png'),

@@ -55,6 +55,12 @@
 | TODAY-V3 | Today Consumer Visual Parity V3 | ✅ | Today V3 已 CLOSED；正式 Hero、锁定几何、真实 AMap/Visit/Place、Memory 双卡、Quick Capture、Bottom Navigation 与 surface correction 已完成最终视觉验收。 |
 | AUTH-UI-01 | Auth UX V3 | ✅ | Auth Design Authority、架构/Session Shell 与最终视觉审查已通过；AUTH UI scope 已 CLOSED。 |
 
+### UI V3 进行中的批次
+
+| ID | 范围 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| UIUX-V3-05-4C | Graph Neighborhood V3 | 🟠 | Issue #254 / 独立 Draft PR：严格消费 `V2Api` Graph Neighborhood，真实节点/边、canonical PERSON 导航、API/owner/session/kind/id rebind 与旧异步结果隔离；候选视觉为 `DERIVED V3 / V3_PARTIAL`，等待独立视觉审查与 CI 验收。 |
+
 ## 状态规则
 
 | 标记 | 状态 | 使用规则 |
