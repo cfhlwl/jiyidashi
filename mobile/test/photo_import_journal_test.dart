@@ -80,6 +80,34 @@ void main() {
     ),
   );
 
+  test('orphan sweep cannot erase an active source staged before SQLite receipt', () async {
+    final store = _PausedReservationStore(databasePath);
+    final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
+    final staging = journal.stage(selected(), clientUploadId: uploadId);
+    await store.entered.future;
+    // Deliberately no grace interval. Inter-process owner lock, not a
+    // timestamp heuristic, must prevent deletion before row commit.
+    var sweepCompleted = false;
+    final sweep = journal.sweepOrphanedFiles(
+      const <OfflineQueueItem>[],
+      gracePeriod: Duration.zero,
+      now: DateTime.now().add(const Duration(minutes: 2)),
+    ).then((count) {
+      sweepCompleted = true;
+      return count;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(sweepCompleted, false, reason: 'source copy owns exclusive lock');
+    store.proceed.complete();
+    final row = await staging;
+    expect(row.status, OfflineQueueStatus.pending);
+    expect(await sweep, 0);
+    final staged = await journal.selectedFrom(row);
+    expect(await File(staged.path).exists(), true);
+    expect(await store.listAll(ownerA), hasLength(1));
+    await store.close();
+  });
+
   test('account deletion waits for source copy before purge', () async {
     final store = _PausedReservationStore(databasePath);
     final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
