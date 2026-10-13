@@ -60,6 +60,7 @@
 | ID | 范围 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | UIUX-V3-05-4C | Graph Neighborhood V3 | 🟠 | Issue #254 / 独立 Draft PR：严格消费 `V2Api` Graph Neighborhood，真实节点/边、canonical PERSON 导航、API/owner/session/kind/id rebind 与旧异步结果隔离；候选视觉为 `DERIVED V3 / V3_PARTIAL`，等待独立视觉审查与 CI 验收。 |
+| UIUX-V3-06-5A | Life Home V3 | 🔵 | Issue #257 / 独立 Draft PR 开发中：`03_life.png` 只读视觉参考；保留人生经历、人生阶段、多年时间线、人生故事四个真实入口与 V2 API/owner/session 导航权限；candidate-only 视觉审计，正式 Golden 暂不修改。 |
 
 ## 状态规则
 
