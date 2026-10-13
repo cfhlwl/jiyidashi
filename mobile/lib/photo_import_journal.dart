@@ -125,7 +125,9 @@ class PhotoImportJournal {
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(photo.contentSha256)) {
       throw ArgumentError('invalid photo import id or fingerprint');
     }
-    final previous = await store.findByClientUuid(ownerUserId, clientUploadId);
+    final releaseStage = store.holdPhotoImportStaging(ownerUserId);
+    try {
+      final previous = await store.findByClientUuid(ownerUserId, clientUploadId);
     if (previous != null) {
       if (previous.operationType != operationType ||
           previous.payload['sha256'] != photo.contentSha256) {
@@ -136,10 +138,20 @@ class PhotoImportJournal {
 
     final dir = await store.photoImportOwnerDirectory(ownerUserId);
     await dir.create(recursive: true);
+    if (await FileSystemEntity.type(dir.path, followLinks: false) !=
+        FileSystemEntityType.directory) {
+      throw const FormatException('photo staging directory is not a real directory');
+    }
     final saved = File('${dir.path}${Platform.pathSeparator}$clientUploadId.bin');
     final temporary = File('${saved.path}.partial');
     var persisted = false;
     try {
+      if (await FileSystemEntity.type(saved.path, followLinks: false) ==
+              FileSystemEntityType.link ||
+          await FileSystemEntity.type(temporary.path, followLinks: false) ==
+              FileSystemEntityType.link) {
+        throw const FormatException('photo staging path is a symlink');
+      }
       if (!await saved.exists()) {
         await File(photo.path).copy(temporary.path);
         if (await temporary.length() != photo.bytes ||
@@ -179,6 +191,9 @@ class PhotoImportJournal {
         // Failed DB write or owner deletion quiesce cannot strand bytes.
         await saved.delete();
       }
+    }
+    } finally {
+      releaseStage();
     }
   }
 
