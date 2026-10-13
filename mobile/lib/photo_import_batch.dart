@@ -14,7 +14,7 @@ import 'offline_queue.dart';
 /// Import remains a preview/foreground-only feature until an owner-scoped
 /// persisted journal is integrated. The existing media upload protocol itself
 /// is idempotent for a stable clientUploadId.
-enum PhotoImportItemState { waiting, uploading, verifying, saving, saved, failed }
+enum PhotoImportItemState { waiting, uploading, verifying, saving, saved, failed, cancelled }
 
 class PhotoImportBatchItem {
   PhotoImportBatchItem(
@@ -101,6 +101,32 @@ class PhotoImportBatchCoordinator {
   }
 
   void stopAfterCurrentFile() => _stopRequested = true;
+
+  Future<void> withdrawPending({
+    void Function(PhotoImportBatchItem item)? onUpdate,
+  }) async {
+    if (_running) {
+      throw StateError('stop current upload before withdrawing queued images');
+    }
+    _assertOwner();
+    for (final item in items) {
+      if (item.state != PhotoImportItemState.waiting &&
+          item.state != PhotoImportItemState.failed) {
+        continue;
+      }
+      final journal = _journal;
+      if (journal != null) {
+        final row = await journal.store.findByClientUuid(_owner, item.clientUploadId);
+        _assertOwner();
+        if (row != null) {
+          await journal.withdraw(row);
+          _assertOwner();
+        }
+      }
+      item.state = PhotoImportItemState.cancelled;
+      onUpdate?.call(item);
+    }
+  }
 
   /// Sequential upload limits network/memory pressure. Each completed item is
   /// a real server memory; cancellation never rewrites it as failed/skipped.
