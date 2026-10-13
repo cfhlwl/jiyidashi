@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/auth_session_store.dart';
 import 'package:jiyidashi/notification_client.dart';
@@ -15,11 +16,8 @@ const _owner = '11111111-1111-4111-8111-111111111111';
 const _otherOwner = '22222222-2222-4222-8222-222222222222';
 
 class _RestoreApi extends JiYiApiClient {
-  _RestoreApi({required this.profileFailure, AuthSessionStore? sessionStore})
-      : super(
-          baseUrl: 'https://issue262.invalid/v1',
-          sessionStore: sessionStore,
-        ) {
+  _RestoreApi({required this.profileFailure, super.sessionStore})
+      : super(baseUrl: 'https://issue262.invalid/v1') {
     authenticatedUserId = _owner;
     accessToken = 'server-verified-access';
   }
