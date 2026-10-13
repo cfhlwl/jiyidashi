@@ -72,6 +72,7 @@ class _GraphNeighborhoodPageState extends State<GraphNeighborhoodPage> {
   bool loading = true;
   String? error;
   bool _rebindScheduled = false;
+  bool _personNavigationInFlight = false;
 
   @override
   void initState() {
@@ -114,8 +115,9 @@ class _GraphNeighborhoodPageState extends State<GraphNeighborhoodPage> {
       _boundEntityId == widget.entityId;
 
   void _rebindAndReload() {
-    if (_rebindScheduled) return;
-    _rebindScheduled = true;
+    // Always adopt the newest binding before coalescing the post-frame reload.
+    // A parent can rebuild this page more than once in a frame; dropping the
+    // second update would leave V2Api and the authority snapshot on old data.
     authority.invalidate();
     _activeSnapshot = null;
     graph = null;
@@ -123,6 +125,8 @@ class _GraphNeighborhoodPageState extends State<GraphNeighborhoodPage> {
     loading = true;
     v2 = V2Api(widget.api);
     _rememberBinding();
+    if (_rebindScheduled) return;
+    _rebindScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _rebindScheduled = false;
@@ -189,7 +193,8 @@ class _GraphNeighborhoodPageState extends State<GraphNeighborhoodPage> {
     return '暂时无法读取关联内容，请稍后重试。';
   }
 
-  void _openPerson(V2GraphNode node) {
+  Future<void> _openPerson(V2GraphNode node) async {
+    if (_personNavigationInFlight) return;
     final snapshot = _activeSnapshot;
     final current = graph;
     final identity = 'graph:${widget.kind}:${widget.entityId}';
@@ -199,11 +204,27 @@ class _GraphNeighborhoodPageState extends State<GraphNeighborhoodPage> {
       return;
     }
     if (!current.nodes.any((item) => item.identity == node.identity)) return;
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => PersonDetailPage(api: widget.api, personId: node.id),
-      ),
-    );
+    _personNavigationInFlight = true;
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) {
+            // Re-check immediately before constructing the detail surface so
+            // a delayed route build cannot expose a stale account/person.
+            if (!mounted ||
+                !_isCurrent(snapshot, identity) ||
+                !current.nodes.any((item) => item.identity == node.identity)) {
+              return const Scaffold(
+                body: Center(child: Text('当前关联内容已更新，请返回后重新查看。')),
+              );
+            }
+            return PersonDetailPage(api: widget.api, personId: node.id);
+          },
+        ),
+      );
+    } finally {
+      if (mounted) _personNavigationInFlight = false;
+    }
   }
 
   Widget _stateSurface(BuildContext context) {

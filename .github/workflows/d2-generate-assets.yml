@@ -641,8 +641,9 @@ jobs:
               '| `golden: place detail loaded scrolled` | Approved Batch 4A lower-viewport regression Golden covering the in-progress visit and load-more surface | Approved committed Golden; strict comparison only, never candidate auto-update. |',
               '| `golden: people` | Batch 4B production UI differs from the pre-Batch-4B strict baseline; stage visual approval recorded in review comment `6124453506` | REVIEWED TARGETED UPDATE; PASS only when this exact-head strict test is green. |',
               '| `golden: V2 person detail` | Batch 4B production UI differs from the pre-Batch-4B strict baseline; stage visual approval recorded in review comment `6124453506` | REVIEWED TARGETED UPDATE; PASS only when this exact-head strict test is green. |',
-              '| Other mobile-ci visual failures | None beyond the two named Batch 4B Goldens | No bulk update or historical-failure waiver. |',
-              '| Other mobile-visual-preview visual failures | None beyond the two named Batch 4B Goldens | Candidate/audit evidence remains review-only. |',
+              '| `golden: V2 graph neighborhood` | Batch 4C Graph Neighborhood production UI differs from the pre-Batch-4C strict baseline; the candidate is derived V3 evidence and has not been visually approved | No Golden update authorized; strict mismatch remains a review finding. |',
+              '| Other mobile-ci visual failures | None beyond the named Batch 4C Graph Neighborhood Golden | No bulk update or historical-failure waiver. |',
+              '| Other mobile-visual-preview visual failures | None beyond the named Batch 4C Graph Neighborhood Golden | Candidate/audit evidence remains review-only. |',
           ])
           (root / 'audit.md').write_text('\n'.join(report) + '\n\nAutomated images are evidence only; visual severity remains subject to independent review.\n', encoding='utf-8')
           manifest = [

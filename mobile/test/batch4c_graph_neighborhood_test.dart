@@ -323,6 +323,106 @@ void main() {
     );
   });
 
+  testWidgets(
+    'Batch 4C keeps the newest binding when API changes twice before reload',
+    (tester) async {
+      final firstApi = _GraphFixtureApi(centerLabel: '账号 A 的人物');
+      await _pumpGraph(tester, firstApi);
+
+      final secondApi = _GraphFixtureApi(centerLabel: '账号 B 的人物');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: JiYiTheme.light(),
+          home: GraphNeighborhoodPage(
+            api: secondApi,
+            kind: 'PERSON',
+            entityId: v2PersonId,
+            title: '账号 B',
+          ),
+        ),
+      );
+      final thirdApi = _GraphFixtureApi(centerLabel: '账号 C 的人物');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: JiYiTheme.light(),
+          home: GraphNeighborhoodPage(
+            api: thirdApi,
+            kind: 'PERSON',
+            entityId: v2Person2Id,
+            title: '账号 C',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(secondApi.graphCalls, lessThanOrEqualTo(1));
+      expect(thirdApi.graphCalls, 1);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('graph-center-label')))
+            .data,
+        '小李',
+      );
+      expect(find.text('账号 B 的人物'), findsNothing);
+      expect(find.text('账号 C 的人物'), findsNothing);
+    },
+  );
+
+  testWidgets('Batch 4C rejects stale session errors after rebind', (
+    tester,
+  ) async {
+    final release = Completer<void>();
+    final api = _GraphFixtureApi(graphGate: release);
+    await _pumpGraph(tester, api);
+    await tester.pump();
+
+    unawaited(api.logout());
+    api.accessToken = 'v2-test-token-b';
+    api.authenticatedUserId = 'owner-b';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: JiYiTheme.light(),
+        home: GraphNeighborhoodPage(
+          api: api,
+          kind: 'PERSON',
+          entityId: v2Person2Id,
+          title: '新会话',
+        ),
+      ),
+    );
+    await tester.pump();
+    release.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂时无法读取关联内容，请稍后重试。'), findsNothing);
+    expect(find.byKey(const ValueKey('graph-center-label')), findsOneWidget);
+  });
+
+  testWidgets('Batch 4C prevents duplicate PERSON navigation', (tester) async {
+    await _pumpGraph(tester, _GraphFixtureApi());
+    final person = find.text('小李 · 重要的人');
+    await tester.tap(person);
+    await tester.tap(person, warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PersonDetailPage), findsOneWidget);
+    expect(find.byType(GraphNeighborhoodPage), findsNothing);
+  });
+
+  testWidgets('Batch 4C route build rechecks graph identity', (tester) async {
+    final api = _GraphFixtureApi();
+    await _pumpGraph(tester, api);
+    await tester.tap(find.text('小李 · 重要的人'));
+
+    // Change the bound session before the route's first frame is built. The
+    // route must not construct PersonDetailPage from the old authority.
+    api.authenticatedUserId = 'owner-b';
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PersonDetailPage), findsNothing);
+    expect(find.text('当前关联内容已更新，请返回后重新查看。'), findsOneWidget);
+  });
+
   testWidgets('Batch 4C remains usable at 320 width and 200% text', (
     tester,
   ) async {
