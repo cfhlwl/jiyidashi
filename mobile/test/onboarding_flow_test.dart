@@ -420,6 +420,32 @@ Future<void> _pumpUntil(
 }
 
 void main() {
+  testWidgets('gallery picker requires an explicit tap during permissions guide', (tester) async {
+    var opens = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: OnboardingPermissionsPage(
+          onImportPhotos: () => opens++,
+          onContinue: () {},
+          onSkip: () {},
+        ),
+      ),
+    ));
+    await tester.pump();
+    expect(opens, 0, reason: 'opening onboarding never enumerates photos');
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('onboarding-import-photos')),
+      200,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('onboarding-permissions')),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('onboarding-import-photos')));
+    expect(opens, 1);
+  });
+
+
   late OfflineQueueStore queue;
   late _OnboardingApi api;
   late _MemoryOnboardingStore onboarding;
