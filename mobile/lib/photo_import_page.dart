@@ -64,9 +64,12 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
         restored.add(PhotoImportBatchItem(
           photo,
           clientUploadId: row.clientUuid,
-          state: row.status == OfflineQueueStatus.failed
-              ? PhotoImportItemState.failed
-              : PhotoImportItemState.waiting,
+          state: PhotoImportBatchCoordinator.isUploadActive(
+                  _pageOwner!, row.clientUuid)
+              ? PhotoImportItemState.uploading
+              : row.status == OfflineQueueStatus.failed
+                  ? PhotoImportItemState.failed
+                  : PhotoImportItemState.waiting,
         ));
       }
       if (!mounted || widget.api.authenticatedUserId != _pageOwner ||
@@ -86,7 +89,11 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
           restoredItems: restored,
           journal: journal,
         );
-        _message = '已恢复 ${restored.length} 张待续传照片。确认后才会继续上传。';
+        _message = restored.any((item) =>
+                PhotoImportBatchCoordinator.isUploadActive(
+                    _pageOwner!, item.clientUploadId))
+            ? '仍有照片正在上传；请勿重复提交，完成后重新打开此页面查看结果。'
+            : '已恢复 ${restored.length} 张待续传照片。确认后才会继续上传。';
       });
     } catch (_) {
       if (mounted && widget.api.authenticatedUserId == _pageOwner &&
