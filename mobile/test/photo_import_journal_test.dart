@@ -306,6 +306,24 @@ void main() {
     await store.close();
   });
 
+  test('symlinked private photo-import parent cannot redirect selected originals',
+      () async {
+    if (Platform.isWindows) return; // Unprivileged Windows links can be disabled.
+    final store = createStore();
+    final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
+    final dir = await store.photoImportOwnerDirectory(ownerA);
+    final outside = Directory('${temp.path}${Platform.pathSeparator}outside');
+    await outside.create();
+    await Link(dir.parent.path).create(outside.path);
+    await expectLater(
+      journal.stage(selected(), clientUploadId: uploadId),
+      throwsA(isA<FormatException>()),
+    );
+    expect(await outside.list().toList(), isEmpty);
+    expect(await journal.findSameContent(digest), isNull);
+    await store.close();
+  });
+
   test('orphan staged copy with same path but altered bytes never becomes an upload', () async {
     final store = createStore();
     final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
