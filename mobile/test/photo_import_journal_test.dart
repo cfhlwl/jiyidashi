@@ -118,7 +118,9 @@ void main() {
         throwsA(isA<FormatException>()));
     expect(await journal.list(), isEmpty);
     final dir = await store.photoImportOwnerDirectory(ownerA);
-    if (await dir.exists()) expect(await dir.list().toList(), isEmpty);
+    if (await dir.exists()) {
+      expect(await dir.list().toList(), isEmpty);
+    }
     await store.close();
   });
 
