@@ -212,7 +212,7 @@ class PhotoImportJournal {
       }
       final basename = entity.uri.pathSegments.last;
       final match = RegExp(
-        r'^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.bin(\.partial)?,
+        r'^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.bin(\.partial)?$',
       ).firstMatch(basename);
       if (match == null ||
           referenced.contains(match.group(1)!.toLowerCase())) {
