@@ -94,10 +94,10 @@ void main() {
 
     Future<void> openAndReturn(Finder entry, Type pageType) async {
       await tester.tap(entry);
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.byType(pageType), findsOneWidget);
       await tester.pageBack();
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.byType(LifePage), findsOneWidget);
     }
 
@@ -115,12 +115,12 @@ void main() {
     );
 
     await tester.tap(find.byKey(const ValueKey('life-home-entry-memoirs')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     final memoirs = tester.widget<MemoirsPage>(find.byType(MemoirsPage));
     expect(memoirs.api, same(api));
     expect(memoirs.mediaCache, same(mediaCache));
     await tester.pageBack();
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.byType(LifePage), findsOneWidget);
   });
 
@@ -134,12 +134,12 @@ void main() {
       tester.tap(entry),
       tester.tap(entry),
     ]);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.byType(LifeEventsPage), findsOneWidget);
     expect(find.byType(LifePage), findsNothing);
     await tester.pageBack();
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.byType(LifePage), findsOneWidget);
   });
 
@@ -158,12 +158,12 @@ void main() {
     expect(find.byType(LifePage), findsOneWidget);
 
     await tester.tap(entry);
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.byType(LifeEventsPage), findsOneWidget);
     final routePage = tester.widget<LifeEventsPage>(find.byType(LifeEventsPage));
     expect(routePage.api, same(api));
     await tester.pageBack();
-    await tester.pump();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('Batch 5A keeps targets and semantics at 320 and 200 percent',
