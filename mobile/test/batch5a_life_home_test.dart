@@ -161,7 +161,7 @@ void main() {
     // can be opened. The first tap must be dropped; it must not be reused as
     // a valid navigation after the account changes.
     api.authenticatedUserId = v2OwnerId;
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     await tester.tap(entry);
     await tester.pumpAndSettle();
