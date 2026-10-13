@@ -41,6 +41,12 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
   bool _picking = false;
   int _selectionEpoch = 0;
   String? _message;
+  int _completedReceipts = 0;
+
+  bool get _hasLiveUpload => _pageOwner != null &&
+      (_batch?.items.any((item) =>
+          PhotoImportBatchCoordinator.isUploadActive(
+              _pageOwner!, item.clientUploadId)) ?? false);
 
   @override
   void initState() {
@@ -55,6 +61,9 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
     try {
       final journal = _journal!;
       final existing = await journal.list();
+      final completedCount = existing.where((row) =>
+          row.status == OfflineQueueStatus.completed &&
+          row.serverResourceId != null).length;
       final active = existing.where((row) =>
           row.status != OfflineQueueStatus.completed &&
           row.status != OfflineQueueStatus.cancelled);
@@ -75,10 +84,17 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
       if (!mounted || widget.api.authenticatedUserId != _pageOwner ||
           widget.api.sessionVersion != _pageSessionVersion ||
           restoringEpoch != _selectionEpoch || _picking ||
-          _selection != null || restored.isEmpty) {
+          _selection != null) {
         return;
       }
       setState(() {
+        _completedReceipts = completedCount;
+        if (restored.isEmpty) {
+          _message = completedCount > 0
+              ? '上次已完成导入 $completedCount 张（本地完成回执）。'
+              : null;
+          return;
+        }
         _selection = PhotoImportSelection(
           selected: List.unmodifiable(restored.map((i) => i.selected)),
           failedNames: const [],
@@ -105,7 +121,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
     }
   }
 
-  bool get _busy => _picking || _batch?.isRunning == true;
+  bool get _busy => _picking || _batch?.isRunning == true || _hasLiveUpload;
 
   Future<void> _choose() async {
     if (_busy) return;
@@ -150,6 +166,9 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
   Future<void> _submit() async {
     final batch = _batch;
     if (batch == null || _busy) return;
+    if (!batch.items.any((item) =>
+        item.state == PhotoImportItemState.waiting ||
+        item.state == PhotoImportItemState.failed)) return;
     setState(() => _message = null);
     try {
       await batch.submit(onUpdate: (_) {
@@ -157,7 +176,11 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
       });
       if (mounted) {
         setState(() {
-          _message = batch.failedCount > 0
+          _message = _hasLiveUpload
+              ? '仍有照片正在上传，请勿重复提交。'
+              : batch.savedCount == 0 && batch.failedCount == 0
+                  ? '没有新的照片完成导入。'
+              : batch.failedCount > 0
               ? '已保存 ${batch.savedCount} 张，失败 ${batch.failedCount} 张。可重试失败项。'
               : '已保存 ${batch.savedCount} 张到当前账号的真实照片记忆。';
         });
@@ -214,6 +237,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
     }
     final batch = _batch;
     final selected = _selection;
+    final liveUpload = _hasLiveUpload;
     return Scaffold(
       appBar: AppBar(title: const Text('导入已有照片')),
       body: ListView(
@@ -234,6 +258,9 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
             icon: const Icon(Icons.photo_library_outlined),
             label: Text(_picking ? '正在读取所选照片…' : '选择照片（最多20张）'),
           ),
+          if (_completedReceipts > 0)
+            Text('上次已完成导入 $_completedReceipts 张（本地完成回执）。',
+                key: const ValueKey('photo-import-completed-receipts')),
           if (selected != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -251,8 +278,13 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
               const SizedBox(height: 12),
               FilledButton(
                 key: const ValueKey('photo-import-submit'),
-                onPressed: _busy ? null : _submit,
-                child: Text(batch?.failedCount == 0 && batch?.savedCount == 0
+                onPressed: _busy || liveUpload ||
+                        batch?.items.any((item) =>
+                            item.state == PhotoImportItemState.waiting ||
+                            item.state == PhotoImportItemState.failed) != true
+                    ? null : _submit,
+                child: Text(liveUpload ? '正在上传，请勿重复提交' :
+                    batch?.failedCount == 0 && batch?.savedCount == 0
                     ? '开始导入所选照片'
                     : '继续 / 重试尚未保存的照片'),
               ),
