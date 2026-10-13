@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
@@ -33,6 +34,7 @@ class LifePage extends StatefulWidget {
 
 class _LifePageState extends State<LifePage> {
   final V2Authority _navigationAuthority = V2Authority();
+  final ValueNotifier<int> _navigationRevision = ValueNotifier<int>(0);
   bool _navigationInFlight = false;
 
   @override
@@ -40,12 +42,14 @@ class _LifePageState extends State<LifePage> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.api, widget.api)) {
       _navigationAuthority.invalidate();
+      _navigationRevision.value += 1;
     }
   }
 
   @override
   void dispose() {
     _navigationAuthority.invalidate();
+    _navigationRevision.dispose();
     super.dispose();
   }
 
@@ -76,14 +80,19 @@ class _LifePageState extends State<LifePage> {
           .push<void>(
             MaterialPageRoute<void>(
               builder: (_) {
-                if (!_navigationAuthority.isCurrent(
-                  widget.api,
-                  captured,
-                  identity,
-                )) {
-                  return const _LifeRebindSurface();
-                }
-                return builder();
+                return ValueListenableBuilder<int>(
+                  valueListenable: _navigationRevision,
+                  builder: (_, __, ___) {
+                    if (!_navigationAuthority.isCurrent(
+                      widget.api,
+                      captured,
+                      identity,
+                    )) {
+                      return const _LifeRebindSurface();
+                    }
+                    return builder();
+                  },
+                );
               },
             ),
           )
