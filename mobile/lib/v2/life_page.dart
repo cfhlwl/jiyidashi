@@ -140,16 +140,16 @@ class _LifePageState extends State<LifePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '最近整理',
+                  '继续整理',
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: JiYiTodayVisuals.navy,
+                    color: theme.colorScheme.onSurface,
                     fontSize: JiYiTypography.titleSection,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: JiYiSpacing.sm),
                 Text(
-                  '还没有已整理的人生经历，从一段想留下的往事开始。',
+                  '打开人生经历，回看并整理自己记录的故事。',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     fontSize: JiYiTypography.bodyPrimary,
@@ -164,7 +164,7 @@ class _LifePageState extends State<LifePage> {
                     builder: () => LifeEventsPage(api: widget.api),
                   ),
                   icon: const Icon(Icons.add),
-                  label: const Text('新建经历'),
+                  label: const Text('查看人生经历'),
                 ),
               ],
             ),
@@ -195,7 +195,7 @@ class _LifeHeader extends StatelessWidget {
             '我的人生',
             semanticsLabel: '我的人生',
             style: theme.textTheme.headlineSmall?.copyWith(
-              color: JiYiTodayVisuals.navy,
+              color: theme.colorScheme.onSurface,
               fontSize: 30,
               fontWeight: FontWeight.w700,
               height: 1.15,
@@ -222,6 +222,10 @@ class _LifeHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final heroTextColor = isDark
+        ? theme.colorScheme.onSurface
+        : JiYiTodayVisuals.navy;
     return Semantics(
       container: true,
       label: '回看、整理、珍藏。人生经历入口。',
@@ -254,8 +258,10 @@ class _LifeHero extends StatelessWidget {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      Colors.white.withValues(alpha: 0.88),
-                      Colors.white.withValues(alpha: 0.22),
+                      (isDark ? theme.colorScheme.surface : Colors.white)
+                          .withValues(alpha: isDark ? 0.90 : 0.88),
+                      (isDark ? theme.colorScheme.surface : Colors.white)
+                          .withValues(alpha: isDark ? 0.35 : 0.22),
                       Colors.transparent,
                     ],
                     begin: Alignment.centerLeft,
@@ -271,7 +277,7 @@ class _LifeHero extends StatelessWidget {
                   child: Text(
                     '回看、整理、珍藏',
                     style: theme.textTheme.titleLarge?.copyWith(
-                      color: JiYiTodayVisuals.navy,
+                      color: heroTextColor,
                       fontSize: 24,
                       fontWeight: FontWeight.w700,
                       height: 1.2,
@@ -402,7 +408,7 @@ class _LifeEntryCard extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleMedium?.copyWith(
-                color: JiYiTodayVisuals.navy,
+                color: theme.colorScheme.onSurface,
                 fontSize: JiYiTypography.titleSection,
                 fontWeight: FontWeight.w700,
                 height: 1.25,

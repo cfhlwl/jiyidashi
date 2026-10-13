@@ -34,6 +34,7 @@ import 'v2_test_api.dart';
 // 统一窗口、DPR、locale 与主题，Linux CI 是首阶段唯一权威像素基线。
 const _goldenSize = Size(390, 844);
 const _goldenFontFamily = 'JiYi Golden CJK';
+const _goldenFallbackFontFamily = 'JiYi Golden CJK Fallback';
 const _captureDeterministicQueryPreview =
     bool.fromEnvironment('DETERMINISTIC_QUERY_VISUAL_PREVIEW');
 const _captureProductionAuthCandidate =
@@ -374,6 +375,14 @@ Future<void> _loadGoldenFont() async {
   await loader.load();
 }
 
+Future<void> _loadGoldenFallbackFont() async {
+  final bytes = await File('test/assets/visual/NotoSansSC-Regular.otf')
+      .readAsBytes();
+  final loader = FontLoader(_goldenFallbackFontFamily)
+    ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+  await loader.load();
+}
+
 // [人工注释][CI-005] Flutter Icons.* 的 IconData 固定使用 `MaterialIcons` family；
 // Golden 必须显式注册仓库内的 Flutter 3.47.4 MaterialIcons 字体，否则图标会退化成缺字方框。
 Future<void> _loadMaterialIconsFont() async {
@@ -405,6 +414,8 @@ Future<void> _precacheProductionAuthAssets(WidgetTester tester) async {
 ThemeData _goldenTheme({bool elderMode = false}) => JiYiTheme.light(
       fontFamily: _goldenFontFamily,
       elderMode: elderMode,
+    ).copyWith(
+      fontFamilyFallback: const [_goldenFallbackFontFamily],
     );
 
 class _GoldenApi extends JiYiApiClient {
@@ -1162,6 +1173,7 @@ Future<Key> _pumpSurface(
   WidgetTester tester,
   Widget child, {
   bool elderMode = false,
+  ThemeData? theme,
   Size size = _goldenSize,
   double textScale = 1.0,
   bool precacheTodayHero = false,
@@ -1184,7 +1196,7 @@ Future<Key> _pumpSurface(
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: _goldenTheme(elderMode: elderMode),
+      theme: theme ?? _goldenTheme(elderMode: elderMode),
       builder: textScale == 1.0
           ? null
           : (context, appChild) {
@@ -1331,6 +1343,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
     await _loadGoldenFont();
+    await _loadGoldenFallbackFont();
     await _loadMaterialIconsFont();
     _goldenPhotoBytes = await File('test/assets/visual/today_memory_left.png')
         .readAsBytes();
@@ -1539,7 +1552,11 @@ void main() {
     'candidate: Batch 5A Life Home production surface',
     (tester) async {
       if (!_captureBatch5aCandidates) return;
-      final key = await _pumpSurface(tester, LifePage(api: V2TestApi()));
+      final key = await _pumpSurface(
+        tester,
+        LifePage(api: V2TestApi()),
+        precacheTodayHero: true,
+      );
       expect(find.text('我的人生'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('life-home-entry-events')),
@@ -1557,10 +1574,55 @@ void main() {
         find.byKey(const ValueKey('life-home-entry-memoirs')),
         findsOneWidget,
       );
-      expect(find.text('最近整理'), findsOneWidget);
+      expect(find.text('继续整理'), findsOneWidget);
+      expect(find.text('查看人生经历'), findsOneWidget);
       await expectLater(
         find.byKey(key),
         matchesGoldenFile('goldens/life_home_v3_batch5a.png'),
+      );
+    },
+  );
+
+  testWidgets(
+    'candidate: Batch 5A Life Home dark surface',
+    (tester) async {
+      if (!_captureBatch5aCandidates) return;
+      final key = await _pumpSurface(
+        tester,
+        LifePage(api: V2TestApi()),
+        theme: JiYiTheme.dark(
+          fontFamily: _goldenFontFamily,
+        ).copyWith(
+          fontFamilyFallback: const [_goldenFallbackFontFamily],
+        ),
+        precacheTodayHero: true,
+      );
+      expect(find.text('我的人生'), findsOneWidget);
+      expect(find.text('继续整理'), findsOneWidget);
+      await expectLater(
+        find.byKey(key),
+        matchesGoldenFile('goldens/life_home_v3_batch5a_dark.png'),
+      );
+    },
+  );
+
+  testWidgets(
+    'candidate: Batch 5A Life Home compact large text surface',
+    (tester) async {
+      if (!_captureBatch5aCandidates) return;
+      final key = await _pumpSurface(
+        tester,
+        LifePage(api: V2TestApi()),
+        size: const Size(320, 568),
+        textScale: 2.0,
+        precacheTodayHero: true,
+      );
+      expect(find.text('我的人生'), findsOneWidget);
+      expect(find.text('查看人生经历'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byKey(key),
+        matchesGoldenFile('goldens/life_home_v3_batch5a_compact.png'),
       );
     },
   );

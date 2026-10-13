@@ -15,6 +15,32 @@ import 'v2_test_api.dart';
 
 const _ownerB = '00000000-0000-4000-8000-000000000002';
 
+double _contrastRatio(Color first, Color second) {
+  final firstLuminance = first.computeLuminance();
+  final secondLuminance = second.computeLuminance();
+  final lighter = firstLuminance > secondLuminance
+      ? firstLuminance
+      : secondLuminance;
+  final darker = firstLuminance > secondLuminance
+      ? secondLuminance
+      : firstLuminance;
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+class _LifeApiHost extends StatelessWidget {
+  const _LifeApiHost({required this.api});
+
+  final ValueListenable<JiYiApiClient> api;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<JiYiApiClient>(
+      valueListenable: api,
+      builder: (_, currentApi, __) => LifePage(api: currentApi),
+    );
+  }
+}
+
 class _TrackingLifeApi extends V2TestApi {
   final List<String> requests = <String>[];
 
@@ -79,8 +105,9 @@ void main() {
       find.byKey(const ValueKey('life-home-entry-memoirs')),
       findsOneWidget,
     );
-    expect(find.text('最近整理'), findsOneWidget);
-    expect(find.text('还没有已整理的人生经历，从一段想留下的往事开始。'), findsOneWidget);
+    expect(find.text('继续整理'), findsOneWidget);
+    expect(find.text('打开人生经历，回看并整理自己记录的故事。'), findsOneWidget);
+    expect(find.text('查看人生经历'), findsOneWidget);
     expect(find.textContaining('PERSON'), findsNothing);
     expect(find.textContaining('memory_id'), findsNothing);
     expect(api.requests, isEmpty, reason: 'Life home must not prefetch child data');
@@ -208,15 +235,99 @@ void main() {
 
   testWidgets('Batch 5A supports dark presentation without fake data',
       (tester) async {
+    final darkTheme = JiYiTheme.dark();
     await _pumpLife(
       tester,
       api: V2TestApi(),
       size: const Size(390, 844),
-      theme: JiYiTheme.dark(),
+      theme: darkTheme,
     );
     expect(find.text('我的人生'), findsOneWidget);
     expect(find.text('人生经历'), findsOneWidget);
-    expect(find.text('还没有已整理的人生经历，从一段想留下的往事开始。'), findsOneWidget);
+    expect(find.text('继续整理'), findsOneWidget);
+    expect(find.text('查看人生经历'), findsOneWidget);
+    final pageTitle = tester.widget<Text>(find.text('我的人生'));
+    final entryTitle = tester.widget<Text>(find.text('人生经历'));
+    final continueTitle = tester.widget<Text>(find.text('继续整理'));
+    final heroTitle = tester.widget<Text>(find.text('回看、整理、珍藏'));
+    expect(
+      _contrastRatio(
+        pageTitle.style!.color!,
+        darkTheme.scaffoldBackgroundColor,
+      ),
+      greaterThanOrEqualTo(4.5),
+    );
+    expect(
+      _contrastRatio(
+        continueTitle.style!.color!,
+        darkTheme.colorScheme.surface,
+      ),
+      greaterThanOrEqualTo(4.5),
+    );
+    expect(
+      _contrastRatio(entryTitle.style!.color!, darkTheme.colorScheme.surface),
+      greaterThanOrEqualTo(4.5),
+    );
+    expect(
+      _contrastRatio(heroTitle.style!.color!, darkTheme.colorScheme.surface),
+      greaterThanOrEqualTo(4.5),
+    );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Batch 5A rejects a session-version rebound and accepts a new owner',
+      (tester) async {
+    final api = V2TestApi();
+    await _pumpLife(tester, api: api);
+    final entry = find.byKey(const ValueKey('life-home-entry-events'));
+
+    final gesture = await tester.startGesture(tester.getCenter(entry));
+    await gesture.up();
+    final previousSessionVersion = api.sessionVersion;
+    await api.logout();
+    expect(api.sessionVersion, greaterThan(previousSessionVersion));
+    api.accessToken = 'v2-test-token-b';
+    api.authenticatedUserId = _ownerB;
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LifeEventsPage), findsNothing);
+    expect(find.text('会话已变化'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    final routePage = tester.widget<LifeEventsPage>(find.byType(LifeEventsPage));
+    expect(routePage.api, same(api));
+    expect(api.authenticatedUserId, _ownerB);
+  });
+
+  testWidgets('Batch 5A rejects a queued route after API object rebind',
+      (tester) async {
+    final apiA = V2TestApi();
+    final apiB = V2TestApi()..authenticatedUserId = _ownerB;
+    final api = ValueNotifier<JiYiApiClient>(apiA);
+    addTearDown(api.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: JiYiTheme.light(),
+        home: _LifeApiHost(api: api),
+      ),
+    );
+    await tester.pump();
+    final entry = find.byKey(const ValueKey('life-home-entry-events'));
+    final gesture = await tester.startGesture(tester.getCenter(entry));
+    await gesture.up();
+    api.value = apiB;
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LifeEventsPage), findsNothing);
+    expect(find.byType(LifePage), findsOneWidget);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    final routePage = tester.widget<LifeEventsPage>(find.byType(LifeEventsPage));
+    expect(routePage.api, same(apiB));
   });
 }

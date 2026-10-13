@@ -414,8 +414,22 @@ jobs:
             --update-goldens \
             --dart-define=UIUX_V3_BATCH5A_CANDIDATE_MODE=true \
             --reporter expanded
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 5A Life Home dark surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH5A_CANDIDATE_MODE=true \
+            --reporter expanded
+          flutter test test/visual_golden_test.dart \
+            --plain-name "candidate: Batch 5A Life Home compact large text surface" \
+            --update-goldens \
+            --dart-define=UIUX_V3_BATCH5A_CANDIDATE_MODE=true \
+            --reporter expanded
           test -s test/goldens/life_home_v3_batch5a.png
+          test -s test/goldens/life_home_v3_batch5a_dark.png
+          test -s test/goldens/life_home_v3_batch5a_compact.png
           cp test/goldens/life_home_v3_batch5a.png /tmp/batch5a-v3-candidates/
+          cp test/goldens/life_home_v3_batch5a_dark.png /tmp/batch5a-v3-candidates/
+          cp test/goldens/life_home_v3_batch5a_compact.png /tmp/batch5a-v3-candidates/
           git checkout -- test/goldens
           git clean -f -- test/goldens
           test -z "$(git status --porcelain -- test/goldens)"
@@ -648,8 +662,8 @@ jobs:
               '| Design element | Real authority | Implemented / deferred |',
               '|---|---|---|',
               '| Life Home navigation | `LifeEventsPage`, `LifeStagesPage`, `LifeHistoryPage`, `MemoirsPage` with the existing `V2Api`/`V2Authority` contracts | Four real production routes are preserved; the home page makes no child-data request before navigation. |',
-              '| Life Home visual hierarchy | `design_reference/v3/03_life.png` | Production candidate uses the V3 title, atmospheric hero, four entry cards and truthful empty recent-organization module; exact visual approval remains deferred. |',
-              '| Life Home unavailable content | No home-level authority for stats, relationship graph, photos, or recent counts | Explicit neutral empty/deferred presentation; no fake statistics, photos, timeline items, or relationship nodes. |',
+              '| Life Home visual hierarchy | `design_reference/v3/03_life.png` | Production candidate uses the V3 title, bundled Hero asset and four real entry routes; missing illustration/media authority remains explicitly deferred. |',
+              '| Life Home unavailable content | No home-level authority for stats, relationship graph, photos, or recent counts | Neutral continue-organizing copy only; no claim about whether the account has records and no fake statistics, photos, timeline items, or relationship nodes. |',
               '| Life Home owner/session fencing | `V2Authority` plus child-page `V2Authority` | Route construction is blocked when owner/session/API identity changes; rapid duplicate taps are coalesced. |',
               '| Life Home responsive/accessibility | Flutter semantics and V3 48dp target contract | 320/390 layouts, 200% text scale, dark theme, semantics and target-size focused tests are included. |',
               '',
@@ -660,7 +674,9 @@ jobs:
               '| Life Home title and subtitle | Implemented in the real `LifePage` production widget | STAGE VISUAL REVIEW; `V3_PARTIAL` pending independent review. |',
               '| Hero atmosphere | Existing bundled brand Hero asset with UI text overlay | DERIVED V3 candidate; focal/crop and exact asset treatment require independent visual review. |',
               '| Four entry cards | Real routes with existing API/media authority preserved | STAGE VISUAL REVIEW; no fake child data rendered on the home page. |',
-              '| Recent organization module | No trusted home-level recent-item authority | ACCEPTED DYNAMIC DIFFERENCE / explicit empty state; `新建经历` routes to the real events page. |',
+              '| Four entry card illustrations | No approved production illustration assets beyond existing icon fallback | V3_PARTIAL / DEFER; no Design Authority PNG or invented user/media artwork is used as production data. |',
+              '| Dark / compact / large-text evidence | Production `LifePage` with deterministic theme and viewport settings | Candidate-only evidence generated for 390 light, 390 dark, and 320 at 200% text scale; no committed Golden update. |',
+              '| Continue organizing module | No trusted home-level recent-item authority | V3_PARTIAL / neutral prompt only; `查看人生经历` routes to the real events page and does not claim record presence. |',
               '',
               '## Batch 4B visual difference matrix',
               '',
@@ -710,7 +726,7 @@ jobs:
               'BATCH 4B AUTHORITY STATUS: STAGE VISUAL APPROVED / V3_PARTIAL; targeted Goldens approved by review comment 6124453506; media deferred; Design Authority PNGs unchanged',
               'BATCH 4C PRODUCTION CANDIDATE: graph_neighborhood_v3_batch4c',
               'BATCH 4C AUTHORITY STATUS: STAGE VISUAL APPROVED / DERIVED V3 / V3_PARTIAL; no dedicated Graph Design Authority PNG; one authorized Golden update completed; strict Graph Golden test PASS',
-              'BATCH 5A PRODUCTION CANDIDATE: batch5a_life_home',
+              'BATCH 5A PRODUCTION CANDIDATES: batch5a_life_home, batch5a_life_home_dark, batch5a_life_home_compact',
               'BATCH 5A AUTHORITY STATUS: DERIVED V3 / V3_PARTIAL; authority is read-only 03_life.png; four real routes preserved; visual approval and any Golden update are deferred',
               '',
           ]
