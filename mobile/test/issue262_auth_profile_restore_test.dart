@@ -394,20 +394,13 @@ void main() {
         final api = _DeferredRestoreApi(lateProfileError: lateError);
         final location = _RecordingLocationBridge();
         final notifications = _RecordingNotifications(api);
-        await tester.pumpWidget(Stack(
-          children: <Widget>[
-            Positioned.fill(
-              child: _app(
-                key: const ValueKey<String>('account-a'),
-                api: api,
-                locationBridge: location,
-                notificationClient: notifications,
-              ),
-            ),
-          ],
-        ));
-        await tester.pump();
-        await _waitFor(tester, () => api.refreshCalls == 1);
+        await _pumpApp(
+          tester,
+          api,
+          locationBridge: location,
+          notificationClient: notifications,
+        );
+        expect(api.refreshCalls, 1);
 
         tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
         await tester.pump();
@@ -416,25 +409,10 @@ void main() {
         api.restoreGate.complete(AuthRestoreStatus.restored);
         await _waitFor(tester, () => api.profileCalls == 1);
 
-        await tester.pumpWidget(Stack(
-          children: <Widget>[
-            Positioned.fill(
-              child: _app(
-                key: const ValueKey<String>('account-a'),
-                api: api,
-                locationBridge: location,
-                notificationClient: notifications,
-              ),
-            ),
-            Positioned.fill(
-              child: _app(
-                key: const ValueKey<String>('account-b'),
-                api: api,
-              ),
-            ),
-          ],
-        ));
-        await tester.pump();
+        await api.switchToOtherOwner();
+        await tester.pumpWidget(
+          _app(key: const ValueKey<String>('account-b'), api: api),
+        );
         await _waitFor(tester, () => api.profileCalls >= 2);
         await _waitFor(
           tester,
