@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -48,6 +49,27 @@ class _FakeSubmission extends TrustedMediaCaptureService {
     onPhase?.call(MediaSubmissionPhase.verifying);
     onPhase?.call(MediaSubmissionPhase.saving);
     sideEffect?.call();
+    return 'memory-${file.clientUploadId}';
+  }
+}
+
+class _PausedSubmission extends _FakeSubmission {
+  _PausedSubmission(super.api);
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> release = Completer<void>();
+
+  @override
+  Future<String> submitPhoto(
+    PendingMediaFile file, {
+    String? title,
+    required String content,
+    Map<String, dynamic>? importProvenance,
+    DateTime? importCaptureUtc,
+    void Function(MediaSubmissionPhase phase)? onPhase,
+  }) async {
+    seenUploadIds.add(file.clientUploadId);
+    entered.complete();
+    await release.future;
     return 'memory-${file.clientUploadId}';
   }
 }
@@ -230,6 +252,41 @@ void main() {
       expect(batch.savedCount, 1);
       expect(service.seenUploadIds, hasLength(1));
     }
+
+    test('same-process reopening never reclaims a live sending UUID', () async {
+      final api = _Api();
+      final service = _PausedSubmission(api);
+      const uuid = '12345678-1234-4234-8234-123456789abc';
+      final original = PhotoImportBatchCoordinator.restored(
+        api: api,
+        journal: journal,
+        service: service,
+        verifySelection: (_) async => true,
+        restoredItems: [PhotoImportBatchItem(photo, clientUploadId: uuid)],
+      );
+      final first = original.submit();
+      await service.entered.future;
+      final stored = (await store.findByClientUuid(ownerA, uuid))!;
+      expect(stored.status, OfflineQueueStatus.sending);
+      expect(PhotoImportBatchCoordinator.isUploadActive(ownerA, uuid), true);
+      final reopened = PhotoImportBatchCoordinator.restored(
+        api: api,
+        journal: journal,
+        service: service,
+        verifySelection: (_) async => true,
+        restoredItems: [PhotoImportBatchItem(
+          await journal.selectedFrom(stored), clientUploadId: uuid,
+        )],
+      );
+      await reopened.submit();
+      expect(service.seenUploadIds, hasLength(1));
+      expect((await store.findByClientUuid(ownerA, uuid))!.status,
+          OfflineQueueStatus.sending);
+      service.release.complete();
+      await first;
+      expect(service.seenUploadIds, hasLength(1));
+      expect(PhotoImportBatchCoordinator.isUploadActive(ownerA, uuid), false);
+    });
 
     test('deleted server memory does not produce false local success', () async {
       final api = _Api();
