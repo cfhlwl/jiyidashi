@@ -3,6 +3,7 @@ import { Button, Input, Switch, Text, View } from '@tarojs/components'
 import { useEffect, useRef, useState } from 'react'
 import {
   canEditApiBaseUrl,
+  cancelPendingAuthAttempt,
   captureAuthSession,
   currentAuthSessionEpoch,
   currentAuthenticatedUserId,
@@ -10,6 +11,7 @@ import {
   getAuthCapabilities,
   getPrivacyStatus,
   getProfile,
+  isCanonicalPhoneInput,
   isAuthSessionCurrent,
   isAuthenticated,
   loginAccount,
@@ -19,6 +21,7 @@ import {
   pauseMemoryToday,
   PrivacyStatus,
   registerAccount,
+  requestSmsOtp,
   resendVerification,
   restoreAuthSession,
   resumeMemory,
@@ -26,6 +29,7 @@ import {
   subscribeAuthSession,
   updateElderMode,
   updateProfile,
+  verifySmsOtp,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
 import { FloatingCaptureAction, ProductHeroHeader } from '../../components/product/ProductUi'
@@ -51,6 +55,13 @@ export default function Page() {
   const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [wechatMiniProgramAvailable, setWechatMiniProgramAvailable] = useState(false)
+  const [smsOtpAvailable, setSmsOtpAvailable] = useState(false)
+  const [smsMode, setSmsMode] = useState(false)
+  const [smsPhone, setSmsPhone] = useState('')
+  const [smsCode, setSmsCode] = useState('')
+  const [smsRequestId, setSmsRequestId] = useState<string | null>(null)
+  const [smsCooldownUntil, setSmsCooldownUntil] = useState<number | null>(null)
+  const [smsNow, setSmsNow] = useState(() => Date.now())
   const profileViewGeneration = useRef(0)
   const operationGeneration = useRef(0)
   const authView = useRef<{ owner: string | null; epoch: number }>({
@@ -109,9 +120,21 @@ export default function Page() {
 
   useEffect(() => {
     void getAuthCapabilities()
-      .then((capabilities) => setWechatMiniProgramAvailable(capabilities.wechat_miniprogram === 'AVAILABLE'))
-      .catch(() => setWechatMiniProgramAvailable(false))
+      .then((capabilities) => {
+        setWechatMiniProgramAvailable(capabilities.wechat_miniprogram === 'AVAILABLE')
+        setSmsOtpAvailable(capabilities.sms_otp === 'AVAILABLE')
+      })
+      .catch(() => {
+        setWechatMiniProgramAvailable(false)
+        setSmsOtpAvailable(false)
+      })
   }, [])
+
+  useEffect(() => {
+    if (smsCooldownUntil === null) return undefined
+    const timer = setInterval(() => setSmsNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [smsCooldownUntil])
 
   useEffect(() => {
     const unsubscribe = subscribeAuthSession((owner, epoch) => {
@@ -134,6 +157,7 @@ export default function Page() {
     })()
     return () => {
       profileViewGeneration.current += 1
+      cancelPendingAuthAttempt()
     }
   }, [])
 
@@ -176,6 +200,59 @@ export default function Page() {
       if (operationIsCurrent(operation)) setStatus('微信登录成功')
     } catch (error) {
       if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '微信登录失败')
+    } finally {
+      if (operationIsCurrent(operation)) setLoading(false)
+    }
+  }
+
+  const smsCooldownSeconds = smsCooldownUntil === null
+    ? 0
+    : Math.max(0, Math.ceil((smsCooldownUntil - smsNow) / 1000))
+
+  const switchToEmailLogin = () => {
+    cancelPendingAuthAttempt()
+    setSmsMode(false)
+    setLoading(false)
+    setSmsPhone('')
+    setSmsCode('')
+    setSmsRequestId(null)
+    setSmsCooldownUntil(null)
+    setStatus('')
+  }
+
+  const requestPhoneSms = async () => {
+    if (!smsOtpAvailable || loading || smsCooldownSeconds > 0 || !isCanonicalPhoneInput(smsPhone.trim())) return
+    const operation = beginOperation()
+    setLoading(true)
+    setStatus('')
+    try {
+      const response = await requestSmsOtp(smsPhone)
+      if (!operationIsCurrent(operation)) return
+      setSmsRequestId(response.request_id)
+      setSmsCooldownUntil(Date.parse(response.cooldown_until))
+      setSmsCode('')
+      setStatus('验证码已发送；手机号验证会自动登录或创建账号')
+    } catch (error) {
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '验证码发送失败')
+    } finally {
+      if (operationIsCurrent(operation)) setLoading(false)
+    }
+  }
+
+  const verifyPhoneSms = async () => {
+    if (!smsRequestId || !/^\d{6}$/.test(smsCode.trim()) || loading) return
+    let operation = beginOperation()
+    setLoading(true)
+    setStatus('')
+    try {
+      const verifyPromise = verifySmsOtp(smsRequestId, smsCode)
+      operation = beginOperation()
+      await verifyPromise
+      operation = beginOperation()
+      await refreshProfile()
+      if (operationIsCurrent(operation)) setStatus('手机号登录成功')
+    } catch (error) {
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '验证码验证失败')
     } finally {
       if (operationIsCurrent(operation)) setLoading(false)
     }
@@ -354,23 +431,52 @@ export default function Page() {
       <View className='title'>我的</View>
       <View className='subtitle'>先登录正式账号，再开始保存个人记忆。</View>
       <View className='card'>
-        <View className='card-title'>{registerMode ? '创建账号' : '登录'}</View>
-        <Input className='field' type='text' placeholder='邮箱' value={email} onInput={(e) => setEmail(e.detail.value)} />
-        <Input className='field' password placeholder='密码（至少 10 位）' value={password} onInput={(e) => setPassword(e.detail.value)} />
-        {registerMode && (
-          <Input className='field' type='text' placeholder='昵称' value={nickname} onInput={(e) => setNickname(e.detail.value)} />
+        {smsMode && smsOtpAvailable ? (
+          <>
+            <View className='card-title'>手机号验证码登录</View>
+            <View className='muted'>验证成功后，已有手机号账号直接登录；新手机号会创建迹忆账号。</View>
+            <Input className='field' type='text' maxlength={16} placeholder='+8613812345678' value={smsPhone} onInput={(e) => setSmsPhone(e.detail.value)} />
+            <Button className='primary-button' disabled={loading || smsCooldownSeconds > 0 || !isCanonicalPhoneInput(smsPhone.trim())} onClick={() => void requestPhoneSms()}>
+              {loading ? '请稍候…' : smsCooldownSeconds > 0 ? `${smsCooldownSeconds} 秒后重发` : '获取验证码'}
+            </Button>
+            {smsRequestId && (
+              <>
+                <Input className='field' type='number' maxlength={6} placeholder='6 位验证码' value={smsCode} onInput={(e) => setSmsCode(e.detail.value)} />
+                <Button className='primary-button' disabled={loading || !/^\d{6}$/.test(smsCode.trim())} onClick={() => void verifyPhoneSms()}>
+                  {loading ? '正在验证…' : '登录 / 注册'}
+                </Button>
+              </>
+            )}
+            <Button className='secondary-button' onClick={switchToEmailLogin}>使用邮箱密码登录</Button>
+          </>
+        ) : (
+          <>
+            <View className='card-title'>{registerMode ? '创建账号' : '登录'}</View>
+            <Input className='field' type='text' placeholder='邮箱' value={email} onInput={(e) => setEmail(e.detail.value)} />
+            <Input className='field' password placeholder='密码（至少 10 位）' value={password} onInput={(e) => setPassword(e.detail.value)} />
+            {registerMode && (
+              <Input className='field' type='text' placeholder='昵称' value={nickname} onInput={(e) => setNickname(e.detail.value)} />
+            )}
+            <Button className='primary-button' disabled={loading} onClick={submit}>
+              {loading ? '请稍候…' : registerMode ? '创建账号' : '登录'}
+            </Button>
+          </>
         )}
-        <Button className='primary-button' disabled={loading} onClick={submit}>
-          {loading ? '请稍候…' : registerMode ? '创建账号' : '登录'}
-        </Button>
+        {smsOtpAvailable && !smsMode && (
+          <Button className='secondary-button' disabled={loading} onClick={() => setSmsMode(true)}>
+            手机号验证码登录 / 注册
+          </Button>
+        )}
         {wechatMiniProgramAvailable && (
           <Button className='secondary-button' disabled={loading} onClick={() => void submitWechatMiniProgram()}>
             微信快捷登录
           </Button>
         )}
-        <Button className='secondary-button' onClick={() => setRegisterMode(!registerMode)}>
-          {registerMode ? '已有账号？登录' : '第一次使用？创建账号'}
-        </Button>
+        {!smsMode && (
+          <Button className='secondary-button' disabled={loading} onClick={() => setRegisterMode(!registerMode)}>
+            {registerMode ? '已有账号？登录' : '第一次使用？创建账号'}
+          </Button>
+        )}
         {verificationPendingEmail && (
           <Button className='secondary-button' disabled={loading} onClick={() => void resend()}>
             重新发送验证邮件
