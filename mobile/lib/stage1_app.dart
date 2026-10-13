@@ -2385,7 +2385,18 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final onboardingExperience = OnboardingExperience(
       step: _accountDeletionIntentActive ? null : onboardingStep,
-      onStart: onboarding?.startFlow ?? () {},
+      onStart: onboarding?.startPermissions ?? () {},
+      onPermissionsNext: onboarding?.startFlow,
+      permissionsPanel: _nativeLocation == null
+          ? null
+          : NativeLocationSection(
+              controller: _nativeLocation!,
+              revalidateAuthority: _revalidateNativeLocationAuthority,
+            ),
+      onEnableNotifications: () => unawaited(
+        widget.notificationClient?.requestPermissionAndRegister() ??
+            Future<void>.value(),
+      ),
       onSkip: () {
         if (onboarding != null) unawaited(onboarding.skip());
       },
