@@ -29,7 +29,7 @@ class OnboardingController extends ChangeNotifier {
   String? get targetMemoryId => _targetMemoryId;
 
   int? get navigationIndex => switch (_step) {
-        OnboardingStep.intro => 0,
+        OnboardingStep.intro || OnboardingStep.permissions => 0,
         OnboardingStep.capture => null,
         OnboardingStep.retrieve || OnboardingStep.trust => 1,
         null => null,
@@ -81,14 +81,29 @@ class OnboardingController extends ChangeNotifier {
       if (_disposed) return;
       if (status == OnboardingStatus.inProgress) {
         _showIntro();
+      } else if (status == null) {
+        // First sign-in on this installation must guide existing accounts too.
+        // Persist an owner-scoped decision so skipped/completed users are not re-prompted.
+        try {
+          await _persist(() => store.markInProgress(ownerUserId));
+        } catch (_) {
+          // A storage outage must not block normal app access.
+        }
+        if (!_disposed) _showIntro();
       }
     } catch (_) {
-      // Existing users with unreadable/missing local state enter the product normally.
+      // Local UX-state failure cannot block auth or the main application.
     }
   }
 
+  void startPermissions() {
+    if (_disposed || _accountDeletionQuiesced) return;
+    _step = OnboardingStep.permissions;
+    _emit();
+  }
+
   void startFlow() {
-    if (_disposed) return;
+    if (_disposed || _accountDeletionQuiesced) return;
     _step = OnboardingStep.capture;
     _emit();
   }

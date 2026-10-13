@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 
 enum OnboardingStep {
   intro,
+  permissions,
   capture,
   retrieve,
   trust,
