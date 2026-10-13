@@ -4,6 +4,8 @@ import 'package:crypto/crypto.dart';
 import 'package:exif/exif.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'capture_media.dart' show detectImageContentTypeFromPrefix;
+
 /// Metadata extracted from the selected source file, never from import time,
 /// EXIF DateTime (file modified time) or a guessed device time zone.
 ///
@@ -150,6 +152,7 @@ class SelectedPhotoImport {
     required this.path,
     required this.originalFilename,
     required this.bytes,
+    required this.contentType,
     required this.contentSha256,
     required this.evidence,
   });
@@ -157,6 +160,7 @@ class SelectedPhotoImport {
   final String path;
   final String originalFilename;
   final int bytes;
+  final String contentType;
   final String contentSha256;
   final PhotoCaptureEvidence evidence;
 }
@@ -185,7 +189,9 @@ class PhotoImportPicker {
   Future<PhotoImportSelection> pick() async {
     final picked = await _picker.pickMultiImage(
       limit: maxSelected,
-      requestFullMetadata: true,
+      // On iOS this avoids requesting broad Photo Library permission merely
+      // to choose items. If the selection copy lacks source EXIF, keep it unknown.
+      requestFullMetadata: false,
     );
     if (picked.length > maxSelected) {
       throw StateError('系统选择器返回数量超过限定值');
@@ -200,6 +206,17 @@ class PhotoImportPicker {
         final length = await file.length();
         if (length <= 0 || length > maxBytesPerPhoto) {
           throw const FormatException('selected photo has invalid size');
+        }
+        final reader = await file.open();
+        late final List<int> prefix;
+        try {
+          prefix = await reader.read(64);
+        } finally {
+          await reader.close();
+        }
+        final contentType = detectImageContentTypeFromPrefix(prefix);
+        if (contentType == null) {
+          throw const FormatException('selected asset is not a supported image');
         }
         // Content hash is generated within this one user-selected batch;
         // any future durable dedup must also bind owner/session authority.
@@ -219,6 +236,7 @@ class PhotoImportPicker {
           path: item.path,
           originalFilename: item.name,
           bytes: length,
+          contentType: contentType,
           contentSha256: digest,
           evidence: evidence,
         ));
