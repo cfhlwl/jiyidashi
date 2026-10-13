@@ -416,8 +416,8 @@ ThemeData _goldenTheme({bool elderMode = false}) => JiYiTheme.light(
       elderMode: elderMode,
     );
 
-// Batch 5A candidates may opt into the deterministic CJK fixture font. This
-// helper is intentionally not used by committed Golden tests.
+// Batch 5A Life Home evidence uses the deterministic CJK fixture font so the
+// candidate and its narrowly scoped committed Golden test rasterize alike.
 ThemeData _batch5aCandidateTheme({bool dark = false}) {
   final base = dark
       ? JiYiTheme.dark(fontFamily: _goldenFontFamily)
@@ -1681,7 +1681,12 @@ void main() {
   });
 
   testWidgets('golden: life home', (tester) async {
-    final key = await _pumpSurface(tester, LifePage(api: V2TestApi()));
+    final key = await _pumpSurface(
+      tester,
+      LifePage(api: V2TestApi()),
+      theme: _batch5aCandidateTheme(),
+      precacheTodayHero: true,
+    );
     expect(find.text('我的人生'), findsWidgets);
     expect(find.text('人生经历'), findsOneWidget);
     await expectLater(find.byKey(key), matchesGoldenFile('goldens/life_home.png'));
