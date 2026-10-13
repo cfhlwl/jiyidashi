@@ -558,7 +558,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
     expect(onboarding.values[owner], OnboardingStatus.inProgress);
-    expect(find.textContaining('只有你主动选择'), findsOneWidget);
+    expect(find.textContaining('不会申请后台定位'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('onboarding-start')));
     await _pumpUntil(
