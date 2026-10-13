@@ -124,6 +124,22 @@ void main() {
     await store.close();
   });
 
+  test('completed SHA is reused only within original owner', () async {
+    final store = createStore();
+    final a = PhotoImportJournal(store: store, ownerUserId: ownerA);
+    final b = PhotoImportJournal(store: store, ownerUserId: ownerB);
+    final pending = await a.stage(selected(), clientUploadId: uploadId);
+    expect((await a.findSameContent(digest))?.clientUuid, uploadId);
+    expect(await b.findSameContent(digest), isNull);
+    final inFlight = await a.begin(pending);
+    await a.complete(inFlight, memoryId: 'existing-memory-id');
+    final match = await a.findSameContent(digest);
+    expect(match?.status, OfflineQueueStatus.completed);
+    expect(match?.serverResourceId, 'existing-memory-id');
+    expect(await b.findSameContent(digest), isNull);
+    await store.close();
+  });
+
   test('journal refuses payload from other owner', () async {
     final store = createStore();
     final source = PhotoImportJournal(store: store, ownerUserId: ownerA);
