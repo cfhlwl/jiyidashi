@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -79,6 +80,70 @@ void main() {
       utcOffsetMinutes: 480,
     ),
   );
+
+  test('v4 -> v5 migrates legacy same-owner duplicate rows without erasing work', () async {
+    final legacy = await factory.openDatabase(
+      databasePath,
+      options: OpenDatabaseOptions(
+        version: 4,
+        onCreate: (db, _) async {
+          await db.execute('''
+            CREATE TABLE offline_queue (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              owner_user_id TEXT NOT NULL,
+              client_uuid TEXT NOT NULL,
+              operation_type TEXT NOT NULL,
+              payload_json TEXT NOT NULL,
+              status TEXT NOT NULL,
+              attempt_count INTEGER NOT NULL DEFAULT 0,
+              last_error TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              completed_at TEXT,
+              cancelled_at TEXT,
+              retryable INTEGER NOT NULL DEFAULT 1,
+              server_resource_id TEXT,
+              UNIQUE(owner_user_id, client_uuid)
+            )
+          ''');
+        },
+      ),
+    );
+    final timestamp = DateTime.utc(2025, 9, 1).toIso8601String();
+    Future<void> legacyRow(String owner, String uuid, String status) async {
+      await legacy.insert('offline_queue', {
+        'owner_user_id': owner,
+        'client_uuid': uuid,
+        'operation_type': OfflineQueueStore.photoImportOperation,
+        'payload_json': jsonEncode({
+          'staged_path': '/fixture/$owner/$uuid.bin',
+          'original_filename': 'legacy.jpeg',
+          'size_bytes': 43,
+          'content_type': 'image/jpeg',
+          'sha256': digest,
+          'evidence': <String, dynamic>{},
+        }),
+        'status': status,
+        'created_at': timestamp,
+        'updated_at': timestamp,
+      });
+    }
+    const secondUuid = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    await legacyRow(ownerA, uploadId, 'pending');
+    await legacyRow(ownerA, secondUuid, 'sending');
+    await legacyRow(ownerB, 'ffffffff-ffff-4fff-8fff-ffffffffffff', 'pending');
+    await legacy.close();
+
+    final upgraded = createStore();
+    final allA = await upgraded.listAll(ownerA);
+    expect(allA, hasLength(2), reason: 'do not erase duplicate old attempts');
+    expect(allA.singleWhere((r) => r.clientUuid == secondUuid).status,
+        OfflineQueueStatus.failed, reason: 'interrupted sending is recovered');
+    final winner = await upgraded.findClaimedPhoto(ownerA, digest);
+    expect(winner?.clientUuid, uploadId);
+    expect((await upgraded.findClaimedPhoto(ownerB, digest))?.ownerUserId, ownerB);
+    await upgraded.close();
+  });
 
   test('orphan sweep cannot erase an active source staged before SQLite receipt', () async {
     final store = _PausedReservationStore(databasePath);
