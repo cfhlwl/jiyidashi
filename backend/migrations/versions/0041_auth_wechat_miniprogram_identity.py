@@ -16,6 +16,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # 0002 created the provider projection with the length of
+    # ``EMAIL_PASSWORD``.  The Mini Program provider value is longer, so widen
+    # the existing VARCHAR before the metadata drift gate compares the schema.
+    with op.batch_alter_table("auth_identities") as batch_op:
+        batch_op.alter_column(
+            "provider",
+            existing_type=sa.String(length=14),
+            type_=sa.String(length=18),
+            existing_nullable=False,
+        )
+
     op.create_table(
         "auth_wechat_miniprogram_exchanges",
         sa.Column("id", sa.Uuid(), nullable=False),
