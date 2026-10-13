@@ -222,7 +222,7 @@ void main() {
     final otherFile = File((await b.selectedFrom(other)).path);
     await otherFile.setLastModified(old);
 
-    expect(await journal.sweepOrphanedFiles(await journal.list()), 2);
+    expect(await journal.sweepOrphanedFiles(await store.listAll(ownerA)), 2);
     expect(await oldPart.exists(), false);
     expect(await oldBin.exists(), false);
     expect(await recent.exists(), true);
