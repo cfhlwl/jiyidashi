@@ -168,6 +168,23 @@ class PhotoImportJournal {
     }
   }
 
+  Future<void> withdraw(OfflineQueueItem row) async {
+    if (row.ownerUserId != ownerUserId || row.operationType != operationType) {
+      throw StateError('photo withdraw owner mismatch');
+    }
+    if (row.status != OfflineQueueStatus.pending &&
+        row.status != OfflineQueueStatus.failed &&
+        row.status != OfflineQueueStatus.cancelled) {
+      throw StateError('in-flight or completed media cannot be withdrawn');
+    }
+    final source = await selectedFrom(row);
+    await store.cancel(ownerUserId, row.clientUuid);
+    final staged = File(source.path);
+    if (await staged.exists()) {
+      await staged.delete();
+    }
+  }
+
   Future<OfflineQueueItem> begin(OfflineQueueItem row) async {
     if (row.ownerUserId != ownerUserId || row.operationType != operationType) {
       throw StateError('wrong photo owner');
