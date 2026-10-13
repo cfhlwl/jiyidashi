@@ -780,6 +780,10 @@ class TimelineItem(BaseModel):
     is_confirmed: bool | None = None
     # PHOTO-only canonical media identity. Never expose storage keys or signed URLs here.
     media_id: UUID | None = None
+    # Explicit time meaning for gallery imports. Missing on legacy records.
+    photo_occurrence_role: Literal[
+        "CLIENT_EXIF_CAPTURE_INSTANT", "IMPORT_DATE_NOT_CAPTURE_TIME"
+    ] | None = None
 
     # Shared/Visit evidence metadata.
     confidence: float
