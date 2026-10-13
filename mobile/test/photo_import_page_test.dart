@@ -67,4 +67,26 @@ void main() {
     expect(find.textContaining('地点未知'), findsOneWidget);
     expect(find.byKey(const ValueKey('photo-import-submit')), findsOneWidget);
   });
+  testWidgets('account switch hides old gallery thumbnails and upload actions', (tester) async {
+    final api = _Api();
+    final picker = _SelectedPicker(PhotoImportSelection(
+      selected: [_sample(const PhotoCaptureEvidence())],
+      failedNames: const [],
+      duplicates: 0,
+    ));
+    await tester.pumpWidget(MaterialApp(home: PhotoImportPage(
+      api: api,
+      picker: picker,
+    )));
+    await tester.tap(find.byKey(const ValueKey('photo-import-select')));
+    await tester.pump();
+    expect(find.text('test.jpeg'), findsOneWidget);
+    api.authenticatedUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await tester.pump();
+    expect(find.byKey(const ValueKey('photo-import-owner-changed')), findsOneWidget);
+    expect(find.text('test.jpeg'), findsNothing);
+    expect(find.byKey(const ValueKey('photo-import-submit')), findsNothing);
+  });
+
+
 }
