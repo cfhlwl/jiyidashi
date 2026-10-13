@@ -55,10 +55,18 @@ class PhotoImportJournal {
   /// A live copy + SQLite reservation are serialized with owner reconciliation.
   Future<T> _withOwnerStageLock<T>(Future<T> Function() operation) async {
     final directory = await store.photoImportOwnerDirectory(ownerUserId);
-    await directory.parent.create(recursive: true);
-    final handle = await File('${directory.path}.stage.lock').open(
-      mode: FileMode.append,
-    );
+    if (await FileSystemEntity.type(directory.path, followLinks: false) ==
+        FileSystemEntityType.link) {
+      throw const FormatException('owner photo staging directory is a symlink');
+    }
+    await directory.create(recursive: true);
+    if (await FileSystemEntity.type(directory.path, followLinks: false) !=
+        FileSystemEntityType.directory) {
+      throw const FormatException('invalid owner photo staging directory');
+    }
+    final handle = await File(
+      '${directory.path}${Platform.pathSeparator}.stage.lock',
+    ).open(mode: FileMode.append);
     try {
       await handle.lock(FileLock.exclusive);
       try {
@@ -149,71 +157,71 @@ class PhotoImportJournal {
     final releaseStage = store.holdPhotoImportStaging(ownerUserId);
     try {
       return await _withOwnerStageLock(() async {
-      final previous = await store.findByClientUuid(ownerUserId, clientUploadId);
-      if (previous != null) {
-        if (previous.operationType != operationType ||
-            previous.payload['sha256'] != photo.contentSha256) {
-          throw StateError('photo upload UUID already belongs to different work');
-        }
-        return previous;
-      }
-
-      final dir = await store.photoImportOwnerDirectory(ownerUserId);
-      await dir.create(recursive: true);
-      if (await FileSystemEntity.type(dir.path, followLinks: false) !=
-          FileSystemEntityType.directory) {
-        throw const FormatException('photo staging directory is not a real directory');
-      }
-      final saved = File('${dir.path}${Platform.pathSeparator}$clientUploadId.bin');
-      final temporary = File('${saved.path}.partial');
-      var persisted = false;
-      try {
-        if (await FileSystemEntity.type(saved.path, followLinks: false) ==
-                FileSystemEntityType.link ||
-            await FileSystemEntity.type(temporary.path, followLinks: false) ==
-                FileSystemEntityType.link) {
-          throw const FormatException('photo staging path is a symlink');
-        }
-        if (!await saved.exists()) {
-          await File(photo.path).copy(temporary.path);
-          if (await temporary.length() != photo.bytes ||
-              (await sha256.bind(temporary.openRead()).first).toString() !=
-                  photo.contentSha256) {
-            throw const FormatException('photo changed during durable copy');
+        final previous = await store.findByClientUuid(ownerUserId, clientUploadId);
+        if (previous != null) {
+          if (previous.operationType != operationType ||
+              previous.payload['sha256'] != photo.contentSha256) {
+            throw StateError('photo upload UUID already belongs to different work');
           }
-          await temporary.rename(saved.path);
+          return previous;
         }
-        // A leftover cache copy from an interrupted process is not trusted just
-        // because its path matches. Rehash even the already-staged file.
-        if (await saved.length() != photo.bytes ||
-            (await sha256.bind(saved.openRead()).first).toString() !=
-                photo.contentSha256) {
-          throw const FormatException('staged photo fingerprint mismatch');
+
+        final dir = await store.photoImportOwnerDirectory(ownerUserId);
+        await dir.create(recursive: true);
+        if (await FileSystemEntity.type(dir.path, followLinks: false) !=
+            FileSystemEntityType.directory) {
+          throw const FormatException('photo staging directory is not a real directory');
         }
-        final row = await store.reservePhotoImport(
-          ownerUserId: ownerUserId,
-          sha256Hex: photo.contentSha256,
-          clientUuid: clientUploadId,
-          payload: {
-            'staged_path': saved.path,
-            'original_filename': photo.originalFilename,
-            'size_bytes': photo.bytes,
-            'content_type': photo.contentType,
-            'sha256': photo.contentSha256,
-            'evidence': _evidence(photo.evidence),
-          },
-        );
-        persisted = row.clientUuid == clientUploadId;
-        return row;
-      } finally {
-        if (await temporary.exists()) {
-          await temporary.delete();
+        final saved = File('${dir.path}${Platform.pathSeparator}$clientUploadId.bin');
+        final temporary = File('${saved.path}.partial');
+        var persisted = false;
+        try {
+          if (await FileSystemEntity.type(saved.path, followLinks: false) ==
+                  FileSystemEntityType.link ||
+              await FileSystemEntity.type(temporary.path, followLinks: false) ==
+                  FileSystemEntityType.link) {
+            throw const FormatException('photo staging path is a symlink');
+          }
+          if (!await saved.exists()) {
+            await File(photo.path).copy(temporary.path);
+            if (await temporary.length() != photo.bytes ||
+                (await sha256.bind(temporary.openRead()).first).toString() !=
+                    photo.contentSha256) {
+              throw const FormatException('photo changed during durable copy');
+            }
+            await temporary.rename(saved.path);
+          }
+          // A leftover cache copy from an interrupted process is not trusted just
+          // because its path matches. Rehash even the already-staged file.
+          if (await saved.length() != photo.bytes ||
+              (await sha256.bind(saved.openRead()).first).toString() !=
+                  photo.contentSha256) {
+            throw const FormatException('staged photo fingerprint mismatch');
+          }
+          final row = await store.reservePhotoImport(
+            ownerUserId: ownerUserId,
+            sha256Hex: photo.contentSha256,
+            clientUuid: clientUploadId,
+            payload: {
+              'staged_path': saved.path,
+              'original_filename': photo.originalFilename,
+              'size_bytes': photo.bytes,
+              'content_type': photo.contentType,
+              'sha256': photo.contentSha256,
+              'evidence': _evidence(photo.evidence),
+            },
+          );
+          persisted = row.clientUuid == clientUploadId;
+          return row;
+        } finally {
+          if (await temporary.exists()) {
+            await temporary.delete();
+          }
+          if (!persisted && await saved.exists()) {
+            // Failed DB write or owner deletion quiesce cannot strand bytes.
+            await saved.delete();
+          }
         }
-        if (!persisted && await saved.exists()) {
-          // Failed DB write or owner deletion quiesce cannot strand bytes.
-          await saved.delete();
-        }
-      }
       });
     } finally {
       releaseStage();
@@ -231,56 +239,56 @@ class PhotoImportJournal {
     DateTime? now,
   }) async {
     return _withOwnerStageLock(() async {
-    if (gracePeriod < Duration.zero) {
-      throw ArgumentError('negative grace period');
-    }
-    final dir = await store.photoImportOwnerDirectory(ownerUserId);
-    if (await FileSystemEntity.type(dir.path, followLinks: false) !=
-        FileSystemEntityType.directory) {
-      return 0;
-    }
-    final referenced = <String>{
-      for (final row in allRows)
-        if (row.operationType == operationType &&
-            row.status != OfflineQueueStatus.cancelled &&
-            row.status != OfflineQueueStatus.completed)
-          row.clientUuid.toLowerCase(),
-    };
-    final cutoff = (now ?? DateTime.now()).toUtc().subtract(gracePeriod);
-    var deleted = 0;
-    await for (final entity in dir.list(followLinks: false)) {
-      if (await FileSystemEntity.type(entity.path, followLinks: false) !=
-          FileSystemEntityType.file) {
-        continue;
+      if (gracePeriod < Duration.zero) {
+        throw ArgumentError('negative grace period');
       }
-      final basename = entity.uri.pathSegments.last;
-      final match = RegExp(
-        r'^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.bin(\.partial)?$',
-      ).firstMatch(basename);
-      if (match == null ||
-          referenced.contains(match.group(1)!.toLowerCase())) {
-        continue;
+      final dir = await store.photoImportOwnerDirectory(ownerUserId);
+      if (await FileSystemEntity.type(dir.path, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        return 0;
       }
-      final file = File(entity.path);
-      final stat = await file.stat();
-      if (!stat.modified.toUtc().isBefore(cutoff)) {
-        continue;
+      final referenced = <String>{
+        for (final row in allRows)
+          if (row.operationType == operationType &&
+              row.status != OfflineQueueStatus.cancelled &&
+              row.status != OfflineQueueStatus.completed)
+            row.clientUuid.toLowerCase(),
+      };
+      final cutoff = (now ?? DateTime.now()).toUtc().subtract(gracePeriod);
+      var deleted = 0;
+      await for (final entity in dir.list(followLinks: false)) {
+        if (await FileSystemEntity.type(entity.path, followLinks: false) !=
+            FileSystemEntityType.file) {
+          continue;
+        }
+        final basename = entity.uri.pathSegments.last;
+        final match = RegExp(
+          r'^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.bin(\.partial)?$',
+        ).firstMatch(basename);
+        if (match == null ||
+            referenced.contains(match.group(1)!.toLowerCase())) {
+          continue;
+        }
+        final file = File(entity.path);
+        final stat = await file.stat();
+        if (!stat.modified.toUtc().isBefore(cutoff)) {
+          continue;
+        }
+        // Second check prevents a referenced item being removed if another
+        // SQLite writer committed during directory enumeration.
+        final existing = await store.findByClientUuid(ownerUserId, match.group(1)!);
+        if (existing != null && existing.operationType == operationType &&
+            existing.status != OfflineQueueStatus.cancelled &&
+            existing.status != OfflineQueueStatus.completed) {
+          continue;
+        }
+        if (await FileSystemEntity.type(file.path, followLinks: false) ==
+            FileSystemEntityType.file) {
+          await file.delete();
+          deleted++;
+        }
       }
-      // Second check prevents a referenced item being removed if another
-      // SQLite writer committed during directory enumeration.
-      final existing = await store.findByClientUuid(ownerUserId, match.group(1)!);
-      if (existing != null && existing.operationType == operationType &&
-          existing.status != OfflineQueueStatus.cancelled &&
-          existing.status != OfflineQueueStatus.completed) {
-        continue;
-      }
-      if (await FileSystemEntity.type(file.path, followLinks: false) ==
-          FileSystemEntityType.file) {
-        await file.delete();
-        deleted++;
-      }
-    }
-    return deleted;
+      return deleted;
     });
   }
 
