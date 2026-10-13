@@ -152,10 +152,12 @@ void main() {
     final gesture = await tester.startGesture(tester.getCenter(entry));
     await gesture.up();
     api.authenticatedUserId = _ownerB;
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.byType(LifeEventsPage), findsNothing);
-    expect(find.byType(LifePage), findsOneWidget);
+    expect(find.text('会话已变化'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
 
     // Rebind back to the original owner before proving that a fresh route
     // can be opened. The first tap must be dropped; it must not be reused as
