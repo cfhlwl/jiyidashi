@@ -245,7 +245,7 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
       setState(() => _sessionState = AuthSessionVisualState.refreshing);
     }
     if (!await _awaitPassiveRecoveryIdle()) {
-      if (!mounted) return;
+      if (!mounted || api.sessionVersion != startingVersion) return;
       setState(() {
         authenticated = false;
         _sessionState = AuthSessionVisualState.unknown;
@@ -259,20 +259,22 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     try {
       result = await api.restorePersistedSession();
     } on PlatformException {
-      if (!mounted) return;
+      if (!mounted || api.sessionVersion != startingVersion) return;
       setState(() {
         authenticated = false;
         _sessionState = AuthSessionVisualState.unknown;
         restoreMessage = null;
       });
+      _scheduleSessionRecoveryRetry();
       return;
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || api.sessionVersion != startingVersion) return;
       setState(() {
         authenticated = false;
         _sessionState = AuthSessionVisualState.unknown;
         restoreMessage = null;
       });
+      _scheduleSessionRecoveryRetry();
       return;
     }
     if (!mounted) return;
