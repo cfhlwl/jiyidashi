@@ -135,7 +135,7 @@ class OnboardingIntroPage extends StatelessWidget {
         const JiYiStatusBanner(
           kind: JiYiStatusKind.info,
           title: '隐私说明',
-          message: '首次引导会说明定位、照片与通知用途，只有你主动选择相应操作才会请求系统权限。',
+          message: '这一步只处理你主动提交的内容，不会申请后台定位，也不会开启自动位置采集。',
         ),
         const SizedBox(height: JiYiSpacing.lg),
         FilledButton.icon(
