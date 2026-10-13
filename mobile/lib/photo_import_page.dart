@@ -39,6 +39,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
   PhotoImportSelection? _selection;
   PhotoImportBatchCoordinator? _batch;
   bool _picking = false;
+  int _selectionEpoch = 0;
   String? _message;
 
   @override
@@ -50,6 +51,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
   }
 
   Future<void> _restoreDurableImport() async {
+    final restoringEpoch = _selectionEpoch;
     try {
       final journal = _journal!;
       final existing = await journal.list();
@@ -69,7 +71,8 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
       }
       if (!mounted || widget.api.authenticatedUserId != _pageOwner ||
           widget.api.sessionVersion != _pageSessionVersion ||
-          restored.isEmpty) {
+          restoringEpoch != _selectionEpoch || _picking ||
+          _selection != null || restored.isEmpty) {
         return;
       }
       setState(() {
@@ -86,7 +89,10 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
         _message = '已恢复 ${restored.length} 张待续传照片。确认后才会继续上传。';
       });
     } catch (_) {
-      if (mounted && widget.api.authenticatedUserId == _pageOwner) {
+      if (mounted && widget.api.authenticatedUserId == _pageOwner &&
+          widget.api.sessionVersion == _pageSessionVersion &&
+          restoringEpoch == _selectionEpoch && !_picking &&
+          _selection == null) {
         setState(() => _message = '部分待续传照片暂不可用，可重新选择照片。');
       }
     }
@@ -100,6 +106,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
     final requestedVersion = widget.api.sessionVersion;
     if (requestedOwner == null || requestedOwner.isEmpty) return;
     _batch?.stopAfterCurrentFile();
+    final selectionEpoch = ++_selectionEpoch;
     setState(() {
       _picking = true;
       _message = null;
@@ -108,7 +115,8 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
       final selected = await _picker.pick();
       if (!mounted) return;
       if (widget.api.authenticatedUserId != requestedOwner ||
-          widget.api.sessionVersion != requestedVersion) {
+          widget.api.sessionVersion != requestedVersion ||
+          selectionEpoch != _selectionEpoch) {
         setState(() => _message = '选择照片期间账号已变化，请在当前账号重新选择。');
         return;
       }
@@ -126,7 +134,9 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
         setState(() => _message = '读取照片失败，请检查系统照片选择器或云端原图下载状态。');
       }
     } finally {
-      if (mounted) setState(() => _picking = false);
+      if (mounted && selectionEpoch == _selectionEpoch) {
+        setState(() => _picking = false);
+      }
     }
   }
 
