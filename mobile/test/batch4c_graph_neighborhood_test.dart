@@ -228,6 +228,7 @@ void main() {
     final oldApi = _GraphFixtureApi(
       graphGate: release,
       centerLabel: '账号 A 的人物',
+      failure: ApiException(403, 'FORBIDDEN'),
     );
     await _pumpGraph(tester, oldApi);
     await tester.pump();
@@ -249,6 +250,38 @@ void main() {
     release.complete();
     await tester.pumpAndSettle();
     expect(find.text('账号 A 的人物'), findsNothing);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('graph-center-label')))
+          .data,
+      '账号 B 的人物',
+    );
+    expect(find.byKey(const ValueKey('graph-error-state')), findsNothing);
+  });
+
+  testWidgets('Batch 4C drops delayed offline error after API rebind', (
+    tester,
+  ) async {
+    final release = Completer<void>();
+    final oldApi = _GraphFixtureApi(
+      graphGate: release,
+      failure: TransportException('offline'),
+    );
+    await _pumpGraph(tester, oldApi);
+    await tester.pump();
+
+    final newApi = _GraphFixtureApi(
+      centerLabel: '账号 B 的人物',
+      nodeLabel: '账号 B 的关系',
+    );
+    await _pumpGraph(tester, newApi);
+    expect(find.byKey(const ValueKey('graph-center-label')), findsOneWidget);
+
+    release.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('graph-error-state')), findsNothing);
+    expect(find.text('网络暂时不可用，关联内容尚未读取。'), findsNothing);
     expect(
       tester
           .widget<Text>(find.byKey(const ValueKey('graph-center-label')))
@@ -407,6 +440,13 @@ void main() {
 
     expect(find.byType(PersonDetailPage), findsOneWidget);
     expect(find.byType(GraphNeighborhoodPage), findsNothing);
+
+    // A single back action must return directly to the graph. This proves the
+    // rapid taps did not stack a second detail route underneath the first.
+    Navigator.of(tester.element(find.byType(PersonDetailPage))).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(PersonDetailPage), findsNothing);
+    expect(find.byType(GraphNeighborhoodPage), findsOneWidget);
   });
 
   testWidgets('Batch 4C route build rechecks graph identity', (tester) async {
