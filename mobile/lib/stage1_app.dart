@@ -2971,7 +2971,7 @@ class _TimelineEntry extends StatelessWidget {
     return Semantics(
       key: ValueKey('timeline-entry-${item.kind}-${item.id}'),
       button: true,
-      label: '$day $time $title',
+      label: '${importedWithoutCaptureTime ? '导入日期' : '发生时间'} $day $time $title',
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
