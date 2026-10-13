@@ -396,7 +396,7 @@ class _LifeEntryCard extends StatelessWidget {
               color: theme.colorScheme.primary,
               semanticLabel: '$title 图标',
             ),
-            const Spacer(),
+            const SizedBox(height: JiYiSpacing.xl),
             Text(
               title,
               maxLines: 2,
