@@ -399,6 +399,34 @@ def consume_wechat_attempt(
         )
 
 
+def consume_wechat_miniprogram_attempt(
+    db: Session,
+    *,
+    client_ip: str,
+    device_id: str,
+    request_id: str,
+    credential_fingerprint: str | None = None,
+) -> None:
+    """Separate anonymous gates for Mini Program login, never shared with App OAuth."""
+
+    if not settings.auth_rate_limit_enabled:
+        return
+    window = settings.auth_wechat_miniprogram_window_seconds
+    for scope, value, limit in (
+        ("wechat_miniprogram_ip", client_ip, settings.auth_wechat_miniprogram_ip_limit),
+        ("wechat_miniprogram_device", device_id, settings.auth_wechat_miniprogram_device_limit),
+        ("wechat_miniprogram_request", request_id, settings.auth_wechat_miniprogram_request_limit),
+    ):
+        _consume(db, scope=scope, value=value, policy=RatePolicy(limit, window))
+    if credential_fingerprint:
+        _consume(
+            db,
+            scope="wechat_miniprogram_credential",
+            value=credential_fingerprint,
+            policy=RatePolicy(settings.auth_wechat_miniprogram_credential_limit, window),
+        )
+
+
 def consume_sms_otp_request_attempt(
     db: Session,
     *,

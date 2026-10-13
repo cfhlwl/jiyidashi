@@ -7,11 +7,13 @@ import {
   currentAuthSessionEpoch,
   currentAuthenticatedUserId,
   getApiBaseUrl,
+  getAuthCapabilities,
   getPrivacyStatus,
   getProfile,
   isAuthSessionCurrent,
   isAuthenticated,
   loginAccount,
+  loginWechatMiniProgram,
   logout,
   pauseMemory,
   pauseMemoryToday,
@@ -48,6 +50,7 @@ export default function Page() {
   const [status, setStatus] = useState('')
   const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [wechatMiniProgramAvailable, setWechatMiniProgramAvailable] = useState(false)
   const profileViewGeneration = useRef(0)
   const operationGeneration = useRef(0)
   const authView = useRef<{ owner: string | null; epoch: number }>({
@@ -105,6 +108,12 @@ export default function Page() {
   }
 
   useEffect(() => {
+    void getAuthCapabilities()
+      .then((capabilities) => setWechatMiniProgramAvailable(capabilities.wechat_miniprogram === 'AVAILABLE'))
+      .catch(() => setWechatMiniProgramAvailable(false))
+  }, [])
+
+  useEffect(() => {
     const unsubscribe = subscribeAuthSession((owner, epoch) => {
       if (authView.current.owner === owner && authView.current.epoch === epoch) return
       authView.current = { owner, epoch }
@@ -151,6 +160,25 @@ export default function Page() {
       setStatus,
       setVerificationPendingEmail,
     })
+  }
+
+  const submitWechatMiniProgram = async () => {
+    if (!wechatMiniProgramAvailable || loading) return
+    let operation = beginOperation()
+    setLoading(true)
+    setStatus('')
+    try {
+      const loginPromise = loginWechatMiniProgram()
+      operation = beginOperation()
+      await loginPromise
+      operation = beginOperation()
+      await refreshProfile()
+      if (operationIsCurrent(operation)) setStatus('微信登录成功')
+    } catch (error) {
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '微信登录失败')
+    } finally {
+      if (operationIsCurrent(operation)) setLoading(false)
+    }
   }
 
   const resend = async () => {
@@ -335,6 +363,11 @@ export default function Page() {
         <Button className='primary-button' disabled={loading} onClick={submit}>
           {loading ? '请稍候…' : registerMode ? '创建账号' : '登录'}
         </Button>
+        {wechatMiniProgramAvailable && (
+          <Button className='secondary-button' disabled={loading} onClick={() => void submitWechatMiniProgram()}>
+            微信快捷登录
+          </Button>
+        )}
         <Button className='secondary-button' onClick={() => setRegisterMode(!registerMode)}>
           {registerMode ? '已有账号？登录' : '第一次使用？创建账号'}
         </Button>

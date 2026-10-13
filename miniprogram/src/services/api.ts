@@ -254,6 +254,16 @@ export type EmailVerificationResponse = {
   session: MiniAuthSession | null
 }
 
+export type AuthCapabilityStatus = 'AVAILABLE' | 'PLANNED' | 'DISABLED' | 'UNAVAILABLE' | 'UNSUPPORTED'
+
+export type AuthCapabilities = {
+  email: AuthCapabilityStatus
+  sms_otp: AuthCapabilityStatus
+  phone_one_tap: AuthCapabilityStatus
+  wechat: AuthCapabilityStatus
+  wechat_miniprogram: AuthCapabilityStatus
+}
+
 type RequestOptions = SafeRequestOptions & Readonly<{
   anonymous?: boolean
   skipSessionRefresh?: boolean
@@ -335,6 +345,23 @@ function parseEmailVerificationResponse(raw: unknown): EmailVerificationResponse
     verified: value.verified,
     already_verified: value.already_verified,
     session: null,
+  }
+}
+
+function parseAuthCapabilities(raw: unknown): AuthCapabilities {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return invalidAuthResponse()
+  const value = raw as Record<string, unknown>
+  const statuses = new Set<AuthCapabilityStatus>(['AVAILABLE', 'PLANNED', 'DISABLED', 'UNAVAILABLE', 'UNSUPPORTED'])
+  const fields = ['email', 'sms_otp', 'phone_one_tap', 'wechat', 'wechat_miniprogram'] as const
+  for (const field of fields) {
+    if (typeof value[field] !== 'string' || !statuses.has(value[field] as AuthCapabilityStatus)) return invalidAuthResponse()
+  }
+  return {
+    email: value.email as AuthCapabilityStatus,
+    sms_otp: value.sms_otp as AuthCapabilityStatus,
+    phone_one_tap: value.phone_one_tap as AuthCapabilityStatus,
+    wechat: value.wechat as AuthCapabilityStatus,
+    wechat_miniprogram: value.wechat_miniprogram as AuthCapabilityStatus,
   }
 }
 
@@ -470,6 +497,10 @@ export function captureAuthSession(): AuthSessionSnapshot {
 
 export function isAuthSessionCurrent(snapshot: AuthSessionSnapshot): boolean {
   return sameSessionSnapshot(snapshot)
+}
+
+export async function getAuthCapabilities(): Promise<AuthCapabilities> {
+  return parseAuthCapabilities(await request<unknown>('GET', '/auth/capabilities', undefined, { anonymous: true }))
 }
 
 function resetElderProjection(): void {
@@ -739,6 +770,26 @@ export async function loginAccount(email: string, password: string): Promise<voi
   const result = parseMiniAuthSession(await request<unknown>('POST', '/auth/login', {
     email: email.trim(),
     password,
+    device_id: getAuthDeviceId(),
+    client_platform: 'miniprogram',
+  }, { anonymous: true }))
+  if (attempt !== authAttemptGeneration || expectedEpoch !== authSessionEpoch || currentStoredSession()) {
+    throw new Error('登录状态已变化，请重试')
+  }
+  installSession(result, false)
+}
+
+export async function loginWechatMiniProgram(): Promise<void> {
+  const attempt = ++authAttemptGeneration
+  clearLocalSession(false)
+  authSessionEpoch += 1
+  const expectedEpoch = authSessionEpoch
+  const loginResult = await Taro.login()
+  const code = loginResult?.code
+  if (typeof code !== 'string' || !code.trim()) throw new Error('微信登录凭证无效')
+  const result = parseMiniAuthSession(await request<unknown>('POST', '/auth/wechat-mini/exchange', {
+    code,
+    request_id: randomDeviceId(),
     device_id: getAuthDeviceId(),
     client_platform: 'miniprogram',
   }, { anonymous: true }))
