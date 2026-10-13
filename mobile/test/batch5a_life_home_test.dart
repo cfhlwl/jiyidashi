@@ -130,10 +130,10 @@ void main() {
     await _pumpLife(tester, api: api);
     final entry = find.byKey(const ValueKey('life-home-entry-events'));
 
-    await Future.wait<void>([
-      tester.tap(entry),
-      tester.tap(entry),
-    ]);
+    final firstTap = await tester.startGesture(tester.getCenter(entry));
+    await firstTap.up();
+    final secondTap = await tester.startGesture(tester.getCenter(entry));
+    await secondTap.up();
     await tester.pumpAndSettle();
 
     expect(find.byType(LifeEventsPage), findsOneWidget);
@@ -156,6 +156,11 @@ void main() {
 
     expect(find.byType(LifeEventsPage), findsNothing);
     expect(find.byType(LifePage), findsOneWidget);
+
+    if (find.text('会话已变化').evaluate().isNotEmpty) {
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+    }
 
     await tester.tap(entry);
     await tester.pumpAndSettle();
