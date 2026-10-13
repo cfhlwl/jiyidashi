@@ -157,6 +157,21 @@ class PhotoImportBatchCoordinator {
           _assertOwner();
           final journal = _journal;
           if (journal != null) {
+            final duplicate =
+                await journal.findSameContent(item.selected.contentSha256);
+            _assertOwner();
+            if (duplicate != null &&
+                duplicate.clientUuid != item.clientUploadId) {
+              if (duplicate.status == OfflineQueueStatus.completed &&
+                  duplicate.serverResourceId != null) {
+                // A verified memory already exists for this owner's image.
+                item.memoryId = duplicate.serverResourceId;
+                item.state = PhotoImportItemState.saved;
+                onUpdate?.call(item);
+                continue;
+              }
+              throw const FormatException('image already queued for this owner');
+            }
             durableRow = await journal.stage(
               item.selected,
               clientUploadId: item.clientUploadId,
