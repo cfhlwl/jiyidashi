@@ -17,6 +17,7 @@ class OnboardingExperience extends StatelessWidget {
     this.onPermissionsNext,
     this.permissionsPanel,
     this.onEnableNotifications,
+    this.onImportPhotos,
   });
 
   final OnboardingStep? step;
@@ -27,6 +28,7 @@ class OnboardingExperience extends StatelessWidget {
   final VoidCallback? onPermissionsNext;
   final Widget? permissionsPanel;
   final VoidCallback? onEnableNotifications;
+  final VoidCallback? onImportPhotos;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +41,7 @@ class OnboardingExperience extends StatelessWidget {
         permissionsPanel: permissionsPanel,
         onContinue: onPermissionsNext ?? onStart,
         onEnableNotifications: onEnableNotifications,
+        onImportPhotos: onImportPhotos,
         onSkip: onSkip,
       );
     }
@@ -162,12 +165,14 @@ class OnboardingPermissionsPage extends StatelessWidget {
     super.key,
     this.permissionsPanel,
     this.onEnableNotifications,
+    this.onImportPhotos,
     required this.onContinue,
     required this.onSkip,
   });
 
   final Widget? permissionsPanel;
   final VoidCallback? onEnableNotifications;
+  final VoidCallback? onImportPhotos;
   final VoidCallback onContinue;
   final VoidCallback onSkip;
 
@@ -191,7 +196,19 @@ class OnboardingPermissionsPage extends StatelessWidget {
           leading: Icon(Icons.photo_library_outlined, color: theme.colorScheme.primary),
           title: '导入已有照片',
           subtitle: '只处理你稍后通过系统照片选择器主动选中的图片，不要求整机相册权限。',
-          child: const Text('照片批量导入将在下一项功能中接入；此步骤不会扫描手机相册。'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('导入完全可选；只在你明确选择并再次确认后上传。'),
+              const SizedBox(height: JiYiSpacing.sm),
+              OutlinedButton.icon(
+                key: const ValueKey('onboarding-import-photos'),
+                onPressed: onImportPhotos,
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                label: const Text('选择已有照片导入'),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: JiYiSpacing.md),
         JiYiSectionCard(
