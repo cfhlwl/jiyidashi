@@ -434,10 +434,11 @@ void main() {
             ),
           ],
         ));
+        await tester.pump();
+        await _waitFor(tester, () => api.profileCalls >= 2);
         await _waitFor(
           tester,
-          () => api.profileCalls == 2 &&
-              find.byType(AppShell).evaluate().isNotEmpty,
+          () => find.byType(AppShell).evaluate().isNotEmpty,
         );
 
         api.completeProfile();
