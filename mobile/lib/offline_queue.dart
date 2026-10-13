@@ -218,6 +218,9 @@ class OfflineQueueStore {
   static const String objectLocationOperation = 'object_location';
   static const String photoImportOperation = 'photo_import';
 
+  // Tests can supply a deterministic queue without touching physical files.
+  bool get supportsPhotoImportFileSweep => true;
+
   final DatabaseFactory? _factory;
   final Future<String> Function() _databasePathProvider;
   final String Function() _clientUuidFactory;
@@ -707,7 +710,9 @@ class OfflineQueueStore {
       WHERE c.owner_user_id = ? AND c.sha256 = ?
       LIMIT 1
     ''', [owner, sha]);
-    if (rows.isEmpty) return null;
+    if (rows.isEmpty) {
+      return null;
+    }
     final item = OfflineQueueItem.fromRow(rows.single);
     return item.status == OfflineQueueStatus.cancelled ? null : item;
   }
