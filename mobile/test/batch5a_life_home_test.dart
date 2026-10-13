@@ -325,10 +325,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(LifeEventsPage), findsNothing);
-    expect(find.byType(LifePage), findsOneWidget);
     expect(find.text('会话已变化'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
+    expect(find.byType(LifePage), findsOneWidget);
     await tester.tap(entry);
     await tester.pumpAndSettle();
     final routePage = tester.widget<LifeEventsPage>(find.byType(LifeEventsPage));
