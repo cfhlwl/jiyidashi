@@ -35,6 +35,9 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
 
   Future<void> _choose() async {
     if (_busy) return;
+    final requestedOwner = widget.api.authenticatedUserId;
+    final requestedVersion = widget.api.sessionVersion;
+    if (requestedOwner == null || requestedOwner.isEmpty) return;
     _batch?.stopAfterCurrentFile();
     setState(() {
       _picking = true;
@@ -43,6 +46,11 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
     try {
       final selected = await _picker.pick();
       if (!mounted) return;
+      if (widget.api.authenticatedUserId != requestedOwner ||
+          widget.api.sessionVersion != requestedVersion) {
+        setState(() => _message = '选择照片期间账号已变化，请在当前账号重新选择。');
+        return;
+      }
       final next = PhotoImportBatchCoordinator(
         api: widget.api,
         selection: selected,
