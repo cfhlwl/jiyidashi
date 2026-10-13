@@ -65,6 +65,19 @@ _PUBLIC_CODES = {
 }
 
 
+def is_wechat_miniprogram_exchange_available(
+    settings: Settings,
+    provider: WechatMiniProgramProvider,
+) -> bool:
+    """Keep capability reporting aligned with exchange prerequisites."""
+
+    return bool(
+        settings.auth_wechat_miniprogram_fingerprint_secret.strip()
+        and settings.auth_wechat_miniprogram_app_id.strip()
+        and getattr(provider, "available", False)
+    )
+
+
 def _fingerprint(code: str, settings: Settings) -> str:
     secret = settings.auth_wechat_miniprogram_fingerprint_secret.strip()
     if not secret:
@@ -286,11 +299,7 @@ def exchange_wechat_miniprogram_code(
 ) -> WechatMiniProgramLoginResult:
     cfg = settings or get_settings()
     selected = provider or get_wechat_miniprogram_provider(cfg)
-    if (
-        not cfg.auth_wechat_miniprogram_fingerprint_secret.strip()
-        or not cfg.auth_wechat_miniprogram_app_id.strip()
-        or not getattr(selected, "available", True)
-    ):
+    if not is_wechat_miniprogram_exchange_available(cfg, selected):
         consume_wechat_miniprogram_attempt(
             db, client_ip=client_ip, device_id=device_id, request_id=str(request_id)
         )

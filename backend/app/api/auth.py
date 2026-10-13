@@ -82,6 +82,7 @@ from app.services.wechat_login_service import (
 from app.services.wechat_miniprogram_login_service import (
     WechatMiniProgramLoginError,
     exchange_wechat_miniprogram_code,
+    is_wechat_miniprogram_exchange_available,
 )
 from app.services.wechat_miniprogram_provider import get_wechat_miniprogram_provider
 
@@ -220,7 +221,10 @@ def _wechat_miniprogram_available() -> bool:
     if settings.auth_wechat_miniprogram_provider.strip().lower() != "wechat_miniprogram":
         return False
     try:
-        return bool(get_wechat_miniprogram_provider().available)
+        return is_wechat_miniprogram_exchange_available(
+            settings,
+            get_wechat_miniprogram_provider(),
+        )
     except Exception:
         return False
 
