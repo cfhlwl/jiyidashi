@@ -135,6 +135,13 @@ class PhotoImportJournal {
         }
         await temporary.rename(saved.path);
       }
+      // A leftover cache copy from an interrupted process is not trusted just
+      // because its path matches. Rehash even the already-staged file.
+      if (await saved.length() != photo.bytes ||
+          (await sha256.bind(saved.openRead()).first).toString() !=
+              photo.contentSha256) {
+        throw const FormatException('staged photo fingerprint mismatch');
+      }
       final row = await store.enqueueLocalTask(
         ownerUserId: ownerUserId,
         operationType: operationType,
