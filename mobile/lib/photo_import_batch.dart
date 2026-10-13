@@ -38,7 +38,9 @@ class PhotoImportBatchCoordinator {
     TrustedMediaCaptureService? service,
     Future<bool> Function(SelectedPhotoImport)? verifySelection,
     PhotoImportJournal? journal,
-  }) : _journal = journal,
+    Future<Map<String, dynamic>> Function(String)? readExistingMemory,
+  }) : _readExistingMemory = readExistingMemory ?? api.getMemory,
+       _journal = journal,
        _service = service ?? TrustedMediaCaptureService(api),
        _verifySelection = verifySelection ?? _verifySourceFingerprint,
        items = List.unmodifiable(
@@ -53,7 +55,9 @@ class PhotoImportBatchCoordinator {
     required PhotoImportJournal journal,
     TrustedMediaCaptureService? service,
     Future<bool> Function(SelectedPhotoImport)? verifySelection,
-  }) : _journal = journal,
+    Future<Map<String, dynamic>> Function(String)? readExistingMemory,
+  }) : _readExistingMemory = readExistingMemory ?? api.getMemory,
+       _journal = journal,
        _service = service ?? TrustedMediaCaptureService(api),
        _verifySelection = verifySelection ?? _verifySourceFingerprint,
        items = List.unmodifiable(restoredItems),
@@ -63,6 +67,7 @@ class PhotoImportBatchCoordinator {
   final JiYiApiClient api;
   final TrustedMediaCaptureService _service;
   final PhotoImportJournal? _journal;
+  final Future<Map<String, dynamic>> Function(String) _readExistingMemory;
   final Future<bool> Function(SelectedPhotoImport) _verifySelection;
   final List<PhotoImportBatchItem> items;
   final String _owner;
@@ -97,6 +102,48 @@ class PhotoImportBatchCoordinator {
     if (api.sessionVersion != _sessionVersion ||
         api.authenticatedUserId != _owner) {
       throw ProtocolException('照片导入账号已变化，请重新选择本账号照片');
+    }
+  }
+
+  /// Completed local SQLite receipts are hints, not server authority. A
+  /// deleted memory must release its claim and be reimported with a NEW UUID.
+  /// Offline/5xx and mismatched owner/source must fail closed, never mark saved.
+  Future<bool> _resolvePhotoClaim(
+    PhotoImportJournal journal,
+    OfflineQueueItem existing,
+    PhotoImportBatchItem item,
+    void Function(PhotoImportBatchItem)? onUpdate,
+  ) async {
+    if (existing.status != OfflineQueueStatus.completed ||
+        existing.serverResourceId == null) {
+      throw const FormatException('photo is already pending for this owner');
+    }
+    final id = existing.serverResourceId!;
+    try {
+      final actual = await _readExistingMemory(id);
+      _assertOwner();
+      final metadata = actual['metadata_json'];
+      if (actual['id']?.toString().toLowerCase() != id.toLowerCase() ||
+          actual['user_id']?.toString().toLowerCase() != _owner.toLowerCase() ||
+          actual['memory_type'] != 'PHOTO' ||
+          actual['source_type'] != 'USER_PHOTO' ||
+          metadata is! Map ||
+          metadata['media_id'] is! String) {
+        throw ProtocolException('已保存照片回执无法验证服务端归属或来源');
+      }
+      item.memoryId = id;
+      item.state = PhotoImportItemState.saved;
+      onUpdate?.call(item);
+      return true;
+    } on ApiException catch (error) {
+      _assertOwner();
+      if (error.statusCode != 404 && error.statusCode != 410) rethrow;
+      await journal.invalidateDeletedMemory(
+        existing,
+        sha256Hex: item.selected.contentSha256,
+      );
+      _assertOwner();
+      return false;
     }
   }
 
@@ -189,21 +236,36 @@ class PhotoImportBatchCoordinator {
             _assertOwner();
             if (duplicate != null &&
                 duplicate.clientUuid != item.clientUploadId) {
-              if (duplicate.status == OfflineQueueStatus.completed &&
-                  duplicate.serverResourceId != null) {
-                // A verified memory already exists for this owner's image.
-                item.memoryId = duplicate.serverResourceId;
-                item.state = PhotoImportItemState.saved;
-                onUpdate?.call(item);
+              if (await _resolvePhotoClaim(
+                journal, duplicate, item, onUpdate,
+              )) {
                 continue;
               }
-              throw const FormatException('image already queued for this owner');
+              // Verified remote tombstone released the SHA claim. Continue
+              // with this import's own UUID rather than reusing deleted media.
             }
             durableRow = await journal.stage(
               item.selected,
               clientUploadId: item.clientUploadId,
             );
             _assertOwner();
+            if (durableRow.clientUuid != item.clientUploadId) {
+              // Two coordinators can race AFTER their first read. SQLite's
+              // unique claim determines the only authorized UUID.
+              if (await _resolvePhotoClaim(
+                journal, durableRow, item, onUpdate,
+              )) {
+                continue;
+              }
+              durableRow = await journal.stage(
+                item.selected,
+                clientUploadId: item.clientUploadId,
+              );
+              _assertOwner();
+              if (durableRow.clientUuid != item.clientUploadId) {
+                throw StateError('photo SHA is held by another uploader');
+              }
+            }
             durableRow = await journal.begin(durableRow);
             ownsSendingAttempt = true;
             _assertOwner();
