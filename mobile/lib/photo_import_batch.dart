@@ -73,6 +73,13 @@ class PhotoImportBatchCoordinator {
   final String _owner;
   final int _sessionVersion;
 
+  // A route may be reopened while its previous coordinator is still uploading.
+  // Fence the same in-process owner/UUID across coordinator instances.
+  static final Set<String> _activeUploads = <String>{};
+  static String _uploadKey(String owner, String uuid) => '$owner/$uuid';
+  static bool isUploadActive(String owner, String uuid) =>
+      _activeUploads.contains(_uploadKey(owner, uuid));
+
   bool _running = false;
   bool _stopRequested = false;
 
@@ -198,6 +205,15 @@ class PhotoImportBatchCoordinator {
           continue;
         }
         _assertOwner();
+        final activeKey = _uploadKey(_owner, item.clientUploadId);
+        if (!_activeUploads.add(activeKey)) {
+          // The original coordinator owns the sending attempt. A reopened
+          // page must not retry or mark that attempt failed.
+          item.state = PhotoImportItemState.uploading;
+          onUpdate?.call(item);
+          continue;
+        }
+        try {
 
         item.errorCode = null;
         item.state = PhotoImportItemState.uploading;
@@ -266,8 +282,14 @@ class PhotoImportBatchCoordinator {
                 throw StateError('photo SHA is held by another uploader');
               }
             }
+            // Validate exactly the staging file supplied to the media sender.
+            await journal.verifyStaged(durableRow);
             durableRow = await journal.begin(durableRow);
             ownsSendingAttempt = true;
+            _assertOwner();
+          }
+          if (journal != null) {
+            await journal.verifyStaged(durableRow!);
             _assertOwner();
           }
           final pending = PendingMediaFile.fromPath(
@@ -324,6 +346,9 @@ class PhotoImportBatchCoordinator {
           // An account switch is not an ordinary per-item failure. Stop the
           // old owner's remaining batch immediately; no cross-owner retries.
           _assertOwner();
+        }
+        } finally {
+          _activeUploads.remove(activeKey);
         }
       }
     } finally {
