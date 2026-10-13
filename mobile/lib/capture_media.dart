@@ -619,7 +619,10 @@ class TrustedMediaCaptureService {
       mediaId: upload.mediaId,
       title: title,
       content: content,
-      occurredAt: file.occurredAt,
+      // A photo picker returns a copy. Its selection/import timestamp is not
+      // evidence of capture time; null remains unknown until EXIF proves UTC.
+      occurredAt: importProvenance == null ? file.occurredAt : importCaptureUtc,
+      importProvenance: importProvenance,
     );
     _assertSameSession(session);
 
