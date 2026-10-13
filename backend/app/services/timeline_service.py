@@ -135,6 +135,15 @@ def _memory_item(memory: Memory, place: Place | None) -> TimelineItem:
         source_type=memory.source_type,
         is_confirmed=memory.is_confirmed,
         media_id=_memory_media_id(memory),
+        photo_occurrence_role=(
+            memory.metadata_json.get("photo_occurrence_role")
+            if memory.memory_type == MemoryType.PHOTO
+            and isinstance(memory.metadata_json, dict)
+            and memory.metadata_json.get("photo_occurrence_role") in {
+                "CLIENT_EXIF_CAPTURE_INSTANT", "IMPORT_DATE_NOT_CAPTURE_TIME"
+            }
+            else None
+        ),
         confidence=memory.confidence,
     )
 
