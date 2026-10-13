@@ -566,7 +566,14 @@ void main() {
       () => find.byKey(const ValueKey('onboarding-permissions')).evaluate().isNotEmpty,
       reason: 'permission choice step',
     );
-    await tester.ensureVisible(find.byKey(const ValueKey('onboarding-permissions-next')));
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('onboarding-permissions-next')),
+      190,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('onboarding-permissions')),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
     await tester.tap(find.byKey(const ValueKey('onboarding-permissions-next')));
     await _pumpUntil(
       tester,
@@ -654,7 +661,14 @@ void main() {
       () => find.byKey(const ValueKey('onboarding-permissions')).evaluate().isNotEmpty,
       reason: 'permission choice step',
     );
-    await tester.ensureVisible(find.byKey(const ValueKey('onboarding-permissions-next')));
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('onboarding-permissions-next')),
+      190,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('onboarding-permissions')),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
     await tester.tap(find.byKey(const ValueKey('onboarding-permissions-next')));
     await _pumpUntil(
       tester,
