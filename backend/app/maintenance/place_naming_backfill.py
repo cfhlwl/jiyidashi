@@ -4,7 +4,7 @@ import argparse
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal
@@ -19,6 +19,40 @@ class PlaceNamingSweepResult:
     attempted: int
     resolved: int
     provider_failures: int
+
+
+@dataclass(frozen=True)
+class PlaceNamingReadonlyInventory:
+    provider: str
+    key_configured: bool
+    eligible_places: int
+    eligible_owners: int
+
+
+def read_only_place_naming_inventory() -> PlaceNamingReadonlyInventory:
+    """Read-only provider/queue counts; never load, return or log secrets/coordinates."""
+    settings = get_settings()
+    criteria = (
+        Place.user_name.is_(None),
+        Place.automatic_name.is_(None),
+        Place.latitude.is_not(None),
+        Place.longitude.is_not(None),
+    )
+    with SessionLocal() as db:
+        eligible_places = db.scalar(
+            select(func.count(Place.id)).where(*criteria)
+        ) or 0
+        eligible_owners = db.scalar(
+            select(func.count(func.distinct(Place.user_id))).where(*criteria)
+        ) or 0
+        # Even an accidental ORM dirty state must not be committed by inspection.
+        db.rollback()
+    return PlaceNamingReadonlyInventory(
+        provider=settings.place_resolver_provider,
+        key_configured=bool(settings.amap_web_service_key.strip()),
+        eligible_places=int(eligible_places),
+        eligible_owners=int(eligible_owners),
+    )
 
 
 def discover_unnamed_place_owner_ids(*, max_owners: int) -> list[UUID]:
@@ -88,7 +122,28 @@ def main() -> None:
         default=100,
         help="Maximum owners to process in this invocation (1..1000).",
     )
+    parser.add_argument(
+        "--status-only",
+        action="store_true",
+        help="READ ONLY: inspect provider/key presence and anonymous eligible counts; no backfill.",
+    )
     args = parser.parse_args()
+    if args.status_only:
+        try:
+            result = read_only_place_naming_inventory()
+        except Exception:
+            # Pydantic/provider/DB errors can contain sensitive inputs. No raw exception.
+            print("place naming inventory: CONFIG_OR_DATABASE_UNAVAILABLE")
+            raise SystemExit(2) from None
+        print(
+            "place naming inventory: "
+            f"provider={result.provider} "
+            f"web_key_set={'YES' if result.key_configured else 'NO'} "
+            f"eligible_places={result.eligible_places} "
+            f"eligible_owners={result.eligible_owners} "
+            "mutation=NONE"
+        )
+        return
     result = sweep_unnamed_place_names(max_owners=args.max_owners)
     print(
         "place naming backfill: "
