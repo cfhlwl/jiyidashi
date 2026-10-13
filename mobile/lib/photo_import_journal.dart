@@ -52,8 +52,12 @@ class PhotoImportJournal {
 
   Future<List<OfflineQueueItem>> list() async {
     final all = await store.listAll(ownerUserId);
-    return all.where((item) => item.operationType == operationType)
+    final photos = all.where((item) => item.operationType == operationType)
         .toList(growable: false);
+    if (store.supportsPhotoImportFileSweep) {
+      await sweepOrphanedFiles(photos);
+    }
+    return photos;
   }
 
   Future<SelectedPhotoImport> selectedFrom(OfflineQueueItem row) async {
@@ -91,15 +95,25 @@ class PhotoImportJournal {
 
   /// Owner-scoped content dedup. A completed SHA has an authoritative memory
   /// receipt; a pending SHA is not a second upload opportunity.
-  Future<OfflineQueueItem?> findSameContent(String sha256Hex) async {
-    final rows = await list();
-    for (final row in rows) {
-      if (row.payload['sha256'] == sha256Hex &&
-          row.status != OfflineQueueStatus.cancelled) {
-        return row;
-      }
+  Future<OfflineQueueItem?> findSameContent(String sha256Hex) =>
+      store.findClaimedPhoto(ownerUserId, sha256Hex);
+
+  Future<void> invalidateDeletedMemory(
+    OfflineQueueItem receipt, {
+    required String sha256Hex,
+  }) {
+    if (receipt.ownerUserId != ownerUserId ||
+        receipt.operationType != operationType ||
+        receipt.status != OfflineQueueStatus.completed ||
+        receipt.serverResourceId == null) {
+      throw StateError('not an owner-completed media receipt');
     }
-    return null;
+    return store.invalidatePhotoReceipt(
+      ownerUserId: ownerUserId,
+      sha256Hex: sha256Hex,
+      clientUuid: receipt.clientUuid,
+      serverResourceId: receipt.serverResourceId!,
+    );
   }
 
   Future<OfflineQueueItem> stage(
@@ -142,9 +156,9 @@ class PhotoImportJournal {
               photo.contentSha256) {
         throw const FormatException('staged photo fingerprint mismatch');
       }
-      final row = await store.enqueueLocalTask(
+      final row = await store.reservePhotoImport(
         ownerUserId: ownerUserId,
-        operationType: operationType,
+        sha256Hex: photo.contentSha256,
         clientUuid: clientUploadId,
         payload: {
           'staged_path': saved.path,
@@ -155,7 +169,7 @@ class PhotoImportJournal {
           'evidence': _evidence(photo.evidence),
         },
       );
-      persisted = true;
+      persisted = row.clientUuid == clientUploadId;
       return row;
     } finally {
       if (await temporary.exists()) {
@@ -166,6 +180,68 @@ class PhotoImportJournal {
         await saved.delete();
       }
     }
+  }
+
+  /// A killed process cannot run a finally block after copy/rename. Sweep
+  /// only unreferenced, old regular UUID stage files belonging to this owner.
+  /// The grace period protects concurrently staging processes; any referenced
+  /// pending/sending/failed row is ALWAYS retained, independent of its age.
+  /// No recursive traversal and no following symlinks.
+  Future<int> sweepOrphanedFiles(
+    List<OfflineQueueItem> allRows, {
+    Duration gracePeriod = const Duration(hours: 1),
+    DateTime? now,
+  }) async {
+    if (gracePeriod < Duration.zero) {
+      throw ArgumentError('negative grace period');
+    }
+    final dir = await store.photoImportOwnerDirectory(ownerUserId);
+    if (await FileSystemEntity.type(dir.path, followLinks: false) !=
+        FileSystemEntityType.directory) {
+      return 0;
+    }
+    final referenced = <String>{
+      for (final row in allRows)
+        if (row.operationType == operationType &&
+            row.status != OfflineQueueStatus.cancelled &&
+            row.status != OfflineQueueStatus.completed)
+          row.clientUuid.toLowerCase(),
+    };
+    final cutoff = (now ?? DateTime.now()).toUtc().subtract(gracePeriod);
+    var deleted = 0;
+    await for (final entity in dir.list(followLinks: false)) {
+      if (await FileSystemEntity.type(entity.path, followLinks: false) !=
+          FileSystemEntityType.file) {
+        continue;
+      }
+      final basename = entity.uri.pathSegments.last;
+      final match = RegExp(
+        r'^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.bin(\.partial)?$',
+      ).firstMatch(basename);
+      if (match == null ||
+          referenced.contains(match.group(1)!.toLowerCase())) {
+        continue;
+      }
+      final file = File(entity.path);
+      final stat = await file.stat();
+      if (!stat.modified.toUtc().isBefore(cutoff)) {
+        continue;
+      }
+      // Second check prevents a referenced item being removed if another
+      // SQLite writer committed during directory enumeration.
+      final existing = await store.findByClientUuid(ownerUserId, match.group(1)!);
+      if (existing != null && existing.operationType == operationType &&
+          existing.status != OfflineQueueStatus.cancelled &&
+          existing.status != OfflineQueueStatus.completed) {
+        continue;
+      }
+      if (await FileSystemEntity.type(file.path, followLinks: false) ==
+          FileSystemEntityType.file) {
+        await file.delete();
+        deleted++;
+      }
+    }
+    return deleted;
   }
 
   Future<void> withdraw(OfflineQueueItem row) async {
@@ -188,6 +264,14 @@ class PhotoImportJournal {
   Future<OfflineQueueItem> begin(OfflineQueueItem row) async {
     if (row.ownerUserId != ownerUserId || row.operationType != operationType) {
       throw StateError('wrong photo owner');
+    }
+    final digest = row.payload['sha256'];
+    if (digest is! String) {
+      throw const FormatException('invalid photo SHA claim');
+    }
+    final claim = await store.findClaimedPhoto(ownerUserId, digest);
+    if (claim?.clientUuid != row.clientUuid) {
+      throw StateError('photo UUID is not owner-SHA active claim');
     }
     if (row.status == OfflineQueueStatus.failed) {
       await store.retryFailed(ownerUserId, row.clientUuid);
@@ -222,3 +306,4 @@ class PhotoImportJournal {
     return completed;
   }
 }
+
