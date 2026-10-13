@@ -1000,234 +1000,11 @@ class OfflineQueueStore {
 
   Future<Directory> photoImportOwnerDirectory(String ownerUserId) async {
     final owner = _normalizeOwnerUserId(ownerUserId).toLowerCase();
-    if (!RegExp(r'^[a-f0-9-]{36}
-    final owner = _normalizeOwnerUserId(ownerUserId);
-    final db = await _database();
-    // 账号注销必须同时删除 Stage 1 outbox 与 Stage 2 raw location outbox。
-    // 两张表放在同一事务里，避免崩溃后留下半清理的敏感位置 payload。
-    return db.transaction((txn) async {
-      final offline = await txn.delete(
-        'offline_queue',
-        where: 'owner_user_id = ?',
-        whereArgs: [owner],
-      );
-      final location = await txn.delete(
-        'location_sample_queue',
-        where: 'owner_user_id = ?',
-        whereArgs: [owner],
-      );
-      await txn.delete(
-        'location_delivery_lease',
-        where: 'owner_user_id = ?',
-        whereArgs: [owner],
-      );
-      await txn.delete(
-        'location_delivery_state',
-        where: 'owner_user_id = ?',
-        whereArgs: [owner],
-      );
-      return offline + location;
-    });
-  }
-
-  Future<int> countAwaitingDelivery(String ownerUserId) async {
-    final owner = _normalizeOwnerUserId(ownerUserId);
-    final db = await _database();
-    final result = await db.rawQuery(
-      '''
-        SELECT COUNT(*) AS total
-        FROM offline_queue
-        WHERE owner_user_id = ? AND status IN (?, ?, ?)
-      ''',
-      [
-        owner,
-        OfflineQueueStatus.pending.storageValue,
-        OfflineQueueStatus.sending.storageValue,
-        OfflineQueueStatus.failed.storageValue,
-      ],
-    );
-    return (result.single['total'] as int?) ?? 0;
-  }
-
-  Future<OfflineQueueItem> markSending(
-    String ownerUserId,
-    String clientUuid,
-  ) {
-    return _transition(
-      ownerUserId,
-      clientUuid,
-      allowed: const {OfflineQueueStatus.pending},
-      next: OfflineQueueStatus.sending,
-      mutate: (current, now) => {
-        'attempt_count': current.attemptCount + 1,
-        'retryable': 1,
-        'last_error': null,
-        'server_resource_id': null,
-        'updated_at': now,
-      },
-    );
-  }
-
-  Future<OfflineQueueItem> markFailed(
-    String ownerUserId,
-    String clientUuid,
-    String error, {
-    required bool retryable,
-  }) {
-    final normalizedError = error.trim();
-    return _transition(
-      ownerUserId,
-      clientUuid,
-      allowed: const {OfflineQueueStatus.sending},
-      next: OfflineQueueStatus.failed,
-      mutate: (_, now) => {
-        'retryable': retryable ? 1 : 0,
-        'last_error': normalizedError.isEmpty ? '发送失败' : normalizedError,
-        'server_resource_id': null,
-        'updated_at': now,
-        'completed_at': null,
-      },
-    );
-  }
-
-  Future<OfflineQueueItem> markCompleted(
-    String ownerUserId,
-    String clientUuid, {
-    required String serverResourceId,
-  }) {
-    final resourceId = serverResourceId.trim();
-    if (resourceId.isEmpty) {
-      throw ArgumentError.value(
-        serverResourceId,
-        'serverResourceId',
-        'completed requires an authoritative server resource ID',
-      );
+    if (!RegExp(r'^[a-f0-9-]{36}$').hasMatch(owner)) {
+      throw ArgumentError('Invalid photo import owner');
     }
-    return _transition(
-      ownerUserId,
-      clientUuid,
-      allowed: const {OfflineQueueStatus.sending},
-      next: OfflineQueueStatus.completed,
-      mutate: (_, now) => {
-        'retryable': 0,
-        'last_error': null,
-        'server_resource_id': resourceId,
-        'updated_at': now,
-        'completed_at': now,
-      },
-    );
-  }
-
-  // 手动重试可以显式把 non-retryable failed 恢复 pending；后台自动重试则
-  // 只从 listDeliverable 读取 retryable=true 的失败任务。
-  Future<OfflineQueueItem> retryFailed(
-    String ownerUserId,
-    String clientUuid,
-  ) {
-    return _transition(
-      ownerUserId,
-      clientUuid,
-      allowed: const {OfflineQueueStatus.failed},
-      next: OfflineQueueStatus.pending,
-      mutate: (_, now) => {
-        'retryable': 1,
-        'last_error': null,
-        'updated_at': now,
-      },
-    );
-  }
-
-  Future<OfflineQueueItem> cancel(
-    String ownerUserId,
-    String clientUuid,
-  ) async {
-    final current = await findByClientUuid(ownerUserId, clientUuid);
-    if (current == null) {
-      throw StateError('Offline queue item not found: $clientUuid');
-    }
-    if (current.status == OfflineQueueStatus.cancelled) {
-      return current;
-    }
-    return _transition(
-      ownerUserId,
-      clientUuid,
-      allowed: const {
-        OfflineQueueStatus.pending,
-        OfflineQueueStatus.failed,
-      },
-      next: OfflineQueueStatus.cancelled,
-      mutate: (_, now) => {
-        'retryable': 0,
-        'last_error': null,
-        'server_resource_id': null,
-        'updated_at': now,
-        'cancelled_at': now,
-      },
-    );
-  }
-
-  Future<OfflineQueueItem> _transition(
-    String ownerUserId,
-    String clientUuid, {
-    required Set<OfflineQueueStatus> allowed,
-    required OfflineQueueStatus next,
-    required Map<String, Object?> Function(
-      OfflineQueueItem current,
-      String now,
-    ) mutate,
-  }) async {
-    final owner = _normalizeOwnerUserId(ownerUserId);
-    final db = await _database();
-    return db.transaction((txn) async {
-      final rows = await txn.query(
-        'offline_queue',
-        where: 'owner_user_id = ? AND client_uuid = ?',
-        whereArgs: [owner, clientUuid],
-        limit: 1,
-      );
-      if (rows.isEmpty) {
-        throw StateError('Offline queue item not found: $clientUuid');
-      }
-      final current = OfflineQueueItem.fromRow(rows.single);
-      if (!allowed.contains(current.status)) {
-        throw StateError(
-          'Invalid offline queue transition: ${current.status.name} -> ${next.name}',
-        );
-      }
-      final now = _utcNow().toIso8601String();
-      await txn.update(
-        'offline_queue',
-        {
-          'status': next.storageValue,
-          ...mutate(current, now),
-        },
-        where: 'id = ? AND owner_user_id = ?',
-        whereArgs: [current.id, owner],
-      );
-      final updated = await txn.query(
-        'offline_queue',
-        where: 'id = ? AND owner_user_id = ?',
-        whereArgs: [current.id, owner],
-        limit: 1,
-      );
-      return OfflineQueueItem.fromRow(updated.single);
-    });
-  }
-
-  Future<void> close() async {
-    final pending = _databaseFuture;
-    _databaseFuture = null;
-    if (pending != null) {
-      final db = await pending;
-      await db.close();
-    }
-  }
-}
-).hasMatch(owner)) {
-      throw ArgumentError('Invalid photo import owner UUID');
-    }
-    final dbPath = await _databasePathProvider();
-    return Directory('$dbPath.photo-import-assets${Platform.pathSeparator}$owner');
+    final databasePath = await _databasePathProvider();
+    return Directory('$databasePath.photo-import-assets${Platform.pathSeparator}$owner');
   }
 
   Future<int> purgeOwner(String ownerUserId) async {
@@ -1259,9 +1036,9 @@ class OfflineQueueStore {
       return offline + location;
     });
     if (RegExp(r'^[a-f0-9-]{36}$', caseSensitive: false).hasMatch(owner)) {
-      final staged = await photoImportOwnerDirectory(owner);
-      if (await staged.exists()) {
-        await staged.delete(recursive: true);
+      final folder = await photoImportOwnerDirectory(owner);
+      if (await folder.exists()) {
+        await folder.delete(recursive: true);
       }
     }
     return deleted;
@@ -1274,10 +1051,11 @@ class OfflineQueueStore {
       '''
         SELECT COUNT(*) AS total
         FROM offline_queue
-        WHERE owner_user_id = ? AND status IN (?, ?, ?)
+        WHERE owner_user_id = ? AND operation_type != ? AND status IN (?, ?, ?)
       ''',
       [
         owner,
+        photoImportOperation,
         OfflineQueueStatus.pending.storageValue,
         OfflineQueueStatus.sending.storageValue,
         OfflineQueueStatus.failed.storageValue,
