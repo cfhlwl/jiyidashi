@@ -177,7 +177,9 @@ class PhotoImportJournal {
     try {
       final source = await selectedFrom(completed);
       final file = File(source.path);
-      if (await file.exists()) await file.delete();
+      if (await file.exists()) {
+        await file.delete();
+      }
     } catch (_) {}
     return completed;
   }
