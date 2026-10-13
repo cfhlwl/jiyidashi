@@ -154,7 +154,9 @@ void main() {
         // These failures occur after server refresh succeeded. They are not proof
         // of session revoke/expiry and must never show the login page.
         expect(api.refreshCalls, 1);
-        expect(api.profileCalls, 1);
+        // The authenticated AppShell also loads profile/elder mode. Both reads
+        // are legitimate; only token rotation/restore must remain single-flight.
+        expect(api.profileCalls, greaterThanOrEqualTo(1));
         expect(find.byType(AppShell), findsOneWidget);
       },
     );
