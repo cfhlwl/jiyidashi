@@ -169,6 +169,70 @@ void main() {
     await store.close();
   });
 
+  test('parallel same-owner SHA is reserved by only one SQLite transaction', () async {
+    final storeA = createStore();
+    final storeB = createStore();
+    final a = PhotoImportJournal(store: storeA, ownerUserId: ownerA);
+    final b = PhotoImportJournal(store: storeB, ownerUserId: ownerA);
+    final secondUuid = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    final results = await Future.wait([
+      a.stage(selected(), clientUploadId: uploadId),
+      b.stage(selected(), clientUploadId: secondUuid),
+    ]);
+    expect(results.map((r) => r.clientUuid).toSet(), hasLength(1));
+    final claimed = (await a.findSameContent(digest))!;
+    expect(claimed.clientUuid, results.first.clientUuid);
+    expect((await a.list()).where((r) => r.status != OfflineQueueStatus.cancelled),
+        hasLength(1));
+    final loser = results.first.clientUuid == uploadId ? secondUuid : uploadId;
+    final dir = await storeA.photoImportOwnerDirectory(ownerA);
+    expect(await File('${dir.path}${Platform.pathSeparator}$loser.bin').exists(),
+        false);
+    final other = PhotoImportJournal(store: storeA, ownerUserId: ownerB);
+    final ownB = await other.stage(
+      selected(), clientUploadId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    );
+    expect(ownB.ownerUserId, ownerB);
+    expect((await other.findSameContent(digest))!.clientUuid, ownB.clientUuid);
+    await storeA.close();
+    await storeB.close();
+  });
+
+  test('orphan sweep removes only old unreferenced regular UUID files', () async {
+    final store = createStore();
+    final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
+    final row = await journal.stage(selected(), clientUploadId: uploadId);
+    final dir = await store.photoImportOwnerDirectory(ownerA);
+    final valid = File((await journal.selectedFrom(row)).path);
+    final orphanUuid = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    final oldPart = File('${dir.path}${Platform.pathSeparator}$orphanUuid.bin.partial');
+    final oldBin = File('${dir.path}${Platform.pathSeparator}$orphanUuid.bin');
+    final recent = File('${dir.path}${Platform.pathSeparator}cccccccc-cccc-4ccc-8ccc-cccccccccccc.bin.partial');
+    await oldPart.writeAsBytes([1]);
+    await oldBin.writeAsBytes([2]);
+    await recent.writeAsBytes([3]);
+    final old = DateTime.now().subtract(const Duration(hours: 3));
+    await oldPart.setLastModified(old);
+    await oldBin.setLastModified(old);
+    await valid.setLastModified(old);
+    final b = PhotoImportJournal(store: store, ownerUserId: ownerB);
+    final other = await b.stage(
+      selected(), clientUploadId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    );
+    final otherFile = File((await b.selectedFrom(other)).path);
+    await otherFile.setLastModified(old);
+
+    expect(await journal.sweepOrphanedFiles(await store.listAll(ownerA)), 2);
+    expect(await oldPart.exists(), false);
+    expect(await oldBin.exists(), false);
+    expect(await recent.exists(), true);
+    expect(await valid.exists(), true, reason: 'never delete referenced pending');
+    expect(await otherFile.exists(), true, reason: 'never cross owner');
+    await journal.withdraw(row);
+    expect(await valid.exists(), false);
+    await store.close();
+  });
+
   test('journal refuses payload from other owner', () async {
     final store = createStore();
     final source = PhotoImportJournal(store: store, ownerUserId: ownerA);
