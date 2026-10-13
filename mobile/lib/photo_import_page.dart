@@ -35,7 +35,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
   late final PhotoImportJournal? _journal = widget.offlineQueue == null ||
           _pageOwner == null
       ? null
-      : PhotoImportJournal(store: widget.offlineQueue!, ownerUserId: _pageOwner!);
+      : PhotoImportJournal(store: widget.offlineQueue!, ownerUserId: _pageOwner);
   PhotoImportSelection? _selection;
   PhotoImportBatchCoordinator? _batch;
   bool _picking = false;
