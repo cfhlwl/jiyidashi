@@ -60,6 +60,8 @@ class _OwnerScopedQueueFixture extends OfflineQueueStore {
         status: rowStatus,
         attemptCount: 0,
         retryable: true,
+        serverResourceId: rowStatus == OfflineQueueStatus.completed
+            ? 'memory-$uploadId' : null,
         createdAt: now,
         updatedAt: now,
       ),
@@ -181,8 +183,12 @@ void main() {
     }
     expect(find.textContaining('仍有照片正在上传'), findsOneWidget);
     expect(find.textContaining('上传中'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('photo-import-submit')));
+    final submit = tester.widget<FilledButton>(
+        find.byKey(const ValueKey('photo-import-submit')));
+    expect(submit.onPressed, isNull,
+        reason: 'live upload must disable repeat submit at the UI boundary');
     await tester.pump();
+    expect(find.textContaining('已保存 0 张'), findsNothing);
     expect(media.attempts, 1, reason: 'reopened page must never start second upload');
     media.release.complete();
     await running;
@@ -193,10 +199,42 @@ void main() {
     )));
     for (var i = 0; i < 6; i++) { await tester.pump(); }
     expect(find.text('restored.jpeg'), findsNothing);
+    expect(find.textContaining('上次已完成导入 1 张'), findsWidgets);
+    expect(find.byKey(const ValueKey('photo-import-completed-receipts')),
+        findsOneWidget);
+    expect(find.textContaining('已保存 0 张'), findsNothing);
     expect(find.textContaining('仍有照片正在上传'), findsNothing);
     expect(media.attempts, 1);
   });
 
+
+  testWidgets('failed receipt is retryable, completed receipt is not a pending photo',
+      (tester) async {
+    final store = _OwnerScopedQueueFixture()..rowStatus = OfflineQueueStatus.failed;
+    await tester.pumpWidget(MaterialApp(home: PhotoImportPage(
+      api: _Api(ownerA), offlineQueue: store,
+    )));
+    for (var i = 0; i < 8; i++) { await tester.pump(); }
+    expect(find.textContaining('失败，可重试'), findsOneWidget);
+    expect(tester.widget<FilledButton>(
+        find.byKey(const ValueKey('photo-import-submit'))).onPressed, isNotNull);
+    await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+    store.rowStatus = OfflineQueueStatus.completed;
+    await tester.pumpWidget(MaterialApp(home: PhotoImportPage(
+      api: _Api(ownerA), offlineQueue: store,
+    )));
+    for (var i = 0; i < 8; i++) { await tester.pump(); }
+    expect(find.byKey(const ValueKey('photo-import-completed-receipts')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('photo-import-submit')), findsNothing);
+    await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+    await tester.pumpWidget(MaterialApp(home: PhotoImportPage(
+      api: _Api(ownerB), offlineQueue: store,
+    )));
+    for (var i = 0; i < 8; i++) { await tester.pump(); }
+    expect(find.byKey(const ValueKey('photo-import-completed-receipts')),
+        findsNothing, reason: 'another owner must not see completed receipts');
+  });
 
   testWidgets('delayed restore never overwrites newly chosen gallery batch',
       (tester) async {
