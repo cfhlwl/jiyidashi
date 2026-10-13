@@ -140,6 +140,20 @@ void main() {
     await store.close();
   });
 
+  test('orphan staged copy with same path but altered bytes never becomes an upload', () async {
+    final store = createStore();
+    final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
+    final dir = await store.photoImportOwnerDirectory(ownerA);
+    await dir.create(recursive: true);
+    final orphan = File('${dir.path}${Platform.pathSeparator}$uploadId.bin');
+    await orphan.writeAsBytes([0xff, 0xd8, 0xff, ...List.filled(40, 9)]);
+    await expectLater(journal.stage(selected(), clientUploadId: uploadId),
+        throwsA(isA<FormatException>()));
+    expect(await journal.list(), isEmpty);
+    expect(await orphan.exists(), false);
+    await store.close();
+  });
+
   test('journal refuses payload from other owner', () async {
     final store = createStore();
     final source = PhotoImportJournal(store: store, ownerUserId: ownerA);
