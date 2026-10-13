@@ -165,16 +165,100 @@ def test_amap_provider_failure_is_bounded_and_backed_off():
 
     with pytest.raises(
         PlaceResolverError,
-        match="AMAP_COORDINATE_CONVERT_FAILED",
+        match="AMAP_KEY_INVALID",
     ):
         resolver.resolve(latitude=39.9, longitude=116.4)
     with pytest.raises(
         PlaceResolverError,
-        match="AMAP_COORDINATE_CONVERT_FAILED",
+        match="AMAP_KEY_INVALID",
     ):
         resolver.resolve(latitude=39.9, longitude=116.4)
 
     assert calls == 1
+
+
+@pytest.mark.parametrize(
+    ("infocode", "expected"),
+    [
+        ("10001", "AMAP_KEY_INVALID"),
+        ("10002", "AMAP_SERVICE_UNAUTHORIZED"),
+        ("10003", "AMAP_QUOTA_EXCEEDED"),
+        ("10004", "AMAP_RATE_LIMITED"),
+        ("10005", "AMAP_IP_RESTRICTED"),
+        ("20011", "AMAP_REGION_UNSUPPORTED"),
+    ],
+)
+@pytest.mark.parametrize("failed_stage", ["convert", "regeo"])
+def test_amap_infocode_is_classified_at_both_provider_stages(
+    infocode: str, expected: str, failed_stage: str,
+):
+    requested_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_paths.append(request.url.path)
+        if request.url.path.endswith("/convert"):
+            if failed_stage == "convert":
+                return httpx.Response(
+                    200, json={"status": "0", "infocode": infocode, "info": "ERROR"}
+                )
+            return httpx.Response(
+                200, json={"status": "1", "locations": "116.405000,39.905000"}
+            )
+        assert request.url.path.endswith("/regeo")
+        return httpx.Response(
+            200, json={"status": "0", "infocode": infocode, "info": "ERROR"}
+        )
+
+    resolver = AMapPlaceResolver(
+        _amap_settings(place_naming_failure_backoff_seconds=300),
+        transport=httpx.MockTransport(handler),
+    )
+    for _ in range(2):
+        with pytest.raises(PlaceResolverError, match=f"^{expected}$"):
+            resolver.resolve(latitude=39.9, longitude=116.4)
+
+    # Second attempt comes from bounded failure-cache, not another provider call.
+    assert len(requested_paths) == (1 if failed_stage == "convert" else 2)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (429, "AMAP_RATE_LIMITED"),
+        (401, "AMAP_HTTP_AUTH_REJECTED"),
+        (403, "AMAP_HTTP_AUTH_REJECTED"),
+        (503, "AMAP_HTTP_UPSTREAM_UNAVAILABLE"),
+    ],
+)
+def test_amap_http_failure_classification_is_secret_free(status: int, expected: str):
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params.get("key") == "server-only-test-key"
+        return httpx.Response(status, text="not a provider JSON response")
+
+    resolver = AMapPlaceResolver(
+        _amap_settings(), transport=httpx.MockTransport(handler)
+    )
+    with pytest.raises(PlaceResolverError) as exc:
+        resolver.resolve(latitude=39.9, longitude=116.4)
+    assert exc.value.code == expected
+    assert "server-only-test-key" not in str(exc.value)
+    assert "39.9" not in str(exc.value)
+
+
+def test_amap_network_failure_does_not_chain_secret_bearing_request_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout(
+            f"upstream request failed: {request.url}", request=request
+        )
+
+    resolver = AMapPlaceResolver(
+        _amap_settings(), transport=httpx.MockTransport(handler)
+    )
+    with pytest.raises(PlaceResolverError) as exc:
+        resolver.resolve(latitude=39.9, longitude=116.4)
+    assert exc.value.code == "AMAP_TIMEOUT"
+    assert exc.value.__cause__ is None
+    assert "server-only-test-key" not in str(exc.value)
 
 
 @pytest.mark.asyncio
