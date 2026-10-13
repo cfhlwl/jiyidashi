@@ -128,6 +128,16 @@ class TimelineReadItem {
         ? null
         : _uuid(value['media_id'], '时间线媒体');
     final visitFinalized = value['visit_finalized'];
+    final photoOccurrenceRole = value['photo_occurrence_role'];
+    if (photoOccurrenceRole != null &&
+        photoOccurrenceRole != 'CLIENT_EXIF_CAPTURE_INSTANT' &&
+        photoOccurrenceRole != 'IMPORT_DATE_NOT_CAPTURE_TIME') {
+      throw ProtocolException('时间线照片日期来源格式不正确');
+    }
+    if (photoOccurrenceRole != null &&
+        (kind != 'MEMORY' || memoryType != 'PHOTO')) {
+      throw ProtocolException('非照片时间线不得携带照片日期来源');
+    }
 
     if (kind == 'MEMORY') {
       if (memoryType == null ||
