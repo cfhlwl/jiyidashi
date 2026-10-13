@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'photo_import_batch.dart';
+import 'photo_import_journal.dart';
+import 'offline_queue.dart';
 import 'photo_import_metadata.dart';
 
 /// Explicit gallery picker flow. Nothing is enumerated or transmitted during
@@ -15,10 +17,12 @@ class PhotoImportPage extends StatefulWidget {
     super.key,
     required this.api,
     this.picker,
+    this.offlineQueue,
   });
 
   final JiYiApiClient api;
   final PhotoImportPicker? picker;
+  final OfflineQueueStore? offlineQueue;
 
   @override
   State<PhotoImportPage> createState() => _PhotoImportPageState();
@@ -28,10 +32,65 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
   late final String? _pageOwner = widget.api.authenticatedUserId;
   late final int _pageSessionVersion = widget.api.sessionVersion;
   late final PhotoImportPicker _picker = widget.picker ?? PhotoImportPicker();
+  late final PhotoImportJournal? _journal = widget.offlineQueue == null ||
+          _pageOwner == null
+      ? null
+      : PhotoImportJournal(store: widget.offlineQueue!, ownerUserId: _pageOwner!);
   PhotoImportSelection? _selection;
   PhotoImportBatchCoordinator? _batch;
   bool _picking = false;
   String? _message;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_journal != null) {
+      unawaited(_restoreDurableImport());
+    }
+  }
+
+  Future<void> _restoreDurableImport() async {
+    try {
+      final journal = _journal!;
+      final existing = await journal.list();
+      final active = existing.where((row) =>
+          row.status != OfflineQueueStatus.completed &&
+          row.status != OfflineQueueStatus.cancelled);
+      final restored = <PhotoImportBatchItem>[];
+      for (final row in active) {
+        final photo = await journal.selectedFrom(row);
+        restored.add(PhotoImportBatchItem(
+          photo,
+          clientUploadId: row.clientUuid,
+          state: row.status == OfflineQueueStatus.failed
+              ? PhotoImportItemState.failed
+              : PhotoImportItemState.waiting,
+        ));
+      }
+      if (!mounted || widget.api.authenticatedUserId != _pageOwner ||
+          widget.api.sessionVersion != _pageSessionVersion ||
+          restored.isEmpty) {
+        return;
+      }
+      setState(() {
+        _selection = PhotoImportSelection(
+          selected: List.unmodifiable(restored.map((i) => i.selected)),
+          failedNames: const [],
+          duplicates: 0,
+        );
+        _batch = PhotoImportBatchCoordinator.restored(
+          api: widget.api,
+          restoredItems: restored,
+          journal: journal,
+        );
+        _message = '已恢复 ${restored.length} 张待续传照片。确认后才会继续上传。';
+      });
+    } catch (_) {
+      if (mounted && widget.api.authenticatedUserId == _pageOwner) {
+        setState(() => _message = '部分待续传照片暂不可用，可重新选择照片。');
+      }
+    }
+  }
 
   bool get _busy => _picking || _batch?.isRunning == true;
 
@@ -56,6 +115,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
       final next = PhotoImportBatchCoordinator(
         api: widget.api,
         selection: selected,
+        journal: _journal,
       );
       setState(() {
         _selection = selected;
