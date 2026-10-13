@@ -407,7 +407,7 @@ void main() {
           ],
         ));
         await tester.pump();
-        expect(api.refreshCalls, 1);
+        await _waitFor(tester, () => api.refreshCalls == 1);
 
         tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
         await tester.pump();
