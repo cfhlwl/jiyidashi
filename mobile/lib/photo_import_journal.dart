@@ -157,6 +157,22 @@ class PhotoImportJournal {
     );
   }
 
+  /// Verify the actual bytes that will be sent, not the original picker path.
+  /// Keep this separate from selectedFrom(), which also feeds UI previews.
+  Future<void> verifyStaged(OfflineQueueItem row) async {
+    final selected = await selectedFrom(row);
+    if (await FileSystemEntity.type(selected.path, followLinks: false) !=
+        FileSystemEntityType.file) {
+      throw const FormatException('staged photo is missing or not a regular file');
+    }
+    final file = File(selected.path);
+    if (await file.length() != selected.bytes ||
+        (await sha256.bind(file.openRead()).first).toString() !=
+            selected.contentSha256) {
+      throw const FormatException('staged photo fingerprint mismatch');
+    }
+  }
+
   /// Owner-scoped content dedup. A completed SHA has an authoritative memory
   /// receipt; a pending SHA is not a second upload opportunity.
   Future<OfflineQueueItem?> findSameContent(String sha256Hex) =>
@@ -198,6 +214,9 @@ class PhotoImportJournal {
               previous.payload['sha256'] != photo.contentSha256) {
             throw StateError('photo upload UUID already belongs to different work');
           }
+          // An existing row is not proof that its private staged bytes are intact.
+          // A same-length modification must fail closed on every retry.
+          await verifyStaged(previous);
           return previous;
         }
 
