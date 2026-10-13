@@ -155,20 +155,27 @@ class _DeferredRestoreApi extends _RestoreApi {
   @override
   Future<AuthRestoreStatus> restorePersistedSession() async {
     refreshCalls++;
-    final result = await restoreGate.future;
-    if (result == AuthRestoreStatus.restored) {
-      authenticatedUserId = _owner;
-      accessToken = 'server-verified-access-a';
+    if (refreshCalls == 1) {
+      final result = await restoreGate.future;
+      if (result == AuthRestoreStatus.restored) {
+        authenticatedUserId = _owner;
+        accessToken = 'server-verified-access-a';
+      }
+      return result;
     }
-    return result;
+    await switchToOtherOwner();
+    return AuthRestoreStatus.restored;
   }
 
   @override
   Future<Map<String, dynamic>> getProfile() async {
     profileCalls++;
-    final profile = await profileGate.future;
-    if (lateProfileError != null) throw lateProfileError!;
-    return profile;
+    if (profileCalls == 1) {
+      final profile = await profileGate.future;
+      if (lateProfileError != null) throw lateProfileError!;
+      return profile;
+    }
+    return <String, dynamic>{'elder_mode_enabled': false};
   }
 
   Future<void> switchToOtherOwner() async {
@@ -273,15 +280,29 @@ Future<void> _pumpApp(
   NativeLocationBridge? locationBridge,
   NotificationClientService? notificationClient,
 }) async {
-  await tester.pumpWidget(JiYiApp(
+  await tester.pumpWidget(_app(
+    api: api,
+    locationBridge: locationBridge,
+    notificationClient: notificationClient ?? _QuietNotifications(api),
+  ));
+  await tester.pump();
+}
+
+JiYiApp _app({
+  required JiYiApiClient api,
+  Key? key,
+  NativeLocationBridge? locationBridge,
+  NotificationClientService? notificationClient,
+}) {
+  return JiYiApp(
+    key: key,
     api: api,
     offlineQueue: _EmptyQueue(),
     onboardingStore: _CompletedOnboarding(),
     locationBridge: locationBridge,
     notificationClient: notificationClient ?? _QuietNotifications(api),
     motionSamplingBridge: _IdleMotionBridge(),
-  ));
-  await tester.pump();
+  );
 }
 
 Future<void> _boot(WidgetTester tester, _RestoreApi api) async {
@@ -373,12 +394,19 @@ void main() {
         final api = _DeferredRestoreApi(lateProfileError: lateError);
         final location = _RecordingLocationBridge();
         final notifications = _RecordingNotifications(api);
-        await _pumpApp(
-          tester,
-          api,
-          locationBridge: location,
-          notificationClient: notifications,
-        );
+        await tester.pumpWidget(Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: _app(
+                key: const ValueKey<String>('account-a'),
+                api: api,
+                locationBridge: location,
+                notificationClient: notifications,
+              ),
+            ),
+          ],
+        ));
+        await tester.pump();
         expect(api.refreshCalls, 1);
 
         tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
@@ -387,12 +415,36 @@ void main() {
 
         api.restoreGate.complete(AuthRestoreStatus.restored);
         await _waitFor(tester, () => api.profileCalls == 1);
-        await api.switchToOtherOwner();
+
+        await tester.pumpWidget(Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: _app(
+                key: const ValueKey<String>('account-a'),
+                api: api,
+                locationBridge: location,
+                notificationClient: notifications,
+              ),
+            ),
+            Positioned.fill(
+              child: _app(
+                key: const ValueKey<String>('account-b'),
+                api: api,
+              ),
+            ),
+          ],
+        ));
+        await _waitFor(
+          tester,
+          () => api.profileCalls == 2 &&
+              find.byType(AppShell).evaluate().isNotEmpty,
+        );
+
         api.completeProfile();
         await tester.pump();
 
         expect(api.authenticatedUserId, _otherOwner);
-        expect(find.byType(AppShell), findsNothing);
+        expect(find.byType(AppShell), findsOneWidget);
         expect(find.byType(AuthPage), findsNothing);
         expect(location.pauseCalls, 0);
         expect(notifications.terminalAuthLossCalls, 0);
@@ -437,5 +489,45 @@ void main() {
 
     expect(api.refreshCalls, 2);
     expect(find.byType(AppShell), findsOneWidget);
+
+    // The original 3-second timer was cancelled by resume and must not fire
+    // after the immediate retry has already restored the session.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    expect(api.refreshCalls, 2);
+  });
+
+  testWidgets('repeated transient failures stay on the 60-second retry cap',
+      (tester) async {
+    final api = _BackoffRestoreApi(failuresBeforeRestore: 8);
+    await _pumpApp(tester, api);
+    expect(api.refreshCalls, 1);
+
+    var expectedRefreshCalls = 1;
+    for (final delay in <Duration>[
+      const Duration(seconds: 3),
+      const Duration(seconds: 6),
+      const Duration(seconds: 12),
+      const Duration(seconds: 24),
+    ]) {
+      await tester.pump(delay);
+      await tester.pump();
+      expectedRefreshCalls++;
+      expect(api.refreshCalls, expectedRefreshCalls);
+    }
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      await tester.pump(const Duration(seconds: 59));
+      await tester.pump();
+      expect(api.refreshCalls, expectedRefreshCalls);
+
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expectedRefreshCalls++;
+      expect(api.refreshCalls, expectedRefreshCalls);
+    }
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
   });
 }
