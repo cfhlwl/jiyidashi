@@ -124,6 +124,21 @@ void main() {
     await store.close();
   });
 
+  test('withdraw unsubmitted file cancels queue and deletes only staged copy', () async {
+    final store = createStore();
+    final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
+    final item = await journal.stage(selected(), clientUploadId: uploadId);
+    final staged = await journal.selectedFrom(item);
+    await journal.withdraw(item);
+    final row = (await journal.list()).single;
+    expect(row.status, OfflineQueueStatus.cancelled);
+    expect(await File(staged.path).exists(), false);
+    expect(await pickerFile.exists(), true, reason: 'never delete user gallery source');
+    expect(await journal.findSameContent(digest), isNull);
+    expect(await store.listDeliverable(ownerA), isEmpty);
+    await store.close();
+  });
+
   test('completed SHA is reused only within original owner', () async {
     final store = createStore();
     final a = PhotoImportJournal(store: store, ownerUserId: ownerA);
