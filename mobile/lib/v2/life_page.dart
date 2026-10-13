@@ -36,13 +36,22 @@ class _LifePageState extends State<LifePage> {
   final V2Authority _navigationAuthority = V2Authority();
   final ValueNotifier<int> _navigationRevision = ValueNotifier<int>(0);
   bool _navigationInFlight = false;
+  bool _navigationRevisionScheduled = false;
 
   @override
   void didUpdateWidget(covariant LifePage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.api, widget.api)) {
       _navigationAuthority.invalidate();
-      _navigationRevision.value += 1;
+      if (!_navigationRevisionScheduled) {
+        _navigationRevisionScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _navigationRevisionScheduled = false;
+          if (mounted) {
+            _navigationRevision.value += 1;
+          }
+        });
+      }
     }
   }
 
