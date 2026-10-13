@@ -89,6 +89,19 @@ class PhotoImportJournal {
     );
   }
 
+  /// Owner-scoped content dedup. A completed SHA has an authoritative memory
+  /// receipt; a pending SHA is not a second upload opportunity.
+  Future<OfflineQueueItem?> findSameContent(String sha256Hex) async {
+    final rows = await list();
+    for (final row in rows) {
+      if (row.payload['sha256'] == sha256Hex &&
+          row.status != OfflineQueueStatus.cancelled) {
+        return row;
+      }
+    }
+    return null;
+  }
+
   Future<OfflineQueueItem> stage(
     SelectedPhotoImport photo, {
     required String clientUploadId,
