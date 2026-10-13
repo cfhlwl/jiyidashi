@@ -62,6 +62,7 @@ class _WidgetMediaApi extends JiYiApiClient {
     String? title,
     required String content,
     DateTime? occurredAt,
+    Map<String, dynamic>? importProvenance,
   }) async {
     photoMemories += 1;
     return {'memory': {'id': 'memory-photo'}};
@@ -87,6 +88,7 @@ class _ResponseLossWidgetMediaApi extends _WidgetMediaApi {
     String? title,
     required String content,
     DateTime? occurredAt,
+    Map<String, dynamic>? importProvenance,
   }) async {
     if (committedContent == null) {
       committedContent = content;
