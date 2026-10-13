@@ -1209,6 +1209,11 @@ class OfflineQueueStore {
         where: 'owner_user_id = ?',
         whereArgs: [owner],
       );
+      await txn.delete(
+        'photo_import_content_claim',
+        where: 'owner_user_id = ?',
+        whereArgs: [owner],
+      );
       return offline + location;
     });
     if (RegExp(r'^[a-f0-9-]{36}$', caseSensitive: false).hasMatch(owner)) {
