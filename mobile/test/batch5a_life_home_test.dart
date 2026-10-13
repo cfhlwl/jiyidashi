@@ -156,7 +156,7 @@ void main() {
 
     expect(find.byType(LifeEventsPage), findsNothing);
     expect(find.text('会话已变化'), findsOneWidget);
-    await tester.pageBack();
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
     // Rebind back to the original owner before proving that a fresh route
