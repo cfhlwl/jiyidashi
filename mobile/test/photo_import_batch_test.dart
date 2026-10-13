@@ -68,6 +68,7 @@ void main() {
     final batch = PhotoImportBatchCoordinator(
       api: api,
       service: service,
+      verifySelection: (_) async => true,
       selection: _selection([_photo('1'), _photo('2')]),
     );
     final progress = <PhotoImportItemState>[];
@@ -91,6 +92,7 @@ void main() {
     final batch = PhotoImportBatchCoordinator(
       api: api,
       service: service,
+      verifySelection: (_) async => true,
       selection: _selection([_photo('A')]),
     );
     await batch.submit();
@@ -109,6 +111,7 @@ void main() {
     final batch = PhotoImportBatchCoordinator(
       api: api,
       service: service,
+      verifySelection: (_) async => true,
       selection: _selection([_photo('1'), _photo('2')]),
     );
     await batch.submit(onUpdate: (item) {
@@ -129,6 +132,7 @@ void main() {
     final batch = PhotoImportBatchCoordinator(
       api: api,
       service: service,
+      verifySelection: (_) async => true,
       selection: _selection([_photo('1', evidence: PhotoCaptureEvidence(
         localCaptureTime: '2025-08-09 01:15:00',
         captureTimeUtc: captured,
@@ -151,6 +155,7 @@ void main() {
     final batch = PhotoImportBatchCoordinator(
       api: api,
       service: service,
+      verifySelection: (_) async => true,
       selection: _selection([_photo('1'), _photo('2')]),
     );
     await expectLater(batch.submit(), throwsA(isA<ProtocolException>()));
