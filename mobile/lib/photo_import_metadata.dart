@@ -95,7 +95,9 @@ class PhotoCaptureEvidence {
     // Dart normalizes overflow, but EXIF fields must be physically valid.
     if (value.year != nums[0] || value.month != nums[1] ||
         value.day != nums[2] || value.hour != nums[3] ||
-        value.minute != nums[4] || value.second != nums[5]) return null;
+        value.minute != nums[4] || value.second != nums[5]) {
+      return null;
+    }
     return (
       '${nums[0].toString().padLeft(4, '0')}-'
       '${nums[1].toString().padLeft(2, '0')}-'
