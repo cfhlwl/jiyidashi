@@ -147,6 +147,7 @@ class PhotoImportBatchCoordinator {
         };
 
         OfflineQueueItem? durableRow;
+        var ownsSendingAttempt = false;
         try {
           // The picker may have copied into a cache path that is later rotated
           // or modified. Do not upload a different same-sized file as the one
@@ -178,6 +179,7 @@ class PhotoImportBatchCoordinator {
             );
             _assertOwner();
             durableRow = await journal.begin(durableRow);
+            ownsSendingAttempt = true;
             _assertOwner();
           }
           final pending = PendingMediaFile.fromPath(
@@ -221,6 +223,7 @@ class PhotoImportBatchCoordinator {
           // the stale account's local journal state.
           _assertOwner();
           if (_journal != null &&
+              ownsSendingAttempt &&
               durableRow?.status == OfflineQueueStatus.sending) {
             await _journal.failed(durableRow!);
             _assertOwner();
