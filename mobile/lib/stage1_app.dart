@@ -21,6 +21,7 @@ import 'notification_client.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
 import 'passive_memory_delivery.dart';
+import 'photo_import_page.dart';
 import 'phone_one_tap_bridge.dart';
 import 'sms_otp.dart';
 import 'wechat_auth_bridge.dart';
@@ -4858,6 +4859,24 @@ class ProfilePage extends StatelessWidget {
                 mode: themeMode,
                 onChanged: onThemeModeChanged,
               ),
+              JiYiSectionCard(
+                leading: Icon(
+                  Icons.photo_library_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                title: '导入已有照片',
+                subtitle: '通过系统选择器主动选取照片。缺少拍摄时间或地点证据时不编造信息。',
+                child: OutlinedButton.icon(
+                  key: const ValueKey('profile-photo-import'),
+                  onPressed: () => JiYiNavigator.push<void>(
+                    context,
+                    builder: (_) => PhotoImportPage(api: api),
+                  ),
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('选择照片导入'),
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.md),
               if (onStartOnboarding != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 JiYiSectionCard(
