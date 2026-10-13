@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -50,32 +51,54 @@ class PhotoImportJournal {
     );
   }
 
-  /// Inter-process advisory owner lock. A crashed writer releases its OS lock,
-  /// letting the next foreground reopen safely sweep abandoned originals.
-  /// A live copy + SQLite reservation are serialized with owner reconciliation.
+  // fcntl-style OS locks may be per-process. Serialize all foreground
+  // coordinators in the same isolate BEFORE acquiring the inter-process lock.
+  static final Map<String, Future<void>> _ownerStageLockTails =
+      <String, Future<void>>{};
+
+  /// Serialize source staging, durable reservation and orphan reconciliation.
+  /// A crashed process releases its file lock. An in-process queued operation
+  /// always completes its gate (including on exceptions).
   Future<T> _withOwnerStageLock<T>(Future<T> Function() operation) async {
     final directory = await store.photoImportOwnerDirectory(ownerUserId);
-    if (await FileSystemEntity.type(directory.path, followLinks: false) ==
-        FileSystemEntityType.link) {
-      throw const FormatException('owner photo staging directory is a symlink');
-    }
-    await directory.create(recursive: true);
-    if (await FileSystemEntity.type(directory.path, followLinks: false) !=
-        FileSystemEntityType.directory) {
-      throw const FormatException('invalid owner photo staging directory');
-    }
-    final handle = await File(
-      '${directory.path}${Platform.pathSeparator}.stage.lock',
-    ).open(mode: FileMode.append);
+    final lockKey = directory.path;
+    final previous = _ownerStageLockTails[lockKey];
+    final completed = Completer<void>();
+    _ownerStageLockTails[lockKey] = completed.future;
     try {
-      await handle.lock(FileLock.exclusive);
+      if (previous != null) {
+        await previous;
+      }
+      if (await FileSystemEntity.type(directory.path, followLinks: false) ==
+          FileSystemEntityType.link) {
+        throw const FormatException('owner photo staging directory is a symlink');
+      }
+      await directory.create(recursive: true);
+      if (await FileSystemEntity.type(directory.path, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        throw const FormatException('invalid owner photo staging directory');
+      }
+      final lockPath = '${directory.path}${Platform.pathSeparator}.stage.lock';
+      if (await FileSystemEntity.type(lockPath, followLinks: false) ==
+          FileSystemEntityType.link) {
+        throw const FormatException('photo staging lock is a symlink');
+      }
+      final handle = await File(lockPath).open(mode: FileMode.append);
       try {
-        return await operation();
+        await handle.lock(FileLock.exclusive);
+        try {
+          return await operation();
+        } finally {
+          await handle.unlock();
+        }
       } finally {
-        await handle.unlock();
+        await handle.close();
       }
     } finally {
-      await handle.close();
+      if (identical(_ownerStageLockTails[lockKey], completed.future)) {
+        _ownerStageLockTails.remove(lockKey);
+      }
+      completed.complete();
     }
   }
 
