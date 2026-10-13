@@ -11,6 +11,7 @@ import {
   getAuthCapabilities,
   getPrivacyStatus,
   getProfile,
+  isCanonicalPhoneInput,
   isAuthSessionCurrent,
   isAuthenticated,
   loginAccount,
@@ -220,7 +221,7 @@ export default function Page() {
   }
 
   const requestPhoneSms = async () => {
-    if (!smsOtpAvailable || loading || smsCooldownSeconds > 0 || !smsPhone.trim()) return
+    if (!smsOtpAvailable || loading || smsCooldownSeconds > 0 || !isCanonicalPhoneInput(smsPhone.trim())) return
     const operation = beginOperation()
     setLoading(true)
     setStatus('')
@@ -434,8 +435,8 @@ export default function Page() {
           <>
             <View className='card-title'>手机号验证码登录</View>
             <View className='muted'>验证成功后，已有手机号账号直接登录；新手机号会创建迹忆账号。</View>
-            <Input className='field' type='number' placeholder='+8613812345678' value={smsPhone} onInput={(e) => setSmsPhone(e.detail.value)} />
-            <Button className='primary-button' disabled={loading || smsCooldownSeconds > 0 || !smsPhone.trim()} onClick={() => void requestPhoneSms()}>
+            <Input className='field' type='text' maxlength={16} placeholder='+8613812345678' value={smsPhone} onInput={(e) => setSmsPhone(e.detail.value)} />
+            <Button className='primary-button' disabled={loading || smsCooldownSeconds > 0 || !isCanonicalPhoneInput(smsPhone.trim())} onClick={() => void requestPhoneSms()}>
               {loading ? '请稍候…' : smsCooldownSeconds > 0 ? `${smsCooldownSeconds} 秒后重发` : '获取验证码'}
             </Button>
             {smsRequestId && (

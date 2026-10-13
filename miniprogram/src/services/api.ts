@@ -199,6 +199,7 @@ const AUTH_OWNER_KEY = 'jiyi_authenticated_user_id'
 const AUTH_SESSION_KEY = 'jiyi_auth_session'
 const AUTH_DEVICE_ID_KEY = 'jiyi_auth_device_id'
 const ACCESS_REFRESH_SKEW_MS = 30_000
+const PHONE_E164_PATTERN = /^\+[1-9][0-9]{7,14}$/
 let authSessionEpoch = 0
 let authAttemptGeneration = 0
 let refreshFlight: { sessionId: string; promise: Promise<MiniAuthSession> } | null = null
@@ -511,13 +512,17 @@ export function logout(): Promise<LogoutResult> {
 }
 
 /**
- * Fence a pre-login operation without touching an already installed session.
+ * Fence a pre-login operation without changing an already installed session's
+ * identity or epoch. Leaving an auth surface is not an account transition.
  * The SMS page uses this when the user changes authentication method or leaves
  * the flow; OTP values remain only in component memory and are never stored.
  */
 export function cancelPendingAuthAttempt(): void {
   authAttemptGeneration += 1
-  authSessionEpoch += 1
+}
+
+export function isCanonicalPhoneInput(value: string): boolean {
+  return PHONE_E164_PATTERN.test(value)
 }
 
 export function captureAuthSession(): AuthSessionSnapshot {
@@ -812,7 +817,9 @@ export async function loginAccount(email: string, password: string): Promise<voi
 
 export async function requestSmsOtp(phone: string): Promise<SmsOtpRequestResponse> {
   const normalizedPhone = phone.trim()
-  if (!normalizedPhone) throw new Error('请输入手机号')
+  if (!isCanonicalPhoneInput(normalizedPhone)) {
+    throw new Error('请输入国际格式手机号（例如 +8613812345678）')
+  }
   const result = await request<unknown>('POST', '/auth/phone/sms/request', {
     phone: normalizedPhone,
     device_id: getAuthDeviceId(),

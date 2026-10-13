@@ -107,11 +107,54 @@ test('SMS request response parser rejects incomplete provider-shaped data', asyn
   )
 })
 
+test('leaving an auth surface does not invalidate an existing session request', async () => {
+  const { Taro, storage } = await setup()
+  storage.set('jiyi_auth_session', tokenResponse(USER_A))
+  let markRequestStarted!: () => void
+  const requestStarted = new Promise<void>((resolve) => { markRequestStarted = resolve })
+  let releaseProfile!: (value: { statusCode: number; data: unknown }) => void
+  Taro.request = (options: RequestOptions) => {
+    assert.equal(options.url, 'https://api.example.test/v1/user')
+    markRequestStarted()
+    return new Promise((resolve) => { releaseProfile = resolve })
+  }
+  const api = await import('../src/services/api')
+  const pending = api.getProfile()
+  await requestStarted
+  api.cancelPendingAuthAttempt()
+  releaseProfile({
+    statusCode: 200,
+    data: {
+      id: USER_A,
+      nickname: 'A',
+      email: 'a@example.com',
+      timezone: 'Asia/Shanghai',
+      locale: 'zh-CN',
+      elder_mode_enabled: false,
+    },
+  })
+  const profile = await pending
+  assert.equal(profile.id, USER_A)
+  assert.equal(api.currentAuthenticatedUserId(), USER_A)
+})
+
+test('phone input requires canonical international E.164 and accepts plus sign', async () => {
+  const api = await import('../src/services/api')
+  assert.equal(api.isCanonicalPhoneInput('+8613812345678'), true)
+  assert.equal(api.isCanonicalPhoneInput('13812345678'), false)
+  await assert.rejects(
+    api.requestSmsOtp('13812345678'),
+    /国际格式手机号/,
+  )
+})
+
 test('Mini SMS entry is capability-gated and uses transient component state', () => {
   const source = readFileSync('src/pages/profile/index.tsx', 'utf8')
   assert.match(source, /smsOtpAvailable && !smsMode/)
   assert.match(source, /requestSmsOtp\(smsPhone\)/)
   assert.match(source, /verifySmsOtp\(smsRequestId, smsCode\)/)
+  assert.match(source, /type='text' maxlength=\{16\}/)
+  assert.match(source, /isCanonicalPhoneInput\(smsPhone\.trim\(\)\)/)
   assert.match(source, /setSmsCode\(''\)/)
   assert.doesNotMatch(source, /setStorageSync\([^\n]*sms/i)
 })
