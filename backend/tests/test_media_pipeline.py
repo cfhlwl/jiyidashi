@@ -656,6 +656,14 @@ async def test_selected_gallery_import_binds_exif_clues_to_verified_media_withou
         assert persisted.longitude is None
         db.rollback()
 
+    timeline = await client.get("/v1/timeline/events?limit=100", headers=headers)
+    assert timeline.status_code == 200
+    recorded = next(
+        item for item in timeline.json()["items"] if item["id"] == memory["id"]
+    )
+    assert recorded["photo_occurrence_role"] == "CLIENT_EXIF_CAPTURE_INSTANT"
+    assert recorded["media_id"] == media_id
+
     # Lost response replay must be idempotent; metadata changes may not silently
     # replace the original evidence or contaminate another owner's memories.
     replay = await client.post(
