@@ -308,7 +308,9 @@ void main() {
 
   test('symlinked private photo-import parent cannot redirect selected originals',
       () async {
-    if (Platform.isWindows) return; // Unprivileged Windows links can be disabled.
+    if (Platform.isWindows) {
+      return; // Unprivileged Windows links can be disabled.
+    }
     final store = createStore();
     final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
     final dir = await store.photoImportOwnerDirectory(ownerA);
