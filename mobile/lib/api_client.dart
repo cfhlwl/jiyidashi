@@ -1545,6 +1545,7 @@ class JiYiApiClient
     String? title,
     required String content,
     DateTime? occurredAt,
+    Map<String, dynamic>? importProvenance,
   }) {
     return _jsonRequest(
       'POST',
