@@ -195,6 +195,16 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_auth_wechat_login_integration.py
 
+      - name: PostgreSQL AUTH-002 WeChat Mini Program identity authority
+        # AUTH-002 requires real PostgreSQL reservation, provider-neutral identity
+        # isolation, unique-identity race handling, and durable code replay fencing.
+        # The fake provider is explicit; no live WeChat endpoint or credential is used.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+        run: python tests/postgres_auth_wechat_miniprogram_integration.py
+
       - name: PostgreSQL Durable Maintenance Job concurrency
         # [OPS-002] Real PostgreSQL validates SKIP LOCKED single-claim authority,
         # concurrent dedupe, lease reclaim, stale-token fencing and crash terminalization.

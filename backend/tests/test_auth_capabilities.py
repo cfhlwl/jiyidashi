@@ -17,6 +17,7 @@ async def test_auth_capabilities_fail_closed_without_live_provider(client):
         "sms_otp": "UNAVAILABLE",
         "phone_one_tap": "UNAVAILABLE",
         "wechat": "DISABLED",
+        "wechat_miniprogram": "DISABLED",
     }
 
 
@@ -41,6 +42,7 @@ async def test_auth_capabilities_expose_only_provider_neutral_available_state(
         "sms_otp": "AVAILABLE",
         "phone_one_tap": "UNAVAILABLE",
         "wechat": "DISABLED",
+        "wechat_miniprogram": "DISABLED",
     }
     assert "aliyun" not in response.text.lower()
     assert "credential" not in response.text.lower()

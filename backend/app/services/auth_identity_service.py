@@ -81,6 +81,21 @@ def canonicalize_wechat_subject(value: str) -> str:
     return value
 
 
+def canonicalize_wechat_miniprogram_subject(value: str) -> str:
+    if value != value.strip() or len(value) > 255 or any(
+        ord(char) < 32 or char.isspace() for char in value
+    ):
+        raise AuthIdentityError("AUTH_WECHAT_MINIPROGRAM_SUBJECT_INVALID", 422)
+    parts = value.split(":")
+    if len(parts) != 3 or parts[0] != "openid":
+        raise AuthIdentityError("AUTH_WECHAT_MINIPROGRAM_SUBJECT_INVALID", 422)
+    if not _WECHAT_COMPONENT_RE.fullmatch(parts[1]) or not _WECHAT_COMPONENT_RE.fullmatch(
+        parts[2]
+    ):
+        raise AuthIdentityError("AUTH_WECHAT_MINIPROGRAM_SUBJECT_INVALID", 422)
+    return value
+
+
 def canonicalize_subject(provider: AuthProvider, value: str) -> str:
     if provider is AuthProvider.EMAIL_PASSWORD:
         return canonicalize_email_subject(value)
@@ -88,6 +103,8 @@ def canonicalize_subject(provider: AuthProvider, value: str) -> str:
         return canonicalize_phone_subject(value)
     if provider is AuthProvider.WECHAT:
         return canonicalize_wechat_subject(value)
+    if provider is AuthProvider.WECHAT_MINIPROGRAM:
+        return canonicalize_wechat_miniprogram_subject(value)
     raise AuthIdentityError("AUTH_PROVIDER_UNSUPPORTED", 422)
 
 
@@ -152,7 +169,8 @@ def resolve_auth_identity(
     if user.auth_disabled_at is not None:
         raise AuthIdentityError("AUTH_ACCOUNT_UNAVAILABLE", 401)
     if (
-        provider in {AuthProvider.PHONE, AuthProvider.WECHAT}
+        provider
+        in {AuthProvider.PHONE, AuthProvider.WECHAT, AuthProvider.WECHAT_MINIPROGRAM}
         and identity.verified_at is None
     ):
         raise AuthIdentityError("AUTH_IDENTITY_NOT_VERIFIED", 401)
@@ -383,7 +401,11 @@ def link_verified_identity(
                 raise AuthIdentityError("AUTH_IDENTITY_NOT_VERIFIED", 409) from exc
             if provider is AuthProvider.EMAIL_PASSWORD and not winner.secret_hash:
                 raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
-            if provider in {AuthProvider.PHONE, AuthProvider.WECHAT} and winner.secret_hash:
+            if provider in {
+                AuthProvider.PHONE,
+                AuthProvider.WECHAT,
+                AuthProvider.WECHAT_MINIPROGRAM,
+            } and winner.secret_hash:
                 raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
             return AuthIdentityResolution(identity=winner, user_id=user_id)
         raise AuthIdentityError("AUTH_IDENTITY_CONFLICT", 409) from exc
