@@ -594,3 +594,130 @@ def test_production_custom_storage_endpoint_requires_https():
         storage_endpoint_url="http://127.0.0.1:9000",
     )
     assert development.storage_endpoint_url == "http://127.0.0.1:9000"
+
+
+@pytest.mark.asyncio
+async def test_selected_gallery_import_binds_exif_clues_to_verified_media_without_visit(
+    client,
+    fake_storage: FakeObjectStorage,
+):
+    # The source is an owner-owned READY object, not an asserted client fact.
+    headers = await _new_headers(client, "photo-import-owner")
+    other = await _new_headers(client, "photo-import-other")
+    upload = await client.post(
+        "/v1/media/uploads",
+        headers=headers,
+        json=_upload_payload(size_bytes=11),
+    )
+    assert upload.status_code == 201
+    media_id = upload.json()["id"]
+    key = fake_storage.last_upload_key
+    assert key is not None
+    _put_fake_object(
+        fake_storage, key, size_bytes=11, content_type="image/jpeg",
+        data=_jpeg_bytes(11), etag="import-etag",
+    )
+    ready = await client.post(f"/v1/media/{media_id}/complete", headers=headers)
+    assert ready.status_code == 200
+
+    exif = {
+        "selection_method": "SYSTEM_PHOTO_PICKER",
+        "capture_time_source": "EXIF_ORIGINAL_OFFSET",
+        "local_capture_time": "2025-08-09 01:15:00",
+        "utc_offset_minutes": 480,
+        "gps_latitude": 31.2304,
+        "gps_longitude": 121.4737,
+    }
+    request = {
+        "occurred_at": "2025-08-08T17:15:00Z",
+        "import_provenance": exif,
+    }
+    imported = await client.post(
+        f"/v1/media/{media_id}/memory", headers=headers, json=request,
+    )
+    assert imported.status_code == 201, imported.text
+    memory = imported.json()["memory"]
+    assert memory["content"] == "用户选择导入的照片（尚未添加文字说明）"
+    assert memory["latitude"] is None
+    assert memory["longitude"] is None
+    assert memory["place_id"] is None
+    assert memory["source_type"] == "USER_PHOTO"
+    assert memory["occurred_at"].startswith("2025-08-08T17:15:00")
+    with SessionLocal() as db:
+        from app.models import Memory
+
+        persisted = db.get(Memory, UUID(memory["id"]))
+        assert persisted is not None
+        data = persisted.metadata_json
+        assert data["photo_import_exif_authority"] == "CLIENT_DECLARED_UNVERIFIED"
+        assert data["photo_occurrence_role"] == "CLIENT_EXIF_CAPTURE_INSTANT"
+        assert data["photo_import_provenance"]["gps_latitude"] == 31.2304
+        assert persisted.latitude is None
+        assert persisted.longitude is None
+        db.rollback()
+
+    # Lost response replay must be idempotent; metadata changes may not silently
+    # replace the original evidence or contaminate another owner's memories.
+    replay = await client.post(
+        f"/v1/media/{media_id}/memory", headers=headers, json=request,
+    )
+    assert replay.status_code == 201
+    assert replay.json()["memory"]["id"] == memory["id"]
+    conflict = await client.post(
+        f"/v1/media/{media_id}/memory",
+        headers=headers,
+        json={**request, "import_provenance": {**exif, "gps_latitude": 32.0}},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"] == "MEDIA_MEMORY_IDEMPOTENCY_CONFLICT"
+    cross_owner = await client.post(
+        f"/v1/media/{media_id}/memory", headers=other, json=request,
+    )
+    assert cross_owner.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_gallery_import_rejects_fabricated_capture_instants(client, auth_headers):
+    from pydantic import ValidationError
+    from app.schemas import PhotoMemoryCreate
+
+    base = {
+        "selection_method": "SYSTEM_PHOTO_PICKER",
+        "capture_time_source": "EXIF_LOCAL_ONLY",
+        "local_capture_time": "2025-11-02 01:30:00",
+    }
+    invalid = [
+        {"occurred_at": "2025-11-02T01:30:00Z", "import_provenance": base},
+        {"import_provenance": {**base, "utc_offset_minutes": 480}},
+        {"import_provenance": {**base, "gps_latitude": 39.0}},
+        {"import_provenance": {**base, "local_capture_time": "2025-02-30 01:30:00"}},
+        {"import_provenance": {
+            **base, "capture_time_source": "EXIF_ORIGINAL_OFFSET",
+            "utc_offset_minutes": 480,
+        }},
+        {"import_provenance": {
+            **base, "capture_time_source": "UNKNOWN",
+        }},
+        {"import_provenance": {"selection_method": "AUTO_SCAN", "capture_time_source": "UNKNOWN"}},
+    ]
+    for candidate in invalid:
+        with pytest.raises(ValidationError):
+            PhotoMemoryCreate.model_validate(candidate)
+
+    unknown = PhotoMemoryCreate.model_validate({
+        "import_provenance": {
+            "selection_method": "SYSTEM_PHOTO_PICKER",
+            "capture_time_source": "UNKNOWN",
+        },
+    })
+    assert unknown.occurred_at is None
+    assert unknown.content == "用户选择导入的照片（尚未添加文字说明）"
+
+    local = PhotoMemoryCreate.model_validate({"import_provenance": base})
+    assert local.occurred_at is None
+    assert local.import_provenance is not None
+
+    # Legacy camera record still requires user text; never silently broaden
+    # that API to allow an unverified source masquerading as authored memory.
+    with pytest.raises(ValidationError):
+        PhotoMemoryCreate.model_validate({})
