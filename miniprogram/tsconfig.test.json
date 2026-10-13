@@ -21,6 +21,7 @@
     "src/pages/profile/profileAuthFlow.ts",
     "tests/authSession.test.ts",
     "tests/profileAuthFence.test.ts",
+    "tests/profileAuthFlow.test.ts",
     "src/services/todayFootprint.ts",
     "src/services/placeDetail.ts",
     "tests/photoCapture.test.ts",

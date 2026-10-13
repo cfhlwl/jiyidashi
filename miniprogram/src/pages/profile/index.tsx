@@ -304,6 +304,7 @@ export default function Page() {
               isViewGenerationCurrent: (generation) => generation === profileViewGeneration.current,
               logout,
               isAuthenticated,
+              setLoading,
               setProfile,
               setPrivacy,
               clearForm: () => {

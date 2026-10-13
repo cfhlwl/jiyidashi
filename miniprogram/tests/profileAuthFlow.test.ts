@@ -95,6 +95,7 @@ test('Profile logout result cannot overwrite a newer account', async () => {
     isViewGenerationCurrent: (value) => value === currentGeneration,
     logout: () => new Promise((resolve) => { resolveLogout = resolve }),
     isAuthenticated: () => authenticated,
+    setLoading: () => undefined,
     setProfile: (value) => { state.profile = value === null ? null : state.profile },
     setPrivacy: () => undefined,
     clearForm: () => undefined,
@@ -102,7 +103,71 @@ test('Profile logout result cannot overwrite a newer account', async () => {
   })
   currentGeneration = ++generation
   authenticated = true
+  state.status = 'B 已登录'
   resolveLogout(await fakeLogout())
   await pending
   assert.deepEqual(state, { status: 'B 已登录', profile: null })
+})
+
+test('Pending profile mutation logout releases busy before B login and stale A finally cannot clear B', async () => {
+  let operationGeneration = 0
+  let currentOperation: object | null = null
+  let viewGeneration = 0
+  let authenticated = true
+  let resolveLogout!: (value: { localCleared: true; serverRevoked: false; serverStatus: 'UNCONFIRMED' }) => void
+  let resolveLogin!: () => void
+  const state = { loading: true, status: 'A 正在保存', profile: 'A' as string | null }
+  const beginOperation = () => {
+    const operation = { generation: ++operationGeneration }
+    currentOperation = operation
+    return operation
+  }
+  const operationIsCurrent = (operation: object) => operation === currentOperation
+  const staleAOperation = beginOperation()
+
+  const pendingLogout = runProfileLogout({
+    beginViewGeneration: () => { viewGeneration = ++viewGeneration; return viewGeneration },
+    isViewGenerationCurrent: (value) => value === viewGeneration,
+    logout: () => new Promise((resolve) => { resolveLogout = resolve }),
+    isAuthenticated: () => authenticated,
+    setLoading: (value) => { state.loading = value },
+    setProfile: (value) => { state.profile = value },
+    setPrivacy: () => undefined,
+    clearForm: () => undefined,
+    setStatus: (value) => { state.status = value },
+  })
+
+  // The old mutation's auth operation is no longer current after logout.
+  currentOperation = null
+  authenticated = false
+  assert.equal(state.loading, false)
+  assert.equal(state.profile, null)
+
+  const bLogin = runProfileSubmit({
+    registerMode: false,
+    email: 'b@example.com',
+    password: 'password-b',
+    nickname: '',
+    beginOperation,
+    operationIsCurrent,
+    registerAccount: async () => ({ user_id: 'unused', verification_required: true, verification_delivery_pending: false }),
+    loginAccount: () => new Promise((resolve) => { resolveLogin = resolve }),
+    refreshProfile: async () => undefined,
+    setLoading: (value) => { state.loading = value },
+    setStatus: (value) => { state.status = value },
+    setVerificationPendingEmail: () => undefined,
+  })
+  await Promise.resolve()
+  assert.equal(state.loading, true)
+
+  if (staleAOperation && operationIsCurrent(staleAOperation)) state.loading = false
+  assert.equal(state.loading, true)
+
+  resolveLogout({ localCleared: true, serverRevoked: false, serverStatus: 'UNCONFIRMED' })
+  await pendingLogout
+  assert.equal(state.loading, true)
+
+  resolveLogin()
+  await bLogin
+  assert.equal(state.loading, false)
 })

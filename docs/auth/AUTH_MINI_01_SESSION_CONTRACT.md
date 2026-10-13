@@ -99,7 +99,9 @@ submit/logout flow is exercised through its page-owned async seam as well as
 the lower-level fence helpers: a rejected password login clears busy state and
 can be retried, logout cannot publish a late result over a newer account, and
 an older account's completion cannot clear the newer account's loading/status
-state.
+state. The active logout transition also releases the prior mutation's busy
+owner synchronously, before remote revoke completion, so the anonymous login
+button is immediately usable while the old mutation remains fenced.
 
 Backend PostgreSQL auth/session tests remain the authority for registration,
 email verification, refresh rotation, logout, and session revocation; this

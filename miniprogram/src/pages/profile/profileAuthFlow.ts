@@ -61,6 +61,7 @@ type LogoutDeps = {
   isViewGenerationCurrent: (generation: number) => boolean
   logout: () => Promise<LogoutResult>
   isAuthenticated: () => boolean
+  setLoading: (value: boolean) => void
   setProfile: (value: null) => void
   setPrivacy: (value: null) => void
   clearForm: () => void
@@ -70,6 +71,10 @@ type LogoutDeps = {
 export async function runProfileLogout(deps: LogoutDeps): Promise<void> {
   const generation = deps.beginViewGeneration()
   const pendingLogout = deps.logout()
+  // Logout is the current synchronous page transition: release the old
+  // mutation's busy owner now, while its delayed finally remains fenced by
+  // operation/auth generation and cannot clear a newer login's busy state.
+  deps.setLoading(false)
   deps.setProfile(null)
   deps.setPrivacy(null)
   deps.clearForm()
