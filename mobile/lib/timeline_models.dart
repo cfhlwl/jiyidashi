@@ -172,6 +172,7 @@ class TimelineReadItem {
       content: content,
       isConfirmed: isConfirmed as bool?,
       mediaId: mediaId,
+      photoOccurrenceRole: photoOccurrenceRole as String?,
       confidence: confidenceRaw.toDouble(),
       visitFinalized: visitFinalized as bool?,
     );
