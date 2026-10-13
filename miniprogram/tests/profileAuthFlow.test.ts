@@ -279,3 +279,81 @@ test('Real delayed profile mutation callback cannot clear B loading after logout
   await Promise.all([logout, login])
   assert.equal(state.loading, false)
 })
+
+test('Real delayed profile mutation failure cannot overwrite B after logout', async () => {
+  let generation = 0
+  let currentOperation: object | null = null
+  let viewGeneration = 0
+  let authenticated = true
+  let rejectMutation!: (error: Error) => void
+  let resolveLogout!: (value: { localCleared: true; serverRevoked: true; serverStatus: 'CONFIRMED' }) => void
+  let resolveLogin!: () => void
+  const state = { loading: false, status: '', profile: 'A' as string | null }
+  const beginOperation = () => {
+    viewGeneration += 1
+    const operation = { generation: ++generation }
+    currentOperation = operation
+    return operation
+  }
+  const operationIsCurrent = (operation: object) => operation === currentOperation
+
+  const mutation = runProfileMutation({
+    beginOperation,
+    operationIsCurrent,
+    currentViewGeneration: () => viewGeneration,
+    isViewGenerationCurrent: (value) => value === viewGeneration,
+    action: () => new Promise<string>((_resolve, reject) => { rejectMutation = reject }),
+    applySuccess: (value) => { state.profile = value },
+    setLoading: (value) => { state.loading = value },
+    setStatus: (value) => { state.status = value },
+    successStatus: '资料已更新',
+    errorStatus: '资料更新失败',
+  })
+  await Promise.resolve()
+  assert.equal(state.loading, true)
+
+  const logout = runProfileLogout({
+    beginViewGeneration: () => ++viewGeneration,
+    isViewGenerationCurrent: (value) => value === viewGeneration,
+    logout: () => {
+      authenticated = false
+      currentOperation = null
+      viewGeneration += 1
+      return new Promise((resolve) => { resolveLogout = resolve })
+    },
+    isAuthenticated: () => authenticated,
+    setLoading: (value) => { state.loading = value },
+    setProfile: (value) => { state.profile = value === null ? null : state.profile },
+    setPrivacy: () => undefined,
+    clearForm: () => undefined,
+    setStatus: (value) => { state.status = value },
+  })
+  assert.equal(state.loading, false)
+  assert.equal(state.profile, null)
+
+  const login = runProfileSubmit({
+    registerMode: false,
+    email: 'b@example.com',
+    password: 'password-b',
+    nickname: '',
+    beginOperation,
+    operationIsCurrent,
+    registerAccount: async () => ({ user_id: 'unused', verification_required: true, verification_delivery_pending: false }),
+    loginAccount: () => new Promise((resolve) => { resolveLogin = resolve }),
+    refreshProfile: async () => undefined,
+    setLoading: (value) => { state.loading = value },
+    setStatus: (value) => { state.status = value },
+    setVerificationPendingEmail: () => undefined,
+  })
+  await Promise.resolve()
+  assert.equal(state.loading, true)
+
+  rejectMutation(new Error('A network failure'))
+  await mutation
+  assert.deepEqual(state, { loading: true, status: '', profile: null })
+
+  resolveLogout({ localCleared: true, serverRevoked: true, serverStatus: 'CONFIRMED' })
+  resolveLogin()
+  await Promise.all([logout, login])
+  assert.equal(state.loading, false)
+})
