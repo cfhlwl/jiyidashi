@@ -66,11 +66,14 @@ A new login clears the previous local authority before installing the new
 complete session, so account switching cannot publish stale owner data.
 
 Every protected request captures the owner, session id, and auth epoch before
-I/O. Both success and error completion are rejected when that snapshot is no
-longer current. A 401 refresh first compares the captured refresh token with
+I/O. HTTP responses and transport/network rejections are both checked against
+that snapshot; a stale rejection is replaced with a bounded stale-session
+error instead of exposing an old account's error to the current page. A 401
+refresh first compares the captured refresh token with
 the current session; if another request already rotated it, the request uses
 the new access token instead of replaying the old refresh token. A refresh
-response whose user or session identity changes is rejected and not persisted.
+response must be HTTP 2xx and preserve user/session identity; otherwise it is
+rejected and not persisted.
 
 Startup restore and foreground resume validate the same durable record and
 perform a bounded refresh when needed. Existing `subscribeAuthSession`,
@@ -86,9 +89,12 @@ decide verification success or create a session. Tests use controlled
 complete login/verify responses, malformed response fail-closed behavior,
 expiry refresh, 401 single-flight, delayed-401 rotated-token non-reuse,
 response-loss logout/switch fencing, login/verification attempt generations,
-protected success/error fencing, remote logout status, refresh identity
-continuity, storage corruption, and token-free errors. Profile publication is
-also guarded by a page view generation and the captured validated session.
+protected success/error/transport-rejection fencing, remote logout status,
+refresh identity continuity and non-2xx rejection, corrupt/expiring restore,
+and token-free errors. Profile publication and every Profile operation
+completion are guarded by page view/auth operation generations and the
+captured validated session; stale success, error, and finally callbacks cannot
+change the current account's status or busy state.
 
 Backend PostgreSQL auth/session tests remain the authority for registration,
 email verification, refresh rotation, logout, and session revocation; this

@@ -27,6 +27,12 @@ import {
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
 import { FloatingCaptureAction, ProductHeroHeader } from '../../components/product/ProductUi'
+import {
+  beginProfileAsyncOperation,
+  isProfileAsyncOperationCurrent,
+  type ProfileAsyncOperation,
+  type ProfileAuthState,
+} from './authFence'
 import './index.scss'
 
 export default function Page() {
@@ -42,11 +48,32 @@ export default function Page() {
   const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const profileViewGeneration = useRef(0)
+  const operationGeneration = useRef(0)
   const authView = useRef<{ owner: string | null; epoch: number }>({
     owner: currentAuthenticatedUserId(),
     epoch: currentAuthSessionEpoch(),
   })
   const allowApiEdit = canEditApiBaseUrl()
+
+  const currentProfileAuthState = (): ProfileAuthState => {
+    let sessionId: string | null = null
+    try {
+      sessionId = captureAuthSession().sessionId
+    } catch {
+      sessionId = null
+    }
+    return { owner: currentAuthenticatedUserId(), epoch: currentAuthSessionEpoch(), sessionId }
+  }
+
+  const beginOperation = (): ProfileAsyncOperation => {
+    // Every new UI action invalidates an older refresh/mutation completion too;
+    // an old finally must not clear a newer action's status or busy state.
+    profileViewGeneration.current += 1
+    return beginProfileAsyncOperation(operationGeneration, currentProfileAuthState())
+  }
+
+  const operationIsCurrent = (operation: ProfileAsyncOperation): boolean =>
+    isProfileAsyncOperationCurrent(operation, operationGeneration.current, currentProfileAuthState())
 
   const applyProfile = (next: Awaited<ReturnType<typeof getProfile>>) => {
     setProfile(next)
@@ -81,6 +108,7 @@ export default function Page() {
       if (authView.current.owner === owner && authView.current.epoch === epoch) return
       authView.current = { owner, epoch }
       profileViewGeneration.current += 1
+      operationGeneration.current += 1
       if (!owner) {
         setProfile(null)
         setPrivacy(null)
@@ -108,12 +136,14 @@ export default function Page() {
       setStatus('请输入昵称')
       return
     }
+    let operation = beginOperation()
     setLoading(true)
     setStatus('')
     try {
       // [人工注释][AUTH-MINI-01] 注册只创建待验证账号；只有完整 TokenResponse 才能进入个人记忆 API。
       if (registerMode) {
         const registration = await registerAccount({ email, password, nickname })
+        if (!operationIsCurrent(operation)) return
         setVerificationPendingEmail(email.trim())
         setStatus(
           registration.verification_delivery_pending
@@ -122,48 +152,53 @@ export default function Page() {
         )
         return
       } else {
-        profileViewGeneration.current += 1
         await loginAccount(email, password)
+        // loginAccount intentionally changes the auth epoch and emits a new
+        // owner. Continue under the newly installed account operation.
+        operation = beginOperation()
       }
       await refreshProfile()
+      if (!operationIsCurrent(operation)) return
       setVerificationPendingEmail(null)
       setStatus('登录成功')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '认证失败')
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '认证失败')
     } finally {
-      setLoading(false)
+      if (operationIsCurrent(operation)) setLoading(false)
     }
   }
 
   const resend = async () => {
     if (!verificationPendingEmail || loading) return
+    const operation = beginOperation()
     setLoading(true)
     setStatus('')
     try {
       await resendVerification(verificationPendingEmail)
-      setStatus('验证邮件已重新发送，请查收邮箱')
+      if (operationIsCurrent(operation)) setStatus('验证邮件已重新发送，请查收邮箱')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '验证邮件发送失败')
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '验证邮件发送失败')
     } finally {
-      setLoading(false)
+      if (operationIsCurrent(operation)) setLoading(false)
     }
   }
 
   const toggleElderMode = async (enabled: boolean) => {
     if (!profile || loading) return
+    const operation = beginOperation()
     const viewGeneration = profileViewGeneration.current
     const snapshot = captureAuthSession()
     setLoading(true)
     setStatus('')
     try {
       const nextProfile = await updateElderMode(enabled)
-      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot) || !operationIsCurrent(operation)) return
       applyProfile(nextProfile)
-      setStatus(enabled ? '长辈模式已开启' : '长辈模式已关闭')
+      if (operationIsCurrent(operation)) setStatus(enabled ? '长辈模式已开启' : '长辈模式已关闭')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '长辈模式更新失败')
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '长辈模式更新失败')
     } finally {
-      setLoading(false)
+      if (operationIsCurrent(operation)) setLoading(false)
     }
   }
 
@@ -172,6 +207,7 @@ export default function Page() {
       setStatus('昵称和时区不能为空')
       return
     }
+    const operation = beginOperation()
     const viewGeneration = profileViewGeneration.current
     const snapshot = captureAuthSession()
     setLoading(true)
@@ -179,30 +215,31 @@ export default function Page() {
     try {
       // [人工注释][S1-002] 用户修改 IANA 时区后以后端返回值为准，客户端不自行推断自然日边界。
       const nextProfile = await updateProfile({ nickname, timezone, locale: profile?.locale })
-      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot) || !operationIsCurrent(operation)) return
       applyProfile(nextProfile)
-      setStatus('资料已更新')
+      if (operationIsCurrent(operation)) setStatus('资料已更新')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '资料更新失败')
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '资料更新失败')
     } finally {
-      setLoading(false)
+      if (operationIsCurrent(operation)) setLoading(false)
     }
   }
 
   const applyPrivacy = async (action: () => Promise<PrivacyStatus>, success: string) => {
+    const operation = beginOperation()
     const viewGeneration = profileViewGeneration.current
     const snapshot = captureAuthSession()
     setLoading(true)
     setStatus('')
     try {
       const nextPrivacy = await action()
-      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot) || !operationIsCurrent(operation)) return
       setPrivacy(nextPrivacy)
-      setStatus(success)
+      if (operationIsCurrent(operation)) setStatus(success)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '操作失败')
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '操作失败')
     } finally {
-      setLoading(false)
+      if (operationIsCurrent(operation)) setLoading(false)
     }
   }
 
@@ -277,10 +314,11 @@ export default function Page() {
         <Button
           className='secondary-button'
           onClick={() => {
-            const logoutGeneration = ++profileViewGeneration.current
+            const logoutViewGeneration = ++profileViewGeneration.current
             void logout().then((result) => {
               if (
-                logoutGeneration === profileViewGeneration.current
+                logoutViewGeneration === profileViewGeneration.current
+                && !isAuthenticated()
                 && !result.serverRevoked
                 && result.serverStatus !== 'NOT_ATTEMPTED'
               ) setStatus('已退出登录；服务器注销未确认，请重新登录后检查账号状态')

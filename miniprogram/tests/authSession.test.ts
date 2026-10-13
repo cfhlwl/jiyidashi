@@ -315,6 +315,104 @@ test('delayed protected error is rejected after logout instead of reaching the o
   await assert.rejects(oldRequest, /登录状态已变化/)
 })
 
+test('transport rejection after account switch is replaced by stale-session fencing', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  let rejectPrivacy!: (error: Error) => void
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    if (options.url.endsWith('/auth/login')) {
+      const userId = (options.data as any).email === 'b@example.com'
+        ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+        : USER_ID
+      return { statusCode: 200, data: tokenResponse({ user_id: userId }) }
+    }
+    if (options.url.endsWith('/privacy/status')) {
+      return new Promise((_resolve, reject) => { rejectPrivacy = reject })
+    }
+    throw new Error(`unexpected request ${options.url}`)
+  }
+  const api = await import('../src/services/api')
+  await api.logout()
+  await api.loginAccount('a@example.com', 'password-1234')
+  const oldRequest = api.getPrivacyStatus()
+  await Promise.resolve()
+  await api.loginAccount('b@example.com', 'password-1234')
+  rejectPrivacy(new Error('A-only network detail'))
+  await assert.rejects(oldRequest, /登录状态已变化/)
+  await assert.doesNotReject(Promise.resolve())
+})
+
+test('refresh rejects a complete-looking TokenResponse on non-2xx status', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    if (options.url.endsWith('/auth/login')) return { statusCode: 200, data: tokenResponse() }
+    if (options.url.endsWith('/privacy/status')) return { statusCode: 401, data: { detail: 'expired' } }
+    if (options.url.endsWith('/auth/refresh')) return { statusCode: 503, data: tokenResponse({ access_token: 'access-b', refresh_token: 'refresh-b' }) }
+    throw new Error(`unexpected request ${options.url}`)
+  }
+  const api = await import('../src/services/api')
+  await api.logout()
+  await api.loginAccount('a@example.com', 'password-1234')
+  await assert.rejects(api.getPrivacyStatus(), /HTTP_503/)
+  assert.equal(api.isAuthenticated(), false)
+})
+
+test('verify success and resend use their strict response/status contracts', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  const calls: RequestOptions[] = []
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    calls.push(options)
+    if (options.url.endsWith('/auth/verify-email')) {
+      return { statusCode: 200, data: { verified: true, already_verified: false, session: tokenResponse() } }
+    }
+    if (options.url.endsWith('/auth/resend-verification')) return { statusCode: 204, data: undefined }
+    throw new Error(`unexpected request ${options.url}`)
+  }
+  const api = await import('../src/services/api')
+  await api.logout()
+  const verification = await api.verifyEmail('verify-token')
+  assert.equal(verification.verified, true)
+  assert.equal(api.currentAuthenticatedUserId(), USER_ID)
+  await api.logout()
+  await api.resendVerification('user@example.com')
+  assert.equal(calls.filter((call) => call.url.endsWith('/auth/resend-verification')).length, 1)
+})
+
+test('restore rejects corrupt storage and refreshes an expiring complete session', async () => {
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const storage = new Map<string, unknown>()
+  let refreshCalls = 0
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: RequestOptions) => {
+    if (options.url.endsWith('/auth/refresh')) {
+      refreshCalls += 1
+      return { statusCode: 200, data: tokenResponse({ access_token: 'access-restored', refresh_token: 'refresh-restored' }) }
+    }
+    throw new Error(`unexpected request ${options.url}`)
+  }
+  const api = await import('../src/services/api')
+  storage.set('jiyi_auth_session', { corrupt: true })
+  assert.equal(await api.restoreAuthSession(), false)
+  assert.equal(api.isAuthenticated(), false)
+  storage.set('jiyi_auth_session', tokenResponse({ access_expires_at: '2000-01-01T00:00:00Z' }))
+  assert.equal(await api.restoreAuthSession(), true)
+  assert.equal(refreshCalls, 1)
+  assert.equal((storage.get('jiyi_auth_session') as any).refresh_token, 'refresh-restored')
+})
+
 test('logout reports remote revoke uncertainty and rejects cross-session refresh responses', async () => {
   const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
   const storage = new Map<string, unknown>()

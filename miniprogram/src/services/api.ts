@@ -536,14 +536,23 @@ async function request<T>(
   const token = options.tokenOverride !== undefined
     ? options.tokenOverride
     : options.anonymous ? '' : requestSession?.access_token || ''
-  const response = await rawRequest<T>(method, path, data, token, options)
-
   const assertCurrent = () => {
     if (!options.anonymous && (
       requestEpoch !== authSessionEpoch
       || !requestSession
       || !sameSessionIdentity(currentStoredSession(), requestSession)
     )) throw new Error('登录状态已变化，请重试')
+  }
+
+  let response: { statusCode: number; data: T }
+  try {
+    response = await rawRequest<T>(method, path, data, token, options)
+  } catch (error) {
+    // A transport rejection is still a protected response boundary. Re-check
+    // the frozen owner before exposing the error to a consumer; otherwise an
+    // A-only network error can be rendered by the page now showing account B.
+    assertCurrent()
+    throw error
   }
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -624,6 +633,13 @@ async function refreshAuthSession(expected: MiniAuthSession): Promise<MiniAuthSe
         { refresh_token: expected.refresh_token },
         '',
       )
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new ApiRequestError(
+          response.statusCode,
+          `HTTP_${response.statusCode}`,
+          `HTTP_${response.statusCode}`,
+        )
+      }
       const next = parseMiniAuthSession(response.data)
       if (
         expectedEpoch !== authSessionEpoch
