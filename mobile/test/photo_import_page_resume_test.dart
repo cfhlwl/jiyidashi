@@ -126,6 +126,9 @@ class _LiveJournal extends PhotoImportJournal {
   final _OwnerScopedQueueFixture _queue;
 
   @override
+  Future<OfflineQueueItem?> findSameContent(String sha256Hex) async => null;
+
+  @override
   Future<OfflineQueueItem> stage(SelectedPhotoImport photo, {
     required String clientUploadId,
   }) async => (await _queue.listAll(ownerA)).single;
