@@ -431,7 +431,7 @@ class _LifeRebindSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return V3PageScaffold(
+    return const V3PageScaffold(
       title: '我的人生',
       child: V3StateSurface(
         variant: V3StateSurfaceVariant.blocked,
