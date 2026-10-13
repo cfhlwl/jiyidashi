@@ -33,6 +33,7 @@ import {
   type ProfileAsyncOperation,
   type ProfileAuthState,
 } from './authFence'
+import { runProfileLogout, runProfileSubmit } from './profileAuthFlow'
 import './index.scss'
 
 export default function Page() {
@@ -136,36 +137,20 @@ export default function Page() {
       setStatus('请输入昵称')
       return
     }
-    let operation = beginOperation()
-    setLoading(true)
-    setStatus('')
-    try {
-      // [人工注释][AUTH-MINI-01] 注册只创建待验证账号；只有完整 TokenResponse 才能进入个人记忆 API。
-      if (registerMode) {
-        const registration = await registerAccount({ email, password, nickname })
-        if (!operationIsCurrent(operation)) return
-        setVerificationPendingEmail(email.trim())
-        setStatus(
-          registration.verification_delivery_pending
-            ? '账号已创建，验证邮件尚未送达，请稍后重试发送'
-            : '账号已创建，请查收验证邮件后再登录',
-        )
-        return
-      } else {
-        await loginAccount(email, password)
-        // loginAccount intentionally changes the auth epoch and emits a new
-        // owner. Continue under the newly installed account operation.
-        operation = beginOperation()
-      }
-      await refreshProfile()
-      if (!operationIsCurrent(operation)) return
-      setVerificationPendingEmail(null)
-      setStatus('登录成功')
-    } catch (error) {
-      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '认证失败')
-    } finally {
-      if (operationIsCurrent(operation)) setLoading(false)
-    }
+    await runProfileSubmit({
+      registerMode,
+      email,
+      password,
+      nickname,
+      beginOperation,
+      operationIsCurrent,
+      registerAccount,
+      loginAccount,
+      refreshProfile,
+      setLoading,
+      setStatus,
+      setVerificationPendingEmail,
+    })
   }
 
   const resend = async () => {
@@ -314,21 +299,20 @@ export default function Page() {
         <Button
           className='secondary-button'
           onClick={() => {
-            const logoutViewGeneration = ++profileViewGeneration.current
-            void logout().then((result) => {
-              if (
-                logoutViewGeneration === profileViewGeneration.current
-                && !isAuthenticated()
-                && !result.serverRevoked
-                && result.serverStatus !== 'NOT_ATTEMPTED'
-              ) setStatus('已退出登录；服务器注销未确认，请重新登录后检查账号状态')
+            void runProfileLogout({
+              beginViewGeneration: () => ++profileViewGeneration.current,
+              isViewGenerationCurrent: (generation) => generation === profileViewGeneration.current,
+              logout,
+              isAuthenticated,
+              setProfile,
+              setPrivacy,
+              clearForm: () => {
+                setEmail('')
+                setPassword('')
+                setNickname('')
+              },
+              setStatus,
             })
-            setProfile(null)
-            setPrivacy(null)
-            setEmail('')
-            setPassword('')
-            setNickname('')
-            setStatus('已退出登录')
           }}
         >
           退出登录

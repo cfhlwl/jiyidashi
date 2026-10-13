@@ -18,6 +18,7 @@
     "src/services/voiceCapture.ts",
     "src/services/api.ts",
     "src/pages/profile/authFence.ts",
+    "src/pages/profile/profileAuthFlow.ts",
     "tests/authSession.test.ts",
     "tests/profileAuthFence.test.ts",
     "src/services/todayFootprint.ts",

@@ -94,7 +94,12 @@ refresh identity continuity and non-2xx rejection, corrupt/expiring restore,
 and token-free errors. Profile publication and every Profile operation
 completion are guarded by page view/auth operation generations and the
 captured validated session; stale success, error, and finally callbacks cannot
-change the current account's status or busy state.
+change the current account's status or busy state. The production Profile
+submit/logout flow is exercised through its page-owned async seam as well as
+the lower-level fence helpers: a rejected password login clears busy state and
+can be retried, logout cannot publish a late result over a newer account, and
+an older account's completion cannot clear the newer account's loading/status
+state.
 
 Backend PostgreSQL auth/session tests remain the authority for registration,
 email verification, refresh rotation, logout, and session revocation; this
