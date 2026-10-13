@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiyidashi/api_client.dart';
 import 'package:jiyidashi/offline_queue.dart';
 import 'package:jiyidashi/photo_import_page.dart';
+import 'package:jiyidashi/photo_import_metadata.dart';
 
 const ownerA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ownerB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -62,7 +64,64 @@ class _OwnerScopedQueueFixture extends OfflineQueueStore {
       Directory('/fixture/photos/$ownerUserId');
 }
 
+class _DelayedQueue extends _OwnerScopedQueueFixture {
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<List<OfflineQueueItem>> listAll(String ownerUserId) async {
+    await gate.future;
+    return super.listAll(ownerUserId);
+  }
+}
+
+class _SelectionPicker extends PhotoImportPicker {
+  @override
+  Future<PhotoImportSelection> pick() async => PhotoImportSelection(
+    selected: [
+      SelectedPhotoImport(
+        path: '/new-picker-photo.jpeg',
+        originalFilename: 'new-picked.jpeg',
+        bytes: 23,
+        contentType: 'image/jpeg',
+        contentSha256: List.filled(64, 'b').join(),
+        evidence: const PhotoCaptureEvidence(),
+      ),
+    ],
+    failedNames: const [],
+    duplicates: 0,
+  );
+}
+
 void main() {
+  testWidgets('delayed restore never overwrites newly chosen gallery batch',
+      (tester) async {
+    final store = _DelayedQueue();
+    final api = _Api(ownerA);
+    await tester.pumpWidget(MaterialApp(home: PhotoImportPage(
+      api: api,
+      offlineQueue: store,
+      picker: _SelectionPicker(),
+    )));
+    await tester.tap(find.byKey(const ValueKey('photo-import-select')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('new-picked.jpeg'), findsOneWidget);
+    store.gate.complete();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    expect(find.text('new-picked.jpeg'), findsOneWidget);
+    expect(find.text('restored.jpeg'), findsNothing);
+    expect(find.textContaining('已恢复 1 张待续传照片'), findsNothing);
+    expect(find.byKey(const ValueKey('photo-import-submit')), findsOneWidget);
+    api.authenticatedUserId = ownerB;
+    await tester.pumpWidget(MaterialApp(home: PhotoImportPage(
+      api: api, offlineQueue: store, picker: _SelectionPicker(),
+    )));
+    expect(find.text('new-picked.jpeg'), findsNothing);
+    expect(find.byKey(const ValueKey('photo-import-submit')), findsNothing);
+  });
+
   testWidgets('restored gallery queue stays owner-scoped and never auto-uploads',
       (tester) async {
     final store = _OwnerScopedQueueFixture();
