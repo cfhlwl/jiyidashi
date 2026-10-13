@@ -253,6 +253,36 @@ void main() {
       expect(service.seenUploadIds, hasLength(1));
     }
 
+    test('batch retry rejects same-length staged tampering before media service', () async {
+      final api = _Api();
+      final service = _FakeSubmission(api)..failFirst = true;
+      const uuid = '87654321-1234-4234-8234-123456789abc';
+      final batch = PhotoImportBatchCoordinator.restored(
+        api: api,
+        journal: journal,
+        service: service,
+        restoredItems: [PhotoImportBatchItem(photo, clientUploadId: uuid)],
+      );
+      await batch.submit();
+      expect(batch.failedCount, 1);
+      expect(service.seenUploadIds, [uuid]);
+      final failed = (await store.findByClientUuid(ownerA, uuid))!;
+      expect(failed.status, OfflineQueueStatus.failed);
+      final staged = await journal.selectedFrom(failed);
+      final bytes = await File(staged.path).readAsBytes();
+      bytes[bytes.length - 1] ^= 1;
+      await File(staged.path).writeAsBytes(bytes, flush: true);
+      expect(await File(staged.path).length(), photo.bytes);
+      expect(await File(source.path).readAsBytes(), isNot(bytes));
+      await batch.submit();
+      expect(service.seenUploadIds, [uuid],
+          reason: 'corrupt staged copy must never reach upload service');
+      expect(batch.failedCount, 1);
+      expect((await store.findByClientUuid(ownerA, uuid))!.status,
+          OfflineQueueStatus.failed,
+          reason: 'failed retry must remain available without stuck sending');
+    });
+
     test('same-process reopening never reclaims a live sending UUID', () async {
       final api = _Api();
       final service = _PausedSubmission(api);
