@@ -46,7 +46,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
   bool get _hasLiveUpload => _pageOwner != null &&
       (_batch?.items.any((item) =>
           PhotoImportBatchCoordinator.isUploadActive(
-              _pageOwner!, item.clientUploadId)) ?? false);
+              _pageOwner, item.clientUploadId)) ?? false);
 
   @override
   void initState() {
@@ -168,7 +168,9 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
     if (batch == null || _busy) return;
     if (!batch.items.any((item) =>
         item.state == PhotoImportItemState.waiting ||
-        item.state == PhotoImportItemState.failed)) return;
+        item.state == PhotoImportItemState.failed)) {
+      return;
+    }
     setState(() => _message = null);
     try {
       await batch.submit(onUpdate: (_) {
