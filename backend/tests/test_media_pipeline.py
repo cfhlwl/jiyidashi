@@ -679,6 +679,7 @@ async def test_selected_gallery_import_binds_exif_clues_to_verified_media_withou
 @pytest.mark.asyncio
 async def test_gallery_import_rejects_fabricated_capture_instants(client, auth_headers):
     from pydantic import ValidationError
+
     from app.schemas import PhotoMemoryCreate
 
     base = {
