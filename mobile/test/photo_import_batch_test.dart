@@ -86,6 +86,21 @@ void main() {
     expect(service.seenCaptureUtc, [null, null]);
   });
 
+  test('changed selected asset is not uploaded after user reviewed metadata', () async {
+    final api = _Api();
+    final service = _FakeSubmission(api);
+    final batch = PhotoImportBatchCoordinator(
+      api: api,
+      service: service,
+      verifySelection: (_) async => false,
+      selection: _selection([_photo('tampered')]),
+    );
+    await batch.submit();
+    expect(batch.savedCount, 0);
+    expect(batch.failedCount, 1);
+    expect(service.seenUploadIds, isEmpty);
+  });
+
   test('retry keeps immutable upload UUID after transient error', () async {
     final api = _Api();
     final service = _FakeSubmission(api)..failFirst = true;
