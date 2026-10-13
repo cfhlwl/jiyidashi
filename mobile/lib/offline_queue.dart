@@ -211,12 +211,15 @@ class OfflineQueueStore {
         _now = now ?? DateTime.now,
         _locationQueueCapacityPerOwner = locationQueueCapacityPerOwner;
 
-  static const int schemaVersion = 4;
+  static const int schemaVersion = 5;
   static const int defaultLocationQueueCapacityPerOwner = 1000;
   static const String databaseFileName = 'jiyidashi_stage1.sqlite3';
   static const String textMemoryOperation = 'text_memory';
   static const String objectLocationOperation = 'object_location';
   static const String photoImportOperation = 'photo_import';
+
+  // Tests can supply a deterministic queue without touching physical files.
+  bool get supportsPhotoImportFileSweep => true;
 
   final DatabaseFactory? _factory;
   final Future<String> Function() _databasePathProvider;
@@ -369,6 +372,50 @@ class OfflineQueueStore {
             CREATE INDEX idx_location_sample_owner_created
             ON location_sample_queue(owner_user_id, created_at, id)
           ''');
+        case 5:
+          // Owner + content SHA is the atomic identity of an active import,
+          // independent of the uploader's client UUID. The claim and outbox
+          // insert commit in a single SQLite transaction.
+          await db.execute('''
+            CREATE TABLE photo_import_content_claim (
+              owner_user_id TEXT NOT NULL,
+              sha256 TEXT NOT NULL,
+              client_uuid TEXT NOT NULL,
+              PRIMARY KEY (owner_user_id, sha256),
+              UNIQUE (owner_user_id, client_uuid)
+            )
+          ''');
+          // Existing v4 rows may include duplicates. Preserve every row for
+          // audit, but only the earliest non-cancelled UUID owns the claim.
+          final previous = await db.query(
+            'offline_queue',
+            columns: ['owner_user_id', 'client_uuid', 'payload_json', 'status'],
+            where: 'operation_type = ? AND status != ?',
+            whereArgs: [
+              photoImportOperation,
+              OfflineQueueStatus.cancelled.storageValue,
+            ],
+            orderBy: 'id ASC',
+          );
+          for (final raw in previous) {
+            try {
+              final payload = jsonDecode(raw['payload_json']! as String);
+              final sha = payload is Map ? payload['sha256'] : null;
+              if (sha is String && RegExp(r'^[a-f0-9]{64}$').hasMatch(sha)) {
+                await db.insert(
+                  'photo_import_content_claim',
+                  {
+                    'owner_user_id': raw['owner_user_id'],
+                    'sha256': sha,
+                    'client_uuid': raw['client_uuid'],
+                  },
+                  conflictAlgorithm: ConflictAlgorithm.ignore,
+                );
+              }
+            } catch (_) {
+              // Invalid legacy payload cannot acquire a verified SHA claim.
+            }
+          }
         case 4:
           // CORE-001 keeps rows present until authoritative server ACK. Delivery state is
           // metadata only; a process death never needs to "undo" a destructive dequeue.
@@ -563,6 +610,140 @@ class OfflineQueueStore {
     } finally {
       _finishEnqueue(owner);
     }
+  }
+
+  /// Atomic photo content reservation. No caller is allowed to infer
+  /// uniqueness from an earlier list()/findSameContent() read.
+  Future<OfflineQueueItem> reservePhotoImport({
+    required String ownerUserId,
+    required String clientUuid,
+    required String sha256Hex,
+    required Map<String, dynamic> payload,
+  }) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(sha256Hex) ||
+        payload['sha256'] != sha256Hex) {
+      throw ArgumentError('invalid photo import SHA');
+    }
+    _beginEnqueue(owner);
+    try {
+      final db = await _database();
+      return await db.transaction((txn) async {
+        final existingUuid = await txn.query(
+          'offline_queue',
+          where: 'owner_user_id = ? AND client_uuid = ?',
+          whereArgs: [owner, clientUuid],
+          limit: 1,
+        );
+        if (existingUuid.isNotEmpty) {
+          final previous = OfflineQueueItem.fromRow(existingUuid.single);
+          if (previous.operationType != photoImportOperation ||
+              previous.payload['sha256'] != sha256Hex) {
+            throw StateError('photo UUID collision');
+          }
+          return previous;
+        }
+        final claim = await txn.query(
+          'photo_import_content_claim',
+          where: 'owner_user_id = ? AND sha256 = ?',
+          whereArgs: [owner, sha256Hex],
+          limit: 1,
+        );
+        if (claim.isNotEmpty) {
+          final activeUuid = claim.single['client_uuid']! as String;
+          final rows = await txn.query(
+            'offline_queue',
+            where: 'owner_user_id = ? AND client_uuid = ?',
+            whereArgs: [owner, activeUuid],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            final winner = OfflineQueueItem.fromRow(rows.single);
+            if (winner.status != OfflineQueueStatus.cancelled) {
+              return winner;
+            }
+          }
+          // A committed cancelled row does not permanently reserve content.
+          await txn.delete(
+            'photo_import_content_claim',
+            where: 'owner_user_id = ? AND sha256 = ? AND client_uuid = ?',
+            whereArgs: [owner, sha256Hex, activeUuid],
+          );
+        }
+        final now = _utcNow().toIso8601String();
+        final id = await txn.insert('offline_queue', {
+          'owner_user_id': owner,
+          'client_uuid': clientUuid,
+          'operation_type': photoImportOperation,
+          'payload_json': jsonEncode(payload),
+          'status': OfflineQueueStatus.pending.storageValue,
+          'attempt_count': 0,
+          'retryable': 1,
+          'created_at': now,
+          'updated_at': now,
+        });
+        await txn.insert('photo_import_content_claim', {
+          'owner_user_id': owner,
+          'sha256': sha256Hex,
+          'client_uuid': clientUuid,
+        });
+        final rows = await txn.query(
+          'offline_queue',
+          where: 'id = ?',
+          whereArgs: [id],
+          limit: 1,
+        );
+        return OfflineQueueItem.fromRow(rows.single);
+      });
+    } finally {
+      _finishEnqueue(owner);
+    }
+  }
+
+  Future<OfflineQueueItem?> findClaimedPhoto(String ownerUserId, String sha) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final db = await _database();
+    final rows = await db.rawQuery('''
+      SELECT q.* FROM photo_import_content_claim c
+      JOIN offline_queue q
+      ON q.owner_user_id = c.owner_user_id AND q.client_uuid = c.client_uuid
+      WHERE c.owner_user_id = ? AND c.sha256 = ?
+      LIMIT 1
+    ''', [owner, sha]);
+    if (rows.isEmpty) {
+      return null;
+    }
+    final item = OfflineQueueItem.fromRow(rows.single);
+    return item.status == OfflineQueueStatus.cancelled ? null : item;
+  }
+
+  /// Only after an authoritative 404/410 of a completed receipt, release the
+  /// claim so the same owner can create a fresh UUID, without changing history.
+  Future<void> invalidatePhotoReceipt({
+    required String ownerUserId,
+    required String sha256Hex,
+    required String clientUuid,
+    required String serverResourceId,
+  }) async {
+    final owner = _normalizeOwnerUserId(ownerUserId);
+    final db = await _database();
+    await db.transaction((txn) async {
+      final affected = await txn.rawDelete('''
+        DELETE FROM photo_import_content_claim
+        WHERE owner_user_id = ? AND sha256 = ? AND client_uuid = ?
+          AND EXISTS (
+            SELECT 1 FROM offline_queue
+            WHERE owner_user_id = ? AND client_uuid = ?
+              AND status = ? AND server_resource_id = ?
+          )
+      ''', [
+        owner, sha256Hex, clientUuid, owner, clientUuid,
+        OfflineQueueStatus.completed.storageValue, serverResourceId,
+      ]);
+      if (affected != 1) {
+        throw StateError('photo receipt changed while validating');
+      }
+    });
   }
 
   Future<LocationSampleQueueItem> enqueueLocationSample({
@@ -1030,6 +1211,11 @@ class OfflineQueueStore {
       );
       await txn.delete(
         'location_delivery_state',
+        where: 'owner_user_id = ?',
+        whereArgs: [owner],
+      );
+      await txn.delete(
+        'photo_import_content_claim',
         where: 'owner_user_id = ?',
         whereArgs: [owner],
       );
