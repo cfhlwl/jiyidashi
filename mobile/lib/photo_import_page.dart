@@ -155,6 +155,23 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _withdraw() async {
+    final batch = _batch;
+    if (batch == null || _busy) return;
+    try {
+      await batch.withdrawPending(onUpdate: (_) {
+        if (mounted) setState(() {});
+      });
+      if (mounted) {
+        setState(() => _message = '已撤回未提交的照片，不影响已保存的记忆。');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _message = '撤回过程中遇到问题，请稍后重试。');
+      }
+    }
+  }
+
   @override
   void dispose() {
     _batch?.stopAfterCurrentFile();
@@ -222,6 +239,15 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
                     ? '开始导入所选照片'
                     : '继续 / 重试尚未保存的照片'),
               ),
+              if (batch?.items.any((item) =>
+                      item.state == PhotoImportItemState.waiting ||
+                      item.state == PhotoImportItemState.failed) == true)
+                TextButton.icon(
+                  key: const ValueKey('photo-import-withdraw'),
+                  onPressed: _busy ? null : _withdraw,
+                  icon: const Icon(Icons.remove_circle_outline),
+                  label: const Text('撤回未提交的照片'),
+                ),
               if (batch?.isRunning == true)
                 OutlinedButton(
                   key: const ValueKey('photo-import-stop'),
@@ -270,6 +296,7 @@ class _ImportedPhotoRow extends StatelessWidget {
       PhotoImportItemState.saving => '保存记忆中',
       PhotoImportItemState.saved => '已保存记忆',
       PhotoImportItemState.failed => '失败，可重试',
+      PhotoImportItemState.cancelled => '已撤回',
       _ => '待导入',
     };
     return ListTile(
