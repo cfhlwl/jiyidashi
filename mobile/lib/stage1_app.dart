@@ -2951,7 +2951,11 @@ class _TimelineEntry extends StatelessWidget {
         DateTime.utc(1970);
     final day = '${occurred.month}月${occurred.day}日';
     String two(int value) => value.toString().padLeft(2, '0');
-    final time = '${two(occurred.hour)}:${two(occurred.minute)}';
+    final importedWithoutCaptureTime =
+        item.photoOccurrenceRole == 'IMPORT_DATE_NOT_CAPTURE_TIME';
+    final time = importedWithoutCaptureTime
+        ? '导入日期'
+        : '${two(occurred.hour)}:${two(occurred.minute)}';
     final title = item.isMemory
         ? (item.title ?? _timelineMemoryTypeLabel(item.memoryType))
         : (item.placeName ?? '一次到访');
