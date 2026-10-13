@@ -91,10 +91,16 @@ class PhotoImportBatchCoordinator {
     _stopRequested = false;
     try {
       for (final item in items) {
-        if (_stopRequested) break;
-        if (item.state == PhotoImportItemState.saved) continue;
+        if (_stopRequested) {
+          break;
+        }
+        if (item.state == PhotoImportItemState.saved) {
+          continue;
+        }
         if (item.state != PhotoImportItemState.waiting &&
-            item.state != PhotoImportItemState.failed) continue;
+            item.state != PhotoImportItemState.failed) {
+          continue;
+        }
         _assertOwner();
 
         item.errorCode = null;
