@@ -2960,7 +2960,9 @@ class _TimelineEntry extends StatelessWidget {
         ? (item.title ?? _timelineMemoryTypeLabel(item.memoryType))
         : (item.placeName ?? '一次到访');
     final message = item.isMemory
-        ? (item.content ?? '一段记忆')
+        ? (importedWithoutCaptureTime
+            ? '拍摄时间未知 · ${item.content ?? '来自相册的照片'}'
+            : (item.content ?? '一段记忆'))
         : (item.visitFinalized == true ? '已形成足迹' : '到访仍在更新');
     final icon = item.isMemory
         ? _timelineMemoryIcon(item.memoryType)
