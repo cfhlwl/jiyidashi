@@ -128,70 +128,70 @@ class PhotoImportJournal {
     final releaseStage = store.holdPhotoImportStaging(ownerUserId);
     try {
       final previous = await store.findByClientUuid(ownerUserId, clientUploadId);
-    if (previous != null) {
-      if (previous.operationType != operationType ||
-          previous.payload['sha256'] != photo.contentSha256) {
-        throw StateError('photo upload UUID already belongs to different work');
-      }
-      return previous;
-    }
-
-    final dir = await store.photoImportOwnerDirectory(ownerUserId);
-    await dir.create(recursive: true);
-    if (await FileSystemEntity.type(dir.path, followLinks: false) !=
-        FileSystemEntityType.directory) {
-      throw const FormatException('photo staging directory is not a real directory');
-    }
-    final saved = File('${dir.path}${Platform.pathSeparator}$clientUploadId.bin');
-    final temporary = File('${saved.path}.partial');
-    var persisted = false;
-    try {
-      if (await FileSystemEntity.type(saved.path, followLinks: false) ==
-              FileSystemEntityType.link ||
-          await FileSystemEntity.type(temporary.path, followLinks: false) ==
-              FileSystemEntityType.link) {
-        throw const FormatException('photo staging path is a symlink');
-      }
-      if (!await saved.exists()) {
-        await File(photo.path).copy(temporary.path);
-        if (await temporary.length() != photo.bytes ||
-            (await sha256.bind(temporary.openRead()).first).toString() !=
-                photo.contentSha256) {
-          throw const FormatException('photo changed during durable copy');
+      if (previous != null) {
+        if (previous.operationType != operationType ||
+            previous.payload['sha256'] != photo.contentSha256) {
+          throw StateError('photo upload UUID already belongs to different work');
         }
-        await temporary.rename(saved.path);
+        return previous;
       }
-      // A leftover cache copy from an interrupted process is not trusted just
-      // because its path matches. Rehash even the already-staged file.
-      if (await saved.length() != photo.bytes ||
-          (await sha256.bind(saved.openRead()).first).toString() !=
-              photo.contentSha256) {
-        throw const FormatException('staged photo fingerprint mismatch');
+
+      final dir = await store.photoImportOwnerDirectory(ownerUserId);
+      await dir.create(recursive: true);
+      if (await FileSystemEntity.type(dir.path, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        throw const FormatException('photo staging directory is not a real directory');
       }
-      final row = await store.reservePhotoImport(
-        ownerUserId: ownerUserId,
-        sha256Hex: photo.contentSha256,
-        clientUuid: clientUploadId,
-        payload: {
-          'staged_path': saved.path,
-          'original_filename': photo.originalFilename,
-          'size_bytes': photo.bytes,
-          'content_type': photo.contentType,
-          'sha256': photo.contentSha256,
-          'evidence': _evidence(photo.evidence),
-        },
-      );
-      persisted = row.clientUuid == clientUploadId;
-      return row;
-    } finally {
-      if (await temporary.exists()) {
-        await temporary.delete();
+      final saved = File('${dir.path}${Platform.pathSeparator}$clientUploadId.bin');
+      final temporary = File('${saved.path}.partial');
+      var persisted = false;
+      try {
+        if (await FileSystemEntity.type(saved.path, followLinks: false) ==
+                FileSystemEntityType.link ||
+            await FileSystemEntity.type(temporary.path, followLinks: false) ==
+                FileSystemEntityType.link) {
+          throw const FormatException('photo staging path is a symlink');
+        }
+        if (!await saved.exists()) {
+          await File(photo.path).copy(temporary.path);
+          if (await temporary.length() != photo.bytes ||
+              (await sha256.bind(temporary.openRead()).first).toString() !=
+                  photo.contentSha256) {
+            throw const FormatException('photo changed during durable copy');
+          }
+          await temporary.rename(saved.path);
+        }
+        // A leftover cache copy from an interrupted process is not trusted just
+        // because its path matches. Rehash even the already-staged file.
+        if (await saved.length() != photo.bytes ||
+            (await sha256.bind(saved.openRead()).first).toString() !=
+                photo.contentSha256) {
+          throw const FormatException('staged photo fingerprint mismatch');
+        }
+        final row = await store.reservePhotoImport(
+          ownerUserId: ownerUserId,
+          sha256Hex: photo.contentSha256,
+          clientUuid: clientUploadId,
+          payload: {
+            'staged_path': saved.path,
+            'original_filename': photo.originalFilename,
+            'size_bytes': photo.bytes,
+            'content_type': photo.contentType,
+            'sha256': photo.contentSha256,
+            'evidence': _evidence(photo.evidence),
+          },
+        );
+        persisted = row.clientUuid == clientUploadId;
+        return row;
+      } finally {
+        if (await temporary.exists()) {
+          await temporary.delete();
+        }
+        if (!persisted && await saved.exists()) {
+          // Failed DB write or owner deletion quiesce cannot strand bytes.
+          await saved.delete();
+        }
       }
-      if (!persisted && await saved.exists()) {
-        // Failed DB write or owner deletion quiesce cannot strand bytes.
-        await saved.delete();
-      }
-    }
     } finally {
       releaseStage();
     }
