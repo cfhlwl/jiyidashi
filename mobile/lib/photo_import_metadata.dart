@@ -88,7 +88,7 @@ class PhotoCaptureEvidence {
     final nums = List<int>.generate(
       6, (i) => int.parse(matched.group(i + 1)!),
     );
-    if (nums[0] < 1970 || nums[0] > DateTime.now().toUtc().year + 1) return null;
+    if (nums[0] < 1900 || nums[0] > DateTime.now().toUtc().year + 1) return null;
     final value = DateTime.utc(
       nums[0], nums[1], nums[2], nums[3], nums[4], nums[5],
     );
