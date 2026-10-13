@@ -234,6 +234,30 @@ void main() {
     await afterCrash.close();
   });
 
+  test('same-session retry rejects same-length tampering of staged bytes', () async {
+    final store = createStore();
+    final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
+    final first = await journal.stage(selected(), clientUploadId: uploadId);
+    final sending = await journal.begin(first);
+    final failed = await journal.failed(sending);
+    final staged = await journal.selectedFrom(failed);
+    final bytes = await File(staged.path).readAsBytes();
+    bytes[bytes.length - 1] ^= 1;
+    await File(staged.path).writeAsBytes(bytes, flush: true);
+    expect(await File(staged.path).length(), selected().bytes);
+    // The original picker copy is intact, but the *uploaded* copy is not.
+    expect(await pickerFile.readAsBytes(), isNot(bytes));
+    await expectLater(
+      journal.stage(selected(), clientUploadId: uploadId),
+      throwsA(isA<FormatException>()),
+    );
+    await expectLater(journal.verifyStaged(failed),
+        throwsA(isA<FormatException>()));
+    expect((await store.findByClientUuid(ownerA, uploadId))?.status,
+        OfflineQueueStatus.failed);
+    await store.close();
+  });
+
   test('account deletion clears both record and owned staged bytes', () async {
     final store = createStore();
     final journal = PhotoImportJournal(store: store, ownerUserId: ownerA);
