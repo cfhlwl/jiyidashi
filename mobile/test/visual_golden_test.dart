@@ -46,6 +46,8 @@ const _captureBatch4bCandidates =
     bool.fromEnvironment('UIUX_V3_BATCH4B_CANDIDATE_MODE');
 const _captureBatch4cCandidates =
     bool.fromEnvironment('UIUX_V3_BATCH4C_CANDIDATE_MODE');
+const _captureBatch5aCandidates =
+    bool.fromEnvironment('UIUX_V3_BATCH5A_CANDIDATE_MODE');
 
 late Uint8List _goldenPhotoBytes;
 
@@ -1532,6 +1534,36 @@ void main() {
       matchesGoldenFile('goldens/graph_neighborhood_v3_batch4c.png'),
     );
   });
+
+  testWidgets(
+    'candidate: Batch 5A Life Home production surface',
+    (tester) async {
+      if (!_captureBatch5aCandidates) return;
+      final key = await _pumpSurface(tester, LifePage(api: V2TestApi()));
+      expect(find.text('我的人生'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('life-home-entry-events')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('life-home-entry-stages')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('life-home-entry-history')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('life-home-entry-memoirs')),
+        findsOneWidget,
+      );
+      expect(find.text('最近整理'), findsOneWidget);
+      await expectLater(
+        find.byKey(key),
+        matchesGoldenFile('goldens/life_home_v3_batch5a.png'),
+      );
+    },
+  );
 
   testWidgets(
     'golden: place detail loaded scrolled',
