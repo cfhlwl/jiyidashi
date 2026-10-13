@@ -33,7 +33,9 @@ void main() {
 
   tearDown(() async {
     await factory.deleteDatabase(databasePath);
-    if (await temp.exists()) await temp.delete(recursive: true);
+    if (await temp.exists()) {
+      await temp.delete(recursive: true);
+    }
   });
 
   SelectedPhotoImport selected() => SelectedPhotoImport(
