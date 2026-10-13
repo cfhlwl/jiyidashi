@@ -34,6 +34,14 @@ void main() {
     expect(result.hasGps, false);
   });
 
+  test('historical EXIF captures before Unix epoch are not misdated', () {
+    final evidence = PhotoCaptureEvidence.fromExifTags({
+      'EXIF DateTimeOriginal': _tag('1965:07:01 10:30:00'),
+      'EXIF OffsetTimeOriginal': _tag('+08:00'),
+    });
+    expect(evidence.captureTimeUtc, DateTime.utc(1965, 7, 1, 2, 30));
+  });
+
   test('explicit offset is authoritative across DST; never infer device timezone', () {
     final east = PhotoCaptureEvidence.fromExifTags({
       'EXIF DateTimeOriginal': _tag('2025:11:02 01:30:00'),
