@@ -15,6 +15,8 @@ dependencies:
   csp_amap_flutter_map: 1.1.1
   flutter_secure_storage: 11.2.0
   image_picker: ^1.2.3
+  exif: ^3.3.0
+  crypto: ^3.0.6
   record: ^7.1.1
   # Android / iOS 本地持久化使用 SQLite；禁止用内存队列冒充离线可靠存储。
   sqflite: ^2.4.4

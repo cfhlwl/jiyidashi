@@ -50,6 +50,43 @@ void main() {
     expect(page.nextCursor, 'opaque');
   });
 
+  test('import date role is preserved without inventing capture time', () {
+    final item = TimelineReadItem.parse({
+      'kind': 'MEMORY',
+      'id': '11111111-1111-4111-8111-111111111111',
+      'occurred_at': '2026-10-13T05:00:00Z',
+      'memory_type': 'PHOTO',
+      'media_id': '22222222-2222-4222-8222-222222222222',
+      'title': null,
+      'content': '用户选择导入的照片（尚未添加文字说明）',
+      'is_confirmed': true,
+      'confidence': 1.0,
+      'photo_occurrence_role': 'IMPORT_DATE_NOT_CAPTURE_TIME',
+    });
+    expect(item.photoOccurrenceRole, 'IMPORT_DATE_NOT_CAPTURE_TIME');
+    expect(item.isVisit, isFalse);
+
+    final corrupt = {
+      'kind': 'MEMORY',
+      'id': '11111111-1111-4111-8111-111111111111',
+      'occurred_at': '2026-10-13T05:00:00Z',
+      'memory_type': 'NOTE',
+      'title': 'ordinary note',
+      'content': 'hello',
+      'is_confirmed': true,
+      'confidence': 1.0,
+      'photo_occurrence_role': 'IMPORT_DATE_NOT_CAPTURE_TIME',
+    };
+    expect(() => TimelineReadItem.parse(corrupt),
+        throwsA(isA<ProtocolException>()));
+    expect(() => TimelineReadItem.parse({
+      ...corrupt,
+      'memory_type': 'PHOTO',
+      'media_id': '22222222-2222-4222-8222-222222222222',
+      'photo_occurrence_role': 'FABRICATED_CAPTURE_TIME',
+    }), throwsA(isA<ProtocolException>()));
+  });
+
   test('Timeline parser fails closed on impossible kind projection', () {
     expect(
       () => TimelineReadPage.parse({

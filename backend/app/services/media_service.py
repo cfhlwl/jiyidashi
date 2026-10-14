@@ -471,6 +471,7 @@ def _media_memory_request_hash(
     title: str | None,
     content: str | None,
     occurred_at: datetime | None,
+    import_provenance: dict | None = None,
 ) -> str:
     # 只保存不可逆请求指纹，不在 metadata 中复制用户正文。
     # null occurred_at 也参与指纹，因此“首次让服务端定时”与后续显式改时间不会静默等价。
@@ -480,6 +481,8 @@ def _media_memory_request_hash(
         "content": content,
         "occurred_at": _canonical_request_time(occurred_at),
     }
+    if import_provenance is not None:
+        payload["import_provenance"] = import_provenance
     encoded = json.dumps(
         payload,
         ensure_ascii=False,
@@ -493,11 +496,17 @@ def _assert_photo_memory_replay_matches(
     memory: Memory,
     payload: PhotoMemoryCreate,
 ) -> None:
+    assert payload.content is not None  # Validated by PhotoMemoryCreate
     expected_hash = _media_memory_request_hash(
         kind="PHOTO",
         title=payload.title,
         content=payload.content.strip(),
         occurred_at=payload.occurred_at,
+        import_provenance=(
+            payload.import_provenance.model_dump(mode="json", exclude_none=True)
+            if payload.import_provenance is not None
+            else None
+        ),
     )
     stored_hash = (memory.metadata_json or {}).get(MEDIA_MEMORY_REQUEST_HASH_KEY)
     if isinstance(stored_hash, str):
@@ -507,6 +516,10 @@ def _assert_photo_memory_replay_matches(
 
     # 兼容 H 线之前已经存在的媒体 Memory：旧记录没有请求指纹。
     # 能可靠比较的字段必须一致；旧请求未显式传 occurred_at 时无法反推出 null，只接受现有时间。
+    if payload.import_provenance is not None:
+        # Old media memories without a fingerprint must never be promoted to
+        # importer-derived provenance by replay of a newer request.
+        raise MediaError("MEDIA_MEMORY_IDEMPOTENCY_CONFLICT", 409)
     if memory.title != payload.title or memory.content != payload.content.strip():
         raise MediaError("MEDIA_MEMORY_IDEMPOTENCY_CONFLICT", 409)
     if (
@@ -588,11 +601,18 @@ def create_photo_memory(
         _assert_photo_memory_replay_matches(existing_memory, payload)
         return asset, existing_memory
 
+    assert payload.content is not None  # Validated by PhotoMemoryCreate
+    import_data = (
+        payload.import_provenance.model_dump(mode="json", exclude_none=True)
+        if payload.import_provenance is not None
+        else None
+    )
     request_hash = _media_memory_request_hash(
         kind="PHOTO",
         title=payload.title,
         content=payload.content.strip(),
         occurred_at=payload.occurred_at,
+        import_provenance=import_data,
     )
     memory = create_trusted_memory(
         db,
@@ -609,6 +629,17 @@ def create_photo_memory(
                 "media_id": str(asset.id),
                 "media_kind": asset.kind.value,
                 MEDIA_MEMORY_REQUEST_HASH_KEY: request_hash,
+                **({
+                    "photo_import_provenance": import_data,
+                    # A client-declared EXIF string is a clue, not independent
+                    # server verification of time/GPS or physical whereabouts.
+                    "photo_import_exif_authority": "CLIENT_DECLARED_UNVERIFIED",
+                    "photo_occurrence_role": (
+                        "CLIENT_EXIF_CAPTURE_INSTANT"
+                        if payload.occurred_at is not None
+                        else "IMPORT_DATE_NOT_CAPTURE_TIME"
+                    ),
+                } if import_data is not None else {}),
             },
             source_id=str(asset.id),
             evidence_text=payload.content,

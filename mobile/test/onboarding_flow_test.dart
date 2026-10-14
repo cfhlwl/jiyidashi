@@ -420,6 +420,32 @@ Future<void> _pumpUntil(
 }
 
 void main() {
+  testWidgets('gallery picker requires an explicit tap during permissions guide', (tester) async {
+    var opens = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: OnboardingPermissionsPage(
+          onImportPhotos: () => opens++,
+          onContinue: () {},
+          onSkip: () {},
+        ),
+      ),
+    ));
+    await tester.pump();
+    expect(opens, 0, reason: 'opening onboarding never enumerates photos');
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('onboarding-import-photos')),
+      200,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('onboarding-permissions')),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('onboarding-import-photos')));
+    expect(opens, 1);
+  });
+
+
   late OfflineQueueStore queue;
   late _OnboardingApi api;
   late _MemoryOnboardingStore onboarding;
@@ -452,10 +478,8 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => startOnboarding
-          ? find.byKey(const ValueKey('onboarding-intro')).evaluate().isNotEmpty
-          : find.text('今天').evaluate().isNotEmpty,
-      reason: startOnboarding ? 'onboarding intro' : 'normal Today page',
+      () => find.byKey(const ValueKey('onboarding-intro')).evaluate().isNotEmpty,
+      reason: 'first-login onboarding intro',
     );
   }
 
@@ -508,7 +532,7 @@ void main() {
     expect(store.values[owner], OnboardingStatus.inProgress);
   });
 
-  testWidgets('ordinary login never infers a missing local row means new user', (
+  testWidgets('first login for existing account also starts optional onboarding', (
     tester,
   ) async {
     final authApi = _AuthenticationApi();
@@ -534,21 +558,25 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '登录'));
     await _pumpUntil(
       tester,
-      () => find.text('今天').evaluate().isNotEmpty,
-      reason: 'ordinary login Today page',
+      () => find.byKey(const ValueKey('onboarding-intro')).evaluate().isNotEmpty,
+      reason: 'existing account onboarding intro',
     );
 
-    expect(find.byKey(const ValueKey('onboarding-intro')), findsNothing);
-    expect(find.text('今天'), findsWidgets);
-    expect(store.values[owner], isNull);
+    expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
+    expect(store.values[owner], OnboardingStatus.inProgress);
   });
 
-  testWidgets('existing user with no local onboarding row is never trapped', (tester) async {
+  testWidgets('existing user with no local row gets skippable guidance', (tester) async {
     await pumpShell(tester, startOnboarding: false);
 
-    expect(find.text('今天'), findsWidgets);
+    expect(find.byKey(const ValueKey('onboarding-intro')), findsOneWidget);
+    expect(onboarding.values[owner], OnboardingStatus.inProgress);
+    await tester.tap(find.byKey(const ValueKey('onboarding-skip-intro')));
+    await _pumpUntil(
+      tester,
+      () => onboarding.values[owner] == OnboardingStatus.skipped,
+    );
     expect(find.byKey(const ValueKey('onboarding-intro')), findsNothing);
-    expect(onboarding.values[owner], isNull);
   });
 
   testWidgets('real capture then real evidence completes the Aha flow', (tester) async {
@@ -559,6 +587,20 @@ void main() {
     expect(find.textContaining('不会申请后台定位'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('onboarding-start')));
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const ValueKey('onboarding-permissions')).evaluate().isNotEmpty,
+      reason: 'permission choice step',
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('onboarding-permissions-next')),
+      190,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('onboarding-permissions')),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('onboarding-permissions-next')));
     await _pumpUntil(
       tester,
       () => find.textContaining('第 1 步').evaluate().isNotEmpty,
@@ -640,6 +682,20 @@ void main() {
   ) async {
     await pumpShell(tester, startOnboarding: true);
     await tester.tap(find.byKey(const ValueKey('onboarding-start')));
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const ValueKey('onboarding-permissions')).evaluate().isNotEmpty,
+      reason: 'permission choice step',
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('onboarding-permissions-next')),
+      190,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('onboarding-permissions')),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('onboarding-permissions-next')));
     await _pumpUntil(
       tester,
       () => find.textContaining('第 1 步').evaluate().isNotEmpty,

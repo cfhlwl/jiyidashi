@@ -21,6 +21,7 @@ import 'notification_client.dart';
 import 'offline_queue.dart';
 import 'offline_sync.dart';
 import 'passive_memory_delivery.dart';
+import 'photo_import_page.dart';
 import 'phone_one_tap_bridge.dart';
 import 'sms_otp.dart';
 import 'wechat_auth_bridge.dart';
@@ -2455,7 +2456,30 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final onboardingExperience = OnboardingExperience(
       step: _accountDeletionIntentActive ? null : onboardingStep,
-      onStart: onboarding?.startFlow ?? () {},
+      onStart: onboarding?.startPermissions ?? () {},
+      onPermissionsNext: onboarding?.startFlow,
+      permissionsPanel: _nativeLocation == null
+          ? null
+          : NativeLocationSection(
+              controller: _nativeLocation!,
+              revalidateAuthority: _revalidateNativeLocationAuthority,
+            ),
+      onEnableNotifications: widget.notificationClient == null
+          ? null
+          : () => unawaited(
+              widget.notificationClient!.requestPermissionAndRegister(),
+            ),
+      onImportPhotos: _accountDeletionIntentActive
+          ? null
+          : () => unawaited(
+              JiYiNavigator.push<void>(
+                context,
+                builder: (_) => PhotoImportPage(
+                  api: widget.api,
+                  offlineQueue: widget.offlineQueue,
+                ),
+              ),
+            ),
       onSkip: () {
         if (onboarding != null) unawaited(onboarding.skip());
       },
@@ -3020,12 +3044,18 @@ class _TimelineEntry extends StatelessWidget {
         DateTime.utc(1970);
     final day = '${occurred.month}月${occurred.day}日';
     String two(int value) => value.toString().padLeft(2, '0');
-    final time = '${two(occurred.hour)}:${two(occurred.minute)}';
+    final importedWithoutCaptureTime =
+        item.photoOccurrenceRole == 'IMPORT_DATE_NOT_CAPTURE_TIME';
+    final time = importedWithoutCaptureTime
+        ? '导入日期'
+        : '${two(occurred.hour)}:${two(occurred.minute)}';
     final title = item.isMemory
         ? (item.title ?? _timelineMemoryTypeLabel(item.memoryType))
         : (item.placeName ?? '一次到访');
     final message = item.isMemory
-        ? (item.content ?? '一段记忆')
+        ? (importedWithoutCaptureTime
+            ? '拍摄时间未知 · ${item.content ?? '来自相册的照片'}'
+            : (item.content ?? '一段记忆'))
         : (item.visitFinalized == true ? '已形成足迹' : '到访仍在更新');
     final icon = item.isMemory
         ? _timelineMemoryIcon(item.memoryType)
@@ -3034,7 +3064,7 @@ class _TimelineEntry extends StatelessWidget {
     return Semantics(
       key: ValueKey('timeline-entry-${item.kind}-${item.id}'),
       button: true,
-      label: '$day $time $title',
+      label: '${importedWithoutCaptureTime ? '导入日期' : '发生时间'} $day $time $title',
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
@@ -4928,6 +4958,24 @@ class ProfilePage extends StatelessWidget {
                 mode: themeMode,
                 onChanged: onThemeModeChanged,
               ),
+              JiYiSectionCard(
+                leading: Icon(
+                  Icons.photo_library_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                title: '导入已有照片',
+                subtitle: '通过系统选择器主动选取照片。缺少拍摄时间或地点证据时不编造信息。',
+                child: OutlinedButton.icon(
+                  key: const ValueKey('profile-photo-import'),
+                  onPressed: () => JiYiNavigator.push<void>(
+                    context,
+                    builder: (_) => PhotoImportPage(api: api, offlineQueue: offlineQueue),
+                  ),
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('选择照片导入'),
+                ),
+              ),
+              const SizedBox(height: JiYiSpacing.md),
               if (onStartOnboarding != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 JiYiSectionCard(
