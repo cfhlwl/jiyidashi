@@ -18,6 +18,7 @@ const out = new URL('../visual-artifacts/', import.meta.url).pathname
 const scenes = [
   'today', 'timeline', 'capture', 'memory', 'people', 'life',
   'family', 'profile', 'summary', 'states', 'elder',
+  'account-security',
 ]
 const widths = [320, 390, 430]
 const height = 844

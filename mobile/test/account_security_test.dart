@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -10,13 +11,16 @@ import 'package:jiyidashi/api_client.dart';
 const _headers = {'content-type': 'application/json'};
 const _userId = '11111111-1111-4111-8111-111111111111';
 const _sessionId = '22222222-2222-4222-8222-222222222222';
+const _userBId = '66666666-6666-4666-8666-666666666666';
+const _sessionBId = '77777777-7777-4777-8777-777777777777';
+const _unlinkRequestId = '88888888-8888-4888-8888-888888888888';
 
-Map<String, dynamic> _token() => {
+Map<String, dynamic> _token({String userId = _userId, String sessionId = _sessionId}) => {
       'access_token': 'access-token',
       'refresh_token': 'refresh-token-long-enough-1234567890',
-      'session_id': _sessionId,
+      'session_id': sessionId,
       'token_type': 'bearer',
-      'user_id': _userId,
+      'user_id': userId,
       'access_expires_at': '2099-01-01T00:00:00Z',
       'refresh_expires_at': '2099-02-01T00:00:00Z',
       'account_deletion_in_progress': false,
@@ -47,6 +51,35 @@ void main() {
         'provider': 'PHONE',
         'subject_hint': '+86138****5678',
         'verified_at': null,
+      }),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => AuthIdentityRead.fromJson({
+        'identity_id': '33333333-3333-4333-8333-333333333333',
+        'provider': 'PHONE',
+        'subject_hint': '+86138****5678',
+        'linked_at': '2026-10-01T00:00:00Z',
+      }),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => AuthIdentityRead.fromJson({
+        'identity_id': '------------------------------------',
+        'provider': 'PHONE',
+        'subject_hint': '+86138****5678',
+        'verified_at': null,
+        'linked_at': '2026-10-01T00:00:00Z',
+      }),
+      throwsA(isA<ProtocolException>()),
+    );
+    expect(
+      () => AuthIdentityRead.fromJson({
+        'identity_id': '33333333-3333-4333-8333-333333333333',
+        'provider': 'PHONE',
+        'subject_hint': '+86138****5678',
+        'verified_at': null,
+        'linked_at': '2026-10-01 00:00:00',
       }),
       throwsA(isA<ProtocolException>()),
     );
@@ -89,7 +122,9 @@ void main() {
         expect(request.url.path, calls == 2 ? '/v1/auth/identities/link' : '/v1/auth/identities/33333333-3333-4333-8333-333333333333');
         return http.Response(
           jsonEncode({
-            'request_id': '55555555-5555-4555-8555-555555555555',
+            'request_id': calls == 2
+                ? '55555555-5555-4555-8555-555555555555'
+                : _unlinkRequestId,
             'operation': calls == 2 ? 'LINK' : 'UNLINK',
             'identity': calls == 2 ? _identities().first : null,
           }),
@@ -106,7 +141,7 @@ void main() {
     );
     final unlinked = await api.unlinkAuthIdentity(
       identityId: '33333333-3333-4333-8333-333333333333',
-      requestId: linked.requestId,
+      requestId: _unlinkRequestId,
       reauthCredential: 'opaque-reauth',
     );
     expect(linked.operation, 'LINK');
@@ -140,5 +175,138 @@ void main() {
     final bind = find.text('绑定新的登录方式');
     expect(tester.widget<FilledButton>(find.ancestor(of: bind, matching: find.byType(FilledButton))).onPressed, isNull);
     expect(mutationCalls, 0);
+  });
+
+  testWidgets('clears A identities before B and rejects late A response', (tester) async {
+    final pendingA = Completer<http.Response>();
+    var identityCalls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        if (request.url.path == '/v1/auth/login') {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode(body['email'] == 'b@example.test'
+                ? _token(userId: _userBId, sessionId: _sessionBId)
+                : _token()),
+            200,
+            headers: _headers,
+          );
+        }
+        if (request.url.path == '/v1/auth/logout') {
+          return http.Response('{}', 200, headers: _headers);
+        }
+        expect(request.url.path, '/v1/auth/identities');
+        identityCalls += 1;
+        if (identityCalls == 1) return pendingA.future;
+        return http.Response(
+          jsonEncode({'identities': [
+            {
+              ..._identities().first,
+              'subject_hint': 'b***@example.test',
+            },
+          ]}),
+          200,
+          headers: _headers,
+        );
+      }),
+    );
+    await api.login(email: 'a@example.test', password: 'password-123456');
+    await tester.pumpWidget(MaterialApp(home: AccountSecurityPage(api: api)));
+    await tester.pump();
+
+    await api.logout();
+    await api.login(email: 'b@example.test', password: 'password-123456');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('b***@example.test'), findsOneWidget);
+    expect(find.textContaining('a***@example.test'), findsNothing);
+
+    pendingA.complete(http.Response(
+      jsonEncode({'identities': _identities()}),
+      200,
+      headers: _headers,
+    ));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('b***@example.test'), findsOneWidget);
+    expect(find.textContaining('a***@example.test'), findsNothing);
+  });
+
+  testWidgets('rebinds an existing page when the API object changes', (tester) async {
+    JiYiApiClient makeApi(String subjectHint, String userId, String sessionId) {
+      return JiYiApiClient(
+        baseUrl: 'https://example.test/v1',
+        httpClient: MockClient((request) async {
+          if (request.url.path == '/v1/auth/login') {
+            return http.Response(
+              jsonEncode(_token(userId: userId, sessionId: sessionId)),
+              200,
+              headers: _headers,
+            );
+          }
+          return http.Response(jsonEncode({'identities': [
+            {..._identities().first, 'subject_hint': subjectHint},
+          ]}), 200, headers: _headers);
+        }),
+      );
+    }
+
+    final apiA = makeApi('a***@example.test', _userId, _sessionId);
+    final apiB = makeApi('b***@example.test', _userBId, _sessionBId);
+    await apiA.login(email: 'a@example.test', password: 'password-123456');
+    await apiB.login(email: 'b@example.test', password: 'password-123456');
+    await tester.pumpWidget(MaterialApp(home: AccountSecurityPage(api: apiA)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('a***@example.test'), findsOneWidget);
+
+    await tester.pumpWidget(MaterialApp(home: AccountSecurityPage(api: apiB)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('a***@example.test'), findsNothing);
+    expect(find.textContaining('b***@example.test'), findsOneWidget);
+  });
+
+  testWidgets('ignores a late A error after B becomes the current account', (tester) async {
+    final pendingA = Completer<http.Response>();
+    var identityCalls = 0;
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        if (request.url.path == '/v1/auth/login') {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode(body['email'] == 'b@example.test'
+                ? _token(userId: _userBId, sessionId: _sessionBId)
+                : _token()),
+            200,
+            headers: _headers,
+          );
+        }
+        if (request.url.path == '/v1/auth/logout') {
+          return http.Response('{}', 200, headers: _headers);
+        }
+        expect(request.url.path, '/v1/auth/identities');
+        identityCalls += 1;
+        if (identityCalls == 1) return pendingA.future;
+        return http.Response(
+          jsonEncode({'identities': [
+            {..._identities().first, 'subject_hint': 'b***@example.test'},
+          ]}),
+          200,
+          headers: _headers,
+        );
+      }),
+    );
+    await api.login(email: 'a@example.test', password: 'password-123456');
+    await tester.pumpWidget(MaterialApp(home: AccountSecurityPage(api: api)));
+    await tester.pump();
+
+    await api.logout();
+    await api.login(email: 'b@example.test', password: 'password-123456');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('b***@example.test'), findsOneWidget);
+
+    pendingA.completeError(StateError('late network failure'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('b***@example.test'), findsOneWidget);
+    expect(find.text('暂时无法读取登录身份，请稍后重试'), findsNothing);
   });
 }

@@ -12,6 +12,20 @@ import {
 } from '../../services/api'
 import './index.scss'
 
+export type AccountSecurityViewState = {
+  identities: AuthIdentityRead[] | null
+  loading: boolean
+  error: string
+}
+
+export type AccountSecurityController = {
+  getState: () => AccountSecurityViewState
+  subscribe: (listener: (state: AccountSecurityViewState) => void) => () => void
+  start: () => void
+  refresh: () => Promise<void>
+  dispose: () => void
+}
+
 function providerName(provider: string): string {
   switch (provider) {
     case 'EMAIL_PASSWORD': return '邮箱密码'
@@ -36,58 +50,99 @@ function safeIdentityError(error: unknown): string {
   return '暂时无法读取登录身份，请稍后重试'
 }
 
-export default function Page() {
-  const [identities, setIdentities] = useState<AuthIdentityRead[] | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const generation = useRef(0)
+export function createAccountSecurityController(
+  load: () => Promise<AuthIdentityRead[]> = getAuthIdentities,
+): AccountSecurityController {
+  let state: AccountSecurityViewState = { identities: null, loading: true, error: '' }
+  let generation = 0
+  let started = false
+  let disposed = false
+  let unsubscribeSession: () => void = () => {}
+  const listeners = new Set<(next: AccountSecurityViewState) => void>()
+
+  const emit = () => {
+    for (const listener of listeners) listener(state)
+  }
+  const setState = (next: AccountSecurityViewState) => {
+    if (disposed) return
+    state = next
+    emit()
+  }
+  const current = (attempt: number, snapshot: ReturnType<typeof captureAuthSession>) =>
+    !disposed && attempt === generation && isAuthSessionCurrent(snapshot)
 
   const refresh = async () => {
-    const currentGeneration = ++generation.current
-    let snapshot
+    const attempt = ++generation
+    let snapshot: ReturnType<typeof captureAuthSession>
     try {
       snapshot = captureAuthSession()
     } catch {
-      setIdentities(null)
-      setLoading(false)
-      setError('请先登录后再管理账号安全')
+      setState({ identities: null, loading: false, error: '请先登录后再管理账号安全' })
       return
     }
-    setLoading(true)
-    setError('')
+    setState({ identities: null, loading: true, error: '' })
     try {
-      const next = await getAuthIdentities()
-      if (currentGeneration !== generation.current || !isAuthSessionCurrent(snapshot)) return
-      setIdentities(next)
+      const identities = await load()
+      if (!current(attempt, snapshot)) return
+      setState({ identities, loading: false, error: '' })
     } catch (value) {
-      if (currentGeneration !== generation.current || !isAuthSessionCurrent(snapshot)) return
-      setIdentities([])
-      setError(safeIdentityError(value))
-    } finally {
-      if (currentGeneration === generation.current && isAuthSessionCurrent(snapshot)) setLoading(false)
+      if (!current(attempt, snapshot)) return
+      setState({ identities: [], loading: false, error: safeIdentityError(value) })
     }
   }
 
-  useEffect(() => {
-    void refresh()
-    const unsubscribe = subscribeAuthSession(() => {
-      generation.current += 1
-      setIdentities(null)
+  const start = () => {
+    if (started || disposed) return
+    started = true
+    unsubscribeSession = subscribeAuthSession(() => {
+      ++generation
+      setState({ identities: null, loading: true, error: '' })
       void refresh()
     })
+  }
+
+  return {
+    getState: () => state,
+    subscribe: (listener) => {
+      listeners.add(listener)
+      listener(state)
+      return () => listeners.delete(listener)
+    },
+    start,
+    refresh,
+    dispose: () => {
+      if (disposed) return
+      disposed = true
+      ++generation
+      unsubscribeSession()
+      listeners.clear()
+    },
+  }
+}
+
+export default function Page() {
+  const controllerRef = useRef<AccountSecurityController | null>(null)
+  if (!controllerRef.current) controllerRef.current = createAccountSecurityController()
+  const controller = controllerRef.current
+  const [viewState, setViewState] = useState<AccountSecurityViewState>(controller.getState())
+
+  useEffect(() => {
+    const unsubscribe = controller.subscribe(setViewState)
+    controller.start()
     return () => {
-      generation.current += 1
       unsubscribe()
+      controller.dispose()
     }
-  }, [])
+  }, [controller])
 
   const manageDisabled = true
+  const { identities, loading, error } = viewState
 
   return (
     <View className='account-security-page'>
       <View className='page-title'>账号与安全</View>
       <View className='page-subtitle'>只展示服务器确认的登录身份，不从个人资料推断绑定关系。</View>
-      <Button className='secondary-button' loading={loading} onClick={() => void refresh()}>刷新登录身份</Button>
+      <Button className='secondary-button' loading={loading} onClick={() => void controller.refresh()}>刷新登录身份</Button>
 
       {loading && <View className='state-card'>正在读取登录身份…</View>}
       {!loading && error && <View className='state-card error'>{error}</View>}

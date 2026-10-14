@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
@@ -12,11 +14,9 @@ class AccountSecurityPage extends StatefulWidget {
   const AccountSecurityPage({
     super.key,
     required this.api,
-    this.providerLinkEnabled = false,
   });
 
   final JiYiApiClient api;
-  final bool providerLinkEnabled;
 
   @override
   State<AccountSecurityPage> createState() => _AccountSecurityPageState();
@@ -24,6 +24,7 @@ class AccountSecurityPage extends StatefulWidget {
 
 class _AccountSecurityPageState extends State<AccountSecurityPage> {
   int _generation = 0;
+  StreamSubscription<void>? _authSessionSubscription;
   bool _loading = true;
   String? _error;
   List<AuthIdentityRead> _identities = const [];
@@ -31,32 +32,81 @@ class _AccountSecurityPageState extends State<AccountSecurityPage> {
   @override
   void initState() {
     super.initState();
+    _authSessionSubscription = widget.api.authSessionChanges.listen((_) {
+      _handleAuthBindingChanged();
+    });
     _reload();
   }
 
-  bool _current(int generation, int? sessionVersion, String? owner) =>
+  @override
+  void didUpdateWidget(covariant AccountSecurityPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.api, widget.api)) {
+      _authSessionSubscription?.cancel();
+      _authSessionSubscription = widget.api.authSessionChanges.listen((_) {
+        _handleAuthBindingChanged();
+      });
+      _handleAuthBindingChanged();
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSessionSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _handleAuthBindingChanged() {
+    if (!mounted) return;
+    ++_generation;
+    final owner = widget.api.authenticatedUserId;
+    setState(() {
+      _identities = const [];
+      _error = owner == null ? '请先登录后再管理账号安全' : null;
+      _loading = owner != null;
+    });
+    if (owner != null) unawaited(_reload());
+  }
+
+  bool _current(
+    int generation,
+    int? sessionVersion,
+    String? owner,
+    JiYiApiClient boundApi,
+  ) =>
       mounted &&
+      identical(widget.api, boundApi) &&
       generation == _generation &&
       widget.api.sessionVersion == sessionVersion &&
       widget.api.authenticatedUserId == owner;
 
   Future<void> _reload() async {
     final generation = ++_generation;
+    final boundApi = widget.api;
     final sessionVersion = widget.api.sessionVersion;
     final owner = widget.api.authenticatedUserId;
+    if (owner == null) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _loading = false;
+        _error = '请先登录后再管理账号安全';
+        _identities = const [];
+      });
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final identities = await widget.api.fetchAuthIdentities();
-      if (!_current(generation, sessionVersion, owner)) return;
+      final identities = await boundApi.fetchAuthIdentities();
+      if (!_current(generation, sessionVersion, owner, boundApi)) return;
       setState(() {
         _identities = identities;
         _loading = false;
       });
     } catch (error) {
-      if (!_current(generation, sessionVersion, owner)) return;
+      if (!_current(generation, sessionVersion, owner, boundApi)) return;
       setState(() {
         _loading = false;
         _error = _safeError(error);
@@ -125,12 +175,10 @@ class _AccountSecurityPageState extends State<AccountSecurityPage> {
                   children: [
                     const Text('绑定与解绑', style: TextStyle(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 8),
-                    Text(widget.providerLinkEnabled
-                        ? '当前操作需要真实 provider 认证和近期重新认证。'
-                        : '当前未配置可用的身份绑定服务，绑定和解绑已安全禁用。'),
+                    const Text('当前未配置可用的身份绑定服务，绑定和解绑已安全禁用。'),
                     const SizedBox(height: 12),
-                    FilledButton.tonal(
-                      onPressed: widget.providerLinkEnabled ? () {} : null,
+                    const FilledButton.tonal(
+                      onPressed: null,
                       child: const Text('绑定新的登录方式'),
                     ),
                   ],
@@ -145,20 +193,16 @@ class _AccountSecurityPageState extends State<AccountSecurityPage> {
 
   Widget _identityCard(AuthIdentityRead identity) {
     final verified = identity.verifiedAt != null;
-    final canManage = widget.providerLinkEnabled && identity.provider != 'UNKNOWN';
     return Card(
       key: ValueKey('account-identity-${identity.identityId}'),
       child: ListTile(
         title: Text(_providerName(identity.provider)),
         subtitle: Text('${identity.subjectHint}\n${verified ? '已验证' : '未验证'}'),
         isThreeLine: true,
-        trailing: PopupMenuButton<String>(
-          enabled: canManage,
-          tooltip: canManage ? '管理身份' : '当前不可管理',
-          onSelected: (_) {},
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'unlink', child: Text('解绑')),
-          ],
+        trailing: Text(
+          '绑定时间\n${identity.linkedAt.toLocal().toIso8601String()}',
+          textAlign: TextAlign.end,
+          style: Theme.of(context).textTheme.bodySmall,
         ),
       ),
     );

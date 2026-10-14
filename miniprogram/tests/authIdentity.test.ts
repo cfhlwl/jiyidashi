@@ -37,6 +37,18 @@ test('identity list parser is strict and preserves only masked server hints', as
     verified_at: null,
     linked_at: '2026-10-01T00:00:00Z',
   })
+  const futureProvider = api.parseAuthIdentityList({
+    identities: [{
+      identity_id: IDENTITY_ID,
+      provider: 'FUTURE_PROVIDER',
+      subject_hint: 'future***@example.test',
+      verified_at: null,
+      linked_at: '2026-10-01T00:00:00Z',
+    }],
+  })
+  assert.equal(futureProvider[0].provider, 'FUTURE_PROVIDER')
+  const pageSource = readFileSync('src/pages/account-security/index.tsx', 'utf8')
+  assert.match(pageSource, /default: return '其他登录方式'/)
   assert.throws(() => api.parseAuthIdentityList({ identities: [{ provider: 'PHONE' }] }), /认证响应异常/)
 })
 
@@ -65,6 +77,68 @@ test('identity GET uses the current session and mutation adapters are not called
   assert.match(source, /const manageDisabled = true/)
   assert.match(source, /getAuthIdentities\(\)/)
   assert.match(source, /disabled=\{manageDisabled\}/)
+})
+
+test('account-security controller clears A before B and ignores a late A response', async () => {
+  ;(globalThis as Record<string, unknown>).JIYI_API_BASE_URL = 'https://api.example.test/v1'
+  ;(globalThis as Record<string, unknown>).JIYI_ALLOW_API_BASE_EDIT = false
+  const Taro = (await import('@tarojs/taro')).default as unknown as Record<string, any>
+  const sessionA = { ...tokenResponse(), user_id: USER_ID }
+  const sessionB = { ...tokenResponse(), user_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', session_id: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }
+  const storage = new Map<string, unknown>([['jiyi_auth_session', sessionA]])
+  let identityCalls = 0
+  let releaseA: ((value: unknown) => void) | null = null
+  const pendingA = new Promise<unknown>((resolve) => { releaseA = resolve })
+  Taro.getStorageSync = (key: string) => storage.get(key)
+  Taro.setStorageSync = (key: string, value: unknown) => { storage.set(key, value) }
+  Taro.removeStorageSync = (key: string) => { storage.delete(key) }
+  Taro.request = async (options: any) => {
+    if (options.url.endsWith('/auth/logout')) return { statusCode: 200, data: {} }
+    if (options.url.endsWith('/auth/login')) return { statusCode: 200, data: sessionB }
+    assert.equal(options.url, 'https://api.example.test/v1/auth/identities')
+    identityCalls += 1
+    if (identityCalls === 1) return pendingA
+    return {
+      statusCode: 200,
+      data: {
+        identities: [{
+          identity_id: IDENTITY_ID,
+          provider: 'EMAIL_PASSWORD',
+          subject_hint: 'b***@example.test',
+          verified_at: '2026-10-01T00:00:00Z',
+          linked_at: '2026-10-01T00:00:00Z',
+        }],
+      },
+    }
+  }
+  const api = await import('../src/services/api')
+  const page = await import('../src/pages/account-security/index')
+  const controller = page.createAccountSecurityController(api.getAuthIdentities)
+  controller.start()
+  const states: Array<import('../src/pages/account-security/index').AccountSecurityViewState> = []
+  const unsubscribe = controller.subscribe((state) => states.push(state))
+
+  await api.logout()
+  await api.loginAccount('b@example.test', 'password-123456')
+  for (let index = 0; index < 8; index += 1) await Promise.resolve()
+  assert.equal(controller.getState().identities?.[0]?.subject_hint, 'b***@example.test')
+  assert.equal(controller.getState().error, '')
+  assert.equal(states.some((state) => state.identities === null), true)
+
+  releaseA?.({
+    statusCode: 200,
+    data: { identities: [{
+      identity_id: IDENTITY_ID,
+      provider: 'EMAIL_PASSWORD',
+      subject_hint: 'a***@example.test',
+      verified_at: '2026-10-01T00:00:00Z',
+      linked_at: '2026-10-01T00:00:00Z',
+    }] },
+  })
+  for (let index = 0; index < 8; index += 1) await Promise.resolve()
+  assert.equal(controller.getState().identities?.[0]?.subject_hint, 'b***@example.test')
+  unsubscribe()
+  controller.dispose()
 })
 
 test('identity mutation adapters keep opaque proof transient and parse provider results', async () => {

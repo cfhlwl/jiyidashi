@@ -54,25 +54,40 @@ class AuthIdentityRead {
   final DateTime? verifiedAt;
   final DateTime linkedAt;
 
+  static final _uuidPattern = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+  );
+  static final _isoDatePattern = RegExp(
+    r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$',
+  );
+
   factory AuthIdentityRead.fromJson(Map<String, dynamic> json) {
     final identityId = json['identity_id'];
     final provider = json['provider'];
     final subjectHint = json['subject_hint'];
     final verifiedAt = json['verified_at'];
     final linkedAt = json['linked_at'];
-    if (identityId is! String ||
-        !RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(identityId) ||
+    if (!json.containsKey('verified_at') ||
+        !json.containsKey('linked_at') ||
+        identityId is! String ||
+        !_uuidPattern.hasMatch(identityId) ||
         provider is! String ||
         provider.trim().isEmpty ||
         subjectHint is! String ||
+        subjectHint.trim().isEmpty ||
         linkedAt is! String) {
+      throw ProtocolException('身份列表响应格式不正确');
+    }
+    if (!_isoDatePattern.hasMatch(linkedAt)) {
       throw ProtocolException('身份列表响应格式不正确');
     }
     final parsedLinkedAt = DateTime.tryParse(linkedAt);
     if (parsedLinkedAt == null) throw ProtocolException('身份列表响应格式不正确');
     DateTime? parsedVerifiedAt;
     if (verifiedAt != null) {
-      if (verifiedAt is! String) throw ProtocolException('身份列表响应格式不正确');
+      if (verifiedAt is! String || !_isoDatePattern.hasMatch(verifiedAt)) {
+        throw ProtocolException('身份列表响应格式不正确');
+      }
       parsedVerifiedAt = DateTime.tryParse(verifiedAt);
       if (parsedVerifiedAt == null) throw ProtocolException('身份列表响应格式不正确');
     }
@@ -102,7 +117,7 @@ class AuthIdentityMutationResult {
     final operation = json['operation'];
     final identity = json['identity'];
     if (requestId is! String ||
-        !RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(requestId) ||
+        !AuthIdentityRead._uuidPattern.hasMatch(requestId) ||
         operation is! String ||
         operation.trim().isEmpty ||
         (identity != null && identity is! Map<String, dynamic>)) {
@@ -599,6 +614,8 @@ class JiYiApiClient
   final http.Client _http;
   final AuthSessionStore _sessionStore;
   final AuthDiagnosticSink? _authDiagnosticSink;
+  final StreamController<void> _authSessionChanges =
+      StreamController<void>.broadcast(sync: true);
   final String baseUrl;
   String? accessToken;
   String? _refreshToken;
@@ -617,6 +634,16 @@ class JiYiApiClient
 
   // 登录、注册和退出都会推进会话版本；后台同步用它检测账号切换。
   int get sessionVersion => _sessionVersion;
+
+  /// Emits synchronously whenever the active authenticated owner binding
+  /// changes. UI surfaces use this to clear server-owned data immediately;
+  /// they must still re-check the captured snapshot after every response.
+  Stream<void> get authSessionChanges => _authSessionChanges.stream;
+
+  void _advanceSessionVersion() {
+    _sessionVersion += 1;
+    _authSessionChanges.add(null);
+  }
 
   /// Captures the current unauthenticated authentication attempt authority.
   ///
@@ -1119,7 +1146,7 @@ class JiYiApiClient
     _accessExpiresAt = accessExpiresAt;
     authenticatedUserId = userId;
     if (!sameOwnerSession) {
-      _sessionVersion += 1;
+      _advanceSessionVersion();
     }
   }
 
@@ -1303,7 +1330,7 @@ class JiYiApiClient
     _sessionId = null;
     _accessExpiresAt = null;
     authenticatedUserId = null;
-    _sessionVersion += 1;
+    _advanceSessionVersion();
     await _runSessionStoreMutation(_sessionStore.clearSession);
   }
 
