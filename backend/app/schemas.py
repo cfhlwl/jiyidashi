@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -467,14 +467,89 @@ class MediaDownloadResponse(BaseModel):
     download: SignedTransfer
 
 
+class PhotoImportProvenance(BaseModel):
+    """Client-declared EXIF clues, not server-verified user whereabouts or facts.
+
+    The actual IMAGE is still validated via READY Media and linked Evidence.
+    Do not use client GPS to create a Visit/Place or start location recording.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    selection_method: Literal["SYSTEM_PHOTO_PICKER"]
+    capture_time_source: Literal[
+        "EXIF_ORIGINAL_OFFSET", "EXIF_LOCAL_ONLY", "UNKNOWN"
+    ]
+    local_capture_time: str | None = Field(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$",
+        max_length=19,
+    )
+    utc_offset_minutes: int | None = Field(default=None, ge=-840, le=840)
+    gps_latitude: float | None = Field(default=None, ge=-90, le=90)
+    gps_longitude: float | None = Field(default=None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def check_claims(self):
+        if (self.gps_latitude is None) != (self.gps_longitude is None):
+            raise ValueError("EXIF GPS must have both latitude and longitude")
+        if self.capture_time_source == "UNKNOWN":
+            if self.local_capture_time is not None or self.utc_offset_minutes is not None:
+                raise ValueError("unknown capture time cannot include clock or offset")
+        elif self.capture_time_source == "EXIF_LOCAL_ONLY":
+            if self.local_capture_time is None or self.utc_offset_minutes is not None:
+                raise ValueError("local-only capture must have clock without offset")
+        else:
+            if self.local_capture_time is None or self.utc_offset_minutes is None:
+                raise ValueError("offset-backed capture must include clock and offset")
+        if self.local_capture_time is not None:
+            try:
+                datetime.strptime(self.local_capture_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError as exc:
+                raise ValueError("invalid EXIF capture wall clock") from exc
+        if self.utc_offset_minutes is not None:
+            minutes = abs(self.utc_offset_minutes)
+            if minutes > 840 or (minutes == 840 and minutes % 60 != 0):
+                raise ValueError("invalid EXIF UTC offset")
+        return self
+
+
 class PhotoMemoryCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # [人工注释][S1-005] 图片文本只能来自用户主动输入；本阶段没有 OCR/Vision
-    # 输出字段，也没有任何客户端可信度/确认状态字段。
+    # Legacy single-photo capture still requires real user text. Import-only
+    # creates an explicitly labeled neutral note; never invent a description.
     title: str | None = Field(default=None, max_length=240)
-    content: str = Field(min_length=1, max_length=20000)
+    content: str | None = Field(default=None, max_length=20000)
     occurred_at: TimezoneAwareDateTime | None = None
+    import_provenance: PhotoImportProvenance | None = None
+
+    @model_validator(mode="after")
+    def validate_photo_time_and_content(self):
+        provenance = self.import_provenance
+        if provenance is None:
+            if self.content is None or not self.content.strip():
+                raise ValueError("photo memory requires user-authored content")
+            return self
+        if self.content is None or not self.content.strip():
+            # Explicitly attributed to imported media, never to user speech.
+            self.content = "用户选择导入的照片（尚未添加文字说明）"
+        if provenance.capture_time_source != "EXIF_ORIGINAL_OFFSET":
+            if self.occurred_at is not None:
+                raise ValueError("unknown/unoffset EXIF time cannot become occurred_at")
+        else:
+            assert provenance.local_capture_time is not None
+            assert provenance.utc_offset_minutes is not None
+            if self.occurred_at is None:
+                raise ValueError("offset-backed EXIF requires occurred_at")
+            wall = datetime.strptime(
+                provenance.local_capture_time, "%Y-%m-%d %H:%M:%S"
+            )
+            offset = timezone(timedelta(minutes=provenance.utc_offset_minutes))
+            expected = wall.replace(tzinfo=offset).astimezone(UTC)
+            if self.occurred_at.astimezone(UTC) != expected:
+                raise ValueError("occurred_at must match EXIF clock and UTC offset")
+        return self
 
 
 class PhotoMemoryResponse(BaseModel):
@@ -717,6 +792,10 @@ class TimelineItem(BaseModel):
     is_confirmed: bool | None = None
     # PHOTO-only canonical media identity. Never expose storage keys or signed URLs here.
     media_id: UUID | None = None
+    # Explicit time meaning for gallery imports. Missing on legacy records.
+    photo_occurrence_role: Literal[
+        "CLIENT_EXIF_CAPTURE_INSTANT", "IMPORT_DATE_NOT_CAPTURE_TIME"
+    ] | None = None
 
     # Shared/Visit evidence metadata.
     confidence: float
