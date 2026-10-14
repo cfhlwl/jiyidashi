@@ -48,6 +48,7 @@ class SecurityScope(StrEnum):
     AUTH_PASSWORD_RESET_ACCOUNT = "AUTH_PASSWORD_RESET_ACCOUNT"
     AUTH_PASSWORD_RESET_CONFIRM = "AUTH_PASSWORD_RESET_CONFIRM"
     AUTH_PHONE_ONE_TAP = "AUTH_PHONE_ONE_TAP"
+    AUTH_IDENTITY_MUTATION = "AUTH_IDENTITY_MUTATION"
     ADMIN_LOGIN_IP = "ADMIN_LOGIN_IP"
     ADMIN_LOGIN_ACCOUNT_IP = "ADMIN_LOGIN_ACCOUNT_IP"
     FAMILY_CURRENT_LOCATION = "FAMILY_CURRENT_LOCATION"
@@ -98,6 +99,7 @@ RULES: dict[SecuritySignalCode, SecurityRulePolicy] = {
                 SecurityScope.ADMIN_LOGIN_IP,
                 SecurityScope.ADMIN_LOGIN_ACCOUNT_IP,
                 SecurityScope.AUTH_PHONE_ONE_TAP,
+                SecurityScope.AUTH_IDENTITY_MUTATION,
             }
         ),
     ),
