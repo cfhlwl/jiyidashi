@@ -167,19 +167,19 @@ class _AccountSecurityPageState extends State<AccountSecurityPage> {
             else
               ..._identities.map(_identityCard),
             const SizedBox(height: 16),
-            Card(
+            const Card(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('绑定与解绑', style: TextStyle(fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 8),
-                    const Text('当前未配置可用的身份绑定服务，绑定和解绑已安全禁用。'),
-                    const SizedBox(height: 12),
-                    const FilledButton.tonal(
+                    Text('绑定与解绑', style: TextStyle(fontWeight: FontWeight.w700)),
+                    SizedBox(height: 8),
+                    Text('当前未配置可用的身份绑定服务，绑定和解绑已安全禁用。'),
+                    SizedBox(height: 12),
+                    FilledButton.tonal(
                       onPressed: null,
-                      child: const Text('绑定新的登录方式'),
+                      child: Text('绑定新的登录方式'),
                     ),
                   ],
                 ),
