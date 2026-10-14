@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'account_delete_section.dart';
+import 'account_security_page.dart';
 import 'amap_footprint_map.dart';
 import 'amap_privacy_consent.dart';
 import 'api_client.dart';
@@ -2449,6 +2450,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         amapPrivacyConsent: _amapPrivacyConsent,
         themeMode: widget.themeMode,
         onThemeModeChanged: widget.onThemeModeChanged,
+        onOpenAccountSecurity: () => unawaited(
+          JiYiNavigator.push<void>(
+            context,
+            builder: (_) => AccountSecurityPage(api: widget.api),
+          ),
+        ),
       ),
     };
     final pages = JiYiDestinationCatalog.buildPages(
@@ -4789,6 +4796,7 @@ class ProfilePage extends StatelessWidget {
     this.amapPrivacyConsent,
     this.themeMode = ThemeMode.system,
     this.onThemeModeChanged,
+    this.onOpenAccountSecurity,
   });
 
   final JiYiApiClient api;
@@ -4804,6 +4812,7 @@ class ProfilePage extends StatelessWidget {
   final AmapPrivacyConsentAuthority? amapPrivacyConsent;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode>? onThemeModeChanged;
+  final VoidCallback? onOpenAccountSecurity;
 
   @override
   Widget build(BuildContext context) {
@@ -4922,6 +4931,23 @@ class ProfilePage extends StatelessWidget {
                   ],
                 ),
               ),
+              if (onOpenAccountSecurity != null) ...[
+                const SizedBox(height: JiYiSpacing.md),
+                JiYiSectionCard(
+                  leading: Icon(
+                    Icons.security_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: '账号与安全',
+                  subtitle: '查看服务器记录的登录身份；绑定和解绑需真实服务支持。',
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('profile-account-security'),
+                    onPressed: onOpenAccountSecurity,
+                    icon: const Icon(Icons.chevron_right),
+                    label: const Text('打开账号与安全'),
+                  ),
+                ),
+              ],
               if (offlineQueue != null) ...[
                 const SizedBox(height: JiYiSpacing.md),
                 RecordingHealthSection(
