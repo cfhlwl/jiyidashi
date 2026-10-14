@@ -149,6 +149,7 @@ jobs:
         run: flutter test test/batch5a_life_home_test.dart --reporter expanded
 
       - name: Test Batch 5C Life Stages targeted
+        if: always()
         timeout-minutes: 6
         run: flutter test test/batch5c_life_stages_test.dart --reporter expanded
 
