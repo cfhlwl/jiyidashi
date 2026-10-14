@@ -132,8 +132,19 @@ Future<void> _loadAnnual(WidgetTester tester) async {
 }
 
 Future<void> _scrollTo(WidgetTester tester, Finder target) async {
-  await tester.ensureVisible(target);
-  await tester.pumpAndSettle();
+  final scrollView = find.byType(SingleChildScrollView);
+  for (var attempt = 0; attempt < 8; attempt++) {
+    if (target.evaluate().isNotEmpty) {
+      final targetRect = tester.getRect(target);
+      final viewportRect = tester.getRect(scrollView);
+      if (targetRect.top >= viewportRect.top &&
+          targetRect.bottom <= viewportRect.bottom) {
+        return;
+      }
+    }
+    await tester.drag(scrollView, const Offset(0, -320));
+    await tester.pumpAndSettle();
+  }
 }
 
 Finder _yearRange(String value) =>
