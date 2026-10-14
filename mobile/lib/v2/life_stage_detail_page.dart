@@ -102,6 +102,8 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
     linkedEvents = const [];
     events = const [];
     reasoning = null;
+    question.clear();
+    reasoningLoading = false;
     error = null;
     status = null;
     loading = true;
@@ -149,12 +151,23 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
   Future<void> _load() async {
     late final V2AuthoritySnapshot snapshot;
     try {
-      snapshot = readAuthority.capture(widget.api, 'life-stage:' + widget.stageId);
+      snapshot = readAuthority.capture(
+        widget.api,
+        'life-stage:' + widget.stageId,
+      );
     } catch (exc) {
-      if (mounted) setState(() { loading = false; error = exc.toString(); });
+      if (mounted)
+        setState(() {
+          loading = false;
+          error = exc.toString();
+        });
       return;
     }
-    if (mounted) setState(() { loading = true; error = null; });
+    if (mounted)
+      setState(() {
+        loading = true;
+        error = null;
+      });
     try {
       final result = await Future.wait<Object>([
         v2.getLifeStage(widget.stageId),
@@ -170,7 +183,10 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
       });
     } catch (exc) {
       if (!_readCurrent(snapshot)) return;
-      setState(() { loading = false; error = exc.toString(); });
+      setState(() {
+        loading = false;
+        error = exc.toString();
+      });
     }
   }
 
@@ -268,12 +284,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
   }
 
   bool _dialogStillCurrent(
-    ({
-      JiYiApiClient api,
-      String? owner,
-      int sessionVersion,
-      String stageId,
-    })
+    ({JiYiApiClient api, String? owner, int sessionVersion, String stageId})
     binding,
   ) {
     return mounted &&
@@ -319,7 +330,9 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
   }
 
   Future<void> _linkEvent() async {
-    final linked = linkedEvents.map((item) => item.lifeEventId.toLowerCase()).toSet();
+    final linked = linkedEvents
+        .map((item) => item.lifeEventId.toLowerCase())
+        .toSet();
     final choices = events
         .where((item) => !linked.contains(item.id.toLowerCase()))
         .toList(growable: false);
@@ -390,16 +403,13 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
       ),
     );
     if (ok != true || !mounted) return;
-    await _runMutation(
-      'life-stage:unlink:' + item.linkId,
-      () async {
-        await v2.unlinkLifeStageEvent(
-          stageId: widget.stageId,
-          eventId: item.lifeEventId,
-        );
-        return '事件关联已取消';
-      },
-    );
+    await _runMutation('life-stage:unlink:' + item.linkId, () async {
+      await v2.unlinkLifeStageEvent(
+        stageId: widget.stageId,
+        eventId: item.lifeEventId,
+      );
+      return '事件关联已取消';
+    });
   }
 
   Future<void> _generateReasoning() async {
@@ -443,10 +453,14 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
 
   V3StateSurfaceVariant _errorVariant() {
     final value = error ?? '';
-    if (value.contains('网络') || value.contains('连接') || value.contains('Transport')) {
+    if (value.contains('网络') ||
+        value.contains('连接') ||
+        value.contains('Transport')) {
       return V3StateSurfaceVariant.offline;
     }
-    if (value.contains('401') || value.contains('403') || value.contains('权限')) {
+    if (value.contains('401') ||
+        value.contains('403') ||
+        value.contains('权限')) {
       return V3StateSurfaceVariant.blocked;
     }
     return V3StateSurfaceVariant.error;
@@ -469,23 +483,23 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
               message: '正在核对阶段与关联经历。',
             )
           : error != null && current == null
-              ? V3StateSurface(
-                  variant: _errorVariant(),
-                  title: '暂时无法读取阶段详情',
-                  message: '请稍后重试；当前不会用猜测内容填充页面。',
-                  primaryAction: V3StateAction(
-                    label: '重试',
-                    onPressed: _load,
-                    icon: Icons.refresh,
-                  ),
-                )
-              : current == null
-                  ? const V3StateSurface(
-                      variant: V3StateSurfaceVariant.blocked,
-                      title: '阶段当前不可用',
-                      message: '这段阶段记录已经无法在当前账号下访问。',
-                    )
-                  : _ready(current),
+          ? V3StateSurface(
+              variant: _errorVariant(),
+              title: '暂时无法读取阶段详情',
+              message: '请稍后重试；当前不会用猜测内容填充页面。',
+              primaryAction: V3StateAction(
+                label: '重试',
+                onPressed: _load,
+                icon: Icons.refresh,
+              ),
+            )
+          : current == null
+          ? const V3StateSurface(
+              variant: V3StateSurfaceVariant.blocked,
+              title: '阶段当前不可用',
+              message: '这段阶段记录已经无法在当前账号下访问。',
+            )
+          : _ready(current),
     );
   }
 
@@ -547,7 +561,10 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
                         ),
                         const SizedBox(height: JiYiSpacing.xxs),
                         Text(
-                          jiyiDisplayDateRange(current.startedAt, current.endedAt),
+                          jiyiDisplayDateRange(
+                            current.startedAt,
+                            current.endedAt,
+                          ),
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
@@ -672,7 +689,8 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
     final theme = Theme.of(context);
     return V3SurfaceCard(
       key: ValueKey('life-stage-linked-event-' + item.lifeEventId),
-      semanticLabel: item.title + '，' + jiyiDisplayDate(item.startedAt) + '，已关联经历',
+      semanticLabel:
+          item.title + '，' + jiyiDisplayDate(item.startedAt) + '，已关联经历',
       padding: const EdgeInsets.all(JiYiSpacing.md),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -699,7 +717,9 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
           IconButton(
             key: ValueKey('life-stage-unlink-' + item.lifeEventId),
             tooltip: '取消关联',
-            onPressed: mutationFlight.isPending ? null : () => _unlinkEvent(item),
+            onPressed: mutationFlight.isPending
+                ? null
+                : () => _unlinkEvent(item),
             icon: const Icon(Icons.link_off),
           ),
         ],

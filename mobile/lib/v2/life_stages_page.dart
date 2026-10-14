@@ -30,6 +30,8 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
   final V2Authority mutationAuthority = V2Authority();
   final V2OperationFlight mutationFlight = V2OperationFlight();
   int _dialogGeneration = 0;
+  bool _dialogInFlight = false;
+  bool _navigationInFlight = false;
 
   List<V2LifeStage> stages = const [];
   bool loading = true;
@@ -109,69 +111,93 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
     try {
       snapshot = readAuthority.capture(widget.api, 'life-stages:list');
     } catch (exc) {
-      if (mounted) setState(() { loading = false; error = exc.toString(); });
+      if (mounted)
+        setState(() {
+          loading = false;
+          error = exc.toString();
+        });
       return;
     }
-    if (mounted) setState(() { loading = true; error = null; });
+    if (mounted)
+      setState(() {
+        loading = true;
+        error = null;
+      });
     try {
       final result = await v2.listLifeStages(limit: 100);
       if (!_readCurrent(snapshot)) return;
-      setState(() { stages = result; loading = false; });
+      setState(() {
+        stages = result;
+        loading = false;
+      });
     } catch (exc) {
       if (!_readCurrent(snapshot)) return;
-      setState(() { loading = false; error = exc.toString(); });
+      setState(() {
+        loading = false;
+        error = exc.toString();
+      });
     }
   }
 
   Future<void> _create() async {
+    if (_dialogInFlight || _navigationInFlight) return;
+    setState(() => _dialogInFlight = true);
     LifeStageDraft? preserved;
-    while (mounted) {
-      final binding = (
-        api: widget.api,
-        owner: widget.api.authenticatedUserId,
-        sessionVersion: widget.api.sessionVersion,
-        generation: _dialogGeneration,
-      );
-      if (!mounted) return;
-      final draft = await showDialog<LifeStageDraft>(
-        context: context,
-        builder: (_) => LifeStageEditorDialog(
-          initialDraft: preserved,
-          initialError: preserved == null ? null : '保存失败，请检查网络后重试。',
-        ),
-      );
-      if (draft == null || !_dialogStillCurrent(binding)) return;
-      final operation = beginV2Operation(
-        widget.api,
-        mutationAuthority,
-        mutationFlight,
-        'life-stage:create',
-      );
-      if (operation == null) return;
-      try {
-        final saved = await v2.createLifeStage(
-          kind: draft.kind,
-          title: draft.title,
-          customLabel: draft.customLabel,
-          note: draft.note,
-          startedAt: draft.startedAt,
-          endedAt: draft.endedAt,
+    try {
+      while (mounted) {
+        final binding = (
+          api: widget.api,
+          owner: widget.api.authenticatedUserId,
+          sessionVersion: widget.api.sessionVersion,
+          generation: _dialogGeneration,
         );
-        if (!_mutationCurrent(operation)) return;
-        setState(() => status = '已保存阶段：' + saved.title);
-        await continueV2Operation(
+        if (!mounted) return;
+        final draft = await showDialog<LifeStageDraft>(
+          context: context,
+          builder: (_) => LifeStageEditorDialog(
+            initialDraft: preserved,
+            initialError: preserved == null ? null : '保存失败，请检查网络后重试。',
+          ),
+        );
+        if (draft == null || !_dialogStillCurrent(binding)) return;
+        final operation = beginV2Operation(
           widget.api,
           mutationAuthority,
-          operation.snapshot,
-          [() async => _load()],
+          mutationFlight,
+          'life-stage:create',
         );
-        return;
-      } catch (exc) {
-        if (!_mutationCurrent(operation)) return;
-        preserved = draft;
-        setState(() => error = exc.toString());
-      } finally {
-        if (mutationFlight.end(operation.token) && mounted) setState(() {});
+        if (operation == null) return;
+        try {
+          final saved = await v2.createLifeStage(
+            kind: draft.kind,
+            title: draft.title,
+            customLabel: draft.customLabel,
+            note: draft.note,
+            startedAt: draft.startedAt,
+            endedAt: draft.endedAt,
+          );
+          if (!_mutationCurrent(operation)) return;
+          setState(() => status = '已保存阶段：' + saved.title);
+          await continueV2Operation(
+            widget.api,
+            mutationAuthority,
+            operation.snapshot,
+            [() async => _load()],
+          );
+          return;
+        } catch (exc) {
+          if (!_mutationCurrent(operation)) return;
+          preserved = draft;
+          setState(() => error = exc.toString());
+        } finally {
+          if (mutationFlight.end(operation.token) && mounted) setState(() {});
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _dialogInFlight = false);
+      } else {
+        _dialogInFlight = false;
       }
     }
   }
@@ -188,28 +214,43 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
   }
 
   Future<void> _open(V2LifeStage stage) async {
+    if (_navigationInFlight || _dialogInFlight) return;
     final owner = widget.api.authenticatedUserId;
     final sessionVersion = widget.api.sessionVersion;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => LifeStageDetailPage(api: widget.api, stageId: stage.id),
-      ),
-    );
-    if (!mounted ||
-        !_bindingMatches ||
-        widget.api.authenticatedUserId != owner ||
-        widget.api.sessionVersion != sessionVersion) {
-      return;
+    setState(() => _navigationInFlight = true);
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) =>
+              LifeStageDetailPage(api: widget.api, stageId: stage.id),
+        ),
+      );
+      if (!mounted ||
+          !_bindingMatches ||
+          widget.api.authenticatedUserId != owner ||
+          widget.api.sessionVersion != sessionVersion) {
+        return;
+      }
+      _load();
+    } finally {
+      if (mounted) {
+        setState(() => _navigationInFlight = false);
+      } else {
+        _navigationInFlight = false;
+      }
     }
-    _load();
   }
 
   V3StateSurfaceVariant _errorVariant() {
     final value = error ?? '';
-    if (value.contains('网络') || value.contains('连接') || value.contains('Transport')) {
+    if (value.contains('网络') ||
+        value.contains('连接') ||
+        value.contains('Transport')) {
       return V3StateSurfaceVariant.offline;
     }
-    if (value.contains('401') || value.contains('403') || value.contains('权限')) {
+    if (value.contains('401') ||
+        value.contains('403') ||
+        value.contains('权限')) {
       return V3StateSurfaceVariant.blocked;
     }
     return V3StateSurfaceVariant.error;
@@ -225,7 +266,10 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
         onBack: () => Navigator.of(context).maybePop(),
         trailing: OutlinedButton.icon(
           key: const ValueKey('life-stages-create'),
-          onPressed: mutationFlight.isPending ? null : _create,
+          onPressed:
+              mutationFlight.isPending || _dialogInFlight || _navigationInFlight
+              ? null
+              : _create,
           icon: const Icon(Icons.add),
           label: const Text('新建阶段'),
         ),
@@ -287,7 +331,8 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
       children: [
         for (var index = 0; index < stages.length; index++) ...[
           _stageCard(stages[index], isLast: index == stages.length - 1),
-          if (index != stages.length - 1) const SizedBox(height: JiYiSpacing.sm),
+          if (index != stages.length - 1)
+            const SizedBox(height: JiYiSpacing.sm),
         ],
       ],
     );

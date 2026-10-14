@@ -90,14 +90,21 @@ Future<void> _pumpLife(
 }
 
 void main() {
-  testWidgets('Batch 5A renders truthful Life home with four real entries',
-      (tester) async {
+  testWidgets('Batch 5A renders truthful Life home with four real entries', (
+    tester,
+  ) async {
     final api = _TrackingLifeApi();
     await _pumpLife(tester, api: api);
 
     expect(find.text('我的人生'), findsOneWidget);
-    expect(find.byKey(const ValueKey('life-home-entry-events')), findsOneWidget);
-    expect(find.byKey(const ValueKey('life-home-entry-stages')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('life-home-entry-events')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('life-home-entry-stages')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('life-home-entry-history')),
       findsOneWidget,
@@ -111,20 +118,35 @@ void main() {
     expect(find.text('查看人生经历'), findsOneWidget);
     expect(find.textContaining('PERSON'), findsNothing);
     expect(find.textContaining('memory_id'), findsNothing);
-    expect(api.requests, isEmpty, reason: 'Life home must not prefetch child data');
+    expect(
+      api.requests,
+      isEmpty,
+      reason: 'Life home must not prefetch child data',
+    );
   });
 
-  testWidgets('Batch 5A routes each entry to the production page and back',
-      (tester) async {
+  testWidgets('Batch 5A routes each entry to the production page and back', (
+    tester,
+  ) async {
     final api = V2TestApi();
     final mediaCache = LocalMediaCache();
     await _pumpLife(tester, api: api, mediaCache: mediaCache);
 
-    Future<void> openAndReturn(Finder entry, Type pageType) async {
+    Future<void> openAndReturn(
+      Finder entry,
+      Type pageType, {
+      bool semanticBack = false,
+    }) async {
       await tester.tap(entry);
       await tester.pumpAndSettle();
       expect(find.byType(pageType), findsOneWidget);
-      await tester.pageBack();
+      if (semanticBack) {
+        final back = find.bySemanticsLabel('返回');
+        expect(back, findsOneWidget);
+        await tester.tap(back);
+      } else {
+        await tester.pageBack();
+      }
       await tester.pumpAndSettle();
       expect(find.byType(LifePage), findsOneWidget);
     }
@@ -136,6 +158,7 @@ void main() {
     await openAndReturn(
       find.byKey(const ValueKey('life-home-entry-stages')),
       LifeStagesPage,
+      semanticBack: true,
     );
     await openAndReturn(
       find.byKey(const ValueKey('life-home-entry-history')),
@@ -152,27 +175,40 @@ void main() {
     expect(find.byType(LifePage), findsOneWidget);
   });
 
-  testWidgets('Batch 5A prevents rapid double navigation and preserves one pop',
-      (tester) async {
-    final api = V2TestApi();
-    await _pumpLife(tester, api: api);
-    final entry = find.byKey(const ValueKey('life-home-entry-events'));
-
-    final firstTap = await tester.startGesture(tester.getCenter(entry));
-    await firstTap.up();
-    final secondTap = await tester.startGesture(tester.getCenter(entry));
-    await secondTap.up();
+  testWidgets('Batch 5A Life Stages also supports system back', (tester) async {
+    await _pumpLife(tester, api: V2TestApi());
+    await tester.tap(find.byKey(const ValueKey('life-home-entry-stages')));
     await tester.pumpAndSettle();
-
-    expect(find.byType(LifeEventsPage), findsOneWidget);
-    expect(find.byType(LifePage), findsNothing);
-    await tester.pageBack();
+    expect(find.byType(LifeStagesPage), findsOneWidget);
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.byType(LifePage), findsOneWidget);
   });
 
-  testWidgets('Batch 5A drops a stale owner before route construction',
-      (tester) async {
+  testWidgets(
+    'Batch 5A prevents rapid double navigation and preserves one pop',
+    (tester) async {
+      final api = V2TestApi();
+      await _pumpLife(tester, api: api);
+      final entry = find.byKey(const ValueKey('life-home-entry-events'));
+
+      final firstTap = await tester.startGesture(tester.getCenter(entry));
+      await firstTap.up();
+      final secondTap = await tester.startGesture(tester.getCenter(entry));
+      await secondTap.up();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LifeEventsPage), findsOneWidget);
+      expect(find.byType(LifePage), findsNothing);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(LifePage), findsOneWidget);
+    },
+  );
+
+  testWidgets('Batch 5A drops a stale owner before route construction', (
+    tester,
+  ) async {
     final api = V2TestApi();
     await _pumpLife(tester, api: api);
     final entry = find.byKey(const ValueKey('life-home-entry-events'));
@@ -196,14 +232,17 @@ void main() {
     await tester.tap(entry);
     await tester.pumpAndSettle();
     expect(find.byType(LifeEventsPage), findsOneWidget);
-    final routePage = tester.widget<LifeEventsPage>(find.byType(LifeEventsPage));
+    final routePage = tester.widget<LifeEventsPage>(
+      find.byType(LifeEventsPage),
+    );
     expect(routePage.api, same(api));
     await tester.pageBack();
     await tester.pumpAndSettle();
   });
 
-  testWidgets('Batch 5A keeps targets and semantics at 320 and 200 percent',
-      (tester) async {
+  testWidgets('Batch 5A keeps targets and semantics at 320 and 200 percent', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
     await _pumpLife(
       tester,
@@ -234,8 +273,9 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('Batch 5A supports dark presentation without fake data',
-      (tester) async {
+  testWidgets('Batch 5A supports dark presentation without fake data', (
+    tester,
+  ) async {
     final darkTheme = JiYiTheme.dark();
     await _pumpLife(
       tester,
@@ -276,35 +316,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Batch 5A rejects a session-version rebound and accepts a new owner',
-      (tester) async {
-    final api = V2TestApi();
-    await _pumpLife(tester, api: api);
-    final entry = find.byKey(const ValueKey('life-home-entry-events'));
+  testWidgets(
+    'Batch 5A rejects a session-version rebound and accepts a new owner',
+    (tester) async {
+      final api = V2TestApi();
+      await _pumpLife(tester, api: api);
+      final entry = find.byKey(const ValueKey('life-home-entry-events'));
 
-    final gesture = await tester.startGesture(tester.getCenter(entry));
-    await gesture.up();
-    final previousSessionVersion = api.sessionVersion;
-    await api.logout();
-    expect(api.sessionVersion, greaterThan(previousSessionVersion));
-    api.accessToken = 'v2-test-token-b';
-    api.authenticatedUserId = _ownerB;
-    await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(tester.getCenter(entry));
+      await gesture.up();
+      final previousSessionVersion = api.sessionVersion;
+      await api.logout();
+      expect(api.sessionVersion, greaterThan(previousSessionVersion));
+      api.accessToken = 'v2-test-token-b';
+      api.authenticatedUserId = _ownerB;
+      await tester.pumpAndSettle();
 
-    expect(find.byType(LifeEventsPage), findsNothing);
-    expect(find.text('会话已变化'), findsOneWidget);
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
+      expect(find.byType(LifeEventsPage), findsNothing);
+      expect(find.text('会话已变化'), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
 
-    await tester.tap(entry);
-    await tester.pumpAndSettle();
-    final routePage = tester.widget<LifeEventsPage>(find.byType(LifeEventsPage));
-    expect(routePage.api, same(api));
-    expect(api.authenticatedUserId, _ownerB);
-  });
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+      final routePage = tester.widget<LifeEventsPage>(
+        find.byType(LifeEventsPage),
+      );
+      expect(routePage.api, same(api));
+      expect(api.authenticatedUserId, _ownerB);
+    },
+  );
 
-  testWidgets('Batch 5A rejects a session-version-only rebound',
-      (tester) async {
+  testWidgets('Batch 5A rejects a session-version-only rebound', (
+    tester,
+  ) async {
     final api = V2TestApi();
     await _pumpLife(tester, api: api);
     final entry = find.byKey(const ValueKey('life-home-entry-events'));
@@ -328,8 +373,9 @@ void main() {
     expect(find.byType(LifePage), findsOneWidget);
   });
 
-  testWidgets('Batch 5A rejects a queued route after API object rebind',
-      (tester) async {
+  testWidgets('Batch 5A rejects a queued route after API object rebind', (
+    tester,
+  ) async {
     final apiA = V2TestApi();
     final apiB = V2TestApi()..authenticatedUserId = _ownerB;
     final api = ValueNotifier<JiYiApiClient>(apiA);
@@ -356,7 +402,9 @@ void main() {
     expect(find.byType(LifePage), findsOneWidget);
     await tester.tap(entry);
     await tester.pumpAndSettle();
-    final routePage = tester.widget<LifeEventsPage>(find.byType(LifeEventsPage));
+    final routePage = tester.widget<LifeEventsPage>(
+      find.byType(LifeEventsPage),
+    );
     expect(routePage.api, same(apiB));
   });
 }
