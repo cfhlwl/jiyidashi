@@ -343,6 +343,13 @@ void main() {
     await api.logout();
     api.accessToken = 'rebound-token';
     api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: JiYiTheme.light(fontFamily: _batch5dFontFamily),
+        home: MemoirsPage(api: api),
+      ),
+    );
     await tester.pump();
     expect(find.text('账号 A 阶段', skipOffstage: false), findsNothing);
     await tester.pumpAndSettle();
