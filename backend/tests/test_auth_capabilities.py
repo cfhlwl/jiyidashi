@@ -17,6 +17,7 @@ async def test_auth_capabilities_fail_closed_without_live_provider(client):
         "sms_otp": "UNAVAILABLE",
         "phone_one_tap": "UNAVAILABLE",
         "wechat": "DISABLED",
+        "wechat_miniprogram": "DISABLED",
     }
 
 
@@ -41,6 +42,7 @@ async def test_auth_capabilities_expose_only_provider_neutral_available_state(
         "sms_otp": "AVAILABLE",
         "phone_one_tap": "UNAVAILABLE",
         "wechat": "DISABLED",
+        "wechat_miniprogram": "DISABLED",
     }
     assert "aliyun" not in response.text.lower()
     assert "credential" not in response.text.lower()
@@ -75,3 +77,33 @@ async def test_auth_capabilities_provider_factory_failure_is_fail_closed(
     assert response.status_code == 200
     assert response.json()["sms_otp"] == "UNAVAILABLE"
     assert "provider configuration" not in response.text
+
+
+async def test_wechat_miniprogram_capability_requires_exchange_fingerprint_secret(
+    client, monkeypatch
+):
+    import app.api.auth as auth_api
+
+    monkeypatch.setattr(auth_api.settings, "auth_wechat_miniprogram_provider", "wechat_miniprogram")
+    monkeypatch.setattr(auth_api.settings, "auth_wechat_miniprogram_app_id", "wx-mini-test")
+    monkeypatch.setattr(auth_api.settings, "auth_wechat_miniprogram_fingerprint_secret", "")
+    monkeypatch.setattr(
+        auth_api,
+        "get_wechat_miniprogram_provider",
+        lambda: _AvailableProvider(),
+    )
+
+    response = await client.get("/v1/auth/capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["wechat_miniprogram"] == "UNAVAILABLE"
+
+    monkeypatch.setattr(
+        auth_api.settings,
+        "auth_wechat_miniprogram_fingerprint_secret",
+        "mini-fingerprint-secret",
+    )
+    response = await client.get("/v1/auth/capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["wechat_miniprogram"] == "AVAILABLE"

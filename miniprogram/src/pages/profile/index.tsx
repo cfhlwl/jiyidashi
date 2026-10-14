@@ -1,25 +1,45 @@
 import Taro from '@tarojs/taro'
 import { Button, Input, Switch, Text, View } from '@tarojs/components'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   canEditApiBaseUrl,
+  cancelPendingAuthAttempt,
+  captureAuthSession,
+  currentAuthSessionEpoch,
+  currentAuthenticatedUserId,
   getApiBaseUrl,
+  getAuthCapabilities,
   getPrivacyStatus,
   getProfile,
+  isCanonicalPhoneInput,
+  isAuthSessionCurrent,
   isAuthenticated,
   loginAccount,
+  loginWechatMiniProgram,
   logout,
   pauseMemory,
   pauseMemoryToday,
   PrivacyStatus,
   registerAccount,
+  requestSmsOtp,
+  resendVerification,
+  restoreAuthSession,
   resumeMemory,
   setApiBaseUrl,
+  subscribeAuthSession,
   updateElderMode,
   updateProfile,
+  verifySmsOtp,
 } from '../../services/api'
 import { elderClassName } from '../../services/elderMode'
 import { FloatingCaptureAction, ProductHeroHeader } from '../../components/product/ProductUi'
+import {
+  beginProfileAsyncOperation,
+  isProfileAsyncOperationCurrent,
+  type ProfileAsyncOperation,
+  type ProfileAuthState,
+} from './authFence'
+import { runProfileLogout, runProfileMutation, runProfileSubmit } from './profileAuthFlow'
 import './index.scss'
 
 export default function Page() {
@@ -32,8 +52,43 @@ export default function Page() {
   const [profile, setProfile] = useState<Awaited<ReturnType<typeof getProfile>> | null>(null)
   const [privacy, setPrivacy] = useState<PrivacyStatus | null>(null)
   const [status, setStatus] = useState('')
+  const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [wechatMiniProgramAvailable, setWechatMiniProgramAvailable] = useState(false)
+  const [smsOtpAvailable, setSmsOtpAvailable] = useState(false)
+  const [smsMode, setSmsMode] = useState(false)
+  const [smsPhone, setSmsPhone] = useState('')
+  const [smsCode, setSmsCode] = useState('')
+  const [smsRequestId, setSmsRequestId] = useState<string | null>(null)
+  const [smsCooldownUntil, setSmsCooldownUntil] = useState<number | null>(null)
+  const [smsNow, setSmsNow] = useState(() => Date.now())
+  const profileViewGeneration = useRef(0)
+  const operationGeneration = useRef(0)
+  const authView = useRef<{ owner: string | null; epoch: number }>({
+    owner: currentAuthenticatedUserId(),
+    epoch: currentAuthSessionEpoch(),
+  })
   const allowApiEdit = canEditApiBaseUrl()
+
+  const currentProfileAuthState = (): ProfileAuthState => {
+    let sessionId: string | null = null
+    try {
+      sessionId = captureAuthSession().sessionId
+    } catch {
+      sessionId = null
+    }
+    return { owner: currentAuthenticatedUserId(), epoch: currentAuthSessionEpoch(), sessionId }
+  }
+
+  const beginOperation = (): ProfileAsyncOperation => {
+    // Every new UI action invalidates an older refresh/mutation completion too;
+    // an old finally must not clear a newer action's status or busy state.
+    profileViewGeneration.current += 1
+    return beginProfileAsyncOperation(operationGeneration, currentProfileAuthState())
+  }
+
+  const operationIsCurrent = (operation: ProfileAsyncOperation): boolean =>
+    isProfileAsyncOperationCurrent(operation, operationGeneration.current, currentProfileAuthState())
 
   const applyProfile = (next: Awaited<ReturnType<typeof getProfile>>) => {
     setProfile(next)
@@ -42,21 +97,68 @@ export default function Page() {
   }
 
   const refreshProfile = async () => {
+    const viewGeneration = ++profileViewGeneration.current
     if (!isAuthenticated()) {
       setProfile(null)
       setPrivacy(null)
       return
     }
     try {
-      applyProfile(await getProfile())
-      setPrivacy(await getPrivacyStatus())
+      const snapshot = captureAuthSession()
+      const nextProfile = await getProfile()
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      applyProfile(nextProfile)
+      const nextPrivacy = await getPrivacyStatus()
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot)) return
+      setPrivacy(nextPrivacy)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '读取资料失败')
+      if (viewGeneration === profileViewGeneration.current) {
+        setStatus(error instanceof Error ? error.message : '读取资料失败')
+      }
     }
   }
 
   useEffect(() => {
-    void refreshProfile()
+    void getAuthCapabilities()
+      .then((capabilities) => {
+        setWechatMiniProgramAvailable(capabilities.wechat_miniprogram === 'AVAILABLE')
+        setSmsOtpAvailable(capabilities.sms_otp === 'AVAILABLE')
+      })
+      .catch(() => {
+        setWechatMiniProgramAvailable(false)
+        setSmsOtpAvailable(false)
+      })
+  }, [])
+
+  useEffect(() => {
+    if (smsCooldownUntil === null) return undefined
+    const timer = setInterval(() => setSmsNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [smsCooldownUntil])
+
+  useEffect(() => {
+    const unsubscribe = subscribeAuthSession((owner, epoch) => {
+      if (authView.current.owner === owner && authView.current.epoch === epoch) return
+      authView.current = { owner, epoch }
+      profileViewGeneration.current += 1
+      operationGeneration.current += 1
+      if (!owner) {
+        setProfile(null)
+        setPrivacy(null)
+      }
+    })
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      await restoreAuthSession()
+      await refreshProfile()
+    })()
+    return () => {
+      profileViewGeneration.current += 1
+      cancelPendingAuthAttempt()
+    }
   }, [])
 
   const submit = async () => {
@@ -68,35 +170,125 @@ export default function Page() {
       setStatus('请输入昵称')
       return
     }
+    await runProfileSubmit({
+      registerMode,
+      email,
+      password,
+      nickname,
+      beginOperation,
+      operationIsCurrent,
+      registerAccount,
+      loginAccount,
+      refreshProfile,
+      setLoading,
+      setStatus,
+      setVerificationPendingEmail,
+    })
+  }
+
+  const submitWechatMiniProgram = async () => {
+    if (!wechatMiniProgramAvailable || loading) return
+    let operation = beginOperation()
     setLoading(true)
     setStatus('')
     try {
-      // [人工注释][S1-001] 登录/注册成功后才允许进入个人记忆 API，Token 保存在微信本地存储。
-      if (registerMode) {
-        await registerAccount({ email, password, nickname })
-      } else {
-        await loginAccount(email, password)
-      }
+      const loginPromise = loginWechatMiniProgram()
+      operation = beginOperation()
+      await loginPromise
+      operation = beginOperation()
       await refreshProfile()
-      setStatus(registerMode ? '账号创建成功' : '登录成功')
+      if (operationIsCurrent(operation)) setStatus('微信登录成功')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '认证失败')
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '微信登录失败')
     } finally {
-      setLoading(false)
+      if (operationIsCurrent(operation)) setLoading(false)
+    }
+  }
+
+  const smsCooldownSeconds = smsCooldownUntil === null
+    ? 0
+    : Math.max(0, Math.ceil((smsCooldownUntil - smsNow) / 1000))
+
+  const switchToEmailLogin = () => {
+    cancelPendingAuthAttempt()
+    setSmsMode(false)
+    setLoading(false)
+    setSmsPhone('')
+    setSmsCode('')
+    setSmsRequestId(null)
+    setSmsCooldownUntil(null)
+    setStatus('')
+  }
+
+  const requestPhoneSms = async () => {
+    if (!smsOtpAvailable || loading || smsCooldownSeconds > 0 || !isCanonicalPhoneInput(smsPhone.trim())) return
+    const operation = beginOperation()
+    setLoading(true)
+    setStatus('')
+    try {
+      const response = await requestSmsOtp(smsPhone)
+      if (!operationIsCurrent(operation)) return
+      setSmsRequestId(response.request_id)
+      setSmsCooldownUntil(Date.parse(response.cooldown_until))
+      setSmsCode('')
+      setStatus('验证码已发送；手机号验证会自动登录或创建账号')
+    } catch (error) {
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '验证码发送失败')
+    } finally {
+      if (operationIsCurrent(operation)) setLoading(false)
+    }
+  }
+
+  const verifyPhoneSms = async () => {
+    if (!smsRequestId || !/^\d{6}$/.test(smsCode.trim()) || loading) return
+    let operation = beginOperation()
+    setLoading(true)
+    setStatus('')
+    try {
+      const verifyPromise = verifySmsOtp(smsRequestId, smsCode)
+      operation = beginOperation()
+      await verifyPromise
+      operation = beginOperation()
+      await refreshProfile()
+      if (operationIsCurrent(operation)) setStatus('手机号登录成功')
+    } catch (error) {
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '验证码验证失败')
+    } finally {
+      if (operationIsCurrent(operation)) setLoading(false)
+    }
+  }
+
+  const resend = async () => {
+    if (!verificationPendingEmail || loading) return
+    const operation = beginOperation()
+    setLoading(true)
+    setStatus('')
+    try {
+      await resendVerification(verificationPendingEmail)
+      if (operationIsCurrent(operation)) setStatus('验证邮件已重新发送，请查收邮箱')
+    } catch (error) {
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '验证邮件发送失败')
+    } finally {
+      if (operationIsCurrent(operation)) setLoading(false)
     }
   }
 
   const toggleElderMode = async (enabled: boolean) => {
     if (!profile || loading) return
+    const operation = beginOperation()
+    const viewGeneration = profileViewGeneration.current
+    const snapshot = captureAuthSession()
     setLoading(true)
     setStatus('')
     try {
-      applyProfile(await updateElderMode(enabled))
-      setStatus(enabled ? '长辈模式已开启' : '长辈模式已关闭')
+      const nextProfile = await updateElderMode(enabled)
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot) || !operationIsCurrent(operation)) return
+      applyProfile(nextProfile)
+      if (operationIsCurrent(operation)) setStatus(enabled ? '长辈模式已开启' : '长辈模式已关闭')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '长辈模式更新失败')
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '长辈模式更新失败')
     } finally {
-      setLoading(false)
+      if (operationIsCurrent(operation)) setLoading(false)
     }
   }
 
@@ -105,29 +297,36 @@ export default function Page() {
       setStatus('昵称和时区不能为空')
       return
     }
-    setLoading(true)
-    setStatus('')
-    try {
+    await runProfileMutation({
+      beginOperation,
+      operationIsCurrent,
+      currentViewGeneration: () => profileViewGeneration.current,
+      isViewGenerationCurrent: (generation) => generation === profileViewGeneration.current,
       // [人工注释][S1-002] 用户修改 IANA 时区后以后端返回值为准，客户端不自行推断自然日边界。
-      applyProfile(await updateProfile({ nickname, timezone, locale: profile?.locale }))
-      setStatus('资料已更新')
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : '资料更新失败')
-    } finally {
-      setLoading(false)
-    }
+      action: () => updateProfile({ nickname, timezone, locale: profile?.locale }),
+      applySuccess: applyProfile,
+      setLoading,
+      setStatus,
+      successStatus: '资料已更新',
+      errorStatus: '资料更新失败',
+    })
   }
 
   const applyPrivacy = async (action: () => Promise<PrivacyStatus>, success: string) => {
+    const operation = beginOperation()
+    const viewGeneration = profileViewGeneration.current
+    const snapshot = captureAuthSession()
     setLoading(true)
     setStatus('')
     try {
-      setPrivacy(await action())
-      setStatus(success)
+      const nextPrivacy = await action()
+      if (viewGeneration !== profileViewGeneration.current || !isAuthSessionCurrent(snapshot) || !operationIsCurrent(operation)) return
+      setPrivacy(nextPrivacy)
+      if (operationIsCurrent(operation)) setStatus(success)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '操作失败')
+      if (operationIsCurrent(operation)) setStatus(error instanceof Error ? error.message : '操作失败')
     } finally {
-      setLoading(false)
+      if (operationIsCurrent(operation)) setLoading(false)
     }
   }
 
@@ -202,13 +401,21 @@ export default function Page() {
         <Button
           className='secondary-button'
           onClick={() => {
-            logout()
-            setProfile(null)
-            setPrivacy(null)
-            setEmail('')
-            setPassword('')
-            setNickname('')
-            setStatus('已退出登录')
+            void runProfileLogout({
+              beginViewGeneration: () => ++profileViewGeneration.current,
+              isViewGenerationCurrent: (generation) => generation === profileViewGeneration.current,
+              logout,
+              isAuthenticated,
+              setLoading,
+              setProfile,
+              setPrivacy,
+              clearForm: () => {
+                setEmail('')
+                setPassword('')
+                setNickname('')
+              },
+              setStatus,
+            })
           }}
         >
           退出登录
@@ -224,18 +431,57 @@ export default function Page() {
       <View className='title'>我的</View>
       <View className='subtitle'>先登录正式账号，再开始保存个人记忆。</View>
       <View className='card'>
-        <View className='card-title'>{registerMode ? '创建账号' : '登录'}</View>
-        <Input className='field' type='text' placeholder='邮箱' value={email} onInput={(e) => setEmail(e.detail.value)} />
-        <Input className='field' password placeholder='密码（至少 10 位）' value={password} onInput={(e) => setPassword(e.detail.value)} />
-        {registerMode && (
-          <Input className='field' type='text' placeholder='昵称' value={nickname} onInput={(e) => setNickname(e.detail.value)} />
+        {smsMode && smsOtpAvailable ? (
+          <>
+            <View className='card-title'>手机号验证码登录</View>
+            <View className='muted'>验证成功后，已有手机号账号直接登录；新手机号会创建迹忆账号。</View>
+            <Input className='field' type='text' maxlength={16} placeholder='+8613812345678' value={smsPhone} onInput={(e) => setSmsPhone(e.detail.value)} />
+            <Button className='primary-button' disabled={loading || smsCooldownSeconds > 0 || !isCanonicalPhoneInput(smsPhone.trim())} onClick={() => void requestPhoneSms()}>
+              {loading ? '请稍候…' : smsCooldownSeconds > 0 ? `${smsCooldownSeconds} 秒后重发` : '获取验证码'}
+            </Button>
+            {smsRequestId && (
+              <>
+                <Input className='field' type='number' maxlength={6} placeholder='6 位验证码' value={smsCode} onInput={(e) => setSmsCode(e.detail.value)} />
+                <Button className='primary-button' disabled={loading || !/^\d{6}$/.test(smsCode.trim())} onClick={() => void verifyPhoneSms()}>
+                  {loading ? '正在验证…' : '登录 / 注册'}
+                </Button>
+              </>
+            )}
+            <Button className='secondary-button' onClick={switchToEmailLogin}>使用邮箱密码登录</Button>
+          </>
+        ) : (
+          <>
+            <View className='card-title'>{registerMode ? '创建账号' : '登录'}</View>
+            <Input className='field' type='text' placeholder='邮箱' value={email} onInput={(e) => setEmail(e.detail.value)} />
+            <Input className='field' password placeholder='密码（至少 10 位）' value={password} onInput={(e) => setPassword(e.detail.value)} />
+            {registerMode && (
+              <Input className='field' type='text' placeholder='昵称' value={nickname} onInput={(e) => setNickname(e.detail.value)} />
+            )}
+            <Button className='primary-button' disabled={loading} onClick={submit}>
+              {loading ? '请稍候…' : registerMode ? '创建账号' : '登录'}
+            </Button>
+          </>
         )}
-        <Button className='primary-button' disabled={loading} onClick={submit}>
-          {loading ? '请稍候…' : registerMode ? '创建账号' : '登录'}
-        </Button>
-        <Button className='secondary-button' onClick={() => setRegisterMode(!registerMode)}>
-          {registerMode ? '已有账号？登录' : '第一次使用？创建账号'}
-        </Button>
+        {smsOtpAvailable && !smsMode && (
+          <Button className='secondary-button' disabled={loading} onClick={() => setSmsMode(true)}>
+            手机号验证码登录 / 注册
+          </Button>
+        )}
+        {wechatMiniProgramAvailable && (
+          <Button className='secondary-button' disabled={loading} onClick={() => void submitWechatMiniProgram()}>
+            微信快捷登录
+          </Button>
+        )}
+        {!smsMode && (
+          <Button className='secondary-button' disabled={loading} onClick={() => setRegisterMode(!registerMode)}>
+            {registerMode ? '已有账号？登录' : '第一次使用？创建账号'}
+          </Button>
+        )}
+        {verificationPendingEmail && (
+          <Button className='secondary-button' disabled={loading} onClick={() => void resend()}>
+            重新发送验证邮件
+          </Button>
+        )}
       </View>
       {allowApiEdit && (
         <View className='card'>
