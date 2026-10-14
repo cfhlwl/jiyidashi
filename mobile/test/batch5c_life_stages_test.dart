@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
+
+// The fixture intentionally uses compact route strings in its fake API.
+// Keep this test focused on canonical route and identity behavior.
+// ignore_for_file: prefer_interpolation_to_compose_strings
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

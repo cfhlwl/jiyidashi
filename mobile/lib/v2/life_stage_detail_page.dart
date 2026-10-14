@@ -221,6 +221,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
         sessionVersion: widget.api.sessionVersion,
         stageId: current.id,
       );
+      if (!mounted) return;
       final draft = await showDialog<LifeStageDraft>(
         context: context,
         builder: (_) => LifeStageEditorDialog(
