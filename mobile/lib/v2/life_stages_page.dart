@@ -31,7 +31,9 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
   final V2OperationFlight mutationFlight = V2OperationFlight();
   int _dialogGeneration = 0;
   bool _dialogInFlight = false;
+  bool _dialogCloseScheduled = false;
   bool _navigationInFlight = false;
+  Route<dynamic>? _dialogRoute;
 
   List<V2LifeStage> stages = const [];
   bool loading = true;
@@ -73,6 +75,7 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
 
   void _rebindAndReload() {
     _dialogGeneration += 1;
+    _scheduleDialogCloseForRebind();
     readAuthority.invalidate();
     mutationAuthority.invalidate();
     mutationFlight.invalidate();
@@ -89,6 +92,36 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
 
   void _checkBinding() {
     if (!_bindingMatches) _rebindAndReload();
+  }
+
+  void _scheduleDialogCloseForRebind() {
+    final route = _dialogRoute;
+    if (route == null || _dialogCloseScheduled) return;
+    _dialogCloseScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _dialogCloseScheduled = false;
+      if (!mounted || !identical(_dialogRoute, route)) return;
+      final navigator = route.navigator;
+      if (navigator != null && route.isActive) {
+        navigator.removeRoute(route);
+      }
+    });
+  }
+
+  Future<T?> _showTrackedDialog<T>({required WidgetBuilder builder}) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final route = DialogRoute<T>(
+      context: context,
+      builder: builder,
+      themes: InheritedTheme.capture(from: context, to: navigator.context),
+    );
+    _dialogRoute = route;
+    try {
+      return await navigator.push<T>(route);
+    } finally {
+      if (identical(_dialogRoute, route)) _dialogRoute = null;
+      _dialogCloseScheduled = false;
+    }
   }
 
   bool _readCurrent(V2AuthoritySnapshot snapshot) =>
@@ -154,8 +187,7 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
           generation: _dialogGeneration,
         );
         if (!mounted) return;
-        final draft = await showDialog<LifeStageDraft>(
-          context: context,
+        final draft = await _showTrackedDialog<LifeStageDraft>(
           builder: (_) => LifeStageEditorDialog(
             initialDraft: preserved,
             initialError: preserved == null ? null : '保存失败，请检查网络后重试。',

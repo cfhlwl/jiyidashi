@@ -374,6 +374,89 @@ void main() {
     expect(find.byType(LifeStageEditorDialog), findsNothing);
   });
 
+  testWidgets('Life Stages rebind closes an old create dialog', (tester) async {
+    final api = V2TestApi();
+    final rebuild = ValueNotifier<int>(0);
+    addTearDown(rebuild.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        locale: const Locale('zh', 'CN'),
+        theme: JiYiTheme.light(fontFamily: _fixtureFontFamily),
+        home: ValueListenableBuilder<int>(
+          valueListenable: rebuild,
+          builder: (context, _, __) => LifeStagesPage(api: api),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('life-stages-create')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('life-stage-title')),
+      '账号 A 的新阶段草稿',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('life-stage-note')),
+      '账号 A 的私密备注',
+    );
+
+    await api.logout();
+    api.accessToken = 'v2-test-token-b';
+    api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
+    rebuild.value += 1;
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LifeStageEditorDialog), findsNothing);
+    expect(find.text('账号 A 的新阶段草稿'), findsNothing);
+    expect(find.text('账号 A 的私密备注'), findsNothing);
+    expect(find.byKey(const ValueKey('life-stages-create')), findsOneWidget);
+  });
+
+  testWidgets('Life Stage rebind removes only the old dialog route', (
+    tester,
+  ) async {
+    final api = V2TestApi();
+    final rebuild = ValueNotifier<int>(0);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    addTearDown(rebuild.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        navigatorKey: navigatorKey,
+        locale: const Locale('zh', 'CN'),
+        theme: JiYiTheme.light(fontFamily: _fixtureFontFamily),
+        home: ValueListenableBuilder<int>(
+          valueListenable: rebuild,
+          builder: (context, _, __) =>
+              LifeStageDetailPage(api: api, stageId: v2StageId),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('life-stage-edit')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('life-stage-title')),
+      '账号 A 的详情草稿',
+    );
+
+    await api.logout();
+    api.accessToken = 'v2-test-token-b';
+    api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
+    rebuild.value += 1;
+    navigatorKey.currentState!.push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('账号 B 页面')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('账号 B 页面'), findsOneWidget);
+    expect(find.byType(LifeStageEditorDialog), findsNothing);
+    expect(find.text('账号 A 的详情草稿'), findsNothing);
+  });
+
   testWidgets(
     'Life Stage reasoning rebind clears draft and fences stale result',
     (tester) async {

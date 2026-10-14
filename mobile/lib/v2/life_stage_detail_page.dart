@@ -41,6 +41,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
   final TextEditingController question = TextEditingController();
   bool _dialogOpen = false;
   bool _dialogCloseScheduled = false;
+  Route<dynamic>? _dialogRoute;
 
   V2LifeStage? stage;
   List<V2LifeStageEvent> linkedEvents = const [];
@@ -116,21 +117,35 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
   }
 
   void _scheduleDialogCloseForRebind() {
-    if (!_dialogOpen || _dialogCloseScheduled) return;
+    final route = _dialogRoute;
+    if (!_dialogOpen || route == null || _dialogCloseScheduled) return;
     _dialogCloseScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _dialogCloseScheduled = false;
-      if (!mounted || !_dialogOpen) return;
-      Navigator.of(context, rootNavigator: true).pop();
+      if (!mounted || !_dialogOpen || !identical(_dialogRoute, route)) {
+        return;
+      }
+      final navigator = route.navigator;
+      if (navigator != null && route.isActive) {
+        navigator.removeRoute(route);
+      }
     });
   }
 
   Future<T?> _showTrackedDialog<T>({required WidgetBuilder builder}) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final route = DialogRoute<T>(
+      context: context,
+      builder: builder,
+      themes: InheritedTheme.capture(from: context, to: navigator.context),
+    );
+    _dialogRoute = route;
     _dialogOpen = true;
     try {
-      return await showDialog<T>(context: context, builder: builder);
+      return await navigator.push<T>(route);
     } finally {
       _dialogOpen = false;
+      if (identical(_dialogRoute, route)) _dialogRoute = null;
       _dialogCloseScheduled = false;
     }
   }
