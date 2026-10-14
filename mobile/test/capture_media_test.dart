@@ -65,6 +65,7 @@ class _FakeMediaApi extends JiYiApiClient {
     String? title,
     required String content,
     DateTime? occurredAt,
+    Map<String, dynamic>? importProvenance,
   }) async {
     calls.add('photo-memory:$mediaId:$content');
     final error = photoMemoryError;
@@ -150,6 +151,7 @@ class _ResponseLossPhotoApi extends _FakeMediaApi {
     String? title,
     required String content,
     DateTime? occurredAt,
+    Map<String, dynamic>? importProvenance,
   }) async {
     calls.add('photo-memory:$mediaId:$content');
     if (committedContent == null) {
