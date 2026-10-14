@@ -414,6 +414,26 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testAlwaysAuthorizationIntermediateForegroundCallbackKeepsPendingOwner() {
+    // iOS may report When-In-Use before the Always system prompt resolves.
+    // Clearing the pending owner here made explicit Enable silently fail.
+    XCTAssertFalse(
+      NativeLocationPolicy.shouldDiscardPendingAlwaysRequest(authorization: .foreground)
+    )
+    XCTAssertFalse(
+      NativeLocationPolicy.shouldDiscardPendingAlwaysRequest(authorization: .notDetermined)
+    )
+    XCTAssertFalse(
+      NativeLocationPolicy.shouldDiscardPendingAlwaysRequest(authorization: .background)
+    )
+    XCTAssertTrue(
+      NativeLocationPolicy.shouldDiscardPendingAlwaysRequest(authorization: .denied)
+    )
+    XCTAssertTrue(
+      NativeLocationPolicy.shouldDiscardPendingAlwaysRequest(authorization: .restricted)
+    )
+  }
+
   func testPermissionRevocationStopsRunningProducer() {
     XCTAssertEqual(
       NativeLocationPolicy.reconcileRuntime(
