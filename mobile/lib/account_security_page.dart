@@ -24,8 +24,6 @@ class AccountSecurityPage extends StatefulWidget {
 
 class _AccountSecurityPageState extends State<AccountSecurityPage> {
   int _generation = 0;
-  int? _sessionVersion;
-  String? _owner;
   bool _loading = true;
   String? _error;
   List<AuthIdentityRead> _identities = const [];
@@ -49,8 +47,6 @@ class _AccountSecurityPageState extends State<AccountSecurityPage> {
     setState(() {
       _loading = true;
       _error = null;
-      _sessionVersion = sessionVersion;
-      _owner = owner;
     });
     try {
       final identities = await widget.api.fetchAuthIdentities();
