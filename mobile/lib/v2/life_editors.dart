@@ -310,32 +310,51 @@ class _LifeEventEditorDialogState extends State<LifeEventEditorDialog> {
 }
 
 class LifeStageEditorDialog extends StatefulWidget {
-  const LifeStageEditorDialog({super.key, this.initial});
+  const LifeStageEditorDialog({
+    super.key,
+    this.initial,
+    this.initialDraft,
+    this.initialError,
+  });
 
   final V2LifeStage? initial;
+  final LifeStageDraft? initialDraft;
+  final String? initialError;
 
   @override
   State<LifeStageEditorDialog> createState() => _LifeStageEditorDialogState();
 }
 
 class _LifeStageEditorDialogState extends State<LifeStageEditorDialog> {
-  late String kind = widget.initial?.kind ?? 'WORK';
+  late String kind = widget.initialDraft?.kind ?? widget.initial?.kind ?? 'WORK';
   late final TextEditingController title = TextEditingController(
-    text: widget.initial?.title ?? '',
+    text: widget.initialDraft?.title ?? widget.initial?.title ?? '',
   );
   late final TextEditingController custom = TextEditingController(
-    text: widget.initial?.customLabel ?? '',
+    text: widget.initialDraft?.customLabel ?? widget.initial?.customLabel ?? '',
   );
   late final TextEditingController note = TextEditingController(
-    text: widget.initial?.note ?? '',
+    text: widget.initialDraft?.note ?? widget.initial?.note ?? '',
   );
-  late DateTime started = widget.initial == null
+  late DateTime started = widget.initialDraft != null
+      ? DateTime.parse(widget.initialDraft!.startedAt).toLocal()
+      : widget.initial == null
       ? DateTime.now()
       : DateTime.parse(widget.initial!.startedAt).toLocal();
-  late DateTime? ended = widget.initial?.endedAt == null
+  late DateTime? ended = widget.initialDraft != null
+      ? (widget.initialDraft!.endedAt == null
+            ? null
+            : DateTime.parse(widget.initialDraft!.endedAt!).toLocal())
+      : widget.initial?.endedAt == null
       ? null
       : DateTime.parse(widget.initial!.endedAt!).toLocal();
   String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    error = widget.initialError;
+  }
 
   @override
   void dispose() {
@@ -420,6 +439,7 @@ class _LifeStageEditorDialogState extends State<LifeStageEditorDialog> {
             TextField(
               controller: title,
               maxLength: 240,
+              key: const ValueKey('life-stage-title'),
               decoration: const InputDecoration(labelText: '阶段标题'),
             ),
             ListTile(
@@ -453,6 +473,7 @@ class _LifeStageEditorDialogState extends State<LifeStageEditorDialog> {
               maxLength: 5000,
               minLines: 2,
               maxLines: 4,
+              key: const ValueKey('life-stage-note'),
               decoration: const InputDecoration(labelText: '备注（可选）'),
             ),
             if (error != null) Text(error!),
@@ -461,10 +482,15 @@ class _LifeStageEditorDialogState extends State<LifeStageEditorDialog> {
       ),
       actions: [
         TextButton(
+          key: const ValueKey('life-stage-cancel'),
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),
-        FilledButton(onPressed: submit, child: const Text('保存')),
+        FilledButton(
+          key: const ValueKey('life-stage-save'),
+          onPressed: submit,
+          child: const Text('保存'),
+        ),
       ],
     );
   }
