@@ -250,7 +250,8 @@ struct NativeLocationPolicy {
     activeOwnerUserId: String?,
     authorization: NativeLocationAuthorization,
     locationServicesEnabled: Bool,
-    runtime: NativeLocationRuntime
+    runtime: NativeLocationRuntime,
+    previousRestorePending: Bool = false
   ) -> NativeLocationRelaunchState {
     guard
       let enabledOwnerUserId,
@@ -258,7 +259,7 @@ struct NativeLocationPolicy {
       enabledOwnerUserId == activeOwnerUserId,
       authorization == .background,
       locationServicesEnabled,
-      runtime == .running
+      (runtime == .running || (runtime == .paused && previousRestorePending))
     else {
       return NativeLocationRelaunchState(
         restorePending: false,
@@ -372,10 +373,14 @@ final class NativeLocationBridge: NSObject, CLLocationManagerDelegate {
       activeOwnerUserId: activeOwnerUserId,
       authorization: authorization(),
       locationServicesEnabled: CLLocationManager.locationServicesEnabled(),
-      runtime: runtime
+      runtime: runtime,
+      previousRestorePending: relaunchRestorePending
     )
 
-    // CoreLocation may relaunch the process before Flutter/auth/server privacy are available.
+    // Either CoreLocation or a normal user launch may start a fresh process
+    // while persistent owner consent still says the former producer was running.
+    // Preserve its owner-scoped recovery hint, but never produce coordinates before
+    // Flutter verifies the real server AUTH + Privacy gates.
     // Never restart the producer here. Persist only a recovery hint and force truthful stopped
     // runtime; Flutter may later consume the hint after authoritative privacy verification.
     manager.stopMonitoringSignificantLocationChanges()
@@ -2435,12 +2440,11 @@ final class PhoneOneTapNativeBridge {
       self?.dispatchPassiveRecoveryIfReady()
     }
     nativeLocationBridge = bridge
-    if launchOptions?[.location] != nil {
-      // iOS can relaunch a terminated app before Flutter can verify authoritative privacy.
-      // Record only that the old producer was eligible to recover; do not start CoreLocation
-      // until the authenticated Flutter shell confirms server privacy is active.
-      bridge.markLocationRelaunchRestorePending()
-    }
+    // A normal foreground cold start is as important as a CoreLocation relaunch.
+    // Runtime persisted as RUNNING belongs to the old, now-dead OS process. Do not
+    // claim that producer is still live; quarantine it as PAUSED with a recovery hint.
+    // Actual start is delegated to AUTH + Privacy verification in Flutter.
+    bridge.markLocationRelaunchRestorePending()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

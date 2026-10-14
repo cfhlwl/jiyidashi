@@ -494,6 +494,66 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testOrdinaryColdStartRestoresOnlyPersistedRunningOrPendingProducer() {
+    // A normal app launch (not launchOptions.location) loses the previous
+    // process's CLLocation producers, but must keep the user's opt-in intent.
+    XCTAssertEqual(
+      NativeLocationPolicy.relaunchState(
+        enabledOwnerUserId: owner,
+        activeOwnerUserId: owner,
+        authorization: .background,
+        locationServicesEnabled: true,
+        runtime: .running,
+        previousRestorePending: false
+      ),
+      NativeLocationRelaunchState(restorePending: true, runtime: .paused)
+    )
+    // A previously quarantined producer may have been persisted as PAUSED.
+    XCTAssertEqual(
+      NativeLocationPolicy.relaunchState(
+        enabledOwnerUserId: owner,
+        activeOwnerUserId: owner,
+        authorization: .background,
+        locationServicesEnabled: true,
+        runtime: .paused,
+        previousRestorePending: true
+      ),
+      NativeLocationRelaunchState(restorePending: true, runtime: .paused)
+    )
+    // Truly stopped by the user, revoked permission, or other owner: NO replay.
+    XCTAssertEqual(
+      NativeLocationPolicy.relaunchState(
+        enabledOwnerUserId: owner,
+        activeOwnerUserId: owner,
+        authorization: .background,
+        locationServicesEnabled: true,
+        runtime: .stopped,
+        previousRestorePending: true
+      ),
+      NativeLocationRelaunchState(restorePending: false, runtime: .stopped)
+    )
+    XCTAssertEqual(
+      NativeLocationPolicy.relaunchState(
+        enabledOwnerUserId: owner,
+        activeOwnerUserId: owner,
+        authorization: .foreground,
+        locationServicesEnabled: true,
+        runtime: .running
+      ),
+      NativeLocationRelaunchState(restorePending: false, runtime: .stopped)
+    )
+    XCTAssertEqual(
+      NativeLocationPolicy.relaunchState(
+        enabledOwnerUserId: owner,
+        activeOwnerUserId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        authorization: .background,
+        locationServicesEnabled: true,
+        runtime: .running
+      ),
+      NativeLocationRelaunchState(restorePending: false, runtime: .stopped)
+    )
+  }
+
   func testMotionSamplingProfileRejectsFiveSecondLoopAndInvalidThresholds() {
     XCTAssertNil(
       NativeSamplingProfile.validated(
