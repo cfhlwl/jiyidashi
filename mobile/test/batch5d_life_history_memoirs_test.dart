@@ -79,7 +79,7 @@ class _TimezoneBoundaryApi extends V2TestApi {
             'title': '跨年记录',
             'custom_label': null,
             'life_event_id': v2EventId,
-            'event_kind': 'LIFE',
+            'event_kind': 'WORK',
             'event_ended_at': null,
             'place_id': null,
             'life_stage_id': null,
@@ -126,7 +126,9 @@ Future<void> _pump(
 
 Future<void> _loadAnnual(WidgetTester tester) async {
   await tester.enterText(find.byType(TextField).first, '2025');
-  await tester.tap(find.text('开始回看'));
+  final action = find.text('开始回看', skipOffstage: false);
+  await _scrollTo(tester, action);
+  await tester.tap(action);
   await tester.pumpAndSettle();
 }
 
@@ -208,7 +210,9 @@ void main() {
     expect(find.textContaining('这一年，你开始了新的产品阶段'), findsOneWidget);
     expect(find.text('参考记录 1'), findsOneWidget);
 
-    await tester.tap(find.text('刷新人生阶段'));
+    final refreshStages = find.text('刷新人生阶段', skipOffstage: false);
+    await _scrollTo(tester, refreshStages);
+    await tester.tap(refreshStages);
     await tester.pumpAndSettle();
     final stage = find.text('产品创业阶段', skipOffstage: false);
     await _scrollTo(tester, stage);
@@ -286,7 +290,9 @@ void main() {
     if (!_candidateMode) return;
     await _pump(tester, MemoirsPage(api: V2TestApi()));
     await _loadAnnual(tester);
-    await tester.tap(find.text('刷新人生阶段'));
+    final refreshStages = find.text('刷新人生阶段', skipOffstage: false);
+    await _scrollTo(tester, refreshStages);
+    await tester.tap(refreshStages);
     await tester.pumpAndSettle();
     final stage = find.text('产品创业阶段', skipOffstage: false);
     await _scrollTo(tester, stage);
