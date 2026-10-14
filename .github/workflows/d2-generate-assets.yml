@@ -644,6 +644,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/auth-006-candidates
+          mkdir -p test/uiux_v3_candidates/auth-006
           flutter test test/account_security_visual_fixture_test.dart \
             --update-goldens \
             --dart-define=AUTH_006_ACCOUNT_SECURITY_CANDIDATE=true \
