@@ -217,7 +217,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('life-history-submit')));
     await tester.pump();
     expect(api.historyCalls, 1);
-    api.sessionVersion += 1;
+    final previousSessionVersion = api.sessionVersion;
+    await api.logout();
+    expect(api.sessionVersion, greaterThan(previousSessionVersion));
+    api.accessToken = 'v2-test-token-rebound';
     api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
     api.release.complete();
     await tester.pumpAndSettle();
