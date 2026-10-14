@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +11,21 @@ import 'package:jiyidashi/v2/memoirs_page.dart';
 import 'v2_test_api.dart';
 
 const _candidateMode = bool.fromEnvironment('UIUX_V3_BATCH5D_CANDIDATE_MODE');
+const _batch5dFontFamily = 'Batch 5D Noto Sans SC';
+
+Future<void> _loadBatch5dFonts() async {
+  final cjkBytes = await File('test/assets/visual/NotoSansSC-Regular.otf')
+      .readAsBytes();
+  final cjk = FontLoader(_batch5dFontFamily)
+    ..addFont(Future<ByteData>.value(ByteData.sublistView(cjkBytes)));
+  await cjk.load();
+
+  final iconBytes = await File('test/fonts/MaterialIcons-Regular.otf')
+      .readAsBytes();
+  final icons = FontLoader('MaterialIcons')
+    ..addFont(Future<ByteData>.value(ByteData.sublistView(iconBytes)));
+  await icons.load();
+}
 
 class _NoEvidenceApi extends V2TestApi {
   @override
@@ -93,6 +110,34 @@ class _TimezoneBoundaryApi extends V2TestApi {
   }
 }
 
+class _TaggedMemoirApi extends V2TestApi {
+  _TaggedMemoirApi(this.tag);
+
+  String tag;
+
+  @override
+  Map<String, dynamic> get stage => {
+        ...super.stage,
+        'title': '$tag 阶段',
+      };
+
+  @override
+  Future<Object?> requestV2Json(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final uri = Uri.parse(path);
+    if (method == 'GET' && uri.path == '/memoirs/life/stages') {
+      return {
+        'items': [stage],
+        'next_cursor': null,
+      };
+    }
+    return super.requestV2Json(method, path, body: body);
+  }
+}
+
 Future<void> _pump(
   WidgetTester tester,
   Widget child, {
@@ -109,8 +154,8 @@ Future<void> _pump(
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: JiYiTheme.light(),
-      darkTheme: JiYiTheme.dark(),
+      theme: JiYiTheme.light(fontFamily: _batch5dFontFamily),
+      darkTheme: JiYiTheme.dark(fontFamily: _batch5dFontFamily),
       themeMode: mode,
       builder: (context, rendered) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -152,6 +197,8 @@ Finder _yearRange(String value) =>
     find.textContaining(value, skipOffstage: false);
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(_loadBatch5dFonts);
   testWidgets('Batch 5D multi-year timeline is truthful and navigable', (tester) async {
     await _pump(tester, LifeHistoryPage(api: V2TestApi()));
     await tester.enterText(find.byType(TextField).first, '2020');
@@ -262,6 +309,42 @@ void main() {
     api.release.complete();
     await tester.pumpAndSettle();
     expect(find.text('加入新团队'), findsNothing);
+  });
+
+  testWidgets('Batch 5D memoir API rebind clears A and reloads B', (tester) async {
+    final apiA = _TaggedMemoirApi('账号 A');
+    final apiB = _TaggedMemoirApi('账号 B');
+    await _pump(tester, MemoirsPage(api: apiA));
+    await tester.pumpAndSettle();
+    expect(find.text('账号 A 阶段', skipOffstage: false), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: JiYiTheme.light(fontFamily: _batch5dFontFamily),
+        home: MemoirsPage(api: apiB),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('账号 A 阶段', skipOffstage: false), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.text('账号 B 阶段', skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('Batch 5D same API session rebind clears displayed stages', (tester) async {
+    final api = _TaggedMemoirApi('账号 A');
+    await _pump(tester, MemoirsPage(api: api));
+    await tester.pumpAndSettle();
+    expect(find.text('账号 A 阶段', skipOffstage: false), findsOneWidget);
+
+    api.tag = '账号 B';
+    await api.logout();
+    api.accessToken = 'rebound-token';
+    api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
+    await tester.pump();
+    expect(find.text('账号 A 阶段', skipOffstage: false), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.text('账号 B 阶段', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('candidate: Batch 5D multi-year timeline', (tester) async {

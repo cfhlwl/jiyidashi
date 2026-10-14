@@ -228,6 +228,20 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
   @override
   Widget build(BuildContext context) {
     _checkBinding();
+    if (!_bindingMatches) {
+      return V3PageScaffold(
+        topBar: V3TopBar(
+          title: '多年时间线',
+          subtitle: '正在切换当前账号',
+          onBack: () => Navigator.of(context).maybePop(),
+        ),
+        child: const V3StateSurface(
+          variant: V3StateSurfaceVariant.loading,
+          title: '正在更新当前记录',
+          message: '旧账号内容不会带入新的账号。',
+        ),
+      );
+    }
     final currentPage = page;
     final timezone = currentPage?.timezone ?? 'UTC';
     return V3PageScaffold(

@@ -746,6 +746,32 @@ jobs:
               if candidate.is_file():
                   shutil.copy2(candidate, root / 'candidate' / name)
 
+          required_candidates = [
+              Path('/tmp/memory-v3-candidates/memory_v3_default.png'),
+              Path('/tmp/memory-v3-candidates/memory_v3_answer.png'),
+              Path('/tmp/memory-v3-candidates/memory_v3_shell.png'),
+          ]
+          missing_candidates = [str(path) for path in required_candidates if not path.is_file()]
+          if missing_candidates:
+              status = [
+                  f'# UIUX-V3-06 Design Authority Audit ({head})',
+                  '',
+                  'AUDIT STATUS: INCOMPLETE',
+                  'Required upstream candidate generation did not produce all inputs.',
+                  '',
+                  *[f'- missing prerequisite: `{path}`' for path in missing_candidates],
+                  '',
+                  'This package is diagnostic evidence only; it is not an audit PASS.',
+              ]
+              (root / 'audit.md').write_text('\n'.join(status) + '\n', encoding='utf-8')
+              (root / 'manifest.txt').write_text(
+                  'AUDIT STATUS: INCOMPLETE\n' +
+                  '\n'.join(f'MISSING PREREQUISITE: {path}' for path in missing_candidates) +
+                  '\n',
+                  encoding='utf-8',
+              )
+              raise SystemExit('missing required candidate inputs; see audit.md')
+
           def normalize(authority, size):
               target_w, target_h = size
               scale = min(target_w / authority.width, target_h / authority.height)

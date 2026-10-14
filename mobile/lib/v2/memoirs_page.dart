@@ -38,7 +38,7 @@ class MemoirsPage extends StatefulWidget {
 }
 
 class _MemoirsPageState extends State<MemoirsPage> {
-  late final V2Api v2 = V2Api(widget.api);
+  late V2Api v2;
   late final LocalMediaCache _mediaCache =
       widget.mediaCache ?? LocalMediaCache();
 
@@ -99,6 +99,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
     _boundApi = widget.api;
     _boundOwner = widget.api.authenticatedUserId;
     _boundSessionVersion = widget.api.sessionVersion;
+    v2 = V2Api(widget.api);
   }
 
   @override
@@ -272,7 +273,6 @@ class _MemoirsPageState extends State<MemoirsPage> {
     final current = annual;
     final cursor = annualTimelineCursor;
     if (current == null || cursor == null) return;
-    annualTimelineLoading = true;
     final identity = 'annual-timeline:' + current.targetYear + ':' + cursor;
     late final V2AuthoritySnapshot snapshot;
     try {
@@ -281,6 +281,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
       if (mounted) setState(() => annualError = exc.toString());
       return;
     }
+    if (!mounted) return;
+    setState(() => annualTimelineLoading = true);
     try {
       final page = await v2.getLifeHistory(
         startYear: int.parse(current.targetYear),
@@ -311,6 +313,11 @@ class _MemoirsPageState extends State<MemoirsPage> {
         annualError = exc.toString();
         annualTimelineLoading = false;
       });
+    } finally {
+      if (mounted &&
+          annualTimelineAuthority.isCurrent(widget.api, snapshot, identity)) {
+        setState(() => annualTimelineLoading = false);
+      }
     }
   }
 
@@ -319,7 +326,6 @@ class _MemoirsPageState extends State<MemoirsPage> {
     final current = annual;
     final cursor = annualPhotoCursor;
     if (current == null || cursor == null) return;
-    annualPhotoLoading = true;
     final identity = 'annual-photos:' + current.targetYear + ':' + cursor;
     late final V2AuthoritySnapshot snapshot;
     try {
@@ -328,6 +334,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
       if (mounted) setState(() => annualError = exc.toString());
       return;
     }
+    if (!mounted) return;
+    setState(() => annualPhotoLoading = true);
     try {
       final page = await v2.getAnnualMemoirPhotos(
         current.targetYear,
@@ -357,6 +365,11 @@ class _MemoirsPageState extends State<MemoirsPage> {
         annualError = exc.toString();
         annualPhotoLoading = false;
       });
+    } finally {
+      if (mounted &&
+          annualPhotoAuthority.isCurrent(widget.api, snapshot, identity)) {
+        setState(() => annualPhotoLoading = false);
+      }
     }
   }
 
@@ -386,7 +399,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
         return;
       }
       final navigator = Navigator.of(context, rootNavigator: true);
-      final route = DialogRoute<void>(
+      late final DialogRoute<void> route;
+      route = DialogRoute<void>(
         context: context,
         builder: (_) => Dialog(
           child: ConstrainedBox(
@@ -406,7 +420,19 @@ class _MemoirsPageState extends State<MemoirsPage> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () {
+                    if (!mounted ||
+                        !route.isActive ||
+                        !identical(_previewRoute, route) ||
+                        !mediaPreviewAuthority.isCurrent(
+                          widget.api,
+                          snapshot,
+                          identity,
+                        )) {
+                      return;
+                    }
+                    route.navigator?.pop();
+                  },
                   child: const Text('关闭'),
                 ),
               ],
@@ -535,6 +561,20 @@ class _MemoirsPageState extends State<MemoirsPage> {
   @override
   Widget build(BuildContext context) {
     _checkBinding();
+    if (!_bindingMatches) {
+      return V3PageScaffold(
+        topBar: V3TopBar(
+          title: '回忆总结',
+          subtitle: '正在切换当前账号',
+          onBack: () => Navigator.of(context).maybePop(),
+        ),
+        child: const V3StateSurface(
+          variant: V3StateSurfaceVariant.loading,
+          title: '正在更新当前记录',
+          message: '旧账号内容不会带入新的账号。',
+        ),
+      );
+    }
     return V3PageScaffold(
       topBar: V3TopBar(
         title: '回忆总结',
