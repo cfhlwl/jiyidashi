@@ -131,14 +131,13 @@ Future<void> _loadAnnual(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Finder _outerScrollView() =>
-    find.byType(Scrollable, skipOffstage: false).first;
+Finder _outerScrollView() => find.byType(SingleChildScrollView).first;
 
 Future<void> _scrollTo(WidgetTester tester, Finder target) async {
-  await tester.scrollUntilVisible(
+  await tester.dragUntilVisible(
     target,
-    320,
-    scrollable: _outerScrollView(),
+    _outerScrollView(),
+    const Offset(0, -320),
   );
   await tester.pumpAndSettle();
 }
@@ -151,12 +150,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('life-history-submit')));
     await tester.pumpAndSettle();
 
-    final range = find.text('2020–2025');
+    final range = find.text('2020–2025', skipOffstage: false);
     await _scrollTo(tester, range);
     expect(range, findsOneWidget);
-    await _scrollTo(tester, find.text('2025年3月'));
+    await _scrollTo(tester, find.text('2025年3月', skipOffstage: false));
     expect(find.text('2025年3月'), findsOneWidget);
-    await _scrollTo(tester, find.text('加入新团队'));
+    await _scrollTo(tester, find.text('加入新团队', skipOffstage: false));
     expect(find.text('加入新团队'), findsOneWidget);
     expect(find.textContaining('Asia/Shanghai'), findsOneWidget);
     expect(find.textContaining('LIFE_EVENT'), findsNothing);
@@ -186,7 +185,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('life-history-submit')));
     await tester.pumpAndSettle();
 
-    await _scrollTo(tester, find.text('2025年1月'));
+    await _scrollTo(tester, find.text('2025年1月', skipOffstage: false));
     expect(find.text('2025年1月'), findsOneWidget);
     expect(find.text('跨年记录'), findsOneWidget);
   });
@@ -198,10 +197,13 @@ void main() {
     expect(find.textContaining('这一年，你开始了新的产品阶段'), findsOneWidget);
     expect(find.text('参考记录 1'), findsOneWidget);
 
-    final stage = find.text('产品创业阶段');
+    final stage = find.text('产品创业阶段', skipOffstage: false);
     await _scrollTo(tester, stage);
     await tester.tap(stage);
-    await _scrollTo(tester, find.text('生成这个阶段的故事'));
+    await _scrollTo(
+      tester,
+      find.text('生成这个阶段的故事', skipOffstage: false),
+    );
     await tester.tap(find.text('生成这个阶段的故事'));
     await tester.pumpAndSettle();
     expect(find.textContaining('这一阶段以产品开发为主线'), findsOneWidget);
@@ -250,7 +252,7 @@ void main() {
     await _pump(tester, LifeHistoryPage(api: V2TestApi()));
     await tester.tap(find.byKey(const ValueKey('life-history-submit')));
     await tester.pumpAndSettle();
-    await _scrollTo(tester, find.text('2020–2025'));
+    await _scrollTo(tester, find.text('2020–2025', skipOffstage: false));
     await expectLater(
       find.byType(LifeHistoryPage),
       matchesGoldenFile('goldens/life_history_v3_batch5d.png'),
@@ -271,10 +273,13 @@ void main() {
     if (!_candidateMode) return;
     await _pump(tester, MemoirsPage(api: V2TestApi()));
     await _loadAnnual(tester);
-    final stage = find.text('产品创业阶段');
+    final stage = find.text('产品创业阶段', skipOffstage: false);
     await _scrollTo(tester, stage);
     await tester.tap(stage);
-    await _scrollTo(tester, find.text('生成这个阶段的故事'));
+    await _scrollTo(
+      tester,
+      find.text('生成这个阶段的故事', skipOffstage: false),
+    );
     await tester.tap(find.text('生成这个阶段的故事'));
     await tester.pumpAndSettle();
     await expectLater(
