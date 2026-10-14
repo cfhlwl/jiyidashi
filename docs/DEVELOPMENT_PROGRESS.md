@@ -1,5 +1,5 @@
 | Mini V2-D | 小程序 Unified Graph Neighborhood V1 | ✅ | Issue #144 / PR #145：trusted read-only one-hop projection 已正式审查并合并；merge `ae7145c2e850ccf6df885ebac4b3e12fd5f499df` |<!-- 本文件是迹忆项目长期维护的唯一开发进度总表；每次功能开发、修复、审查或合并后都必须同步更新状态。 -->
-<!-- AUTH-01 / PR #222 已完成 exact-head Gate 并合并 main=1ba028059905a2dd6dc8c62d76c3c60729ebb3ae；AUTH-01 CLOSED。Today V3 与 AUTH-UI-01 已完成并纳入 UI V3 已完成子里程碑；AUTH-02 尚未启动。 -->
+<!-- AUTH-01 / PR #222 已完成 exact-head Gate 并合并 main=1ba028059905a2dd6dc8c62d76c3c60729ebb3ae；AUTH-01 CLOSED。AUTH-002 已从 main=79f330a449d509ac4457739d4e16a6e6ce29b208 启动独立实现；live WeChat provider、凭证与真机验收继续关闭。 -->
 <!-- PR #179 / #167 SEC-014 Sensitive Operation Confirmation Standard V1 已完成两轮正式 security review 并合并 main=2080174f。2026-09-30 production-launch audit 进一步确认：公开注册仍创建 LEGACY_FULL、用户认证仍为 7-day bearer-only、删除 durable state machine 缺少服务端自动 progression、备份默认同机、普通认证 API/AI provider 缺少统一瞬时滥用/并发门禁，并存在同步大导出、stale PENDING media、Security Alert 无人类通知、运行资源边界与真实容量 Gate 等上线前缺口。当前主线保持 ADMIN-001；其后先完成 Production Launch Hardening，再做 #136 最终真实生产验收。 -->
 <!-- PR #9 已完成 latest-main clean replay、最终 Mini Program CI 与 replay-after-clean 核验，并合并 main=9722635f；C 工作线第一阶段正式完成，S1-005 转 ✅，S1-004 继续保持进行中，真实音频上传/ASR/Evidence 留待 S1-007。 -->
 <!-- D1/PR #12 与 D2/PR #13 已分别完成正式审查、latest-main replay 与最终 CI 并合并；PR #13 先合并为 main=3b43574a，PR #12 随后 clean replay 到该 main 并合并为 main=f1d9baef。Issue #10/#11 已自动关闭。 -->
@@ -60,6 +60,7 @@
 | ID | 范围 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | UIUX-V3-05-4C | Graph Neighborhood V3 | 🟠 | Issue #254 / 独立 Draft PR：严格消费 `V2Api` Graph Neighborhood，真实节点/边、canonical PERSON 导航、API/owner/session/kind/id rebind 与旧异步结果隔离；候选视觉为 `DERIVED V3 / V3_PARTIAL`，等待独立视觉审查与 CI 验收。 |
+| UIUX-V3-06-5A | Life Home V3 | 🔵 | Issue #257 / 独立 Draft PR 开发中：`03_life.png` 只读视觉参考；保留人生经历、人生阶段、多年时间线、人生故事四个真实入口与 V2 API/owner/session 导航权限；candidate-only 视觉审计，正式 Golden 暂不修改。 |
 
 ## 状态规则
 
@@ -394,8 +395,9 @@ OPS-002 不以“5000/10000 DAU”作为单一启动条件；正式规模化判�
 | --- | --- | --- | --- | --- |
 | AUTH-001 | P0 | Public Auth & Persistent Session Hardening | ✅ | Issue #182 / PR #183 已完成正式安全审查并合并；merge `d20617973499c2a04cede58016999f31d331bdfc`。durable server session、15 分钟短 JWT、opaque refresh rotation/replay revoke、logout/logout-all/revoke、邮箱验证/密码恢复、Keychain/Keystore secure persistence、cold-start server-authoritative restore、并发 refresh exactly-one-success 与 stale-refresh/logout/account-switch 竞态均已收口。 |
 | AUTH-01 | P0 | Canonical Identity Foundation | ✅ | PR #222 已完成 exact-head GitHub Gate 并合并；reviewed HEAD `0f59e62d2320421d2e2af980eee930b250f9bd24`，merge `1ba028059905a2dd6dc8c62d76c3c60729ebb3ae`。User.id 保持 canonical account authority，AuthIdentity 成为 provider-neutral authority；PHONE/EMAIL/WECHAT identity guards、provider-neutral session issuance、Account Delete continuation 与 PostgreSQL concurrency A-H 均已验收。无 provider route；AUTH-02 NOT INCLUDED。 |
-| AUTH-002 | P0* | WeChat Mini Program Identity | ⬜ | 若微信小程序作为正式主入口，则在公开发布前加入 `WECHAT_MINIPROGRAM` AuthIdentity：`wx.login → code2session → stable provider subject → User`；微信 secret 仅服务端。若小程序不是首发主入口，可降为 P1。 |
-| AUTH-003 | P0* | Phone Number + SMS OTP Login | ⬜ | 当前只有邮箱+密码认证；`users.phone` 仅是资料字段，尚未接入手机号 AuthIdentity、短信验证码发送/校验、过期/重放/频率限制、阿里云 SMS 服务端凭证和 Flutter/小程序登录入口。若手机号是正式主登录方式，公开发布前必须完成；短信密钥只能放服务端。 |
+| AUTH-002 | P0* | WeChat Mini Program Identity | 🔵 | Issue #274 独立 Draft PR：新增独立 `WECHAT_MINIPROGRAM` AuthIdentity、服务端 `wx.login → code2session` adapter、HMAC replay receipt、AUTH-01 canonical session、Mini Program capability/epoch fencing 与真实 PostgreSQL race gate。live provider 默认 disabled/fail-closed；AppSecret、生产配置、真实微信登录与真机验收不在本 PR。 |
+| AUTH-MINI-01 | P0 | Mini Program registration / email verification / session contract | 🔵 | 原 Draft PR #253 的 Session 安全复审窄修继续收口：注册/邮箱验证严格遵守现有响应契约；完整 `TokenResponse` durable session、refresh rotation/single-flight、remote logout 状态、登录/验证 attempt generation、protected success/error/transport-rejection fencing、Profile auth-operation completion fencing 与 page-owned async behavior regressions（密码错误可重试、注销立即释放旧 mutation busy、旧 A 回调不污染 B 的 busy/status）；不启动 AUTH-002 identity provider、AUTH-04C 或生产配置。 |
+| AUTH-003 | P0* | Phone Number + SMS OTP Login | 🔵 | Issue #278 CODE/MOCK 阶段：复用 `AuthIdentity(provider=PHONE)`、AUTH-01 durable session、持久 IP/phone/device/request 限流与 `AuthSmsOtpChallenge`；Flutter 与 Mini Program 已有 provider-neutral request/verify 入口、能力 fail-closed、一次性消费及跨账号 fencing 约束。真实短信 provider 默认 disabled，凭证、付费发送、供应商签名/模板、Android/iOS/Mini 真机 FIELD 验收仍未完成。 |
 | AUTH-004 | P0* | Native WeChat Login for Flutter Android/iOS | ⏸ | 后期配置，当前不阻塞主线开发。届时需完成 Android/iOS SDK 注册、`wxlogin` 回调、服务端 `code → openid/unionid → AuthIdentity → session`，并配置 Android 包签名、iOS Universal Link、微信 AppID；微信 secret 仅服务端。 |
 | BIZ-011 | P0 | Production Registration Entitlement Default | ✅ | **Issue #197 / PR #199 已正式审查并合并 `main=f805848ba16af786b3d15a6ae26d5dc3d399aa95`**。正式 `register_email_password()` 使用 canonical `FREE` initial entitlement；User + AuthIdentity + Entitlement 保持同事务原子提交。`LEGACY_FULL` 仅历史兼容/migration/dev-only 明确路径可用，现有历史用户不做批量降级或登录时重写。 |
 | OPS-002 | P0 | Durable Job & Maintenance Worker Foundation V1 | ✅ | **Issue #206 / PR #207 已完成正式审查并合并 `319e17725fcff5b18b7b44aeac19dbe682def5c9`。** PostgreSQL-backed durable job/claim/lease/retry authority、六类 Phase 1 maintenance、删除 fencing、crash recovery、graceful shutdown、独立 worker 部署与 PostgreSQL 多 worker Gate 均已收口。 |

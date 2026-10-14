@@ -164,6 +164,17 @@ class WechatLoginRequest(BaseModel):
     device_name: str | None = Field(default=None, max_length=120)
 
 
+class WechatMiniProgramLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Opaque one-shot wx.login code. It is transient and never an identity claim.
+    code: str = Field(min_length=1, max_length=512)
+    request_id: UUID
+    device_id: str = Field(min_length=1, max_length=120)
+    client_platform: str | None = Field(default="miniprogram", max_length=32)
+    device_name: str | None = Field(default=None, max_length=120)
+
+
 class SmsOtpRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -286,6 +297,7 @@ class AuthCapabilitiesResponse(BaseModel):
     sms_otp: AuthCapabilityStatus
     phone_one_tap: AuthCapabilityStatus
     wechat: AuthCapabilityStatus
+    wechat_miniprogram: AuthCapabilityStatus = AuthCapabilityStatus.DISABLED
 
 
 class UserRead(ORMModel):
