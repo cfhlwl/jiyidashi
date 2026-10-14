@@ -131,7 +131,8 @@ Future<void> _loadAnnual(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Finder _outerScrollView() => find.byType(Scrollable).first;
+Finder _outerScrollView() =>
+    find.byType(Scrollable, skipOffstage: false).first;
 
 Future<void> _scrollTo(WidgetTester tester, Finder target) async {
   await tester.scrollUntilVisible(
@@ -204,7 +205,7 @@ void main() {
     await tester.tap(find.text('生成这个阶段的故事'));
     await tester.pumpAndSettle();
     expect(find.textContaining('这一阶段以产品开发为主线'), findsOneWidget);
-    expect(find.bySemanticsLabel(RegExp('可信状态：AI 整理')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('可信状态：AI 整理')), findsNWidgets(2));
   });
 
   testWidgets('Batch 5D no-evidence state never invents a memoir', (tester) async {
