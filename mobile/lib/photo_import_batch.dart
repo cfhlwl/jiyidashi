@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'capture_media.dart';
 import 'api_client.dart';
 import 'photo_import_metadata.dart';
+import 'photo_import_journal.dart';
+import 'offline_queue.dart';
 
 /// In-memory coordinator for one user-approved picker selection.
 ///
@@ -12,14 +14,19 @@ import 'photo_import_metadata.dart';
 /// Import remains a preview/foreground-only feature until an owner-scoped
 /// persisted journal is integrated. The existing media upload protocol itself
 /// is idempotent for a stable clientUploadId.
-enum PhotoImportItemState { waiting, uploading, verifying, saving, saved, failed }
+enum PhotoImportItemState { waiting, uploading, verifying, saving, saved, failed, cancelled }
 
 class PhotoImportBatchItem {
-  PhotoImportBatchItem(this.selected) : clientUploadId = newCaptureClientUuid();
+  PhotoImportBatchItem(
+    this.selected, {
+    String? clientUploadId,
+    this.state = PhotoImportItemState.waiting,
+    this.memoryId,
+  }) : clientUploadId = clientUploadId ?? newCaptureClientUuid();
 
   final SelectedPhotoImport selected;
   final String clientUploadId;
-  PhotoImportItemState state = PhotoImportItemState.waiting;
+  PhotoImportItemState state;
   String? memoryId;
   String? errorCode;
 }
@@ -30,7 +37,11 @@ class PhotoImportBatchCoordinator {
     required PhotoImportSelection selection,
     TrustedMediaCaptureService? service,
     Future<bool> Function(SelectedPhotoImport)? verifySelection,
-  }) : _service = service ?? TrustedMediaCaptureService(api),
+    PhotoImportJournal? journal,
+    Future<Map<String, dynamic>> Function(String)? readExistingMemory,
+  }) : _readExistingMemory = readExistingMemory ?? api.getMemory,
+       _journal = journal,
+       _service = service ?? TrustedMediaCaptureService(api),
        _verifySelection = verifySelection ?? _verifySourceFingerprint,
        items = List.unmodifiable(
          selection.selected.map(PhotoImportBatchItem.new),
@@ -38,12 +49,36 @@ class PhotoImportBatchCoordinator {
        _owner = _requireOwner(api),
        _sessionVersion = api.sessionVersion;
 
+  PhotoImportBatchCoordinator.restored({
+    required this.api,
+    required List<PhotoImportBatchItem> restoredItems,
+    required PhotoImportJournal journal,
+    TrustedMediaCaptureService? service,
+    Future<bool> Function(SelectedPhotoImport)? verifySelection,
+    Future<Map<String, dynamic>> Function(String)? readExistingMemory,
+  }) : _readExistingMemory = readExistingMemory ?? api.getMemory,
+       _journal = journal,
+       _service = service ?? TrustedMediaCaptureService(api),
+       _verifySelection = verifySelection ?? _verifySourceFingerprint,
+       items = List.unmodifiable(restoredItems),
+       _owner = _requireOwner(api),
+       _sessionVersion = api.sessionVersion;
+
   final JiYiApiClient api;
   final TrustedMediaCaptureService _service;
+  final PhotoImportJournal? _journal;
+  final Future<Map<String, dynamic>> Function(String) _readExistingMemory;
   final Future<bool> Function(SelectedPhotoImport) _verifySelection;
   final List<PhotoImportBatchItem> items;
   final String _owner;
   final int _sessionVersion;
+
+  // A route may be reopened while its previous coordinator is still uploading.
+  // Fence the same in-process owner/UUID across coordinator instances.
+  static final Set<String> _activeUploads = <String>{};
+  static String _uploadKey(String owner, String uuid) => '$owner/$uuid';
+  static bool isUploadActive(String owner, String uuid) =>
+      _activeUploads.contains(_uploadKey(owner, uuid));
 
   bool _running = false;
   bool _stopRequested = false;
@@ -77,7 +112,75 @@ class PhotoImportBatchCoordinator {
     }
   }
 
+  /// Completed local SQLite receipts are hints, not server authority. A
+  /// deleted memory must release its claim and be reimported with a NEW UUID.
+  /// Offline/5xx and mismatched owner/source must fail closed, never mark saved.
+  Future<bool> _resolvePhotoClaim(
+    PhotoImportJournal journal,
+    OfflineQueueItem existing,
+    PhotoImportBatchItem item,
+    void Function(PhotoImportBatchItem)? onUpdate,
+  ) async {
+    if (existing.status != OfflineQueueStatus.completed ||
+        existing.serverResourceId == null) {
+      throw const FormatException('photo is already pending for this owner');
+    }
+    final id = existing.serverResourceId!;
+    try {
+      final actual = await _readExistingMemory(id);
+      _assertOwner();
+      final metadata = actual['metadata_json'];
+      if (actual['id']?.toString().toLowerCase() != id.toLowerCase() ||
+          actual['user_id']?.toString().toLowerCase() != _owner.toLowerCase() ||
+          actual['memory_type'] != 'PHOTO' ||
+          actual['source_type'] != 'USER_PHOTO' ||
+          metadata is! Map ||
+          metadata['media_id'] is! String) {
+        throw ProtocolException('已保存照片回执无法验证服务端归属或来源');
+      }
+      item.memoryId = id;
+      item.state = PhotoImportItemState.saved;
+      onUpdate?.call(item);
+      return true;
+    } on ApiException catch (error) {
+      _assertOwner();
+      if (error.statusCode != 404 && error.statusCode != 410) rethrow;
+      await journal.invalidateDeletedMemory(
+        existing,
+        sha256Hex: item.selected.contentSha256,
+      );
+      _assertOwner();
+      return false;
+    }
+  }
+
   void stopAfterCurrentFile() => _stopRequested = true;
+
+  Future<void> withdrawPending({
+    void Function(PhotoImportBatchItem item)? onUpdate,
+  }) async {
+    if (_running) {
+      throw StateError('stop current upload before withdrawing queued images');
+    }
+    _assertOwner();
+    for (final item in items) {
+      if (item.state != PhotoImportItemState.waiting &&
+          item.state != PhotoImportItemState.failed) {
+        continue;
+      }
+      final journal = _journal;
+      if (journal != null) {
+        final row = await journal.store.findByClientUuid(_owner, item.clientUploadId);
+        _assertOwner();
+        if (row != null) {
+          await journal.withdraw(row);
+          _assertOwner();
+        }
+      }
+      item.state = PhotoImportItemState.cancelled;
+      onUpdate?.call(item);
+    }
+  }
 
   /// Sequential upload limits network/memory pressure. Each completed item is
   /// a real server memory; cancellation never rewrites it as failed/skipped.
@@ -102,6 +205,15 @@ class PhotoImportBatchCoordinator {
           continue;
         }
         _assertOwner();
+        final activeKey = _uploadKey(_owner, item.clientUploadId);
+        if (!_activeUploads.add(activeKey)) {
+          // The original coordinator owns the sending attempt. A reopened
+          // page must not retry or mark that attempt failed.
+          item.state = PhotoImportItemState.uploading;
+          onUpdate?.call(item);
+          continue;
+        }
+        try {
 
         item.errorCode = null;
         item.state = PhotoImportItemState.uploading;
@@ -123,6 +235,8 @@ class PhotoImportBatchCoordinator {
           if (e.hasGps) 'gps_longitude': e.longitude,
         };
 
+        OfflineQueueItem? durableRow;
+        var ownsSendingAttempt = false;
         try {
           // The picker may have copied into a cache path that is later rotated
           // or modified. Do not upload a different same-sized file as the one
@@ -131,8 +245,57 @@ class PhotoImportBatchCoordinator {
             throw const FormatException('selected photo changed after preview');
           }
           _assertOwner();
+          final journal = _journal;
+          if (journal != null) {
+            final duplicate =
+                await journal.findSameContent(item.selected.contentSha256);
+            _assertOwner();
+            if (duplicate != null &&
+                duplicate.clientUuid != item.clientUploadId) {
+              if (await _resolvePhotoClaim(
+                journal, duplicate, item, onUpdate,
+              )) {
+                continue;
+              }
+              // Verified remote tombstone released the SHA claim. Continue
+              // with this import's own UUID rather than reusing deleted media.
+            }
+            durableRow = await journal.stage(
+              item.selected,
+              clientUploadId: item.clientUploadId,
+            );
+            _assertOwner();
+            if (durableRow.clientUuid != item.clientUploadId) {
+              // Two coordinators can race AFTER their first read. SQLite's
+              // unique claim determines the only authorized UUID.
+              if (await _resolvePhotoClaim(
+                journal, durableRow, item, onUpdate,
+              )) {
+                continue;
+              }
+              durableRow = await journal.stage(
+                item.selected,
+                clientUploadId: item.clientUploadId,
+              );
+              _assertOwner();
+              if (durableRow.clientUuid != item.clientUploadId) {
+                throw StateError('photo SHA is held by another uploader');
+              }
+            }
+            // Validate exactly the staging file supplied to the media sender.
+            await journal.verifyStaged(durableRow);
+            durableRow = await journal.begin(durableRow);
+            ownsSendingAttempt = true;
+            _assertOwner();
+          }
+          if (journal != null) {
+            await journal.verifyStaged(durableRow!);
+            _assertOwner();
+          }
           final pending = PendingMediaFile.fromPath(
-            path: item.selected.path,
+            path: journal == null
+                ? item.selected.path
+                : (await journal.selectedFrom(durableRow!)).path,
             clientUploadId: item.clientUploadId,
             contentType: item.selected.contentType,
             sizeBytes: item.selected.bytes,
@@ -158,10 +321,23 @@ class PhotoImportBatchCoordinator {
             },
           );
           _assertOwner();
+          if (_journal != null) {
+            await _journal.complete(durableRow!, memoryId: id);
+            _assertOwner();
+          }
           item.memoryId = id;
           item.state = PhotoImportItemState.saved;
           onUpdate?.call(item);
         } catch (error) {
+          // An owner rebind must stop before any further mutation, including
+          // the stale account's local journal state.
+          _assertOwner();
+          if (_journal != null &&
+              ownsSendingAttempt &&
+              durableRow?.status == OfflineQueueStatus.sending) {
+            await _journal.failed(durableRow!);
+            _assertOwner();
+          }
           item.errorCode = error is ProtocolException
               ? 'SESSION_OR_PROTOCOL_CHANGED'
               : 'UPLOAD_OR_SAVE_FAILED';
@@ -170,6 +346,9 @@ class PhotoImportBatchCoordinator {
           // An account switch is not an ordinary per-item failure. Stop the
           // old owner's remaining batch immediately; no cross-owner retries.
           _assertOwner();
+        }
+        } finally {
+          _activeUploads.remove(activeKey);
         }
       }
     } finally {

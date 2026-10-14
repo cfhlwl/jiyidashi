@@ -4946,7 +4946,7 @@ class ProfilePage extends StatelessWidget {
                   key: const ValueKey('profile-photo-import'),
                   onPressed: () => JiYiNavigator.push<void>(
                     context,
-                    builder: (_) => PhotoImportPage(api: api),
+                    builder: (_) => PhotoImportPage(api: api, offlineQueue: offlineQueue),
                   ),
                   icon: const Icon(Icons.add_photo_alternate_outlined),
                   label: const Text('选择照片导入'),
