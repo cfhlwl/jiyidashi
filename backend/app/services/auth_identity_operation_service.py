@@ -197,6 +197,44 @@ def _reject(db: Session, *, operation_id: UUID, code: str) -> None:
     raise AuthIdentityError(code, _status_for_code(code))
 
 
+def _lock_reserved_operation_or_raise(
+    db: Session,
+    *,
+    operation_id: UUID,
+    request_id: UUID,
+    operation: AuthIdentityOperationType,
+    user_id: UUID,
+    session_id: UUID,
+) -> AuthIdentityOperation:
+    """Re-authorize a provider result before any identity mutation.
+
+    A provider call is deliberately outside the database transaction.  The
+    operation row is therefore the durable fence: a timeout/recovery worker
+    may move RESERVED to REJECTED while the original provider call is still
+    running.  The original worker must re-lock and re-check that fence before
+    writing provider metadata and again before changing identity ownership.
+    """
+
+    row = db.scalar(
+        select(AuthIdentityOperation)
+        .where(
+            AuthIdentityOperation.id == operation_id,
+            AuthIdentityOperation.request_id == request_id,
+            AuthIdentityOperation.operation_type == operation,
+            AuthIdentityOperation.user_id == user_id,
+            AuthIdentityOperation.session_id == session_id,
+        )
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    if row is None:
+        raise AuthIdentityError("AUTH_IDENTITY_OPERATION_NOT_FOUND", 409)
+    if row.state != AuthIdentityOperationState.RESERVED:
+        code = row.error_code or "AUTH_IDENTITY_OPERATION_CONFLICT"
+        raise AuthIdentityError(code, _status_for_code(code))
+    return row
+
+
 def _status_for_code(code: str) -> int:
     if code in {"AUTH_ACCOUNT_UNAVAILABLE", "AUTH_SESSION_INVALID"}:
         return 401
@@ -298,6 +336,15 @@ def link_identity(
             max_age_seconds=current_settings.auth_identity_link_recent_reauth_seconds,
         )
         canonical_subject = canonicalize_subject(proof.provider, proof.subject)
+        db.rollback()
+        operation = _lock_reserved_operation_or_raise(
+            db,
+            operation_id=operation_id,
+            request_id=request_id,
+            operation=AuthIdentityOperationType.LINK,
+            user_id=user_id,
+            session_id=session_id,
+        )
         operation.provider = proof.provider
         operation.subject_fingerprint = _digest(
             f"{proof.provider}:{canonical_subject}",
@@ -323,6 +370,15 @@ def link_identity(
         )
 
     try:
+        db.rollback()
+        operation = _lock_reserved_operation_or_raise(
+            db,
+            operation_id=operation_id,
+            request_id=request_id,
+            operation=AuthIdentityOperationType.LINK,
+            user_id=user_id,
+            session_id=session_id,
+        )
         _ensure_current_session(db, user_id=user_id, session_id=session_id)
         identity = _link_verified_identities_without_commit(
             db,
@@ -403,6 +459,15 @@ def unlink_identity(
             verified_at,
             max_age_seconds=current_settings.auth_identity_link_recent_reauth_seconds,
         )
+        db.rollback()
+        operation = _lock_reserved_operation_or_raise(
+            db,
+            operation_id=operation_id,
+            request_id=request_id,
+            operation=AuthIdentityOperationType.UNLINK,
+            user_id=user_id,
+            session_id=session_id,
+        )
         operation.subject_fingerprint = _digest(
             str(identity_id),
             purpose="identity",
@@ -419,6 +484,15 @@ def unlink_identity(
         )
 
     try:
+        db.rollback()
+        operation = _lock_reserved_operation_or_raise(
+            db,
+            operation_id=operation_id,
+            request_id=request_id,
+            operation=AuthIdentityOperationType.UNLINK,
+            user_id=user_id,
+            session_id=session_id,
+        )
         _ensure_current_session(db, user_id=user_id, session_id=session_id)
         identity = _unlink_identity_without_commit(
             db,
@@ -432,7 +506,11 @@ def unlink_identity(
             except_session_id=session_id,
             reason="IDENTITY_CHANGED",
         )
-        operation.identity_id = identity_id
+        # The target identity is deleted by the unlink transaction.  Do not
+        # persist its UUID into the completed receipt: PostgreSQL must be able
+        # to commit the delete without leaving an invalid audit FK.  The
+        # operation still retains its request and subject fingerprints.
+        operation.identity_id = None
         operation.state = AuthIdentityOperationState.COMPLETED
         operation.completed_at = datetime.now(UTC)
         db.commit()
@@ -443,6 +521,12 @@ def unlink_identity(
         )
     except AuthIdentityError as exc:
         _reject(db, operation_id=operation_id, code=exc.code)
+    except Exception:
+        _reject(
+            db,
+            operation_id=operation_id,
+            code="AUTH_IDENTITY_OPERATION_UNKNOWN",
+        )
     raise AssertionError("unreachable")
 
 

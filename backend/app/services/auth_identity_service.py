@@ -538,6 +538,16 @@ def _identity_has_enabled_login_path(identity: AuthIdentity, *, settings=None) -
 
     current = settings or get_settings()
     try:
+        if (
+            identity.provider
+            in {
+                AuthProvider.PHONE,
+                AuthProvider.WECHAT,
+                AuthProvider.WECHAT_MINIPROGRAM,
+            }
+            and identity.verified_at is None
+        ):
+            return False
         if identity.provider is AuthProvider.EMAIL_PASSWORD:
             return bool(identity.secret_hash and identity.verified_at is not None)
         if identity.provider is AuthProvider.PHONE:

@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.api import auth as auth_api
 from app.auth_models import (
@@ -16,6 +16,7 @@ from app.auth_models import (
 from app.core.config import Settings, get_settings
 from app.core.db import SessionLocal, create_schema
 from app.core.security import decode_access_token_claims
+from app.entitlement_models import UserEntitlement
 from app.models import User
 from app.services import auth_rate_limit
 from app.services.auth_identity_link_provider import (
@@ -309,6 +310,84 @@ def test_unlink_rejects_when_remaining_identity_has_no_enabled_login_provider(mo
             settings=settings,
         )
         assert removed.identity is not None
+
+
+@pytest.mark.parametrize(
+    ("unverified_provider", "unverified_subject"),
+    [
+        (AuthProvider.PHONE, "+8613912345678"),
+        (AuthProvider.WECHAT, "unionid:test-scope:auth005-unverified"),
+        (
+            AuthProvider.WECHAT_MINIPROGRAM,
+            "openid:test-mini-scope:auth005-unverified",
+        ),
+    ],
+)
+def test_unlink_rejects_unverified_external_identity_as_last_login_path(
+    monkeypatch, unverified_provider, unverified_subject
+):
+    settings = _settings(monkeypatch)
+    with SessionLocal() as db:
+        if unverified_provider is AuthProvider.PHONE:
+            created = create_user_for_verified_identity(
+                db,
+                provider=AuthProvider.EMAIL_PASSWORD,
+                subject=f"auth005-unverified-phone-{uuid4().hex}@example.com",
+                secret_hash="integration-only",
+                verified_at=datetime.now(UTC),
+            )
+            target_provider = AuthProvider.EMAIL_PASSWORD
+        else:
+            created = _phone_user(db, "10007")
+            target_provider = AuthProvider.PHONE
+        db.commit()
+        session = issue_authenticated_session(
+            db, user_id=created.user_id, device_id=f"auth-005-a-{uuid4()}"
+        )
+        unverified_identity = AuthIdentity(
+            user_id=created.user_id,
+            provider=unverified_provider,
+            subject=unverified_subject,
+            verified_at=None,
+        )
+        db.add(unverified_identity)
+        db.commit()
+        provider = _provider(
+            user_id=created.user_id,
+            session_id=session.tokens.session_id,
+            subject="unionid:test-scope:auth005-unverified",
+        )
+
+        with pytest.raises(AuthIdentityError, match="AUTH_LAST_IDENTITY_REQUIRED"):
+            unlink_identity(
+                db,
+                user_id=created.user_id,
+                session_id=session.tokens.session_id,
+                request_id=uuid4(),
+                identity_id=db.scalar(
+                    select(AuthIdentity).where(
+                        AuthIdentity.user_id == created.user_id,
+                        AuthIdentity.provider == target_provider,
+                    )
+                ).id,
+                reauth_credential="reauth",
+                provider=provider,
+                settings=settings,
+            )
+
+        assert db.get(AuthIdentity, unverified_identity.id) is not None
+        db.execute(
+            delete(AuthIdentityOperation).where(
+                AuthIdentityOperation.user_id == created.user_id
+            )
+        )
+        db.execute(delete(AuthSession).where(AuthSession.user_id == created.user_id))
+        db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == created.user_id))
+        db.execute(
+            delete(UserEntitlement).where(UserEntitlement.user_id == created.user_id)
+        )
+        db.execute(delete(User).where(User.id == created.user_id))
+        db.commit()
 
 
 def test_provider_unknown_outcome_is_terminal_and_never_retried(monkeypatch):
