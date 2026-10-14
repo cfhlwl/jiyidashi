@@ -465,13 +465,13 @@ def link_verified_wechat_aliases(
     return tuple(identities)
 
 
-def unlink_identity(
+def _unlink_identity_without_commit(
     db: Session,
     *,
     user_id: UUID,
     identity_id: UUID,
-) -> None:
-    """Foundation-only unlink with last-login-method and projection guards."""
+) -> AuthIdentity:
+    """Unlink while leaving transaction ownership with the caller."""
 
     user = db.scalar(select(User).where(User.id == user_id).with_for_update())
     if user is None:
@@ -520,6 +520,22 @@ def unlink_identity(
             user.email = replacement.subject if replacement is not None else None
         else:
             user.phone = replacement.subject if replacement is not None else None
+    return identity
+
+
+def unlink_identity(
+    db: Session,
+    *,
+    user_id: UUID,
+    identity_id: UUID,
+) -> None:
+    """Foundation-only unlink with last-login-method and projection guards."""
+
+    _unlink_identity_without_commit(
+        db,
+        user_id=user_id,
+        identity_id=identity_id,
+    )
     db.commit()
 
 

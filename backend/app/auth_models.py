@@ -75,6 +75,78 @@ class AuthIdentity(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class AuthIdentityOperationState(StrEnum):
+    RESERVED = "RESERVED"
+    COMPLETED = "COMPLETED"
+    REJECTED = "REJECTED"
+
+
+class AuthIdentityOperationType(StrEnum):
+    LINK = "LINK"
+    UNLINK = "UNLINK"
+
+
+class AuthIdentityOperation(Base):
+    """Durable idempotency and audit receipt for identity mutations.
+
+    Raw credentials and raw provider subjects are intentionally absent. The
+    request and subject fingerprints are server-keyed digests used only to
+    detect retries/conflicts and to support redacted audit evidence.
+    """
+
+    __tablename__ = "auth_identity_operations"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_auth_identity_operation_request_id"),
+        Index("ix_auth_identity_operation_user_created", "user_id", "created_at"),
+        Index("ix_auth_identity_operation_state_created", "state", "created_at"),
+        Index("ix_auth_identity_operations_session_id", "session_id"),
+        Index("ix_auth_identity_operations_identity_id", "identity_id"),
+        CheckConstraint(
+            "operation_type IN ('LINK', 'UNLINK')",
+            name="ck_auth_identity_operation_type",
+        ),
+        CheckConstraint(
+            "state IN ('RESERVED', 'COMPLETED', 'REJECTED')",
+            name="ck_auth_identity_operation_state",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    request_id: Mapped[UUID] = mapped_column(nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    fingerprint_key_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    operation_type: Mapped[AuthIdentityOperationType] = mapped_column(
+        String(16), nullable=False
+    )
+    state: Mapped[AuthIdentityOperationState] = mapped_column(
+        String(16), nullable=False, default=AuthIdentityOperationState.RESERVED
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("auth_sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    provider: Mapped[AuthProvider | None] = mapped_column(
+        String(24), nullable=True
+    )
+    identity_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("auth_identities.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    subject_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    provider_request_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class AuthOneTimePurpose(StrEnum):
     EMAIL_VERIFY = "EMAIL_VERIFY"
     PASSWORD_RESET = "PASSWORD_RESET"

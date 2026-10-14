@@ -216,6 +216,17 @@ jobs:
           AUTO_CREATE_SCHEMA: "false"
         run: python tests/postgres_auth_sms_otp_integration.py
 
+      - name: PostgreSQL AUTH-005 identity link/unlink authority
+        # AUTH-005 requires real PostgreSQL unique-key races, durable request
+        # receipts, account-owner locks, and session fencing. Only the explicit
+        # provider-neutral mock is used; no live SMS/WeChat provider is called.
+        env:
+          DATABASE_URL: postgresql+psycopg://jiyi:jiyi@127.0.0.1:5432/jiyi_ci
+          ENABLE_DEV_AUTH: "false"
+          AUTO_CREATE_SCHEMA: "false"
+          AUTH_IDENTITY_OPERATION_FINGERPRINT_SECRET: auth-005-ci-only-fingerprint-key
+        run: python tests/postgres_auth_identity_linking_integration.py
+
       - name: PostgreSQL Durable Maintenance Job concurrency
         # [OPS-002] Real PostgreSQL validates SKIP LOCKED single-claim authority,
         # concurrent dedupe, lease reclaim, stale-token fencing and crash terminalization.

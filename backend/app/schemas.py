@@ -276,6 +276,39 @@ class AuthSessionRead(BaseModel):
     current: bool = False
 
 
+class AuthIdentityRead(BaseModel):
+    identity_id: UUID
+    provider: str
+    subject_hint: str
+    verified_at: datetime | None
+    linked_at: datetime
+
+
+class AuthIdentityListResponse(BaseModel):
+    identities: list[AuthIdentityRead]
+
+
+class AuthIdentityLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
+    credential: str = Field(min_length=1, max_length=512)
+    reauth_credential: str = Field(min_length=1, max_length=512)
+
+
+class AuthIdentityUnlinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
+    reauth_credential: str = Field(min_length=1, max_length=512)
+
+
+class AuthIdentityMutationResponse(BaseModel):
+    request_id: UUID
+    operation: str
+    identity: AuthIdentityRead | None = None
+
+
 class AuthAcceptedResponse(BaseModel):
     accepted: bool = True
 
