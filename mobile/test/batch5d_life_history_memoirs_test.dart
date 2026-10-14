@@ -131,7 +131,7 @@ Future<void> _loadAnnual(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Finder _outerScrollView() => find.byType(SingleChildScrollView).first;
+Finder _outerScrollView() => find.byType(Scrollable).first;
 
 Future<void> _scrollTo(WidgetTester tester, Finder target) async {
   await tester.scrollUntilVisible(
