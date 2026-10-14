@@ -283,11 +283,19 @@ void main() {
     await tester.pump();
     current.value = V2TestApi();
     await tester.pumpAndSettle();
-    expect(find.text('产品创业阶段'), findsOneWidget);
+    final identity = find.byKey(const ValueKey('life-stage-identity'));
+    expect(identity, findsOneWidget);
+    expect(
+      find.descendant(of: identity, matching: find.text('产品创业阶段')),
+      findsOneWidget,
+    );
     oldApi.release.complete();
     await tester.pumpAndSettle();
     expect(find.text('账号 A 阶段'), findsNothing);
-    expect(find.text('产品创业阶段'), findsOneWidget);
+    expect(
+      find.descendant(of: identity, matching: find.text('产品创业阶段')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Life Stage states remain accessible at compact width and dark theme', (
