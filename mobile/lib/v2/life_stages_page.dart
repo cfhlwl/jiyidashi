@@ -111,18 +111,20 @@ class _LifeStagesPageState extends State<LifeStagesPage> {
     try {
       snapshot = readAuthority.capture(widget.api, 'life-stages:list');
     } catch (exc) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           loading = false;
           error = exc.toString();
         });
+      }
       return;
     }
-    if (mounted)
+    if (mounted) {
       setState(() {
         loading = true;
         error = null;
       });
+    }
     try {
       final result = await v2.listLifeStages(limit: 100);
       if (!_readCurrent(snapshot)) return;

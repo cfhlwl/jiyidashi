@@ -156,18 +156,20 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
         'life-stage:' + widget.stageId,
       );
     } catch (exc) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           loading = false;
           error = exc.toString();
         });
+      }
       return;
     }
-    if (mounted)
+    if (mounted) {
       setState(() {
         loading = true;
         error = null;
       });
+    }
     try {
       final result = await Future.wait<Object>([
         v2.getLifeStage(widget.stageId),
