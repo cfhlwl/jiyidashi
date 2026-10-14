@@ -551,7 +551,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
               children: [
                 Text('把生活翻回来', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
                 const SizedBox(height: JiYiSpacing.xs),
-                Text('先看已经保存的记录，再决定是否生成一段有依据的故事。'),
+                const Text('先看已经保存的记录，再决定是否生成一段有依据的故事。'),
               ],
             ),
           ),

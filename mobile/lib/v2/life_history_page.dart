@@ -173,7 +173,9 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
       final merged = <String, V2LifeHistoryItem>{
         for (final item in append ? items : const <V2LifeHistoryItem>[]) _itemKey(item): item,
       };
-      for (final item in result.items) merged[_itemKey(item)] = item;
+      for (final item in result.items) {
+        merged[_itemKey(item)] = item;
+      }
       setState(() {
         page = result;
         items = List.unmodifiable(merged.values);
