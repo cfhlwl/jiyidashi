@@ -182,7 +182,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('life-history-submit')));
     await tester.pumpAndSettle();
 
-    final month = find.textContaining('2025年1月', skipOffstage: false);
+    final month = find.byKey(
+      const ValueKey('history-group-2025年1月'),
+      skipOffstage: false,
+    );
     await _scrollTo(tester, month);
     expect(month, findsOneWidget);
     expect(find.text('跨年记录'), findsOneWidget);
