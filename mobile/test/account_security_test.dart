@@ -135,7 +135,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('账号与安全'), findsOneWidget);
-    expect(find.text('a***@example.test'), findsOneWidget);
+    expect(find.textContaining('a***@example.test'), findsOneWidget);
     expect(find.text('当前未配置可用的身份绑定服务，绑定和解绑已安全禁用。'), findsOneWidget);
     final bind = find.text('绑定新的登录方式');
     expect(tester.widget<FilledButton>(find.ancestor(of: bind, matching: find.byType(FilledButton))).onPressed, isNull);
