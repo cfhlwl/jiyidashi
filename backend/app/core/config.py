@@ -297,6 +297,33 @@ class Settings(BaseSettings):
     auth_wechat_global_concurrency: int = Field(default=8, ge=1, le=1000)
     auth_wechat_permit_lease_seconds: int = Field(default=120, ge=5, le=1800)
 
+    # AUTH-002: WeChat Mini Program login is a separate provider namespace.
+    # Defaults remain disabled; AppSecret and fingerprint material are server-only.
+    auth_wechat_miniprogram_provider: str = "disabled"
+    auth_wechat_miniprogram_live_enabled: bool = False
+    auth_wechat_miniprogram_app_id: str = ""
+    auth_wechat_miniprogram_app_secret: str = ""
+    auth_wechat_miniprogram_api_base_url: str = "https://api.weixin.qq.com"
+    auth_wechat_miniprogram_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
+    auth_wechat_miniprogram_max_response_bytes: int = Field(
+        default=65536, ge=1024, le=1048576
+    )
+    auth_wechat_miniprogram_fingerprint_secret: str = ""
+    auth_wechat_miniprogram_fingerprint_key_version: str = "v1"
+    auth_wechat_miniprogram_exchange_reservation_seconds: int = Field(
+        default=60, ge=5, le=900
+    )
+    auth_wechat_miniprogram_exchange_retention_seconds: int = Field(
+        default=86400, ge=3600, le=2592000
+    )
+    auth_wechat_miniprogram_ip_limit: int = Field(default=20, ge=1, le=1000)
+    auth_wechat_miniprogram_device_limit: int = Field(default=10, ge=1, le=500)
+    auth_wechat_miniprogram_request_limit: int = Field(default=4, ge=1, le=100)
+    auth_wechat_miniprogram_credential_limit: int = Field(default=4, ge=1, le=100)
+    auth_wechat_miniprogram_window_seconds: int = Field(default=600, ge=60, le=86400)
+    auth_wechat_miniprogram_global_concurrency: int = Field(default=8, ge=1, le=1000)
+    auth_wechat_miniprogram_permit_lease_seconds: int = Field(default=120, ge=5, le=1800)
+
     # AUTH-02B: durable phone one-tap exchange policy. These are JiYi-side
     # replay/abuse controls, not claims about a live carrier provider's TTL.
     # The fingerprint secret is intentionally empty by default: the endpoint

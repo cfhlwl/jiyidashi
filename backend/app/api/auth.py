@@ -32,6 +32,7 @@ from app.schemas import (
     SmsOtpVerifyRequest,
     TokenResponse,
     WechatLoginRequest,
+    WechatMiniProgramLoginRequest,
 )
 from app.services.auth_identity_service import issue_authenticated_session
 from app.services.auth_recovery_service import (
@@ -78,6 +79,12 @@ from app.services.wechat_login_service import (
     WechatLoginError,
     exchange_wechat_credential,
 )
+from app.services.wechat_miniprogram_login_service import (
+    WechatMiniProgramLoginError,
+    exchange_wechat_miniprogram_code,
+    is_wechat_miniprogram_exchange_available,
+)
+from app.services.wechat_miniprogram_provider import get_wechat_miniprogram_provider
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -197,7 +204,29 @@ def auth_capabilities() -> AuthCapabilitiesResponse:
                 else AuthCapabilityStatus.DISABLED
             )
         ),
+        wechat_miniprogram=(
+            AuthCapabilityStatus.AVAILABLE
+            if _wechat_miniprogram_available()
+            else (
+                AuthCapabilityStatus.UNAVAILABLE
+                if settings.auth_wechat_miniprogram_provider.strip().lower()
+                == "wechat_miniprogram"
+                else AuthCapabilityStatus.DISABLED
+            )
+        ),
     )
+
+
+def _wechat_miniprogram_available() -> bool:
+    if settings.auth_wechat_miniprogram_provider.strip().lower() != "wechat_miniprogram":
+        return False
+    try:
+        return is_wechat_miniprogram_exchange_available(
+            settings,
+            get_wechat_miniprogram_provider(),
+        )
+    except Exception:
+        return False
 
 
 def _resolve_session_device_id(device_id: str) -> str:
@@ -364,6 +393,35 @@ def wechat_exchange(
             client_uuid=result.device_id,
         )
     except WechatLoginError as exc:
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.code,
+            headers=headers,
+        ) from exc
+    return _token_response(
+        result.tokens,
+        account_deletion_in_progress=result.account_deletion_in_progress,
+    )
+
+
+@router.post("/wechat-mini/exchange", response_model=TokenResponse)
+def wechat_miniprogram_exchange(
+    payload: WechatMiniProgramLoginRequest,
+    request: Request,
+    db: DbSession,
+) -> TokenResponse:
+    try:
+        result = exchange_wechat_miniprogram_code(
+            db,
+            code=payload.code,
+            request_id=payload.request_id,
+            device_id=_resolve_session_device_id(payload.device_id),
+            client_platform=payload.client_platform,
+            device_name=payload.device_name,
+            client_ip=_client_ip(request),
+        )
+    except WechatMiniProgramLoginError as exc:
         headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
         raise HTTPException(
             status_code=exc.status_code,
