@@ -34,6 +34,7 @@ _SECURITY_SCOPE_BY_RATE_SCOPE = {
     "phone_one_tap_device": SecurityScope.AUTH_PHONE_ONE_TAP,
     "phone_one_tap_request": SecurityScope.AUTH_PHONE_ONE_TAP,
     "phone_one_tap_token": SecurityScope.AUTH_PHONE_ONE_TAP,
+    "identity_mutation_ip": SecurityScope.AUTH_IDENTITY_MUTATION,
     "wechat_ip": SecurityScope.AUTH_PHONE_ONE_TAP,
     "wechat_device": SecurityScope.AUTH_PHONE_ONE_TAP,
     "wechat_request": SecurityScope.AUTH_PHONE_ONE_TAP,
@@ -454,6 +455,22 @@ def consume_sms_otp_request_attempt(
         scope="sms_otp_phone",
         value=phone_subject,
         policy=RatePolicy(settings.auth_sms_otp_phone_limit, window),
+    )
+
+
+def consume_identity_mutation_attempt(db: Session, *, client_ip: str) -> None:
+    """Apply the durable AUTH-005 mutation IP gate before provider I/O."""
+
+    if not settings.auth_rate_limit_enabled:
+        return
+    _consume(
+        db,
+        scope="identity_mutation_ip",
+        value=client_ip,
+        policy=RatePolicy(
+            settings.auth_identity_link_ip_limit,
+            settings.auth_identity_link_window_seconds,
+        ),
     )
 
 

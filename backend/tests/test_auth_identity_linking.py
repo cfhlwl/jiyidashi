@@ -1,7 +1,8 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.api import auth as auth_api
@@ -16,6 +17,7 @@ from app.core.config import Settings, get_settings
 from app.core.db import SessionLocal, create_schema
 from app.core.security import decode_access_token_claims
 from app.models import User
+from app.services import auth_rate_limit
 from app.services.auth_identity_link_provider import (
     DisabledAuthIdentityLinkProvider,
     FakeAuthIdentityLinkProvider,
@@ -23,6 +25,7 @@ from app.services.auth_identity_link_provider import (
     get_auth_identity_link_provider,
 )
 from app.services.auth_identity_operation_service import (
+    _digest,
     link_identity,
     list_identities,
     unlink_identity,
@@ -32,6 +35,7 @@ from app.services.auth_identity_service import (
     create_user_for_verified_identity,
     issue_authenticated_session,
 )
+from app.services.auth_rate_limit import consume_identity_mutation_attempt
 
 create_schema()
 
@@ -44,6 +48,7 @@ def _settings(monkeypatch) -> Settings:
         "auth-005-test-only-server-key",
     )
     monkeypatch.setattr(settings, "auth_identity_link_recent_reauth_seconds", 300)
+    monkeypatch.setattr(settings, "auth_sms_otp_provider", "fake")
     return settings
 
 
@@ -247,6 +252,174 @@ def test_unlink_requires_step_up_and_never_removes_last_identity(monkeypatch):
         assert removed.identity is not None
         assert len(list_identities(db, user_id=created.user_id)) == 1
         assert db.get(User, created.user_id).phone is not None
+
+
+def test_unlink_rejects_when_remaining_identity_has_no_enabled_login_provider(monkeypatch):
+    settings = _settings(monkeypatch)
+    with SessionLocal() as db:
+        created = _phone_user(db, "10005")
+        db.commit()
+        session = issue_authenticated_session(
+            db, user_id=created.user_id, device_id=f"auth-005-a-{uuid4()}"
+        )
+        provider = _provider(
+            user_id=created.user_id,
+            session_id=session.tokens.session_id,
+            subject="unionid:test-scope:auth005-disabled-remaining",
+        )
+        linked = link_identity(
+            db,
+            user_id=created.user_id,
+            session_id=session.tokens.session_id,
+            request_id=uuid4(),
+            credential="credential-a",
+            reauth_credential="reauth",
+            provider=provider,
+            settings=settings,
+        )
+        phone = db.scalar(
+            select(AuthIdentity).where(
+                AuthIdentity.user_id == created.user_id,
+                AuthIdentity.provider == AuthProvider.PHONE,
+            )
+        )
+        assert linked.identity is not None and phone is not None
+
+        with pytest.raises(AuthIdentityError, match="AUTH_LAST_IDENTITY_REQUIRED"):
+            unlink_identity(
+                db,
+                user_id=created.user_id,
+                session_id=session.tokens.session_id,
+                request_id=uuid4(),
+                identity_id=phone.id,
+                reauth_credential="reauth",
+                provider=provider,
+                settings=settings,
+            )
+
+        monkeypatch.setattr(settings, "auth_wechat_provider", "fake")
+        removed = unlink_identity(
+            db,
+            user_id=created.user_id,
+            session_id=session.tokens.session_id,
+            request_id=uuid4(),
+            identity_id=phone.id,
+            reauth_credential="reauth",
+            provider=provider,
+            settings=settings,
+        )
+        assert removed.identity is not None
+
+
+def test_provider_unknown_outcome_is_terminal_and_never_retried(monkeypatch):
+    settings = _settings(monkeypatch)
+
+    class CrashingProvider(FakeAuthIdentityLinkProvider):
+        def verify_link_credentials(self, **kwargs):
+            self.link_calls += 1
+            raise RuntimeError("provider process interrupted")
+
+    with SessionLocal() as db:
+        created = _phone_user(db, "10006")
+        db.commit()
+        session = issue_authenticated_session(
+            db, user_id=created.user_id, device_id=f"auth-005-a-{uuid4()}"
+        )
+        provider = CrashingProvider()
+        request_id = uuid4()
+        with pytest.raises(AuthIdentityError, match="AUTH_IDENTITY_OPERATION_UNKNOWN"):
+            link_identity(
+                db,
+                user_id=created.user_id,
+                session_id=session.tokens.session_id,
+                request_id=request_id,
+                credential="credential-a",
+                reauth_credential="reauth",
+                provider=provider,
+                settings=settings,
+            )
+        with pytest.raises(AuthIdentityError, match="AUTH_IDENTITY_OPERATION_UNKNOWN"):
+            link_identity(
+                db,
+                user_id=created.user_id,
+                session_id=session.tokens.session_id,
+                request_id=request_id,
+                credential="credential-a",
+                reauth_credential="reauth",
+                provider=provider,
+                settings=settings,
+            )
+        assert provider.link_calls == 1
+        operation = db.scalar(
+            select(AuthIdentityOperation).where(
+                AuthIdentityOperation.request_id == request_id
+            )
+        )
+        assert operation is not None
+        assert operation.state == AuthIdentityOperationState.REJECTED
+        assert operation.error_code == "AUTH_IDENTITY_OPERATION_UNKNOWN"
+
+
+def test_stale_reserved_operation_fails_closed_without_provider_retry(monkeypatch):
+    settings = _settings(monkeypatch)
+    monkeypatch.setattr(settings, "auth_identity_operation_reservation_timeout_seconds", 60)
+    with SessionLocal() as db:
+        created = _phone_user(db, "10007")
+        db.commit()
+        session = issue_authenticated_session(
+            db, user_id=created.user_id, device_id=f"auth-005-a-{uuid4()}"
+        )
+        request_id = uuid4()
+        credential = "credential-a"
+        reauth = "reauth"
+        operation = AuthIdentityOperation(
+            request_id=request_id,
+            request_fingerprint=_digest(
+                f"LINK:{credential}:{reauth}",
+                purpose="request",
+                settings=settings,
+            ),
+            fingerprint_key_version=settings.auth_identity_operation_fingerprint_key_version,
+            operation_type="LINK",
+            state=AuthIdentityOperationState.RESERVED,
+            user_id=created.user_id,
+            session_id=session.tokens.session_id,
+            created_at=datetime.now(UTC) - timedelta(seconds=61),
+        )
+        db.add(operation)
+        db.commit()
+        provider = _provider(
+            user_id=created.user_id,
+            session_id=session.tokens.session_id,
+            subject="unionid:test-scope:auth005-stale",
+        )
+        with pytest.raises(AuthIdentityError, match="AUTH_IDENTITY_OPERATION_UNKNOWN"):
+            link_identity(
+                db,
+                user_id=created.user_id,
+                session_id=session.tokens.session_id,
+                request_id=request_id,
+                credential=credential,
+                reauth_credential=reauth,
+                provider=provider,
+                settings=settings,
+            )
+        assert provider.link_calls == 0
+        db.refresh(operation)
+        assert operation.state == AuthIdentityOperationState.REJECTED
+
+
+def test_identity_mutation_uses_durable_ip_rate_limit(monkeypatch):
+    settings = _settings(monkeypatch)
+    monkeypatch.setattr(settings, "auth_identity_link_ip_limit", 1)
+    monkeypatch.setattr(settings, "auth_identity_link_window_seconds", 600)
+    monkeypatch.setattr(auth_rate_limit, "settings", settings)
+    client_ip = f"198.51.100.{uuid4().int % 200 + 1}"
+    with SessionLocal() as db:
+        consume_identity_mutation_attempt(db, client_ip=client_ip)
+        with pytest.raises(HTTPException) as exc_info:
+            consume_identity_mutation_attempt(db, client_ip=client_ip)
+        assert getattr(exc_info.value, "status_code", None) == 429
 
 
 @pytest.mark.asyncio

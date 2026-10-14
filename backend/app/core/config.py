@@ -359,6 +359,9 @@ class Settings(BaseSettings):
     auth_identity_link_recent_reauth_seconds: int = Field(
         default=300, ge=30, le=3600
     )
+    auth_identity_operation_reservation_timeout_seconds: int = Field(
+        default=120, ge=5, le=3600
+    )
     auth_identity_link_ip_limit: int = Field(default=20, ge=1, le=100)
     auth_identity_link_window_seconds: int = Field(default=600, ge=60, le=86400)
 

@@ -50,6 +50,7 @@ from app.services.auth_identity_operation_service import (
     unlink_identity,
 )
 from app.services.auth_identity_service import AuthIdentityError, issue_authenticated_session
+from app.services.auth_rate_limit import consume_identity_mutation_attempt
 from app.services.auth_recovery_service import (
     AuthRecoveryError,
     change_password,
@@ -607,9 +608,11 @@ def identities(
 def link_auth_identity(
     payload: AuthIdentityLinkRequest,
     claims: AuthenticatedClaims,
+    request: Request,
     db: DbSession,
 ) -> AuthIdentityMutationResponse:
     db.rollback()
+    consume_identity_mutation_attempt(db, client_ip=_client_ip(request))
     provider = get_auth_identity_link_provider()
     try:
         result = link_identity(
@@ -641,9 +644,11 @@ def unlink_auth_identity(
     identity_id: UUID,
     payload: AuthIdentityUnlinkRequest,
     claims: AuthenticatedClaims,
+    request: Request,
     db: DbSession,
 ) -> AuthIdentityMutationResponse:
     db.rollback()
+    consume_identity_mutation_attempt(db, client_ip=_client_ip(request))
     provider = get_auth_identity_link_provider()
     try:
         result = unlink_identity(

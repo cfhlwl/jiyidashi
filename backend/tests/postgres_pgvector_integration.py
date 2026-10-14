@@ -114,7 +114,8 @@ def _schema_signature(engine) -> tuple[tuple[object, ...], ...]:
                           'auth_phone_one_tap_exchanges',
                           'auth_sms_otp_challenges',
                           'auth_wechat_login_exchanges',
-                          'auth_wechat_miniprogram_exchanges'
+                          'auth_wechat_miniprogram_exchanges',
+                          'auth_identity_operations'
                       )
                     ORDER BY table_name, ordinal_position
                     """

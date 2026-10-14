@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -470,6 +470,7 @@ def _unlink_identity_without_commit(
     *,
     user_id: UUID,
     identity_id: UUID,
+    settings=None,
 ) -> AuthIdentity:
     """Unlink while leaving transaction ownership with the caller."""
 
@@ -493,15 +494,18 @@ def _unlink_identity_without_commit(
     if identity is None:
         raise AuthIdentityError("AUTH_IDENTITY_NOT_FOUND", 404)
 
-    identity_count = int(
-        db.scalar(
-            select(func.count(AuthIdentity.id)).where(
-                AuthIdentity.user_id == user_id
+    remaining_identities = list(
+        db.scalars(
+            select(AuthIdentity).where(
+                AuthIdentity.user_id == user_id,
+                AuthIdentity.id != identity_id,
             )
         )
-        or 0
     )
-    if identity_count <= 1:
+    if not any(
+        _identity_has_enabled_login_path(row, settings=settings)
+        for row in remaining_identities
+    ):
         raise AuthIdentityError("AUTH_LAST_IDENTITY_REQUIRED", 409)
 
     provider = identity.provider
@@ -521,6 +525,46 @@ def _unlink_identity_without_commit(
         else:
             user.phone = replacement.subject if replacement is not None else None
     return identity
+
+
+def _identity_has_enabled_login_path(identity: AuthIdentity, *, settings=None) -> bool:
+    """Return whether an identity can actually authenticate right now.
+
+    Identity rows are not enough: provider configuration is part of login
+    capability. Any provider construction failure is treated as unavailable.
+    """
+
+    from app.core.config import get_settings
+
+    current = settings or get_settings()
+    try:
+        if identity.provider is AuthProvider.EMAIL_PASSWORD:
+            return bool(identity.secret_hash and identity.verified_at is not None)
+        if identity.provider is AuthProvider.PHONE:
+            from app.services.phone_one_tap_provider import get_phone_one_tap_provider
+            from app.services.sms_otp_provider import get_sms_otp_provider
+
+            return bool(
+                get_phone_one_tap_provider().available
+                or get_sms_otp_provider(current).available
+            )
+        if identity.provider is AuthProvider.WECHAT:
+            from app.services.wechat_auth_provider import get_wechat_provider
+
+            return bool(get_wechat_provider(current).available)
+        if identity.provider is AuthProvider.WECHAT_MINIPROGRAM:
+            from app.services.wechat_miniprogram_login_service import (
+                is_wechat_miniprogram_exchange_available,
+            )
+            from app.services.wechat_miniprogram_provider import (
+                get_wechat_miniprogram_provider,
+            )
+
+            provider = get_wechat_miniprogram_provider(current)
+            return is_wechat_miniprogram_exchange_available(current, provider)
+    except Exception:
+        return False
+    return False
 
 
 def unlink_identity(

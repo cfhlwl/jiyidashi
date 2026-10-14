@@ -39,9 +39,11 @@ account existence or other owner data is disclosed.
 
 `DELETE /v1/auth/identities/{identity_id}` uses the same current-session and
 recent step-up contract. The User and identity rows are locked together. The
-last remaining login identity cannot be removed. Email/phone projections are
-recomputed from the remaining identity, and other sessions are fenced only
-after the unlink is part of the same successful transaction.
+last remaining usable login identity cannot be removed. Usability includes the
+current provider capability and, for email/password, a verified password
+identity. Email/phone projections are recomputed from the remaining identity,
+and other sessions are fenced only after the unlink is part of the same
+successful transaction.
 
 Disabled accounts and accounts in active deletion are hard-denied. There is no
 automatic merge, ownership transfer, projection fallback, or user-data
@@ -53,7 +55,10 @@ remain disabled until separately activated.
 Every mutation request reserves a durable, unique request ID before provider
 I/O. A same request ID with the same request fingerprint is deterministic; a
 different payload is `AUTH_IDENTITY_OPERATION_CONFLICT`; an in-progress request
-cannot be executed twice. Completed and rejected receipts are terminal.
+cannot be executed twice. Provider exceptions are recorded as terminal
+`AUTH_IDENTITY_OPERATION_UNKNOWN`; stale `RESERVED` receipts are closed to the
+same outcome after the configured reservation timeout. Neither path retries a
+possibly consumed one-time credential.
 
 Only HMAC fingerprints, provider request IDs, normalized outcome codes, and
 non-sensitive timestamps are stored. Raw credentials, raw subjects and
@@ -70,10 +75,17 @@ to fake.
 - `DELETE /v1/auth/identities/{identity_id}` removes a non-last identity after
   step-up verification.
 
+Both mutation routes consume the durable server-side IP rate-limit bucket
+`identity_mutation_ip` before provider verification. The configured
+`AUTH_IDENTITY_LINK_IP_LIMIT` and window apply across workers; disabling the
+general auth limiter is the only way to disable this gate and is not permitted
+by production configuration validation.
+
 Stable errors include `AUTH_REAUTH_REQUIRED`, `AUTH_PROVIDER_UNAVAILABLE`,
 `AUTH_PROVIDER_TOKEN_INVALID`, `AUTH_PROVIDER_SCOPE_MISMATCH`,
 `AUTH_IDENTITY_CONFLICT`, `AUTH_IDENTITY_OPERATION_CONFLICT`,
-`AUTH_IDENTITY_OPERATION_IN_PROGRESS`, `AUTH_LAST_IDENTITY_REQUIRED`,
+`AUTH_IDENTITY_OPERATION_IN_PROGRESS`, `AUTH_IDENTITY_OPERATION_UNKNOWN`,
+`AUTH_LAST_IDENTITY_REQUIRED`,
 `AUTH_ACCOUNT_UNAVAILABLE`, and `ACCOUNT_DELETION_IN_PROGRESS`.
 
 ## Verification

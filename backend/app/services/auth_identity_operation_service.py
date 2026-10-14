@@ -45,6 +45,10 @@ def _settings(settings: Settings | None) -> Settings:
     return settings or get_settings()
 
 
+def _as_utc(value: datetime) -> datetime:
+    return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 def _digest(value: str, *, purpose: str, settings: Settings) -> str:
     key = settings.auth_identity_operation_fingerprint_secret.encode()
     if not key:
@@ -88,6 +92,7 @@ def _load_operation_or_raise(
     session_id: UUID,
     request_fingerprint: str,
     fingerprint_key_version: str,
+    reservation_timeout_seconds: int,
 ) -> tuple[AuthIdentityOperation, bool]:
     row = db.scalar(
         select(AuthIdentityOperation)
@@ -106,6 +111,15 @@ def _load_operation_or_raise(
             return row, False
         if row.state == AuthIdentityOperationState.REJECTED:
             raise AuthIdentityError(row.error_code or "AUTH_IDENTITY_REJECTED", 409)
+        age_seconds = (
+            datetime.now(UTC) - _as_utc(row.created_at)
+        ).total_seconds()
+        if age_seconds >= reservation_timeout_seconds:
+            row.state = AuthIdentityOperationState.REJECTED
+            row.error_code = "AUTH_IDENTITY_OPERATION_UNKNOWN"
+            row.completed_at = datetime.now(UTC)
+            db.commit()
+            raise AuthIdentityError("AUTH_IDENTITY_OPERATION_UNKNOWN", 503)
         raise AuthIdentityError("AUTH_IDENTITY_OPERATION_IN_PROGRESS", 409)
 
     row = AuthIdentityOperation(
@@ -131,6 +145,7 @@ def _load_operation_or_raise(
             session_id=session_id,
             request_fingerprint=request_fingerprint,
             fingerprint_key_version=fingerprint_key_version,
+            reservation_timeout_seconds=reservation_timeout_seconds,
         )
     return row, True
 
@@ -156,6 +171,9 @@ def _reserve(
         session_id=session_id,
         request_fingerprint=request_fingerprint,
         fingerprint_key_version=settings.auth_identity_operation_fingerprint_key_version,
+        reservation_timeout_seconds=(
+            settings.auth_identity_operation_reservation_timeout_seconds
+        ),
     )
     return row, reserved
 
@@ -188,6 +206,7 @@ def _status_for_code(code: str) -> int:
         "AUTH_PROVIDER_UNAVAILABLE",
         "AUTH_PROVIDER_ERROR",
         "AUTH_IDENTITY_OPERATION_UNAVAILABLE",
+        "AUTH_IDENTITY_OPERATION_UNKNOWN",
     }:
         return 503
     if code in {"AUTH_PROVIDER_TOKEN_INVALID", "AUTH_PROVIDER_TOKEN_REPLAYED"}:
@@ -294,6 +313,14 @@ def link_identity(
         _reject(db, operation_id=operation_id, code=exc.code)
     except AuthIdentityError as exc:
         _reject(db, operation_id=operation_id, code=exc.code)
+    except Exception:
+        # Provider completion is unknown. Make the receipt terminal so a
+        # retry cannot consume a one-time credential a second time.
+        _reject(
+            db,
+            operation_id=operation_id,
+            code="AUTH_IDENTITY_OPERATION_UNKNOWN",
+        )
 
     try:
         _ensure_current_session(db, user_id=user_id, session_id=session_id)
@@ -326,6 +353,12 @@ def link_identity(
         _reject(db, operation_id=operation_id, code="AUTH_IDENTITY_CONFLICT")
     except AuthIdentityError as exc:
         _reject(db, operation_id=operation_id, code=exc.code)
+    except Exception:
+        _reject(
+            db,
+            operation_id=operation_id,
+            code="AUTH_IDENTITY_OPERATION_UNKNOWN",
+        )
     raise AssertionError("unreachable")
 
 
@@ -378,6 +411,12 @@ def unlink_identity(
         db.commit()
     except AuthIdentityLinkProviderError as exc:
         _reject(db, operation_id=operation_id, code=exc.code)
+    except Exception:
+        _reject(
+            db,
+            operation_id=operation_id,
+            code="AUTH_IDENTITY_OPERATION_UNKNOWN",
+        )
 
     try:
         _ensure_current_session(db, user_id=user_id, session_id=session_id)
@@ -385,6 +424,7 @@ def unlink_identity(
             db,
             user_id=user_id,
             identity_id=identity_id,
+            settings=current_settings,
         )
         revoke_all_sessions_in_transaction(
             db,
