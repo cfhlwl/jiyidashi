@@ -644,14 +644,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/auth-006-candidates
-          mkdir -p test/uiux_v3_candidates/auth-006
           flutter test test/account_security_visual_fixture_test.dart \
             --update-goldens \
             --dart-define=AUTH_006_ACCOUNT_SECURITY_CANDIDATE=true \
             --reporter expanded
-          cp test/uiux_v3_candidates/auth-006/*.png /tmp/auth-006-candidates/
-          rm -rf test/uiux_v3_candidates/auth-006
-          test -z "$(git status --porcelain -- test/uiux_v3_candidates)"
+          cp test/goldens/auth_006_account_security_*.png /tmp/auth-006-candidates/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
           for file in /tmp/auth-006-candidates/*.png; do test -s "$file"; done
 
       - name: Upload AUTH-006 account security candidates

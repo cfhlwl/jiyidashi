@@ -131,7 +131,7 @@ void main() {
       await expectLater(
         find.byKey(_canvasKey),
         matchesGoldenFile(
-          'uiux_v3_candidates/auth-006/account_security_390.png',
+          'goldens/auth_006_account_security_390.png',
         ),
       );
     }
@@ -151,7 +151,7 @@ void main() {
       await expectLater(
         find.byKey(_canvasKey),
         matchesGoldenFile(
-          'uiux_v3_candidates/auth-006/account_security_320_large_text.png',
+          'goldens/auth_006_account_security_320_large_text.png',
         ),
       );
     }
