@@ -14,6 +14,10 @@ class OnboardingExperience extends StatelessWidget {
     required this.onStart,
     required this.onSkip,
     required this.onComplete,
+    this.onPermissionsNext,
+    this.permissionsPanel,
+    this.onEnableNotifications,
+    this.onImportPhotos,
   });
 
   final OnboardingStep? step;
@@ -21,12 +25,25 @@ class OnboardingExperience extends StatelessWidget {
   final VoidCallback onStart;
   final VoidCallback onSkip;
   final VoidCallback onComplete;
+  final VoidCallback? onPermissionsNext;
+  final Widget? permissionsPanel;
+  final VoidCallback? onEnableNotifications;
+  final VoidCallback? onImportPhotos;
 
   @override
   Widget build(BuildContext context) {
     final current = step;
     if (current == OnboardingStep.intro) {
       return OnboardingIntroPage(onStart: onStart, onSkip: onSkip);
+    }
+    if (current == OnboardingStep.permissions) {
+      return OnboardingPermissionsPage(
+        permissionsPanel: permissionsPanel,
+        onContinue: onPermissionsNext ?? onStart,
+        onEnableNotifications: onEnableNotifications,
+        onImportPhotos: onImportPhotos,
+        onSkip: onSkip,
+      );
     }
 
     // [人工注释][S1-026] 完成/跳过引导时保持产品页始终位于 Column 的第二个槽位。
@@ -47,8 +64,8 @@ class OnboardingExperience extends StatelessWidget {
   }
 }
 
-// The intro deliberately explains only abilities that the user is about to exercise.
-// It does not request location/background permissions and it does not fabricate demo data.
+// The intro does not request OS permissions. Each capability has a separate
+// opt-in action on the next step; first login alone never starts collection.
 class OnboardingIntroPage extends StatelessWidget {
   const OnboardingIntroPage({
     super.key,
@@ -141,6 +158,88 @@ class OnboardingIntroPage extends StatelessWidget {
   }
 }
 
+// Permission actions are explicit, and the native section continues to enforce
+// server Privacy authority. This screen does not fabricate authorization states.
+class OnboardingPermissionsPage extends StatelessWidget {
+  const OnboardingPermissionsPage({
+    super.key,
+    this.permissionsPanel,
+    this.onEnableNotifications,
+    this.onImportPhotos,
+    required this.onContinue,
+    required this.onSkip,
+  });
+
+  final Widget? permissionsPanel;
+  final VoidCallback? onEnableNotifications;
+  final VoidCallback? onImportPhotos;
+  final VoidCallback onContinue;
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListView(
+      key: const ValueKey('onboarding-permissions'),
+      padding: const EdgeInsets.all(JiYiSpacing.lg),
+      children: [
+        Text('选择你希望开启的能力', style: theme.textTheme.headlineSmall),
+        const SizedBox(height: JiYiSpacing.sm),
+        Text(
+          '所有权限都由你决定。拒绝或稍后开启也能正常使用迹忆；这里只展示系统实际授权与采集状态。',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: JiYiSpacing.lg),
+        if (permissionsPanel != null) permissionsPanel!,
+        const SizedBox(height: JiYiSpacing.md),
+        JiYiSectionCard(
+          leading: Icon(Icons.photo_library_outlined, color: theme.colorScheme.primary),
+          title: '导入已有照片',
+          subtitle: '只处理你稍后通过系统照片选择器主动选中的图片，不要求整机相册权限。',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('导入完全可选；只在你明确选择并再次确认后上传。'),
+              const SizedBox(height: JiYiSpacing.sm),
+              OutlinedButton.icon(
+                key: const ValueKey('onboarding-import-photos'),
+                onPressed: onImportPhotos,
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                label: const Text('选择已有照片导入'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: JiYiSpacing.md),
+        JiYiSectionCard(
+          leading: Icon(Icons.notifications_outlined, color: theme.colorScheme.primary),
+          title: '通知（可选）',
+          subtitle: '用于提醒与完成状态。只有点击下方按钮才申请系统通知权限。',
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
+              key: const ValueKey('onboarding-enable-notifications'),
+              onPressed: onEnableNotifications,
+              child: const Text('允许通知'),
+            ),
+          ),
+        ),
+        const SizedBox(height: JiYiSpacing.lg),
+        FilledButton(
+          key: const ValueKey('onboarding-permissions-next'),
+          onPressed: onContinue,
+          child: const Text('继续真实记忆体验'),
+        ),
+        TextButton(
+          key: const ValueKey('onboarding-permissions-skip'),
+          onPressed: onSkip,
+          child: const Text('暂时跳过引导'),
+        ),
+      ],
+    );
+  }
+}
+
 class _IntroItem extends StatelessWidget {
   const _IntroItem({
     required this.icon,
@@ -211,7 +310,8 @@ class OnboardingGuideBar extends StatelessWidget {
           '第 3 步 · 看懂为什么可信',
           '打开“查看这次回答的依据”，确认这次回答实际使用的来源和时间，再完成引导。',
         ),
-      OnboardingStep.intro => throw StateError('Intro uses OnboardingIntroPage'),
+      OnboardingStep.intro || OnboardingStep.permissions =>
+        throw StateError('Full-page onboarding steps have their own views'),
     };
 
     return Semantics(

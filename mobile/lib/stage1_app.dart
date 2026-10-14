@@ -2456,7 +2456,30 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final onboardingExperience = OnboardingExperience(
       step: _accountDeletionIntentActive ? null : onboardingStep,
-      onStart: onboarding?.startFlow ?? () {},
+      onStart: onboarding?.startPermissions ?? () {},
+      onPermissionsNext: onboarding?.startFlow,
+      permissionsPanel: _nativeLocation == null
+          ? null
+          : NativeLocationSection(
+              controller: _nativeLocation!,
+              revalidateAuthority: _revalidateNativeLocationAuthority,
+            ),
+      onEnableNotifications: widget.notificationClient == null
+          ? null
+          : () => unawaited(
+              widget.notificationClient!.requestPermissionAndRegister(),
+            ),
+      onImportPhotos: _accountDeletionIntentActive
+          ? null
+          : () => unawaited(
+              JiYiNavigator.push<void>(
+                context,
+                builder: (_) => PhotoImportPage(
+                  api: widget.api,
+                  offlineQueue: widget.offlineQueue,
+                ),
+              ),
+            ),
       onSkip: () {
         if (onboarding != null) unawaited(onboarding.skip());
       },

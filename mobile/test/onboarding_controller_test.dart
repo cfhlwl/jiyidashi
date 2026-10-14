@@ -72,6 +72,34 @@ void main() {
     }
   });
 
+  test('existing account with no owner-scoped row sees first-install onboarding once', () async {
+    final store = _Store();
+    final first = OnboardingController(
+      store: store,
+      ownerUserId: owner,
+      autoStartForNewRegistration: false,
+    );
+    await first.initialize();
+    expect(first.step, OnboardingStep.intro);
+    expect(store.status, OnboardingStatus.inProgress);
+    first.startPermissions();
+    expect(first.step, OnboardingStep.permissions);
+    first.startFlow();
+    expect(first.step, OnboardingStep.capture);
+    await first.skip();
+    expect(store.status, OnboardingStatus.skipped);
+    first.dispose();
+
+    final repeat = OnboardingController(
+      store: store,
+      ownerUserId: owner,
+      autoStartForNewRegistration: false,
+    );
+    await repeat.initialize();
+    expect(repeat.step, isNull, reason: 'skip persists across app restarts');
+    repeat.dispose();
+  });
+
   test('new registration persists in-progress and opens intro', () async {
     final store = _Store();
     final controller = OnboardingController(
