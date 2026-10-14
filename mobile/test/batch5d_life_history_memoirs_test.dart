@@ -136,6 +136,9 @@ Future<void> _scrollTo(WidgetTester tester, Finder target) async {
   await tester.pumpAndSettle();
 }
 
+Finder _yearRange(String value) =>
+    find.textContaining(value, skipOffstage: false);
+
 void main() {
   testWidgets('Batch 5D multi-year timeline is truthful and navigable', (tester) async {
     await _pump(tester, LifeHistoryPage(api: V2TestApi()));
@@ -144,7 +147,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('life-history-submit')));
     await tester.pumpAndSettle();
 
-    final range = find.text('2020–2025', skipOffstage: false);
+    final range = _yearRange('2020–2025');
     await _scrollTo(tester, range);
     expect(range, findsOneWidget);
     await _scrollTo(tester, find.text('2025年3月', skipOffstage: false));
@@ -191,6 +194,8 @@ void main() {
     expect(find.textContaining('这一年，你开始了新的产品阶段'), findsOneWidget);
     expect(find.text('参考记录 1'), findsOneWidget);
 
+    await tester.tap(find.text('刷新人生阶段'));
+    await tester.pumpAndSettle();
     final stage = find.text('产品创业阶段', skipOffstage: false);
     await _scrollTo(tester, stage);
     await tester.tap(stage);
@@ -246,7 +251,7 @@ void main() {
     await _pump(tester, LifeHistoryPage(api: V2TestApi()));
     await tester.tap(find.byKey(const ValueKey('life-history-submit')));
     await tester.pumpAndSettle();
-    await _scrollTo(tester, find.text('2020–2025', skipOffstage: false));
+    await _scrollTo(tester, _yearRange('2020–2025'));
     await expectLater(
       find.byType(LifeHistoryPage),
       matchesGoldenFile('goldens/life_history_v3_batch5d.png'),
@@ -267,6 +272,8 @@ void main() {
     if (!_candidateMode) return;
     await _pump(tester, MemoirsPage(api: V2TestApi()));
     await _loadAnnual(tester);
+    await tester.tap(find.text('刷新人生阶段'));
+    await tester.pumpAndSettle();
     final stage = find.text('产品创业阶段', skipOffstage: false);
     await _scrollTo(tester, stage);
     await tester.tap(stage);
