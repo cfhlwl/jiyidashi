@@ -148,6 +148,10 @@ jobs:
         timeout-minutes: 5
         run: flutter test test/batch5a_life_home_test.dart --reporter expanded
 
+      - name: Test Batch 5C Life Stages targeted
+        timeout-minutes: 6
+        run: flutter test test/batch5c_life_stages_test.dart --reporter expanded
+
       - name: Generate Today B2 authority candidate
         timeout-minutes: 5
         shell: bash
@@ -486,6 +490,43 @@ jobs:
           retention-days: 14
           path: /tmp/batch5b-v3-candidates/*.png
 
+      - name: Generate Batch 5C Life Stages candidates
+        if: always()
+        timeout-minutes: 6
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/batch5c-v3-candidates
+          mkdir -p /tmp/batch5c-v3-candidates
+          mkdir -p test/goldens
+          for candidate in \
+            "candidate: Batch 5C Life Stages production list|life_stages_v3_batch5c.png" \
+            "candidate: Batch 5C Life Stage Detail production page|life_stage_detail_v3_batch5c.png" \
+            "candidate: Batch 5C Life Stage Editor production dialog|life_stage_editor_v3_batch5c.png"; do
+            name="${candidate%%|*}"
+            file="${candidate##*|}"
+            flutter test test/batch5c_life_stages_test.dart \
+              --plain-name "$name" \
+              --update-goldens \
+              --dart-define=UIUX_V3_BATCH5C_CANDIDATE_MODE=true \
+              --reporter expanded
+            test -s "test/goldens/$file"
+            cp "test/goldens/$file" /tmp/batch5c-v3-candidates/
+          done
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          for file in /tmp/batch5c-v3-candidates/*.png; do test -s "$file"; done
+
+      - name: Upload Batch 5C Life Stages review candidates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-batch5c-life-stages-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/batch5c-v3-candidates/*.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -632,6 +673,9 @@ jobs:
               'batch5b_life_events': ('design_reference/v3/10_life_experience.png', '/tmp/batch5b-v3-candidates/life_events_v3_batch5b.png', 44, 22),
               'batch5b_life_event_detail': ('design_reference/v3/10_life_experience.png', '/tmp/batch5b-v3-candidates/life_event_detail_v3_batch5b.png', 44, 22),
               'batch5b_life_event_editor': ('design_reference/v3/10_life_experience.png', '/tmp/batch5b-v3-candidates/life_event_editor_v3_batch5b.png', 44, 22),
+              'batch5c_life_stages': ('design_reference/v3/10_life_experience.png', '/tmp/batch5c-v3-candidates/life_stages_v3_batch5c.png', 44, 22),
+              'batch5c_life_stage_detail': ('design_reference/v3/10_life_experience.png', '/tmp/batch5c-v3-candidates/life_stage_detail_v3_batch5c.png', 44, 22),
+              'batch5c_life_stage_editor': ('design_reference/v3/10_life_experience.png', '/tmp/batch5c-v3-candidates/life_stage_editor_v3_batch5c.png', 44, 22),
               # Place Detail has no dedicated V3 Design Authority PNG. This
               # existing committed golden is a regression reference only, not
               # an acceptance authority.
@@ -641,6 +685,11 @@ jobs:
           graph_candidate = Path('/tmp/batch4c-v3-candidates/graph_neighborhood_v3_batch4c.png')
           if graph_candidate.is_file():
               shutil.copy2(graph_candidate, root / 'candidate' / graph_candidate.name)
+
+          for name in ('life_stages_v3_batch5c.png', 'life_stage_detail_v3_batch5c.png', 'life_stage_editor_v3_batch5c.png'):
+              candidate = Path('/tmp/batch5c-v3-candidates') / name
+              if candidate.is_file():
+                  shutil.copy2(candidate, root / 'candidate' / name)
 
           def normalize(authority, size):
               target_w, target_h = size
@@ -723,6 +772,18 @@ jobs:
               '| Batch 5B visual status | `design_reference/v3/10_life_experience.png` read-only authority | List/detail/editor candidates are candidate-only evidence; exact layout/media differences remain `DERIVED V3 / V3_PARTIAL` pending independent review. |',
               '| Batch 5B responsive/accessibility | V3 48dp target and explicit state semantics | 390 light, 390 dark, 320 at 200% text, empty and offline candidates plus focused navigation/state tests are generated. |',
               '',
+              '## Batch 5C Life Stages contract notes',
+              '',
+              '| Design element | Real authority | Implemented / deferred |',
+              '|---|---|---|',
+              '| Life Stages list | `V2Api.listLifeStages` + `V2Authority` | Production list uses canonical stage identity, localized type/date presentation, explicit loading/empty/error/offline/blocked states, and no raw enum or internal ID. |',
+              '| Life Stage detail | `getLifeStage` + `listLifeStageEvents` + `listLifeEvents` | Identity card, stage range, note, linked-event cards, edit/delete and explicit relationship ownership are rendered from real V2 records. |',
+              '| Life Stage editor | `createLifeStage` / `updateLifeStage` | Existing draft validation and mutation contracts are preserved; failed saves reopen the same draft instead of inventing a second model. |',
+              '| Long-term reasoning | `reasonAboutLifeStage` and strict citation parser | User-triggered only; evidence, inference, incomplete evidence, provider failure and unknown remain distinct. |',
+              '| Batch 5C visual status | `design_reference/v3/10_life_experience.png` and related `03_life.png` hierarchy | Three production candidates are review-only `DERIVED V3 / V3_PARTIAL`; no Design Authority PNG or committed Golden is modified. |',
+              '| Batch 5C identity fencing | `V2Authority` + API/owner/session/stage identity | Widget/API rebind invalidates reads, dialogs, mutations and reasoning; stale account results cannot overwrite the current stage page. |',
+              '| Batch 5C responsive/accessibility | V3 components and tap-target contract | Candidate/test coverage includes 390 light, 320 at 200% text, dark theme, semantic actions and no-overflow assertions. |',
+              '',
               '## Batch 5A visual difference matrix',
               '',
               '| Surface / element | Candidate status | Review decision |',
@@ -786,6 +847,8 @@ jobs:
               'BATCH 5A AUTHORITY STATUS: DERIVED V3 / V3_PARTIAL; authority is read-only 03_life.png; four real routes preserved; visual approval and any Golden update are deferred',
               'BATCH 5B PRODUCTION CANDIDATES: batch5b_life_events, batch5b_life_event_detail, batch5b_life_event_editor plus dark/compact/empty/offline variants',
               'BATCH 5B AUTHORITY STATUS: DERIVED V3 / V3_PARTIAL; authority is read-only 10_life_experience.png; candidate-only, no committed Golden update',
+              'BATCH 5C PRODUCTION CANDIDATES: batch5c_life_stages, batch5c_life_stage_detail, batch5c_life_stage_editor',
+              'BATCH 5C AUTHORITY STATUS: DERIVED V3 / V3_PARTIAL; authority is read-only 10_life_experience.png with 03_life.png hierarchy context; candidates only, no committed Golden update',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())
