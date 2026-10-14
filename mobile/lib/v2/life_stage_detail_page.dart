@@ -11,6 +11,7 @@ import 'life_editors.dart';
 import 'life_models.dart';
 import 'v2_api.dart';
 import 'v2_authority.dart';
+import 'v2_widgets.dart';
 
 class LifeStageDetailPage extends StatefulWidget {
   const LifeStageDetailPage({
