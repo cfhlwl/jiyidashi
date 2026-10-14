@@ -349,6 +349,22 @@ class Settings(BaseSettings):
         default=120, ge=5, le=1800
     )
 
+    # AUTH-005: identity link/unlink is provider-neutral and disabled by
+    # default. The operation fingerprint key is server-only and is required
+    # before a mutation can be accepted; no raw credential or subject is ever
+    # persisted. ``fake`` is test/development-only.
+    auth_identity_link_provider: str = "disabled"
+    auth_identity_operation_fingerprint_secret: str = ""
+    auth_identity_operation_fingerprint_key_version: str = "v1"
+    auth_identity_link_recent_reauth_seconds: int = Field(
+        default=300, ge=30, le=3600
+    )
+    auth_identity_operation_reservation_timeout_seconds: int = Field(
+        default=120, ge=5, le=3600
+    )
+    auth_identity_link_ip_limit: int = Field(default=20, ge=1, le=100)
+    auth_identity_link_window_seconds: int = Field(default=600, ge=60, le=86400)
+
     # ADMIN-001 review hardening: privileged login has a separate, stricter
     # namespace/policy so ordinary-user traffic cannot consume or reset Admin buckets.
     admin_login_ip_limit: int = Field(default=30, ge=1, le=100)

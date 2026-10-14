@@ -14,6 +14,11 @@ from app.schemas import (
     AuthAcceptedResponse,
     AuthCapabilitiesResponse,
     AuthCapabilityStatus,
+    AuthIdentityLinkRequest,
+    AuthIdentityListResponse,
+    AuthIdentityMutationResponse,
+    AuthIdentityRead,
+    AuthIdentityUnlinkRequest,
     AuthSessionRead,
     ChangePasswordRequest,
     DevTokenRequest,
@@ -34,7 +39,18 @@ from app.schemas import (
     WechatLoginRequest,
     WechatMiniProgramLoginRequest,
 )
-from app.services.auth_identity_service import issue_authenticated_session
+from app.services.auth_identity_link_provider import (
+    AuthIdentityLinkProviderError,
+    get_auth_identity_link_provider,
+)
+from app.services.auth_identity_operation_service import (
+    link_identity,
+    list_identities,
+    subject_hint,
+    unlink_identity,
+)
+from app.services.auth_identity_service import AuthIdentityError, issue_authenticated_session
+from app.services.auth_rate_limit import consume_identity_mutation_attempt
 from app.services.auth_recovery_service import (
     AuthRecoveryError,
     change_password,
@@ -563,6 +579,97 @@ def sessions(
         )
         for row in list_active_sessions(db, user_id=claims.user_id)
     ]
+
+
+def _identity_read(identity) -> AuthIdentityRead:
+    return AuthIdentityRead(
+        identity_id=identity.id,
+        provider=str(identity.provider),
+        subject_hint=subject_hint(identity),
+        verified_at=identity.verified_at,
+        linked_at=identity.created_at,
+    )
+
+
+@router.get("/identities", response_model=AuthIdentityListResponse)
+def identities(
+    claims: AuthenticatedClaims,
+    db: DbSession,
+) -> AuthIdentityListResponse:
+    return AuthIdentityListResponse(
+        identities=[_identity_read(row) for row in list_identities(db, user_id=claims.user_id)]
+    )
+
+
+@router.post(
+    "/identities/link",
+    response_model=AuthIdentityMutationResponse,
+)
+def link_auth_identity(
+    payload: AuthIdentityLinkRequest,
+    claims: AuthenticatedClaims,
+    request: Request,
+    db: DbSession,
+) -> AuthIdentityMutationResponse:
+    db.rollback()
+    consume_identity_mutation_attempt(db, client_ip=_client_ip(request))
+    provider = get_auth_identity_link_provider()
+    try:
+        result = link_identity(
+            db,
+            user_id=claims.user_id,
+            session_id=claims.session_id,
+            request_id=payload.request_id,
+            credential=payload.credential,
+            reauth_credential=payload.reauth_credential,
+            provider=provider,
+        )
+    except (AuthIdentityError, AuthIdentityLinkProviderError) as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 409),
+            detail=getattr(exc, "code", "AUTH_IDENTITY_OPERATION_FAILED"),
+        ) from exc
+    return AuthIdentityMutationResponse(
+        request_id=result.request_id,
+        operation=result.operation.value,
+        identity=_identity_read(result.identity) if result.identity is not None else None,
+    )
+
+
+@router.delete(
+    "/identities/{identity_id}",
+    response_model=AuthIdentityMutationResponse,
+)
+def unlink_auth_identity(
+    identity_id: UUID,
+    payload: AuthIdentityUnlinkRequest,
+    claims: AuthenticatedClaims,
+    request: Request,
+    db: DbSession,
+) -> AuthIdentityMutationResponse:
+    db.rollback()
+    consume_identity_mutation_attempt(db, client_ip=_client_ip(request))
+    provider = get_auth_identity_link_provider()
+    try:
+        result = unlink_identity(
+            db,
+            user_id=claims.user_id,
+            session_id=claims.session_id,
+            request_id=payload.request_id,
+            identity_id=identity_id,
+            reauth_credential=payload.reauth_credential,
+            provider=provider,
+        )
+    except (AuthIdentityError, AuthIdentityLinkProviderError) as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 409),
+            detail=getattr(exc, "code", "AUTH_IDENTITY_OPERATION_FAILED"),
+        ) from exc
+    return AuthIdentityMutationResponse(
+        request_id=result.request_id,
+        operation=result.operation.value,
+        identity=None,
+    )
 
 
 @router.delete(
