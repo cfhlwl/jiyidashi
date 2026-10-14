@@ -119,6 +119,7 @@ class _TaggedMemoirApi extends V2TestApi {
   @override
   Map<String, dynamic> get stage => {
         ...super.stage,
+        'life_stage_id': v2StageId,
         'title': '$tag 阶段',
       };
 
