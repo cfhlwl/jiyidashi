@@ -61,6 +61,8 @@ class AuthIdentityRead {
     r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$',
   );
 
+  static bool isStrictUuid(String value) => _uuidPattern.hasMatch(value);
+
   factory AuthIdentityRead.fromJson(Map<String, dynamic> json) {
     final identityId = json['identity_id'];
     final provider = json['provider'];
@@ -70,7 +72,7 @@ class AuthIdentityRead {
     if (!json.containsKey('verified_at') ||
         !json.containsKey('linked_at') ||
         identityId is! String ||
-        !_uuidPattern.hasMatch(identityId) ||
+        !isStrictUuid(identityId) ||
         provider is! String ||
         provider.trim().isEmpty ||
         subjectHint is! String ||
@@ -117,7 +119,7 @@ class AuthIdentityMutationResult {
     final operation = json['operation'];
     final identity = json['identity'];
     if (requestId is! String ||
-        !AuthIdentityRead._uuidPattern.hasMatch(requestId) ||
+        !AuthIdentityRead.isStrictUuid(requestId) ||
         operation is! String ||
         operation.trim().isEmpty ||
         (identity != null && identity is! Map<String, dynamic>)) {
@@ -1383,7 +1385,7 @@ class JiYiApiClient
     required String credential,
     required String reauthCredential,
   }) async {
-    if (!RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(requestId) ||
+    if (!AuthIdentityRead.isStrictUuid(requestId) ||
         credential.trim().isEmpty ||
         reauthCredential.trim().isEmpty) {
       throw ProtocolException('身份认证材料无效');
@@ -1408,8 +1410,8 @@ class JiYiApiClient
     required String requestId,
     required String reauthCredential,
   }) async {
-    if (!RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(identityId) ||
-        !RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(requestId) ||
+    if (!AuthIdentityRead.isStrictUuid(identityId) ||
+        !AuthIdentityRead.isStrictUuid(requestId) ||
         reauthCredential.trim().isEmpty) {
       throw ProtocolException('身份认证材料无效');
     }

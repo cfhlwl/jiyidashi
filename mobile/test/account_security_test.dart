@@ -149,6 +149,44 @@ void main() {
     expect(calls, 3);
   });
 
+  test('typed mutation adapters reject UUIDs with invalid version or variant bits', () async {
+    final api = JiYiApiClient(
+      baseUrl: 'https://example.test/v1',
+      httpClient: MockClient((request) async {
+        if (request.url.path == '/v1/auth/login') {
+          return http.Response(jsonEncode(_token()), 200, headers: _headers);
+        }
+        fail('malformed mutation input must not reach the server');
+      }),
+    );
+    await api.login(email: 'a@example.test', password: 'password-123456');
+
+    await expectLater(
+      api.linkAuthIdentity(
+        requestId: '55555555-5555-0555-8555-555555555555',
+        credential: 'opaque-provider-proof',
+        reauthCredential: 'opaque-reauth',
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+    await expectLater(
+      api.unlinkAuthIdentity(
+        identityId: '33333333-3333-4333-7333-333333333333',
+        requestId: _unlinkRequestId,
+        reauthCredential: 'opaque-reauth',
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+    await expectLater(
+      api.unlinkAuthIdentity(
+        identityId: '33333333-3333-4333-8333-333333333333',
+        requestId: '88888888-8888-4888-0888-888888888888',
+        reauthCredential: 'opaque-reauth',
+      ),
+      throwsA(isA<ProtocolException>()),
+    );
+  });
+
   testWidgets('provider OFF renders identities but does not expose mutation action', (tester) async {
     var mutationCalls = 0;
     final api = JiYiApiClient(
