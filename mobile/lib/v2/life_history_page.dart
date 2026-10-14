@@ -249,26 +249,32 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
                 const SizedBox(height: JiYiSpacing.md),
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final fields = [
-                      Expanded(
-                        child: TextField(
-                          controller: startYear,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: '开始年份'),
-                        ),
-                      ),
-                      const SizedBox(width: JiYiSpacing.sm),
-                      Expanded(
-                        child: TextField(
-                          controller: endYear,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: '结束年份'),
-                        ),
-                      ),
-                    ];
+                    final startField = TextField(
+                      controller: startYear,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: '开始年份'),
+                    );
+                    final endField = TextField(
+                      controller: endYear,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: '结束年份'),
+                    );
                     return constraints.maxWidth < 360
-                        ? Column(children: [fields[0], fields[2]])
-                        : Row(children: fields);
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              startField,
+                              const SizedBox(height: JiYiSpacing.sm),
+                              endField,
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(child: startField),
+                              const SizedBox(width: JiYiSpacing.sm),
+                              Expanded(child: endField),
+                            ],
+                          );
                   },
                 ),
                 const SizedBox(height: JiYiSpacing.md),
