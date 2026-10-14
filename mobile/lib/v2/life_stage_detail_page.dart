@@ -39,6 +39,8 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
   final V2OperationFlight mutationFlight = V2OperationFlight();
   final V2OperationFlight reasoningFlight = V2OperationFlight();
   final TextEditingController question = TextEditingController();
+  bool _dialogOpen = false;
+  bool _dialogCloseScheduled = false;
 
   V2LifeStage? stage;
   List<V2LifeStageEvent> linkedEvents = const [];
@@ -91,6 +93,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
       _boundStageId == widget.stageId;
 
   void _rebindAndReload() {
+    _scheduleDialogCloseForRebind();
     readAuthority.invalidate();
     mutationAuthority.invalidate();
     reasoningAuthority.invalidate();
@@ -110,6 +113,26 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _load();
     });
+  }
+
+  void _scheduleDialogCloseForRebind() {
+    if (!_dialogOpen || _dialogCloseScheduled) return;
+    _dialogCloseScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _dialogCloseScheduled = false;
+      if (!mounted || !_dialogOpen) return;
+      Navigator.of(context, rootNavigator: true).pop();
+    });
+  }
+
+  Future<T?> _showTrackedDialog<T>({required WidgetBuilder builder}) async {
+    _dialogOpen = true;
+    try {
+      return await showDialog<T>(context: context, builder: builder);
+    } finally {
+      _dialogOpen = false;
+      _dialogCloseScheduled = false;
+    }
   }
 
   void _checkBinding() {
@@ -240,8 +263,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
         stageId: current.id,
       );
       if (!mounted) return;
-      final draft = await showDialog<LifeStageDraft>(
-        context: context,
+      final draft = await _showTrackedDialog<LifeStageDraft>(
         builder: (_) => LifeStageEditorDialog(
           initial: current,
           initialDraft: preserved,
@@ -300,8 +322,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
   Future<void> _delete() async {
     final current = stage;
     if (current == null) return;
-    final ok = await showDialog<bool>(
-      context: context,
+    final ok = await _showTrackedDialog<bool>(
       builder: (_) => AlertDialog(
         title: const Text('删除人生阶段？'),
         content: Text('将删除“' + current.title + '”及其事件关联。此操作无法撤销。'),
@@ -342,8 +363,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
       setState(() => status = '没有可继续关联的人生事件');
       return;
     }
-    final selected = await showDialog<String>(
-      context: context,
+    final selected = await _showTrackedDialog<String>(
       builder: (context) {
         String value = choices.first.id;
         return StatefulBuilder(
@@ -387,8 +407,7 @@ class _LifeStageDetailPageState extends State<LifeStageDetailPage> {
   }
 
   Future<void> _unlinkEvent(V2LifeStageEvent item) async {
-    final ok = await showDialog<bool>(
-      context: context,
+    final ok = await _showTrackedDialog<bool>(
       builder: (_) => AlertDialog(
         title: const Text('取消事件关联？'),
         content: const Text('只删除阶段与事件之间的明确关系，不删除原始人生经历。'),

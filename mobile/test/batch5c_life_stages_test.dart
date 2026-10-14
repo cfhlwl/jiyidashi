@@ -199,9 +199,9 @@ Future<void> _pump(
         data: MediaQuery.of(
           context,
         ).copyWith(textScaler: TextScaler.linear(textScale)),
-        child: rendered!,
+        child: RepaintBoundary(key: _rootKey, child: rendered!),
       ),
-      home: RepaintBoundary(key: _rootKey, child: child),
+      home: child,
     ),
   );
   await tester.pumpAndSettle();
@@ -421,6 +421,49 @@ void main() {
       expect(find.textContaining('这个阶段持续围绕产品开发'), findsOneWidget);
     },
   );
+
+  testWidgets('Life Stage rebind closes an old account editor dialog', (
+    tester,
+  ) async {
+    final api = V2TestApi();
+    final rebuild = ValueNotifier<int>(0);
+    addTearDown(rebuild.dispose);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        locale: const Locale('zh', 'CN'),
+        theme: JiYiTheme.light(fontFamily: _fixtureFontFamily),
+        home: ValueListenableBuilder<int>(
+          valueListenable: rebuild,
+          builder: (context, _, __) =>
+              LifeStageDetailPage(api: api, stageId: v2StageId),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('life-stage-edit')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('life-stage-title')),
+      '账号 A 的阶段草稿',
+    );
+
+    await api.logout();
+    api.accessToken = 'v2-test-token-b';
+    api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
+    rebuild.value += 1;
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LifeStageEditorDialog), findsNothing);
+    expect(find.text('账号 A 的阶段草稿'), findsNothing);
+    expect(find.byKey(const ValueKey('life-stage-identity')), findsOneWidget);
+  });
 
   testWidgets('Life Stage empty linked-event state is truthful', (
     tester,
