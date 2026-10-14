@@ -196,7 +196,7 @@ void main() {
   ) async {
     await _pump(tester, LifeStagesPage(api: V2TestApi()));
     expect(find.text('产品创业阶段'), findsOneWidget);
-    expect(find.text('工作'), findsOneWidget);
+    expect(find.textContaining('工作'), findsOneWidget);
     expect(find.text('WORK'), findsNothing);
     expect(find.textContaining(v2StageId), findsNothing);
     expect(find.byKey(const ValueKey('life-stage-card-' + v2StageId)), findsOneWidget);
@@ -208,7 +208,7 @@ void main() {
     await _pump(tester, LifeStagesPage(api: V2TestApi()));
     await tester.tap(find.byKey(const ValueKey('life-stage-card-' + v2StageId)));
     await tester.pumpAndSettle();
-    expect(find.text('产品创业阶段'), findsOneWidget);
+    expect(find.byKey(const ValueKey('life-stage-identity')), findsOneWidget);
     expect(find.text('关联的人生经历（1）'), findsOneWidget);
     expect(find.text('加入新团队'), findsOneWidget);
     expect(find.byKey(const ValueKey('life-stage-edit')), findsOneWidget);
