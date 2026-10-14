@@ -131,14 +131,8 @@ Future<void> _loadAnnual(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Finder _outerScrollView() => find.byType(SingleChildScrollView).first;
-
 Future<void> _scrollTo(WidgetTester tester, Finder target) async {
-  await tester.dragUntilVisible(
-    target,
-    _outerScrollView(),
-    const Offset(0, -320),
-  );
+  await tester.ensureVisible(target);
   await tester.pumpAndSettle();
 }
 
