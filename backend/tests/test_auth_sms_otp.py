@@ -14,6 +14,8 @@ from app.auth_models import (
     AuthSmsOtpChallengeState,
 )
 from app.core.db import SessionLocal
+from app.models import User
+from app.services.auth_identity_service import create_user_for_verified_identity
 from app.services.sms_otp_provider import FakeSmsOtpProvider, SmsOtpDelivery, SmsOtpProviderError
 
 
@@ -304,3 +306,66 @@ def test_sms_otp_resend_fence_remains_device_scoped(monkeypatch):
     with SessionLocal() as db:
         request_sms_otp(db, device_id="DEVICE-B", **common)
     assert provider.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_sms_otp_existing_phone_identity_reuses_canonical_user(client, monkeypatch):
+    _settings(monkeypatch)
+    provider = _provider()
+    phone = "+8613800000094"
+    with SessionLocal() as db:
+        created = create_user_for_verified_identity(
+            db,
+            provider=AuthProvider.PHONE,
+            subject=phone,
+            verified_at=datetime.now(UTC),
+        )
+        db.commit()
+        expected_user_id = str(created.user_id)
+
+    requested = await client.post(
+        "/v1/auth/phone/sms/request",
+        json={"phone": phone, "device_id": "existing-phone-device"},
+    )
+    assert requested.status_code == 200
+    request_id = requested.json()["request_id"]
+    code = provider.sent[next(iter(provider.sent))]
+    verified = await client.post(
+        "/v1/auth/phone/sms/verify",
+        json={"request_id": request_id, "code": code, "device_id": "existing-phone-device"},
+    )
+    assert verified.status_code == 200
+    assert verified.json()["user_id"] == expected_user_id
+
+
+@pytest.mark.asyncio
+async def test_sms_otp_auth_disabled_is_hard_denied(client, monkeypatch):
+    _settings(monkeypatch)
+    provider = _provider()
+    phone = "+8613800000095"
+    with SessionLocal() as db:
+        created = create_user_for_verified_identity(
+            db,
+            provider=AuthProvider.PHONE,
+            subject=phone,
+            verified_at=datetime.now(UTC),
+        )
+        user = db.get(User, created.user_id)
+        assert user is not None
+        user.auth_disabled_at = datetime.now(UTC)
+        db.commit()
+
+    requested = await client.post(
+        "/v1/auth/phone/sms/request",
+        json={"phone": phone, "device_id": "disabled-phone-device"},
+    )
+    assert requested.status_code == 200
+    request_id = requested.json()["request_id"]
+    code = provider.sent[next(iter(provider.sent))]
+    verified = await client.post(
+        "/v1/auth/phone/sms/verify",
+        json={"request_id": request_id, "code": code, "device_id": "disabled-phone-device"},
+    )
+    assert verified.status_code == 401
+    assert verified.json()["detail"] == "AUTH_ACCOUNT_UNAVAILABLE"
+    assert "access_token" not in verified.json()

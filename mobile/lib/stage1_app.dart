@@ -112,7 +112,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   String? restoreMessage;
   Timer? _authorityRefreshTimer;
   Timer? _sessionRetryTimer;
-  bool _coldRecoveryRetryUsed = false;
+  Future<void>? _restoreInFlight;
+  int _coldRecoveryAttempt = 0;
   StreamSubscription<void>? _passiveRecoveryRequests;
   final Completer<void> _initialRestoreFinished = Completer<void>();
 
@@ -206,17 +207,52 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _restoreServerSession() async {
+  // A cold-start restore and a lifecycle resume may arrive in the same frame.
+  // A refresh credential is single-use; never launch two independent restores.
+  Future<void> _restoreServerSession() {
+    final existing = _restoreInFlight;
+    if (existing != null) return existing;
+    late final Future<void> ongoing;
+    ongoing = _performRestoreServerSession().whenComplete(() {
+      if (identical(_restoreInFlight, ongoing)) _restoreInFlight = null;
+    });
+    _restoreInFlight = ongoing;
+    return ongoing;
+  }
+
+  void _scheduleSessionRecoveryRetry() {
+    if (!mounted || authenticated || _sessionRetryTimer != null) return;
+    // Bounded exponential backoff; resume can still trigger an immediate retry.
+    final seconds = switch (_coldRecoveryAttempt) {
+      0 => 3,
+      1 => 6,
+      2 => 12,
+      3 => 24,
+      _ => 60,
+    };
+    if (_coldRecoveryAttempt < 5) _coldRecoveryAttempt++;
+    _sessionRetryTimer = Timer(Duration(seconds: seconds), () {
+      _sessionRetryTimer = null;
+      if (mounted && !authenticated &&
+          _sessionState == AuthSessionVisualState.unknown) {
+        unawaited(_restoreServerSession());
+      }
+    });
+  }
+
+  Future<void> _performRestoreServerSession() async {
+    final startingVersion = api.sessionVersion;
     if (mounted) {
       setState(() => _sessionState = AuthSessionVisualState.refreshing);
     }
     if (!await _awaitPassiveRecoveryIdle()) {
-      if (!mounted) return;
+      if (!mounted || api.sessionVersion != startingVersion) return;
       setState(() {
         authenticated = false;
         _sessionState = AuthSessionVisualState.unknown;
         restoreMessage = null;
       });
+      _scheduleSessionRecoveryRetry();
       return;
     }
     if (!mounted) return;
@@ -224,37 +260,54 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
     try {
       result = await api.restorePersistedSession();
     } on PlatformException {
-      if (!mounted) return;
+      if (!mounted || api.sessionVersion != startingVersion) return;
       setState(() {
         authenticated = false;
         _sessionState = AuthSessionVisualState.unknown;
         restoreMessage = null;
       });
+      _scheduleSessionRecoveryRetry();
       return;
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || api.sessionVersion != startingVersion) return;
       setState(() {
         authenticated = false;
         _sessionState = AuthSessionVisualState.unknown;
         restoreMessage = null;
       });
+      _scheduleSessionRecoveryRetry();
       return;
     }
     if (!mounted) return;
+    // Another login/logout may have superseded the cold-start request.
+    if (result != AuthRestoreStatus.restored &&
+        api.sessionVersion != startingVersion) {
+      return;
+    }
     if (result == AuthRestoreStatus.restored) {
+      final restoredVersion = api.sessionVersion;
+      final restoredOwner = api.authenticatedUserId;
+      if (restoredOwner == null) return;
+      bool stillRestoredOwner() => mounted &&
+          api.sessionVersion == restoredVersion &&
+          api.authenticatedUserId == restoredOwner;
       try {
         final profile = await api.getProfile();
-        if (!mounted) return;
+        if (!stillRestoredOwner()) return;
         setState(() {
           authenticated = true;
           _sessionState = AuthSessionVisualState.valid;
           restoreMessage = null;
           elderModeEnabled = profile['elder_mode_enabled'] == true;
         });
+        _coldRecoveryAttempt = 0;
+        _sessionRetryTimer?.cancel();
+        _sessionRetryTimer = null;
         unawaited(notificationClient.onAuthenticated());
         unawaited(_recoverPassiveMemory());
         return;
       } on ApiException catch (exc) {
+        if (!stillRestoredOwner()) return;
         if (exc.statusCode == 423 &&
             exc.message == 'ACCOUNT_DELETION_IN_PROGRESS') {
           setState(() {
@@ -269,12 +322,10 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           return;
         }
         if (isTerminalDurableSessionFailure(exc)) {
-          final owner = api.authenticatedUserId?.trim();
-          if (owner != null && owner.isNotEmpty) {
-            await _disableNativeForTerminalAuthLoss(owner);
-          }
+          await _disableNativeForTerminalAuthLoss(restoredOwner);
+          if (!stillRestoredOwner()) return;
           await notificationClient.onTerminalAuthLoss();
-          if (!mounted) return;
+          if (!stillRestoredOwner()) return;
           setState(() {
             authenticated = false;
             _sessionState = AuthSessionVisualState.signedOut;
@@ -283,8 +334,26 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           return;
         }
       } catch (_) {
-        // Fall through to a safe unauthenticated state.
+        if (!stillRestoredOwner()) return;
+        // Profile is supplementary metadata, not the durable-session authority.
       }
+      // A successful /auth/refresh has already proved server-owned identity. An
+      // independent /user timeout, HTTP 5xx or malformed response must not show
+      // the login screen or destroy the rotated Keychain/Keystore credential.
+      // All subsequent operations still require real server authorization.
+      if (!stillRestoredOwner()) return;
+      setState(() {
+        authenticated = true;
+        _sessionState = AuthSessionVisualState.valid;
+        elderModeEnabled = false; // Unknown until the next successful profile read.
+        restoreMessage = '个人资料暂未刷新，网络恢复后可重试。';
+      });
+      _coldRecoveryAttempt = 0;
+      _sessionRetryTimer?.cancel();
+      _sessionRetryTimer = null;
+      unawaited(notificationClient.onAuthenticated());
+      unawaited(_recoverPassiveMemory());
+      return;
     }
 
     setState(() {
@@ -294,13 +363,12 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
           : AuthSessionVisualState.signedOut;
       restoreMessage = null;
     });
-    if (result == AuthRestoreStatus.serverUnavailable &&
-        !_coldRecoveryRetryUsed) {
-      _coldRecoveryRetryUsed = true;
-      _sessionRetryTimer = Timer(const Duration(seconds: 3), () {
-        _sessionRetryTimer = null;
-        unawaited(_restoreServerSession());
-      });
+    if (result == AuthRestoreStatus.serverUnavailable) {
+      _scheduleSessionRecoveryRetry();
+    } else {
+      _coldRecoveryAttempt = 0;
+      _sessionRetryTimer?.cancel();
+      _sessionRetryTimer = null;
     }
   }
 
@@ -470,6 +538,8 @@ class _JiYiAppState extends State<JiYiApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       if (_sessionState == AuthSessionVisualState.unknown && !authenticated) {
+        _sessionRetryTimer?.cancel();
+        _sessionRetryTimer = null;
         unawaited(_restoreServerSession());
       } else {
         unawaited(_resumeAuthorityAndPassiveMemory());
