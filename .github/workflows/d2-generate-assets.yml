@@ -153,6 +153,11 @@ jobs:
         timeout-minutes: 6
         run: flutter test test/batch5c_life_stages_test.dart --reporter expanded
 
+      - name: Test Batch 5D Life History and Memoirs targeted
+        if: always()
+        timeout-minutes: 8
+        run: flutter test test/batch5d_life_history_memoirs_test.dart --reporter expanded
+
       - name: Generate Today B2 authority candidate
         timeout-minutes: 5
         shell: bash
@@ -528,6 +533,46 @@ jobs:
           retention-days: 14
           path: /tmp/batch5c-v3-candidates/*.png
 
+      - name: Generate Batch 5D Life History and Memoir candidates
+        if: always()
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/batch5d-v3-candidates
+          mkdir -p /tmp/batch5d-v3-candidates
+          mkdir -p test/goldens
+          for candidate in \
+            "candidate: Batch 5D multi-year timeline|life_history_v3_batch5d.png" \
+            "candidate: Batch 5D annual review with evidence|annual_review_v3_batch5d.png" \
+            "candidate: Batch 5D annual photos and memoir chapter|memoir_chapter_v3_batch5d.png" \
+            "candidate: Batch 5D loading and no-evidence state|memoir_no_evidence_v3_batch5d.png"; do
+            name="${candidate%%|*}"
+            file="${candidate##*|}"
+            flutter test test/batch5d_life_history_memoirs_test.dart \
+              --plain-name "$name" \
+              --update-goldens \
+              --dart-define=UIUX_V3_BATCH5D_CANDIDATE_MODE=true \
+              --reporter expanded
+            test -s "test/goldens/$file"
+            cp "test/goldens/$file" /tmp/batch5d-v3-candidates/
+          done
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          for file in /tmp/batch5d-v3-candidates/*.png; do
+            test -s "$file"
+          done
+
+      - name: Upload Batch 5D Life History and Memoir review candidates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uiux-v3-batch5d-life-history-memoirs-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/batch5d-v3-candidates/*.png
+
       - name: Upload Memory V3 candidates
         uses: actions/upload-artifact@v4
         with:
@@ -677,6 +722,10 @@ jobs:
               'batch5c_life_stages': ('design_reference/v3/10_life_experience.png', '/tmp/batch5c-v3-candidates/life_stages_v3_batch5c.png', 44, 22),
               'batch5c_life_stage_detail': ('design_reference/v3/10_life_experience.png', '/tmp/batch5c-v3-candidates/life_stage_detail_v3_batch5c.png', 44, 22),
               'batch5c_life_stage_editor': ('design_reference/v3/10_life_experience.png', '/tmp/batch5c-v3-candidates/life_stage_editor_v3_batch5c.png', 44, 22),
+              'batch5d_life_history': ('design_reference/v3/09_year_review.png', '/tmp/batch5d-v3-candidates/life_history_v3_batch5d.png', 44, 22),
+              'batch5d_annual_review': ('design_reference/v3/09_year_review.png', '/tmp/batch5d-v3-candidates/annual_review_v3_batch5d.png', 44, 22),
+              'batch5d_memoir_chapter': ('design_reference/v3/09_year_review.png', '/tmp/batch5d-v3-candidates/memoir_chapter_v3_batch5d.png', 44, 22),
+              'batch5d_no_evidence': ('design_reference/v3/10_life_experience.png', '/tmp/batch5d-v3-candidates/memoir_no_evidence_v3_batch5d.png', 44, 22),
               # Place Detail has no dedicated V3 Design Authority PNG. This
               # existing committed golden is a regression reference only, not
               # an acceptance authority.
@@ -692,6 +741,11 @@ jobs:
               if candidate.is_file():
                   shutil.copy2(candidate, root / 'candidate' / name)
 
+          for name in ('life_history_v3_batch5d.png', 'annual_review_v3_batch5d.png', 'memoir_chapter_v3_batch5d.png', 'memoir_no_evidence_v3_batch5d.png'):
+              candidate = Path('/tmp/batch5d-v3-candidates') / name
+              if candidate.is_file():
+                  shutil.copy2(candidate, root / 'candidate' / name)
+
           def normalize(authority, size):
               target_w, target_h = size
               scale = min(target_w / authority.width, target_h / authority.height)
@@ -703,7 +757,7 @@ jobs:
               return canvas
 
           report = [
-              f'# UIUX-V3-05 Design Authority Audit ({head})',
+              f'# UIUX-V3-06 Design Authority Audit ({head})',
               '',
               'Review-only package. Design Authority PNGs are copied, never modified.',
               '',
@@ -785,6 +839,18 @@ jobs:
               '| Batch 5C identity fencing | `V2Authority` + API/owner/session/stage identity | Widget/API rebind invalidates reads, dialogs, mutations and reasoning; stale account results cannot overwrite the current stage page. |',
               '| Batch 5C responsive/accessibility | V3 components and tap-target contract | Candidate/test coverage includes 390 light, 320 at 200% text, dark theme, semantic actions and no-overflow assertions. |',
               '',
+              '## Batch 5D Life History and Memoir contract notes',
+              '',
+              '| Design element | Real authority | Implemented / deferred |',
+              '|---|---|---|',
+              '| Multi-year timeline | `V2Api.getLifeHistory` + server-owned IANA timezone + opaque cursor | Production groups real event/stage records by server timezone, preserves canonical IDs, dedupes page append, and exposes real detail routes only when IDs exist. |',
+              '| Annual review | `V2Api.generateAnnualMemoir` + strict status/citation parser | Explicit user action only; confirmed records, AI整理, no-evidence, provider failure and retry remain distinct. |',
+              '| Annual photos | `getAnnualMemoirPhotos` + `MediaPresentationResolver` + owner-scoped cache | Only server-returned `media_id` entries are rendered; cache miss/offline/signed-download failure stays visible and no photo is fabricated. |',
+              '| Life story chapters | `getLifeMemoirStages` + `generateLifeMemoirChapter(stageId)` | Canonical stage selection, citations and trust status are preserved; no chapter is generated before explicit action. |',
+              '| Batch 5D identity fencing | `V2Authority` + `V2OperationFlight` + exact preview route | API/owner/session/year/stage changes clear visible state and reject stale reads, writes, photos and chapter results. |',
+              '| Batch 5D visual status | `design_reference/v3/09_year_review.png` and `10_life_experience.png` | Four production candidates are review-only `DERIVED V3 / V3_PARTIAL`; no Design Authority PNG or committed Golden is modified. |',
+              '| Batch 5D responsive/accessibility | V3 shell, semantics and tap-target contract | Candidate/test coverage includes 390 light, 320 at 200% text, dark theme, no-overflow, empty and failure evidence. |',
+              '',
               '## Batch 5A visual difference matrix',
               '',
               '| Surface / element | Candidate status | Review decision |',
@@ -850,6 +916,8 @@ jobs:
               'BATCH 5B AUTHORITY STATUS: DERIVED V3 / V3_PARTIAL; authority is read-only 10_life_experience.png; candidate-only, no committed Golden update',
               'BATCH 5C PRODUCTION CANDIDATES: batch5c_life_stages, batch5c_life_stage_detail, batch5c_life_stage_editor',
               'BATCH 5C AUTHORITY STATUS: DERIVED V3 / V3_PARTIAL; authority is read-only 10_life_experience.png with 03_life.png hierarchy context; candidates only, no committed Golden update',
+              'BATCH 5D PRODUCTION CANDIDATES: batch5d_life_history, batch5d_annual_review, batch5d_memoir_chapter, batch5d_no_evidence',
+              'BATCH 5D AUTHORITY STATUS: DERIVED V3 / V3_PARTIAL; authority is read-only 09_year_review.png / 10_life_experience.png; candidate-only, no committed Golden update',
               '',
           ]
           manifest.extend(f'{name}: {authority} -> {candidate}' for name, (authority, candidate, _, _) in cases.items())

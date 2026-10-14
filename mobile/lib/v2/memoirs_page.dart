@@ -9,7 +9,9 @@ import '../api_client.dart';
 import '../media_presentation_cache.dart';
 import '../ui/jiyi_components.dart';
 import '../ui/jiyi_format.dart';
+import '../ui/jiyi_timezone.dart';
 import '../ui/jiyi_tokens.dart';
+import '../ui/jiyi_v3_components.dart';
 import 'life_editors.dart';
 import 'life_models.dart';
 import 'memoir_models.dart';
@@ -49,6 +51,15 @@ class _MemoirsPageState extends State<MemoirsPage> {
   final V2OperationFlight annualFlight = V2OperationFlight();
   final V2OperationFlight chapterFlight = V2OperationFlight();
 
+  JiYiApiClient? _boundApi;
+  String? _boundOwner;
+  int? _boundSessionVersion;
+  bool _rebindScheduled = false;
+  bool annualTimelineLoading = false;
+  bool annualPhotoLoading = false;
+  Route<dynamic>? _previewRoute;
+  bool _previewOpen = false;
+
   late final TextEditingController year;
 
   V2AnnualMemoir? annual;
@@ -68,13 +79,83 @@ class _MemoirsPageState extends State<MemoirsPage> {
   bool chapterLoading = false;
   String? chapterError;
 
+  bool get _bindingMatches =>
+      identical(_boundApi, widget.api) &&
+      _boundOwner == widget.api.authenticatedUserId &&
+      _boundSessionVersion == widget.api.sessionVersion;
+
   @override
   void initState() {
     super.initState();
+    _rememberBinding();
     year = TextEditingController(
       text: (DateTime.now().year - 1).toString().padLeft(4, '0'),
     );
     year.addListener(_yearChanged);
+    _loadStages(append: false);
+  }
+
+  void _rememberBinding() {
+    _boundApi = widget.api;
+    _boundOwner = widget.api.authenticatedUserId;
+    _boundSessionVersion = widget.api.sessionVersion;
+  }
+
+  @override
+  void didUpdateWidget(covariant MemoirsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.api, widget.api)) _scheduleRebind();
+  }
+
+  void _scheduleRebind() {
+    if (_rebindScheduled) return;
+    _rebindScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _rebindScheduled = false;
+      if (mounted) _rebind();
+    });
+  }
+
+  void _checkBinding() {
+    if (!_bindingMatches) _scheduleRebind();
+  }
+
+  void _rebind() {
+    annualAuthority.invalidate();
+    annualTimelineAuthority.invalidate();
+    annualPhotoAuthority.invalidate();
+    mediaPreviewAuthority.invalidate();
+    memoirIndexAuthority.invalidate();
+    chapterAuthority.invalidate();
+    annualFlight.invalidate();
+    chapterFlight.invalidate();
+    final route = _previewRoute;
+    if (_previewOpen && route != null && route.isActive) {
+      route.navigator?.removeRoute(route);
+    }
+    _previewRoute = null;
+    _previewOpen = false;
+    _rememberBinding();
+    if (!mounted) return;
+    setState(() {
+      annual = null;
+      annualTimeline = const [];
+      annualTimelineCursor = null;
+      annualPhotos = const [];
+      annualPhotoCursor = null;
+      annualLoading = false;
+      annualTimelineLoading = false;
+      annualPhotoLoading = false;
+      annualError = null;
+      stages = const [];
+      stageCursor = null;
+      stageLoading = false;
+      stageError = null;
+      selectedStageId = null;
+      chapter = null;
+      chapterLoading = false;
+      chapterError = null;
+    });
     _loadStages(append: false);
   }
 
@@ -108,6 +189,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
       annualPhotoCursor = null;
       annualLoading = false;
       annualError = null;
+      annualTimelineLoading = false;
+      annualPhotoLoading = false;
     });
   }
 
@@ -131,6 +214,9 @@ class _MemoirsPageState extends State<MemoirsPage> {
         operation.snapshot.identity,
       ) &&
       flight.isCurrent(operation.token, widget.api);
+
+  String _timelineItemKey(V2LifeHistoryItem item) =>
+      '${item.kind}:${item.lifeEventId ?? item.lifeStageId ?? item.title}:${item.occurredAt}';
 
   Future<void> _generateAnnual() async {
     final target = _validYear();
@@ -156,6 +242,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
       annualTimelineCursor = null;
       annualPhotos = const [];
       annualPhotoCursor = null;
+      annualTimelineLoading = false;
+      annualPhotoLoading = false;
     });
     try {
       final result = await v2.generateAnnualMemoir(target);
@@ -180,9 +268,11 @@ class _MemoirsPageState extends State<MemoirsPage> {
   }
 
   Future<void> _moreAnnualTimeline() async {
+    if (annualTimelineLoading) return;
     final current = annual;
     final cursor = annualTimelineCursor;
     if (current == null || cursor == null) return;
+    annualTimelineLoading = true;
     final identity = 'annual-timeline:' + current.targetYear + ':' + cursor;
     late final V2AuthoritySnapshot snapshot;
     try {
@@ -204,22 +294,32 @@ class _MemoirsPageState extends State<MemoirsPage> {
         return;
       }
       setState(() {
-        annualTimeline = List.unmodifiable([...annualTimeline, ...page.items]);
+        final merged = <String, V2LifeHistoryItem>{
+          for (final item in annualTimeline) _timelineItemKey(item): item,
+          for (final item in page.items) _timelineItemKey(item): item,
+        };
+        annualTimeline = List.unmodifiable(merged.values);
         annualTimelineCursor = page.nextCursor;
+        annualTimelineLoading = false;
       });
     } catch (exc) {
       if (!mounted ||
           !annualTimelineAuthority.isCurrent(widget.api, snapshot, identity)) {
         return;
       }
-      setState(() => annualError = exc.toString());
+      setState(() {
+        annualError = exc.toString();
+        annualTimelineLoading = false;
+      });
     }
   }
 
   Future<void> _moreAnnualPhotos() async {
+    if (annualPhotoLoading) return;
     final current = annual;
     final cursor = annualPhotoCursor;
     if (current == null || cursor == null) return;
+    annualPhotoLoading = true;
     final identity = 'annual-photos:' + current.targetYear + ':' + cursor;
     late final V2AuthoritySnapshot snapshot;
     try {
@@ -240,15 +340,23 @@ class _MemoirsPageState extends State<MemoirsPage> {
         return;
       }
       setState(() {
-        annualPhotos = List.unmodifiable([...annualPhotos, ...page.items]);
+        final merged = <String, V2AnnualMemoirPhoto>{
+          for (final item in annualPhotos) item.mediaId: item,
+          for (final item in page.items) item.mediaId: item,
+        };
+        annualPhotos = List.unmodifiable(merged.values);
         annualPhotoCursor = page.nextCursor;
+        annualPhotoLoading = false;
       });
     } catch (exc) {
       if (!mounted ||
           !annualPhotoAuthority.isCurrent(widget.api, snapshot, identity)) {
         return;
       }
-      setState(() => annualError = exc.toString());
+      setState(() {
+        annualError = exc.toString();
+        annualPhotoLoading = false;
+      });
     }
   }
 
@@ -277,7 +385,8 @@ class _MemoirsPageState extends State<MemoirsPage> {
           annual?.targetYear != current.targetYear) {
         return;
       }
-      await showDialog<void>(
+      final navigator = Navigator.of(context, rootNavigator: true);
+      final route = DialogRoute<void>(
         context: context,
         builder: (_) => Dialog(
           child: ConstrainedBox(
@@ -297,7 +406,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.of(context).pop(),
                   child: const Text('关闭'),
                 ),
               ],
@@ -305,6 +414,14 @@ class _MemoirsPageState extends State<MemoirsPage> {
           ),
         ),
       );
+      _previewRoute = route;
+      _previewOpen = true;
+      try {
+        await navigator.push<void>(route);
+      } finally {
+        _previewOpen = false;
+        if (identical(_previewRoute, route)) _previewRoute = null;
+      }
     } on MediaUnavailableOffline {
       if (!mounted ||
           !mediaPreviewAuthority.isCurrent(widget.api, snapshot, identity)) {
@@ -346,9 +463,11 @@ class _MemoirsPageState extends State<MemoirsPage> {
         return;
       }
       setState(() {
-        stages = append
-            ? List.unmodifiable([...stages, ...page.items])
-            : page.items;
+        final merged = <String, V2LifeMemoirStage>{
+          if (append) for (final item in stages) item.lifeStageId: item,
+          for (final item in page.items) item.lifeStageId: item,
+        };
+        stages = List.unmodifiable(merged.values);
         stageCursor = page.nextCursor;
         stageLoading = false;
       });
@@ -415,28 +534,32 @@ class _MemoirsPageState extends State<MemoirsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('回忆总结')),
-      body: SafeArea(
-        child: JiYiPageFrame(
-          title: '回忆总结',
-          subtitle: '用已经记录的照片、时间和重要经历，慢慢把过去翻回来。',
-          hero: const JiYiHeroHeader(
-            atmospheric: true,
-            eyebrow: '迹忆 · 回忆总结',
-            title: '把生活翻回来',
-            subtitle: '从照片和时间开始，再把值得记住的片段整理成故事。',
-            icon: Icons.auto_awesome_outlined,
+    _checkBinding();
+    return V3PageScaffold(
+      topBar: V3TopBar(
+        title: '回忆总结',
+        subtitle: '从真实照片、时间和经历中慢慢回看',
+        onBack: () => Navigator.of(context).maybePop(),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          V3SurfaceCard(
+            color: Theme.of(context).colorScheme.primaryContainer,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('把生活翻回来', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: JiYiSpacing.xs),
+                Text('先看已经保存的记录，再决定是否生成一段有依据的故事。'),
+              ],
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _annualCard(),
-              const SizedBox(height: JiYiSpacing.xxl),
-              _lifeMemoirCard(),
-            ],
-          ),
-        ),
+          const SizedBox(height: JiYiSpacing.xl),
+          _annualCard(),
+          const SizedBox(height: JiYiSpacing.xxl),
+          _lifeMemoirCard(),
+        ],
       ),
     );
   }
@@ -451,31 +574,37 @@ class _MemoirsPageState extends State<MemoirsPage> {
           subtitle: '选择一年，用已经保存的照片和记录回看那一年的生活。',
         ),
         const SizedBox(height: JiYiSpacing.md),
-        V2SectionCard(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: year,
-                  keyboardType: TextInputType.number,
-                  maxLength: 4,
-                  decoration: const InputDecoration(
-                    labelText: '想回看的年份',
-                    hintText: '例如 2025',
-                  ),
+        V3SurfaceCard(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final field = TextField(
+                controller: year,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                decoration: const InputDecoration(
+                  labelText: '想回看的年份',
+                  hintText: '例如 2025',
                 ),
-              ),
-              const SizedBox(width: JiYiSpacing.sm),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: FilledButton.icon(
-                  onPressed: annualLoading ? null : _generateAnnual,
-                  icon: const Icon(Icons.auto_awesome),
-                  label: Text(annualLoading ? '整理中…' : '开始回看'),
-                ),
-              ),
-            ],
+              );
+              final action = FilledButton.icon(
+                onPressed: annualLoading ? null : _generateAnnual,
+                icon: const Icon(Icons.auto_awesome),
+                label: Text(annualLoading ? '整理中…' : '开始回看'),
+              );
+              return constraints.maxWidth < 360
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [field, action],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: field),
+                        const SizedBox(width: JiYiSpacing.sm),
+                        action,
+                      ],
+                    );
+            },
           ),
         ),
         if (annualError != null) ...[
@@ -488,6 +617,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
             key: const ValueKey('annual-story-hero'),
             year: result.targetYear,
             presentation: result.presentation,
+            narrativeStatus: result.narrativeStatus,
             narrative: result.narrative,
           ),
           const SizedBox(height: JiYiSpacing.xl),
@@ -517,6 +647,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
                     api: widget.api,
                     mediaCache: _mediaCache,
                     photo: photo,
+                    timezone: result.timezone,
                     onTap: () => _previewPhoto(photo),
                   );
                 },
@@ -527,9 +658,9 @@ class _MemoirsPageState extends State<MemoirsPage> {
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
-                onPressed: _moreAnnualPhotos,
+                onPressed: annualPhotoLoading ? null : _moreAnnualPhotos,
                 icon: const Icon(Icons.add_photo_alternate_outlined),
-                label: const Text('查看更多照片'),
+                label: Text(annualPhotoLoading ? '正在读取…' : '查看更多照片'),
               ),
             ),
           ],
@@ -551,6 +682,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
             for (var index = 0; index < annualTimeline.length; index++)
               _AnnualTimelineRow(
                 item: annualTimeline[index],
+                timezone: result.timezone,
                 isLast: index == annualTimeline.length - 1,
               ),
           if (annualTimelineCursor != null) ...[
@@ -558,9 +690,9 @@ class _MemoirsPageState extends State<MemoirsPage> {
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
-                onPressed: _moreAnnualTimeline,
+                onPressed: annualTimelineLoading ? null : _moreAnnualTimeline,
                 icon: const Icon(Icons.expand_more),
-                label: const Text('继续回看'),
+                label: Text(annualTimelineLoading ? '正在读取…' : '继续回看'),
               ),
             ),
           ],
@@ -590,12 +722,15 @@ class _MemoirsPageState extends State<MemoirsPage> {
 
   Widget _lifeMemoirCard() {
     final result = chapter;
-    return V2SectionCard(
-      title: '人生故事',
-      subtitle: '选择一个人生阶段，需要时再让 AI 帮你整理成故事。',
+    return V3SurfaceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const V3SectionHeader(
+            title: '人生故事',
+            subtitle: '选择一个真实人生阶段，需要时再生成有依据的章节。',
+          ),
+          const SizedBox(height: JiYiSpacing.md),
           OutlinedButton(
             onPressed: stageLoading ? null : () => _loadStages(append: false),
             child: Text(stageLoading ? '加载中…' : '刷新人生阶段'),
@@ -669,11 +804,13 @@ class _AnnualStoryHero extends StatelessWidget {
     super.key,
     required this.year,
     required this.presentation,
+    required this.narrativeStatus,
     required this.narrative,
   });
 
   final String year;
   final AiPresentation presentation;
+  final String narrativeStatus;
   final String? narrative;
 
   @override
@@ -710,7 +847,9 @@ class _AnnualStoryHero extends StatelessWidget {
             ),
             const SizedBox(height: JiYiSpacing.xs),
             Text(
-              '这一年的故事',
+              narrativeStatus == 'NO_SUMMARIZABLE_EVIDENCE'
+                  ? '还没有足够的记录'
+                  : '这一年的故事',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
@@ -719,7 +858,9 @@ class _AnnualStoryHero extends StatelessWidget {
             V2TrustBadge(presentation: presentation),
             const SizedBox(height: JiYiSpacing.sm),
             Text(
-              presentation.detail,
+              narrativeStatus == 'NO_SUMMARIZABLE_EVIDENCE'
+                  ? '目前没有足够的真实记录来生成年度回顾。'
+                  : presentation.detail,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 height: 1.5,
@@ -748,12 +889,14 @@ class _AnnualPhotoCard extends StatelessWidget {
     required this.api,
     required this.mediaCache,
     required this.photo,
+    required this.timezone,
     required this.onTap,
   });
 
   final JiYiApiClient api;
   final LocalMediaCache mediaCache;
   final V2AnnualMemoirPhoto photo;
+  final String timezone;
   final VoidCallback onTap;
 
   @override
@@ -802,7 +945,7 @@ class _AnnualPhotoCard extends StatelessWidget {
                     ),
                     const SizedBox(height: JiYiSpacing.xxs),
                     Text(
-                      jiyiDisplayDate(photo.occurredAt),
+                      _dateLabel(),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -816,12 +959,23 @@ class _AnnualPhotoCard extends StatelessWidget {
       ),
     );
   }
+
+  String _dateLabel() {
+    final wall = jiyiDateTimeInTimezone(photo.occurredAt, timezone);
+    if (wall == null) return jiyiDisplayDate(photo.occurredAt);
+    return '${wall.year}年${wall.month}月${wall.day}日';
+  }
 }
 
 class _AnnualTimelineRow extends StatelessWidget {
-  const _AnnualTimelineRow({required this.item, required this.isLast});
+  const _AnnualTimelineRow({
+    required this.item,
+    required this.timezone,
+    required this.isLast,
+  });
 
   final V2LifeHistoryItem item;
+  final String timezone;
   final bool isLast;
 
   @override
@@ -835,7 +989,7 @@ class _AnnualTimelineRow extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.only(top: JiYiSpacing.sm),
             child: Text(
-              jiyiDisplayDate(item.occurredAt),
+              _dateLabel(),
               textAlign: TextAlign.end,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
@@ -880,6 +1034,12 @@ class _AnnualTimelineRow extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _dateLabel() {
+    final wall = jiyiDateTimeInTimezone(item.occurredAt, timezone);
+    if (wall == null) return jiyiDisplayDate(item.occurredAt);
+    return '${wall.month}月${wall.day}日';
   }
 }
 
