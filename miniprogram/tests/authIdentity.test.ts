@@ -177,3 +177,12 @@ test('profile exposes a separate account-security route without provider fake su
   const source = readFileSync('src/pages/profile/index.tsx', 'utf8')
   assert.match(source, /pages\/account-security\/index/)
 })
+
+test('account-security visual capture mounts the production page with masked identities', () => {
+  const capture = readFileSync('scripts/capture-visual-review.mjs', 'utf8')
+  assert.match(capture, /#\/pages\/account-security\/index/)
+  assert.match(capture, /jiyi_auth_session/)
+  assert.match(capture, /g\*\*\*@example\.test/)
+  assert.match(capture, /route\.request\(\)\.method\(\) !== 'GET'/)
+  assert.match(capture, /account-security-empty/)
+})

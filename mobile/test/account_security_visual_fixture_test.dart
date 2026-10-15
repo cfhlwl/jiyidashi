@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,11 +7,13 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:jiyidashi/account_security_page.dart';
 import 'package:jiyidashi/api_client.dart';
+import 'package:jiyidashi/ui/jiyi_theme.dart';
 
 const _candidateMode = bool.fromEnvironment(
   'AUTH_006_ACCOUNT_SECURITY_CANDIDATE',
   defaultValue: false,
 );
+const _fixtureFontFamily = 'AUTH006NotoSansSC';
 const _canvasKey = ValueKey<String>('auth-006-account-security-canvas');
 const _headers = {'content-type': 'application/json'};
 const _userId = '11111111-1111-4111-8111-111111111111';
@@ -84,6 +87,7 @@ Future<void> _pumpAccountSecurity(
     MaterialApp(
       debugShowCheckedModeBanner: false,
       locale: const Locale('zh', 'CN'),
+      theme: JiYiTheme.light(fontFamily: _fixtureFontFamily),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
           textScaler: TextScaler.linear(textScale),
@@ -99,8 +103,19 @@ Future<void> _pumpAccountSecurity(
   await tester.pumpAndSettle();
 }
 
+Future<void> _loadFixtureFont() async {
+  final bytes = await File(
+    'test/assets/visual/NotoSansSC-Regular.otf',
+  ).readAsBytes();
+  final loader = FontLoader(_fixtureFontFamily)
+    ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+  await loader.load();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(_loadFixtureFont);
 
   testWidgets('AUTH-006 account security page fits small screen and large text',
       (tester) async {
