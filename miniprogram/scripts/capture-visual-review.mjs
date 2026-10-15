@@ -140,7 +140,10 @@ try {
 
       if (productionAccountSecurity) {
         await page.addInitScript((session) => {
-          window.localStorage.setItem('jiyi_auth_session', JSON.stringify(session))
+          window.localStorage.setItem(
+            'jiyi_auth_session',
+            JSON.stringify({ data: session }),
+          )
         }, visualSession)
         await page.route('**/v1/auth/identities*', async (route) => {
           if (route.request().method() !== 'GET') {
