@@ -142,7 +142,7 @@ try {
         await page.addInitScript((session) => {
           window.localStorage.setItem('jiyi_auth_session', JSON.stringify(session))
         }, visualSession)
-        await page.route('https://api.example.invalid/v1/auth/identities', async (route) => {
+        await page.route('**/v1/auth/identities*', async (route) => {
           if (route.request().method() !== 'GET') {
             throw new Error('AUTH-006 visual page attempted a non-GET identity mutation')
           }
@@ -189,7 +189,9 @@ try {
           throw new Error(scene + '@' + width + ': empty-state fixture did not render')
         }
         if (!emptyAccountSecurity && !text.includes('g***@example.test')) {
-          throw new Error(scene + '@' + width + ': masked server identity did not render')
+          throw new Error(
+            scene + '@' + width + ': masked server identity did not render; page text=' + JSON.stringify(text),
+          )
         }
       }
 
