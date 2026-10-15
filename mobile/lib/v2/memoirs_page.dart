@@ -114,7 +114,10 @@ class _MemoirsPageState extends State<MemoirsPage> {
   }
 
   void _sessionChanged() {
-    if (mounted) _scheduleRebind();
+    // Session authority changes are revocations, not ordinary widget updates:
+    // clear the already-rendered account-owned surface synchronously so a
+    // single frame cannot continue to expose the previous owner's content.
+    if (mounted) _rebind();
   }
 
   void _scheduleRebind() {

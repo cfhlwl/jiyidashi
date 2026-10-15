@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -171,7 +172,13 @@ class _PreviewRaceCache extends LocalMediaCache {
     required String mediaId,
     String? cacheVersion,
   }) async {
-    await file.writeAsBytes(const <int>[1], flush: true);
+    await file.writeAsBytes(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+        '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      ),
+      flush: true,
+    );
     return file;
   }
 
@@ -445,7 +452,7 @@ void main() {
     await tester.pump();
     await _loadAnnual(tester);
     await _scrollTo(tester, find.text('团队合影', skipOffstage: false));
-    await tester.tap(find.text('团队合影'));
+    await tester.tap(find.byKey(ValueKey('annual-photo-$v2MediaId')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('memoir-photo-close')), findsOneWidget);
 
