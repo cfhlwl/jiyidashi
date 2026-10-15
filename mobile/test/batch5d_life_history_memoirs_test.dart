@@ -459,7 +459,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('memoir-photo-close')), findsOneWidget);
+    expect(observer.previewRoute, isNotNull);
+    expect(observer.previewRoute!.isActive, isTrue);
 
     await tester.tap(find.byKey(const ValueKey('preview-push-overlay')));
     await tester.pumpAndSettle();
@@ -471,7 +472,7 @@ void main() {
     navigator.removeRoute(observer.previewRoute!);
     await tester.pumpAndSettle();
     expect(find.text('其它顶层页面'), findsOneWidget);
-    expect(find.byKey(const ValueKey('memoir-photo-close')), findsNothing);
+    expect(observer.previewRoute!.isActive, isFalse);
   });
 
   testWidgets('candidate: Batch 5D multi-year timeline', (tester) async {
