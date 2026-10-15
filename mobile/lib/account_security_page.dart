@@ -195,14 +195,25 @@ class _AccountSecurityPageState extends State<AccountSecurityPage> {
     final verified = identity.verifiedAt != null;
     return Card(
       key: ValueKey('account-identity-${identity.identityId}'),
-      child: ListTile(
-        title: Text(_providerName(identity.provider)),
-        subtitle: Text('${identity.subjectHint}\n${verified ? '已验证' : '未验证'}'),
-        isThreeLine: true,
-        trailing: Text(
-          '绑定时间\n${identity.linkedAt.toLocal().toIso8601String()}',
-          textAlign: TextAlign.end,
-          style: Theme.of(context).textTheme.bodySmall,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _providerName(identity.provider),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(identity.subjectHint),
+            const SizedBox(height: 4),
+            Text(verified ? '已验证' : '未验证'),
+            const SizedBox(height: 4),
+            Text(
+              '绑定时间 ${identity.linkedAt.toLocal().toIso8601String()}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ),
       ),
     );
