@@ -452,7 +452,12 @@ void main() {
     await tester.pump();
     await _loadAnnual(tester);
     await _scrollTo(tester, find.text('团队合影', skipOffstage: false));
-    await tester.tap(find.byKey(ValueKey('annual-photo-$v2MediaId')));
+    await tester.tap(
+      find.ancestor(
+        of: find.byKey(ValueKey('annual-photo-$v2MediaId')),
+        matching: find.byType(InkWell),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('memoir-photo-close')), findsOneWidget);
 
