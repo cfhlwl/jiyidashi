@@ -443,7 +443,7 @@ void main() {
     await _loadAnnual(tester);
     await _scrollTo(tester, find.text('团队合影', skipOffstage: false));
     await tester.tap(
-      find.byKey(ValueKey('annual-photo-card-$v2MediaId')),
+      find.byKey(const ValueKey('annual-photo-card-$v2MediaId')),
     );
     for (var attempt = 0; attempt < 40 && observer.previewRoute == null; attempt++) {
       await tester.pump(const Duration(milliseconds: 100));
