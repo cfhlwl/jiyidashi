@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jiyidashi/media_presentation_cache.dart';
 import 'package:jiyidashi/ui/jiyi_theme.dart';
 import 'package:jiyidashi/v2/life_history_page.dart';
 import 'package:jiyidashi/v2/memoirs_page.dart';
@@ -137,6 +138,48 @@ class _TaggedMemoirApi extends V2TestApi {
     }
     return super.requestV2Json(method, path, body: body);
   }
+}
+
+class _MemoirRouteObserver extends NavigatorObserver {
+  Route<dynamic>? previewRoute;
+  Route<dynamic>? overlayRoute;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    if (route is DialogRoute<void>) {
+      previewRoute = route;
+    } else if (previousRoute != null && previewRoute != null) {
+      overlayRoute = route;
+    }
+  }
+}
+
+class _PreviewRaceApi extends V2TestApi {}
+
+class _PreviewRaceCache extends LocalMediaCache {
+  _PreviewRaceCache()
+      : super(
+          rootDirectoryProvider: () async => Directory('/tmp/jiyi-5d-unused'),
+        );
+
+  final File file = File('/tmp/jiyi-5d-preview.media');
+
+  @override
+  Future<File?> lookup({
+    required String ownerUserId,
+    required String mediaId,
+    String? cacheVersion,
+  }) async {
+    await file.writeAsBytes(const <int>[1], flush: true);
+    return file;
+  }
+
+  @override
+  bool hasFreshAuthorityLease({
+    required String ownerUserId,
+    required String mediaId,
+  }) => true;
 }
 
 Future<void> _pump(
@@ -353,6 +396,70 @@ void main() {
     expect(find.text('账号 A 阶段', skipOffstage: false), findsNothing);
     await tester.pumpAndSettle();
     expect(find.text('账号 B 阶段', skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('Batch 5D session change rebinds mounted memoir route without rebuild',
+      (tester) async {
+    final api = _TaggedMemoirApi('账号 A');
+    await _pump(tester, MemoirsPage(api: api));
+    await tester.pumpAndSettle();
+    expect(find.text('账号 A 阶段', skipOffstage: false), findsOneWidget);
+
+    await api.logout();
+    api.accessToken = 'rebound-token';
+    api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
+    api.tag = '账号 B';
+    await tester.pump();
+    expect(find.text('账号 A 阶段', skipOffstage: false), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.text('账号 B 阶段', skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('Batch 5D photo preview close removes only its owned route',
+      (tester) async {
+    final observer = _MemoirRouteObserver();
+    final api = _PreviewRaceApi();
+    final cache = _PreviewRaceCache();
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        navigatorObservers: <NavigatorObserver>[observer],
+        theme: JiYiTheme.light(fontFamily: _batch5dFontFamily),
+        home: MemoirsPage(
+          api: api,
+          mediaCache: cache,
+          photoRenderer: (_) => Builder(
+            builder: (context) => TextButton(
+              key: const ValueKey('preview-push-overlay'),
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => const Scaffold(body: Text('其它顶层页面')),
+                ),
+              ),
+              child: const Text('打开其它顶层页面'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await _loadAnnual(tester);
+    await _scrollTo(tester, find.text('团队合影', skipOffstage: false));
+    await tester.tap(find.text('团队合影'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('memoir-photo-close')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('preview-push-overlay')));
+    await tester.pumpAndSettle();
+    expect(find.text('其它顶层页面'), findsOneWidget);
+    expect(observer.previewRoute, isNotNull);
+    expect(observer.overlayRoute, isNotNull);
+
+    final navigator = observer.previewRoute!.navigator!;
+    navigator.removeRoute(observer.previewRoute!);
+    await tester.pumpAndSettle();
+    expect(find.text('其它顶层页面'), findsOneWidget);
+    expect(find.byKey(const ValueKey('memoir-photo-close')), findsNothing);
   });
 
   testWidgets('candidate: Batch 5D multi-year timeline', (tester) async {

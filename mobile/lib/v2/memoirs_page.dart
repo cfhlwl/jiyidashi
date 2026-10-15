@@ -87,6 +87,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
   @override
   void initState() {
     super.initState();
+    widget.api.addSessionChangeListener(_sessionChanged);
     _rememberBinding();
     year = TextEditingController(
       text: (DateTime.now().year - 1).toString().padLeft(4, '0'),
@@ -105,7 +106,15 @@ class _MemoirsPageState extends State<MemoirsPage> {
   @override
   void didUpdateWidget(covariant MemoirsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.api, widget.api)) _scheduleRebind();
+    if (!identical(oldWidget.api, widget.api)) {
+      oldWidget.api.removeSessionChangeListener(_sessionChanged);
+      widget.api.addSessionChangeListener(_sessionChanged);
+      _scheduleRebind();
+    }
+  }
+
+  void _sessionChanged() {
+    if (mounted) _scheduleRebind();
   }
 
   void _scheduleRebind() {
@@ -162,6 +171,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
 
   @override
   void dispose() {
+    widget.api.removeSessionChangeListener(_sessionChanged);
     year.removeListener(_yearChanged);
     year.dispose();
     annualAuthority.invalidate();
@@ -173,6 +183,13 @@ class _MemoirsPageState extends State<MemoirsPage> {
     annualFlight.invalidate();
     chapterFlight.invalidate();
     super.dispose();
+  }
+
+  void _removePreviewRoute(Route<dynamic> route) {
+    final navigator = route.navigator;
+    if (navigator != null && route.isActive) {
+      navigator.removeRoute(route);
+    }
   }
 
   void _yearChanged() {
@@ -420,6 +437,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
                   ),
                 ),
                 TextButton(
+                  key: const ValueKey('memoir-photo-close'),
                   onPressed: () {
                     if (!mounted ||
                         !route.isActive ||
@@ -431,7 +449,7 @@ class _MemoirsPageState extends State<MemoirsPage> {
                         )) {
                       return;
                     }
-                    route.navigator?.pop();
+                    _removePreviewRoute(route);
                   },
                   child: const Text('关闭'),
                 ),

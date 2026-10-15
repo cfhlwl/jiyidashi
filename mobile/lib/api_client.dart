@@ -503,6 +503,7 @@ class AuthDiagnosticEvent {
 }
 
 typedef AuthDiagnosticSink = void Function(AuthDiagnosticEvent event);
+typedef ApiSessionChangeListener = void Function();
 
 
 class JiYiApiClient
@@ -530,6 +531,8 @@ class JiYiApiClient
   String? authenticatedUserId;
   int _sessionVersion = 0;
   int _unauthenticatedAuthGeneration = 0;
+  final Set<ApiSessionChangeListener> _sessionChangeListeners =
+      <ApiSessionChangeListener>{};
   Future<void>? _refreshInFlight;
   int? _refreshInFlightVersion;
   String? _refreshInFlightSessionId;
@@ -538,6 +541,29 @@ class JiYiApiClient
 
   // 登录、注册和退出都会推进会话版本；后台同步用它检测账号切换。
   int get sessionVersion => _sessionVersion;
+
+  /// Notifies mounted UI surfaces when this client's authenticated session
+  /// authority changes. The callback carries no data; consumers must reread
+  /// owner/session fields from this client before starting work.
+  void addSessionChangeListener(ApiSessionChangeListener listener) {
+    _sessionChangeListeners.add(listener);
+  }
+
+  void removeSessionChangeListener(ApiSessionChangeListener listener) {
+    _sessionChangeListeners.remove(listener);
+  }
+
+  void _notifySessionChanged() {
+    for (final listener in List<ApiSessionChangeListener>.of(
+      _sessionChangeListeners,
+    )) {
+      try {
+        listener();
+      } catch (_) {
+        // Session observers must never alter authentication semantics.
+      }
+    }
+  }
 
   /// Captures the current unauthenticated authentication attempt authority.
   ///
@@ -1041,6 +1067,7 @@ class JiYiApiClient
     authenticatedUserId = userId;
     if (!sameOwnerSession) {
       _sessionVersion += 1;
+      _notifySessionChanged();
     }
   }
 
@@ -1225,6 +1252,7 @@ class JiYiApiClient
     _accessExpiresAt = null;
     authenticatedUserId = null;
     _sessionVersion += 1;
+    _notifySessionChanged();
     await _runSessionStoreMutation(_sessionStore.clearSession);
   }
 
