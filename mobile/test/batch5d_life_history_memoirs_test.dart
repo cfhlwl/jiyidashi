@@ -455,6 +455,9 @@ void main() {
     await tester.tap(
       find.byKey(ValueKey('annual-photo-card-$v2MediaId')),
     );
+    for (var attempt = 0; attempt < 10 && observer.previewRoute == null; attempt++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
     await tester.pumpAndSettle();
     expect(observer.previewRoute, isNotNull);
     expect(observer.previewRoute!.isActive, isTrue);
