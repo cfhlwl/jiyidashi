@@ -142,7 +142,7 @@ try {
         await page.addInitScript((session) => {
           window.localStorage.setItem('jiyi_auth_session', JSON.stringify(session))
         }, visualSession)
-        await page.route('http://127.0.0.1:8000/v1/auth/identities', async (route) => {
+        await page.route('https://api.example.invalid/v1/auth/identities', async (route) => {
           if (route.request().method() !== 'GET') {
             throw new Error('AUTH-006 visual page attempted a non-GET identity mutation')
           }
