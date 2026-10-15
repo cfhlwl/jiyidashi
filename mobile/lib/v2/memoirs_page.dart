@@ -970,6 +970,7 @@ class _AnnualPhotoCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(JiYiRadius.card),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
+          key: ValueKey('annual-photo-card-${photo.mediaId}'),
           borderRadius: BorderRadius.circular(JiYiRadius.card),
           onTap: onTap,
           child: Column(

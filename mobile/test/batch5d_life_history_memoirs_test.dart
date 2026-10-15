@@ -453,10 +453,7 @@ void main() {
     await _loadAnnual(tester);
     await _scrollTo(tester, find.text('团队合影', skipOffstage: false));
     await tester.tap(
-      find.ancestor(
-        of: find.byKey(ValueKey('annual-photo-$v2MediaId')),
-        matching: find.byType(InkWell),
-      ),
+      find.byKey(ValueKey('annual-photo-card-$v2MediaId')),
     );
     await tester.pumpAndSettle();
     expect(observer.previewRoute, isNotNull);
