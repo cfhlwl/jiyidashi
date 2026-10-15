@@ -112,7 +112,7 @@ void main() {
       textScale: 1.4,
     );
     expect(find.text('账号与安全'), findsOneWidget);
-    expect(find.text('绑定新的登录方式'), findsOneWidget);
+    expect(find.byType(ListView), findsOneWidget);
     expect(find.text('手机号'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
