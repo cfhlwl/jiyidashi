@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -171,16 +170,7 @@ class _PreviewRaceCache extends LocalMediaCache {
     required String ownerUserId,
     required String mediaId,
     String? cacheVersion,
-  }) async {
-    await file.writeAsBytes(
-      base64Decode(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
-        '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-      ),
-      flush: true,
-    );
-    return file;
-  }
+  }) async => file;
 
   @override
   bool hasFreshAuthorityLease({
