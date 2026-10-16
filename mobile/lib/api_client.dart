@@ -599,6 +599,7 @@ class AuthDiagnosticEvent {
 }
 
 typedef AuthDiagnosticSink = void Function(AuthDiagnosticEvent event);
+typedef ApiSessionChangeListener = void Function();
 
 
 class JiYiApiClient
@@ -628,6 +629,8 @@ class JiYiApiClient
   String? authenticatedUserId;
   int _sessionVersion = 0;
   int _unauthenticatedAuthGeneration = 0;
+  final Set<ApiSessionChangeListener> _sessionChangeListeners =
+      <ApiSessionChangeListener>{};
   Future<void>? _refreshInFlight;
   int? _refreshInFlightVersion;
   String? _refreshInFlightSessionId;
@@ -637,6 +640,29 @@ class JiYiApiClient
   // 登录、注册和退出都会推进会话版本；后台同步用它检测账号切换。
   int get sessionVersion => _sessionVersion;
 
+  /// Notifies mounted UI surfaces when this client's authenticated session
+  /// authority changes. The callback carries no data; consumers must reread
+  /// owner/session fields from this client before starting work.
+  void addSessionChangeListener(ApiSessionChangeListener listener) {
+    _sessionChangeListeners.add(listener);
+  }
+
+  void removeSessionChangeListener(ApiSessionChangeListener listener) {
+    _sessionChangeListeners.remove(listener);
+  }
+
+  void _notifySessionChanged() {
+    for (final listener in List<ApiSessionChangeListener>.of(
+      _sessionChangeListeners,
+    )) {
+      try {
+        listener();
+      } catch (_) {
+        // Session observers must never alter authentication semantics.
+      }
+    }
+  }
+
   /// Emits synchronously whenever the active authenticated owner binding
   /// changes. UI surfaces use this to clear server-owned data immediately;
   /// they must still re-check the captured snapshot after every response.
@@ -645,6 +671,7 @@ class JiYiApiClient
   void _advanceSessionVersion() {
     _sessionVersion += 1;
     _authSessionChanges.add(null);
+    _notifySessionChanged();
   }
 
   /// Captures the current unauthenticated authentication attempt authority.

@@ -306,6 +306,10 @@ jobs:
           test/historical_day_query_test.dart
           --reporter expanded
 
+      - name: Test UIUX-V3-06 Batch 5D Life History and Memoirs
+        timeout-minutes: 8
+        run: flutter test test/batch5d_life_history_memoirs_test.dart --reporter expanded
+
       - name: Test NOTIFY-001B client lifecycle
         timeout-minutes: 5
         run: flutter test test/notification_client_test.dart --reporter expanded

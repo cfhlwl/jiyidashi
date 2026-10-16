@@ -268,6 +268,21 @@ class V2TestApi extends JiYiApiClient {
 
     if (method == 'GET' && route == '/life-stages') return [stage];
     if (method == 'GET' && route == '/life-stages/' + v2StageId) return stage;
+    if (method == 'GET' && route == '/memoirs/life/stages') {
+      return {
+        'items': [
+          {
+            'life_stage_id': v2StageId,
+            'stage_kind': 'WORK',
+            'title': '产品创业阶段',
+            'custom_label': null,
+            'started_at': '2025-01-01T00:00:00Z',
+            'ended_at': null,
+          },
+        ],
+        'next_cursor': null,
+      };
+    }
     if (method == 'GET' && route == '/life-stages/' + v2StageId + '/events') {
       return [
         {

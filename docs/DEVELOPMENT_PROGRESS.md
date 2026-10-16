@@ -59,8 +59,11 @@
 
 | ID | 范围 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| UIUX-V3-05-4C | Graph Neighborhood V3 | 🟠 | Issue #254 / 独立 Draft PR：严格消费 `V2Api` Graph Neighborhood，真实节点/边、canonical PERSON 导航、API/owner/session/kind/id rebind 与旧异步结果隔离；候选视觉为 `DERIVED V3 / V3_PARTIAL`，等待独立视觉审查与 CI 验收。 |
-| UIUX-V3-06-5A | Life Home V3 | 🔵 | Issue #257 / 独立 Draft PR 开发中：`03_life.png` 只读视觉参考；保留人生经历、人生阶段、多年时间线、人生故事四个真实入口与 V2 API/owner/session 导航权限；candidate-only 视觉审计，正式 Golden 暂不修改。 |
+| UIUX-V3-05-4C | Graph Neighborhood V3 | 🟠 | Issue #254 / Graph Neighborhood 已完成代码与阶段视觉验收，候选为 `DERIVED V3 / V3_PARTIAL`；最终合并状态按 GitHub PR 记录核验。 |
+| UIUX-V3-06-5A | Life Home V3 | ✅ | Issue #257 / PR #258 已完成 Life Home 生产页面、四个真实入口、owner/session 导航保护及定点 Golden 验收；`03_life.png` 保持只读，视觉状态为 `DERIVED V3 / V3_PARTIAL`。 |
+| UIUX-V3-06-5B | Life Events / Life Event Detail V3 | ✅ | Issue #276 / PR #277 已完成真实事件列表、详情、编辑入口与定点 Golden 验收；`10_life_experience.png` 保持只读，完整设计一致性继续记录为 `V3_PARTIAL`。 |
+| UIUX-V3-06-5C | Life Stages / Stage Detail / Editor V3 | ✅ | Issue #280 / PR #282 已完成阶段列表、详情、编辑器、推理状态和定点 Golden 验收；`09_year_review.png` / `10_life_experience.png` 保持只读，视觉状态为 `V3_PARTIAL`。 |
+| UIUX-V3-06-5D | Multi-year Timeline / Year Review / Life Story V3 | 🔵 | Issue #284 / 当前独立 Draft PR 开发中：复用 `V2Api`、`V2Authority`、`V2OperationFlight` 与 owner-scoped media cache；候选视觉仅供审查，正式 Golden 暂不修改。 |
 
 ## 状态规则
 

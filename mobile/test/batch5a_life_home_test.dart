@@ -134,19 +134,14 @@ void main() {
 
     Future<void> openAndReturn(
       Finder entry,
-      Type pageType, {
-      bool semanticBack = false,
-    }) async {
+      Type pageType,
+    ) async {
       await tester.tap(entry);
       await tester.pumpAndSettle();
       expect(find.byType(pageType), findsOneWidget);
-      if (semanticBack) {
-        final back = find.bySemanticsLabel('返回');
-        expect(back, findsOneWidget);
-        await tester.tap(back);
-      } else {
-        await tester.pageBack();
-      }
+      final back = find.bySemanticsLabel('返回');
+      expect(back, findsOneWidget);
+      await tester.tap(back);
       await tester.pumpAndSettle();
       expect(find.byType(LifePage), findsOneWidget);
     }
@@ -158,7 +153,6 @@ void main() {
     await openAndReturn(
       find.byKey(const ValueKey('life-home-entry-stages')),
       LifeStagesPage,
-      semanticBack: true,
     );
     await openAndReturn(
       find.byKey(const ValueKey('life-home-entry-history')),
@@ -170,7 +164,9 @@ void main() {
     final memoirs = tester.widget<MemoirsPage>(find.byType(MemoirsPage));
     expect(memoirs.api, same(api));
     expect(memoirs.mediaCache, same(mediaCache));
-    await tester.pageBack();
+    final back = find.bySemanticsLabel('返回');
+    expect(back, findsOneWidget);
+    await tester.tap(back);
     await tester.pumpAndSettle();
     expect(find.byType(LifePage), findsOneWidget);
   });
