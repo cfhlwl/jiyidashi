@@ -15,14 +15,16 @@ const _candidateMode = bool.fromEnvironment('UIUX_V3_BATCH5D_CANDIDATE_MODE');
 const _batch5dFontFamily = 'Batch 5D Noto Sans SC';
 
 Future<void> _loadBatch5dFonts() async {
-  final cjkBytes = await File('test/assets/visual/NotoSansSC-Regular.otf')
-      .readAsBytes();
+  final cjkBytes = await File(
+    'test/assets/visual/NotoSansSC-Regular.otf',
+  ).readAsBytes();
   final cjk = FontLoader(_batch5dFontFamily)
     ..addFont(Future<ByteData>.value(ByteData.sublistView(cjkBytes)));
   await cjk.load();
 
-  final iconBytes = await File('test/fonts/MaterialIcons-Regular.otf')
-      .readAsBytes();
+  final iconBytes = await File(
+    'test/fonts/MaterialIcons-Regular.otf',
+  ).readAsBytes();
   final icons = FontLoader('MaterialIcons')
     ..addFont(Future<ByteData>.value(ByteData.sublistView(iconBytes)));
   await icons.load();
@@ -60,6 +62,7 @@ class _NoEvidenceApi extends V2TestApi {
 class _DelayedHistoryApi extends V2TestApi {
   final Completer<void> release = Completer<void>();
   int historyCalls = 0;
+  String tag = '账号 A';
 
   @override
   Future<Object?> requestV2Json(
@@ -71,6 +74,72 @@ class _DelayedHistoryApi extends V2TestApi {
     if (method == 'GET' && uri.path == '/life-history/timeline') {
       historyCalls += 1;
       await release.future;
+      final start = int.parse(uri.queryParameters['start_year'] ?? '2025');
+      final end = int.parse(uri.queryParameters['end_year'] ?? '2025');
+      return {
+        'timezone': 'Asia/Shanghai',
+        'start_year': start,
+        'end_year': end,
+        'as_of': '2026-09-29T00:00:00Z',
+        'items': [
+          {
+            'kind': 'LIFE_EVENT',
+            'occurred_at': '2025-03-01T01:00:00Z',
+            'title': '$tag 时间线',
+            'custom_label': null,
+            'life_event_id': v2EventId,
+            'event_kind': 'WORK',
+            'event_ended_at': null,
+            'place_id': null,
+            'life_stage_id': null,
+            'stage_kind': null,
+          },
+        ],
+        'next_cursor': null,
+      };
+    }
+    return super.requestV2Json(method, path, body: body);
+  }
+}
+
+class _TaggedHistoryApi extends V2TestApi {
+  _TaggedHistoryApi(this.tag);
+
+  String tag;
+  int historyCalls = 0;
+
+  @override
+  Future<Object?> requestV2Json(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final uri = Uri.parse(path);
+    if (method == 'GET' && uri.path == '/life-history/timeline') {
+      historyCalls += 1;
+      final start = int.parse(uri.queryParameters['start_year'] ?? '2025');
+      final end = int.parse(uri.queryParameters['end_year'] ?? '2025');
+      return {
+        'timezone': 'Asia/Shanghai',
+        'start_year': start,
+        'end_year': end,
+        'as_of': '2026-09-29T00:00:00Z',
+        'items': [
+          {
+            'kind': 'LIFE_EVENT',
+            'occurred_at': '2025-03-01T01:00:00Z',
+            'title': '$tag 时间线',
+            'custom_label': null,
+            'life_event_id': v2EventId,
+            'event_kind': 'WORK',
+            'event_ended_at': null,
+            'place_id': null,
+            'life_stage_id': null,
+            'stage_kind': null,
+          },
+        ],
+        'next_cursor': null,
+      };
     }
     return super.requestV2Json(method, path, body: body);
   }
@@ -118,10 +187,10 @@ class _TaggedMemoirApi extends V2TestApi {
 
   @override
   Map<String, dynamic> get stage => {
-        ...super.stage,
-        'life_stage_id': v2StageId,
-        'title': '$tag 阶段',
-      };
+    ...super.stage,
+    'life_stage_id': v2StageId,
+    'title': '$tag 阶段',
+  };
 
   @override
   Future<Object?> requestV2Json(
@@ -159,9 +228,9 @@ class _PreviewRaceApi extends V2TestApi {}
 
 class _PreviewRaceCache extends LocalMediaCache {
   _PreviewRaceCache()
-      : super(
-          rootDirectoryProvider: () async => Directory('/tmp/jiyi-5d-unused'),
-        );
+    : super(
+        rootDirectoryProvider: () async => Directory('/tmp/jiyi-5d-unused'),
+      );
 
   final File file = File('/tmp/jiyi-5d-preview.media');
 
@@ -199,9 +268,9 @@ Future<void> _pump(
       darkTheme: JiYiTheme.dark(fontFamily: _batch5dFontFamily),
       themeMode: mode,
       builder: (context, rendered) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(textScale),
-        ),
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(textScale)),
         child: rendered!,
       ),
       home: child,
@@ -240,7 +309,9 @@ Finder _yearRange(String value) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(_loadBatch5dFonts);
-  testWidgets('Batch 5D multi-year timeline is truthful and navigable', (tester) async {
+  testWidgets('Batch 5D multi-year timeline is truthful and navigable', (
+    tester,
+  ) async {
     await _pump(tester, LifeHistoryPage(api: V2TestApi()));
     await tester.enterText(find.byType(TextField).first, '2020');
     await tester.enterText(find.byType(TextField).last, '2025');
@@ -266,7 +337,9 @@ void main() {
     expect(find.byType(LifeHistoryPage), findsOneWidget);
   });
 
-  testWidgets('Batch 5D rejects reversed year ranges before API access', (tester) async {
+  testWidgets('Batch 5D rejects reversed year ranges before API access', (
+    tester,
+  ) async {
     await _pump(tester, LifeHistoryPage(api: V2TestApi()));
     await tester.enterText(find.byType(TextField).first, '2026');
     await tester.enterText(find.byType(TextField).last, '2025');
@@ -291,31 +364,33 @@ void main() {
     expect(find.text('跨年记录'), findsOneWidget);
   });
 
-  testWidgets('Batch 5D annual review and stage chapter remain evidence-labelled', (tester) async {
-    await _pump(tester, MemoirsPage(api: V2TestApi()));
-    await _loadAnnual(tester);
-    expect(find.text('AI 整理'), findsOneWidget);
-    expect(find.textContaining('这一年，你开始了新的产品阶段'), findsOneWidget);
-    expect(find.text('参考记录 1'), findsOneWidget);
+  testWidgets(
+    'Batch 5D annual review and stage chapter remain evidence-labelled',
+    (tester) async {
+      await _pump(tester, MemoirsPage(api: V2TestApi()));
+      await _loadAnnual(tester);
+      expect(find.text('AI 整理'), findsOneWidget);
+      expect(find.textContaining('这一年，你开始了新的产品阶段'), findsOneWidget);
+      expect(find.text('参考记录 1'), findsOneWidget);
 
-    final refreshStages = find.text('刷新人生阶段', skipOffstage: false);
-    await _scrollTo(tester, refreshStages);
-    await tester.tap(refreshStages);
-    await tester.pumpAndSettle();
-    final stage = find.text('产品创业阶段', skipOffstage: false);
-    await _scrollTo(tester, stage);
-    await tester.tap(stage);
-    await _scrollTo(
-      tester,
-      find.text('生成这个阶段的故事', skipOffstage: false),
-    );
-    await tester.tap(find.text('生成这个阶段的故事'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('这一阶段以产品开发为主线'), findsOneWidget);
-    expect(find.bySemanticsLabel(RegExp('可信状态：AI 整理')), findsNWidgets(2));
-  });
+      final refreshStages = find.text('刷新人生阶段', skipOffstage: false);
+      await _scrollTo(tester, refreshStages);
+      await tester.tap(refreshStages);
+      await tester.pumpAndSettle();
+      final stage = find.text('产品创业阶段', skipOffstage: false);
+      await _scrollTo(tester, stage);
+      await tester.tap(stage);
+      await _scrollTo(tester, find.text('生成这个阶段的故事', skipOffstage: false));
+      await tester.tap(find.text('生成这个阶段的故事'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('这一阶段以产品开发为主线'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('可信状态：AI 整理')), findsNWidgets(2));
+    },
+  );
 
-  testWidgets('Batch 5D no-evidence state never invents a memoir', (tester) async {
+  testWidgets('Batch 5D no-evidence state never invents a memoir', (
+    tester,
+  ) async {
     await _pump(tester, MemoirsPage(api: _NoEvidenceApi()));
     await _loadAnnual(tester);
     expect(find.text('目前没有足够的真实记录来生成年度回顾。'), findsOneWidget);
@@ -323,7 +398,9 @@ void main() {
     expect(find.text('AI 整理'), findsNothing);
   });
 
-  testWidgets('Batch 5D remains usable at compact width and large text', (tester) async {
+  testWidgets('Batch 5D remains usable at compact width and large text', (
+    tester,
+  ) async {
     await _pump(
       tester,
       MemoirsPage(api: V2TestApi()),
@@ -336,7 +413,9 @@ void main() {
     expect(find.text('回忆总结'), findsOneWidget);
   });
 
-  testWidgets('Batch 5D stale timeline result is fenced after session rebind', (tester) async {
+  testWidgets('Batch 5D stale timeline result is fenced after session rebind', (
+    tester,
+  ) async {
     final api = _DelayedHistoryApi();
     await _pump(tester, LifeHistoryPage(api: api));
     await tester.tap(find.byKey(const ValueKey('life-history-submit')));
@@ -345,6 +424,7 @@ void main() {
     final previousSessionVersion = api.sessionVersion;
     await api.logout();
     expect(api.sessionVersion, greaterThan(previousSessionVersion));
+    api.tag = '账号 B';
     api.accessToken = 'v2-test-token-rebound';
     api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
     api.release.complete();
@@ -352,7 +432,31 @@ void main() {
     expect(find.text('加入新团队'), findsNothing);
   });
 
-  testWidgets('Batch 5D memoir API rebind clears A and reloads B', (tester) async {
+  testWidgets(
+    'Batch 5D mounted timeline session change clears A and reloads B',
+    (tester) async {
+      final api = _TaggedHistoryApi('账号 A');
+      await _pump(tester, LifeHistoryPage(api: api));
+      await tester.tap(find.byKey(const ValueKey('life-history-submit')));
+      await tester.pumpAndSettle();
+      expect(find.text('账号 A 时间线', skipOffstage: false), findsOneWidget);
+      expect(api.historyCalls, 1);
+
+      api.tag = '账号 B';
+      await api.logout();
+      api.accessToken = 'rebound-token';
+      api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
+      await tester.pump();
+      expect(find.text('账号 A 时间线', skipOffstage: false), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('账号 B 时间线', skipOffstage: false), findsOneWidget);
+      expect(api.historyCalls, 2);
+    },
+  );
+
+  testWidgets('Batch 5D memoir API rebind clears A and reloads B', (
+    tester,
+  ) async {
     final apiA = _TaggedMemoirApi('账号 A');
     final apiB = _TaggedMemoirApi('账号 B');
     await _pump(tester, MemoirsPage(api: apiA));
@@ -372,7 +476,9 @@ void main() {
     expect(find.text('账号 B 阶段', skipOffstage: false), findsOneWidget);
   });
 
-  testWidgets('Batch 5D same API session rebind clears displayed stages', (tester) async {
+  testWidgets('Batch 5D same API session rebind clears displayed stages', (
+    tester,
+  ) async {
     final api = _TaggedMemoirApi('账号 A');
     await _pump(tester, MemoirsPage(api: api));
     await tester.pumpAndSettle();
@@ -395,25 +501,28 @@ void main() {
     expect(find.text('账号 B 阶段', skipOffstage: false), findsOneWidget);
   });
 
-  testWidgets('Batch 5D session change rebinds mounted memoir route without rebuild',
-      (tester) async {
-    final api = _TaggedMemoirApi('账号 A');
-    await _pump(tester, MemoirsPage(api: api));
-    await tester.pumpAndSettle();
-    expect(find.text('账号 A 阶段', skipOffstage: false), findsOneWidget);
+  testWidgets(
+    'Batch 5D session change rebinds mounted memoir route without rebuild',
+    (tester) async {
+      final api = _TaggedMemoirApi('账号 A');
+      await _pump(tester, MemoirsPage(api: api));
+      await tester.pumpAndSettle();
+      expect(find.text('账号 A 阶段', skipOffstage: false), findsOneWidget);
 
-    await api.logout();
-    api.accessToken = 'rebound-token';
-    api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
-    api.tag = '账号 B';
-    await tester.pump();
-    expect(find.text('账号 A 阶段', skipOffstage: false), findsNothing);
-    await tester.pumpAndSettle();
-    expect(find.text('账号 B 阶段', skipOffstage: false), findsOneWidget);
-  });
+      await api.logout();
+      api.accessToken = 'rebound-token';
+      api.authenticatedUserId = '00000000-0000-4000-8000-000000000002';
+      api.tag = '账号 B';
+      await tester.pump();
+      expect(find.text('账号 A 阶段', skipOffstage: false), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('账号 B 阶段', skipOffstage: false), findsOneWidget);
+    },
+  );
 
-  testWidgets('Batch 5D photo preview close removes only its owned route',
-      (tester) async {
+  testWidgets('Batch 5D photo preview close removes only its owned route', (
+    tester,
+  ) async {
     final observer = _MemoirRouteObserver();
     final api = _PreviewRaceApi();
     final cache = _PreviewRaceCache();
@@ -445,7 +554,11 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('annual-photo-card-$v2MediaId')),
     );
-    for (var attempt = 0; attempt < 40 && observer.previewRoute == null; attempt++) {
+    for (
+      var attempt = 0;
+      attempt < 40 && observer.previewRoute == null;
+      attempt++
+    ) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await tester.pumpAndSettle();
@@ -477,7 +590,9 @@ void main() {
     );
   });
 
-  testWidgets('candidate: Batch 5D annual review with evidence', (tester) async {
+  testWidgets('candidate: Batch 5D annual review with evidence', (
+    tester,
+  ) async {
     if (!_candidateMode) return;
     await _pump(tester, MemoirsPage(api: V2TestApi()));
     await _loadAnnual(tester);
@@ -487,7 +602,9 @@ void main() {
     );
   });
 
-  testWidgets('candidate: Batch 5D annual photos and memoir chapter', (tester) async {
+  testWidgets('candidate: Batch 5D annual photos and memoir chapter', (
+    tester,
+  ) async {
     if (!_candidateMode) return;
     await _pump(tester, MemoirsPage(api: V2TestApi()));
     await _loadAnnual(tester);
@@ -498,10 +615,7 @@ void main() {
     final stage = find.text('产品创业阶段', skipOffstage: false);
     await _scrollTo(tester, stage);
     await tester.tap(stage);
-    await _scrollTo(
-      tester,
-      find.text('生成这个阶段的故事', skipOffstage: false),
-    );
+    await _scrollTo(tester, find.text('生成这个阶段的故事', skipOffstage: false));
     await tester.tap(find.text('生成这个阶段的故事'));
     await tester.pumpAndSettle();
     await expectLater(
@@ -510,7 +624,9 @@ void main() {
     );
   });
 
-  testWidgets('candidate: Batch 5D loading and no-evidence state', (tester) async {
+  testWidgets('candidate: Batch 5D loading and no-evidence state', (
+    tester,
+  ) async {
     if (!_candidateMode) return;
     await _pump(tester, MemoirsPage(api: _NoEvidenceApi()));
     await _loadAnnual(tester);

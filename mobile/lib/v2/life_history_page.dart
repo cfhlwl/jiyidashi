@@ -39,6 +39,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
   String? cursor;
   bool loading = false;
   String? error;
+  bool _historyRequested = false;
 
   bool get _bindingMatches =>
       identical(_boundApi, widget.api) &&
@@ -48,6 +49,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
   @override
   void initState() {
     super.initState();
+    widget.api.addSessionChangeListener(_sessionChanged);
     v2 = V2Api(widget.api);
     _rememberBinding();
     final year = DateTime.now().year;
@@ -66,7 +68,18 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
   @override
   void didUpdateWidget(covariant LifeHistoryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.api, widget.api)) _scheduleRebind();
+    if (!identical(oldWidget.api, widget.api)) {
+      oldWidget.api.removeSessionChangeListener(_sessionChanged);
+      widget.api.addSessionChangeListener(_sessionChanged);
+      _scheduleRebind();
+    }
+  }
+
+  void _sessionChanged() {
+    // Session changes are revocations, not ordinary widget updates: clear the
+    // already-rendered account-owned timeline synchronously before the next
+    // frame can continue to expose the previous owner's records.
+    if (mounted) _rebind();
   }
 
   void _scheduleRebind() {
@@ -79,6 +92,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
   }
 
   void _rebind() {
+    final shouldReload = _historyRequested;
     authority.invalidate();
     v2 = V2Api(widget.api);
     _rememberBinding();
@@ -90,6 +104,11 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
       loading = false;
       error = null;
     });
+    if (shouldReload &&
+        widget.api.accessToken != null &&
+        widget.api.authenticatedUserId != null) {
+      _load(append: false);
+    }
   }
 
   void _checkBinding() {
@@ -98,6 +117,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
 
   @override
   void dispose() {
+    widget.api.removeSessionChangeListener(_sessionChanged);
     startYear.removeListener(_rangeChanged);
     endYear.removeListener(_rangeChanged);
     startYear.dispose();
@@ -121,7 +141,11 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
   ({int start, int end})? _range() {
     final start = int.tryParse(startYear.text.trim());
     final end = int.tryParse(endYear.text.trim());
-    if (start == null || end == null || start < 1 || end > 9998 || start > end) {
+    if (start == null ||
+        end == null ||
+        start < 1 ||
+        end > 9998 ||
+        start > end) {
       return null;
     }
     return (start: start, end: end);
@@ -133,6 +157,7 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
   }
 
   Future<void> _load({required bool append}) async {
+    _historyRequested = true;
     if (loading) return;
     final range = _range();
     if (range == null) {
@@ -141,7 +166,8 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
     }
     final nextCursor = append ? cursor : null;
     if (append && nextCursor == null) return;
-    final identity = 'history:${range.start}:${range.end}:${nextCursor ?? 'root'}';
+    final identity =
+        'history:${range.start}:${range.end}:${nextCursor ?? 'root'}';
     late final V2AuthoritySnapshot snapshot;
     try {
       snapshot = authority.capture(widget.api, identity);
@@ -171,7 +197,8 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
         return;
       }
       final merged = <String, V2LifeHistoryItem>{
-        for (final item in append ? items : const <V2LifeHistoryItem>[]) _itemKey(item): item,
+        for (final item in append ? items : const <V2LifeHistoryItem>[])
+          _itemKey(item): item,
       };
       for (final item in result.items) {
         merged[_itemKey(item)] = item;
@@ -209,17 +236,21 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
         ? LifeEventDetailPage(api: widget.api, eventId: id)
         : LifeStageDetailPage(api: widget.api, stageId: id);
     if (!mounted || !authority.isCurrent(widget.api, snapshot, snapshot.identity)) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => detail),
-    );
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute<void>(builder: (_) => detail));
   }
 
   V3StateSurfaceVariant _errorVariant() {
     final value = error ?? '';
-    if (value.contains('网络') || value.contains('连接') || value.contains('Transport')) {
+    if (value.contains('网络') ||
+        value.contains('连接') ||
+        value.contains('Transport')) {
       return V3StateSurfaceVariant.offline;
     }
-    if (value.contains('401') || value.contains('403') || value.contains('权限')) {
+    if (value.contains('401') ||
+        value.contains('403') ||
+        value.contains('权限')) {
       return V3StateSurfaceVariant.blocked;
     }
     return V3StateSurfaceVariant.error;
@@ -311,7 +342,10 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
                   ? '暂时离线'
                   : '时间线暂时无法显示',
               message: error!,
-              primaryAction: V3StateAction(label: '重试', onPressed: () => _load(append: false)),
+              primaryAction: V3StateAction(
+                label: '重试',
+                onPressed: () => _load(append: false),
+              ),
             ),
           ],
           if (currentPage != null) ...[
@@ -347,7 +381,11 @@ class _LifeHistoryPageState extends State<LifeHistoryPage> {
 }
 
 class _TimelineList extends StatelessWidget {
-  const _TimelineList({required this.items, required this.timezone, required this.onTap});
+  const _TimelineList({
+    required this.items,
+    required this.timezone,
+    required this.onTap,
+  });
 
   final List<V2LifeHistoryItem> items;
   final String timezone;
@@ -382,7 +420,10 @@ class _TimelineList extends StatelessWidget {
         children.add(
           Padding(
             key: ValueKey('history-group-$group'),
-            padding: const EdgeInsets.only(top: JiYiSpacing.md, bottom: JiYiSpacing.xs),
+            padding: const EdgeInsets.only(
+              top: JiYiSpacing.md,
+              bottom: JiYiSpacing.xs,
+            ),
             child: Text(
               group,
               style: theme.textTheme.titleSmall?.copyWith(
@@ -397,7 +438,9 @@ class _TimelineList extends StatelessWidget {
       final hasDetail = item.lifeEventId != null || item.lifeStageId != null;
       children.add(
         V3SurfaceCard(
-          key: ValueKey('history-item-${item.lifeEventId ?? item.lifeStageId ?? item.occurredAt}'),
+          key: ValueKey(
+            'history-item-${item.lifeEventId ?? item.lifeStageId ?? item.occurredAt}',
+          ),
           padding: const EdgeInsets.all(JiYiSpacing.md),
           semanticLabel: item.title,
           onTap: hasDetail ? () => onTap(item) : null,
@@ -412,7 +455,9 @@ class _TimelineList extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(JiYiSpacing.sm),
                   child: Icon(
-                    item.kind == 'LIFE_EVENT' ? Icons.event_note_outlined : Icons.view_timeline_outlined,
+                    item.kind == 'LIFE_EVENT'
+                        ? Icons.event_note_outlined
+                        : Icons.view_timeline_outlined,
                     color: theme.colorScheme.onPrimaryContainer,
                   ),
                 ),
@@ -422,15 +467,27 @@ class _TimelineList extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                    Text(
+                      item.title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                     const SizedBox(height: JiYiSpacing.xxs),
                     Text(
                       '${_kindLabel(item)} · ${_dateTimeLabel(item)}',
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     if (item.placeId != null) ...[
                       const SizedBox(height: JiYiSpacing.xs),
-                      Text('包含已关联地点记录', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary)),
+                      Text(
+                        '包含已关联地点记录',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -442,6 +499,9 @@ class _TimelineList extends StatelessWidget {
       );
       children.add(const SizedBox(height: JiYiSpacing.sm));
     }
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
   }
 }
