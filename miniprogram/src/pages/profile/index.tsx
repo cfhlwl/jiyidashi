@@ -354,6 +354,13 @@ export default function Page() {
           <Input className='field' type='text' placeholder='IANA 时区，例如 Asia/Shanghai' value={timezone} onInput={(e) => setTimezone(e.detail.value)} />
           <View className='muted'>语言：{profile.locale}</View>
           <Button className='primary-button' disabled={loading} onClick={saveProfile}>保存资料</Button>
+          <Button
+            className='secondary-button'
+            disabled={loading}
+            onClick={() => void Taro.navigateTo({ url: '/pages/account-security/index' })}
+          >
+            账号与安全
+          </Button>
         </View>
 
         <View className='card'>

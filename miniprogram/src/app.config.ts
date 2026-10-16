@@ -8,6 +8,7 @@ export default defineAppConfig({
     'pages/query/index',
     'pages/family/index',
     'pages/profile/index',
+    'pages/account-security/index',
     'pages/people/index',
     'pages/person-detail/index',
     'pages/graph-neighborhood/index',

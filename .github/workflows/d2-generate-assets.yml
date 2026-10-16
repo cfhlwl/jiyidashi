@@ -634,6 +634,35 @@ jobs:
           path: |
             /tmp/product-v2-goldens/candidate/*.png
 
+      # AUTH-006 uses the production AccountSecurityPage itself with a
+      # deterministic server response. These are review candidates only;
+      # they must never update committed Golden baselines.
+      - name: Generate AUTH-006 account security candidates
+        if: always()
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/auth-006-candidates
+          flutter test test/account_security_visual_fixture_test.dart \
+            --update-goldens \
+            --dart-define=AUTH_006_ACCOUNT_SECURITY_CANDIDATE=true \
+            --reporter expanded
+          cp test/goldens/auth_006_account_security_*.png /tmp/auth-006-candidates/
+          git checkout -- test/goldens
+          git clean -f -- test/goldens
+          test -z "$(git status --porcelain -- test/goldens)"
+          for file in /tmp/auth-006-candidates/*.png; do test -s "$file"; done
+
+      - name: Upload AUTH-006 account security candidates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auth-006-account-security-candidates-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/auth-006-candidates/*.png
+
       - name: Generate Design Authority audit package
         if: always()
         timeout-minutes: 10
