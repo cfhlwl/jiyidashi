@@ -21,6 +21,7 @@ type Scene =
   | 'summary'
   | 'states'
   | 'elder'
+  | 'account-security'
 
 function ReviewRow({ title, subtitle, meta }: { title: string; subtitle?: string; meta?: string }) {
   return (
@@ -268,6 +269,32 @@ function ElderScene() {
   )
 }
 
+function AccountSecurityScene() {
+  return (
+    <>
+      <ProductHeroHeader
+        eyebrow='迹忆 · 账号'
+        title='账号与安全'
+        subtitle='只展示服务器确认的登录身份，不从个人资料推断绑定关系。'
+      />
+      <View className='card account-security-visual-card'>
+        <View className='card-title'>已绑定的登录方式</View>
+        <ReviewRow title='邮箱密码' subtitle='golden@example.test' meta='已验证' />
+        <ReviewRow title='手机号' subtitle='+86138****5678' meta='已验证' />
+      </View>
+      <View className='card account-security-visual-card'>
+        <View className='card-title'>绑定与解绑</View>
+        <Text className='muted'>当前未配置可用的身份绑定服务。绑定和解绑已安全禁用。</Text>
+        <Button className='secondary-button' disabled>绑定新的登录方式</Button>
+      </View>
+      <View className='card account-security-visual-card'>
+        <View className='card-title'>安全提示</View>
+        <Text className='muted'>身份冲突、账号注销中和重新认证不足均由服务端最终裁决。</Text>
+      </View>
+    </>
+  )
+}
+
 function renderScene(scene: Scene) {
   switch (scene) {
     case 'today': return <TodayScene />
@@ -281,6 +308,7 @@ function renderScene(scene: Scene) {
     case 'summary': return <SummaryScene />
     case 'states': return <StatesScene />
     case 'elder': return <ElderScene />
+    case 'account-security': return <AccountSecurityScene />
   }
 }
 
@@ -289,6 +317,7 @@ export default function VisualReviewPage() {
   const scenes: Scene[] = [
     'today', 'timeline', 'capture', 'memory', 'people', 'life',
     'family', 'profile', 'summary', 'states', 'elder',
+    'account-security',
   ]
   const scene = (scenes.includes(raw as Scene) ? raw : 'today') as Scene
   return <View className='page visual-review'>{renderScene(scene)}</View>

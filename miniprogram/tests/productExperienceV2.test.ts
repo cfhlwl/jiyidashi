@@ -90,7 +90,7 @@ test('Mini Product Experience V2 has deterministic visual review harness', () =>
 
   for (const scene of [
     'today', 'timeline', 'capture', 'memory', 'people', 'life',
-    'family', 'profile', 'summary', 'states', 'elder',
+    'family', 'profile', 'summary', 'states', 'elder', 'account-security',
   ]) {
     assert.ok(review.includes("'" + scene + "'"), 'missing visual review scene: ' + scene)
   }
@@ -106,6 +106,7 @@ test('Mini Product Experience V2 has deterministic visual review harness', () =>
   assert.match(workflow, /Capture deterministic Mini visual-review screenshots/)
   assert.match(workflow, /Upload Mini visual-review artifact/)
   assert.match(captureScript, /const widths = \[320, 390, 430\]/)
+  assert.match(captureScript, /'account-security'/)
   assert.match(captureScript, /horizontal overflow/)
   assert.match(captureScript, /page\.screenshot\(\{ path, fullPage: true \}\)/)
 })

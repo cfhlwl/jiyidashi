@@ -1798,3 +1798,10 @@ GROW-011 Value-triggered Share / Invite Timing
 8. Stage 2 及以后功能不得提前侵入当前 Stage 1 PR，除非先更新本表并明确变更范围。
 9. 并行开发必须保持独立分支/独立 PR；共享协议由单一 PR 定义，其他工作线只消费。
 10. 每条工作线在最终合并前都必须重新确认最新 `main`、clean replay、精确 HEAD CI 和最终净 diff。
+# AUTH-006
+
+- Account & Security V1 client/mock work started from latest `origin/main`.
+- Flutter and Mini Program read the server-owned identity list with strict
+  parsing and session/generation fencing.
+- Production identity link/unlink remains disabled/fail-closed; no provider or
+  credential was enabled. See `docs/auth/AUTH_006_ACCOUNT_SECURITY.md`.

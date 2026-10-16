@@ -104,6 +104,10 @@
 .review-empty { padding: $jiyi-space-6 $jiyi-space-4; text-align: center; }
 .review-empty-icon { display: block; margin-bottom: $jiyi-space-2; color: $jiyi-text-tertiary; font-size: 64rpx; }
 
+.account-security-visual-card .secondary-button[disabled] {
+  opacity: 0.55;
+}
+
 @media (max-width: 340px) {
   .visual-review { padding-left: 24rpx; padding-right: 24rpx; }
   .review-action-grid,

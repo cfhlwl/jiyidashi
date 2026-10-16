@@ -271,6 +271,20 @@ export type AuthCapabilities = {
   wechat_miniprogram: AuthCapabilityStatus
 }
 
+export type AuthIdentityRead = {
+  identity_id: string
+  provider: string
+  subject_hint: string
+  verified_at: string | null
+  linked_at: string
+}
+
+export type AuthIdentityMutationResponse = {
+  request_id: string
+  operation: string
+  identity: AuthIdentityRead | null
+}
+
 type RequestOptions = SafeRequestOptions & Readonly<{
   anonymous?: boolean
   skipSessionRefresh?: boolean
@@ -384,6 +398,49 @@ function parseAuthCapabilities(raw: unknown): AuthCapabilities {
     phone_one_tap: value.phone_one_tap as AuthCapabilityStatus,
     wechat: value.wechat as AuthCapabilityStatus,
     wechat_miniprogram: value.wechat_miniprogram as AuthCapabilityStatus,
+  }
+}
+
+export function parseAuthIdentityRead(raw: unknown): AuthIdentityRead {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return invalidAuthResponse()
+  const value = raw as Record<string, unknown>
+  if (
+    typeof value.identity_id !== 'string' || !UUID_PATTERN.test(value.identity_id)
+    || typeof value.provider !== 'string' || !value.provider.trim()
+    || typeof value.subject_hint !== 'string'
+    || (value.verified_at !== null && typeof value.verified_at !== 'string')
+    || typeof value.linked_at !== 'string'
+    || !Number.isFinite(Date.parse(value.linked_at))
+    || (value.verified_at !== null && !Number.isFinite(Date.parse(value.verified_at)))
+  ) return invalidAuthResponse()
+  return {
+    identity_id: value.identity_id,
+    provider: value.provider,
+    subject_hint: value.subject_hint,
+    verified_at: value.verified_at,
+    linked_at: value.linked_at,
+  }
+}
+
+export function parseAuthIdentityList(raw: unknown): AuthIdentityRead[] {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return invalidAuthResponse()
+  const value = raw as Record<string, unknown>
+  if (!Array.isArray(value.identities)) return invalidAuthResponse()
+  return value.identities.map(parseAuthIdentityRead)
+}
+
+export function parseAuthIdentityMutationResponse(raw: unknown): AuthIdentityMutationResponse {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return invalidAuthResponse()
+  const value = raw as Record<string, unknown>
+  if (
+    typeof value.request_id !== 'string' || !UUID_PATTERN.test(value.request_id)
+    || typeof value.operation !== 'string' || !value.operation.trim()
+    || (value.identity !== null && value.identity === undefined)
+  ) return invalidAuthResponse()
+  return {
+    request_id: value.request_id,
+    operation: value.operation,
+    identity: value.identity === null ? null : parseAuthIdentityRead(value.identity),
   }
 }
 
@@ -897,6 +954,52 @@ export async function getProfile(): Promise<UserProfile> {
   const profile = parseElderUserProfile(raw)
   publishElderProjection(profile, snapshot)
   return profile
+}
+
+export async function getAuthIdentities(): Promise<AuthIdentityRead[]> {
+  return parseAuthIdentityList(await request<unknown>('GET', '/auth/identities'))
+}
+
+/**
+ * Typed adapter for a future verified identity provider. The production
+ * account-security page never calls this while the server provider is OFF.
+ * Credentials are transient request data and are never stored or logged.
+ */
+export async function linkAuthIdentity(input: {
+  request_id: string
+  credential: string
+  reauth_credential: string
+}): Promise<AuthIdentityMutationResponse> {
+  if (
+    !UUID_PATTERN.test(input.request_id)
+    || !input.credential.trim()
+    || !input.reauth_credential.trim()
+  ) throw new Error('身份认证材料无效')
+  return parseAuthIdentityMutationResponse(await request<unknown>(
+    'POST',
+    '/auth/identities/link',
+    input,
+  ))
+}
+
+export async function unlinkAuthIdentity(input: {
+  identity_id: string
+  request_id: string
+  reauth_credential: string
+}): Promise<AuthIdentityMutationResponse> {
+  if (
+    !UUID_PATTERN.test(input.identity_id)
+    || !UUID_PATTERN.test(input.request_id)
+    || !input.reauth_credential.trim()
+  ) throw new Error('身份认证材料无效')
+  return parseAuthIdentityMutationResponse(await request<unknown>(
+    'DELETE',
+    `/auth/identities/${encodeURIComponent(input.identity_id)}`,
+    {
+      request_id: input.request_id,
+      reauth_credential: input.reauth_credential,
+    },
+  ))
 }
 
 export async function getTodayFootprint(): Promise<TodayFootprintResponse> {

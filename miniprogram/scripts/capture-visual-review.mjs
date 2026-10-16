@@ -18,6 +18,7 @@ const out = new URL('../visual-artifacts/', import.meta.url).pathname
 const scenes = [
   'today', 'timeline', 'capture', 'memory', 'people', 'life',
   'family', 'profile', 'summary', 'states', 'elder',
+  'account-security', 'account-security-empty',
 ]
 const widths = [320, 390, 430]
 const height = 844
@@ -81,6 +82,34 @@ const mime = {
   '.svg': 'image/svg+xml',
 }
 
+const visualSession = {
+  access_token: 'auth-006-visual-access-token',
+  refresh_token: 'auth-006-visual-refresh-token',
+  session_id: '22222222-2222-4222-8222-222222222222',
+  token_type: 'bearer',
+  user_id: '11111111-1111-4111-8111-111111111111',
+  access_expires_at: '2099-01-01T00:00:00Z',
+  refresh_expires_at: '2099-02-01T00:00:00Z',
+  account_deletion_in_progress: false,
+}
+
+const visualIdentities = [
+  {
+    identity_id: '33333333-3333-4333-8333-333333333333',
+    provider: 'EMAIL_PASSWORD',
+    subject_hint: 'g***@example.test',
+    verified_at: '2026-10-01T00:00:00Z',
+    linked_at: '2026-10-01T00:00:00Z',
+  },
+  {
+    identity_id: '44444444-4444-4444-8444-444444444444',
+    provider: 'PHONE',
+    subject_hint: '+86138****5678',
+    verified_at: '2026-10-02T00:00:00Z',
+    linked_at: '2026-10-02T00:00:00Z',
+  },
+]
+
 const server = createServer((req, res) => {
   const raw = (req.url || '/').split('?')[0]
   let path = normalize(join(root, raw === '/' ? 'index.html' : raw))
@@ -102,15 +131,38 @@ const manifest = []
 try {
   for (const width of widths) {
     for (const scene of scenes) {
+      const productionAccountSecurity = scene === 'account-security' || scene === 'account-security-empty'
+      const emptyAccountSecurity = scene === 'account-security-empty'
       const page = await browser.newPage({
         viewport: { width, height },
         deviceScaleFactor: 1,
       })
-      const url =
-        'http://127.0.0.1:4173/#/pages/visual-review/index?scene=' +
-        encodeURIComponent(scene)
+
+      if (productionAccountSecurity) {
+        await page.addInitScript((session) => {
+          window.localStorage.setItem(
+            'jiyi_auth_session',
+            JSON.stringify({ data: session }),
+          )
+        }, visualSession)
+        await page.route('**/v1/auth/identities*', async (route) => {
+          if (route.request().method() !== 'GET') {
+            throw new Error('AUTH-006 visual page attempted a non-GET identity mutation')
+          }
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ identities: emptyAccountSecurity ? [] : visualIdentities }),
+          })
+        })
+      }
+
+      const url = productionAccountSecurity
+        ? 'http://127.0.0.1:4173/#/pages/account-security/index'
+        : 'http://127.0.0.1:4173/#/pages/visual-review/index?scene=' + encodeURIComponent(scene)
       await page.goto(url, { waitUntil: 'networkidle' })
-      await page.locator('.visual-review').waitFor({ state: 'visible' })
+      await page.locator(productionAccountSecurity ? '.account-security-page' : '.visual-review')
+        .waitFor({ state: 'visible' })
       await page.addStyleTag({
         content:
           '*{animation:none!important;transition:none!important;caret-color:transparent!important;}',
@@ -125,6 +177,25 @@ try {
           scene + '@' + width + ': horizontal overflow ' +
           overflow.scrollWidth + ' > ' + overflow.clientWidth,
         )
+      }
+
+      if (productionAccountSecurity) {
+        const accountPage = page.locator('.account-security-page')
+        const text = await accountPage.innerText()
+        if (!text.includes('账号与安全') || !text.includes('绑定与解绑')) {
+          throw new Error(scene + '@' + width + ': production account-security page did not mount')
+        }
+        if (text.includes('golden@example.test')) {
+          throw new Error(scene + '@' + width + ': unmasked identity leaked into visual fixture')
+        }
+        if (emptyAccountSecurity && !text.includes('当前没有可展示的登录身份。')) {
+          throw new Error(scene + '@' + width + ': empty-state fixture did not render')
+        }
+        if (!emptyAccountSecurity && !text.includes('g***@example.test')) {
+          throw new Error(
+            scene + '@' + width + ': masked server identity did not render; page text=' + JSON.stringify(text),
+          )
+        }
       }
 
       const primaryActions = await page.locator('button').evaluateAll((nodes) =>

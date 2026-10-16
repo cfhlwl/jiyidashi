@@ -39,6 +39,102 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+class AuthIdentityRead {
+  const AuthIdentityRead({
+    required this.identityId,
+    required this.provider,
+    required this.subjectHint,
+    required this.verifiedAt,
+    required this.linkedAt,
+  });
+
+  final String identityId;
+  final String provider;
+  final String subjectHint;
+  final DateTime? verifiedAt;
+  final DateTime linkedAt;
+
+  static final _uuidPattern = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+  );
+  static final _isoDatePattern = RegExp(
+    r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$',
+  );
+
+  static bool isStrictUuid(String value) => _uuidPattern.hasMatch(value);
+
+  factory AuthIdentityRead.fromJson(Map<String, dynamic> json) {
+    final identityId = json['identity_id'];
+    final provider = json['provider'];
+    final subjectHint = json['subject_hint'];
+    final verifiedAt = json['verified_at'];
+    final linkedAt = json['linked_at'];
+    if (!json.containsKey('verified_at') ||
+        !json.containsKey('linked_at') ||
+        identityId is! String ||
+        !isStrictUuid(identityId) ||
+        provider is! String ||
+        provider.trim().isEmpty ||
+        subjectHint is! String ||
+        subjectHint.trim().isEmpty ||
+        linkedAt is! String) {
+      throw ProtocolException('身份列表响应格式不正确');
+    }
+    if (!_isoDatePattern.hasMatch(linkedAt)) {
+      throw ProtocolException('身份列表响应格式不正确');
+    }
+    final parsedLinkedAt = DateTime.tryParse(linkedAt);
+    if (parsedLinkedAt == null) throw ProtocolException('身份列表响应格式不正确');
+    DateTime? parsedVerifiedAt;
+    if (verifiedAt != null) {
+      if (verifiedAt is! String || !_isoDatePattern.hasMatch(verifiedAt)) {
+        throw ProtocolException('身份列表响应格式不正确');
+      }
+      parsedVerifiedAt = DateTime.tryParse(verifiedAt);
+      if (parsedVerifiedAt == null) throw ProtocolException('身份列表响应格式不正确');
+    }
+    return AuthIdentityRead(
+      identityId: identityId,
+      provider: provider,
+      subjectHint: subjectHint,
+      verifiedAt: parsedVerifiedAt,
+      linkedAt: parsedLinkedAt,
+    );
+  }
+}
+
+class AuthIdentityMutationResult {
+  const AuthIdentityMutationResult({
+    required this.requestId,
+    required this.operation,
+    required this.identity,
+  });
+
+  final String requestId;
+  final String operation;
+  final AuthIdentityRead? identity;
+
+  factory AuthIdentityMutationResult.fromJson(Map<String, dynamic> json) {
+    final requestId = json['request_id'];
+    final operation = json['operation'];
+    final identity = json['identity'];
+    if (requestId is! String ||
+        !AuthIdentityRead.isStrictUuid(requestId) ||
+        operation is! String ||
+        operation.trim().isEmpty ||
+        (identity != null && identity is! Map<String, dynamic>)) {
+      throw ProtocolException('身份操作响应格式不正确');
+    }
+    return AuthIdentityMutationResult(
+      requestId: requestId,
+      operation: operation,
+      identity: identity == null
+          ? null
+          : AuthIdentityRead.fromJson(identity),
+    );
+  }
+}
+
 // [人工注释][S1-016] 只有 HTTP 客户端明确报告的连接/传输失败或超时才属于可离线降级的 transport；协议/解析错误不得进入该类型。
 class TransportException implements Exception {
   TransportException(this.message, [this.cause]);
@@ -521,6 +617,8 @@ class JiYiApiClient
   final http.Client _http;
   final AuthSessionStore _sessionStore;
   final AuthDiagnosticSink? _authDiagnosticSink;
+  final StreamController<void> _authSessionChanges =
+      StreamController<void>.broadcast(sync: true);
   final String baseUrl;
   String? accessToken;
   String? _refreshToken;
@@ -563,6 +661,17 @@ class JiYiApiClient
         // Session observers must never alter authentication semantics.
       }
     }
+  }
+
+  /// Emits synchronously whenever the active authenticated owner binding
+  /// changes. UI surfaces use this to clear server-owned data immediately;
+  /// they must still re-check the captured snapshot after every response.
+  Stream<void> get authSessionChanges => _authSessionChanges.stream;
+
+  void _advanceSessionVersion() {
+    _sessionVersion += 1;
+    _authSessionChanges.add(null);
+    _notifySessionChanged();
   }
 
   /// Captures the current unauthenticated authentication attempt authority.
@@ -1066,8 +1175,7 @@ class JiYiApiClient
     _accessExpiresAt = accessExpiresAt;
     authenticatedUserId = userId;
     if (!sameOwnerSession) {
-      _sessionVersion += 1;
-      _notifySessionChanged();
+      _advanceSessionVersion();
     }
   }
 
@@ -1251,8 +1359,7 @@ class JiYiApiClient
     _sessionId = null;
     _accessExpiresAt = null;
     authenticatedUserId = null;
-    _sessionVersion += 1;
-    _notifySessionChanged();
+    _advanceSessionVersion();
     await _runSessionStoreMutation(_sessionStore.clearSession);
   }
 
@@ -1277,6 +1384,76 @@ class JiYiApiClient
     final snapshot = _captureAuthenticatedSession();
     final data = await _jsonRequest('GET', '/user', authSnapshot: snapshot);
     return _canonicalProfile(data, snapshot);
+  }
+
+  Future<List<AuthIdentityRead>> fetchAuthIdentities() async {
+    final snapshot = _captureAuthenticatedSession();
+    final decoded = await _jsonRequest(
+      'GET',
+      '/auth/identities',
+      authSnapshot: snapshot,
+    );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    final raw = decoded['identities'];
+    if (raw is! List<dynamic>) throw ProtocolException('身份列表响应格式不正确');
+    return raw.map((item) {
+      if (item is! Map<String, dynamic>) {
+        throw ProtocolException('身份列表响应格式不正确');
+      }
+      return AuthIdentityRead.fromJson(item);
+    }).toList(growable: false);
+  }
+
+  /// Low-level typed adapter for a future verified provider. The production UI
+  /// keeps this disabled while AUTH_IDENTITY_LINK_PROVIDER is disabled; it is
+  /// intentionally not called with profile text, access tokens, or fake proof.
+  Future<AuthIdentityMutationResult> linkAuthIdentity({
+    required String requestId,
+    required String credential,
+    required String reauthCredential,
+  }) async {
+    if (!AuthIdentityRead.isStrictUuid(requestId) ||
+        credential.trim().isEmpty ||
+        reauthCredential.trim().isEmpty) {
+      throw ProtocolException('身份认证材料无效');
+    }
+    final snapshot = _captureAuthenticatedSession();
+    final decoded = await _jsonRequest(
+      'POST',
+      '/auth/identities/link',
+      body: {
+        'request_id': requestId,
+        'credential': credential,
+        'reauth_credential': reauthCredential,
+      },
+      authSnapshot: snapshot,
+    );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return AuthIdentityMutationResult.fromJson(decoded);
+  }
+
+  Future<AuthIdentityMutationResult> unlinkAuthIdentity({
+    required String identityId,
+    required String requestId,
+    required String reauthCredential,
+  }) async {
+    if (!AuthIdentityRead.isStrictUuid(identityId) ||
+        !AuthIdentityRead.isStrictUuid(requestId) ||
+        reauthCredential.trim().isEmpty) {
+      throw ProtocolException('身份认证材料无效');
+    }
+    final snapshot = _captureAuthenticatedSession();
+    final decoded = await _jsonRequest(
+      'DELETE',
+      '/auth/identities/$identityId',
+      body: {
+        'request_id': requestId,
+        'reauth_credential': reauthCredential,
+      },
+      authSnapshot: snapshot,
+    );
+    _assertAuthenticatedSessionCurrent(snapshot);
+    return AuthIdentityMutationResult.fromJson(decoded);
   }
 
   Future<Map<String, dynamic>> updateElderMode(bool enabled) async {
