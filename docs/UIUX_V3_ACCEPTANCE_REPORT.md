@@ -10,9 +10,9 @@
 | 项目 | 值 |
 | --- | --- |
 | `origin/main` at checkout | `88862ea998f593d62ddb2ac18d75c5f9b33663d0` |
-| acceptance source `HEAD` | `37e78ae751ec4aa977963062a5806190f44c734e` |
+| original local acceptance evidence SHA | `a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f` (historical local execution; not latest CI SHA) |
 | merge-base | `88862ea998f593d62ddb2ac18d75c5f9b33663d0` |
-| ahead / behind | `4 / 0` |
+| reviewed PR snapshot before this documentation-only correction | `06a36d1f6345884220d912256462f5aa0c0fb43a`, ahead/behind `5 / 0` |
 | Flutter | `3.47.4` |
 | Dart | `3.13.3` |
 | workspace | `D:/jiyi-v3-acceptance-001` |
@@ -72,15 +72,18 @@ No Golden or Design Authority PNG was changed.
 
 ## 3. Gate status
 
+Latest verified PR exact-head CI snapshot: `06a36d1f6345884220d912256462f5aa0c0fb43a`. A subsequent docs-only report correction changes the PR HEAD but does not rerun the original local acceptance tests; do not conflate the fixed source `main` SHA, the historical local test SHA, and the hosted PR CI snapshot.
+
+
 | Gate | Run / exit code | Status |
 | --- | --- | --- |
 | `flutter analyze` on exact main | exit `0`, `No issues found` | PASS |
 | focused V3 functional tests | see above | PASS |
 | full Flutter suite | Mobile CI Android job | PASS in hosted Linux CI; local Windows full suite remains platform/baseline-failing |
-| `mobile-ci` | run `38998158611` / #1925 | PASS |
-| `mobile-visual-preview` | run `38998158644` / #1776 | PASS |
-| `backend-ci` | run `38998158808` / #2384 | PASS |
-| `miniprogram-ci` | run `38998158596` / #1750 | PASS |
+| `mobile-ci` | run `39013474365` / #1926 | PASS |
+| `mobile-visual-preview` | run `39013474362` / #1777 | PASS |
+| `backend-ci` | run `39013474374` / #2385 | PASS |
+| `miniprogram-ci` | run `39013474367` / #1751 | PASS |
 | `ios-unsigned-ipa` | no manual dispatch performed | NOT RUN |
 | `core004-ios-trollstore-fix` | no manual dispatch performed | NOT RUN |
 
@@ -123,20 +126,20 @@ No secrets, provider credentials, or production configuration changes are includ
 
 ## 7. Exact-head hosted evidence
 
-All four PR-triggered runs above reported checkout SHA `37e78ae751ec4aa977963062a5806190f44c734e`.
+All four latest verified PR-triggered runs listed above reported checkout SHA `06a36d1f6345884220d912256462f5aa0c0fb43a`. These CI artifacts are a dated evidence snapshot, not a claim that a later documentation-only commit was executed.
 
 Visual Preview uploaded the following exact-head artifacts (14-day retention):
 
-- `uiux-v3-design-authority-audit-37e78ae751ec4aa977963062a5806190f44c734e`, artifact `12088525346`, digest `sha256:2ae8e33a464d5dd938d29e91331441e98f2bb66a251411e656ad25d02c98ed0f`
-- `flutter-visual-preview-37e78ae751ec4aa977963062a5806190f44c734e`, artifact `12088096875`, digest `sha256:8f40e9473625be47faea2fe3078ecda746141084d402386549f3dfbc9d9c94e2`
-- `memory-v3-candidates-37e78ae751ec4aa977963062a5806190f44c734e`, artifact `12087669735`, digest `sha256:7dea323624f18052ea1ddcd1053edeaf553faba5593d13de1807c1025c13c8d7`
-- `uiux-v3-batch5d-life-history-memoirs-candidates-37e78ae751ec4aa977963062a5806190f44c734e`, artifact `12088440719`, digest `sha256:fcaf3fbd15960e6c40d9f144e69da4dcf6acfd188e1d95fcfca84a0ea617c164`
+- `uiux-v3-design-authority-audit-06a36d1f6345884220d912256462f5aa0c0fb43a`, artifact `12094181705`, digest `sha256:c0dd631163df65d7153668c46e091e9ec7c06d7869589c3a189e0fff2c41c158`
+- `flutter-visual-preview-06a36d1f6345884220d912256462f5aa0c0fb43a`, artifact `12093464785`, digest `sha256:553c94ddcfb5402a77bd960a90288f02a917540888259fa00d9773cafbde1a36`
+- `memory-v3-candidates-06a36d1f6345884220d912256462f5aa0c0fb43a`, artifact `12094281291`, digest `sha256:c65781b61a50d1f37d9e1fe5ce429512996ab48849f28e739743087f86adc4f5`
+- `uiux-v3-batch5d-life-history-memoirs-candidates-06a36d1f6345884220d912256462f5aa0c0fb43a`, artifact `12093733224`, digest `sha256:761d6e85d4d595c6eabd0d841436c40009ca7527f3dfac30c840bb0aca240599`
 
 The visual job executed Analyze, all listed V3 targeted suites, candidate generation, Design Authority audit generation, full committed-Golden testing, and the Android debug build. Its result was PASS. No Golden or Design Authority PNG was modified by this acceptance branch.
 
 ## 8. Local full-suite classification
 
-On Windows Flutter 3.47.4, the local full suite ended `+607 ~1 -41`. The 41 failures are retained as non-gating evidence and are classified as follows:
+On Windows Flutter 3.47.4, the local full suite ended `+607 ~1 -41`. The 41 failures are retained as non-gating evidence; the groups below are a partial, non-exhaustive classification because individual failure records were not fully persisted:
 
 1. **Existing visual/Golden baseline differences:** the Today B2 strict fixture, Auth V3 main/email fixtures, and the existing `visual_golden_test.dart` authority/Golden cases for Auth, Timeline, Memory Detail, Family, Memory Query, Capture, Summary and Profile. These were not updated or relaxed.
 2. **Windows path/fixture behavior:** `media_presentation_cache_test.dart` and `photo_memory_render_test.dart` assert POSIX-style paths while the Windows runner returns Windows separators; `photo_import_page_resume_test.dart` contains retry/resume fixture failures. These do not indicate a production data-authority regression and were not hidden by changing code.
