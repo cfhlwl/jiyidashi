@@ -1,0 +1,98 @@
+name: uiux-v3-test-packages
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/uiux-v3-test-packages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-test-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+      - name: Build installable debug APK
+        env:
+          AMAP_ANDROID_SDK_KEY: ${{ secrets.AMAP_ANDROID_SDK_KEY }}
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build apk --debug \
+            --dart-define=APP_ENV=production \
+            --dart-define=API_BASE_URL=https://jiyi.ccwl.net.cn/v1 \
+            --dart-define=AMAP_ANDROID_SDK_KEY="$AMAP_ANDROID_SDK_KEY"
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+      - name: Package Android artifact and manifest
+        run: |
+          set -euo pipefail
+          mkdir -p build/v3-package
+          cp build/app/outputs/flutter-apk/app-debug.apk "build/v3-package/jiyidashi-v3-android-debug-${GITHUB_SHA:0:12}.apk"
+          (cd build/v3-package && sha256sum *.apk > SHA256SUMS)
+          printf 'source_sha=%s\napi_base_url=https://jiyi.ccwl.net.cn/v1\nsigning=android_debug_test_only\nmap_key=repository_secret_if_configured\n' "$(git rev-parse HEAD)" > build/v3-package/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jiyidashi-v3-android-debug-${{ github.event.pull_request.head.sha || github.sha }}
+          path: mobile/build/v3-package/
+          if-no-files-found: error
+          retention-days: 14
+
+  ios-unsigned-ipa:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+      - name: Prepare iOS dependencies
+        run: |
+          set -euo pipefail
+          flutter pub get
+          python3 ../.github/scripts/prepare_ios_cocoapods.py
+      - name: Build unsigned release iOS app
+        env:
+          AMAP_IOS_SDK_KEY: ${{ secrets.AMAP_IOS_SDK_KEY }}
+        run: |
+          set -euo pipefail
+          flutter build ios --release --no-codesign \
+            --dart-define=APP_ENV=production \
+            --dart-define=API_BASE_URL=https://jiyi.ccwl.net.cn/v1 \
+            --dart-define=AMAP_IOS_SDK_KEY="$AMAP_IOS_SDK_KEY"
+          test -f build/ios/iphoneos/Runner.app/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist
+          file build/ios/iphoneos/Runner.app/Runner
+      - name: Package unsigned IPA and checksum
+        run: |
+          set -euo pipefail
+          mkdir -p build/v3-package/Payload
+          /usr/bin/ditto build/ios/iphoneos/Runner.app build/v3-package/Payload/Runner.app
+          ipa="jiyidashi-v3-ios-unsigned-${GITHUB_SHA:0:12}.ipa"
+          (cd build/v3-package && /usr/bin/zip -qry "$ipa" Payload && shasum -a 256 "$ipa" > SHA256SUMS && shasum -a 256 -c SHA256SUMS)
+          /usr/bin/unzip -l "build/v3-package/$ipa" | grep -q 'Payload/Runner.app/Info.plist'
+          printf 'source_sha=%s\napi_base_url=https://jiyi.ccwl.net.cn/v1\nsigning=unsigned_trollstore_candidate_not_field_certified\nmap_key=repository_secret_if_configured\n' "$(git rev-parse HEAD)" > build/v3-package/build-info.txt
+          rm -rf build/v3-package/Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jiyidashi-v3-ios-unsigned-${{ github.event.pull_request.head.sha || github.sha }}
+          path: mobile/build/v3-package/
+          if-no-files-found: error
+          retention-days: 14
