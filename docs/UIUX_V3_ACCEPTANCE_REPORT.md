@@ -2,7 +2,7 @@
 
 > Issue：[#288](https://github.com/cfhlwl/jiyidashi/issues/288)
 > 验收分支：`codex/uiux-v3-acceptance-001-20261017`
-> 报告状态：AUTO 验收进行中；FIELD 验收未开始
+> 报告状态：AUTO 验收完成；FIELD 验收未开始
 > Design Authority PNG：只读，本轮未修改
 
 ## 1. Exact source and toolchain
@@ -10,9 +10,9 @@
 | 项目 | 值 |
 | --- | --- |
 | `origin/main` at checkout | `88862ea998f593d62ddb2ac18d75c5f9b33663d0` |
-| checkout `HEAD` at report start | `88862ea998f593d62ddb2ac18d75c5f9b33663d0` |
+| acceptance source `HEAD` | `77389cbf2b247a5c8098f75848c33de6be3768cf` |
 | merge-base | `88862ea998f593d62ddb2ac18d75c5f9b33663d0` |
-| ahead / behind | `0 / 0` |
+| ahead / behind | `2 / 0` |
 | Flutter | `3.47.4` |
 | Dart | `3.13.3` |
 | workspace | `D:/jiyi-v3-acceptance-001` |
@@ -76,13 +76,13 @@ No Golden or Design Authority PNG was changed.
 | --- | --- | --- |
 | `flutter analyze` on exact main | exit `0`, `No issues found` | PASS |
 | focused V3 functional tests | see above | PASS |
-| full Flutter suite | pending exact-head CI | PENDING |
-| `mobile-ci` | pending Draft PR | PENDING |
-| `mobile-visual-preview` | pending Draft PR | PENDING |
-| `backend-ci` | pending exact-head run | PENDING |
-| `miniprogram-ci` | pending exact-head run | PENDING |
-| `ios-unsigned-ipa` | requires manual dispatch with real API URL | PENDING |
-| `core004-ios-trollstore-fix` | requires manual dispatch | PENDING |
+| full Flutter suite | Mobile CI Android job | PASS in hosted Linux CI; local Windows full suite remains platform/baseline-failing |
+| `mobile-ci` | run `38996193193` / #1923 | PASS |
+| `mobile-visual-preview` | run `38996193192` / #1774 | PASS |
+| `backend-ci` | run `38996193222` / #2382 | PASS |
+| `miniprogram-ci` | run `38996193194` / #1748 | PASS |
+| `ios-unsigned-ipa` | no manual dispatch performed | NOT RUN |
+| `core004-ios-trollstore-fix` | no manual dispatch performed | NOT RUN |
 
 Existing workflow note: ordinary `mobile-ci` and visual preview use the repository's fail-closed CI endpoint/configuration gates. The Issue #288 production artifact requirement is stricter: iOS dispatch must use `https://jiyi.ccwl.net.cn/v1`; no `api.example.invalid` result may be reported as real-device acceptance.
 
@@ -103,10 +103,10 @@ Current local evidence shows three pre-existing strict visual mismatches listed 
 
 | Artifact / validation | Status | Required evidence |
 | --- | --- | --- |
-| iOS unsigned release IPA | PENDING | same exact main SHA, `Payload/*.app`, SHA256 sidecar, bundle/plist/arm64 checks |
+| iOS unsigned release IPA | NOT RUN | requires manual dispatch with real API URL; no IPA or SHA256 sidecar claimed |
 | TrollStore installation | NOT RUN | unsigned IPA compatibility is not installation proof |
-| Android debug APK | PENDING | installable test-signed APK, package/version/minSdk/arm64 and SHA256 |
-| Android release APK | PENDING | valid signature required; unsigned release is not acceptable |
+| Android debug APK | PASS in Mobile CI / Visual Preview build steps | hosted build passed; downloadable APK/SHA256 artifact was not exposed by the connector, so installability is not claimed |
+| Android release APK | NOT RUN | standard PR workflows do not provide a real release-signed artifact |
 | iOS physical device | NOT RUN | install/login/photo/location/map/life navigation evidence |
 | Android physical device | NOT RUN | install/login/photo/location/map/life navigation evidence |
 | CORE-004 24h/72h | NOT RUN | separate long-running certification |
@@ -121,10 +121,36 @@ No secrets, provider credentials, or production configuration changes are includ
 | P1 | No new functional P1 observed; required exact-head CI and artifact gates still pending | 0 observed / gate pending |
 | P2 | Three existing visual baseline mismatches listed in §2; no baseline update authorized | 3 existing visual findings |
 
-## 7. Next actions
+## 7. Exact-head hosted evidence
 
-- Create a Draft PR from this exact-main branch so PR-triggered `mobile-ci`, `mobile-visual-preview`, `backend-ci`, and `miniprogram-ci` run against the exact PR HEAD.
-- Dispatch `ios-unsigned-ipa` in release mode with the real API URL and dispatch `core004-ios-trollstore-fix` on the same SHA.
-- Record all run IDs, checkout SHA, artifact URLs, sizes, SHA256 sidecars, and exit results here.
-- Keep all FIELD installation and long-running checks explicitly blocked until performed on real devices.
-- Do not update Golden files or Design Authority PNGs as part of this acceptance PR.
+All four PR-triggered runs above reported checkout SHA `77389cbf2b247a5c8098f75848c33de6be3768cf`.
+
+Visual Preview uploaded the following exact-head artifacts (14-day retention):
+
+- `uiux-v3-design-authority-audit-77389cbf2b247a5c8098f75848c33de6be3768cf`, artifact `12087835649`, digest `sha256:d24e402f6d47128a4ff8349a6bb665a6bca898911f91f0b12cfe1385b9ccca20`
+- `flutter-visual-preview-77389cbf2b247a5c8098f75848c33de6be3768cf`, artifact `12087481161`, digest `sha256:02418fa6cfc100c0bee9d46969e8e9d8a2231c667384537bce0ea95a8ac66983`
+- `memory-v3-candidates-77389cbf2b247a5c8098f75848c33de6be3768cf`, artifact `12087905188`, digest `sha256:a72323afdfd664eb983d18eac06606bfa9642a229a3e7efe28db79537b5a8cb9`
+- `uiux-v3-batch5d-life-history-memoirs-candidates-77389cbf2b247a5c8098f75848c33de6be3768cf`, artifact `12087088597`, digest `sha256:bf4db48b8d012df96346547683415ec8a18815529afa26a2acb5f2c2b7f73af0`
+
+The visual job executed Analyze, all listed V3 targeted suites, candidate generation, Design Authority audit generation, full committed-Golden testing, and the Android debug build. Its result was PASS. No Golden or Design Authority PNG was modified by this acceptance branch.
+
+## 8. Local full-suite classification
+
+On Windows Flutter 3.47.4, the local full suite ended `+607 ~1 -41`. The failures were existing strict visual/Golden comparisons plus Windows path-separator and photo-import fixture behavior; no production file was changed to absorb them. Hosted exact-head Mobile CI and Visual Preview passed, so the local Windows result is retained as environment/baseline evidence rather than a hosted gate result.
+
+The focused local matrix remains `159 executed / 156 passed / 3 strict visual mismatches`, with no new functional failure. The three mismatches are the Today B2 authority fixture and Auth V3 main/email fixtures listed in §2.
+
+## 9. FIELD and release artifact gate
+
+The following remain explicitly open and cannot be inferred from hosted CI:
+
+- manual `ios-unsigned-ipa` release dispatch with `https://jiyi.ccwl.net.cn/v1`;
+- `core004-ios-trollstore-fix` run on the same exact SHA;
+- IPA bundle/plist/arm64/SHA256 sidecar verification;
+- valid release-signed Android APK and SHA256 verification;
+- real iOS TrollStore install, Android physical install, login/media/location/map/life navigation checks;
+- CORE-004 24h/72h evidence.
+
+Therefore this PR establishes AUTO hosted acceptance evidence only. Overall status remains **HOLD for release-artifact and FIELD gates**; visual classification remains **DERIVED V3 / V3_PARTIAL**.
+
+No secrets, provider credentials, production configuration, Golden files, or Design Authority PNGs were changed.
