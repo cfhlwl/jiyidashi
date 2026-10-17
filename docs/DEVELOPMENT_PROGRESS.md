@@ -63,7 +63,11 @@
 | UIUX-V3-06-5A | Life Home V3 | ✅ | Issue #257 / PR #258 已完成 Life Home 生产页面、四个真实入口、owner/session 导航保护及定点 Golden 验收；`03_life.png` 保持只读，视觉状态为 `DERIVED V3 / V3_PARTIAL`。 |
 | UIUX-V3-06-5B | Life Events / Life Event Detail V3 | ✅ | Issue #276 / PR #277 已完成真实事件列表、详情、编辑入口与定点 Golden 验收；`10_life_experience.png` 保持只读，完整设计一致性继续记录为 `V3_PARTIAL`。 |
 | UIUX-V3-06-5C | Life Stages / Stage Detail / Editor V3 | ✅ | Issue #280 / PR #282 已完成阶段列表、详情、编辑器、推理状态和定点 Golden 验收；`09_year_review.png` / `10_life_experience.png` 保持只读，视觉状态为 `V3_PARTIAL`。 |
-| UIUX-V3-06-5D | Multi-year Timeline / Year Review / Life Story V3 | 🔵 | Issue #284 / 当前独立 Draft PR 开发中：复用 `V2Api`、`V2Authority`、`V2OperationFlight` 与 owner-scoped media cache；候选视觉仅供审查，正式 Golden 暂不修改。 |
+| UIUX-V3-06-5D | Multi-year Timeline / Year Review / Life Story V3 | ✅ | Issue #284 / PR #286 已合并 `main`；复用 `V2Api`、`V2Authority`、`V2OperationFlight` 与 owner-scoped media cache。视觉仍按 `DERIVED V3 / V3_PARTIAL` 记录，完整自动验收与真机验收由 Issue #288 分开追踪。 |
+
+### UIUX-V3-ACCEPTANCE-001
+
+Issue #288 对最新 `main` 固定 SHA 执行 V3 自动验收、视觉审计、iOS unsigned IPA / Android APK 产物核验。自动验收与 FIELD 真机安装、TrollStore、CORE-004 24h/72h 长时认证分开记录；未取得真实设备证据前不得将 FIELD 标记为 PASS。
 
 ## 状态规则
 
