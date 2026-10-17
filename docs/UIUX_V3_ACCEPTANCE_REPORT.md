@@ -1,8 +1,8 @@
 # UIUX-V3-ACCEPTANCE-001 验收报告
 
-> Issue：[#288](https://github.com/cfhlwl/jiyidashi/issues/288)  
-> 验收分支：`codex/uiux-v3-acceptance-001-20261017`  
-> 报告状态：AUTO 验收进行中；FIELD 验收未开始  
+> Issue：[#288](https://github.com/cfhlwl/jiyidashi/issues/288)
+> 验收分支：`codex/uiux-v3-acceptance-001-20261017`
+> 报告状态：AUTO 验收进行中；FIELD 验收未开始
 > Design Authority PNG：只读，本轮未修改
 
 ## 1. Exact source and toolchain
