@@ -10,9 +10,9 @@
 | 项目 | 值 |
 | --- | --- |
 | `origin/main` at checkout | `88862ea998f593d62ddb2ac18d75c5f9b33663d0` |
-| acceptance source `HEAD` | `77389cbf2b247a5c8098f75848c33de6be3768cf` |
+| acceptance source `HEAD` | `a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f` |
 | merge-base | `88862ea998f593d62ddb2ac18d75c5f9b33663d0` |
-| ahead / behind | `2 / 0` |
+| ahead / behind | `3 / 0` |
 | Flutter | `3.47.4` |
 | Dart | `3.13.3` |
 | workspace | `D:/jiyi-v3-acceptance-001` |
@@ -77,10 +77,10 @@ No Golden or Design Authority PNG was changed.
 | `flutter analyze` on exact main | exit `0`, `No issues found` | PASS |
 | focused V3 functional tests | see above | PASS |
 | full Flutter suite | Mobile CI Android job | PASS in hosted Linux CI; local Windows full suite remains platform/baseline-failing |
-| `mobile-ci` | run `38996193193` / #1923 | PASS |
-| `mobile-visual-preview` | run `38996193192` / #1774 | PASS |
-| `backend-ci` | run `38996193222` / #2382 | PASS |
-| `miniprogram-ci` | run `38996193194` / #1748 | PASS |
+| `mobile-ci` | run `38997323493` / #1924 | PASS |
+| `mobile-visual-preview` | run `38997323331` / #1775 | PASS |
+| `backend-ci` | run `38997323339` / #2383 | PASS |
+| `miniprogram-ci` | run `38997323364` / #1749 | PASS |
 | `ios-unsigned-ipa` | no manual dispatch performed | NOT RUN |
 | `core004-ios-trollstore-fix` | no manual dispatch performed | NOT RUN |
 
@@ -123,14 +123,14 @@ No secrets, provider credentials, or production configuration changes are includ
 
 ## 7. Exact-head hosted evidence
 
-All four PR-triggered runs above reported checkout SHA `77389cbf2b247a5c8098f75848c33de6be3768cf`.
+All four PR-triggered runs above reported checkout SHA `a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`.
 
 Visual Preview uploaded the following exact-head artifacts (14-day retention):
 
-- `uiux-v3-design-authority-audit-77389cbf2b247a5c8098f75848c33de6be3768cf`, artifact `12087835649`, digest `sha256:d24e402f6d47128a4ff8349a6bb665a6bca898911f91f0b12cfe1385b9ccca20`
-- `flutter-visual-preview-77389cbf2b247a5c8098f75848c33de6be3768cf`, artifact `12087481161`, digest `sha256:02418fa6cfc100c0bee9d46969e8e9d8a2231c667384537bce0ea95a8ac66983`
-- `memory-v3-candidates-77389cbf2b247a5c8098f75848c33de6be3768cf`, artifact `12087905188`, digest `sha256:a72323afdfd664eb983d18eac06606bfa9642a229a3e7efe28db79537b5a8cb9`
-- `uiux-v3-batch5d-life-history-memoirs-candidates-77389cbf2b247a5c8098f75848c33de6be3768cf`, artifact `12087088597`, digest `sha256:bf4db48b8d012df96346547683415ec8a18815529afa26a2acb5f2c2b7f73af0`
+- `uiux-v3-design-authority-audit-a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`, artifact `12087892302`, digest `sha256:a77f0a4eb5e9a4e28ad2fb04f3f45b0302f7f3969e7333431f7c57ca4fd57200`
+- `flutter-visual-preview-a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`, artifact `12087447521`, digest `sha256:2eb645e26afd63595063adda2a65218714cf0e83eb3230f9f53ca772178ab58c`
+- `memory-v3-candidates-a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`, artifact `12088035472`, digest `sha256:8bcd0e41b8856bcdfa05efbaf42bad9d0c4115ec3b4f57e16394c29058d0da4a`
+- `uiux-v3-batch5d-life-history-memoirs-candidates-a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`, artifact `12087940930`, digest `sha256:400539c1a349b59c73fc1999822dc6bd38bf450a0e85605af07d4c5822af24be`
 
 The visual job executed Analyze, all listed V3 targeted suites, candidate generation, Design Authority audit generation, full committed-Golden testing, and the Android debug build. Its result was PASS. No Golden or Design Authority PNG was modified by this acceptance branch.
 
