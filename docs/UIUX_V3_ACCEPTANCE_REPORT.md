@@ -10,9 +10,9 @@
 | 项目 | 值 |
 | --- | --- |
 | `origin/main` at checkout | `88862ea998f593d62ddb2ac18d75c5f9b33663d0` |
-| acceptance source `HEAD` | `a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f` |
+| acceptance source `HEAD` | `37e78ae751ec4aa977963062a5806190f44c734e` |
 | merge-base | `88862ea998f593d62ddb2ac18d75c5f9b33663d0` |
-| ahead / behind | `3 / 0` |
+| ahead / behind | `4 / 0` |
 | Flutter | `3.47.4` |
 | Dart | `3.13.3` |
 | workspace | `D:/jiyi-v3-acceptance-001` |
@@ -77,10 +77,10 @@ No Golden or Design Authority PNG was changed.
 | `flutter analyze` on exact main | exit `0`, `No issues found` | PASS |
 | focused V3 functional tests | see above | PASS |
 | full Flutter suite | Mobile CI Android job | PASS in hosted Linux CI; local Windows full suite remains platform/baseline-failing |
-| `mobile-ci` | run `38997323493` / #1924 | PASS |
-| `mobile-visual-preview` | run `38997323331` / #1775 | PASS |
-| `backend-ci` | run `38997323339` / #2383 | PASS |
-| `miniprogram-ci` | run `38997323364` / #1749 | PASS |
+| `mobile-ci` | run `38998158611` / #1925 | PASS |
+| `mobile-visual-preview` | run `38998158644` / #1776 | PASS |
+| `backend-ci` | run `38998158808` / #2384 | PASS |
+| `miniprogram-ci` | run `38998158596` / #1750 | PASS |
 | `ios-unsigned-ipa` | no manual dispatch performed | NOT RUN |
 | `core004-ios-trollstore-fix` | no manual dispatch performed | NOT RUN |
 
@@ -118,25 +118,31 @@ No secrets, provider credentials, or production configuration changes are includ
 | Severity | Finding | State |
 | --- | --- | --- |
 | P0 | None observed in local focused acceptance | 0 |
-| P1 | No new functional P1 observed; required exact-head CI and artifact gates still pending | 0 observed / gate pending |
+| P1 | No new functional P1 observed; release-artifact and FIELD gates remain open | 0 observed / release gate pending |
 | P2 | Three existing visual baseline mismatches listed in §2; no baseline update authorized | 3 existing visual findings |
 
 ## 7. Exact-head hosted evidence
 
-All four PR-triggered runs above reported checkout SHA `a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`.
+All four PR-triggered runs above reported checkout SHA `37e78ae751ec4aa977963062a5806190f44c734e`.
 
 Visual Preview uploaded the following exact-head artifacts (14-day retention):
 
-- `uiux-v3-design-authority-audit-a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`, artifact `12087892302`, digest `sha256:a77f0a4eb5e9a4e28ad2fb04f3f45b0302f7f3969e7333431f7c57ca4fd57200`
-- `flutter-visual-preview-a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`, artifact `12087447521`, digest `sha256:2eb645e26afd63595063adda2a65218714cf0e83eb3230f9f53ca772178ab58c`
-- `memory-v3-candidates-a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`, artifact `12088035472`, digest `sha256:8bcd0e41b8856bcdfa05efbaf42bad9d0c4115ec3b4f57e16394c29058d0da4a`
-- `uiux-v3-batch5d-life-history-memoirs-candidates-a99ad8f9eac25c3f3ddf27a1fd0e8753f5ec707f`, artifact `12087940930`, digest `sha256:400539c1a349b59c73fc1999822dc6bd38bf450a0e85605af07d4c5822af24be`
+- `uiux-v3-design-authority-audit-37e78ae751ec4aa977963062a5806190f44c734e`, artifact `12088525346`, digest `sha256:2ae8e33a464d5dd938d29e91331441e98f2bb66a251411e656ad25d02c98ed0f`
+- `flutter-visual-preview-37e78ae751ec4aa977963062a5806190f44c734e`, artifact `12088096875`, digest `sha256:8f40e9473625be47faea2fe3078ecda746141084d402386549f3dfbc9d9c94e2`
+- `memory-v3-candidates-37e78ae751ec4aa977963062a5806190f44c734e`, artifact `12087669735`, digest `sha256:7dea323624f18052ea1ddcd1053edeaf553faba5593d13de1807c1025c13c8d7`
+- `uiux-v3-batch5d-life-history-memoirs-candidates-37e78ae751ec4aa977963062a5806190f44c734e`, artifact `12088440719`, digest `sha256:fcaf3fbd15960e6c40d9f144e69da4dcf6acfd188e1d95fcfca84a0ea617c164`
 
 The visual job executed Analyze, all listed V3 targeted suites, candidate generation, Design Authority audit generation, full committed-Golden testing, and the Android debug build. Its result was PASS. No Golden or Design Authority PNG was modified by this acceptance branch.
 
 ## 8. Local full-suite classification
 
-On Windows Flutter 3.47.4, the local full suite ended `+607 ~1 -41`. The failures were existing strict visual/Golden comparisons plus Windows path-separator and photo-import fixture behavior; no production file was changed to absorb them. Hosted exact-head Mobile CI and Visual Preview passed, so the local Windows result is retained as environment/baseline evidence rather than a hosted gate result.
+On Windows Flutter 3.47.4, the local full suite ended `+607 ~1 -41`. The 41 failures are retained as non-gating evidence and are classified as follows:
+
+1. **Existing visual/Golden baseline differences:** the Today B2 strict fixture, Auth V3 main/email fixtures, and the existing `visual_golden_test.dart` authority/Golden cases for Auth, Timeline, Memory Detail, Family, Memory Query, Capture, Summary and Profile. These were not updated or relaxed.
+2. **Windows path/fixture behavior:** `media_presentation_cache_test.dart` and `photo_memory_render_test.dart` assert POSIX-style paths while the Windows runner returns Windows separators; `photo_import_page_resume_test.dart` contains retry/resume fixture failures. These do not indicate a production data-authority regression and were not hidden by changing code.
+3. **Evidence limitation:** the local terminal summary reported the remaining cases as `and 37 more` after the named failures, so this report does not invent a per-test split that was not persisted. The hosted exact-head Mobile CI and Visual Preview are the authoritative Linux gates and both passed.
+
+No production file was changed to absorb local failures. Hosted exact-head Mobile CI and Visual Preview passed, so the local Windows result remains environment/baseline evidence rather than a hosted gate result.
 
 The focused local matrix remains `159 executed / 156 passed / 3 strict visual mismatches`, with no new functional failure. The three mismatches are the Today B2 authority fixture and Auth V3 main/email fixtures listed in §2.
 
