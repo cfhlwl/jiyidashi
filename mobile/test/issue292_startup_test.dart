@@ -8,15 +8,18 @@ void main() {
     testWidgets('Issue #292: entrypoint can schedule visible first frame without map key on $platform',
         (tester) async {
       debugDefaultTargetPlatformOverride = platform;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-
       Widget? captured;
-      entry.startJiYiApp(
-        app: const MaterialApp(home: Scaffold(body: Text('迹忆登录入口'))),
-        runner: (widget) => captured = widget,
-      );
-      expect(captured, isNotNull);
-      await tester.pumpWidget(captured!);
+      try {
+        entry.startJiYiApp(
+          app: const MaterialApp(home: Scaffold(body: Text('迹忆登录入口'))),
+          runner: (widget) => captured = widget,
+        );
+        expect(captured, isNotNull);
+        await tester.pumpWidget(captured!);
+      } finally {
+        // Flutter's test invariant is checked before addTearDown runs.
+        debugDefaultTargetPlatformOverride = null;
+      }
       expect(find.text('迹忆登录入口'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
