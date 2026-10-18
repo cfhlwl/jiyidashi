@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'amap_footprint_map.dart';
 import 'api_client.dart';
 import 'native_location_bridge.dart';
 import 'native_motion_sampling_bridge.dart';
@@ -12,8 +11,17 @@ export 'stage1_app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  const JiYiAmapConfig().assertProductionConfiguration();
-  runApp(const JiYiApp());
+  // A missing optional map SDK key must never prevent Flutter from showing its first frame.
+  startJiYiApp();
+}
+
+/// Small launch seam for verifying a visible first frame without using real services.
+/// Map eligibility is enforced at the individual map surface, not at process start.
+void startJiYiApp({
+  Widget app = const JiYiApp(),
+  void Function(Widget)? runner,
+}) {
+  (runner ?? runApp)(app);
 }
 
 /// Android WorkManager invokes this headless entry point after reboot/process recovery.
