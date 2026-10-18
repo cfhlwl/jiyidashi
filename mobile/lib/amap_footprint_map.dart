@@ -33,11 +33,13 @@ class JiYiAmapSdkHooks {
 void bootstrapJiYiAmapSdk(
   BuildContext context,
   JiYiAmapConfig config, {
+  required bool privacyAccepted,
   JiYiAmapSdkHooks hooks = const JiYiAmapSdkHooks(
     updatePrivacyAgree: AMapInitializer.updatePrivacyAgree,
     init: AMapInitializer.init,
   ),
 }) {
+  if (!privacyAccepted || !config.configuredForCurrentPlatform) return;
   hooks.updatePrivacyAgree(
     const AMapPrivacyStatement(
       hasContains: true,
@@ -123,7 +125,6 @@ class JiYiFootprintMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final scope = JiYiAmapPresentationScope.maybeOf(context);
     final effectiveConfig = scope?.config ?? config;
-    effectiveConfig.assertProductionConfiguration();
     final mappable = visits
         .where((visit) => visit.isMappable)
         .toList(growable: false);
@@ -157,19 +158,30 @@ class JiYiFootprintMap extends StatelessWidget {
         : 0;
     final builder =
         nativeBuilder ?? scope?.footprintBuilder ?? _defaultNativeBuilder;
+    Widget mapSurface;
+    try {
+      mapSurface = builder(
+        context,
+        effectiveConfig,
+        mappable,
+        safeSelected,
+        onSelected,
+        interactive,
+      );
+    } catch (_) {
+      return const _MapFallback(
+        key: ValueKey('amap-load-unavailable'),
+        icon: Icons.map_outlined,
+        title: '地图暂时无法加载',
+        message: '地点和时间信息不受影响，可稍后重试地图。',
+      );
+    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: SizedBox(
         key: const ValueKey('amap-real-surface'),
         height: height ?? (interactive ? 360 : 210),
-        child: builder(
-          context,
-          effectiveConfig,
-          mappable,
-          safeSelected,
-          onSelected,
-          interactive,
-        ),
+        child: mapSurface,
       ),
     );
   }
@@ -303,8 +315,9 @@ class _NativeFootprintMapState extends State<_NativeFootprintMap> {
 
   @override
   Widget build(BuildContext context) {
-    bootstrapJiYiAmapSdk(context, widget.config);
-    return AMapWidget(
+    try {
+      bootstrapJiYiAmapSdk(context, widget.config, privacyAccepted: true);
+      return AMapWidget(
       initialCameraPosition: CameraPosition(
         target: LatLng(
           widget.visits.first.latitude!,
@@ -324,6 +337,14 @@ class _NativeFootprintMapState extends State<_NativeFootprintMap> {
         _fitCamera();
       },
     );
+    } catch (_) {
+      return const _MapFallback(
+        key: ValueKey('amap-load-unavailable'),
+        icon: Icons.map_outlined,
+        title: '地图暂时无法加载',
+        message: '地点和时间信息不受影响，可稍后重试地图。',
+      );
+    }
   }
 }
 
@@ -394,7 +415,6 @@ class JiYiPlaceMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final scope = JiYiAmapPresentationScope.maybeOf(context);
     final effectiveConfig = scope?.config ?? config;
-    effectiveConfig.assertProductionConfiguration();
     if (!_validCoordinate) {
       return const SizedBox.shrink(key: ValueKey('amap-place-no-coordinate'));
     }
@@ -417,19 +437,30 @@ class JiYiPlaceMap extends StatelessWidget {
 
     final builder =
         nativeBuilder ?? scope?.placeBuilder ?? _defaultPlaceNativeBuilder;
+    Widget mapSurface;
+    try {
+      mapSurface = builder(
+        context,
+        effectiveConfig,
+        latitude!,
+        longitude!,
+        name,
+        address,
+      );
+    } catch (_) {
+      return const _MapFallback(
+        key: ValueKey('amap-place-load-unavailable'),
+        icon: Icons.map_outlined,
+        title: '地图暂时无法加载',
+        message: '地点名称、地址和到访记录仍可正常查看。',
+      );
+    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: SizedBox(
         key: const ValueKey('amap-place-real-surface'),
         height: 240,
-        child: builder(
-          context,
-          effectiveConfig,
-          latitude!,
-          longitude!,
-          name,
-          address,
-        ),
+        child: mapSurface,
       ),
     );
   }
@@ -444,7 +475,7 @@ Widget _defaultPlaceNativeBuilder(
   String? address,
 ) {
   final coordinate = LatLng(latitude, longitude);
-  bootstrapJiYiAmapSdk(context, config);
+  bootstrapJiYiAmapSdk(context, config, privacyAccepted: true);
   return AMapWidget(
     initialCameraPosition: CameraPosition(target: coordinate, zoom: 15),
     markers: <Marker>{
