@@ -4,13 +4,58 @@ on:
   pull_request:
     paths:
       - ".github/workflows/uiux-v3-test-packages.yml"
+      - "mobile/lib/main.dart"
+      - "mobile/lib/amap_footprint_map.dart"
+      - "mobile/test/amap_footprint_map_test.dart"
+      - "mobile/test/issue292_startup_test.dart"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  dart-regression:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Guard exact source and nonfatal app startup
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          ! grep -q 'assertProductionConfiguration()' lib/main.dart
+          grep -q 'startJiYiApp();' lib/main.dart
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+      - name: Analyze
+        run: |
+          flutter pub get
+          flutter analyze
+      - name: Test empty SDK keys on iOS and Android, login and maps
+        run: >-
+          flutter test
+          test/issue292_startup_test.dart
+          test/amap_footprint_map_test.dart
+          test/widget_test.dart
+          --dart-define=APP_ENV=production
+          --dart-define=AMAP_ANDROID_SDK_KEY=
+          --dart-define=AMAP_IOS_SDK_KEY=
+          --reporter expanded
+      - name: Full Flutter test suite
+        timeout-minutes: 15
+        run: flutter test --reporter expanded
+
   android-test-apk:
+    needs: dart-regression
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,17 +78,25 @@ jobs:
           flutter-version: 3.47.4
           channel: stable
           cache: true
-      - name: Validate production AMap configuration
+      - name: Classify optional map SDK key for test packages
         env:
           AMAP_ANDROID_SDK_KEY: ${{ secrets.AMAP_ANDROID_SDK_KEY }}
         run: |
           set -euo pipefail
           key_present=false
-          if [ -n "${AMAP_ANDROID_SDK_KEY:-}" ]; then
+          if [ -n "${AMAP_ANDROID_SDK_KEY//[[:space:]]/}" ]; then
             key_present=true
           fi
+          case "${AMAP_ANDROID_SDK_KEY:-}" in
+            ci-*|CI-*) echo "::error::placeholder SDK key rejected"; exit 1;;
+          esac
           echo "AMAP_KEY_PRESENT=$key_present"
-          test "$key_present" = true
+          if [ "$key_present" = true ]; then
+            echo 'MAP_STATUS=CONFIGURED_UNVERIFIED' >> "$GITHUB_ENV"
+          else
+            echo 'MAP_STATUS=DISABLED_MISSING_KEY' >> "$GITHUB_ENV"
+            echo 'MAP_DISABLED_MISSING_KEY=true' >> "$GITHUB_ENV"
+          fi
           response="$(curl -fsS --connect-timeout 10 --max-time 20 https://jiyi.ccwl.net.cn/health)"
           echo "$response"
           echo "$response" | grep -q '"status":"ok"'
@@ -62,9 +115,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/v3-package
-          cp build/app/outputs/flutter-apk/app-debug.apk "build/v3-package/jiyidashi-v3-android-debug-${GITHUB_SHA:0:12}.apk"
-          (cd build/v3-package && sha256sum *.apk > SHA256SUMS)
-          printf 'source_sha=%s\napi_base_url=https://jiyi.ccwl.net.cn/v1\nsigning=android_debug_test_only\nmap_key=repository_secret_if_configured\n' "$(git rev-parse HEAD)" > build/v3-package/build-info.txt
+          actual_sha="$(git rev-parse HEAD)"
+          short_sha="${actual_sha:0:12}"
+          cp build/app/outputs/flutter-apk/app-debug.apk "build/v3-package/jiyidashi-v3-android-debug-${short_sha}.apk"
+          (cd build/v3-package && sha256sum *.apk > SHA256SUMS && sha256sum -c SHA256SUMS)
+          printf 'source_sha=%s\napi_base_url=https://jiyi.ccwl.net.cn/v1\nsigning=android_debug_test_only\nmap_status=%s\nbuild_purpose=TEST_ONLY\nfield_status=NOT_VERIFIED\n' "$(git rev-parse HEAD)" "$MAP_STATUS" > build/v3-package/build-info.txt
       - uses: actions/upload-artifact@v4
         with:
           name: jiyidashi-v3-android-debug-${{ github.event.pull_request.head.sha || github.sha }}
@@ -73,6 +128,7 @@ jobs:
           retention-days: 14
 
   ios-unsigned-ipa:
+    needs: dart-regression
     runs-on: macos-latest
     defaults:
       run:
@@ -100,17 +156,25 @@ jobs:
           set -euo pipefail
           flutter pub get
           python3 ../.github/scripts/prepare_ios_cocoapods.py
-      - name: Validate production AMap configuration
+      - name: Classify optional map SDK key for test packages
         env:
           AMAP_IOS_SDK_KEY: ${{ secrets.AMAP_IOS_SDK_KEY }}
         run: |
           set -euo pipefail
           key_present=false
-          if [ -n "${AMAP_IOS_SDK_KEY:-}" ]; then
+          if [ -n "${AMAP_IOS_SDK_KEY//[[:space:]]/}" ]; then
             key_present=true
           fi
+          case "${AMAP_IOS_SDK_KEY:-}" in
+            ci-*|CI-*) echo "::error::placeholder SDK key rejected"; exit 1;;
+          esac
           echo "AMAP_KEY_PRESENT=$key_present"
-          test "$key_present" = true
+          if [ "$key_present" = true ]; then
+            echo 'MAP_STATUS=CONFIGURED_UNVERIFIED' >> "$GITHUB_ENV"
+          else
+            echo 'MAP_STATUS=DISABLED_MISSING_KEY' >> "$GITHUB_ENV"
+            echo 'MAP_DISABLED_MISSING_KEY=true' >> "$GITHUB_ENV"
+          fi
           response="$(curl -fsS --connect-timeout 10 --max-time 20 https://jiyi.ccwl.net.cn/health)"
           echo "$response"
           echo "$response" | grep -q '"status":"ok"'
@@ -125,16 +189,19 @@ jobs:
             --dart-define=AMAP_IOS_SDK_KEY="$AMAP_IOS_SDK_KEY"
           test -f build/ios/iphoneos/Runner.app/Info.plist
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist
-          file build/ios/iphoneos/Runner.app/Runner
+          file build/ios/iphoneos/Runner.app/Runner | grep -q arm64
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)" = "com.jiyidays"
       - name: Package unsigned IPA and checksum
         run: |
           set -euo pipefail
           mkdir -p build/v3-package/Payload
           /usr/bin/ditto build/ios/iphoneos/Runner.app build/v3-package/Payload/Runner.app
-          ipa="jiyidashi-v3-ios-unsigned-${GITHUB_SHA:0:12}.ipa"
+          actual_sha="$(git rev-parse HEAD)"
+          short_sha="${actual_sha:0:12}"
+          ipa="jiyidashi-v3-ios-unsigned-${short_sha}.ipa"
           (cd build/v3-package && /usr/bin/zip -qry "$ipa" Payload && shasum -a 256 "$ipa" > SHA256SUMS && shasum -a 256 -c SHA256SUMS)
           /usr/bin/unzip -l "build/v3-package/$ipa" | grep -q 'Payload/Runner.app/Info.plist'
-          printf 'source_sha=%s\napi_base_url=https://jiyi.ccwl.net.cn/v1\nsigning=unsigned_trollstore_candidate_not_field_certified\nmap_key=repository_secret_if_configured\n' "$(git rev-parse HEAD)" > build/v3-package/build-info.txt
+          printf 'source_sha=%s\napi_base_url=https://jiyi.ccwl.net.cn/v1\nsigning=unsigned_trollstore_candidate_not_field_certified\nmap_status=%s\nbuild_purpose=TEST_ONLY\nfield_status=NOT_VERIFIED\n' "$(git rev-parse HEAD)" "$MAP_STATUS" > build/v3-package/build-info.txt
           rm -rf build/v3-package/Payload
       - uses: actions/upload-artifact@v4
         with:
