@@ -187,32 +187,75 @@ void main() {
     expect(nativeBuilds, 0);
   });
 
-  testWidgets('production build without platform SDK key fails closed',
-      (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
+  for (final platform in <TargetPlatform>[
+    TargetPlatform.android,
+    TargetPlatform.iOS,
+  ]) {
+    testWidgets('production without SDK key degrades footprint and place: $platform',
+        (tester) async {
+      var nativeBuilds = 0;
+      final noKey = JiYiAmapConfig(
+        platformOverride: platform,
+        appEnv: 'production',
+      );
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(children: <Widget>[
+            JiYiFootprintMap(
+              visits: <FootprintVisit>[_visit()],
+              privacyAccepted: true,
+              selectedIndex: 0,
+              onSelected: (_) {},
+              config: noKey,
+              nativeBuilder: (context, config, visits, selected, onSelected, interactive) {
+                nativeBuilds++;
+                return const SizedBox();
+              },
+            ),
+            JiYiPlaceMap(
+              latitude: 39.9042,
+              longitude: 116.4074,
+              name: '地点',
+              privacyAccepted: true,
+              config: noKey,
+              nativeBuilder: (context, config, latitude, longitude, name, address) {
+                nativeBuilds++;
+                return const SizedBox();
+              },
+            ),
+          ]),
+        ),
+      ));
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey('amap-key-unavailable')), findsOneWidget);
+      expect(find.byKey(const ValueKey('amap-place-key-unavailable')), findsOneWidget);
+      expect(nativeBuilds, 0);
+    });
+    testWidgets('production key and privacy enabled keeps map path: $platform',
+        (tester) async {
+      var nativeBuilds = 0;
+      await tester.pumpWidget(MaterialApp(
         home: JiYiFootprintMap(
           visits: <FootprintVisit>[_visit()],
           privacyAccepted: true,
           selectedIndex: 0,
           onSelected: (_) {},
-          config: const JiYiAmapConfig(
-            platformOverride: TargetPlatform.android,
+          config: JiYiAmapConfig(
+            platformOverride: platform,
             appEnv: 'production',
+            androidKey: 'fixture-android',
+            iosKey: 'fixture-ios',
           ),
+          nativeBuilder: (context, config, visits, selected, onSelected, interactive) {
+            nativeBuilds++;
+            return const SizedBox();
+          },
         ),
-      ),
-    );
-
-    expect(
-      tester.takeException(),
-      isA<StateError>().having(
-        (error) => error.message,
-        'message',
-        contains('Production AMap configuration'),
-      ),
-    );
-  });
+      ));
+      expect(find.byKey(const ValueKey('amap-real-surface')), findsOneWidget);
+      expect(nativeBuilds, 1);
+    });
+  }
 
   testWidgets('accepted privacy applies SDK privacy state before initialization',
       (tester) async {
@@ -228,6 +271,7 @@ void main() {
                 platformOverride: TargetPlatform.android,
                 appEnv: 'development',
               ),
+              privacyAccepted: true,
               hooks: JiYiAmapSdkHooks(
                 updatePrivacyAgree: (_) => calls.add('privacy'),
                 init: (context, {required apiKey}) => calls.add('init'),
@@ -240,6 +284,43 @@ void main() {
     );
 
     expect(calls, <String>['privacy', 'init']);
+  });
+
+  testWidgets('SDK bootstrap is a no-op without key or without privacy', (tester) async {
+    final calls = <String>[];
+    final hooks = JiYiAmapSdkHooks(
+      updatePrivacyAgree: (_) => calls.add('privacy'),
+      init: (context, {required apiKey}) => calls.add('init'),
+    );
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) {
+      bootstrapJiYiAmapSdk(context,
+        const JiYiAmapConfig(platformOverride: TargetPlatform.android, appEnv: 'production'),
+        privacyAccepted: true, hooks: hooks);
+      bootstrapJiYiAmapSdk(context,
+        const JiYiAmapConfig(platformOverride: TargetPlatform.android, androidKey: 'fixture'),
+        privacyAccepted: false, hooks: hooks);
+      return const SizedBox();
+    })));
+    expect(calls, isEmpty);
+  });
+
+  testWidgets('map renderer failure safely degrades both map surfaces', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: Column(children: <Widget>[
+      JiYiFootprintMap(
+        visits: <FootprintVisit>[_visit()], privacyAccepted: true,
+        selectedIndex: 0, onSelected: (_) {},
+        config: const JiYiAmapConfig(platformOverride: TargetPlatform.android, androidKey: 'fixture'),
+        nativeBuilder: (context, config, visits, selected, onSelected, interactive) => throw StateError('sdk-unavailable'),
+      ),
+      JiYiPlaceMap(
+        latitude: 39.9042, longitude: 116.4074, name: '地点', privacyAccepted: true,
+        config: const JiYiAmapConfig(platformOverride: TargetPlatform.android, androidKey: 'fixture'),
+        nativeBuilder: (context, config, latitude, longitude, name, address) => throw StateError('sdk-unavailable'),
+      ),
+    ]))));
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('amap-load-unavailable')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amap-place-load-unavailable')), findsOneWidget);
   });
 
   testWidgets('missing canonical coordinates never creates fake marker', (tester) async {
